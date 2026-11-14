@@ -5,51 +5,51 @@ fn fixture(
     unrelated: usize,
     quantities: usize,
 ) -> (
-    CState,
-    Vec<CResourceSpec>,
-    Vec<CCompositeResourceDefinition>,
+    ExecutionState,
+    Vec<ResourceSpec>,
+    Vec<CompositeResourceDefinition>,
 ) {
     let pointer = Pointer {
         block: PointerBlock::Concrete("quantity-pool".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("pool", CValue::pointer(pointer.clone()))
-        .with_memory(CMemory::new().with_block(pointer.block.clone(), 8).store(
+    let state = ExecutionState::new()
+        .with_local("pool", ProgramValue::pointer(pointer.clone()))
+        .with_memory(Memory::new().with_block(pointer.block.clone(), 8).store(
             pointer.offset_by_int32_elements(MachineTerm::constant(1)),
             int32(4),
         ));
-    let slot = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let slot = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "slot".into(),
-        vec![c_variable("pool")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("pool")],
+        vec![ProgramType::Int32Pointer],
     );
-    let authority = CResourceSpec::new(
-        CResourceTerm::PopulationAuthority {
+    let authority = ResourceSpec::new(
+        ResourceTerm::PopulationAuthority {
             population_arity: None,
-            protected: Box::new(CResourceTypeSpec {
+            protected: Box::new(ResourceTypeSpec {
                 resource: Box::new(slot.clone()),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
             }),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
-    let control = CCompositeResourceDefinition::new(
+    let control = CompositeResourceDefinition::new(
         "zz_control",
-        vec![c_parameter("pool", CType::Int32Pointer)],
+        vec![program_parameter("pool", ProgramType::Int32Pointer)],
         None,
         false,
         vec![
-            CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("pool"),
-                c_int32_literal(0),
-                c_int32_literal(2),
+            ResourceSpec::owned_memory(MemorySegment::new(
+                crate::kernel::program_expression::variable("pool"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(2),
             )),
             authority,
         ],
@@ -57,7 +57,7 @@ fn fixture(
     );
     let mut definitions = (0..unrelated)
         .map(|index| {
-            CCompositeResourceDefinition::new(
+            CompositeResourceDefinition::new(
                 format!("unused_{index:04}"),
                 vec![],
                 None,
@@ -69,18 +69,21 @@ fn fixture(
         .collect::<Vec<_>>();
     definitions.push(control);
     definitions.sort_by(|a, b| a.name().cmp(b.name()));
-    let quantity = CResourceSpec::quantified(
-        c_load(c_add(c_variable("pool"), c_int32_literal(1))),
+    let quantity = ResourceSpec::quantified(
+        crate::kernel::program_expression::load(crate::kernel::program_expression::add(
+            crate::kernel::program_expression::variable("pool"),
+            crate::kernel::program_expression::int32_literal(1),
+        )),
         slot,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
-    let mut resources = vec![CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let mut resources = vec![ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "zz_control".into(),
-        vec![c_variable("pool")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("pool")],
+        vec![ProgramType::Int32Pointer],
     )];
     resources.extend(std::iter::repeat_n(quantity, quantities));
     (state, resources, definitions)
@@ -122,19 +125,19 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
 fn composite_read_projection_requires_positive_ownership() {
     let (state, _, definitions) = fixture(0, 1);
     let pointer = match state.locals.get_native("pool").as_deref().unwrap() {
-        CValue::Pointer(value) => value.pointer().clone(),
+        ProgramValue::Pointer(value) => value.pointer().clone(),
         _ => unreachable!(),
     };
-    let target = CResourceFact::view_memory(CMemoryRange::new(
+    let target = ResourceFact::view_memory(MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(1),
         MachineTerm::constant(2),
     ));
     for quantity in [0, 1] {
-        let supplied = CResourceFact::Own(
-            CResource::Composite {
+        let supplied = ResourceFact::Own(
+            Resource::Composite {
                 name: "zz_control".into(),
-                arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+                arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
             },
             Box::new(MachineTerm::constant(quantity)),
         );

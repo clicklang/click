@@ -21,21 +21,21 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
             ensures result == &p->bytes[0] + i;
         } by { step_until(function.exit); solve(); }
     "#;
-    let verified_for_expansion = verify_c0_sources(proof, &inputs).unwrap();
+    let verified_for_expansion = verify_c_sources(proof, &inputs).unwrap();
     for (_, expanded) in
         expand_checked_grouped_claims(proof, &verified_for_expansion, ["logical", "byte_at"])
     {
-        verify_c0_sources(&expanded, &inputs).unwrap();
+        verify_c_sources(&expanded, &inputs).unwrap();
     }
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &proof.replace("&p->values[0] ==", "&p->values[1] =="),
             &inputs
         )
         .is_err()
     );
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &proof.replace("result == &p->bytes[i]", "result == &p->bytes[0]"),
             &inputs
         )
@@ -44,7 +44,7 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
     for expression in ["defined(&p->values[5])", "defined(old(&p->values[5]))"] {
         let false_definedness = proof.replace("&p->values[0] == p->values", expression);
         assert!(
-            verify_c0_sources(&false_definedness, &inputs).is_err(),
+            verify_c_sources(&false_definedness, &inputs).is_err(),
             "{expression}"
         );
     }
@@ -53,7 +53,7 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
             ensures &p->values[0] == p->values;
         } by { step_until(function.exit); solve(); }
     "#;
-    assert!(verify_c0_sources(missing_view, &inputs).is_err());
+    assert!(verify_c_sources(missing_view, &inputs).is_err());
 }
 
 #[test]
@@ -77,15 +77,19 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
             }}
         "#
         );
-        let result = verify_c0_sources(&proof, &[("snapshot.c", c)]);
+        let result = verify_c_sources(&proof, &[("snapshot.c", c)]);
         if extent == 16 {
             assert!(result.is_err(), "the saved counter needs 32 bytes, not 16");
         } else {
             result.unwrap();
-            let expanded =
-                expand_c0_claim_source(&proof, &[("snapshot.c", c)], "f", CProofClaim::Ensure(0))
-                    .unwrap();
-            verify_c0_sources(&expanded, &[("snapshot.c", c)]).unwrap();
+            let expanded = expand_c_claim_source(
+                &proof,
+                &[("snapshot.c", c)],
+                "f",
+                ContractProofClaim::Ensure(0),
+            )
+            .unwrap();
+            verify_c_sources(&expanded, &[("snapshot.c", c)]).unwrap();
         }
     }
 }
@@ -97,15 +101,15 @@ fn readonly_scalar_initialization_preserves_address_and_expands() {
     let proof = r#"verifying "readonly.c";
         int32 seven() { ensures result == 7; }
         int32 probe() { ensures result == 7; }"#;
-    verify_c0_sources(proof, &[("readonly.c", source)]).unwrap();
-    let expanded = expand_c0_claim_source(
+    verify_c_sources(proof, &[("readonly.c", source)]).unwrap();
+    let expanded = expand_c_claim_source(
         proof,
         &[("readonly.c", source)],
         "probe",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .unwrap();
-    verify_c0_sources(&expanded, &[("readonly.c", source)]).unwrap();
+    verify_c_sources(&expanded, &[("readonly.c", source)]).unwrap();
 }
 
 #[test]
@@ -115,17 +119,17 @@ fn typed_load_through_entry_pointer_reads_current_memory() {
     let proof = r#"verifying "snapshot.c"; void probe(int32* p, int32* q) {
         owns p[0..1]; ensures load_int32(old(p)) == 7;
     }"#;
-    verify_c0_sources(proof, &[("snapshot.c", source)]).unwrap();
-    let expanded = expand_c0_claim_source(
+    verify_c_sources(proof, &[("snapshot.c", source)]).unwrap();
+    let expanded = expand_c_claim_source(
         proof,
         &[("snapshot.c", source)],
         "probe",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .unwrap();
-    verify_c0_sources(&expanded, &[("snapshot.c", source)]).unwrap();
+    verify_c_sources(&expanded, &[("snapshot.c", source)]).unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &proof.replace("load_int32(old(p))", "old(load_int32(p))"),
             &[("snapshot.c", source)]
         )
@@ -140,15 +144,15 @@ fn typed_pointer_load_through_entry_pointer_expands() {
     let proof = r#"verifying "snapshot.c"; void probe(int32** p, int32* q, int32** r) {
         owns p[0..1]; ensures load_int32_pointer(old(p)) == q;
     }"#;
-    verify_c0_sources(proof, &[("snapshot.c", source)]).unwrap();
-    let expanded = expand_c0_claim_source(
+    verify_c_sources(proof, &[("snapshot.c", source)]).unwrap();
+    let expanded = expand_c_claim_source(
         proof,
         &[("snapshot.c", source)],
         "probe",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .unwrap();
-    verify_c0_sources(&expanded, &[("snapshot.c", source)]).unwrap();
+    verify_c_sources(&expanded, &[("snapshot.c", source)]).unwrap();
 }
 
 #[test]
@@ -161,15 +165,15 @@ fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
             ensures result as (uint8 *) == old((p + 1) as (uint8 *));
             ensures result as (uint8 *) == p as (uint8 *) + 4;
         }"#;
-    verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
-    let expanded = expand_c0_claim_source(
+    verify_c_sources(proof, &[("bytes.c", source)]).unwrap();
+    let expanded = expand_c_claim_source(
         proof,
         &[("bytes.c", source)],
         "probe",
-        CProofClaim::Ensure(1),
+        ContractProofClaim::Ensure(1),
     )
     .unwrap();
-    verify_c0_sources(&expanded, &[("bytes.c", source)]).unwrap();
+    verify_c_sources(&expanded, &[("bytes.c", source)]).unwrap();
 }
 
 #[test]
@@ -200,7 +204,7 @@ fn native_contract_byte_casts_check_their_type_boundary() {
         let proof =
             format!("verifying \"bytes.c\"; int32 probe({parameter}) {{ ensures {expression}; }}");
         let source = format!("int32 probe({parameter}) {{ return 0; }}");
-        let error = verify_c0_sources(&proof, &[("bytes.c", &source)]).unwrap_err();
+        let error = verify_c_sources(&proof, &[("bytes.c", &source)]).unwrap_err();
         assert!(error.message().contains(diagnostic), "{}", error.message());
     }
 }
@@ -212,9 +216,9 @@ fn native_contract_byte_casts_do_not_grant_memory_access() {
     let proof = r#"verifying "bytes.c"; uint8 probe(uint8* p) {
         views p[0..1]; ensures result == *(p as (uint8 *));
     }"#;
-    verify_c0_sources(proof, &[("bytes.c", source)]).unwrap();
+    verify_c_sources(proof, &[("bytes.c", source)]).unwrap();
     assert!(
-        verify_c0_sources(&proof.replace("views p[0..1];", ""), &[("bytes.c", source)]).is_err()
+        verify_c_sources(&proof.replace("views p[0..1];", ""), &[("bytes.c", source)]).is_err()
     );
 }
 
@@ -228,9 +232,9 @@ fn unsigned_word_array_field_contracts_decay_to_typed_addresses() {
             views p->values[0..4];
             ensures result == old(p->values[k]);
         }"#;
-    verify_c0_sources(proof, &[("fields.c", source)]).unwrap();
+    verify_c_sources(proof, &[("fields.c", source)]).unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &proof.replace("views p->values[0..4];", ""),
             &[("fields.c", source)]
         )
@@ -260,16 +264,16 @@ fn modular_exceptional_call_continues_through_a_normal_assignment() {
             exceptional ensures exception == 7;
         }
     "#;
-    verify_c0_sources(click_source, &[("calls.c", c_source)])
+    verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect("the normal call successor must continue while its throw successor exits");
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("calls.c", c_source)],
         "caller",
-        CProofClaim::ExceptionalEnsure(0),
+        ContractProofClaim::ExceptionalEnsure(0),
     )
     .expect("the exceptional caller claim must expand across the call fork");
-    verify_c0_sources(&expanded, &[("calls.c", c_source)])
+    verify_c_sources(&expanded, &[("calls.c", c_source)])
         .expect("the expanded call fork must reverify");
 }
 
@@ -295,7 +299,7 @@ fn successive_modular_exceptional_calls_keep_each_throw_path() {
             exceptional ensures exception == 7;
         }
     "#;
-    verify_c0_sources(click_source, &[("calls.c", c_source)])
+    verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect("both call sites must retain their exceptional paths");
 }
 
@@ -321,7 +325,7 @@ fn exceptional_call_before_a_normal_branch_retains_its_exit() {
             exceptional ensures exception == 7;
         }
     "#;
-    verify_c0_sources(click_source, &[("calls.c", c_source)])
+    verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect("a later normal branch must not drop the call's throw exit");
 }
 
@@ -346,7 +350,7 @@ fn exceptional_call_before_two_returning_normal_arms_retains_its_exit() {
             exceptional ensures exception == 7;
         }
     "#;
-    verify_c0_sources(click_source, &[("calls.c", c_source)])
+    verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect("a checked branch join must retain the earlier exceptional exit");
 }
 
@@ -372,7 +376,7 @@ fn nonterminal_exceptional_call_rejects_a_false_caller_claim() {
             exceptional ensures exception == 8;
         }
     "#;
-    let error = verify_c0_sources(click_source, &[("calls.c", c_source)])
+    let error = verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect_err("the normal continuation must not contaminate the throw claim");
     assert!(
         error.message().contains("exceptional_ensures_0"),
@@ -400,7 +404,7 @@ fn nonterminal_call_cannot_drop_an_unconstrained_exception() {
             ensures result == x;
         }
     "#;
-    let error = verify_c0_sources(click_source, &[("calls.c", c_source)])
+    let error = verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect_err("the caller's omitted throws clause cannot hide the callee's throw");
     assert!(
         error.message().contains("caller"),
@@ -426,7 +430,7 @@ fn modular_exceptional_call_completes_both_caller_claim_families() {
             exceptional ensures exception == 7;
         }
     "#;
-    let verified = verify_c0_sources(click_source, &[("calls.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect("normal and exceptional caller claims must verify");
     let exceptional = verified
         .iter()
@@ -434,7 +438,7 @@ fn modular_exceptional_call_completes_both_caller_claim_families() {
             matches!(theorem.claim, VerifiedClaim::ExceptionalEnsure { .. })
                 && matches!(
                     theorem.specification.outcome(),
-                    CFunctionOutcome::Throw { .. }
+                    FunctionOutcome::Throw { .. }
                 )
         })
         .collect::<Vec<_>>();
@@ -445,14 +449,14 @@ fn modular_exceptional_call_completes_both_caller_claim_families() {
             .all(|theorem| theorem.checked_proposition.is_some()),
         "exceptional claims retain their proposition completion through certification"
     );
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("calls.c", c_source)],
         "caller",
-        CProofClaim::ExceptionalEnsure(0),
+        ContractProofClaim::ExceptionalEnsure(0),
     )
     .expect("the caller's exceptional claim must expand");
-    verify_c0_sources(&expanded, &[("calls.c", c_source)])
+    verify_c_sources(&expanded, &[("calls.c", c_source)])
         .expect("the expanded exceptional caller proof must verify");
 }
 
@@ -474,7 +478,7 @@ fn modular_exceptional_call_rejects_a_false_caller_claim() {
             exceptional ensures exception == 8;
         }
     "#;
-    let error = verify_c0_sources(click_source, &[("calls.c", c_source)])
+    let error = verify_c_sources(click_source, &[("calls.c", c_source)])
         .expect_err("the callee's exceptional fact cannot prove a false caller claim");
     assert!(
         error.message().contains("exceptional_ensures_0"),
@@ -500,14 +504,14 @@ fn targeted_exceptional_caller_assumes_but_does_not_certify_an_unselected_callee
             exceptional ensures exception == 7;
         }
     "#;
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("calls.c", c_source)],
         "caller",
-        CProofClaim::ExceptionalEnsure(0),
+        ContractProofClaim::ExceptionalEnsure(0),
     )
     .expect("targeted expansion may assume the callee interface");
-    let error = verify_c0_sources(&expanded, &[("calls.c", c_source)])
+    let error = verify_c_sources(&expanded, &[("calls.c", c_source)])
         .expect_err("whole-file verification must still certify the callee body");
     // The callee's two omitted proofs share its implicit grouped proof.
     assert!(
@@ -533,7 +537,7 @@ fn exceptional_contracts_publish_distinct_claim_families() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("helper.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("helper.c", c_source)])
         .expect("a nonthrowing body should vacuously certify its exceptional family");
     assert!(
         verified
@@ -545,14 +549,14 @@ fn exceptional_contracts_publish_distinct_claim_families() {
             .iter()
             .any(|theorem| matches!(&theorem.claim, VerifiedClaim::ExceptionalEnsure { .. }))
     );
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("helper.c", c_source)],
         "helper",
-        CProofClaim::ExceptionalEnsure(0),
+        ContractProofClaim::ExceptionalEnsure(0),
     )
     .expect("the exceptional claim should have an independently expandable proof site");
-    verify_c0_sources(&expanded, &[("helper.c", c_source)])
+    verify_c_sources(&expanded, &[("helper.c", c_source)])
         .expect("the expanded exceptional claim should reverify");
 }
 
@@ -609,7 +613,7 @@ fn exceptional_contract_bindings_are_family_specific() {
             "with resources or mutable effects",
         ),
     ] {
-        let error = verify_c0_sources(source, &[("identity.c", c_source)])
+        let error = verify_c_sources(source, &[("identity.c", c_source)])
             .expect_err("invalid exceptional surface contract must be rejected");
         assert!(
             error.message().contains(expected),
@@ -622,7 +626,7 @@ fn exceptional_contract_bindings_are_family_specific() {
             exceptional ensures exception == 7;
         }
     "#;
-    verify_c0_sources(external, &[])
+    verify_c_sources(external, &[])
         .unwrap_or_else(|error| panic!("an external contract may throw: {error:?}"));
 }
 
@@ -648,7 +652,7 @@ fn abstract_resource_construction_adds_one_authorized_token() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("open_thing.c", c_source)])
+    verify_c_sources(click_source, &[("open_thing.c", c_source)])
         .expect("an authorized abstract resource construction should verify");
 }
 
@@ -673,7 +677,7 @@ fn abstract_resource_construction_requires_function_authorization() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("fake_open.c", c_source)])
+    let error = verify_c_sources(click_source, &[("fake_open.c", c_source)])
         .expect_err("an unauthorized abstract resource construction must fail");
     assert!(
         error
@@ -706,7 +710,7 @@ fn contradiction_closes_an_impossible_concrete_outcome() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("always_zero.c", c_source)]).expect(
+    verify_c_sources(click_source, &[("always_zero.c", c_source)]).expect(
         "a concrete-false outcome guard should avoid lowering its unavailable memory consequent",
     );
 }
@@ -728,7 +732,7 @@ fn flat_function_proof_stays_on_proof_through_claim_acceptance() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
+        verify_c_sources(click_source, &[("identity.c", c_source)])
     });
     verified.expect("the flat function proof should verify");
     assert_eq!(
@@ -764,16 +768,16 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
+        verify_c_sources(click_source, &[("identity.c", c_source)])
     });
     verified.expect("the individual open proof should verify");
     assert_eq!(flat_units, 1, "the open claim should finish from one Proof");
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("identity.c", c_source)],
         "identity",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .expect("the individual open proof should expand");
     assert!(expanded.contains("open(marker(x))"), "{expanded}");
@@ -781,7 +785,7 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &[("identity.c", c_source)])
+    verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the rewritten individual open proof should verify normally");
 
     let checked_step = "                        step();\n";
@@ -790,7 +794,7 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
         corrupted, expanded,
         "expansion should expose the return step"
     );
-    verify_c0_sources(&corrupted, &[("identity.c", c_source)])
+    verify_c_sources(&corrupted, &[("identity.c", c_source)])
         .expect_err("removing the scoped return step must invalidate the rewritten proof");
 }
 
@@ -877,7 +881,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
     ];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("the explicit call partition should remain on one retained Proof");
     assert_eq!(
         flat_units, 2,
@@ -984,7 +988,7 @@ fn explicit_proof_if_does_not_capture_shared_following_c_if() {
         click_source.contains("if at(region(1).exit, owner->data)"),
         "the regression must insert the empty explicit proof split"
     );
-    verify_c0_sources(
+    verify_c_sources(
         &click_source,
         &[
             ("replace_allocated_cell.c", replace_source),
@@ -1003,16 +1007,16 @@ fn following_c_if_splits_one_symbolic_call_successor() {
         ("replace_then_branch.c", caller_source),
     ];
 
-    verify_c0_sources(click_source, sources)
+    verify_c_sources(click_source, sources)
         .expect("the following C `if` should split the symbolic call successor");
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         sources,
         "replace_then_branch",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the explicit result split should retain an expandable proof");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the explicit result split expansion should check independently");
 
     // The call has one symbolic successor. Its data-identity postconditions
@@ -1032,16 +1036,16 @@ fn following_c_if_splits_one_symbolic_call_successor() {
         without_identity_bridge, click_source,
         "the bridging postconditions should be present"
     );
-    verify_c0_sources(&without_identity_bridge, sources)
+    verify_c_sources(&without_identity_bridge, sources)
         .expect("the C `if` must not depend on unrelated call identity facts");
-    let expanded_without_bridge = expand_c0_claim_source(
+    let expanded_without_bridge = expand_c_claim_source(
         &without_identity_bridge,
         sources,
         "replace_then_branch",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the single-successor proof should remain expandable");
-    verify_c0_sources(&expanded_without_bridge, sources)
+    verify_c_sources(&expanded_without_bridge, sources)
         .expect("the expanded single-successor proof should check independently");
 }
 
@@ -1077,7 +1081,7 @@ fn proof_if_splits_one_frontier_after_execution_has_started() {
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("the mid-execution proof case split should remain on one retained Proof");
     assert_eq!(flat_units, 1, "the contract should retain one Proof");
     assert_eq!(
@@ -1086,15 +1090,15 @@ fn proof_if_splits_one_frontier_after_execution_has_started() {
         "an exhaustive proof-level case split should complete its retained execution paths"
     );
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         sources,
         "identity_after_prefix",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the retained mid-execution case split should expand");
     assert!(expanded.contains("if x >= 0"), "{expanded}");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the expanded mid-execution case split should verify independently");
 }
 
@@ -1125,7 +1129,7 @@ fn post_execution_resource_fold_completes_without_a_body_rerun() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(click_source, &[("preserve_cell.c", c_source)])
+    verify_c_sources(click_source, &[("preserve_cell.c", c_source)])
         .expect("the post-execution resource fold should verify");
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
@@ -1164,7 +1168,7 @@ fn implicitly_closed_population_entry_completes_without_a_body_rerun() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(click_source, &[("inspect_counts.c", c_source)])
+    verify_c_sources(click_source, &[("inspect_counts.c", c_source)])
         .expect("populations closed by the outcome solve should verify");
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
@@ -1210,7 +1214,7 @@ fn callee_subrange_requirement_completes_without_a_body_rerun() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(
+    verify_c_sources(
         click_source,
         &[("write_at.c", write_at), ("write_at_symbolic.c", caller)],
     )
@@ -1241,7 +1245,7 @@ fn token_quantity_entry_completes_without_a_body_rerun() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(click_source, &[("preserve.c", c_source)])
+    verify_c_sources(click_source, &[("preserve.c", c_source)])
         .expect("the token quantity entry should verify");
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
@@ -1268,7 +1272,7 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
+        verify_c_sources(click_source, &[("identity.c", c_source)])
     });
     let verified = verified.expect("the grouped flat function proof should verify");
     assert_eq!(verified.len(), 2, "both grouped claims should be proved");
@@ -1277,11 +1281,11 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
         "the grouped claims should finish from one retained Proof"
     );
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("identity.c", c_source)],
         "identity",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the retained grouped Proof should expand");
     assert!(
@@ -1289,7 +1293,7 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
         "{expanded}"
     );
     assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, &[("identity.c", c_source)])
+    verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the grouped rewrite should verify normally");
 
     let corrupted = expanded.replacen("have result == result", "have result != result", 1);
@@ -1297,7 +1301,7 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
         corrupted, expanded,
         "grouped expansion should expose a checked have"
     );
-    verify_c0_sources(&corrupted, &[("identity.c", c_source)])
+    verify_c_sources(&corrupted, &[("identity.c", c_source)])
         .expect_err("tampering with a grouped extracted operation must invalidate the proof");
 }
 
@@ -1325,7 +1329,7 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("classify.c", c_source)])
+        verify_c_sources(click_source, &[("classify.c", c_source)])
     });
     let verified = verified.expect("the grouped N-way function proof should verify");
     assert_eq!(
@@ -1335,11 +1339,11 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
     );
     assert_eq!(flat_units, 1, "all outcomes should stay on one Proof");
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("classify.c", c_source)],
         "classify",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the retained grouped N-way Proof should expand");
     assert!(
@@ -1347,7 +1351,7 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
         "{expanded}"
     );
     assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, &[("classify.c", c_source)])
+    verify_c_sources(&expanded, &[("classify.c", c_source)])
         .expect("the expanded grouped N-way proof should verify normally");
 }
 
@@ -1372,20 +1376,20 @@ fn grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("pointer_is_null.c", c_source)])
+        verify_c_sources(click_source, &[("pointer_is_null.c", c_source)])
     });
     let verified = verified.expect("the feasible grouped outcome should verify");
     assert_eq!(verified.len(), 1);
     assert_eq!(flat_units, 1, "the selected outcome should stay on Proof");
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("pointer_is_null.c", c_source)],
         "pointer_is_null",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the feasible grouped outcome should expand");
-    verify_c0_sources(&expanded, &[("pointer_is_null.c", c_source)])
+    verify_c_sources(&expanded, &[("pointer_is_null.c", c_source)])
         .expect("the rewritten feasible-outcome proof should verify normally");
 }
 
@@ -1423,13 +1427,17 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
     let sources = &[("set_one.c", set_source), ("call_set_one.c", caller_source)];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("the grouped call and callee proofs should verify");
     assert_eq!(flat_units, 2, "both functions should retain one Proof");
 
-    let expanded =
-        expand_c0_claim_source(click_source, sources, "call_set_one", CProofClaim::Grouped)
-            .expect("the retained grouped call Proof should expand");
+    let expanded = expand_c_claim_source(
+        click_source,
+        sources,
+        "call_set_one",
+        ContractProofClaim::Grouped,
+    )
+    .expect("the retained grouped call Proof should expand");
     let caller_expansion = expanded
         .split("int32 call_set_one")
         .nth(1)
@@ -1440,7 +1448,7 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
     );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert!(caller_expansion.contains("step();"), "{expanded}");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten grouped call proof should verify normally");
 
     // The call step runs in the caller's context; its prerequisite is the
@@ -1450,7 +1458,7 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
         corrupted, expanded,
         "the caller's requirement should be present"
     );
-    verify_c0_sources(&corrupted, sources)
+    verify_c_sources(&corrupted, sources)
         .expect_err("removing the call prerequisite from the context must invalidate the proof");
 }
 
@@ -1507,22 +1515,23 @@ fn outcome_solve_spells_a_call_postcondition_across_two_snapshots() {
     ];
 
     let (verified, planning_transitions) =
-        collect_planning_statement_transitions(|| verify_c0_sources(click_source, sources));
+        collect_planning_statement_transitions(|| verify_c_sources(click_source, sources));
     verified.expect("the caller should verify through the checked linear search");
     assert!(
         planning_transitions.is_empty(),
         "the caller's outcome must close without planner construction: {planning_transitions:#?}"
     );
 
-    let expanded = expand_c0_claim_source(click_source, sources, "keep_x", CProofClaim::Grouped)
-        .expect("the retained caller Proof should expand");
+    let expanded =
+        expand_c_claim_source(click_source, sources, "keep_x", ContractProofClaim::Grouped)
+            .expect("the retained caller Proof should expand");
     let caller_expansion = expanded
         .split("int32 keep_x")
         .nth(1)
         .expect("the expanded source should retain the caller");
     // The checked frame equation connects the snapshots in the shared graph.
     assert!(caller_expansion.contains("assumption();"), "{expanded}");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten caller proof should verify normally");
 }
 
@@ -1568,15 +1577,15 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
     ];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("declared composite resources should cross both checked calls");
     assert_eq!(flat_units, 2, "both functions should retain one Proof");
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         sources,
         "borrow_token_twice",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the retained declared-resource call Proof should expand");
     let caller_expansion = expanded
@@ -1593,7 +1602,7 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
         4,
         "each caller statement should retain one checked step: {expanded}"
     );
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten declared-resource call proof should verify normally");
 
     let checked_step = "                step();\n";
@@ -1602,7 +1611,7 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
         corrupted, expanded,
         "expansion should expose checked call steps"
     );
-    verify_c0_sources(&corrupted, sources)
+    verify_c_sources(&corrupted, sources)
         .expect_err("removing an extracted resource-bearing step must invalidate the proof");
 }
 
@@ -1660,15 +1669,15 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
     ];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("mutable composite resources should cross the scoped opaque call");
     assert_eq!(flat_units, 2, "both open-scope proofs should stay on Proof");
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         sources,
         "set_wrapped_seven",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the retained mutable composite call scope should expand");
     let caller_expansion = expanded
@@ -1684,7 +1693,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
         "{expanded}"
     );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten scoped composite-call proof should verify normally");
 
     let checked_step = "                    step();\n";
@@ -1693,7 +1702,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
         corrupted, expanded,
         "expansion should expose a scoped call step"
     );
-    verify_c0_sources(&corrupted, sources)
+    verify_c_sources(&corrupted, sources)
         .expect_err("removing the scoped call step must invalidate the rewritten proof");
 }
 
@@ -1755,15 +1764,15 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
     ];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("the closed preparatory scope should continue through the checked call");
     assert_eq!(flat_units, 2, "both functions should retain one Proof");
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         sources,
         "prepare_then_set_seven",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the retained preparatory scope Proof should expand");
     let caller_expansion = expanded
@@ -1776,7 +1785,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
     );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert!(caller_expansion.contains("open(wrapped_cell(cell))"));
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .unwrap_or_else(|error| panic!("TEMP {error:?}\n{expanded}"));
 }
 
@@ -1820,12 +1829,17 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
     let sources = &[("add_twice.c", c_source)];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("both sequential scopes should advance one checked Proof");
     assert_eq!(flat_units, 1, "the function should retain one Proof");
 
-    let expanded = expand_c0_claim_source(click_source, sources, "add_twice", CProofClaim::Grouped)
-        .expect("the retained sequential scopes should expand");
+    let expanded = expand_c_claim_source(
+        click_source,
+        sources,
+        "add_twice",
+        ContractProofClaim::Grouped,
+    )
+    .expect("the retained sequential scopes should expand");
     let caller_expansion = expanded
         .split("int32 add_twice")
         .nth(1)
@@ -1840,7 +1854,7 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
         "{expanded}"
     );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten sequential-scope proof should verify normally");
 
     let checked_step = "                    step();\n";
@@ -1849,7 +1863,7 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
         corrupted, expanded,
         "expansion should expose both checked statements"
     );
-    verify_c0_sources(&corrupted, sources)
+    verify_c_sources(&corrupted, sources)
         .expect_err("removing one scoped statement must invalidate the rewritten proof");
 }
 
@@ -1881,7 +1895,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
     let sources = &[("identity.c", c_source)];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     let verified = verified.expect("the grouped predicate contract should verify");
     assert_eq!(verified.len(), 2, "both predicate claims should be proved");
     assert_eq!(
@@ -1889,8 +1903,13 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         "the predicate claims should stay on one Proof"
     );
 
-    let expanded = expand_c0_claim_source(click_source, sources, "identity", CProofClaim::Grouped)
-        .expect("the retained predicate Proof should expand");
+    let expanded = expand_c_claim_source(
+        click_source,
+        sources,
+        "identity",
+        ContractProofClaim::Grouped,
+    )
+    .expect("the retained predicate Proof should expand");
     assert!(
         expanded.contains("have nonnegative(result) by {"),
         "{expanded}"
@@ -1901,7 +1920,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         "{expanded}"
     );
     assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten predicate proof should verify normally");
 
     let corrupted = expanded.replacen("unfold(same);", "unfold(nonnegative);", 1);
@@ -1909,7 +1928,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         corrupted, expanded,
         "expansion should expose the predicate unfold"
     );
-    verify_c0_sources(&corrupted, sources)
+    verify_c_sources(&corrupted, sources)
         .expect_err("tampering with the extracted predicate operation must fail");
 }
 
@@ -1939,7 +1958,7 @@ fn heap_backed_predicate_contract_stays_on_checked_proof() {
             }
         "#;
 
-    let verified = { verify_c0_sources(click_source, &[("read_first.c", c_source)]) };
+    let verified = { verify_c_sources(click_source, &[("read_first.c", c_source)]) };
     let verified = verified.expect("heap-backed predicate contract should verify");
     assert_eq!(verified.len(), 2);
     assert!(
@@ -1984,7 +2003,7 @@ fn quantified_heap_scope_stays_on_checked_proof() {
             }
         "#;
 
-    let verified = { verify_c0_sources(click_source, &[("read_first.c", c_source)]) };
+    let verified = { verify_c_sources(click_source, &[("read_first.c", c_source)]) };
     let verified = verified.expect("quantified heap scope should verify");
     assert_eq!(verified.len(), 2);
     assert!(
@@ -2033,13 +2052,17 @@ fn grouped_leading_resource_relations_stay_on_one_proof() {
     let sources = &[("inspect_pair.c", c_source)];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("leading resource relations should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
 
-    let expanded =
-        expand_c0_claim_source(click_source, sources, "inspect_pair", CProofClaim::Grouped)
-            .expect("the retained resource-relation scopes should expand");
+    let expanded = expand_c_claim_source(
+        click_source,
+        sources,
+        "inspect_pair",
+        ContractProofClaim::Grouped,
+    )
+    .expect("the retained resource-relation scopes should expand");
     assert!(
         expanded.contains("have contains(pair(left, right)"),
         "{expanded}"
@@ -2048,7 +2071,7 @@ fn grouped_leading_resource_relations_stay_on_one_proof() {
         expanded.contains("have separate(memory(left[0..1])"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten resource-relation proof should verify normally");
 
     for (relation, corrupted) in [
@@ -2070,7 +2093,7 @@ fn grouped_leading_resource_relations_stay_on_one_proof() {
         ),
     ] {
         assert_ne!(corrupted, expanded, "expansion should expose {relation}");
-        let corrupted_result = { verify_c0_sources(&corrupted, sources) };
+        let corrupted_result = { verify_c_sources(&corrupted, sources) };
         corrupted_result.expect_err(&format!(
             "tampering with {relation} must invalidate the proof"
         ));
@@ -2113,13 +2136,17 @@ fn grouped_unfolded_resource_relations_stay_on_one_proof() {
     let sources = &[("inspect_pair.c", c_source)];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("relations projected by an explicit unfold should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
 
-    let expanded =
-        expand_c0_claim_source(click_source, sources, "inspect_pair", CProofClaim::Grouped)
-            .expect("the retained unfolded-resource Proof should expand");
+    let expanded = expand_c_claim_source(
+        click_source,
+        sources,
+        "inspect_pair",
+        ContractProofClaim::Grouped,
+    )
+    .expect("the retained unfolded-resource Proof should expand");
     assert!(
         expanded.contains("observe(pair(left, right));"),
         "{expanded}"
@@ -2137,7 +2164,7 @@ fn grouped_unfolded_resource_relations_stay_on_one_proof() {
         expanded.contains("have separate(memory(left[0..1])"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten unfolded-resource proof should verify normally");
 
     let corrupted = expanded.replacen(
@@ -2149,7 +2176,7 @@ fn grouped_unfolded_resource_relations_stay_on_one_proof() {
         corrupted, expanded,
         "expansion should expose the derived separation"
     );
-    let corrupted_result = { verify_c0_sources(&corrupted, sources) };
+    let corrupted_result = { verify_c_sources(&corrupted, sources) };
     corrupted_result.expect_err("tampering with the derived separation must fail");
 }
 
@@ -2186,16 +2213,21 @@ fn grouped_owned_outcome_resources_stay_on_one_proof() {
     let sources = &[("set_seven.c", c_source)];
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, sources));
     verified.expect("owned outcome resource operations should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
 
-    let expanded = expand_c0_claim_source(click_source, sources, "set_seven", CProofClaim::Grouped)
-        .expect("the retained owned outcome Proof should expand");
+    let expanded = expand_c_claim_source(
+        click_source,
+        sources,
+        "set_seven",
+        ContractProofClaim::Grouped,
+    )
+    .expect("the retained owned outcome Proof should expand");
     assert!(expanded.contains("unfold(seven_cell(cell));"), "{expanded}");
     assert!(expanded.contains("have cell[0] == 7 by {"), "{expanded}");
     assert!(expanded.contains("fold(seven_cell(cell));"), "{expanded}");
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("the rewritten owned outcome proof should verify normally");
 }
 
@@ -2215,11 +2247,11 @@ fn flat_function_expansion_rewrites_and_rejects_tampering() {
             }
         "#;
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("identity.c", c_source)],
         "identity",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .expect("the retained flat Proof should expand");
     assert!(
@@ -2227,7 +2259,7 @@ fn flat_function_expansion_rewrites_and_rejects_tampering() {
         "{expanded}"
     );
     assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, &[("identity.c", c_source)])
+    verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the rewritten source should verify normally");
 
     let corrupted = expanded.replacen("have result == x", "have result != x", 1);
@@ -2235,7 +2267,7 @@ fn flat_function_expansion_rewrites_and_rejects_tampering() {
         corrupted, expanded,
         "expansion should expose its checked have"
     );
-    verify_c0_sources(&corrupted, &[("identity.c", c_source)])
+    verify_c_sources(&corrupted, &[("identity.c", c_source)])
         .expect_err("tampering with an extracted operation must invalidate the source proof");
 }
 
@@ -2263,7 +2295,7 @@ fn post_execution_frame_using_relowers_a_preceding_have_fact() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("clear_first.c", c_source)])
+    verify_c_sources(click_source, &[("clear_first.c", c_source)])
         .expect("frame premises should use facts established by preceding exit haves");
 }
 
@@ -2289,7 +2321,7 @@ fn ordinary_verification_stops_at_the_tactic_work_budget() {
     };
     let (result, events) = crate::instrumentation::collect(|| {
         crate::instrumentation::with_tactic_work_limits(limits, || {
-            verify_c0_sources(click_source, &[("identity.c", c_source)])
+            verify_c_sources(click_source, &[("identity.c", c_source)])
         })
     });
     let error = result.expect_err("the first tactic should exhaust its zero work budget");
@@ -2332,7 +2364,7 @@ fn verifies_omitted_proof_with_default_prover() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("zero.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("zero.c", c_source)])
         .expect("omitted proof clauses should use the default prover");
 
     assert_eq!(verified.len(), 1);
@@ -2360,7 +2392,7 @@ fn solve_rejects_loop_backed_claims() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("count_to_three.c", c_source)])
+    let error = verify_c_sources(click_source, &[("count_to_three.c", c_source)])
         .expect_err("solve should not run loop verification");
 
     assert!(
@@ -2379,7 +2411,7 @@ fn verifies_memory_postcondition() {
         "ensures returns_second: result == 2",
         "ensures third: p[2] == 2",
     );
-    let verified = verify_c0_sources(&source, &[("fill3.c", FILL3_C)])
+    let verified = verify_c_sources(&source, &[("fill3.c", FILL3_C)])
         .expect("fill3 memory postcondition should verify");
 
     assert_eq!(verified.len(), 1);
@@ -2414,7 +2446,7 @@ fn verifies_quantified_old_memory_postcondition() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("write_second.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("write_second.c", c_source)])
         .expect("unwritten segment should match old memory");
 
     assert_eq!(verified.len(), 1);
@@ -2446,14 +2478,14 @@ fn separate_requirement_proves_symbolic_unwritten_read() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("write_i_read_j.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("write_i_read_j.c", c_source)])
         .expect("separate singleton ranges should prove symbolic unwritten read");
 
     assert_eq!(verified.len(), 1);
 
     let offset = click_source.find("ensures keeps_j").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("write_i_read_j.c", c_source)],
         position.line,
@@ -2464,7 +2496,7 @@ fn separate_requirement_proves_symbolic_unwritten_read() {
     // cell's name across the write and no explicit transport is needed.
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_c0_sources(&expanded, &[("write_i_read_j.c", c_source)])
+    verify_c_sources(&expanded, &[("write_i_read_j.c", c_source)])
         .expect("expanded unwritten read should check");
 }
 
@@ -2488,7 +2520,7 @@ fn quantified_old_memory_rejects_overwritten_cell() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("write_second.c", c_source)])
+    let error = verify_c_sources(click_source, &[("write_second.c", c_source)])
         .expect_err("overwritten segment should not match old memory");
 
     assert!(
@@ -2523,7 +2555,7 @@ fn owned_segment_rejects_write_outside_owned_memory() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("write_second.c", c_source)])
+    let error = verify_c_sources(click_source, &[("write_second.c", c_source)])
         .expect_err("write outside owned memory should fail");
 
     assert!(
@@ -2571,7 +2603,7 @@ fn sequence_contracts_reject_mixed_and_non_equality_types() {
                 }}
             "#
         );
-        let error = verify_c0_sources(&click_source, &[("inspect.c", c_source)])
+        let error = verify_c_sources(&click_source, &[("inspect.c", c_source)])
             .expect_err("ill-typed sequence contract should fail");
         assert!(
             error.message().contains(expected),
@@ -2613,7 +2645,7 @@ fn source_have_failures_keep_the_written_operation_in_each_execution_phase() {
                 }}
             "#
             );
-            let error = verify_c0_sources(&source, &[("identity.c", c_source)])
+            let error = verify_c_sources(&source, &[("identity.c", c_source)])
                 .expect_err("an invalid source operation must not be rescued by the true goal");
             assert!(error.message().contains(diagnostic), "{body}: {error:?}");
         }
@@ -2649,15 +2681,15 @@ fn grouped_outcome_fold_is_local_to_the_returning_branch() {
         }
     "#;
     let sources = &[("select.c", c_source)];
-    let verified_for_expansion = verify_c0_sources(click_source, sources)
+    let verified_for_expansion = verify_c_sources(click_source, sources)
         .expect("each branch closes its own scalar and resource claims");
     let expanded =
         expand_checked_grouped_claim(click_source, &verified_for_expansion, "select").unwrap();
-    verify_c0_sources(&expanded, sources)
+    verify_c_sources(&expanded, sources)
         .expect("branch-local fold expansion independently verifies");
     let wrong_result = expanded.replace("result == 0 or result == 7", "result == 7");
     assert_ne!(wrong_result, expanded);
-    verify_c0_sources(&wrong_result, sources)
+    verify_c_sources(&wrong_result, sources)
         .expect_err("the zero-returning sibling cannot borrow the seven-result completion");
 }
 
@@ -2673,22 +2705,27 @@ fn aggregate_return_claims_retain_checked_completions() {
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    let verified = verify_c0_sources(source, &sources).unwrap();
+    let verified = verify_c_sources(source, &sources).unwrap();
     assert_eq!(verified.len(), 4);
     assert!(
         verified
             .iter()
             .all(|claim| claim.checked_proposition.is_some())
     );
-    let expanded =
-        expand_c0_claim_source(source, &sources, "clone_packet", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    let expanded = expand_c_claim_source(
+        source,
+        &sources,
+        "clone_packet",
+        ContractProofClaim::Grouped,
+    )
+    .unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     let tampered = expanded.replace(
         "ensures result.tag == source->tag;",
         "ensures result.tag == source->inner.flag;",
     );
     assert_ne!(tampered, expanded);
-    assert!(verify_c0_sources(&tampered, &sources).is_err());
+    assert!(verify_c_sources(&tampered, &sources).is_err());
 }
 
 #[test]
@@ -2704,7 +2741,7 @@ fn sorry_without_the_flag_is_rejected_at_parse() {
         }
     "#;
     let _ = crate::surface::verification::take_sorry_admissions();
-    let error = verify_c0_sources(click_source, &[("t.c", c_source)])
+    let error = verify_c_sources(click_source, &[("t.c", c_source)])
         .expect_err("sorry without --allow-sorry must fail");
     assert!(
         error.message().contains("--allow-sorry"),
@@ -2728,7 +2765,7 @@ fn sorry_admits_a_grouped_contract_under_the_flag_without_counting_it_verified()
     "#;
     let _ = crate::surface::verification::take_sorry_admissions();
     let verified = crate::surface::verification::with_allow_sorry(|| {
-        verify_c0_sources(click_source, &[("t.c", c_source)])
+        verify_c_sources(click_source, &[("t.c", c_source)])
     })
     .expect("sorry under --allow-sorry must admit the contract");
     assert!(
@@ -2755,7 +2792,7 @@ fn bare_mid_script_sorry_is_rejected_to_keep_holes_minimal() {
     "#;
     let _ = crate::surface::verification::take_sorry_admissions();
     let error = crate::surface::verification::with_allow_sorry(|| {
-        verify_c0_sources(click_source, &[("t.c", c_source)])
+        verify_c_sources(click_source, &[("t.c", c_source)])
     })
     .expect_err("bare mid-script sorry must fail: it would cover an unbounded suffix");
     assert!(
@@ -2782,7 +2819,7 @@ fn have_sorry_admits_one_fact_while_the_rest_checks() {
     "#;
     let _ = crate::surface::verification::take_sorry_admissions();
     let verified = crate::surface::verification::with_allow_sorry(|| {
-        verify_c0_sources(click_source, &[("t.c", c_source)])
+        verify_c_sources(click_source, &[("t.c", c_source)])
     })
     .expect("have-sorry must admit the fact and check the rest");
     assert!(
@@ -2877,11 +2914,15 @@ uint64 nested(uint64 total) {
  step_until(function.exit); solve();
 }
 "#;
-    verify_c0_sources(proof, &[("nested.c", c)]).unwrap();
-    let expanded =
-        expand_c0_claim_source(proof, &[("nested.c", c)], "nested", CProofClaim::Ensure(0))
-            .unwrap();
-    verify_c0_sources(&expanded, &[("nested.c", c)]).unwrap();
+    verify_c_sources(proof, &[("nested.c", c)]).unwrap();
+    let expanded = expand_c_claim_source(
+        proof,
+        &[("nested.c", c)],
+        "nested",
+        ContractProofClaim::Ensure(0),
+    )
+    .unwrap();
+    verify_c_sources(&expanded, &[("nested.c", c)]).unwrap();
     for invalid in [
         proof.replace(
             "invariant remaining <= total - 16u64;",
@@ -2890,7 +2931,7 @@ uint64 nested(uint64 total) {
         proof.replace("ensures result < 16u64;", "ensures result < 15u64;"),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_sources(&invalid, &[("nested.c", c)]).is_err());
+        assert!(verify_c_sources(&invalid, &[("nested.c", c)]).is_err());
     }
 }
 
@@ -2905,13 +2946,13 @@ fn a_function_cannot_assume_its_own_pointer_return_type_guarantee() {
         function node_type(p: struct node*) -> int32 { 1 }
         struct node* get(void* p) { POST }
     "#;
-    verify_c0_sources(
+    verify_c_sources(
         &source.replace("POST", "ensures address(result) == address(p);"),
         &c,
     )
     .unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace(
                 "POST",
                 "ensures result != 0 implies node_type(result) == 1;"
@@ -2938,17 +2979,17 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
             step_until(function.exit); solve();
         }
     "#;
-    verify_c0_sources(source, &[("field.c", c)])
+    verify_c_sources(source, &[("field.c", c)])
         .expect("casts must see the resource field's declared machine type");
     let unknown = source.replace("(o.size as int32)", "(o.missing as int32)");
-    let refusal = verify_c0_sources(&unknown, &[("field.c", c)])
+    let refusal = verify_c_sources(&unknown, &[("field.c", c)])
         .expect_err("a cast cannot hide a missing resource field");
     assert!(
         refusal.message().contains("has no field `missing`"),
         "{refusal:?}"
     );
     let mathematical = source.replace("field size: int32", "field size: Integer");
-    verify_c0_sources(&mathematical, &[("field.c", c)])
+    verify_c_sources(&mathematical, &[("field.c", c)])
         .expect_err("a C cast cannot replace an explicit Integer conversion");
 }
 
@@ -2966,7 +3007,7 @@ fn contract_claims_cannot_hide_overflow_behind_reflexivity() {
             }} by {{ step(); solve(); }}
         "#
         );
-        verify_c0_sources(&source, &[("domain.c", c)])
+        verify_c_sources(&source, &[("domain.c", c)])
             .unwrap_or_else(|error| panic!("{expression} is total: {error:?}"));
     }
     for expression in [
@@ -2983,7 +3024,7 @@ fn contract_claims_cannot_hide_overflow_behind_reflexivity() {
         "#
         );
         assert!(
-            verify_c0_sources(&source, &[("domain.c", c)]).is_err(),
+            verify_c_sources(&source, &[("domain.c", c)]).is_err(),
             "{expression} must have a domain"
         );
     }
@@ -3025,7 +3066,7 @@ fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
             int32 identity(int32 x) {{ ensures {claim} by {{ step(); {proof} }} }}
         "#
         );
-        let result = verify_c0_sources(&source, &[("domain.c", c)]);
+        let result = verify_c_sources(&source, &[("domain.c", c)]);
         assert_eq!(result.is_ok(), passes, "{claim}: {result:?}");
     }
 }
@@ -3037,9 +3078,9 @@ fn contract_logical_read_facts_do_not_grant_access() {
     let source = r#"verifying "domain.c";
         int32 identity(int32* p) { ensures p[0] == p[0]; }
     "#;
-    verify_c0_sources(source, &[("domain.c", c)]).expect("logical reflexivity is total");
+    verify_c_sources(source, &[("domain.c", c)]).expect("logical reflexivity is total");
     let source = source.replace("p[0] == p[0]", "defined(p[0])");
-    verify_c0_sources(&source, &[("domain.c", c)])
+    verify_c_sources(&source, &[("domain.c", c)])
         .expect_err("logical read naming grants no access");
 }
 
@@ -3051,13 +3092,13 @@ fn opaque_contract_predicate_proof_still_owes_its_body_domain() {
         predicate reflexive(x: int32) { to_integer(x + 1) == to_integer(x + 1) }
         int32 identity(int32 x) { ensures reflexive(result); }
     "#;
-    verify_c0_sources(source, &[("domain.c", c)])
+    verify_c_sources(source, &[("domain.c", c)])
         .expect_err("an opaque predicate cannot conceal overflow");
     let bounded = source.replace(
         "ensures reflexive",
         "requires x < 2147483647; ensures reflexive",
     );
-    verify_c0_sources(&bounded, &[("domain.c", c)])
+    verify_c_sources(&bounded, &[("domain.c", c)])
         .expect("the predicate is defined under the required bound");
 }
 
@@ -3095,7 +3136,7 @@ fn exceptional_contract_claims_discharge_their_own_domains() {
             }}
         "#
         );
-        let result = verify_c0_sources(&source, &[("domain.c", c)]);
+        let result = verify_c_sources(&source, &[("domain.c", c)]);
         assert_eq!(result.is_ok(), passes, "{claim}: {result:?}");
     }
 }
@@ -3108,7 +3149,7 @@ fn contract_arithmetic_domain_refusal_retains_the_actual_goal_and_checked_contex
             ensures to_integer(result + 1) == to_integer(result + 1);
         }
     "#;
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         source,
         &[("claim_domain.c", "int32 identity(int32 x) { return x; }")],
     )
@@ -3135,7 +3176,7 @@ fn contract_domain_refusal_retains_the_actual_goal_and_checked_context() {
             ensures to_uint8(to_integer(result)) == to_uint8(to_integer(result));
         }
     "#;
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         source,
         &[("claim_domain.c", "int32 identity(int32 x) { return x; }")],
     )
@@ -3262,7 +3303,7 @@ fn contract_closing_preserves_proposition_identity_through_explicit_proofs() {
         uint32 consume(struct packet p) { ensures result == old(p.n); }
     "#;
     let inputs = [("closing.c", source)];
-    let (verified, events) = crate::instrumentation::collect(|| verify_c0_sources(proof, &inputs));
+    let (verified, events) = crate::instrumentation::collect(|| verify_c_sources(proof, &inputs));
     let verified = verified.unwrap();
     assert_eq!(verified.len(), 3);
     assert_eq!(
@@ -3276,9 +3317,9 @@ fn contract_closing_preserves_proposition_identity_through_explicit_proofs() {
         crate::instrumentation::VerificationEvent::OperationFinished { name, .. } if name == "ensure lowering"
     )), "completed postconditions must not be lowered again");
     let expanded = expand_checked_grouped_claim(proof, &verified, "consume").unwrap();
-    verify_c0_sources(&expanded, &inputs).unwrap();
+    verify_c_sources(&expanded, &inputs).unwrap();
     let wrong = proof.replace("ensures result == old(p.n);", "ensures result == 9u32;");
-    let error = verify_c0_sources(&wrong, &inputs).unwrap_err();
+    let error = verify_c_sources(&wrong, &inputs).unwrap_err();
     assert!(
         !error.message().contains("could not certify contract"),
         "{error}"
@@ -3294,12 +3335,12 @@ fn contract_closing_keeps_snapshot_clauses_as_local_obligations() {
         } by { step(); normalize(); }
     "#;
     let inputs = [("closing.c", source)];
-    verify_c0_sources(proof, &inputs).unwrap();
+    verify_c_sources(proof, &inputs).unwrap();
     let wrong = proof.replace(
         "result == at(region(0).entry, x)",
         "result != at(region(0).entry, x)",
     );
-    assert!(verify_c0_sources(&wrong, &inputs).is_err());
+    assert!(verify_c_sources(&wrong, &inputs).is_err());
 }
 
 #[test]
@@ -3311,18 +3352,18 @@ fn contract_closing_retains_resource_and_write_footprint_completions() {
     let proof = r#"verifying "closing.c";
         int32 write() { owns counter; ensures result == 0; }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| verify_c0_sources(proof, &inputs));
+    let (verified, events) = crate::instrumentation::collect(|| verify_c_sources(proof, &inputs));
     let verified = verified.unwrap();
     assert!(!events.iter().any(|event| matches!(event,
         crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
             if name == "storage write footprint check" || name == "implicit empty effect check" || name == "contract path preparation"
     )));
     let expanded = expand_checked_grouped_claim(proof, &verified, "write").unwrap();
-    without_implicit_solve(|| verify_c0_sources(&expanded, &inputs)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &inputs)).unwrap();
 
     let missing_ownership = proof.replace("owns counter;", "");
     let (result, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(&missing_ownership, &inputs));
+        crate::instrumentation::collect(|| verify_c_sources(&missing_ownership, &inputs));
     assert!(
         result
             .unwrap_err()

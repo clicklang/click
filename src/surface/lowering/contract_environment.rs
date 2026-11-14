@@ -10,7 +10,7 @@ use crate::surface::diagnostics::describe_program_point_ref;
 
 pub(in crate::surface) fn array_refs_with_memory(
     array_refs: &ClickArrayRefs,
-    memory: &CMemory,
+    memory: &Memory,
 ) -> ClickArrayRefs {
     array_refs
         .iter()
@@ -28,10 +28,10 @@ pub(in crate::surface) fn array_refs_with_memory(
 }
 
 pub(in crate::surface) fn contract_environment_at_state(
-    parameter_values: &BTreeMap<String, CValue>,
+    parameter_values: &BTreeMap<String, ProgramValue>,
     array_refs: &ClickArrayRefs,
-    state: &CState,
-) -> (BTreeMap<String, CValue>, ClickArrayRefs) {
+    state: &ExecutionState,
+) -> (BTreeMap<String, ProgramValue>, ClickArrayRefs) {
     let mut values = parameter_values.clone();
     values.extend(
         state
@@ -55,7 +55,7 @@ pub(in crate::surface) fn contract_environment_at_state(
         }
     }
     for (name, value, element_type) in state.locals().array_object_values() {
-        let CValue::Pointer(pointer) = value.clone() else {
+        let ProgramValue::Pointer(pointer) = value.clone() else {
             unreachable!("local array values are pointers")
         };
         // File-scope arrays remain in the state even when a parameter hides
@@ -83,8 +83,8 @@ pub(in crate::surface) fn contract_environment_at_state(
 pub(in crate::surface) fn contract_environment_for_names(
     parameter_binding: ParameterBinding<'_>,
     names: &BTreeSet<String>,
-    state: &CState,
-) -> Result<(BTreeMap<String, CValue>, ClickArrayRefs), ClickError> {
+    state: &ExecutionState,
+) -> Result<(BTreeMap<String, ProgramValue>, ClickArrayRefs), ClickError> {
     let mut values = parameter_values_named(parameter_binding, names)?;
     let mut array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
     for name in names {
@@ -99,7 +99,7 @@ pub(in crate::surface) fn contract_environment_for_names(
             }
             values.insert(name.clone(), value.clone().into_native());
         } else if let Some((value, element_type)) = state.locals().array_object_value(name) {
-            let CValue::Pointer(pointer) = &value else {
+            let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!("local array values are pointers")
             };
             if pointer.block.is_global_block() && values.contains_key(name) {
@@ -121,9 +121,9 @@ pub(in crate::surface) fn contract_environment_for_names(
 
 pub(in crate::surface) fn selected_snapshot_state<'a>(
     selector: &SnapshotSelector,
-    function_entry_state: &'a CState,
+    function_entry_state: &'a ExecutionState,
     recorded_snapshots: &'a RecordedSnapshots,
-) -> Result<&'a CState, String> {
+) -> Result<&'a ExecutionState, String> {
     match selector {
         SnapshotSelector::ProgramPoint(ProgramPointRef {
             region: CodeRegionRef::Function,
@@ -178,10 +178,10 @@ pub(in crate::surface) fn selected_snapshot_state<'a>(
 pub(in crate::surface) fn contract_array_ref_element_type(
     array_refs: &ClickArrayRefs,
     expression: &ContractExpression,
-) -> Option<CType> {
+) -> Option<ProgramType> {
     match expression {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
@@ -198,27 +198,32 @@ pub(in crate::surface) fn contract_array_ref_element_type(
     }
 }
 
-pub(in crate::surface) fn c_value_matches_click_type(value: &CValue, c_type: C0Type) -> bool {
-    match (value.numeric_value(), c_type) {
+pub(in crate::surface) fn program_value_matches_click_type(
+    value: &ProgramValue,
+    interface_type: InterfaceType,
+) -> bool {
+    match (value.numeric_value(), interface_type) {
         (
-            CValue::Int8(_),
-            C0Type::Int8 | C0Type::Char(crate::languages::c::syntax::PlainChar::Signed),
+            ProgramValue::Int8(_),
+            InterfaceType::Int8
+            | InterfaceType::Char(crate::languages::c::syntax::PlainChar::Signed),
         ) => true,
-        (CValue::Int16(_), C0Type::Int16)
-        | (CValue::Int32(_), C0Type::Int32)
+        (ProgramValue::Int16(_), InterfaceType::Int16)
+        | (ProgramValue::Int32(_), InterfaceType::Int32)
         | (
-            CValue::UInt8(_),
-            C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) | C0Type::UInt8,
+            ProgramValue::UInt8(_),
+            InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned)
+            | InterfaceType::UInt8,
         )
-        | (CValue::UInt16(_), C0Type::UInt16)
-        | (CValue::UInt32(_), C0Type::UInt32)
-        | (CValue::Int64(_), C0Type::Int64(_))
-        | (CValue::UInt64(_), C0Type::UInt64(_))
-        | (CValue::Int128(_), C0Type::Int128)
-        | (CValue::UInt128(_), C0Type::UInt128) => true,
-        (CValue::Pointer(pointer), c_type) if c_type.is_pointer() => pointer
-            .c_type()
-            .pointer_types_compatible(c_type.to_kernel_type()),
+        | (ProgramValue::UInt16(_), InterfaceType::UInt16)
+        | (ProgramValue::UInt32(_), InterfaceType::UInt32)
+        | (ProgramValue::Int64(_), InterfaceType::Int64(_))
+        | (ProgramValue::UInt64(_), InterfaceType::UInt64(_))
+        | (ProgramValue::Int128(_), InterfaceType::Int128)
+        | (ProgramValue::UInt128(_), InterfaceType::UInt128) => true,
+        (ProgramValue::Pointer(pointer), interface_type) if interface_type.is_pointer() => pointer
+            .program_type()
+            .pointer_types_compatible(interface_type.to_kernel_type()),
         _ => false,
     }
 }
@@ -227,17 +232,20 @@ pub(in crate::surface) fn c_value_matches_click_type(value: &CValue, c_type: C0T
 /// pointer type used by the C caller. Its public declaration keeps the
 /// historical `int32*` spelling, but allocator contracts may name any
 /// modeled data pointer (including pointer-to-pointer storage).
-pub(in crate::surface) fn c_value_matches_allocation_pointer(value: &CValue) -> bool {
+pub(in crate::surface) fn program_value_matches_allocation_pointer(value: &ProgramValue) -> bool {
     matches!(
         value,
-        CValue::Pointer(pointer) if pointer.c_type().pointee_type().is_some()
+        ProgramValue::Pointer(pointer) if pointer.program_type().pointee_type().is_some()
     )
 }
 
 /// An `allocation` byte count: an `int32` or a `uint64` heap extent
 /// (`design/heap-extents.md`, D4).
-pub(in crate::surface) fn c_value_matches_allocation_extent(value: &CValue) -> bool {
-    matches!(value.numeric_value(), CValue::Int32(_) | CValue::UInt64(_))
+pub(in crate::surface) fn program_value_matches_allocation_extent(value: &ProgramValue) -> bool {
+    matches!(
+        value.numeric_value(),
+        ProgramValue::Int32(_) | ProgramValue::UInt64(_)
+    )
 }
 
 #[cfg(test)]
@@ -297,37 +305,37 @@ pub(in crate::surface) fn scale_int32_offset(
 mod tests {
     use super::*;
 
-    fn globals(unrelated: usize) -> CState {
+    fn globals(unrelated: usize) -> ExecutionState {
         let arrays = std::iter::once("bytes".to_string())
             .chain((0..unrelated).map(|i| format!("other_{i}")))
             .map(|name| {
-                crate::kernel::CGlobalArray::new_with_kernel_name(
+                crate::kernel::GlobalArray::new_with_kernel_name(
                     &name,
                     &name,
-                    CType::UInt8,
+                    ProgramType::UInt8,
                     2,
                     vec![crate::kernel::uint8(0); 2],
                 )
             })
             .collect();
-        let function = crate::kernel::CFunction::new(
-            CType::Void,
+        let function = crate::kernel::ProgramFunction::new(
+            ProgramType::Void,
             "shadow",
             vec![],
-            crate::kernel::CStatement::Skip,
+            crate::kernel::ProgramStatement::Skip,
         )
         .with_global_arrays(arrays);
-        crate::kernel::c_function_entry_state(&CState::new(), &function, &[]).unwrap()
+        crate::kernel::program_function_entry_state(&ExecutionState::new(), &function, &[]).unwrap()
     }
 
     fn assert_bytes(
-        values: &BTreeMap<String, CValue>,
+        values: &BTreeMap<String, ProgramValue>,
         arrays: &ClickArrayRefs,
-        value: &CValue,
-        element_type: CType,
+        value: &ProgramValue,
+        element_type: ProgramType,
     ) {
         assert_eq!(values.get("bytes"), Some(value));
-        let CValue::Pointer(pointer) = value else {
+        let ProgramValue::Pointer(pointer) = value else {
             unreachable!()
         };
         assert_eq!(arrays["bytes"].pointer, *pointer.pointer());
@@ -337,29 +345,29 @@ mod tests {
     #[test]
     fn parameter_array_binding_hides_global_and_follows_reassignment() {
         let state = globals(0);
-        let value = CValue::typed_pointer(
+        let value = ProgramValue::typed_pointer(
             Pointer {
                 block: "parameter-bytes".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         );
-        let parameters = [syntax::C0Parameter::new(
-            C0Type::Int32Pointer,
+        let parameters = [crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
             "bytes".into(),
             None,
         )];
-        let arguments = [CExpression::Value(value.clone())];
+        let arguments = [ProgramExpression::Value(value.clone())];
         let binding = ParameterBinding::new(&parameters, &arguments);
         let values = BTreeMap::from([("bytes".to_string(), value.clone())]);
         let arrays = array_refs_for_parameters(&parameters, &values, state.memory());
         let names = BTreeSet::from(["bytes".to_string()]);
-        let reassigned = CValue::typed_pointer(
+        let reassigned = ProgramValue::typed_pointer(
             Pointer {
                 block: "reassigned-bytes".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         );
         for (state, expected) in [
             (state.clone(), value),
@@ -369,19 +377,20 @@ mod tests {
             ),
         ] {
             let (all_values, all_arrays) = contract_environment_at_state(&values, &arrays, &state);
-            assert_bytes(&all_values, &all_arrays, &expected, CType::Int32);
+            assert_bytes(&all_values, &all_arrays, &expected, ProgramType::Int32);
             let (named_values, named_arrays) =
                 contract_environment_for_names(binding, &names, &state).unwrap();
-            assert_bytes(&named_values, &named_arrays, &expected, CType::Int32);
+            assert_bytes(&named_values, &named_arrays, &expected, ProgramType::Int32);
         }
         // Without a shadowing parameter, the same name still denotes the global.
-        let expected = CValue::typed_pointer(CMemory::global_pointer("bytes"), CType::UInt8Pointer);
+        let expected =
+            ProgramValue::typed_pointer(Memory::global_pointer("bytes"), ProgramType::UInt8Pointer);
         let (values, arrays) =
             contract_environment_at_state(&BTreeMap::new(), &BTreeMap::new(), &state);
-        assert_bytes(&values, &arrays, &expected, CType::UInt8);
+        assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);
         let (values, arrays) =
             contract_environment_for_names(ParameterBinding::default(), &names, &state).unwrap();
-        assert_bytes(&values, &arrays, &expected, CType::UInt8);
+        assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);
     }
 
     mod scaling_tests {

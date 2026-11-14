@@ -1,5 +1,5 @@
 use super::*;
-use crate::surface::C0VerificationSession;
+use crate::surface::ProgramVerificationSession;
 
 const ARTIFACT: &[u8] =
     include_bytes!("../../../../design/charon-trial/split-slices/.click/split/split.rs.ullbc");
@@ -39,7 +39,7 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
         }
     }
     let prepared = super::super::import::prepared_for_test(export).unwrap();
-    C0VerificationSession::new_program_prepared(CLAIM, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(CLAIM, &prepared).unwrap();
     for bad in [
         CLAIM.replace("requires mid <= bytes.len();", ""),
         CLAIM.replace("views bytes[0..bytes.len()];", ""),
@@ -50,7 +50,7 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
         ),
     ] {
         assert!(
-            C0VerificationSession::new_program_prepared(&bad, &prepared).is_err(),
+            ProgramVerificationSession::new_program_prepared(&bad, &prepared).is_err(),
             "{bad}"
         );
     }

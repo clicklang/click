@@ -10,7 +10,7 @@ fn charon_scalar_slices_verify_with_their_index_checks() {
     let p = Project::from_fixture("design/charon-trial/scalar-slices");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
 }
 
@@ -58,7 +58,7 @@ fn charon_scalar_slices_reject_bad_indices_and_swap_claim() {
             "verifying \"slices.rs\";\n{}",
             selected.replacen(before, after, 1)
         );
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
         let rendered = format!("{error:?} {error}");

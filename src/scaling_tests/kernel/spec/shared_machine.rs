@@ -7,12 +7,13 @@ fn unsigned_production_and_single_export_are_linear_beside_unrelated_terms() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(980000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut expression =
-                SpecExpression::Value(CValue::UInt64(MachineTerm::Variable(Variable(981000))));
+            let mut expression = SpecExpression::Value(ProgramValue::UInt64(
+                MachineTerm::Variable(Variable(981000)),
+            ));
             for _ in 0..size {
                 expression = SpecExpression::Add(
                     Box::new(expression),
-                    Box::new(SpecExpression::Value(CValue::UInt64(
+                    Box::new(SpecExpression::Value(ProgramValue::UInt64(
                         MachineTerm::uint64_constant(1),
                     ))),
                 );
@@ -41,7 +42,8 @@ fn shared_arithmetic_children_are_not_reimported_or_expanded_during_construction
         MachineIntegerType::UInt64,
     ] {
         for size in [16, 64, 256] {
-            let mut term = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982000));
+            let mut term =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982000));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
                     term = KernelTerm::arithmetic_binary(
@@ -75,8 +77,8 @@ fn signed_available_operand_production_is_linear_beside_unrelated_terms() {
                 };
             }
             let expression = SpecExpression::Add(
-                Box::new(SpecExpression::Value(CValue::Int64(operand))),
-                Box::new(SpecExpression::Value(CValue::Int64(
+                Box::new(SpecExpression::Value(ProgramValue::Int64(operand))),
+                Box::new(SpecExpression::Value(ProgramValue::Int64(
                     MachineTerm::int64_constant(1),
                 ))),
             );
@@ -133,21 +135,22 @@ fn nested_signed_preparation_retains_obligations_without_prefix_exports() {
 #[test]
 fn a_deferred_operand_rejects_one_preparation_without_importing_prefixes() {
     for size in [16, 64, 256] {
-        let mut expression =
-            SpecExpression::Value(CValue::UInt64(MachineTerm::Variable(Variable(983000))));
+        let mut expression = SpecExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(
+            Variable(983000),
+        )));
         for _ in 0..size {
             expression = SpecExpression::Add(
                 Box::new(expression),
-                Box::new(SpecExpression::Value(CValue::UInt64(
+                Box::new(SpecExpression::Value(ProgramValue::UInt64(
                     MachineTerm::uint64_constant(1),
                 ))),
             );
         }
         let expression = SpecExpression::Add(
             Box::new(expression),
-            Box::new(SpecExpression::CExpression(CExpression::Variable(
-                "later".into(),
-            ))),
+            Box::new(SpecExpression::ProgramExpression(
+                ProgramExpression::Variable("later".into()),
+            )),
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut execution = ExecutionBudget::new();
@@ -166,20 +169,20 @@ fn partial_division_production_retains_prefixes_and_debts() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut expression =
-                SpecExpression::Value(CValue::Int64(MachineTerm::Variable(Variable(991910))));
+                SpecExpression::Value(ProgramValue::Int64(MachineTerm::Variable(Variable(991910))));
             for _ in 0..size {
                 expression = SpecExpression::Divide(
                     Box::new(expression),
-                    Box::new(SpecExpression::Value(CValue::Int64(MachineTerm::Variable(
-                        Variable(991911),
-                    )))),
+                    Box::new(SpecExpression::Value(ProgramValue::Int64(
+                        MachineTerm::Variable(Variable(991911)),
+                    ))),
                 );
             }
             let exports = KernelTermExport::machine_export_count();
             let (prepared, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut execution = ExecutionBudget::new();
                 let mut budget = SpecEvaluation::logical(&mut execution);
-                budget.c_definedness = defined;
+                budget.program_definedness = defined;
                 prepare(&expression, &mut budget).unwrap().unwrap()
             });
             assert_eq!(prepared.obligations.len(), size);
@@ -197,13 +200,13 @@ fn signed_shift_production_retains_prefixes_and_debts() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut expression =
-            SpecExpression::Value(CValue::Int64(MachineTerm::Variable(Variable(991920))));
+            SpecExpression::Value(ProgramValue::Int64(MachineTerm::Variable(Variable(991920))));
         for _ in 0..size {
             expression = SpecExpression::ShiftLeft(
                 Box::new(expression),
-                Box::new(SpecExpression::Value(CValue::Int64(MachineTerm::Variable(
-                    Variable(991921),
-                )))),
+                Box::new(SpecExpression::Value(ProgramValue::Int64(
+                    MachineTerm::Variable(Variable(991921)),
+                ))),
             );
         }
         let exports = KernelTermExport::machine_export_count();
@@ -226,13 +229,16 @@ fn deferred_results_and_integer_observations_retain_growing_prefixes() {
     let mut previous = None;
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let state =
-            CState::new().with_local("x", CValue::UInt64(MachineTerm::Variable(Variable(992200))));
-        let mut expression = SpecExpression::CExpression(CExpression::Variable("x".into()));
+        let state = ExecutionState::new().with_local(
+            "x",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(992200))),
+        );
+        let mut expression =
+            SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
         for _ in 0..size {
             expression = SpecExpression::Add(
                 Box::new(expression),
-                Box::new(SpecExpression::Value(CValue::UInt64(
+                Box::new(SpecExpression::Value(ProgramValue::UInt64(
                     MachineTerm::uint64_constant(1),
                 ))),
             );
@@ -288,7 +294,7 @@ fn opaque_results_observe_and_compare_without_expanding_prefixes() {
                 assert!(value.observe().is_some());
                 assert!(
                     value
-                        .comparison(CComparisonOperator::Equal, &value)
+                        .comparison(ComparisonOperator::Equal, &value)
                         .unwrap()
                         .is_some()
                 );
@@ -319,10 +325,12 @@ fn deferred_opaque_shift_domains_keep_shared_prefixes() {
             );
             let mut value =
                 SpecValue::Shared(KernelTerm::retained_native_machine_operand(format, &leaf));
-            let right = SpecValue::Native(CValue::UInt64(MachineTerm::Variable(Variable(992241))));
+            let right = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+                992241,
+            ))));
             let mut execution = ExecutionBudget::new();
             let mut budget = SpecEvaluation::logical(&mut execution);
-            budget.c_definedness = true;
+            budget.program_definedness = true;
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
@@ -349,18 +357,21 @@ fn same_format_casts_keep_deferred_prefixes_and_obligations() {
     let mut previous = None;
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let state =
-            CState::new().with_local("x", CValue::UInt64(MachineTerm::Variable(Variable(992200))));
-        let mut expression = SpecExpression::CExpression(CExpression::Variable("x".into()));
+        let state = ExecutionState::new().with_local(
+            "x",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(992200))),
+        );
+        let mut expression =
+            SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
         for _ in 0..size {
             expression = SpecExpression::Cast(
                 Box::new(SpecExpression::Add(
                     Box::new(expression),
-                    Box::new(SpecExpression::Value(CValue::UInt64(
+                    Box::new(SpecExpression::Value(ProgramValue::UInt64(
                         MachineTerm::uint64_constant(1),
                     ))),
                 )),
-                CType::UInt64,
+                ProgramType::UInt64,
             );
         }
         let exports = KernelTermExport::machine_export_count();

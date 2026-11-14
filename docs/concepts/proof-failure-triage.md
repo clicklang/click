@@ -157,7 +157,7 @@ its `C operation` line, which spells the operation as Click checked it, with
 a `C statement at file:line:column` line quoting the statement as written.
 The C frontend records each statement's site beside its source execution
 layout, keyed by statement index, and a step names the site of the statement
-it checks (`CStatementSiteScope`); a site never takes part in statement
+it checks (`StatementSiteScope`); a site never takes part in statement
 equality, so it cannot change what a proof checks or how much work it does. Equal resource arguments do not
 necessarily identify the same resource occurrence: preserve source binders such
 as `g` and `next` when that distinction matters. Internal subsystem names may

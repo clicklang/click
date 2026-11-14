@@ -54,11 +54,11 @@ fn bitwise_all_promotions_match_native_terms_without_exports() {
             for left in terms(a) {
                 for right in terms(b) {
                     for (op, native) in [
-                        (MachineBinaryOp::BitwiseAnd, CBitwiseOperation::And),
-                        (MachineBinaryOp::BitwiseOr, CBitwiseOperation::Or),
-                        (MachineBinaryOp::BitwiseXor, CBitwiseOperation::Xor),
+                        (MachineBinaryOp::BitwiseAnd, BitwiseOperation::And),
+                        (MachineBinaryOp::BitwiseOr, BitwiseOperation::Or),
+                        (MachineBinaryOp::BitwiseXor, BitwiseOperation::Xor),
                     ] {
-                        let expected = apply_c_bitwise_binary(
+                        let expected = apply_program_bitwise_binary(
                             a.value_from_term(left.clone()),
                             b.value_from_term(right.clone()),
                             ExecutionFacts::default(),
@@ -68,7 +68,7 @@ fn bitwise_all_promotions_match_native_terms_without_exports() {
                         )
                         .pop()
                         .unwrap();
-                        let CExpressionOutcome::Value(expected) = expected.outcome else {
+                        let ExpressionOutcome::Value(expected) = expected.outcome else {
                             panic!()
                         };
                         for (l, r) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -101,7 +101,7 @@ fn bitwise_not_and_annotated_narrow_match_native() {
         ] {
             for shared in [false, true] {
                 let value = input(format, &term, shared);
-                let expected = apply_c_bitwise_not(
+                let expected = apply_program_bitwise_not(
                     format.value_from_term(term.clone()),
                     ExecutionFacts::default(),
                     Vec::new(),
@@ -112,7 +112,7 @@ fn bitwise_not_and_annotated_narrow_match_native() {
                 let result = bitwise_not(&value, None).unwrap();
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
                 assert_eq!(
-                    CExpressionOutcome::Value(SpecValue::Shared(result).into_native()),
+                    ExpressionOutcome::Value(SpecValue::Shared(result).into_native()),
                     expected.outcome
                 );
             }
@@ -167,13 +167,13 @@ fn shared_bitwise_smart_constructors_preserve_native_component_normalization() {
     }
     let format = MachineIntegerType::UInt64;
     let mask = |n| {
-        Box::new(SpecExpression::Value(CValue::UInt64(
+        Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(n),
         )))
     };
     for operand in [
         value(format, 993452),
-        SpecExpression::Value(CValue::UInt64(MachineTerm::opaque_conversion(
+        SpecExpression::Value(ProgramValue::UInt64(MachineTerm::opaque_conversion(
             "opaque_bits",
             MachineTerm::Variable(Variable(993453)),
         ))),
@@ -229,8 +229,8 @@ fn retained_tag_side_facts_use_exact_bounds_without_changing_the_word() {
     .enumerate()
     {
         let expression = SpecExpression::BitwiseAnd(
-            Box::new(SpecExpression::Value(CValue::UInt64(inner))),
-            Box::new(SpecExpression::Value(CValue::UInt64(
+            Box::new(SpecExpression::Value(ProgramValue::UInt64(inner))),
+            Box::new(SpecExpression::Value(ProgramValue::UInt64(
                 MachineTerm::uint64_constant(!3),
             ))),
         );
@@ -256,10 +256,10 @@ fn retained_tag_addition_selects_only_a_true_exact_clear_guard() {
     let word = MachineTerm::Variable(Variable(993462));
     let low = MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(1));
     let expression = SpecExpression::BitwiseAnd(
-        Box::new(SpecExpression::Value(CValue::UInt64(
+        Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_add(word, MachineTerm::uint64_constant(1)),
         ))),
-        Box::new(SpecExpression::Value(CValue::UInt64(
+        Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(!3),
         ))),
     );
@@ -311,7 +311,7 @@ fn nested_bitwise_evaluator_retains_values_and_unsupported_widths_decline() {
         let mut execution = ExecutionBudget::new();
         let exports = KernelTermExport::machine_export_count();
         let actual = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            SpecScope::unbound(&CState::new(), None),
+            SpecScope::unbound(&ExecutionState::new(), None),
             &expression,
             &PureFactContext::new(),
             &mut SpecEvaluation::logical(&mut execution),

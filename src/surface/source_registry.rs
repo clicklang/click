@@ -68,7 +68,7 @@ pub(in crate::surface) struct CallerRequirementRecord {
     pub(in crate::surface) principal_fact_index: usize,
     pub(in crate::surface) principal_fact: Proposition,
     pub(in crate::surface) source_arguments: Vec<ContractExpression>,
-    pub(in crate::surface) entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface) entry_snapshot: crate::kernel::MemorySnapshotIdentity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -78,7 +78,7 @@ pub(in crate::surface) struct CallerRequirementSelection {
     pub(in crate::surface) principal_fact: Proposition,
     pub(in crate::surface) source_proposition: ClickProposition,
     pub(in crate::surface) source_arguments: Vec<ContractExpression>,
-    pub(in crate::surface) entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface) entry_snapshot: crate::kernel::MemorySnapshotIdentity,
 }
 
 /// The proof-local lookup table for direct caller predicate requirements.
@@ -117,10 +117,10 @@ impl CallerRequirementIndex {
     pub(in crate::surface) fn from_entry_facts(
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
-        parameters: &[syntax::C0Parameter],
+        parameters: &[crate::languages::interface::ImportedParameter],
         entry_facts: &[Proposition],
         entry_fact_origins: &[EntryFactOrigin],
-        entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+        entry_snapshot: crate::kernel::MemorySnapshotIdentity,
     ) -> Self {
         Self::from_entry_facts_elaborated(
             owner,
@@ -141,10 +141,10 @@ impl CallerRequirementIndex {
     pub(in crate::surface) fn from_entry_facts_elaborated(
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
-        parameters: &[syntax::C0Parameter],
+        parameters: &[crate::languages::interface::ImportedParameter],
         entry_facts: &[Proposition],
         entry_fact_origins: &[EntryFactOrigin],
-        entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+        entry_snapshot: crate::kernel::MemorySnapshotIdentity,
         predicates: Option<&PredicateEnvironment>,
     ) -> Self {
         if entry_facts.len() != entry_fact_origins.len() {
@@ -203,7 +203,7 @@ impl CallerRequirementIndex {
                         parameters
                             .iter()
                             .find(|parameter| parameter.name() == name)
-                            .map(syntax::C0Parameter::c_type)
+                            .map(crate::languages::interface::ImportedParameter::interface_type)
                     },
                 )
             });
@@ -288,7 +288,7 @@ impl CallerRequirementIndex {
         predicate_argument_slot: usize,
         caller_parameter_slot: usize,
         source_arguments: &[ContractExpression],
-        expected_entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+        expected_entry_snapshot: crate::kernel::MemorySnapshotIdentity,
     ) -> Option<CallerRequirementSelection> {
         let key = CallerRequirementKey {
             predicate_name: predicate_name.to_string(),
@@ -363,7 +363,7 @@ impl CallerRequirementIndex {
 
 fn direct_parameter_name(expression: &ContractExpression) -> Option<&str> {
     match expression {
-        ContractExpression::CFragment(CExpression::Variable(name)) => Some(name),
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
         // The elaborated C-string bridge names its parameter's storage.
         expression => crate::surface::lowering::character_byte_view_name(expression),
     }
@@ -565,12 +565,12 @@ mod tests {
     ) -> FunctionBlock {
         FunctionBlock {
             body: Default::default(),
-            c_object_names: Default::default(),
+            program_object_names: Default::default(),
             recursion_peers: Vec::new(),
             call_ranked_numeric_recursion: false,
             signature: FunctionSignature {
                 c_source: None,
-                return_type: C0Type::Int32,
+                return_type: InterfaceType::Int32,
                 return_struct_name: None,
                 return_pointee_constant: false,
                 return_reference: false,
@@ -578,7 +578,7 @@ mod tests {
                 parameters: parameter_names
                     .iter()
                     .map(|name| FunctionParameter {
-                        click_type: ClickType::C(C0Type::Int32),
+                        click_type: ClickType::Program(InterfaceType::Int32),
                         name: (*name).to_string(),
                         struct_name: None,
                         function_pointer_signature: None,
@@ -616,16 +616,16 @@ mod tests {
         CallerSourceOwnerId::ordinary("test.c", "caller")
     }
 
-    fn snapshot() -> crate::kernel::CMemorySnapshotIdentity {
-        crate::kernel::CMemorySnapshotIdentity::of(&crate::kernel::CMemory::new())
+    fn snapshot() -> crate::kernel::MemorySnapshotIdentity {
+        crate::kernel::MemorySnapshotIdentity::of(&crate::kernel::Memory::new())
     }
 
     fn direct_predicate(name: &str, parameter: &str) -> Requirement {
         Requirement::Proposition(ClickProposition::PredicateCall {
             name: name.to_string(),
-            arguments: vec![ContractExpression::CFragment(CExpression::Variable(
-                parameter.to_string(),
-            ))],
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(parameter.to_string()),
+            )],
         })
     }
 
@@ -669,9 +669,9 @@ mod tests {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("p".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Variable("p".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Object("p".to_string()),
             })),
             proposition("q"),
@@ -746,9 +746,9 @@ mod tests {
                 Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Variable("p".to_string()),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Value(int32(1)),
+                    base: ProgramExpression::Variable("p".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Value(int32(1)),
                     surface: ContractSegmentSurface::Object("p".to_string()),
                 })),
                 direct_predicate("readable", "p"),
@@ -775,8 +775,8 @@ mod tests {
         let index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -784,9 +784,9 @@ mod tests {
             &origins,
             snapshot_value,
         );
-        let source_arguments = vec![ContractExpression::CFragment(CExpression::Variable(
-            "p".to_string(),
-        ))];
+        let source_arguments = vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("p".to_string()),
+        )];
         let selected = index
             .lookup_unique_caller_requirement(
                 &owner,
@@ -830,8 +830,8 @@ mod tests {
             let index = CallerRequirementIndex::from_entry_facts(
                 owner.clone(),
                 &block,
-                &[syntax::C0Parameter::new(
-                    C0Type::Int32,
+                &[crate::languages::interface::ImportedParameter::new(
+                    InterfaceType::Int32,
                     "p".to_string(),
                     None,
                 )],
@@ -840,9 +840,9 @@ mod tests {
                 snapshot_value,
             );
             assert_eq!(index.bucket_count(), count);
-            let source_arguments = vec![ContractExpression::CFragment(CExpression::Variable(
-                "p".to_string(),
-            ))];
+            let source_arguments = vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("p".to_string()),
+            )];
             let selected = index
                 .lookup_unique_caller_requirement(
                     &owner,
@@ -873,16 +873,16 @@ mod tests {
     fn caller_index_rejects_duplicates_and_overfull_buckets() {
         let owner = owner();
         let snapshot_value = snapshot();
-        let source_arguments = vec![ContractExpression::CFragment(CExpression::Variable(
-            "p".to_string(),
-        ))];
+        let source_arguments = vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("p".to_string()),
+        )];
         let duplicate_requires = vec![direct_predicate("readable", "p"); 2];
         let duplicate_block = function_with_parameters("caller", duplicate_requires, &["p"]);
         let duplicate_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &duplicate_block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -906,8 +906,8 @@ mod tests {
         let duplicate_source_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &function_with_parameters("caller", vec![direct_predicate("readable", "p")], &["p"]),
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -950,8 +950,8 @@ mod tests {
         let overfull_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &overfull_block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -989,9 +989,9 @@ mod tests {
                 Requirement::Proposition(ClickProposition::And(
                     Box::new(ClickProposition::PredicateCall {
                         name: "nested".to_string(),
-                        arguments: vec![ContractExpression::CFragment(CExpression::Variable(
-                            "p".to_string(),
-                        ))],
+                        arguments: vec![ContractExpression::ProgramExpression(
+                            ProgramExpression::Variable("p".to_string()),
+                        )],
                     }),
                     Box::new(ClickProposition::PredicateCall {
                         name: "other".to_string(),
@@ -1001,9 +1001,9 @@ mod tests {
                 Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Variable("p".to_string()),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Value(int32(1)),
+                    base: ProgramExpression::Variable("p".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Value(int32(1)),
                     surface: ContractSegmentSurface::Object("p".to_string()),
                 })),
             ],
@@ -1012,8 +1012,8 @@ mod tests {
         let index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -1021,9 +1021,9 @@ mod tests {
             &entry_origins(&owner, 0..2),
             snapshot_value,
         );
-        let source_arguments = vec![ContractExpression::CFragment(CExpression::Variable(
-            "p".to_string(),
-        ))];
+        let source_arguments = vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("p".to_string()),
+        )];
         assert!(
             index
                 .lookup_unique_caller_requirement(
@@ -1042,8 +1042,8 @@ mod tests {
         let valid_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &valid_block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -1059,8 +1059,8 @@ mod tests {
                     0,
                     0,
                     &source_arguments,
-                    crate::kernel::CMemorySnapshotIdentity::of(
-                        &crate::kernel::CMemory::new().with_block("stale", 1),
+                    crate::kernel::MemorySnapshotIdentity::of(
+                        &crate::kernel::Memory::new().with_block("stale", 1),
                     ),
                 )
                 .is_none()

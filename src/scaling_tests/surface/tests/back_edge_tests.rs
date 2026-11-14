@@ -11,7 +11,7 @@ fn back_edge_work_scales_with_body_size() {
         let body = "i=i;".repeat(size) + "i=i+1;";
         let c = source(&body);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(PROOF, &[("count.c", &c)])
+            verify_c_sources(PROOF, &[("count.c", &c)])
         });
         result.unwrap();
         (size, work)

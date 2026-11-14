@@ -61,7 +61,7 @@ fn ranking_member_diagnostic(bundle: &InvariantBodyContext) -> String {
         bundle
             .ranking_measures
             .iter()
-            .map(crate::kernel::c_ranking_measure_source)
+            .map(crate::kernel::ranking_measure_source)
             .collect()
     };
     let tuple = match measures.as_slice() {
@@ -92,15 +92,17 @@ mod ranking_diagnostic_tests {
                 Box::new(ContractExpression::Binding("n".into())),
                 Box::new(ContractExpression::Binding("t".into())),
             )),
-            Box::new(ContractExpression::CFragment(
-                crate::kernel::c_uint32_literal(1),
+            Box::new(ContractExpression::ProgramExpression(
+                crate::kernel::program_expression::uint32_literal(1),
             )),
         );
         let key = crate::surface::verification::termination_measure_source(&measure);
-        let component = crate::kernel::CRankingComponent::PureInteger {
+        let component = crate::kernel::RankingComponent::PureInteger {
             source: key,
             expression: crate::kernel::SpecIntegerExpression::FromMachine(Box::new(
-                crate::kernel::SpecExpression::CExpression(crate::kernel::c_uint32_literal(1)),
+                crate::kernel::SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::uint32_literal(1),
+                ),
             )),
         };
         let mut bundle = InvariantBodyContext {
@@ -131,7 +133,7 @@ mod ranking_diagnostic_tests {
 /// condition that matches the statement at the frontier is one of those. The
 /// check is one indexed source lookup and one comparison against the written
 /// condition, so it reads no fact context.
-fn c_branch_condition_at_frontier(
+fn program_branch_condition_at_frontier(
     execution: &ExecutionProofState,
     context: &ExecutionProofContext<'_>,
     condition: &ClickProposition,
@@ -149,7 +151,7 @@ fn c_branch_condition_at_frontier(
         return Ok(None);
     };
     let Ok((
-        CStatement::If {
+        ProgramStatement::If {
             condition: source, ..
         },
         _,
@@ -157,7 +159,7 @@ fn c_branch_condition_at_frontier(
     else {
         return Ok(None);
     };
-    if surface_c_condition(&source, &execution.core.state)? != *condition {
+    if surface_program_condition(&source, &execution.core.state)? != *condition {
         return Ok(None);
     }
     Ok(Some(surface_at_snapshot(
@@ -387,7 +389,7 @@ impl<'a> Proof<'a> {
         let context = self.execution_context()?;
         let execution = self.execution()?;
         let bundle = context.constants.invariant_body_context.as_deref()?;
-        let synthesize_at = |state: &CState, selector: &SnapshotSelector| {
+        let synthesize_at = |state: &ExecutionState, selector: &SnapshotSelector| {
             let synthesize = || {
                 crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
                     goal,
@@ -448,12 +450,14 @@ impl<'a> Proof<'a> {
     /// Plain `step()` bindings accept assignments; call bindings retain the
     /// explicit callee and binder-map path.
     ///
-    /// A call whose result is used in a condition or a return expression is
-    /// lowered as an assignment to one synthesized local, so naming that
-    /// local's post-call value is what gives a proof a surface name for the
-    /// result. A call in statement position discards its result and has no
-    /// such local; naming it is an error rather than a silent no-op.
-    fn frontier_result_local(&self, name: &String, assignment: bool) -> Result<String, ClickError> {
+    /// A call whose result the rest of its statement reads is a call step of
+    /// its own, and its result is that step's. A call in statement position
+    /// discards its result; naming it is an error rather than a silent no-op.
+    fn frontier_result_local(
+        &self,
+        name: &String,
+        assignment: bool,
+    ) -> Result<FrontierResult, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`step` requires an execution-frontier proof"));
         };
@@ -479,8 +483,11 @@ impl<'a> Proof<'a> {
             "step",
         )?;
         match statement {
-            CStatement::Assign { name, .. } if assignment => Ok(name),
-            CStatement::CallAssign { target, .. } if !assignment => Ok(target),
+            ProgramStatement::Assign { name, .. } if assignment => Ok(FrontierResult::Local(name)),
+            ProgramStatement::CallAssign { target, .. } if !assignment => {
+                Ok(FrontierResult::Local(target))
+            }
+            ProgramStatement::CallResult { call, .. } if !assignment => Ok(FrontierResult::Call(call)),
             _ if assignment => Err(self.step_error(format!(
                 "`let {{ result: {name} }} = step()` requires a scalar assignment at the frontier"
             ))),
@@ -498,7 +505,7 @@ impl<'a> Proof<'a> {
         context: &ExecutionProofContext<'_>,
         expression: &ContractExpression,
         what: &str,
-    ) -> Result<CValue, ClickError> {
+    ) -> Result<ProgramValue, ClickError> {
         let execution = self
             .execution()
             .ok_or_else(|| self.step_error(format!("{what} needs an execution state")))?;
@@ -748,7 +755,7 @@ impl<'a> Proof<'a> {
                     context.parameter_binding(),
                     state,
                 )?;
-                let crate::kernel::CResource::Composite { arguments, .. } = fact.resource() else {
+                let crate::kernel::Resource::Composite { arguments, .. } = fact.resource() else {
                     return Err(self.step_error(format!(
                         "type binder `{name}` must name a resource with a body"
                     )));
@@ -837,12 +844,12 @@ impl<'a> Proof<'a> {
                     crate::instrumentation::record_deterministic_work(1);
                     let value = self.evaluate_at_frontier(
                         context,
-                        &ContractExpression::CFragment(argument.clone()),
+                        &ContractExpression::ProgramExpression(argument.clone()),
                         &format!("call argument `{name}`"),
                     )?;
                     produced_arguments.push((
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(value)),
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
                     ));
                 }
             }
@@ -892,21 +899,22 @@ impl<'a> Proof<'a> {
         // bound as the proof-local value the surface name denotes from here on.
         let result_binding = match &result_target {
             Some((name, target)) => {
-                let value = checked
-                    .execution
-                    .core
-                    .state
-                    .locals()
-                    .get(target)
-                    .cloned()
-                    .ok_or_else(|| {
-                        self.step_error(format!(
-                            "`let {{ result: {name} }} = step(...)` found no assignment result"
-                        ))
-                    })?;
+                let state = &checked.execution.core.state;
+                let value = match target {
+                    FrontierResult::Local(target) => state
+                        .locals()
+                        .get(target)
+                        .map(|value| value.clone().into_native()),
+                    FrontierResult::Call(call) => state.call_result(*call).cloned(),
+                }
+                .ok_or_else(|| {
+                    self.step_error(format!(
+                        "`let {{ result: {name} }} = step(...)` found no assignment result"
+                    ))
+                })?;
                 Some((
                     name.clone(),
-                    ContractExpression::CFragment(CExpression::Value(value.into_native())),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
                 ))
             }
             None => None,
@@ -1008,18 +1016,18 @@ impl<'a> Proof<'a> {
             // As at resource and pure-function parameters, the literal `0`
             // denotes a typed null pointer here. Do not coerce arbitrary
             // integer expressions, even when their evaluated value is zero.
-            if parameter.c_type().is_pointer()
+            if parameter.program_type().is_pointer()
                 && matches!(&argument, ContractExpression::IntegerLiteral(text) if text == "0")
             {
-                arguments.push(CValue::typed_pointer(
+                arguments.push(ProgramValue::typed_pointer(
                     crate::kernel::Pointer::null(),
-                    parameter.c_type(),
+                    parameter.program_type(),
                 ));
                 continue;
             }
             let (value, obligations) = capture_resource_field_initializer(
                 &argument,
-                &crate::kernel::ResourceFieldType::C(parameter.c_type()),
+                &crate::kernel::ResourceFieldType::Program(parameter.program_type()),
                 self.facts().assumptions(),
                 ContractEnvironment::new(&values, &array_refs),
                 pre_state,
@@ -1042,7 +1050,7 @@ impl<'a> Proof<'a> {
                     .with_unresolved_requirement(&obligation),
                 )?;
             }
-            let crate::kernel::AlgebraicValue::C(value) = value else {
+            let crate::kernel::AlgebraicValue::Program(value) = value else {
                 unreachable!("a C parameter captures a C value")
             };
             arguments.push(value);
@@ -1126,18 +1134,23 @@ impl<'a> Proof<'a> {
         let mut operation = remaining;
         loop {
             operation = match operation {
-                Some(CStatement::Seq(statements)) => Some(statements.first()),
-                Some(CStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
+                Some(ProgramStatement::Seq(statements)) => Some(statements.first()),
+                Some(ProgramStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
                 _ => break,
             };
             crate::instrumentation::record_deterministic_work(1);
         }
         let call = operation.and_then(|statement| match statement {
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name,
                 arguments,
             }
-            | CStatement::CallAssign {
+            | ProgramStatement::CallAssign {
+                function_name,
+                arguments,
+                ..
+            }
+            | ProgramStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -1373,19 +1386,20 @@ impl<'a> Proof<'a> {
                     {
                         path.clone()
                     } else {
-                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                        crate::kernel::program_function_execution_candidate_with_additional_facts(
                             path,
                             &additional,
                         )
                     }
                 })
                 .collect();
-            let completed = crate::kernel::c_function_execution_candidates_from_retained_paths(
-                completed.state().clone(),
-                completed.function().clone(),
-                completed.arguments().to_vec(),
-                paths,
-            );
+            let completed =
+                crate::kernel::program_function_execution_candidates_from_retained_paths(
+                    completed.state().clone(),
+                    completed.function().clone(),
+                    completed.arguments().to_vec(),
+                    paths,
+                );
             if let Some(leaf) = &mut execution.presentation.checked_leaf_facts {
                 Arc::make_mut(leaf).0 = completed
                     .candidate_at(0)
@@ -1524,14 +1538,14 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::surface::proof) fn check_loop_state_join(
         &self,
-        loop_entry_state: &CState,
-        loop_head_state: &CState,
+        loop_entry_state: &ExecutionState,
+        loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &CExpression,
-        invariant_checks: &[CLoopInvariantCheck],
-        binders: &[crate::kernel::CLoopBinder],
+        condition: &ProgramExpression,
+        invariant_checks: &[LoopInvariantCheck],
+        binders: &[crate::kernel::LoopBinder],
         structural_measure: Option<&str>,
-        composite_resource_definitions: &[CCompositeResourceDefinition],
+        composite_resource_definitions: &[CompositeResourceDefinition],
     ) -> Result<(), ClickError> {
         if !matches!(self.context.as_ref(), ProofContext::Execution(_)) {
             return Err(self.step_error("loop state join requires an execution proof"));
@@ -1548,7 +1562,7 @@ impl<'a> Proof<'a> {
         // them: whatever the body called the instance it ends holding, the
         // binder names it, and a body that ends with no instance at those
         // arguments fails here by name.
-        let back_edge_state = crate::kernel::c_loop_state_with_loop_binders_rebound(
+        let back_edge_state = crate::kernel::loop_state_with_loop_binders_rebound(
             loop_head_state,
             &execution.core.state,
             binders,
@@ -1570,7 +1584,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!("loop state join: {failure}")));
         }
-        let invariant_obligations = crate::kernel::c_loop_invariant_obligations_at_back_edge(
+        let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
             &back_edge_state,
             loop_entry_state,
             invariant_checks,
@@ -1582,7 +1596,7 @@ impl<'a> Proof<'a> {
             .into_iter()
             .map(|obligation| obligation.proposition().clone())
             .fold(assumptions, PureFactContext::assume_proposition);
-        if !crate::kernel::c_loop_condition_may_continue(&back_edge_state, condition, &assumptions)
+        if !crate::kernel::loop_condition_may_continue(&back_edge_state, condition, &assumptions)
             .map_err(|message| {
                 self.step_error(format!("loop condition classification: {message}"))
             })?
@@ -1595,7 +1609,7 @@ impl<'a> Proof<'a> {
         // the loop declares `owns` or `views` clauses of its own. A binder's
         // model is what its invariants constrain, so the ownership comparison
         // sets it aside; the invariant obligations above checked it.
-        crate::kernel::c_loop_binder_state_components_match_at_back_edge(
+        crate::kernel::loop_binder_state_components_match_at_back_edge(
             loop_head_state,
             &back_edge_state,
             binders,
@@ -1608,8 +1622,8 @@ impl<'a> Proof<'a> {
     /// Consume the complete prepared bundle without lowering or proof search.
     pub(in crate::surface::proof) fn validate_loop_invariant_bundle(
         &self,
-        invariant_checks: &[CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        invariant_checks: &[LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
     ) -> Result<(), ClickError> {
         self.state
             .validate_checked_invariant_lowerings(invariant_checks, ranking_measures)
@@ -1626,8 +1640,8 @@ impl<'a> Proof<'a> {
     /// explicit proof could spell.
     pub(in crate::surface::proof) fn certify_loop_invariant_bundle(
         &self,
-        invariant_checks: &[CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        invariant_checks: &[LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
     ) -> Result<Self, ClickError> {
         self.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
         let execution = self
@@ -1682,7 +1696,7 @@ impl<'a> Proof<'a> {
         // bundle closer can name it after the loop body has overwritten the
         // cells the condition read.
         let c_branch_condition =
-            c_branch_condition_at_frontier(&base_execution, context, condition)?;
+            program_branch_condition_at_frontier(&base_execution, context, condition)?;
         let mut arms: [Option<(ProofFacts, ExecutionProofState, Vec<Proposition>)>; 2] =
             [None, None];
         let lowering_condition = self.substitute_fixed_state_locals_in_proposition(condition)?;
@@ -2038,7 +2052,7 @@ pub fn without_implicit_solve<R>(operation: impl FnOnce() -> R) -> R {
 /// name and argument expressions.
 struct FrontierCall {
     callee: String,
-    arguments: Vec<CExpression>,
+    arguments: Vec<ProgramExpression>,
 }
 
 /// The descent member of a ranked loop as its `decreases` clause writes it:
@@ -2093,3 +2107,11 @@ thread_local! {
 mod driver;
 
 mod search;
+
+/// Where the statement at the frontier leaves the result a `step` binds.
+enum FrontierResult {
+    /// The local it assigns.
+    Local(String),
+    /// The result of this call step.
+    Call(u32),
+}

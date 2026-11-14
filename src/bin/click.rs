@@ -1200,7 +1200,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(report.contains("goal: ∃z:CInt32."), "{report}");
+        assert!(report.contains("goal: ∃z:ProgramInt32."), "{report}");
         assert!(!report.contains("recent premises"), "{report}");
         assert!(report.contains("adds: r == 1"), "{report}");
         assert!(
@@ -1211,13 +1211,17 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
         // Keep the saved read's snapshot visible in the implication rather
         // than confusing it with the current goal.
         assert!(!report.contains("validated-composition"), "{report}");
-        assert!(report.contains("is false ⇒ ∃z:CInt32."), "{report}");
+        assert!(report.contains("is false ⇒ ∃z:ProgramInt32."), "{report}");
         assert!(report.contains("read<Bits32>(snapshot#"), "{report}");
         assert!(
             !report.contains("checked fact(s) with no exact Click spelling"),
             "{report}"
         );
-        assert_eq!(report.matches("goal: ∃z:CInt32.").count(), 1, "{report}");
+        assert_eq!(
+            report.matches("goal: ∃z:ProgramInt32.").count(),
+            1,
+            "{report}"
+        );
         assert!(
             !report.contains("snapshot identity (internal):"),
             "{report}"

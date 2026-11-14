@@ -4,7 +4,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_00")]
 fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
-    for (c_type, expression) in [
+    for (interface_type, expression) in [
         ("int32", "-2147483648"),
         ("int64", "2147483648"),
         ("int64", "-2147483649"),
@@ -15,7 +15,7 @@ fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
     ] {
         for extra in ["", ", unused: Integer"] {
             let source = format!(
-                "theorem compatibility(x: {c_type}{extra}) {{
+                "theorem compatibility(x: {interface_type}{extra}) {{
                     requires x == {expression};
                     ensures x == {expression} by {{ assumption(); }}
                 }}"
@@ -214,16 +214,20 @@ fn parser_deep_const_preserves_supported_pointer_qualifier_levels() {
             format!("struct node {{ int value; }}; int probe({spelling} p) {{ return 0; }}");
         let function =
             syntax::parse_function(&c_source).expect("C must accept the same qualifiers");
-        let c_parameter = &function.parameters()[0];
-        assert_eq!(parameter.c_type(), c_parameter.c_type(), "{spelling}");
+        let program_parameter = &function.parameters()[0];
+        assert_eq!(
+            parameter.interface_type(),
+            program_parameter.interface_type(),
+            "{spelling}"
+        );
         assert_eq!(
             parameter.is_constant(),
-            c_parameter.is_constant(),
+            program_parameter.is_constant(),
             "{spelling}"
         );
         assert_eq!(
             parameter.pointee_is_constant(),
-            c_parameter.pointee_is_constant(),
+            program_parameter.pointee_is_constant(),
             "{spelling}"
         );
     }
@@ -265,8 +269,8 @@ fn plain_char_needs_a_c_target_and_takes_its_signedness() {
         )
         .unwrap();
         assert_eq!(
-            file.function_blocks()[0].signature().parameters()[0].c_type(),
-            C0Type::Char(plain)
+            file.function_blocks()[0].signature().parameters()[0].interface_type(),
+            InterfaceType::Char(plain)
         );
     }
     // A character constant at 0x80 or above is the target's plain `char`
@@ -288,31 +292,31 @@ fn parser_plain_char_sidecars_preserve_source_compatibility() {
     let signature = file.function_blocks()[0].signature();
     // A sidecar's plain `char` takes the default target's signedness.
     let plain = crate::languages::c::target::CTarget::SUPPORTED.plain_char();
-    assert_eq!(signature.return_type(), C0Type::CharPointer(plain));
+    assert_eq!(signature.return_type(), InterfaceType::CharPointer(plain));
     assert_eq!(
         signature
             .parameters()
             .iter()
-            .map(FunctionParameter::c_type)
+            .map(FunctionParameter::interface_type)
             .collect::<Vec<_>>(),
         vec![
-            C0Type::CharPointer(plain),
-            C0Type::UInt8Pointer,
-            C0Type::CharPointer(plain),
-            C0Type::CharPointerPointer(plain)
+            InterfaceType::CharPointer(plain),
+            InterfaceType::UInt8Pointer,
+            InterfaceType::CharPointer(plain),
+            InterfaceType::CharPointerPointer(plain)
         ]
     );
     assert!(!click_types_compatible(
-        C0Type::CharPointer(plain),
-        C0Type::UInt8Pointer
+        InterfaceType::CharPointer(plain),
+        InterfaceType::UInt8Pointer
     ));
     assert!(!click_types_compatible(
-        C0Type::CharPointerPointer(plain),
-        C0Type::UInt8PointerPointer
+        InterfaceType::CharPointerPointer(plain),
+        InterfaceType::UInt8PointerPointer
     ));
     assert!(click_types_compatible(
-        C0Type::CharArray(plain, 2),
-        C0Type::CharPointer(plain)
+        InterfaceType::CharArray(plain, 2),
+        InterfaceType::CharPointer(plain)
     ));
 }
 
@@ -364,20 +368,20 @@ fn parser_accepts_standard_c_type_spellings_in_sidecars() {
 
     assert_eq!(
         file.function_blocks()[0].signature().return_type(),
-        C0Type::Int32
+        InterfaceType::Int32
     );
     assert_eq!(
         file.function_blocks()[0]
             .signature()
             .parameters()
             .iter()
-            .map(FunctionParameter::c_type)
+            .map(FunctionParameter::interface_type)
             .collect::<Vec<_>>(),
         vec![
-            C0Type::Int32Pointer,
-            C0Type::UInt8,
-            C0Type::Int32,
-            C0Type::UInt8,
+            InterfaceType::Int32Pointer,
+            InterfaceType::UInt8,
+            InterfaceType::Int32,
+            InterfaceType::UInt8,
         ]
     );
 }
@@ -775,8 +779,8 @@ fn parses_expanded_typed_loads_and_old_loadability() {
     assert!(matches!(
         &premises[1],
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::TypedLoad {
-                value_type: CType::Int32Pointer,
+            left: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+                value_type: ProgramType::Int32Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,
@@ -888,12 +892,12 @@ fn parses_checked_signature_and_contract_clauses() {
     assert_eq!(file.verifying_sources(), &["fill3.c".to_string()]);
     assert_eq!(file.function_blocks().len(), 1);
     let function = &file.function_blocks()[0];
-    assert_eq!(function.signature().return_type(), C0Type::Int32);
+    assert_eq!(function.signature().return_type(), InterfaceType::Int32);
     assert_eq!(function.signature().name(), "fill3");
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -909,9 +913,9 @@ fn parses_checked_signature_and_contract_clauses() {
                 segment: ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Variable("p".to_string()),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Value(int32(3)),
+                    base: ProgramExpression::Variable("p".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Value(int32(3)),
                     surface: ContractSegmentSurface::Range {
                         base: current_var("p"),
                         start: current_int(0),
@@ -922,9 +926,9 @@ fn parses_checked_signature_and_contract_clauses() {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("p".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(3)),
+                base: ProgramExpression::Variable("p".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(3)),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("p"),
                     start: current_int(0),
@@ -960,10 +964,10 @@ fn parses_void_c_function_contracts_without_a_result_binding() {
     let file = parse(source).expect("void C contracts should parse");
     assert_eq!(
         file.function_blocks()[0].signature().return_type(),
-        C0Type::Void
+        InterfaceType::Void
     );
 
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         r#"
             verifying "destroy.c";
             void destroy(int32* value) {
@@ -997,7 +1001,7 @@ fn parses_pure_theorem_definition() {
     assert_eq!(
         theorem.parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32),
+            click_type: ClickType::Program(InterfaceType::Int32),
             name: "x".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -1052,14 +1056,23 @@ fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
 
     let file = parse(source).expect("function-pointer theorem parameter should parse");
     let parameter = &file.theorem_definitions()[0].parameters()[0];
-    assert!(matches!(parameter.c_type(), C0Type::FunctionPointer(_)));
+    assert!(matches!(
+        parameter.interface_type(),
+        InterfaceType::FunctionPointer(_)
+    ));
     let signature = parameter
         .function_pointer_signature()
         .expect("the parameter should retain its nominal signature");
-    assert_eq!(signature.return_type(), C0Type::Int32);
+    assert_eq!(signature.return_type(), InterfaceType::Int32);
     assert_eq!(signature.parameters().len(), 2);
-    assert_eq!(signature.parameters()[0].c_type(), C0Type::Int32);
-    assert_eq!(signature.parameters()[1].c_type(), C0Type::Int32Pointer);
+    assert_eq!(
+        signature.parameters()[0].interface_type(),
+        InterfaceType::Int32
+    );
+    assert_eq!(
+        signature.parameters()[1].interface_type(),
+        InterfaceType::Int32Pointer
+    );
     assert_eq!(signature.parameters()[1].struct_name(), Some("item"));
 }
 
@@ -2509,11 +2522,11 @@ fn records_checked_surface_forms_for_lowered_propositions() {
     let surface = ClickProposition::And(Box::new(left.clone()), Box::new(right.clone()));
     let values = BTreeMap::from([(
         "x".to_string(),
-        CValue::Int32(MachineTerm::Variable(Variable(42))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(42))),
     )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let kernel = crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         &surface,
         &PureFactContext::new(),
@@ -2570,7 +2583,7 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
         },
         true,
     );
-    let state = CState::new().with_local("result", CValue::Int32(local));
+    let state = ExecutionState::new().with_local("result", ProgramValue::Int32(local));
 
     let surface = synthesize_surface_proposition(&proposition, ParameterBinding::default(), &state)
         .expect("the local comparison should have a surface form");
@@ -2599,8 +2612,8 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
     let proposition = Proposition::Predicate {
         name: "valid_pool".to_string(),
         arguments: vec![
-            Term::CState(Box::new(CState::new())),
-            Term::CValue(CValue::pointer(pool.clone())),
+            Term::ExecutionState(Box::new(ExecutionState::new())),
+            Term::ProgramValue(ProgramValue::pointer(pool.clone())),
         ],
     };
 
@@ -2608,18 +2621,18 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         &proposition,
         ParameterBinding::new(
             function.parameters(),
-            &[CExpression::Value(CValue::pointer(pool))],
+            &[ProgramExpression::Value(ProgramValue::pointer(pool))],
         ),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("the hidden state should not need a surface spelling");
     assert_eq!(
         surface,
         ClickProposition::PredicateCall {
             name: "valid_pool".to_string(),
-            arguments: vec![ContractExpression::CFragment(CExpression::Variable(
-                "pool".to_string(),
-            ))],
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("pool".to_string(),)
+            )],
         }
     );
 }
@@ -2638,19 +2651,24 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
             &Proposition::Predicate { name, arguments },
             ParameterBinding::new(
                 function.parameters(),
-                &[CExpression::Value(CValue::pointer(mutex.clone()))],
+                &[ProgramExpression::Value(ProgramValue::pointer(
+                    mutex.clone(),
+                ))],
             ),
-            &CState::new(),
+            &ExecutionState::new(),
         )
     };
-    let state = Term::CState(Box::new(CState::new()));
-    let m = vec![ContractExpression::CFragment(CExpression::Variable(
-        "m".to_string(),
-    ))];
+    let state = Term::ExecutionState(Box::new(ExecutionState::new()));
+    let m = vec![ContractExpression::ProgramExpression(
+        ProgramExpression::Variable("m".to_string()),
+    )];
     assert_eq!(
         synthesize(
             crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
-            vec![state.clone(), Term::CValue(CValue::pointer(mutex.clone()))],
+            vec![
+                state.clone(),
+                Term::ProgramValue(ProgramValue::pointer(mutex.clone()))
+            ],
         ),
         Some(ClickProposition::PredicateCall {
             name: "held".to_string(),
@@ -2659,23 +2677,25 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     );
     assert_eq!(
         synthesize(
-            crate::kernel::CFunctionContract::predicate_name_for("ordered"),
+            crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![
                 state.clone(),
-                Term::CValue(CValue::pointer(Pointer::function("compare".to_string()))),
+                Term::ProgramValue(ProgramValue::pointer(Pointer::function(
+                    "compare".to_string()
+                ))),
             ],
         ),
         Some(ClickProposition::PredicateCall {
             name: "ordered".to_string(),
-            arguments: vec![ContractExpression::CFragment(CExpression::FunctionAddress(
-                "compare".to_string(),
-            ))],
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::FunctionAddress("compare".to_string(),)
+            )],
         })
     );
     assert_eq!(
         synthesize(
             format!("{}4", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX),
-            vec![Term::CValue(CValue::pointer(mutex.clone()))],
+            vec![Term::ProgramValue(ProgramValue::pointer(mutex.clone()))],
         ),
         None,
         "bookkeeping has no Click spelling"
@@ -2707,7 +2727,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2719,9 +2739,11 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         &proposition,
         ParameterBinding::new(
             function.parameters(),
-            &[CExpression::Value(CValue::pointer(owner.clone()))],
+            &[ProgramExpression::Value(ProgramValue::pointer(
+                owner.clone(),
+            ))],
         ),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("known struct field load should have a surface spelling");
     let ClickProposition::Comparison { left, .. } = surface else {
@@ -2734,7 +2756,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
     let data_pointer = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(CMemory::new()),
+        crate::kernel::intern_memory(Memory::new()),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2747,7 +2769,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2759,9 +2781,9 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         &proposition,
         ParameterBinding::new(
             function.parameters(),
-            &[CExpression::Value(CValue::pointer(owner))],
+            &[ProgramExpression::Value(ProgramValue::pointer(owner))],
         ),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("indexed pointer field load should have a surface spelling");
     let ClickProposition::Comparison { left, .. } = surface else {
@@ -2796,7 +2818,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
     );
 
     let quantified = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
@@ -2888,8 +2910,8 @@ theorem impossible_interval() {
     }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
-        .expect_err("normalize must not construct a quantified proof");
+    let error =
+        verify_c_sources(opaque, &[]).expect_err("normalize must not construct a quantified proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
     let explicit = r#"
@@ -2901,7 +2923,7 @@ theorem impossible_interval() {
     }
 }
 "#;
-    verify_c0_sources(explicit, &[]).expect("the explicit enumeration should verify");
+    verify_c_sources(explicit, &[]).expect("the explicit enumeration should verify");
 }
 
 #[test]
@@ -2912,7 +2934,7 @@ theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by { normalize(); }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
+    let error = verify_c_sources(opaque, &[])
         .expect_err("normalize must not construct a conjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
@@ -2923,7 +2945,7 @@ theorem reflexive_pair() {
     }
 }
 "#;
-    verify_c0_sources(explicit, &[]).expect("the explicit conjunction proof should verify");
+    verify_c_sources(explicit, &[]).expect("the explicit conjunction proof should verify");
 
     let opaque_using = r#"
 theorem cited_pair(x: int32) {
@@ -2931,7 +2953,7 @@ theorem cited_pair(x: int32) {
     ensures x == 0 and x == x by { normalize() using { x == 0; } }
 }
 "#;
-    let error = verify_c0_sources(opaque_using, &[])
+    let error = verify_c_sources(opaque_using, &[])
         .expect_err("normalize using must not construct a conjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 }
@@ -2944,7 +2966,7 @@ theorem reflexive_choice() {
     ensures 1 == 1 or 2 == 3 by { normalize(); }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
+    let error = verify_c_sources(opaque, &[])
         .expect_err("normalize must not construct a disjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
@@ -2956,7 +2978,7 @@ theorem reflexive_choice() {
     }
 }
 "#;
-    verify_c0_sources(explicit_left, &[]).expect("the explicit left-disjunct proof should verify");
+    verify_c_sources(explicit_left, &[]).expect("the explicit left-disjunct proof should verify");
 
     let explicit_right = r#"
 theorem reflexive_choice() {
@@ -2966,8 +2988,7 @@ theorem reflexive_choice() {
     }
 }
 "#;
-    verify_c0_sources(explicit_right, &[])
-        .expect("the explicit right-disjunct proof should verify");
+    verify_c_sources(explicit_right, &[]).expect("the explicit right-disjunct proof should verify");
 
     let opaque_using = r#"
 theorem cited_choice(x: int32) {
@@ -2975,7 +2996,7 @@ theorem cited_choice(x: int32) {
     ensures x == 1 or x == 0 by { normalize() using { x == 0; } }
 }
 "#;
-    let error = verify_c0_sources(opaque_using, &[])
+    let error = verify_c_sources(opaque_using, &[])
         .expect_err("normalize using must not construct a disjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 }
@@ -3026,7 +3047,7 @@ theorem reflexive_implication(x: int32) {
     ensures x == 0 implies x == 0 by { normalize(); }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
+    let error = verify_c_sources(opaque, &[])
         .expect_err("normalize must not construct an implication proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
@@ -3038,7 +3059,7 @@ theorem reflexive_implication(x: int32) {
     }
 }
 "#;
-    verify_c0_sources(explicit, &[]).expect("the explicit implication proof should verify");
+    verify_c_sources(explicit, &[]).expect("the explicit implication proof should verify");
 
     let opaque_using = r#"
 theorem cited_implication(x: int32) {
@@ -3046,7 +3067,7 @@ theorem cited_implication(x: int32) {
     ensures x == 0 implies x == 0 by { normalize() using { x == 0; } }
 }
 "#;
-    let error = verify_c0_sources(opaque_using, &[])
+    let error = verify_c_sources(opaque_using, &[])
         .expect_err("normalize using must not construct an implication proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 }
@@ -3258,9 +3279,9 @@ fn parses_loadable_segment_syntax() {
             segment: ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("p".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Variable("n".to_string()),
+                base: ProgramExpression::Variable("p".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Variable("n".to_string()),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("p"),
                     start: current_int(0),
@@ -3312,12 +3333,12 @@ fn parses_loadable_segment_proposition() {
                 segment: ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Add(
-                        Box::new(CExpression::Variable("p".to_string())),
-                        Box::new(CExpression::Value(int32(1))),
+                    base: ProgramExpression::Add(
+                        Box::new(ProgramExpression::Variable("p".to_string())),
+                        Box::new(ProgramExpression::Value(int32(1))),
                     ),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Variable("n".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Variable("n".to_string()),
                     surface: ContractSegmentSurface::Range {
                         base: ContractExpression::Add(
                             Box::new(current_var("p")),
@@ -3331,8 +3352,12 @@ fn parses_loadable_segment_proposition() {
             Requirement::Proposition(ClickProposition::PredicateCall {
                 name: "shifted_loadable".to_string(),
                 arguments: vec![
-                    ContractExpression::CFragment(CExpression::Variable("p".to_string())),
-                    ContractExpression::CFragment(CExpression::Variable("n".to_string())),
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        "p".to_string()
+                    )),
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        "n".to_string()
+                    )),
                 ],
             }),
         ]
@@ -3385,7 +3410,7 @@ fn parses_resource_relation_propositions() {
             kind: ResourceKind::Composite,
             parameter_types,
             ..
-        } if parameter_types == &[C0Type::Int32Pointer, C0Type::Int32]
+        } if parameter_types == &[InterfaceType::Int32Pointer, InterfaceType::Int32]
     ));
 }
 
@@ -3444,7 +3469,7 @@ fn restricted_solve_premises_retain_declared_resource_argument_types() {
         ClickProposition::Separate {
             left: ResourceSubject::Declared { parameter_types, .. },
             ..
-        } if parameter_types == &[C0Type::Int32Pointer]
+        } if parameter_types == &[InterfaceType::Int32Pointer]
     ));
 }
 
@@ -3493,7 +3518,7 @@ fn transport_using_retains_declared_resource_argument_types() {
             ClickProposition::Contains {
                 parent: ResourceSubject::Declared { parameter_types, .. },
                 ..
-            } if parameter_types == &[C0Type::Int32Pointer]
+            } if parameter_types == &[InterfaceType::Int32Pointer]
         ));
     }
 }
@@ -3515,7 +3540,7 @@ fn rejects_reversed_constant_loadable_segment() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("read_second.c", c_source)])
+    let error = verify_c_sources(click_source, &[("read_second.c", c_source)])
         .expect_err("reversed concrete segment should fail");
 
     assert!(
@@ -3537,7 +3562,7 @@ fn parses_array_parameter_signature_as_pointer() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -3562,11 +3587,11 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
     let file = parse(source).expect("pilot struct pointer signature should parse");
     let function = &file.function_blocks()[0];
 
-    assert_eq!(function.signature().return_type(), C0Type::Int32);
+    assert_eq!(function.signature().return_type(), InterfaceType::Int32);
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "obj".to_string(),
             struct_name: Some("json_object".to_string()),
             function_pointer_signature: None,
@@ -3581,13 +3606,13 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
             segment: ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("obj".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Variable("obj".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
-                    base: Some(Box::new(ContractExpression::CFragment(
-                        CExpression::Variable("obj".to_string())
+                    base: Some(Box::new(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable("obj".to_string())
                     ))),
                     name: "ref_count".to_string(),
                     element_width: None,
@@ -3650,7 +3675,7 @@ fn parses_chained_struct_fields_with_imported_pointee_types() {
             assumption();
         }
     "#;
-    let file = parse_c0_click_file(click_source, &[("read_nested.c", c_source)])
+    let file = parse_click_file_with_c_sources(click_source, &[("read_nested.c", c_source)])
         .expect("contract field chains should use imported struct pointee types");
     let Ensure::Proposition(ClickProposition::Comparison { right, .. }) =
         file.function_blocks()[0].ensures()[0].ensure()
@@ -3698,7 +3723,7 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
             ensures result == 7;
         }
     "#;
-    let file = parse_c0_click_file(click_source, &[("write_nested.c", c_source)])
+    let file = parse_click_file_with_c_sources(click_source, &[("write_nested.c", c_source)])
         .expect("nested field segments should retain imported terminal field metadata");
     let Requirement::Resource(ResourceClause::OwnMemory(required)) =
         &file.function_blocks()[0].requires()[1]
@@ -3707,18 +3732,18 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
     };
     {
         let segment = required;
-        assert_eq!(segment.start, CExpression::Value(int32(1)));
-        assert_eq!(segment.end, CExpression::Value(int32(2)));
+        assert_eq!(segment.start, ProgramExpression::Value(int32(1)));
+        assert_eq!(segment.end, ProgramExpression::Value(int32(2)));
         assert!(matches!(
             segment.base,
-            CExpression::TypedLoad {
-                value_type: CType::Int32Pointer,
+            ProgramExpression::TypedLoad {
+                value_type: ProgramType::Int32Pointer,
                 ..
             }
         ));
     }
 
-    verify_c0_sources(click_source, &[("write_nested.c", c_source)])
+    verify_c_sources(click_source, &[("write_nested.c", c_source)])
         .expect("the corrected nested segment should verify the write");
 }
 
@@ -3745,7 +3770,7 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
             ensures separate(memory(*owner), memory(owner->data[0..owner->cap]));
         }
     "#;
-    let file = parse_c0_click_file(click_source, &[("initialize.c", c_source)])
+    let file = parse_click_file_with_c_sources(click_source, &[("initialize.c", c_source)])
         .expect("whole struct objects should have a source-level segment spelling");
     let function = &file.function_blocks()[0];
     let Requirement::LoadableSegment { segment: range } = &function.requires()[0] else {
@@ -3764,8 +3789,8 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
         super::diagnostics::describe_contract_segment(segment),
         "*owner"
     );
-    assert_eq!(segment.start, CExpression::Value(int32(0)));
-    assert_eq!(segment.end, CExpression::Value(int32(4)));
+    assert_eq!(segment.start, ProgramExpression::Value(int32(0)));
+    assert_eq!(segment.end, ProgramExpression::Value(int32(4)));
     assert_eq!(
         segment.surface,
         ContractSegmentSurface::Object("vector".to_string())
@@ -3799,7 +3824,7 @@ fn an_embedded_struct_is_viewed_as_a_place() {
         }
     "#;
     // An embedded struct is viewed like any other place.
-    verify_c0_sources(click_source, &[("aggregate_resource_places.c", c_source)]).unwrap();
+    verify_c_sources(click_source, &[("aggregate_resource_places.c", c_source)]).unwrap();
 }
 
 #[test]
@@ -3825,13 +3850,13 @@ fn parses_pilot_struct_field_owned_segment() {
         &ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
-            base: CExpression::Variable("obj".to_string()),
-            start: CExpression::Value(int32(0)),
-            end: CExpression::Value(int32(1)),
+            base: ProgramExpression::Variable("obj".to_string()),
+            start: ProgramExpression::Value(int32(0)),
+            end: ProgramExpression::Value(int32(1)),
             surface: ContractSegmentSurface::Field {
                 value_bytes: None,
-                base: Some(Box::new(ContractExpression::CFragment(
-                    CExpression::Variable("obj".to_string())
+                base: Some(Box::new(ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable("obj".to_string())
                 ))),
                 name: "ref_count".to_string(),
                 element_width: None,
@@ -4133,7 +4158,7 @@ fn diverges_stays_an_ordinary_identifier_elsewhere() {
                 ensures result == diverges;
             }
         "#;
-    verify_c0_sources(click_source, &[("diverges.c", c_source)])
+    verify_c_sources(click_source, &[("diverges.c", c_source)])
         .expect("`diverges` must still name a C function and a parameter");
 }
 
@@ -4150,7 +4175,7 @@ fn diverges_must_follow_throws_in_a_signature() {
                 ensures result == x;
             }
         "#;
-    let error = verify_c0_sources(click_source, &[("f.c", c_source)])
+    let error = verify_c_sources(click_source, &[("f.c", c_source)])
         .expect_err("`diverges throws` must be refused");
     assert!(
         error
@@ -4163,7 +4188,7 @@ fn diverges_must_follow_throws_in_a_signature() {
     // The accepted order parses; `f` has no loop or call that could fail to
     // return, so the marker itself is then refused as unjustified.
     let ordered = click_source.replace("diverges throws int32", "throws int32 diverges");
-    let error = verify_c0_sources(&ordered, &[("f.c", c_source)])
+    let error = verify_c_sources(&ordered, &[("f.c", c_source)])
         .expect_err("a marker with nothing to justify it is refused");
     assert!(
         error.message().contains("`f` is declared `diverges`, but"),
@@ -4195,14 +4220,14 @@ fn external_contracts_accept_diverges_and_still_reject_decreases() {
                 ensures result == 0;
             }
         "#;
-    verify_c0_sources(marked, &[("wait.c", c_source)])
+    verify_c_sources(marked, &[("wait.c", c_source)])
         .expect("an external contract takes the marker");
 
     let ranked = marked.replace(
         "extern int32 wait_event(int32 fd) diverges {",
         "extern int32 wait_event(int32 fd) diverges {\n                decreases fd;",
     );
-    let error = verify_c0_sources(&ranked, &[("wait.c", c_source)])
+    let error = verify_c_sources(&ranked, &[("wait.c", c_source)])
         .expect_err("an external contract cannot carry a `decreases` clause");
     assert!(
         error
@@ -4234,7 +4259,7 @@ fn loop_diverges_round_trips_through_expansion() {
             }} by {{ {body} }}
         "#
     );
-    let verified = verify_c0_sources(&click_source, &[("spin.c", c_source)])
+    let verified = verify_c_sources(&click_source, &[("spin.c", c_source)])
         .expect("a marked perpetual loop proves partial correctness");
     let expanded = verified[0]
         .expanded_proof_source()
@@ -4243,7 +4268,7 @@ fn loop_diverges_round_trips_through_expansion() {
         expanded.contains("loop diverges {"),
         "expansion must reprint the loop marker:\n{expanded}"
     );
-    verify_c0_sources(
+    verify_c_sources(
         &click_source.replace(&format!("by {{ {body} }}"), &expanded),
         &[("spin.c", c_source)],
     )
@@ -4265,9 +4290,9 @@ fn loop_diverges_round_trips_through_expansion() {
             .map(|offset| offset + 1)
             .unwrap_or(0)
         + 1;
-    let in_place = expand_c0_tactic_source_at(&click_source, &[("spin.c", c_source)], line, column)
+    let in_place = expand_c_tactic_source_at(&click_source, &[("spin.c", c_source)], line, column)
         .expect("a marked signature must not hide the proof body");
-    verify_c0_sources(&in_place, &[("spin.c", c_source)])
+    verify_c_sources(&in_place, &[("spin.c", c_source)])
         .expect("the in-place expansion checks unchanged");
 }
 
@@ -4316,8 +4341,9 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 solve();
             }
         "#;
-    let (session, _) = C0VerificationSession::new(click_source, &[("drain_then_wait.c", c_source)])
-        .expect("a marked function still verifies its ranked loop's bundle");
+    let (session, _) =
+        ProgramVerificationSession::new(click_source, &[("drain_then_wait.c", c_source)])
+            .expect("a marked function still verifies its ranked loop's bundle");
     assert!(!session.function_termination_is_verified("drain_then_wait"));
 }
 
@@ -4381,14 +4407,14 @@ fn resource_array_extent_excludes_struct_padding() {
         verifying "array.c";
         uint8 read(struct packet* p) { views p->bytes; ensures result == p->bytes[2]; }
     "#;
-    let file = parse_c0_click_file(click_source, &[("array.c", c_source)]).unwrap();
+    let file = parse_click_file_with_c_sources(click_source, &[("array.c", c_source)]).unwrap();
     let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
         &file.function_blocks()[0].requires()[0]
     else {
         panic!("expected an array view");
     };
-    assert_eq!(segment.start, CExpression::Value(int32(0)));
-    assert_eq!(segment.end, CExpression::Value(int32(3)));
+    assert_eq!(segment.start, ProgramExpression::Value(int32(0)));
+    assert_eq!(segment.end, ProgramExpression::Value(int32(3)));
     assert_eq!(segment.field_element_width(), Some(1));
 }
 
@@ -4406,7 +4432,7 @@ fn a_child_resource_is_owned_like_any_other() {
         "{inner} resource outer(p: struct cell*) {{ owns inner(p); owns p->other; }} \
          verifying \"cell.c\"; {proof}"
     );
-    verify_c0_sources(&source, &[("cell.c", c_source)]).unwrap();
+    verify_c_sources(&source, &[("cell.c", c_source)]).unwrap();
     for (child, expected) in [
         (
             "contains inner(p);",
@@ -4421,7 +4447,7 @@ fn a_child_resource_is_owned_like_any_other() {
             "{inner} resource outer(p: struct cell*) {{ {child} owns p->other; }} \
              verifying \"cell.c\"; {proof}"
         );
-        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+        let error = verify_c_sources(&source, &[("cell.c", c_source)])
             .expect_err("the child clause is not the one spelling");
         assert!(error.message.contains(expected), "{child}: {error:?}");
     }
@@ -4440,13 +4466,13 @@ fn an_invariant_label_names_it_in_a_failure() {
              }} step_until(function.exit); solve(); }}"
         )
     };
-    let labelled = verify_c0_sources(&sidecar("upper:"), &[("count.c", c_source)])
+    let labelled = verify_c_sources(&sidecar("upper:"), &[("count.c", c_source)])
         .expect_err("the invariant does not hold at entry");
     assert!(
         labelled.message.contains("loop 0 invariant `upper` entry"),
         "{labelled:?}"
     );
-    let unlabelled = verify_c0_sources(&sidecar(""), &[("count.c", c_source)])
+    let unlabelled = verify_c_sources(&sidecar(""), &[("count.c", c_source)])
         .expect_err("the invariant does not hold at entry");
     assert!(
         unlabelled.message.contains("loop 0 invariant 0 entry"),
@@ -4465,7 +4491,7 @@ fn nonzero_member_addresses_preserve_their_typed_place_when_printed() {
             ensures 1 == 1;
         }
     "#;
-    let file = parse_c0_click_file(source, &[("member.c", c)]).unwrap();
+    let file = parse_click_file_with_c_sources(source, &[("member.c", c)]).unwrap();
     let Requirement::Proposition(original) = &file.function_blocks()[0].requires()[0] else {
         panic!("expected a pointer comparison");
     };
@@ -4473,7 +4499,7 @@ fn nonzero_member_addresses_preserve_their_typed_place_when_printed() {
     let rewritten = format!(
         "verifying \"member.c\"; void check(struct node *p, struct node *q) {{ requires {rendered}; ensures 1 == 1; }}"
     );
-    let reparsed = parse_c0_click_file(&rewritten, &[("member.c", c)]).unwrap();
+    let reparsed = parse_click_file_with_c_sources(&rewritten, &[("member.c", c)]).unwrap();
     let Requirement::Proposition(round_trip) = &reparsed.function_blocks()[0].requires()[0] else {
         panic!("expected the printed pointer comparison");
     };
@@ -4493,8 +4519,8 @@ fn pointer_storage_views_name_the_field_alone() {
             ensures result == p->data[0];
         }
     "#;
-    verify_c0_sources(click_source, &[("pointer.c", c_source)]).unwrap();
-    let file = parse_c0_click_file(click_source, &[("pointer.c", c_source)]).unwrap();
+    verify_c_sources(click_source, &[("pointer.c", c_source)]).unwrap();
+    let file = parse_click_file_with_c_sources(click_source, &[("pointer.c", c_source)]).unwrap();
     let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
         &file.function_blocks()[0].requires()[0]
     else {
@@ -4536,7 +4562,7 @@ fn a_contract_cannot_return_one_place_twice() {
         ),
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+        let error = verify_c_sources(&source, &[("cell.c", c_source)])
             .expect_err("the contract returns one place twice");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
         assert!(
@@ -4552,7 +4578,7 @@ fn a_contract_cannot_return_one_place_twice() {
         "contract int32 Fields(struct cell* p) { consumes p->value; consumes p->data; produces p->value; produces p->data; }",
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
-        let refused = match verify_c0_sources(&source, &[("cell.c", c_source)]) {
+        let refused = match verify_c_sources(&source, &[("cell.c", c_source)]) {
             Err(error) => error.message,
             Ok(_) => String::new(),
         };
@@ -4581,7 +4607,7 @@ fn a_reference_parameter_does_not_match_a_c_pointer() {
     let c_source = "int32 read(int32* p) { return p[0]; }";
     let source = "verifying \"read.c\"; int32 read(int32& p) { views p; ensures result == p; } \
 ";
-    let error = verify_c0_sources(source, &[("read.c", c_source)])
+    let error = verify_c_sources(source, &[("read.c", c_source)])
         .expect_err("a C parameter is not a reference");
     assert!(
         error
@@ -4604,7 +4630,7 @@ fn a_contract_cannot_return_overlapping_places() {
          int32 get(struct cell* p) { views p->value; ensures result == result; }",
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+        let error = verify_c_sources(&source, &[("cell.c", c_source)])
             .expect_err("the contract returns overlapping places");
         assert!(
             error
@@ -4622,7 +4648,7 @@ fn a_contract_cannot_return_overlapping_places() {
          int32 keep(int32* q, int32 n) { ensures result == 0; }",
     ] {
         let source = format!("verifying \"range.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("range.c", range_source)])
+        let error = verify_c_sources(&source, &[("range.c", range_source)])
             .expect_err("the contract returns overlapping places");
         assert!(
             error
@@ -4633,7 +4659,7 @@ fn a_contract_cannot_return_overlapping_places() {
     }
     let open = "verifying \"range.c\"; int32 keep(int32* q, int32 n) { requires n >= 0; \
         owns q[0..n]; produces q[1]; }";
-    let error = verify_c0_sources(open, &[("range.c", range_source)])
+    let error = verify_c_sources(open, &[("range.c", range_source)])
         .expect_err("the exit state still refuses what the entry could not decide");
     assert!(
         !error.message.contains("would return overlapping places"),
@@ -4642,7 +4668,7 @@ fn a_contract_cannot_return_overlapping_places() {
     // Two fields of one struct do not overlap.
     let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
         owns p->other; ensures result == result; }";
-    verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
+    verify_c_sources(disjoint, &[("cell.c", c_source)]).unwrap();
 }
 
 /// A resource that declares no fields keeps a named child's fields in a
@@ -4657,7 +4683,7 @@ fn a_hidden_record_needs_its_child_declared_first() {
         int32 get(struct pair* p) { owns x: pair(p); }";
     let c_source = "struct cell { int32 value; }; struct pair { struct cell* a; }; \
         int32 get(struct pair* p) { return 0; }";
-    let error = verify_c0_sources(source, &[("pair.c", c_source)])
+    let error = verify_c_sources(source, &[("pair.c", c_source)])
         .expect_err("the child is declared after the parent that names it");
     assert!(
         error.message.contains(
@@ -4815,7 +4841,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     .expect("the Rust spelling parses");
     // A trait's type argument names the method as the importer does:
     // a scalar by its name, a reference as `ref_`, a record as `value_`.
-    for (header, method, name, parameter, c_parameter) in [
+    for (header, method, name, parameter, program_parameter) in [
         (
             "MulAssign<u32>",
             "mul_assign",
@@ -4845,7 +4871,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             ))
             .unwrap_or_else(|error| panic!("{header}: {error:?}")).function_blocks(),
             parser::parse(&format!(
-                "verifying \"l.c\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
+                "verifying \"l.c\"; void {name}(struct Lanes* self, {program_parameter}) {{ \
                  ensures 0 == 0; }}"
             ))
             .expect("the C-shaped spelling parses").function_blocks(),
@@ -5020,7 +5046,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
         ),
     ] {
         let source = format!("verifying \"place.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("place.c", c_source)])
+        let error = verify_c_sources(&source, &[("place.c", c_source)])
             .expect_err("the access is not authorized");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
     }
@@ -5030,7 +5056,8 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
+        MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
@@ -5039,10 +5066,9 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
         block: PointerBlock::Concrete("range_base".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let arguments = [CExpression::Value(CValue::Pointer(CPointerValue::new(
-        base.clone(),
-        CType::Int32Pointer,
-    )))];
+    let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+        PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+    ))];
     for (low, high, width, expected) in [
         (0, 2, 4, "{p->head, p->inner.a}"),
         (1, 3, 4, "{p->inner.a, p->inner.b}"),
@@ -5054,7 +5080,7 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
         (0, 10, 4, "p[0..2]"),
         (1, 3, 1, "((char *)p)[1..3]"),
     ] {
-        let range = CMemoryRange::new_with_element_width(
+        let range = MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(low),
             MachineTerm::constant(high),
@@ -5079,7 +5105,7 @@ resource pair(node: struct node*) { field weight: int32; owns node->left; owns n
 verifying "relink.c";
 void relink(struct node* node) { requires node != 0; owns links: pair(node); owns node->right->augmented; }
 "#;
-    let error = verify_c0_sources(click_source, &[("relink.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(click_source, &[("relink.c", c_source)]).unwrap_err();
     assert!(
         error
             .message
@@ -5111,7 +5137,7 @@ void relink(struct node* node) { requires node != 0; owns links: pair(node); own
 fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
     let c_source = "struct cell { int32 a; int32 b; }; int32 release(struct cell* p) { return 0; }";
     let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; }"#;
-    let error = verify_c0_sources(source, &[("cell.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(source, &[("cell.c", c_source)]).unwrap_err();
     assert!(
         error.message.contains("missing resource fact `owns *p`"),
         "{error:?}"
@@ -5133,8 +5159,8 @@ fn a_struct_pointer_range_counts_structs() {
     let contract = |clause: &str| {
         format!("verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }}")
     };
-    verify_c0_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
-    let error = verify_c0_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
+    verify_c_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
+    let error = verify_c_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
         .expect_err("one struct does not cover the second");
     assert!(
         error
@@ -5144,7 +5170,7 @@ fn a_struct_pointer_range_counts_structs() {
     );
 
     let link = "verifying \"cells.c\"; struct cell* first(struct cell** link) { views *link; }";
-    let file = parse_c0_click_file(link, &[("cells.c", c_source)]).unwrap();
+    let file = parse_click_file_with_c_sources(link, &[("cells.c", c_source)]).unwrap();
     let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
         &file.function_blocks()[0].requires()[0]
     else {
@@ -5154,7 +5180,7 @@ fn a_struct_pointer_range_counts_structs() {
         segment.surface,
         ContractSegmentSurface::Range { .. }
     ));
-    assert_eq!(segment.end, CExpression::Value(int32(1)));
+    assert_eq!(segment.end, ProgramExpression::Value(int32(1)));
 }
 
 /// `*p` is the object behind a pointer, and a place written alone is its own
@@ -5180,7 +5206,7 @@ fn a_resource_clause_names_a_place() {
         "int32 read_next(struct node* n) { views n->next; owns *n->next; }",
     ] {
         let source = format!("verifying \"place.c\"; {contract}");
-        verify_c0_sources(&source, &[("place.c", c_source)])
+        verify_c_sources(&source, &[("place.c", c_source)])
             .unwrap_or_else(|error| panic!("{contract}: {error:?}"));
     }
     for (contract, expected) in [
@@ -5215,7 +5241,7 @@ fn a_resource_clause_names_a_place() {
         ),
     ] {
         let source = format!("verifying \"place.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("place.c", c_source)])
+        let error = verify_c_sources(&source, &[("place.c", c_source)])
             .expect_err("the clause names no ownable place");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
     }
@@ -5231,10 +5257,10 @@ fn a_whole_struct_view_reads_and_does_not_write() {
         int32 write(struct packet* p) { p->other = 1; return 0; }";
     let read = "verifying \"pointer.c\"; int32 read(struct packet* p) { views *p; \
         ensures result == p->other; }";
-    verify_c0_sources(read, &[("pointer.c", c_source)]).unwrap();
+    verify_c_sources(read, &[("pointer.c", c_source)]).unwrap();
     let write = "verifying \"pointer.c\"; int32 write(struct packet* p) { views *p; } \
 ";
-    let error = verify_c0_sources(write, &[("pointer.c", c_source)])
+    let error = verify_c_sources(write, &[("pointer.c", c_source)])
         .expect_err("a view does not authorize a write");
     assert!(error.message.contains("missing resource fact"), "{error:?}");
 }
@@ -5307,9 +5333,9 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         ("alpha.c", "static inline int callback(void) { return 1; }"),
         ("beta.c", "static inline int callback(void) { return 2; }"),
     ];
-    let file = parse_c0_click_file(source, &inputs).unwrap();
-    assert!(!file.c_function_names.contains_key("callback"));
-    let error = verify_c0_sources(source, &inputs).unwrap_err();
+    let file = parse_click_file_with_c_sources(source, &inputs).unwrap();
+    assert!(!file.program_function_names.contains_key("callback"));
+    let error = verify_c_sources(source, &inputs).unwrap_err();
     assert!(
         error
             .message()
@@ -5350,8 +5376,8 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
         theorem an_index_is_a_usize(n: usize) {
             ensures forall (k: usize) { k < n implies k < n };
         }";
-    verify_c0_sources(accepted, &rust_source).expect("the Rust spellings verify");
-    let error = verify_c0_sources(
+    verify_c_sources(accepted, &rust_source).expect("the Rust spellings verify");
+    let error = verify_c_sources(
         "verifying \"bytes.rs\"; function big(x: u32) -> bool { x > 255u32 }
          theorem two_hundred_is_big() {
              ensures big(200u32) by { unfold(big(200u32)); normalize(); }
@@ -5364,7 +5390,7 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
         "{}",
         error.message
     );
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         "verifying \"bytes.rs\"; theorem wrong(b: bool) {
              requires b == (3u32 > 5u32);
              ensures b by solve();
@@ -5566,7 +5592,9 @@ trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ens
     assert!(generic.signature().has_abstract_types());
     assert_eq!(
         generic.signature().return_type(),
-        syntax::C0Type::Parameter(crate::kernel::TypeParameterName::intern("T"))
+        crate::languages::interface::InterfaceType::Parameter(
+            crate::kernel::TypeParameterName::intern("T")
+        )
     );
     let unused = parser::parse(
         "verifying \"shapes.rs\"; trait shapes::Scale<T> { fn scale(&self, x: T) -> T { ensures result != x; } }",
@@ -5654,10 +5682,10 @@ fn a_rust_trait_function_is_its_object_field() {
             parser::ProgramLayouts {
                 struct_layouts: [(
                     "__rust_q_I6_shapes_I6_Square".to_string(),
-                    crate::languages::c::syntax::C0StructLayout::from_explicit_fields(
+                    crate::languages::interface::RecordLayout::from_explicit_fields(
                         vec![(
                             "side".into(),
-                            crate::languages::c::syntax::C0Type::Int32,
+                            crate::languages::interface::InterfaceType::Int32,
                             0,
                             4,
                         )],
@@ -5742,8 +5770,9 @@ fn a_cpp_class_function_is_its_object_field() {
         extern int Shape::area(int scale) const { ensures result == size(this) + scale; } \
         int total(const Shape& shape, int scale) { ensures result == size(shape) + scale; } \
         class Square : Shape { function size(this) -> int32 { this->side } }";
-    use crate::languages::c::syntax::{C0StructLayout, C0Type};
-    let layout = |fields, size| C0StructLayout::from_explicit_fields(fields, size, 8).unwrap();
+    use crate::languages::interface::{InterfaceType, RecordLayout};
+
+    let layout = |fields, size| RecordLayout::from_explicit_fields(fields, size, 8).unwrap();
     let parse = |source: &str| {
         parser::parse_with_layouts_and_aggregate_objects(
             source,
@@ -5755,7 +5784,7 @@ fn a_cpp_class_function_is_its_object_field() {
                     ("Shape".to_string(), layout(vec![], 8)),
                     (
                         "Square".to_string(),
-                        layout(vec![("side".into(), C0Type::Int32, 8, 4)], 16),
+                        layout(vec![("side".into(), InterfaceType::Int32, 8, 4)], 16),
                     ),
                 ]
                 .into(),
@@ -5873,27 +5902,27 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
     for (ty, one, operator, authored) in [
         (
             "int32",
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
             "-",
             "to_integer(hi - 1) < to_integer(hi)",
         ),
         (
             "uint64",
-            CValue::UInt64(MachineTerm::uint64_constant(1)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
             "+",
             "to_integer(hi) < to_integer(hi + 1u64)",
         ),
     ] {
-        let variable = CExpression::Variable("hi".into());
+        let variable = ProgramExpression::Variable("hi".into());
         let arithmetic = if operator == "-" {
-            CExpression::Subtract(
+            ProgramExpression::Subtract(
                 Box::new(variable.clone()),
-                Box::new(CExpression::Value(one)),
+                Box::new(ProgramExpression::Value(one)),
             )
         } else {
-            CExpression::Add(
+            ProgramExpression::Add(
                 Box::new(variable.clone()),
-                Box::new(CExpression::Value(one)),
+                Box::new(ProgramExpression::Value(one)),
             )
         };
         let (left, right) = if operator == "-" {
@@ -5902,9 +5931,9 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
             (variable, arithmetic)
         };
         let premise = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(left),
+            left: ContractExpression::ProgramExpression(left),
             operator: ComparisonOperator::LessThan,
-            right: ContractExpression::CFragment(right),
+            right: ContractExpression::ProgramExpression(right),
         };
         let printed = printing::source_click_proposition(&premise);
         let source = format!(
@@ -5927,9 +5956,9 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     let lo = MachineTerm::Variable(Variable(984_601));
     let difference = MachineTerm::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
     let original = Proposition::ConditionIs(less_equal(MachineTerm::constant(0), difference), true);
-    let state = CState::new()
-        .with_local("hi", CValue::Int32(hi.clone()))
-        .with_local("lo", CValue::Int32(lo.clone()));
+    let state = ExecutionState::new()
+        .with_local("hi", ProgramValue::Int32(hi.clone()))
+        .with_local("lo", ProgramValue::Int32(lo.clone()));
     let surface =
         synthesize_surface_proposition(&original, ParameterBinding::default(), &state).unwrap();
     let printed = printing::source_click_proposition(&surface);
@@ -5953,8 +5982,8 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     }
     let facts = crate::surface::verification::assumptions_from_propositions(&bounds);
     let values = BTreeMap::from([
-        ("hi".to_string(), CValue::Int32(hi)),
-        ("lo".to_string(), CValue::Int32(lo)),
+        ("hi".to_string(), ProgramValue::Int32(hi)),
+        ("lo".to_string(), ProgramValue::Int32(lo)),
     ]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -6195,34 +6224,36 @@ test_batches! {
 
 #[test]
 fn local_storage_and_resource_stars_have_round_tripping_spellings() {
-    let declaration = crate::kernel::prove_c_statement_execution(
-        CState::new(),
-        crate::kernel::CStatement::Declare {
+    let declaration = crate::kernel::prove_execution_statement_execution(
+        ExecutionState::new(),
+        crate::kernel::ProgramStatement::Declare {
             name: "i".into(),
-            c_type: CType::Int32,
+            program_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
-            initializer: Some(CExpression::Value(CValue::Int32(MachineTerm::constant(7)))),
+            initializer: Some(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(7),
+            ))),
             zero_fill: None,
             declared_class: None,
         },
     )
     .unwrap();
-    let Proposition::CStatementExecutes {
-        outcome: crate::kernel::CStatementOutcome::Normal(state),
+    let Proposition::ProgramStatementExecutes {
+        outcome: crate::kernel::StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()
     else {
         panic!("local declaration did not finish");
     };
     let local = state.resources().facts()[0].resource().clone();
-    let original = Proposition::CResourceSeparate {
+    let original = Proposition::ResourceSeparate {
         left: Box::new(local.clone()),
-        right: Box::new(crate::kernel::CResource::star(
+        right: Box::new(crate::kernel::Resource::star(
             local,
-            crate::kernel::CResource::Emp,
+            crate::kernel::Resource::Emp,
         )),
     };
     let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
@@ -6235,7 +6266,10 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
     let reparsed = file.theorem_definitions()[0].requires()[0]
         .theorem_proposition()
         .unwrap();
-    let values = BTreeMap::from([("i".to_string(), CValue::Int32(MachineTerm::constant(7)))]);
+    let values = BTreeMap::from([(
+        "i".to_string(),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let lowered = crate::surface::proof::lower_fixed_state_proposition_through_kernel(

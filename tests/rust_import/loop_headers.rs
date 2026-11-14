@@ -39,7 +39,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
     ] {
         let p = project(name, false);
         let prepared = p.prepared().unwrap();
-        let error = C0VerificationSession::new_program_prepared(
+        let error = ProgramVerificationSession::new_program_prepared(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
             &prepared,
         )
@@ -80,7 +80,7 @@ fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
             .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
         assert_eq!(generic.source, expanded, "{label}");
         assert_eq!(generic.proof_unit, "count.contract", "{label}");
-        C0VerificationSession::new_program_prepared(&expanded, &prepared)
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
             .unwrap_or_else(|error| panic!("{label}: {}\n{expanded}", error.message()));
     }
 }
@@ -92,7 +92,7 @@ fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
         let p = project(name, true);
         let prepared = p.prepared().unwrap();
         let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-        C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
         for (before, after) in [
             ("ensures result == n;", "ensures result == 0;"),
             ("ensures result == bytes.len();", "ensures result == 0u64;"),
@@ -103,7 +103,9 @@ fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
         ] {
             let invalid = sidecar.replace(before, after);
             if invalid != sidecar {
-                assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+                assert!(
+                    ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err()
+                );
             }
         }
     }
@@ -142,7 +144,7 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
         let p = project(name, true);
         p.refresh().unwrap();
         let prepared = p.prepared().unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
             &prepared,
         )
@@ -158,7 +160,7 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
             p.refresh().unwrap();
             let prepared = p.prepared().unwrap();
             let sidecar = assignment_frontier_sidecar();
-            C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+            ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
             fs::write(p.root.join("loops.rs"), original).unwrap();
             p.refresh().unwrap();
         }
@@ -175,7 +177,7 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
             .unwrap();
             p.refresh().unwrap();
             let prepared = p.prepared().unwrap();
-            C0VerificationSession::new_program_prepared(
+            ProgramVerificationSession::new_program_prepared(
                 &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
                 &prepared,
             )
@@ -225,13 +227,13 @@ fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {
     let sidecar = assignment_frontier_sidecar();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for (from, to) in [
         ("assignment(i, 0)", "assignment(absent, 0)"),
         ("have i == 0", "have i == 1"),
     ] {
         assert!(
-            C0VerificationSession::new_program_prepared(&sidecar.replace(from, to), &prepared)
+            ProgramVerificationSession::new_program_prepared(&sidecar.replace(from, to), &prepared)
                 .is_err()
         );
     }

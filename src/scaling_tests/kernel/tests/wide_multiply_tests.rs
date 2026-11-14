@@ -18,9 +18,9 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
             assumptions = assumptions.assume_condition(bound.clone(), true);
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::eval::apply_c_multiply(
-                CValue::Int128(MachineTerm::Variable(Variable(150_001))),
-                CValue::Int128(MachineTerm::Variable(Variable(150_002))),
+            crate::kernel::eval::apply_program_multiply(
+                ProgramValue::Int128(MachineTerm::Variable(Variable(150_001))),
+                ProgramValue::Int128(MachineTerm::Variable(Variable(150_002))),
                 Vec::new().into(),
                 Vec::new(),
                 &assumptions,
@@ -71,8 +71,8 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
             let widened =
                 MachineTerm::machine_integer_cast(ty, MachineIntegerType::Int128, variable.clone());
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::eval::apply_c_multiply(
-                    CValue::Int128(widened),
+                crate::kernel::eval::apply_program_multiply(
+                    ProgramValue::Int128(widened),
                     MachineIntegerType::Int128
                         .constant_value(
                             MachineIntegerConstant::from_signed(
@@ -89,7 +89,7 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
             });
             assert_eq!(paths.len(), 1);
             assert!(paths[0].obligations.is_empty());
-            let CExpressionOutcome::Value(value) = &paths[0].outcome else {
+            let ExpressionOutcome::Value(value) = &paths[0].outcome else {
                 panic!("known bounded product")
             };
             assert_eq!(

@@ -35,11 +35,11 @@ const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 /// existing integer cell: the resulting typed cell replaces the byte cells,
 /// and the ordinary store transition invalidates overlapping cached values.
 pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
-    stored: &CValue,
+    stored: &ProgramValue,
     byte_order: Option<ByteOrder>,
-) -> Option<(Pointer, CValue)> {
+) -> Option<(Pointer, ProgramValue)> {
     if byte_order != Some(ByteOrder::Little) {
         return None;
     }
@@ -49,7 +49,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     }
     crate::instrumentation::record_deterministic_work(1);
     let declaration = memory.blocks.get(&pointer.block)?;
-    if declaration.declared_scalar_type != Some(CType::UInt32)
+    if declaration.declared_scalar_type != Some(ProgramType::UInt32)
         || declaration.size().as_const() != Some(4)
         || memory.is_ended_local_address(pointer)
     {
@@ -74,17 +74,19 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
             MachineTerm::unsigned_shift_left(bits, MachineTerm::constant(8 * byte as u32)),
         );
     }
-    Some((start, CValue::UInt32(assembled)))
+    Some((start, ProgramValue::UInt32(assembled)))
 }
 
 /// The 32-bit word of a stored byte, `0..=255`: the zero extension of its
 /// eight bits, `uint8` read directly and `int8` through its conversion to
 /// `uint8`. `None` for a value that is not a byte.
-fn byte_word(value: &CValue) -> Option<MachineTerm> {
+fn byte_word(value: &ProgramValue) -> Option<MachineTerm> {
     use crate::kernel::MachineIntegerType as Ty;
     let byte = match value {
-        CValue::UInt8(bits) => bits.clone(),
-        CValue::Int8(bits) => MachineTerm::machine_integer_cast(Ty::Int8, Ty::UInt8, bits.clone()),
+        ProgramValue::UInt8(bits) => bits.clone(),
+        ProgramValue::Int8(bits) => {
+            MachineTerm::machine_integer_cast(Ty::Int8, Ty::UInt8, bits.clone())
+        }
         _ => return None,
     };
     Some(MachineTerm::machine_integer_cast(
@@ -100,27 +102,27 @@ pub(in crate::kernel) struct ContainingIntegerCell {
     /// The cell's own address, `(block, const o')`.
     pub(in crate::kernel) pointer: Pointer,
     /// The cell's value, an integer variant wider than one byte.
-    pub(in crate::kernel) value: CValue,
+    pub(in crate::kernel) value: ProgramValue,
     /// Which byte of the cell's representation the access names, `o - o'`.
     pub(in crate::kernel) byte: u32,
 }
 
 /// The byte width of an integer cell, or `None` for a cell with no byte view.
-fn integer_cell_width(value: &CValue) -> Option<u32> {
+fn integer_cell_width(value: &ProgramValue) -> Option<u32> {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int8(_) | CValue::UInt8(_) => Some(1),
-        CValue::Int16(_) | CValue::UInt16(_) => Some(2),
-        CValue::Int32(_) | CValue::UInt32(_) => Some(4),
-        CValue::Int64(_) | CValue::UInt64(_) => Some(8),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Bool(_)
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Int8(_) | ProgramValue::UInt8(_) => Some(1),
+        ProgramValue::Int16(_) | ProgramValue::UInt16(_) => Some(2),
+        ProgramValue::Int32(_) | ProgramValue::UInt32(_) => Some(4),
+        ProgramValue::Int64(_) | ProgramValue::UInt64(_) => Some(8),
+        ProgramValue::Int128(_)
+        | ProgramValue::UInt128(_)
+        | ProgramValue::Void
+        | ProgramValue::Bool(_)
+        | ProgramValue::Pointer(_)
+        | ProgramValue::Parameter(_)
+        | ProgramValue::Float32(_)
+        | ProgramValue::Float64(_) => None,
     }
 }
 
@@ -134,7 +136,7 @@ fn integer_cell_width(value: &CValue) -> Option<u32> {
 /// overlapping cell, or an overlapping cell with no byte view (pointer,
 /// float, `_Bool`).
 pub(in crate::kernel) fn containing_integer_cell(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
     byte_order: Option<ByteOrder>,
 ) -> Option<ContainingIntegerCell> {
@@ -192,7 +194,7 @@ pub(in crate::kernel) fn containing_integer_cell(
 /// `unsigned char` it is: the conversion to `uint8` of `v >> 8k`, a native
 /// 8-bit term. A 16-bit value is read through its 32-bit widening, whose
 /// low sixteen bits are its representation whatever its signedness.
-pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<MachineTerm> {
+pub(in crate::kernel) fn integer_cell_byte(value: &ProgramValue, byte: u32) -> Option<MachineTerm> {
     use crate::kernel::MachineIntegerType as Ty;
     let value = value.numeric_value();
     let width = integer_cell_width(value)?;
@@ -209,15 +211,17 @@ pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<
         MachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, shifted)
     };
     Some(match value {
-        CValue::Int16(term) | CValue::UInt16(term) => word(MachineTerm::machine_integer_cast(
-            Ty::from_c_type(value.c_type())?,
-            Ty::UInt32,
-            term.clone(),
-        )),
-        CValue::Int32(term) | CValue::UInt32(term) => word(term.clone()),
-        CValue::Int64(term) | CValue::UInt64(term) => {
+        ProgramValue::Int16(term) | ProgramValue::UInt16(term) => {
+            word(MachineTerm::machine_integer_cast(
+                Ty::from_program_type(value.program_type())?,
+                Ty::UInt32,
+                term.clone(),
+            ))
+        }
+        ProgramValue::Int32(term) | ProgramValue::UInt32(term) => word(term.clone()),
+        ProgramValue::Int64(term) | ProgramValue::UInt64(term) => {
             let bits = match value {
-                CValue::Int64(_) => MachineTerm::uint64_from_int64(term.clone()),
+                ProgramValue::Int64(_) => MachineTerm::uint64_from_int64(term.clone()),
                 _ => term.clone(),
             };
             let shifted = if shift == 0 {
@@ -240,15 +244,15 @@ pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<
 /// byte; a symbolic signed byte view is refused, as before native bytes.
 pub(in crate::kernel) fn byte_view_load_value(
     cell: &ContainingIntegerCell,
-    value_type: CType,
-) -> Option<CValue> {
+    value_type: ProgramType,
+) -> Option<ProgramValue> {
     use crate::kernel::MachineIntegerType as Ty;
     let byte = integer_cell_byte(&cell.value, cell.byte)?;
     match value_type {
-        CType::UInt8 => Some(CValue::UInt8(byte)),
-        CType::Int8 => Ty::UInt8
-            .constant_from_term(&byte)
-            .map(|_| CValue::Int8(MachineTerm::machine_integer_cast(Ty::UInt8, Ty::Int8, byte))),
+        ProgramType::UInt8 => Some(ProgramValue::UInt8(byte)),
+        ProgramType::Int8 => Ty::UInt8.constant_from_term(&byte).map(|_| {
+            ProgramValue::Int8(MachineTerm::machine_integer_cast(Ty::UInt8, Ty::Int8, byte))
+        }),
         _ => None,
     }
 }
@@ -263,8 +267,8 @@ pub(in crate::kernel) fn byte_view_load_value(
 /// `None` leaves the store to forget the cell, as it did before this view.
 pub(in crate::kernel) fn integer_cell_with_byte(
     cell: &ContainingIntegerCell,
-    stored: &CValue,
-) -> Option<CValue> {
+    stored: &ProgramValue,
+) -> Option<ProgramValue> {
     let width = integer_cell_width(&cell.value)?;
     if width <= 1 || cell.byte >= width {
         return None;
@@ -284,7 +288,7 @@ pub(in crate::kernel) fn integer_cell_with_byte(
     use crate::kernel::MachineIntegerType as Ty;
     Some(match cell.value.numeric_value() {
         // A 16-bit cell is updated in its 32-bit widening and converted back.
-        CValue::UInt16(term) => CValue::UInt16(MachineTerm::machine_integer_cast(
+        ProgramValue::UInt16(term) => ProgramValue::UInt16(MachineTerm::machine_integer_cast(
             Ty::UInt32,
             Ty::UInt16,
             update32(&MachineTerm::machine_integer_cast(
@@ -293,25 +297,25 @@ pub(in crate::kernel) fn integer_cell_with_byte(
                 term.clone(),
             )),
         )),
-        CValue::Int32(term) => CValue::Int32(update32(term)),
-        CValue::UInt32(term) => CValue::UInt32(update32(term)),
-        CValue::UInt64(term) => CValue::UInt64(MachineTerm::uint64_bitwise_or(
+        ProgramValue::Int32(term) => ProgramValue::Int32(update32(term)),
+        ProgramValue::UInt32(term) => ProgramValue::UInt32(update32(term)),
+        ProgramValue::UInt64(term) => ProgramValue::UInt64(MachineTerm::uint64_bitwise_or(
             MachineTerm::uint64_bitwise_and(term.clone(), MachineTerm::uint64_constant(mask64)),
             MachineTerm::uint64_shift_left(
                 MachineTerm::uint64_from_32(byte),
                 MachineTerm::uint64_constant(u64::from(shift)),
             ),
         )),
-        CValue::Int16(term) => {
+        ProgramValue::Int16(term) => {
             let value = Ty::Int16.constant_from_term(term)?.bits() as u32;
             let byte = byte.as_const()?;
             let bits = (value & 0xFFFF & mask32) | ((byte & 0xFF) << shift);
             crate::kernel::int16(bits as u16 as i16 as i32 as u32)
         }
-        CValue::Int64(term) => {
+        ProgramValue::Int64(term) => {
             let (value, byte) = (term.int64_as_const()?, byte.as_const()?);
             let bits = (value as u64 & mask64) | (u64::from(byte & 0xFF) << shift);
-            CValue::Int64(MachineTerm::int64_constant(bits as i64))
+            ProgramValue::Int64(MachineTerm::int64_constant(bits as i64))
         }
         _ => return None,
     })

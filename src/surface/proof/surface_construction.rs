@@ -5,7 +5,7 @@ fn checked_surface_fact_in_state_with_assumptions(
     kernel: &Proposition,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<ClickProposition, ClickError> {
     let check = |surface: &ClickProposition| {
@@ -53,7 +53,7 @@ fn checked_surface_fact_in_state_with_assumptions(
         let same_non_memory_arguments = |arguments: &[Term]| {
             arguments.len() == target_arguments.len()
                 && arguments.iter().zip(target_arguments).all(|(left, right)| {
-                    matches!((left, right), (Term::CMemory(_), Term::CMemory(_))) || left == right
+                    matches!((left, right), (Term::Memory(_), Term::Memory(_))) || left == right
                 })
         };
         for recorded in view.surface_propositions.atomic_kernel_facts() {
@@ -91,7 +91,7 @@ fn checked_surface_fact_in_state_with_assumptions(
             }
         }
     }
-    let kernel_memories = c_condition_fact_memories(kernel);
+    let kernel_memories = program_condition_fact_memories(kernel);
     if !kernel_memories.is_empty()
         && kernel_memories
             .iter()
@@ -185,7 +185,7 @@ fn checked_surface_fact_in_state_with_assumptions(
     }
 }
 
-fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
+fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<Memory> {
     if !matches!(
         proposition,
         Proposition::And(_, _)
@@ -197,14 +197,14 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
             | Proposition::Predicate { .. }
             | Proposition::Equal(_, _)
     ) {
-        return c_condition_fact_memories(proposition);
+        return program_condition_fact_memories(proposition);
     }
     let mut memories = Vec::new();
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
             Proposition::ConditionIs(_, _) => {
-                for memory in c_condition_fact_memories(proposition) {
+                for memory in program_condition_fact_memories(proposition) {
                     if !memories.contains(&memory) {
                         memories.push(memory);
                     }
@@ -212,7 +212,7 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
             }
             Proposition::Equal(left, right) => {
                 for term in [left, right] {
-                    if let Term::CMemory(memory) = term
+                    if let Term::Memory(memory) = term
                         && !memories.contains(memory)
                     {
                         memories.push(memory.clone());
@@ -221,7 +221,7 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
-                    if let Term::CMemory(memory) = argument
+                    if let Term::Memory(memory) = argument
                         && !memories.contains(memory)
                     {
                         memories.push(memory.clone());
@@ -243,7 +243,7 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
     memories
 }
 
-type SnapshotMatches<'a> = Vec<(&'a SnapshotSelector, &'a CState)>;
+type SnapshotMatches<'a> = Vec<(&'a SnapshotSelector, &'a ExecutionState)>;
 
 pub(super) fn snapshot_indexed_selectors<'a>(
     kernel: &Proposition,
@@ -272,7 +272,7 @@ pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
     available: &ProofFacts,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<ClickProposition, ClickError> {
     checked_surface_comparison_fact_in_state_with_availability(
@@ -297,7 +297,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     indexed_available: Option<&ProofFacts>,
     allow_snapshot_blind_candidates: bool,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<ClickProposition, ClickError> {
     let _qualified_sources =
@@ -345,9 +345,9 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             .collect::<BTreeMap<_, _>>();
         let mut names = BTreeMap::<Variable, Option<String>>::new();
         for (name, expression) in bindings.iter() {
-            if let ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                MachineTerm::Variable(variable),
-            ))) = expression
+            if let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::Variable(variable)),
+            )) = expression
             {
                 names
                     .entry(*variable)
@@ -407,13 +407,13 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     let parameter_names = parameter_binding
         .parameters
         .iter()
-        .map(syntax::C0Parameter::name)
+        .map(crate::languages::interface::ImportedParameter::name)
         .collect::<BTreeSet<_>>();
     for surface in &recorded_surfaces {
         if matches!(
             surface,
             ClickProposition::Defined { expression }
-                if !super::surface_certificates::contract_expression_mentions_c_local(
+                if !super::surface_certificates::contract_expression_mentions_program_local(
                     expression,
                     &parameter_names,
                 )

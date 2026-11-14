@@ -22,7 +22,7 @@ fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_g
     );
     let p = project("sum");
     let prepared = p.prepared().unwrap();
-    let error = C0VerificationSession::new_program_prepared(
+    let error = ProgramVerificationSession::new_program_prepared(
         &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
         &prepared,
     )
@@ -43,7 +43,7 @@ fn charon_slice_into_iter_tools_agree_on_typed_reads_empty_inputs_and_expansion(
     let p = project("iteration");
     let prepared = p.prepared().unwrap();
     let empty = include_str!("../../design/charon-trial/into-slices/empty.click");
-    C0VerificationSession::new_program_prepared(empty, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(empty, &prepared).unwrap();
     for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
@@ -66,7 +66,7 @@ fn charon_slice_into_iter_live_refresh_and_rejected_mutable_or_owned_shapes() {
         p.refresh().unwrap();
         let prepared = p.prepared().unwrap();
         if name == "sum" {
-            let error = C0VerificationSession::new_program_prepared(
+            let error = ProgramVerificationSession::new_program_prepared(
                 &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
                 &prepared,
             )
@@ -80,12 +80,12 @@ fn charon_slice_into_iter_live_refresh_and_rejected_mutable_or_owned_shapes() {
             );
             continue;
         }
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
             &prepared,
         )
         .unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             include_str!("../../design/charon-trial/into-slices/empty.click"),
             &prepared,
         )

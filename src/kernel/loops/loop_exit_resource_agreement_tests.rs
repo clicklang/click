@@ -1,7 +1,7 @@
 use super::*;
 
-fn range(block: &str) -> CMemoryRange {
-    CMemoryRange::new_with_element_width(
+fn range(block: &str) -> MemoryRange {
+    MemoryRange::new_with_element_width(
         Pointer {
             block: PointerBlock::Concrete(block.to_string()),
             offset: PointerOffsetTerm::Constant(0),
@@ -12,17 +12,17 @@ fn range(block: &str) -> CMemoryRange {
     )
 }
 
-fn view(block: &str) -> CResourceFact {
-    CResourceFact::View(CResource::Memory(range(block)))
+fn view(block: &str) -> ResourceFact {
+    ResourceFact::View(Resource::Memory(range(block)))
 }
 
-fn own(block: &str) -> CResourceFact {
-    CResourceFact::own(CResource::Memory(range(block)))
+fn own(block: &str) -> ResourceFact {
+    ResourceFact::own(Resource::Memory(range(block)))
 }
 
-fn token(quantity: u32) -> CResourceFact {
-    CResourceFact::Own(
-        CResource::Token {
+fn token(quantity: u32) -> ResourceFact {
+    ResourceFact::Own(
+        Resource::Token {
             name: "ticket".to_string(),
             arguments: Vec::new().into(),
         },
@@ -30,7 +30,7 @@ fn token(quantity: u32) -> CResourceFact {
     )
 }
 
-fn context(facts: impl IntoIterator<Item = CResourceFact>) -> ResourceContext {
+fn context(facts: impl IntoIterator<Item = ResourceFact>) -> ResourceContext {
     ResourceContext::new().unchecked_with_facts(facts)
 }
 

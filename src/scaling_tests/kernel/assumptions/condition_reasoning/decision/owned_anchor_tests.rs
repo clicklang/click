@@ -43,14 +43,14 @@ fn explicit_separation_decides_pointers_without_composition_discovery() {
         let _fast = crate::kernel::search::FastOperationScope::enter("explicit pointer separation");
         assert_eq!(facts.decide(&condition), None);
         let cell = |pointer| {
-            Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                 pointer,
                 0u32.into(),
                 1u32.into(),
                 8,
             )))
         };
-        let facts = facts.assume_proposition(Proposition::CResourceSeparate {
+        let facts = facts.assume_proposition(Proposition::ResourceSeparate {
             left: cell(left.clone()),
             right: cell(right),
         });

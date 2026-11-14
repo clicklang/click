@@ -76,17 +76,15 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
 #[test]
 fn unsigned_congruence_keeps_load_snapshots_and_widths_distinct() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("unsigned", 4));
+    let before = intern_memory(Memory::new().with_block("unsigned", 4));
     let pointer = Pointer {
         block: "unsigned".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer.clone(), CValue::UInt32(MachineTerm::constant(9))),
-    );
+    let after = intern_memory(before.memory().clone().store(
+        pointer.clone(),
+        ProgramValue::UInt32(MachineTerm::constant(9)),
+    ));
     let load = |memory, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), kind);
     let old = load(before.clone(), LoadKind::Int32);
     let value = var(90_012);
@@ -173,12 +171,12 @@ fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
 #[test]
 fn fact_transport_uses_registered_load_congruence_only_in_one_snapshot() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("int32", 16));
+    let before = intern_memory(Memory::new().with_block("int32", 16));
     let pointer = |index| Pointer {
         block: "int32".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let load = |memory: &SharedCMemory, index| {
+    let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
@@ -188,12 +186,10 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_snapshot() {
         ))
     };
     let (a, b) = (var(11), var(12));
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-    );
+    let after = intern_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
     let left = load(&before, a.clone());
     let right = load(&before, b.clone());
     let later = load(&after, b.clone());
@@ -222,23 +218,21 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
             value,
         )
     };
-    let before = intern_c_memory(
-        CMemory::new()
+    let before = intern_memory(
+        Memory::new()
             .with_block("resolved-int32", 4)
-            .store(pointer.clone(), CValue::Int32(sum(a.clone()))),
+            .store(pointer.clone(), ProgramValue::Int32(sum(a.clone()))),
     );
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
-    );
-    let byte_memory = intern_c_memory(
-        CMemory::new()
+    let after = intern_memory(before.memory().clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
+    let byte_memory = intern_memory(
+        Memory::new()
             .with_block("resolved-int32", 1)
-            .store(pointer.clone(), CValue::UInt8(byte(sum(a.clone())))),
+            .store(pointer.clone(), ProgramValue::UInt8(byte(sum(a.clone())))),
     );
-    let load = |memory: &SharedCMemory| {
+    let load = |memory: &SharedMemory| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer,
@@ -297,22 +291,21 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
     };
     let left_pointer = pointer(0);
     let right_pointer = pointer(4);
-    let before = intern_c_memory(
-        CMemory::new()
+    let before = intern_memory(
+        Memory::new()
             .with_block("two-resolved-int32", 8)
-            .store(left_pointer.clone(), CValue::Int32(sum(a.clone())))
-            .store(right_pointer.clone(), CValue::Int32(sum(b.clone()))),
+            .store(left_pointer.clone(), ProgramValue::Int32(sum(a.clone())))
+            .store(right_pointer.clone(), ProgramValue::Int32(sum(b.clone()))),
     );
-    let after = intern_c_memory(before.memory().clone().store(
+    let after = intern_memory(before.memory().clone().store(
         right_pointer.clone(),
-        CValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(MachineTerm::constant(9)),
     ));
-    let byte_memory = intern_c_memory(
-        CMemory::new()
-            .with_block("two-resolved-int32", 8)
-            .store(right_pointer.clone(), CValue::UInt8(byte(sum(b.clone())))),
-    );
-    let load = |memory: &SharedCMemory, pointer: &Pointer, width| {
+    let byte_memory = intern_memory(Memory::new().with_block("two-resolved-int32", 8).store(
+        right_pointer.clone(),
+        ProgramValue::UInt8(byte(sum(b.clone()))),
+    ));
+    let load = |memory: &SharedMemory, pointer: &Pointer, width| {
         let kind = if width == 1 {
             crate::kernel::LoadKind::UInt8
         } else {
@@ -345,12 +338,12 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
 #[test]
 fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("resource-value", 8));
+    let before = intern_memory(Memory::new().with_block("resource-value", 8));
     let pointer = |index| Pointer {
         block: "resource-value".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let load = |memory: &SharedCMemory, index| {
+    let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
@@ -360,15 +353,13 @@ fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
         ))
     };
     let (a, b) = (var(51), var(52));
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-    );
-    let resource = |value| CResource::Composite {
+    let after = intern_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
+    let resource = |value| Resource::Composite {
         name: "indexed-value".into(),
-        arguments: vec![CValue::Int32(value).into()].into(),
+        arguments: vec![ProgramValue::Int32(value).into()].into(),
     };
     let left = resource(load(&before, a.clone()));
     let right = resource(load(&before, b.clone()));
@@ -378,21 +369,27 @@ fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
     let branch = parent.clone().assume_condition(premise.clone(), true);
     let _scope = branch.enter_id_scope();
     PureFactContext::reset_bitvector_equality_index_fact_visits();
-    assert!(crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &branch,));
+    assert!(crate::kernel::memory_provenance::resources_directly_match(
+        &left, &right, &branch,
+    ));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-    assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &later, &branch,));
-    assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &parent,));
+    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+        &left, &later, &branch,
+    ));
+    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+        &left, &right, &parent,
+    ));
 }
 
 #[test]
 fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("instance-value", 8));
+    let before = intern_memory(Memory::new().with_block("instance-value", 8));
     let pointer = |index| Pointer {
         block: "instance-value".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let load = |memory: &SharedCMemory, index| {
+    let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
@@ -402,23 +399,23 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
         ))
     };
     let (a, b) = (var(61), var(62));
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-    );
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let after = intern_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
+    let schema = ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let instance = |value| {
-        CResource::Instance(
+        Resource::Instance(
             ResourceInstance::new(
                 Variable(6100),
                 "instance-value".into(),
-                vec![CValue::Int32(MachineTerm::constant(3)).into()].into(),
+                vec![ProgramValue::Int32(MachineTerm::constant(3)).into()].into(),
                 schema.clone(),
-                vec![CValue::Int32(value).into()].into(),
+                vec![ProgramValue::Int32(value).into()].into(),
             )
             .unwrap(),
         )
@@ -431,21 +428,27 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
     let branch = parent.clone().assume_condition(premise.clone(), true);
     let _scope = branch.enter_id_scope();
     PureFactContext::reset_bitvector_equality_index_fact_visits();
-    assert!(crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &branch,));
+    assert!(crate::kernel::memory_provenance::resources_directly_match(
+        &left, &right, &branch,
+    ));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-    assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &later, &branch,));
-    assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &parent,));
+    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+        &left, &later, &branch,
+    ));
+    assert!(!crate::kernel::memory_provenance::resources_directly_match(
+        &left, &right, &parent,
+    ));
 }
 
 #[test]
 fn certification_uses_graph_int32_equality_with_snapshot_scope() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("certified-int32", 8));
+    let before = intern_memory(Memory::new().with_block("certified-int32", 8));
     let pointer = |index| Pointer {
         block: "certified-int32".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let load = |memory: &SharedCMemory, index| {
+    let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
@@ -455,12 +458,10 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
         ))
     };
     let (a, b) = (var(81), var(82));
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-    );
+    let after = intern_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
     let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
     let left = sum(load(&before, a.clone()));
     let right = sum(load(&before, b.clone()));
@@ -483,12 +484,12 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
 #[test]
 fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("int32", 16));
+    let before = intern_memory(Memory::new().with_block("int32", 16));
     let pointer = |index| Pointer {
         block: "int32".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let load = |memory: &SharedCMemory, index| {
+    let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
@@ -498,12 +499,10 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
         ))
     };
     let (a, b) = (var(21), var(22));
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-    );
+    let after = intern_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
     let sum = |value, other| MachineTerm::add(value, other);
     let fixed = var(23);
     let left = sum(load(&before, a.clone()), fixed.clone());
@@ -592,15 +591,13 @@ fn int32_restriction_and_contradiction_preserve_support() {
 #[test]
 fn int32_load_identity_keeps_snapshots_separate() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("int32", 8));
+    let before = intern_memory(Memory::new().with_block("int32", 8));
     let pointer = Pointer::symbolic(Variable(40));
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
-    );
-    let load = |memory: &SharedCMemory| {
+    let after = intern_memory(before.memory().clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
+    let load = |memory: &SharedMemory| {
         MachineTerm::MemoryLoad(
             memory.clone(),
             Box::new(pointer.clone()),
@@ -713,12 +710,12 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
 fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
     let _session = VerificationSession::enter();
     let pointer = |id| {
-        CPointerValue::new(
+        PointerValue::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(var(id), 4),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
     };
     let (left, right) = (pointer(941_001), pointer(941_002));

@@ -14,8 +14,8 @@ fn ledger_with_participants() -> (
     (ledger, owner, reader)
 }
 
-fn token_with_support(name: &str) -> (CResourceFact, ResourceOccurrenceId) {
-    let fact = CResourceFact::own_token(name.to_string(), Vec::new());
+fn token_with_support(name: &str) -> (ResourceFact, ResourceOccurrenceId) {
+    let fact = ResourceFact::own_token(name.to_string(), Vec::new());
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(&fact)
@@ -26,13 +26,13 @@ fn token_with_support(name: &str) -> (CResourceFact, ResourceOccurrenceId) {
 
 #[test]
 fn empty_states_remain_canonically_equal() {
-    assert_eq!(CState::new(), CState::default());
+    assert_eq!(ExecutionState::new(), ExecutionState::default());
 }
 
 #[test]
 fn cloned_state_shares_the_loan_ledger_root() {
     let (ledger, _, _) = ledger_with_participants();
-    let state = CState::new().with_loan_ledger(Some(ledger));
+    let state = ExecutionState::new().with_loan_ledger(Some(ledger));
     let clone = state.clone();
 
     assert!(state.shares_nonlocal_storage_with(&clone));
@@ -47,10 +47,10 @@ fn cloned_state_shares_the_loan_ledger_root() {
 #[test]
 fn divergent_holders_make_equal_ledger_states_differ() {
     let (ledger, owner, reader) = ledger_with_participants();
-    let owner_state = CState::new()
+    let owner_state = ExecutionState::new()
         .with_loan_ledger(Some(ledger.clone()))
         .with_loan_participant(Some(owner));
-    let reader_state = CState::new()
+    let reader_state = ExecutionState::new()
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader));
 
@@ -62,21 +62,21 @@ fn divergent_holders_make_equal_ledger_states_differ() {
 #[test]
 fn statement_outcome_reconstruction_preserves_holder_identity() {
     let (ledger, owner, _) = ledger_with_participants();
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("x", int32(0))
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(owner));
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &state,
-        &c_assign("x", c_int32_literal(1)),
+        &program_assign("x", crate::kernel::program_expression::int32_literal(1)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("assignment should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(next_state),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(next_state),
             ..
         },
     ] = paths.as_slice()
@@ -106,8 +106,8 @@ fn divergent_ledger_successors_make_state_identities_differ() {
         .expect("second loan");
     let first = ledger.apply(&first.transition).expect("first successor");
     let second = ledger.apply(&second.transition).expect("second successor");
-    let first_state = CState::new().with_loan_ledger(Some(first));
-    let second_state = CState::new().with_loan_ledger(Some(second));
+    let first_state = ExecutionState::new().with_loan_ledger(Some(first));
+    let second_state = ExecutionState::new().with_loan_ledger(Some(second));
 
     assert_ne!(first_state, second_state);
     assert_ne!(first_state.cmp(&second_state), Ordering::Equal);
@@ -128,17 +128,18 @@ fn abstract_join_rejects_divergent_loan_roots_without_scanning_ledgers() {
     let second = ledger
         .lend(owner, reader, second_support, second_fact)
         .expect("second loan");
-    let first_state = CState::new().with_loan_ledger(Some(
+    let first_state = ExecutionState::new().with_loan_ledger(Some(
         ledger.apply(&first.transition).expect("first successor"),
     ));
-    let second_state = CState::new().with_loan_ledger(Some(
+    let second_state = ExecutionState::new().with_loan_ledger(Some(
         ledger.apply(&second.transition).expect("second successor"),
     ));
 
-    let error = abstract_c_state_for_join(&first_state, &std::collections::BTreeMap::new(), 0)
-        .expect("single-state join retains its root");
+    let error =
+        abstract_execution_state_for_join(&first_state, &std::collections::BTreeMap::new(), 0)
+            .expect("single-state join retains its root");
     assert_eq!(error.state.loan_ledger(), first_state.loan_ledger());
-    let error = abstract_c_state_for_join_across(
+    let error = abstract_execution_state_for_join_across(
         &first_state,
         &[&first_state, &second_state],
         &std::collections::BTreeMap::new(),
@@ -171,9 +172,9 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
         .expect("the owner recovers");
     let recovered = ended.apply(&recover).expect("recovered successor");
 
-    let kept = CState::new().with_loan_ledger(Some(lent.clone()));
-    let closed = CState::new().with_loan_ledger(Some(recovered.clone()));
-    let error = abstract_c_state_for_join_across(
+    let kept = ExecutionState::new().with_loan_ledger(Some(lent.clone()));
+    let closed = ExecutionState::new().with_loan_ledger(Some(recovered.clone()));
+    let error = abstract_execution_state_for_join_across(
         &closed,
         &[&closed, &kept],
         &std::collections::BTreeMap::new(),
@@ -181,7 +182,7 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
     )
     .expect_err("a loan ended on one arm only must not join into ownership");
     assert!(error.contains("stable-view loan state"), "{error}");
-    let error = abstract_c_state_for_join_across(
+    let error = abstract_execution_state_for_join_across(
         &kept,
         &[&kept, &closed],
         &std::collections::BTreeMap::new(),
@@ -190,8 +191,8 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
     .expect_err("arm order does not matter");
     assert!(error.contains("stable-view loan state"), "{error}");
 
-    let closed_too = CState::new().with_loan_ledger(Some(recovered.clone()));
-    let joined = abstract_c_state_for_join_across(
+    let closed_too = ExecutionState::new().with_loan_ledger(Some(recovered.clone()));
+    let joined = abstract_execution_state_for_join_across(
         &closed,
         &[&closed, &closed_too],
         &std::collections::BTreeMap::new(),
@@ -209,9 +210,9 @@ fn arm_with_view_binding(
     owner: crate::kernel::loans::LoanParticipantId,
     reader: crate::kernel::loans::LoanParticipantId,
     name: &str,
-) -> (CState, crate::kernel::loans::LoanViewBinding) {
+) -> (ExecutionState, crate::kernel::loans::LoanViewBinding) {
     let (support_fact, _) = token_with_support(&format!("{name}_support"));
-    let viewed = CResourceFact::view_token(format!("{name}_view"), Vec::new());
+    let viewed = ResourceFact::view_token(format!("{name}_view"), Vec::new());
     let resources =
         ResourceContext::new().unchecked_with_facts([support_fact.clone(), viewed.clone()]);
     let support = resources.owned_occurrences_for_fact(&support_fact)[0];
@@ -227,7 +228,7 @@ fn arm_with_view_binding(
         viewed,
         hold: None,
     };
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_loan_ledger(Some(ledger.clone()))
         .with_loan_participant(Some(reader))
         .with_resource_context_and_loan_dependencies(resources, [(occurrence, binding.clone())]);
@@ -240,8 +241,9 @@ fn abstract_join_keeps_one_shared_view_root_and_drops_its_occurrence_sidecar() {
     let (arm, binding) = arm_with_view_binding(&ledger, owner, reader, "shared");
     let sibling = arm.clone();
 
-    let abstraction = abstract_c_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
-        .expect("arms holding the same root have one deterministic abstraction");
+    let abstraction =
+        abstract_execution_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
+            .expect("arms holding the same root have one deterministic abstraction");
     let abstraction = abstraction.state;
 
     // The root survives the join; the bookkeeping of the discarded resource
@@ -273,7 +275,7 @@ fn abstract_join_rejects_a_changed_view_root_on_one_ledger() {
     // Same ledger root and same holder: only the checked occurrence binding
     // moved, and a join must not pick one arm's authority for the successor.
     assert_eq!(arm.loan_ledger(), sibling.loan_ledger());
-    let error = abstract_c_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
+    let error = abstract_execution_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
         .expect_err("a changed view root must not be silently selected");
     assert!(error.contains("stable-view occurrence bindings"));
 }
@@ -282,7 +284,7 @@ fn abstract_join_rejects_a_changed_view_root_on_one_ledger() {
 fn abstract_join_rejects_an_arm_that_dropped_its_view_root() {
     let (ledger, owner, reader) = ledger_with_participants();
     let (arm, _) = arm_with_view_binding(&ledger, owner, reader, "kept");
-    let dropped = CState::new()
+    let dropped = ExecutionState::new()
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader))
         // The same visible facts, but no recorded dependency on the loan that
@@ -292,7 +294,7 @@ fn abstract_join_rejects_an_arm_that_dropped_its_view_root() {
         );
 
     assert_eq!(dropped.loan_view_bindings().iter().count(), 0);
-    let error = abstract_c_state_for_interface_join_across(&arm, &[&arm, &dropped], 0)
+    let error = abstract_execution_state_for_interface_join_across(&arm, &[&arm, &dropped], 0)
         .expect_err("an arm that dropped its root must not inherit the other arm's");
     assert!(error.contains("stable-view occurrence bindings"));
 }
@@ -300,14 +302,14 @@ fn abstract_join_rejects_an_arm_that_dropped_its_view_root() {
 #[test]
 fn abstract_join_rejects_divergent_holders_on_one_ledger_root() {
     let (ledger, owner, reader) = ledger_with_participants();
-    let owner_state = CState::new()
+    let owner_state = ExecutionState::new()
         .with_loan_ledger(Some(ledger.clone()))
         .with_loan_participant(Some(owner));
-    let reader_state = CState::new()
+    let reader_state = ExecutionState::new()
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader));
 
-    let error = abstract_c_state_for_join_across(
+    let error = abstract_execution_state_for_join_across(
         &owner_state,
         &[&owner_state, &reader_state],
         &std::collections::BTreeMap::new(),
@@ -320,14 +322,14 @@ fn abstract_join_rejects_divergent_holders_on_one_ledger_root() {
 #[test]
 fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
     let (ledger, owner, reader) = ledger_with_participants();
-    let top_state = CState::new()
+    let top_state = ExecutionState::new()
         .with_loan_ledger(Some(ledger.clone()))
         .with_loan_participant(Some(owner));
-    let next_state = CState::new()
+    let next_state = ExecutionState::new()
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader));
 
-    let error = c_loop_state_components_match_at_back_edge(
+    let error = loop_state_components_match_at_back_edge(
         &top_state,
         &next_state,
         &PureFactContext::new(),
@@ -339,7 +341,7 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
 
 /// Two arm states that share `known` cached cells and differ in one other
 /// cell, as the arms of an `if` that each store once leave them.
-fn arms_beside_known_cells(known: u32) -> (CMemory, [CState; 2]) {
+fn arms_beside_known_cells(known: u32) -> (Memory, [ExecutionState; 2]) {
     let known_cell = |index: u32| Pointer {
         block: "global:known".into(),
         offset: PointerOffsetTerm::Constant(4 * i64::from(index)),
@@ -348,14 +350,14 @@ fn arms_beside_known_cells(known: u32) -> (CMemory, [CState; 2]) {
         block: "global:written".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut memory = CMemory::new()
+    let mut memory = Memory::new()
         .with_block("global:known", 4 * known)
         .with_block("global:written", 4);
     for index in 0..known {
         memory = memory.store(known_cell(index), int32(index));
     }
     let arms = [1, 2].map(|value| {
-        CState::new().with_memory(memory.clone().store(written.clone(), int32(value)))
+        ExecutionState::new().with_memory(memory.clone().store(written.clone(), int32(value)))
     });
     (memory, arms)
 }
@@ -372,8 +374,8 @@ fn interface_join_does_not_visit_cells_its_arms_share() {
         let siblings = [&then_state, &else_state];
         let ((from_then, from_else), work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                let abstract_arm = |state: &CState| {
-                    abstract_c_state_for_interface_join_across(state, &siblings, 0)
+                let abstract_arm = |state: &ExecutionState| {
+                    abstract_execution_state_for_interface_join_across(state, &siblings, 0)
                         .expect("the arms join")
                 };
                 let from_then = abstract_arm(&then_state);
@@ -407,7 +409,7 @@ fn interface_join_does_not_visit_cells_its_arms_share() {
 #[test]
 fn interface_join_does_not_visit_locals_its_arms_share() {
     let work_for = |kept: usize| {
-        let split = (0..kept).fold(CState::new(), |state, index| {
+        let split = (0..kept).fold(ExecutionState::new(), |state, index| {
             state.with_local(format!("kept{index}"), int32(index as u32))
         });
         let then_state = split.clone().with_local("picked", int32(1));
@@ -415,8 +417,8 @@ fn interface_join_does_not_visit_locals_its_arms_share() {
         let siblings = [&then_state, &else_state];
         let ((from_then, from_else), work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                let abstract_arm = |state: &CState| {
-                    abstract_c_state_for_interface_join_across(state, &siblings, 0)
+                let abstract_arm = |state: &ExecutionState| {
+                    abstract_execution_state_for_interface_join_across(state, &siblings, 0)
                         .expect("the arms join")
                 };
                 (abstract_arm(&then_state), abstract_arm(&else_state))
@@ -453,20 +455,20 @@ fn interface_join_provenance_uses_checked_arms_before_marker_union() {
         block: "global:branch-value".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let base = CMemory::new().with_block(pointer.block.clone(), 4);
-    let then_state = CState::new().with_memory(
+    let base = Memory::new().with_block(pointer.block.clone(), 4);
+    let then_state = ExecutionState::new().with_memory(
         base.clone()
             .store(pointer.clone(), int32(1))
             .with_block("havoc:7", 0),
     );
-    let else_state = CState::new().with_memory(
+    let else_state = ExecutionState::new().with_memory(
         base.clone()
             .store(pointer, int32(2))
             .with_block("havoc:8", 0),
     );
     let siblings = [&then_state, &else_state];
     let abstract_arm = |state| {
-        abstract_c_state_for_interface_join_across(state, &siblings, 9)
+        abstract_execution_state_for_interface_join_across(state, &siblings, 9)
             .expect("the checked arms can be abstracted")
     };
     let left = abstract_arm(&then_state);
@@ -484,13 +486,16 @@ fn binding_a_local_copies_a_search_path_not_the_frame() {
     // function's N parameters one at a time costs N log N, not N^2.
     let mut copied = Vec::new();
     for size in [64, 1024] {
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for index in 0..size {
-            state = state.with_local(format!("p{index}"), CValue::Int32(MachineTerm::constant(0)));
+            state = state.with_local(
+                format!("p{index}"),
+                ProgramValue::Int32(MachineTerm::constant(0)),
+            );
         }
         let shared = state.clone();
         let before = crate::persistent::persistent_node_allocations();
-        let bound = state.with_local("next", CValue::Int32(MachineTerm::constant(1)));
+        let bound = state.with_local("next", ProgramValue::Int32(MachineTerm::constant(1)));
         copied.push(crate::persistent::persistent_node_allocations() - before);
         assert!(shared.locals.get_native("next").as_deref().is_none());
         assert!(bound.locals.get_native("next").as_deref().is_some());

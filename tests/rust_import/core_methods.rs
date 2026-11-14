@@ -13,7 +13,7 @@ fn charon_core_methods_verify_against_their_library_contracts() {
     let p = Project::from_fixture("design/charon-trial/core-methods");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // Reject `min` returning `max` on distinct concrete inputs, rather than
     // searching for the false equality over arbitrary integers. The successful
@@ -31,7 +31,7 @@ fn smaller(a: u32, b: u32) -> u32 {
     unfold(u32::max(a, b));
 }"#;
     let (verified, work) = click::instrumentation::measure_deterministic_work(|| {
-        C0VerificationSession::new_program_prepared(witness, &prepared)
+        ProgramVerificationSession::new_program_prepared(witness, &prepared)
     });
     verified.unwrap_or_else(|error| panic!("{error:?}"));
     assert!(
@@ -40,7 +40,7 @@ fn smaller(a: u32, b: u32) -> u32 {
     );
     let invalid = witness.replace("ensures result == 1u32;", "ensures result == 2u32;");
     assert_ne!(witness, invalid);
-    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
         .err()
         .expect("`smaller(1, 2)` returning 2 must fail");
     assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
@@ -100,7 +100,7 @@ fn smaller(a: u32, b: u32) -> u32 {
             "{imports}\nverifying \"methods.rs\";\n{keyword} {}",
             item.replacen(before, after, 1)
         );
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
         let rendered = format!("{error:?} {error}");
@@ -108,5 +108,5 @@ fn smaller(a: u32, b: u32) -> u32 {
     }
     // A sidecar names the library function only after importing its module.
     let unimported = SIDECAR.replacen("import click::rust::u32;\n", "", 1);
-    assert!(C0VerificationSession::new_program_prepared(&unimported, &prepared).is_err());
+    assert!(ProgramVerificationSession::new_program_prepared(&unimported, &prepared).is_err());
 }

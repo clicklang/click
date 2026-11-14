@@ -16,11 +16,11 @@ fn parameterized_contract_project() -> Project {
 fn charon_parameterized_contract_fixes_its_value_where_attached() {
     let p = parameterized_contract_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let weak = SIDECAR.replacen("ensures result == x + 3;", "ensures result >= x;", 1);
     assert_ne!(weak, SIDECAR);
-    let error = C0VerificationSession::new_program_prepared(&weak, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&weak, &prepared)
         .err()
         .expect("a weaker `add3` contract does not meet `Adds`");
     let rendered = error.message();

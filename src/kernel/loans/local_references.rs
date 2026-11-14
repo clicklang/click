@@ -7,7 +7,7 @@
 
 use super::*;
 pub(super) mod scopes;
-use crate::kernel::{CType, Pointer};
+use crate::kernel::{Pointer, ProgramType};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(in crate::kernel) struct LocalReferenceId(u64);
@@ -16,8 +16,8 @@ pub(in crate::kernel) struct LocalReferenceId(u64);
 struct LocalReferenceBacking {
     holder: LoanParticipantId,
     support: ResourceOccurrenceId,
-    owned: CResourceFact,
-    value_type: CType,
+    owned: ResourceFact,
+    value_type: ProgramType,
     reservation: Option<Arc<crate::kernel::primitives::ReservedLocalScalarOwner>>,
 }
 
@@ -133,7 +133,7 @@ impl LoanLedger {
         holder: LoanParticipantId,
         resources: &ResourceContext,
         support: ResourceOccurrenceId,
-        value_type: CType,
+        value_type: ProgramType,
     ) -> Result<(LocalReferenceBinding, CheckedLoanTransition), LoanRefusal> {
         let owned = resources
             .owned_fact_for_occurrence(support)
@@ -198,7 +198,7 @@ impl LoanLedger {
         holder: LoanParticipantId,
         resources: &ResourceContext,
         pointer: &Pointer,
-        value_type: CType,
+        value_type: ProgramType,
     ) -> Result<(), LoanRefusal> {
         self.validate_local_reference(binding, holder, resources)?;
         if binding.backing.value_type != value_type
@@ -296,7 +296,7 @@ impl LoanLedger {
                 .is_some_and(|reservation| !reservation.matches(backing.support, &backing.owned))
             || !matches!(
                 backing.value_type,
-                CType::Int32 | CType::UInt8 | CType::UInt16 | CType::UInt32
+                ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt16 | ProgramType::UInt32
             )
             || backing
                 .owned

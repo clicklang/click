@@ -153,12 +153,12 @@ impl<'a> ProofScope<'a> {
                     };
                     let expected = match sort {
                         crate::kernel::Sort::Integer => (false, true),
-                        crate::kernel::Sort::CInt32
-                        | crate::kernel::Sort::CInt64
-                        | crate::kernel::Sort::CMachineInteger(_)
+                        crate::kernel::Sort::ProgramInt32
+                        | crate::kernel::Sort::ProgramInt64
+                        | crate::kernel::Sort::ProgramInteger(_)
                         | crate::kernel::Sort::Algebraic(_) => (false, false),
-                        crate::kernel::Sort::CPointer(_)
-                        | crate::kernel::Sort::CObjectPointer(_, _) => (true, false),
+                        crate::kernel::Sort::ProgramPointer(_)
+                        | crate::kernel::Sort::ProgramObjectPointer(_, _) => (true, false),
                         _ => {
                             return Err(self.root.step_error(
                                 "reported introductions use an unsupported `have` binder sort",

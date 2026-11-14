@@ -1,7 +1,7 @@
 use super::*;
 
-fn prove(body: &str) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    verify_c0_sources(
+fn prove(body: &str) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
+    verify_c_sources(
         &format!("verifying \"literals.rs\"; {body}"),
         &[("literals.rs", "")],
     )
@@ -118,7 +118,7 @@ fn rust_integer_literal_syntax_does_not_change_c_or_cpp_sidecars() {
             );
         }
     }
-    verify_c0_sources(
+    verify_c_sources(
         "verifying \"source.c\"; theorem legacy() {
         ensures 255u8 > 0u8 by { normalize(); }
         ensures 4294967295u32 > 0u32 by { normalize(); }
@@ -173,11 +173,11 @@ fn rust_shift_spelling_survives_expansion_and_rechecking() {
         }
     "#;
     let sources = [("literals.rs", "")];
-    verify_c0_sources(source, &sources).unwrap();
+    verify_c_sources(source, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source_by_label(source, &sources, "rust_shift.ensures_0").unwrap();
+        expand_c_claim_source_by_label(source, &sources, "rust_shift.ensures_0").unwrap();
     assert!(expanded.contains("<<"), "{expanded}");
-    crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .unwrap();
 }
 
@@ -194,11 +194,13 @@ fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
             (ContractExpression::RustShiftLeft(..), true)
                 | (ContractExpression::RustShiftRight(..), false)
         ));
-        let argument = crate::surface::lowering::resource_argument_to_c_expression(expression)
-            .expect("resource arguments retain the source shift");
+        let argument =
+            crate::surface::lowering::resource_argument_to_program_expression(expression)
+                .expect("resource arguments retain the source shift");
         assert!(matches!(
             (argument, left_shift),
-            (CExpression::RustShiftLeft(..), true) | (CExpression::RustShiftRight(..), false)
+            (ProgramExpression::RustShiftLeft(..), true)
+                | (ProgramExpression::RustShiftRight(..), false)
         ));
         let spelled = crate::surface::diagnostics::describe_contract_expression(expression);
         let reparsed = parser::parse(&format!(

@@ -16,7 +16,7 @@ impl FoldVariableRead {
     fn binder_sort(self, ty: &KernelType) -> bool {
         match self {
             Self::IntegerFree | Self::IntegerBinders => *ty == KernelType::Integer,
-            Self::MachineCapture | Self::MachineBinders => matches!(ty, KernelType::C(_)),
+            Self::MachineCapture | Self::MachineBinders => matches!(ty, KernelType::Program(_)),
             Self::ExpressionFree => true,
         }
     }
@@ -148,7 +148,7 @@ pub(super) fn common_variables(
                         leaf_variables.insert(*variable);
                     }
                 }
-                KernelType::C(_) => collect_machine_leaf(
+                KernelType::Program(_) => collect_machine_leaf(
                     &MachineTerm::Variable(*variable),
                     mode,
                     &mut leaf_variables,
@@ -172,10 +172,21 @@ pub(super) fn common_variables(
                 if !finish {
                     pending.push((term, true));
                     pending.extend(term.children().iter().rev().map(|child| (child, false)));
+                    if let KernelTermNode::Match(matched) = term.node() {
+                        pending.extend(
+                            matched
+                                .arms
+                                .iter()
+                                .flat_map(|arm| &arm.bindings)
+                                .map(|child| (child, false)),
+                        );
+                    }
                     continue;
                 }
                 let mut result = Variables::default();
-                if let KernelTermNode::Fold(fold) = term.node() {
+                if let KernelTermNode::Match(matched) = term.node() {
+                    result = super::retained_matches::match_variables(matched, mode, summaries);
+                } else if let KernelTermNode::Fold(fold) = term.node() {
                     for child in &fold.arguments[..3] {
                         result = union(&result, &summaries[&child.id()]);
                     }
@@ -274,7 +285,7 @@ fn collect_argument(
                 collect_machine_bitvector_variables(value, variables)
             }
             PureFunctionArgument::Value(value) => {
-                collect_c_value_bitvector_variables(value, variables)
+                collect_program_value_bitvector_variables(value, variables)
             }
             PureFunctionArgument::Algebraic(value) => {
                 collect_algebraic_term_bitvector_variables(value, variables)
@@ -283,7 +294,7 @@ fn collect_argument(
                 memory, pointer, ..
             } => {
                 collect_memory_bitvector_variables(memory, variables);
-                collect_c_value_bitvector_variables(pointer, variables);
+                collect_program_value_bitvector_variables(pointer, variables);
             }
         },
     }
@@ -424,8 +435,9 @@ mod tests {
 
     #[test]
     fn retained_fold_collectors_keep_call_connection_modes_query_local() {
-        let value =
-            |n| PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(Variable(n))));
+        let value = |n| {
+            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(n))))
+        };
         let integer = |n| PureFunctionArgument::Integer(IntegerTerm::Variable(Variable(n)).into());
         let source = IntegerTerm::RangeFold {
             index: IntegerRangeFoldIndex::Integer {
@@ -560,13 +572,19 @@ pub(super) fn collect_native_fold_variables(
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
 ) -> bool {
-    if !matches!(term, IntegerTerm::RangeFold { .. }) {
+    if !matches!(
+        term,
+        IntegerTerm::RangeFold { .. } | IntegerTerm::AlgebraicMatch { .. }
+    ) {
         return false;
     }
     let root = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
-    let KernelTermNode::Fold(fold) = root.node() else {
-        unreachable!("migrated Integer fold");
-    };
-    collect_fold_variables(fold, mode, variables);
+    match root.node() {
+        KernelTermNode::Fold(fold) => collect_fold_variables(fold, mode, variables),
+        KernelTermNode::Match(matched) => {
+            super::retained_matches::collect_match_variables(matched, mode, variables)
+        }
+        _ => unreachable!("migrated Integer scope"),
+    }
     true
 }

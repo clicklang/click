@@ -33,7 +33,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         let first = before.clone().store(at(block("global:h"), 0), one());
         let second = before.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::Int32(MachineTerm::constant(2)),
         );
         let joined = first
             .clone()
@@ -46,7 +46,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         // Warm only the common prefix. The query below must inspect the
         // new branch delta, not repeat all of that prefix's work.
         let expected = last_same_point(
-            Resource::Cell {
+            TrackedResource::Cell {
                 pointer: &cell,
                 bytes: 8,
             },
@@ -54,7 +54,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         );
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
             last_same_point(
-                Resource::Cell {
+                TrackedResource::Cell {
                     pointer: &cell,
                     bytes: 8,
                 },
@@ -75,7 +75,7 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
     let cell = at(block("global:g"), 0);
     let mut memory = entry_memory();
     let expected = last_same_point(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &cell,
             bytes: 8,
         },
@@ -85,11 +85,11 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
     for index in 0..32 {
         let left = memory.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(MachineTerm::constant(index * 2)),
+            ProgramValue::Int32(MachineTerm::constant(index * 2)),
         );
         let right = memory.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(MachineTerm::constant(index * 2 + 1)),
+            ProgramValue::Int32(MachineTerm::constant(index * 2 + 1)),
         );
         memory = left
             .clone()
@@ -101,7 +101,7 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
             .unwrap();
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
             last_same_point(
-                Resource::Cell {
+                TrackedResource::Cell {
                     pointer: &cell,
                     bytes: 8,
                 },
@@ -128,12 +128,12 @@ fn adjacent_cell_preservation_costs_only_the_selected_edge() {
         let assumptions = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                let previous = intern_c_memory(memory.clone());
+                let previous = intern_memory(memory.clone());
                 memory = memory
                     .clone()
                     .store(at(block("global:unrelated"), index * 4), one());
                 let source = cell_source::memory_dag_cell_source(
-                    &intern_c_memory(memory.clone()),
+                    &intern_memory(memory.clone()),
                     &cell,
                     4,
                     &assumptions,
@@ -173,7 +173,7 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
             for i in 0..size {
                 memory = memory.clone().store(
                     at(block("local:f:i"), 0),
-                    CValue::Int32(MachineTerm::constant(i)),
+                    ProgramValue::Int32(MachineTerm::constant(i)),
                 );
                 let here = point(&memory);
                 assert_eq!(
@@ -214,7 +214,7 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
 fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
     let samples = [8usize, 16, 32, 64].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let entry = intern_c_memory(CMemory::new());
+        let entry = intern_memory(Memory::new());
         let mut memory = entry.memory().clone();
         for index in 0..size {
             memory = memory.store(
@@ -228,7 +228,7 @@ fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
                 let pointer = at(PointerBlock::ExternalArgument, index as i64 * 4);
                 assert_eq!(
                     last_same_point(
-                        Resource::Cell {
+                        TrackedResource::Cell {
                             pointer: &pointer,
                             bytes: 4
                         },
@@ -259,14 +259,14 @@ fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
         for size in [4, 16, 64] {
             let pointer = at(block("global:g"), 0);
             let assumptions = PureFactContext::new();
-            let mut before = CMemory::new()
+            let mut before = Memory::new()
                 .with_block(block("global:g"), 4)
                 .with_block(block("global:h"), (size * 4) as u32);
             for index in 0..size {
                 before = before.store(pointer.clone(), one());
                 before = before.store(at(block("global:h"), index * 4), one());
             }
-            let forgotten = intern_c_memory(before.without_possible_aliasing_cells(
+            let forgotten = intern_memory(before.without_possible_aliasing_cells(
                 &pointer.offset_by_bytes(1),
                 1,
                 &assumptions,
@@ -291,31 +291,31 @@ fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
 
 #[test]
 fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
-    use crate::kernel::{CResourceFact, CallKeptRanges, ResourceContext};
+    use crate::kernel::{CallKeptRanges, ResourceContext, ResourceFact};
     let mut samples = Vec::new();
     for size in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(980115));
         let ambiguous = Pointer::symbolic(Variable(980116));
         let range = |base: Pointer, count: u32| {
-            CMemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 1)
+            MemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 1)
         };
         let mut owners = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(range(field.clone(), 8)));
+            .unchecked_with_fact(ResourceFact::own_memory(range(field.clone(), 8)));
         for index in 0..size {
             owners = owners
-                .unchecked_with_fact(CResourceFact::own_memory(range(
+                .unchecked_with_fact(ResourceFact::own_memory(range(
                     Pointer::symbolic(Variable(981000 + u64::from(index))),
                     8,
                 )))
-                .unchecked_with_fact(CResourceFact::own_memory(range(
+                .unchecked_with_fact(ResourceFact::own_memory(range(
                     ambiguous.clone(),
                     index + 16,
                 )));
         }
-        let base = CMemory::new();
-        let before = intern_c_memory(base.clone());
-        let after = intern_c_memory(base.with_loop_memory_havoc_preserving_frame(
+        let base = Memory::new();
+        let before = intern_memory(base.clone());
+        let after = intern_memory(base.with_loop_memory_havoc_preserving_frame(
             Variable(980117),
             &std::collections::BTreeSet::new(),
             Some(&[range(field.clone(), 128), range(ambiguous.clone(), 128)]),
@@ -353,7 +353,7 @@ fn cold_cell_source_lookup_does_not_search_older_stores() {
         for index in 0..size {
             memory = memory.store(at(block("global:other"), index * 4), one());
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let facts = PureFactContext::new();
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
             cell_source::memory_dag_cell_source(&memory, &cell, 4, &facts, false).unwrap()
@@ -397,14 +397,14 @@ fn cold_cell_source_lookup_does_not_search_older_stores() {
             matches!(answer, cell_source::MemoryDagCell::Stored { value, .. } if value == one())
         );
         assert!(walked >= size as usize, "size={size}: {walked}");
-        let latest = intern_c_memory(
+        let latest = intern_memory(
             memory
                 .memory()
                 .clone()
-                .store(cell.clone(), CValue::Int32(2u32.into())),
+                .store(cell.clone(), ProgramValue::Int32(2u32.into())),
         );
         assert!(
-            matches!(cell_source::memory_dag_cell_source(&latest, &cell, 4, &facts, false), Some(cell_source::MemoryDagCell::Stored { value, .. }) if value == CValue::Int32(2u32.into()))
+            matches!(cell_source::memory_dag_cell_source(&latest, &cell, 4, &facts, false), Some(cell_source::MemoryDagCell::Stored { value, .. }) if value == ProgramValue::Int32(2u32.into()))
         );
         assert!(!matches!(
             cell_source::memory_dag_cell_source(&latest, &cell, 8, &facts, false),
@@ -427,7 +427,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(crate::kernel::Variable(1081601));
-        let memory = intern_c_memory(CMemory::new().store(address.clone(), one()));
+        let memory = intern_memory(Memory::new().store(address.clone(), one()));
         let read =
             MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32);
         let mut root =
@@ -464,10 +464,10 @@ fn shared_conditional_guard_reads_keep_snapshot_identity_in_linear_work() {
     };
     for size in [16usize, 64, 256] {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new().with_declared_scalar_block(
+        let memory = intern_memory(Memory::new().with_declared_scalar_block(
             block("global:g"),
             4,
-            CType::Int32,
+            ProgramType::Int32,
         ));
         let pointer = at(block("global:g"), 0);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
@@ -476,7 +476,8 @@ fn shared_conditional_guard_reads_keep_snapshot_identity_in_linear_work() {
             MachineTerm::constant(0),
         );
         let guard = KernelTermImport::default().condition(&guard);
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998201));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998201));
         for _ in 0..size {
             root = KernelTerm::machine_if_shared(
                 MachineIntegerType::Int32,

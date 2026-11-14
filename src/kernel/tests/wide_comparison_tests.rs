@@ -3,74 +3,78 @@ use num_bigint::BigInt;
 
 const LEFT: Variable = Variable(166_001);
 const RIGHT: Variable = Variable(166_002);
-const OPERATORS: [CComparisonOperator; 6] = [
-    CComparisonOperator::Equal,
-    CComparisonOperator::NotEqual,
-    CComparisonOperator::LessThan,
-    CComparisonOperator::LessEqual,
-    CComparisonOperator::GreaterThan,
-    CComparisonOperator::GreaterEqual,
+const OPERATORS: [ComparisonOperator; 6] = [
+    ComparisonOperator::Equal,
+    ComparisonOperator::NotEqual,
+    ComparisonOperator::LessThan,
+    ComparisonOperator::LessEqual,
+    ComparisonOperator::GreaterThan,
+    ComparisonOperator::GreaterEqual,
 ];
 
-fn compare(operator: CComparisonOperator, a: CExpression, b: CExpression) -> CExpression {
+fn compare(
+    operator: ComparisonOperator,
+    a: ProgramExpression,
+    b: ProgramExpression,
+) -> ProgramExpression {
     match operator {
-        CComparisonOperator::Equal => c_equal(a, b),
-        CComparisonOperator::NotEqual => c_not_equal(a, b),
-        CComparisonOperator::LessThan => c_less_than(a, b),
-        CComparisonOperator::LessEqual => c_less_equal(a, b),
-        CComparisonOperator::GreaterThan => c_greater_than(a, b),
-        CComparisonOperator::GreaterEqual => c_greater_equal(a, b),
+        ComparisonOperator::Equal => crate::kernel::program_expression::equal(a, b),
+        ComparisonOperator::NotEqual => crate::kernel::program_expression::not_equal(a, b),
+        ComparisonOperator::LessThan => crate::kernel::program_expression::less_than(a, b),
+        ComparisonOperator::LessEqual => crate::kernel::program_expression::less_equal(a, b),
+        ComparisonOperator::GreaterThan => crate::kernel::program_expression::greater_than(a, b),
+        ComparisonOperator::GreaterEqual => crate::kernel::program_expression::greater_equal(a, b),
     }
 }
 
-fn condition(operator: CComparisonOperator, ty: MachineIntegerType) -> ConditionTerm {
+fn condition(operator: ComparisonOperator, ty: MachineIntegerType) -> ConditionTerm {
     let a = IntegerTerm::from_machine(ty, MachineTerm::Variable(LEFT)).unwrap();
     let b = IntegerTerm::from_machine(ty, MachineTerm::Variable(RIGHT)).unwrap();
     match operator {
-        CComparisonOperator::Equal => ConditionTerm::integer_equal(a, b),
-        CComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(a, b),
-        CComparisonOperator::LessThan => ConditionTerm::integer_less_than(a, b),
-        CComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(a, b),
-        CComparisonOperator::GreaterThan => ConditionTerm::integer_greater_than(a, b),
-        CComparisonOperator::GreaterEqual => ConditionTerm::integer_greater_equal(a, b),
+        ComparisonOperator::Equal => ConditionTerm::integer_equal(a, b),
+        ComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(a, b),
+        ComparisonOperator::LessThan => ConditionTerm::integer_less_than(a, b),
+        ComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(a, b),
+        ComparisonOperator::GreaterThan => ConditionTerm::integer_greater_than(a, b),
+        ComparisonOperator::GreaterEqual => ConditionTerm::integer_greater_equal(a, b),
     }
 }
 
-fn complement(operator: CComparisonOperator) -> CComparisonOperator {
+fn complement(operator: ComparisonOperator) -> ComparisonOperator {
     match operator {
-        CComparisonOperator::Equal => CComparisonOperator::NotEqual,
-        CComparisonOperator::NotEqual => CComparisonOperator::Equal,
-        CComparisonOperator::LessThan => CComparisonOperator::GreaterEqual,
-        CComparisonOperator::LessEqual => CComparisonOperator::GreaterThan,
-        CComparisonOperator::GreaterThan => CComparisonOperator::LessEqual,
-        CComparisonOperator::GreaterEqual => CComparisonOperator::LessThan,
+        ComparisonOperator::Equal => ComparisonOperator::NotEqual,
+        ComparisonOperator::NotEqual => ComparisonOperator::Equal,
+        ComparisonOperator::LessThan => ComparisonOperator::GreaterEqual,
+        ComparisonOperator::LessEqual => ComparisonOperator::GreaterThan,
+        ComparisonOperator::GreaterThan => ComparisonOperator::LessEqual,
+        ComparisonOperator::GreaterEqual => ComparisonOperator::LessThan,
     }
 }
 
-fn symbolic(operator: CComparisonOperator, ty: MachineIntegerType) -> CExpression {
+fn symbolic(operator: ComparisonOperator, ty: MachineIntegerType) -> ProgramExpression {
     let value = |variable| {
-        CExpression::Value(match ty {
-            MachineIntegerType::Int128 => CValue::Int128(MachineTerm::Variable(variable)),
-            MachineIntegerType::UInt128 => CValue::UInt128(MachineTerm::Variable(variable)),
+        ProgramExpression::Value(match ty {
+            MachineIntegerType::Int128 => ProgramValue::Int128(MachineTerm::Variable(variable)),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(MachineTerm::Variable(variable)),
             _ => unreachable!(),
         })
     };
     compare(operator, value(LEFT), value(RIGHT))
 }
 
-fn paths(expression: &CExpression, context: &PureFactContext) -> Vec<CExpressionPath> {
-    evaluate_c_expression_paths(
-        &CState::new(),
+fn paths(expression: &ProgramExpression, context: &PureFactContext) -> Vec<ExpressionPath> {
+    evaluate_program_expression_paths(
+        &ExecutionState::new(),
         expression,
         context,
-        &mut ExecutionBudget::for_c_expression(expression),
+        &mut ExecutionBudget::for_program_expression(expression),
     )
     .unwrap()
 }
 
-fn outcome(expression: CExpression) -> CExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
-    let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+fn outcome(expression: ProgramExpression) -> ExpressionOutcome {
+    let theorem = prove_program_expression_evaluation(ExecutionState::new(), expression).unwrap();
+    let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
     outcome.clone()
@@ -104,7 +108,7 @@ fn wide_comparison_constants_match_full_width_ordering_oracle() {
         ),
     ] {
         let literal = |value: &BigInt| {
-            CExpression::Value(
+            ProgramExpression::Value(
                 ty.constant_value(
                     MachineIntegerConstant::from_integer(ty.format(), value).unwrap(),
                 )
@@ -115,16 +119,16 @@ fn wide_comparison_constants_match_full_width_ordering_oracle() {
             for b in &values {
                 for operator in OPERATORS {
                     let expected = match operator {
-                        CComparisonOperator::Equal => a == b,
-                        CComparisonOperator::NotEqual => a != b,
-                        CComparisonOperator::LessThan => a < b,
-                        CComparisonOperator::LessEqual => a <= b,
-                        CComparisonOperator::GreaterThan => a > b,
-                        CComparisonOperator::GreaterEqual => a >= b,
+                        ComparisonOperator::Equal => a == b,
+                        ComparisonOperator::NotEqual => a != b,
+                        ComparisonOperator::LessThan => a < b,
+                        ComparisonOperator::LessEqual => a <= b,
+                        ComparisonOperator::GreaterThan => a > b,
+                        ComparisonOperator::GreaterEqual => a >= b,
                     };
                     assert_eq!(
                         outcome(compare(operator, literal(a), literal(b))),
-                        CExpressionOutcome::Value(int32(u32::from(expected))),
+                        ExpressionOutcome::Value(int32(u32::from(expected))),
                         "{ty:?} {a} {operator:?} {b}"
                     );
                 }
@@ -144,7 +148,7 @@ fn wide_comparison_symbolic_paths_retain_exact_true_and_false_guards() {
             for (path, truth) in output.iter().zip([true, false]) {
                 assert_eq!(
                     path.outcome,
-                    CExpressionOutcome::Value(int32(u32::from(truth)))
+                    ExpressionOutcome::Value(int32(u32::from(truth)))
                 );
                 assert!(
                     path.facts.iter().any(|fact| fact.proposition()
@@ -162,10 +166,12 @@ fn wide_comparison_symbolic_paths_retain_exact_true_and_false_guards() {
                 assert_eq!(known.len(), 1);
                 assert_eq!(
                     known[0].outcome,
-                    CExpressionOutcome::Value(int32(u32::from(truth)))
+                    ExpressionOutcome::Value(int32(u32::from(truth)))
                 );
             }
-            assert!(prove_c_expression_evaluation(CState::new(), expression).is_none());
+            assert!(
+                prove_program_expression_evaluation(ExecutionState::new(), expression).is_none()
+            );
         }
     }
 }
@@ -174,41 +180,62 @@ fn wide_comparison_symbolic_paths_retain_exact_true_and_false_guards() {
 fn wide_comparison_requires_explicit_promotions_and_preserves_operand_failures() {
     for operator in OPERATORS {
         for (a, b) in [
-            (c_int128_literal(7), c_uint128_literal(3)),
-            (c_int128_literal(7), c_int64_literal(3)),
-            (c_uint128_literal(7), c_int32_literal(3)),
-            (c_uint128_literal(7), c_void_value()),
+            (
+                crate::kernel::program_expression::int128_literal(7),
+                crate::kernel::program_expression::uint128_literal(3),
+            ),
+            (
+                crate::kernel::program_expression::int128_literal(7),
+                crate::kernel::program_expression::int64_literal(3),
+            ),
+            (
+                crate::kernel::program_expression::uint128_literal(7),
+                crate::kernel::program_expression::int32_literal(3),
+            ),
+            (
+                crate::kernel::program_expression::uint128_literal(7),
+                program_void_value(),
+            ),
         ] {
             assert_eq!(
                 outcome(compare(operator, a, b)),
-                CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+                ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
             );
         }
-        let converted = c_integer_cast_modulo(c_int64_literal(-1), CType::UInt128);
+        let converted = crate::kernel::program_expression::integer_cast_modulo(
+            crate::kernel::program_expression::int64_literal(-1),
+            ProgramType::UInt128,
+        );
         assert_eq!(
             outcome(compare(
-                CComparisonOperator::GreaterThan,
+                ComparisonOperator::GreaterThan,
                 converted,
-                c_uint128_literal(7)
+                crate::kernel::program_expression::uint128_literal(7)
             )),
-            CExpressionOutcome::Value(int32(1))
+            ExpressionOutcome::Value(int32(1))
         );
         for on_left in [false, true] {
             for (bad, expected) in [
                 (
-                    c_divide(c_int128_literal(1), c_int128_literal(0)),
-                    CUndefinedBehavior::DivisionByZero,
+                    crate::kernel::program_expression::divide(
+                        crate::kernel::program_expression::int128_literal(1),
+                        crate::kernel::program_expression::int128_literal(0),
+                    ),
+                    UndefinedBehavior::DivisionByZero,
                 ),
                 (
-                    c_remainder(c_int128_literal(i128::MIN), c_int128_literal(-1)),
-                    CUndefinedBehavior::SignedOverflow,
+                    crate::kernel::program_expression::remainder(
+                        crate::kernel::program_expression::int128_literal(i128::MIN),
+                        crate::kernel::program_expression::int128_literal(-1),
+                    ),
+                    UndefinedBehavior::SignedOverflow,
                 ),
             ] {
-                let good = c_int128_literal(0);
+                let good = crate::kernel::program_expression::int128_literal(0);
                 let (a, b) = if on_left { (bad, good) } else { (good, bad) };
                 assert_eq!(
                     outcome(compare(operator, a, b)),
-                    CExpressionOutcome::UndefinedBehavior(expected)
+                    ExpressionOutcome::UndefinedBehavior(expected)
                 );
             }
         }

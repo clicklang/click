@@ -24,7 +24,8 @@ pub(super) fn check_native_parity(root: KernelTerm, destination: MachineIntegerT
         crate::kernel::machine_integer::conversion::convert_value(native, destination).unwrap();
     for count in [1, 3] {
         let exports = KernelTermExport::machine_export_count();
-        let (path, _) = super::identity_cast_tests::cast_chain(&root, destination.c_type(), count);
+        let (path, _) =
+            super::identity_cast_tests::cast_chain(&root, destination.program_type(), count);
         assert!(matches!(path.value, SpecValue::Shared(_)));
         assert!(path.facts.is_empty());
         assert!(path.obligations.is_empty());
@@ -67,9 +68,11 @@ fn retained_signedness_casts_match_native_terms_and_boundary_constants() {
             for leaf in leaves {
                 let root = KernelTerm::retained_native_machine_operand(source, &leaf);
                 check_native_parity(root.clone(), destination);
-                let intermediate =
-                    shared_machine::cast_signedness(&SpecValue::Shared(root), destination.c_type())
-                        .unwrap();
+                let intermediate = shared_machine::cast_signedness(
+                    &SpecValue::Shared(root),
+                    destination.program_type(),
+                )
+                .unwrap();
                 check_native_parity(intermediate, source);
             }
         }
@@ -93,24 +96,24 @@ fn signed_64_conversion_preserves_existing_extension_spellings() {
 #[test]
 fn signedness_producer_leaves_other_cast_boundaries_unchanged() {
     let _session = VerificationSession::enter();
-    let native = SpecValue::Native(CValue::Int32(MachineTerm::Variable(Variable(995423))));
-    assert!(shared_machine::cast_signedness(&native, CType::UInt32).is_none());
+    let native = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995423))));
+    assert!(shared_machine::cast_signedness(&native, ProgramType::UInt32).is_none());
     let general_call = SpecValue::Shared(KernelTermImport::default().machine(
         MachineIntegerType::Int32,
         &MachineTerm::opaque_conversion("unmigrated_call", MachineTerm::Variable(Variable(995426))),
     ));
-    assert!(shared_machine::cast_signedness(&general_call, CType::UInt32).is_none());
+    assert!(shared_machine::cast_signedness(&general_call, ProgramType::UInt32).is_none());
     let root = KernelTermImport::default().machine(
         MachineIntegerType::Int32,
         &MachineTerm::Variable(Variable(995423)),
     );
     let value = SpecValue::Shared(root);
     for target in [
-        CType::Int32,
-        CType::UInt8,
-        CType::Int64,
-        CType::UInt128,
-        CType::Bool,
+        ProgramType::Int32,
+        ProgramType::UInt8,
+        ProgramType::Int64,
+        ProgramType::UInt128,
+        ProgramType::Bool,
     ] {
         assert!(shared_machine::cast_signedness(&value, target).is_none());
     }
@@ -118,7 +121,7 @@ fn signedness_producer_leaves_other_cast_boundaries_unchanged() {
         MachineIntegerType::Int128,
         &MachineTerm::Variable(Variable(995424)),
     ));
-    assert!(shared_machine::cast_signedness(&wide, CType::UInt128).is_none());
+    assert!(shared_machine::cast_signedness(&wide, ProgramType::UInt128).is_none());
 }
 
 mod scaling_tests {
@@ -133,8 +136,9 @@ fn cast_variable_guards_keep_native_spelling_without_exporting_arithmetic() {
     for (source, destination) in [PAIRS[2], (PAIRS[2].1, PAIRS[2].0)] {
         let variable = MachineTerm::Variable(Variable(995427));
         let root = KernelTermImport::default().machine(source, &variable);
-        let cast = shared_machine::cast_signedness(&SpecValue::Shared(root), destination.c_type())
-            .unwrap();
+        let cast =
+            shared_machine::cast_signedness(&SpecValue::Shared(root), destination.program_type())
+                .unwrap();
         let zero =
             crate::kernel::machine_integer::range::constant_word(destination, &0.into()).unwrap();
         let native =

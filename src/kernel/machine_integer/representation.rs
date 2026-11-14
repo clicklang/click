@@ -564,7 +564,7 @@ mod mixed_observation_tests {
         for ty in [T::Int128, T::UInt128] {
             let shared = SharedMachineIntegerTerm::from_shared(
                 ty,
-                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007005)),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007005)),
             )
             .unwrap();
             let native = SharedMachineIntegerTerm::intern(ty, opaque());
@@ -581,7 +581,7 @@ mod mixed_observation_tests {
     fn mixed_operation_readings_still_require_each_exact_range_premise() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007010));
+        let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007010));
         let shared = SharedMachineIntegerTerm::from_shared(
             ty,
             KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]),

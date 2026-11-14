@@ -210,7 +210,7 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
     )?;
     // The theorem's parameters shadow any C local of the same name: the
     // application binds them, not the state.
-    let bind = |state: &CState| {
+    let bind = |state: &ExecutionState| {
         values.iter().fold(state.clone(), |state, (name, value)| {
             state.with_local(name.clone(), value.clone())
         })

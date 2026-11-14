@@ -160,7 +160,7 @@ C syntax embedded in a Click contract or tactic to identify an expression,
 ### C0
 
 The historical name for the part of C that Click models. Documentation now says
-supported C; the C front end's Rust types, such as `C0Type` and
+supported C; the C front end's Rust types, such as `InterfaceType` and
 `C0Expression`, keep the old name. See [Supported C](language/c.md).
 
 ### Canonical form
@@ -666,7 +666,7 @@ facts, not contract clauses.
 
 A contiguous half-open region of a memory block. Surface ranges use element
 indices such as `p[start..end]`; lowering converts them to byte offsets in a
-kernel `CMemoryRange`.
+kernel `MemoryRange`.
 
 ### Modus ponens
 
@@ -1092,7 +1092,7 @@ connected by the memory derivation DAG.
 ### Symbolic state
 
 The modeled C state on one execution path: local values, memory, resource
-facts, and the population authority ledger. `CState` is the kernel representation;
+facts, and the population authority ledger. `ExecutionState` is the kernel representation;
 logical proposition facts and execution-control data live alongside it.
 
 ### Symbolic value

@@ -72,19 +72,19 @@ fn retained_widening_casts_match_native_terms_at_every_supported_width() {
 #[test]
 fn widening_producer_keeps_other_boundaries_outside_its_slice() {
     let _session = VerificationSession::enter();
-    let native = SpecValue::Native(CValue::Int32(MachineTerm::Variable(Variable(995431))));
-    assert!(shared_machine::cast_widening(&native, CType::Int64).is_none());
+    let native = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995431))));
+    assert!(shared_machine::cast_widening(&native, ProgramType::Int64).is_none());
     let root = KernelTermImport::default().machine(
         MachineIntegerType::Int32,
         &MachineTerm::Variable(Variable(995431)),
     );
     for target in [
-        CType::Int8,
-        CType::UInt16,
-        CType::Int32,
-        CType::UInt32,
-        CType::Int128,
-        CType::Bool,
+        ProgramType::Int8,
+        ProgramType::UInt16,
+        ProgramType::Int32,
+        ProgramType::UInt32,
+        ProgramType::Int128,
+        ProgramType::Bool,
     ] {
         assert!(shared_machine::cast_widening(&SpecValue::Shared(root.clone()), target).is_none());
     }
@@ -95,7 +95,7 @@ fn widening_producer_keeps_other_boundaries_outside_its_slice() {
             MachineTerm::Variable(Variable(995431)),
         ),
     );
-    assert!(shared_machine::cast_widening(&SpecValue::Shared(call), CType::Int64).is_none());
+    assert!(shared_machine::cast_widening(&SpecValue::Shared(call), ProgramType::Int64).is_none());
 }
 
 mod scaling_tests {

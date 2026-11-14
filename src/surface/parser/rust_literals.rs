@@ -51,19 +51,19 @@ impl IntegerSuffix {
         }
     }
 
-    /// The suffix of the fixed-width integer type `c_type`; plain `char`
+    /// The suffix of the fixed-width integer type `interface_type`; plain `char`
     /// takes the byte type of its signedness.
-    pub(super) fn of_c_type(c_type: C0Type) -> Option<Self> {
+    pub(super) fn of_c_type(interface_type: InterfaceType) -> Option<Self> {
         use crate::languages::c::syntax::PlainChar;
-        Some(match c_type {
-            C0Type::Int8 | C0Type::Char(PlainChar::Signed) => Self::I8,
-            C0Type::Int16 => Self::I16,
-            C0Type::Int32 => Self::I32,
-            C0Type::Int64(_) => Self::I64,
-            C0Type::UInt8 | C0Type::Char(PlainChar::Unsigned) => Self::U8,
-            C0Type::UInt16 => Self::U16,
-            C0Type::UInt32 => Self::U32,
-            C0Type::UInt64(_) => Self::U64,
+        Some(match interface_type {
+            InterfaceType::Int8 | InterfaceType::Char(PlainChar::Signed) => Self::I8,
+            InterfaceType::Int16 => Self::I16,
+            InterfaceType::Int32 => Self::I32,
+            InterfaceType::Int64(_) => Self::I64,
+            InterfaceType::UInt8 | InterfaceType::Char(PlainChar::Unsigned) => Self::U8,
+            InterfaceType::UInt16 => Self::U16,
+            InterfaceType::UInt32 => Self::U32,
+            InterfaceType::UInt64(_) => Self::U64,
             _ => return None,
         })
     }
@@ -156,7 +156,7 @@ impl IntegerLiteral {
         )
     }
 
-    pub(super) fn native_value(&self, negative: bool) -> Result<CValue, String> {
+    pub(super) fn native_value(&self, negative: bool) -> Result<ProgramValue, String> {
         let suffix = self.suffix.expect("typed literal");
         let (signed, width) = suffix.signed_width();
         if negative && !signed {
@@ -192,24 +192,24 @@ impl IntegerLiteral {
         Ok(match suffix {
             IntegerSuffix::I8 => crate::kernel::int8(narrow),
             IntegerSuffix::I16 => crate::kernel::int16(narrow),
-            IntegerSuffix::I32 => CValue::Int32(narrow),
+            IntegerSuffix::I32 => ProgramValue::Int32(narrow),
             IntegerSuffix::U8 => crate::kernel::uint8(narrow),
             IntegerSuffix::U16 => crate::kernel::uint16(narrow),
             IntegerSuffix::U32 => crate::kernel::uint32(narrow),
             IntegerSuffix::I64 | IntegerSuffix::Isize => {
-                CValue::Int64(MachineTerm::int64_constant(bits as i64))
+                ProgramValue::Int64(MachineTerm::int64_constant(bits as i64))
             }
             IntegerSuffix::U64 | IntegerSuffix::Usize => {
-                CValue::UInt64(MachineTerm::uint64_constant(bits))
+                ProgramValue::UInt64(MachineTerm::uint64_constant(bits))
             }
         })
     }
 
     pub(super) fn contract_expression(&self, negative: bool) -> Result<ContractExpression, String> {
         if self.suffix.is_some() {
-            return Ok(ContractExpression::CFragment(CExpression::Value(
-                self.native_value(negative)?,
-            )));
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(self.native_value(negative)?),
+            ));
         }
         let expression = ContractExpression::IntegerLiteral(self.digits.clone());
         Ok(if negative {
@@ -235,7 +235,7 @@ impl IntegerLiteral {
         Ok(if negative { -value } else { value })
     }
 
-    pub(super) fn c_expression(&self, negative: bool) -> Result<C0Expression, String> {
+    pub(super) fn program_expression(&self, negative: bool) -> Result<C0Expression, String> {
         let value = if self.suffix.is_some() {
             self.native_value(negative)?
         } else {
@@ -245,64 +245,66 @@ impl IntegerLiteral {
                 .map_err(|_| "integer literal does not fit a native integer".to_string())?;
             if negative {
                 if magnitude <= 1 << 31 {
-                    CValue::Int32(MachineTerm::constant(0u32.wrapping_sub(magnitude as u32)))
+                    ProgramValue::Int32(MachineTerm::constant(0u32.wrapping_sub(magnitude as u32)))
                 } else if magnitude <= 1 << 63 {
-                    CValue::Int64(MachineTerm::int64_constant(
+                    ProgramValue::Int64(MachineTerm::int64_constant(
                         0u64.wrapping_sub(magnitude) as i64
                     ))
                 } else {
                     return Err("negative integer literal does not fit i64".into());
                 }
             } else if magnitude <= i32::MAX as u64 {
-                CValue::Int32(MachineTerm::constant(magnitude as u32))
+                ProgramValue::Int32(MachineTerm::constant(magnitude as u32))
             } else if magnitude <= i64::MAX as u64 {
-                CValue::Int64(MachineTerm::int64_constant(magnitude as i64))
+                ProgramValue::Int64(MachineTerm::int64_constant(magnitude as i64))
             } else {
-                CValue::UInt64(MachineTerm::uint64_constant(magnitude))
+                ProgramValue::UInt64(MachineTerm::uint64_constant(magnitude))
             }
         };
         // A narrow value's constant is native; its literal reads its value.
         let value = match &value {
-            CValue::Int8(term)
-            | CValue::UInt8(term)
-            | CValue::Int16(term)
-            | CValue::UInt16(term) => {
-                let ty = crate::kernel::MachineIntegerType::from_c_type(value.c_type())
+            ProgramValue::Int8(term)
+            | ProgramValue::UInt8(term)
+            | ProgramValue::Int16(term)
+            | ProgramValue::UInt16(term) => {
+                let ty = crate::kernel::MachineIntegerType::from_program_type(value.program_type())
                     .expect("a narrow integer type");
                 let word = ty
                     .constant_from_term(term)
                     .and_then(crate::kernel::MachineIntegerConstant::to_i128)
                     .expect("literal constants") as i32 as u32;
                 match value {
-                    CValue::Int8(_) => CValue::Int8(MachineTerm::constant(word)),
-                    CValue::UInt8(_) => CValue::UInt8(MachineTerm::constant(word)),
-                    CValue::Int16(_) => CValue::Int16(MachineTerm::constant(word)),
-                    _ => CValue::UInt16(MachineTerm::constant(word)),
+                    ProgramValue::Int8(_) => ProgramValue::Int8(MachineTerm::constant(word)),
+                    ProgramValue::UInt8(_) => ProgramValue::UInt8(MachineTerm::constant(word)),
+                    ProgramValue::Int16(_) => ProgramValue::Int16(MachineTerm::constant(word)),
+                    _ => ProgramValue::UInt16(MachineTerm::constant(word)),
                 }
             }
             _ => value,
         };
         Ok(match value {
-            CValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
-            CValue::UInt8(bits32_constant!(bits)) => {
+            ProgramValue::Int32(bits32_constant!(bits)) => {
+                C0Expression::Int32Literal(constant_u32(bits))
+            }
+            ProgramValue::UInt8(bits32_constant!(bits)) => {
                 C0Expression::UInt8Literal(constant_u32(bits) as u8)
             }
-            CValue::UInt32(bits32_constant!(bits)) => {
+            ProgramValue::UInt32(bits32_constant!(bits)) => {
                 C0Expression::UInt32Literal(constant_u32(bits))
             }
-            CValue::Int64(int64_constant!(value)) => {
+            ProgramValue::Int64(int64_constant!(value)) => {
                 C0Expression::Int64Literal(constant_i64(value))
             }
-            CValue::UInt64(uint64_constant!(value)) => {
+            ProgramValue::UInt64(uint64_constant!(value)) => {
                 C0Expression::UInt64Literal(constant_u64(value))
             }
-            CValue::Int8(bits32_constant!(bits))
-            | CValue::Int16(bits32_constant!(bits))
-            | CValue::UInt16(bits32_constant!(bits)) => C0Expression::Cast {
-                c_type: match value {
-                    CValue::Int8(_) => C0Type::Int8,
-                    CValue::Int16(_) => C0Type::Int16,
-                    _ => C0Type::UInt16,
+            ProgramValue::Int8(bits32_constant!(bits))
+            | ProgramValue::Int16(bits32_constant!(bits))
+            | ProgramValue::UInt16(bits32_constant!(bits)) => C0Expression::Cast {
+                interface_type: match value {
+                    ProgramValue::Int8(_) => InterfaceType::Int8,
+                    ProgramValue::Int16(_) => InterfaceType::Int16,
+                    _ => InterfaceType::UInt16,
                 },
                 expression: Box::new(C0Expression::Int32Literal(constant_u32(bits))),
                 struct_name: None,
@@ -381,7 +383,7 @@ mod tests {
         assert!(matches!(
             expression,
             C0Expression::Cast {
-                c_type: C0Type::UInt16,
+                interface_type: InterfaceType::UInt16,
                 ..
             }
         ));

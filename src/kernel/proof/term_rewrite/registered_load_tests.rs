@@ -6,25 +6,25 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{
-    CMemory, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, Pointer, PointerBlock,
-    PointerOffsetTerm, SharedCMemory, SharedIntegerRangeEndpoint, SharedIntegerTerm,
-    SharedMachineIntegerTerm, Term, Variable,
+    IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, Memory, Pointer, PointerBlock,
+    PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm,
+    SharedMemory, Term, Variable,
 };
 use std::collections::BTreeMap;
 
-fn memory() -> SharedCMemory {
-    crate::kernel::intern_c_memory(CMemory::new().with_block("registered-load-capture", 64))
+fn memory() -> SharedMemory {
+    crate::kernel::intern_memory(Memory::new().with_block("registered-load-capture", 64))
 }
 
 #[test]
 fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(memory().memory().clone().store(
+    let memory = crate::kernel::intern_memory(memory().memory().clone().store(
         Pointer {
             block: PointerBlock::Concrete("registered-load-capture".into()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(MachineTerm::constant(7)),
     ));
     let from = MachineTerm::Variable(Variable(3_219_010));
     let to = MachineTerm::Variable(Variable(3_219_011));
@@ -69,7 +69,7 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     );
 }
 
-fn exact_load(memory: &SharedCMemory, pointer: &Pointer) -> Variable {
+fn exact_load(memory: &SharedMemory, pointer: &Pointer) -> Variable {
     crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -112,7 +112,7 @@ fn machine_variable(variable: Variable) -> IntegerTerm {
 }
 
 #[test]
-fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
+fn checked_program_substitution_reserves_free_integer_in_registered_load_pointer() {
     let memory = memory();
     let source = Variable(3_210_000);
     let free_integer = Variable(3_210_001);
@@ -175,7 +175,7 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
 }
 
 #[test]
-fn checked_c_substitution_reserves_free_c_in_registered_load_pointer() {
+fn checked_program_substitution_reserves_free_program_in_registered_load_pointer() {
     let memory = memory();
     let source = Variable(3_220_000);
     let free_c = Variable(3_220_001);
@@ -279,11 +279,11 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_snapshot() {
     };
     let load = exact_load(&memory, &pointer);
     let input = Term::Integer(machine_variable(load));
-    let c_replacements = BTreeMap::new();
+    let program_replacements = BTreeMap::new();
     let integer_replacements = BTreeMap::from([(source, IntegerTerm::constant_i64(9))]);
     let algebraic_replacements = BTreeMap::new();
     let mut rewrite = TermRewrite::for_checked_typed_variables(
-        &c_replacements,
+        &program_replacements,
         &integer_replacements,
         &algebraic_replacements,
     );
@@ -320,8 +320,8 @@ fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
         format,
         MachineBinaryOp::Add,
         [
-            KernelTerm::variable(KernelType::C(CType::Int32), load),
-            KernelTerm::variable(KernelType::C(CType::Int32), load),
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), load),
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), load),
         ],
     );
     let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
@@ -412,22 +412,22 @@ fn structural_read_replacement_matches_retained_name_at_native_value_boundary() 
 fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(3_219_020));
-    let memory = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), CValue::Int32(37u32.into())),
+    let memory = crate::kernel::intern_memory(
+        Memory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
     );
     let relation = |term: MachineTerm| {
-        let parent = CResource::Composite {
+        let parent = Resource::Composite {
             name: "storage".into(),
             arguments: vec![AlgebraicValue::Integer(
                 IntegerTerm::from_machine(MachineIntegerType::Int32, term.clone()).unwrap(),
             )]
             .into(),
         };
-        let child = CResource::Composite {
+        let child = Resource::Composite {
             name: "allocation".into(),
-            arguments: vec![AlgebraicValue::C(CValue::Int32(term))].into(),
+            arguments: vec![AlgebraicValue::Program(ProgramValue::Int32(term))].into(),
         };
-        Proposition::CResourceContains {
+        Proposition::ResourceContains {
             parent: Box::new(parent),
             child: Box::new(child),
         }
@@ -446,8 +446,8 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         crate::kernel::eval::comparison_form(&other_address),
         Some(expected.clone())
     );
-    let other_memory = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), CValue::Int32(38u32.into())),
+    let other_memory = crate::kernel::intern_memory(
+        Memory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
     );
     assert_ne!(
         crate::kernel::eval::comparison_form(&relation(read(other_memory, address))),

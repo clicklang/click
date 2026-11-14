@@ -2,33 +2,37 @@
 //! and domain. Operand equalities cannot replace that source during lowering.
 use super::*;
 
-fn observe(value: &CValue) -> Option<IntegerTerm> {
-    let ty = match value.c_type() {
-        CType::Bool => MachineIntegerType::UInt8,
-        ty => MachineIntegerType::from_c_type(ty)?,
+fn observe(value: &ProgramValue) -> Option<IntegerTerm> {
+    let ty = match value.program_type() {
+        ProgramType::Bool => MachineIntegerType::UInt8,
+        ty => MachineIntegerType::from_program_type(ty)?,
     };
-    IntegerTerm::from_machine(ty, crate::kernel::spec::c_value_bitvector_term(value)?)
+    IntegerTerm::from_machine(
+        ty,
+        crate::kernel::spec::program_value_bitvector_term(value)?,
+    )
 }
 
 pub(super) fn apply(
     op: MachineBinaryOp,
     division: SpecDivision,
-    left: &CValue,
-    right: &CValue,
+    left: &ProgramValue,
+    right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     let destination = match op {
         MachineBinaryOp::Multiply
-            if (matches!(left, CValue::Int128(_)) || matches!(right, CValue::Int128(_)))
-                && !matches!(left, CValue::UInt128(_))
-                && !matches!(right, CValue::UInt128(_)) =>
+            if (matches!(left, ProgramValue::Int128(_))
+                || matches!(right, ProgramValue::Int128(_)))
+                && !matches!(left, ProgramValue::UInt128(_))
+                && !matches!(right, ProgramValue::UInt128(_)) =>
         {
             MachineIntegerType::Int128
         }
         MachineBinaryOp::Divide | MachineBinaryOp::Remainder => match (left, right) {
-            (CValue::Int128(_), CValue::Int128(_)) => MachineIntegerType::Int128,
-            (CValue::UInt128(_), CValue::UInt128(_)) => MachineIntegerType::UInt128,
+            (ProgramValue::Int128(_), ProgramValue::Int128(_)) => MachineIntegerType::Int128,
+            (ProgramValue::UInt128(_), ProgramValue::UInt128(_)) => MachineIntegerType::UInt128,
             _ => return None,
         },
         _ => return None,
@@ -99,10 +103,10 @@ pub(super) fn apply(
             value: result.into(),
             destination,
         });
-    Some(CExpressionPath {
-        outcome: CExpressionOutcome::Value(match destination {
-            MachineIntegerType::Int128 => CValue::Int128(term),
-            MachineIntegerType::UInt128 => CValue::UInt128(term),
+    Some(ExpressionPath {
+        outcome: ExpressionOutcome::Value(match destination {
+            MachineIntegerType::Int128 => ProgramValue::Int128(term),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(term),
             _ => unreachable!(),
         }),
         facts: facts.clone(),
@@ -114,12 +118,12 @@ pub(super) fn apply(
 mod tests {
     use super::*;
 
-    fn value(format: MachineIntegerType, constant: i128) -> CValue {
+    fn value(format: MachineIntegerType, constant: i128) -> ProgramValue {
         let term =
             crate::kernel::machine_integer::range::constant_word(format, &constant.into()).unwrap();
         match format {
-            MachineIntegerType::Int128 => CValue::Int128(term),
-            MachineIntegerType::UInt128 => CValue::UInt128(term),
+            MachineIntegerType::Int128 => ProgramValue::Int128(term),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(term),
             _ => unreachable!(),
         }
     }
@@ -142,7 +146,7 @@ mod tests {
             .unwrap();
             assert!(matches!(
                 path.outcome,
-                CExpressionOutcome::Value(CValue::Int128(_))
+                ExpressionOutcome::Value(ProgramValue::Int128(_))
             ));
             assert!(path.facts.is_empty());
             assert!(
@@ -159,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn a_wide_zero_divisor_is_owed_only_by_c_definedness() {
+    fn a_wide_zero_divisor_is_owed_only_by_program_definedness() {
         for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
             for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
                 let (left, right) = (value(format, 1), value(format, 0));
@@ -173,8 +177,9 @@ mod tests {
                 )
                 .unwrap();
                 // The value is the opaque quotient, never a chosen constant.
-                let CExpressionOutcome::Value(CValue::Int128(term) | CValue::UInt128(term)) =
-                    &total.outcome
+                let ExpressionOutcome::Value(
+                    ProgramValue::Int128(term) | ProgramValue::UInt128(term),
+                ) = &total.outcome
                 else {
                     panic!("a wide quotient has a wide value");
                 };
@@ -220,9 +225,9 @@ mod tests {
                 )
                 .unwrap();
                 let execute = match op {
-                    MachineBinaryOp::Multiply => apply_c_multiply,
-                    MachineBinaryOp::Divide => apply_c_divide,
-                    MachineBinaryOp::Remainder => apply_c_remainder,
+                    MachineBinaryOp::Multiply => apply_program_multiply,
+                    MachineBinaryOp::Divide => apply_program_divide,
+                    MachineBinaryOp::Remainder => apply_program_remainder,
                     _ => unreachable!(),
                 };
                 let execution = execute(

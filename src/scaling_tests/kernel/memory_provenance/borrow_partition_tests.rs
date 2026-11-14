@@ -12,15 +12,15 @@ fn borrow_partition_query_does_not_scan_unrelated_resources_or_history() {
     for size in [4u64, 16, 64, 256] {
         let (_, mut source, write, read) = resources();
         let mut context = PureFactContext::new()
-            .assume_proposition(Proposition::CResourceComposition(source.clone()));
+            .assume_proposition(Proposition::ResourceComposition(source.clone()));
         let (_, admission) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 source = source
                     .clone()
-                    .unchecked_with_fact(CResourceFact::own_memory(range(910_000 + index)));
+                    .unchecked_with_fact(ResourceFact::own_memory(range(910_000 + index)));
                 context = context
                     .clone()
-                    .assume_proposition(Proposition::CResourceComposition(source.clone()));
+                    .assume_proposition(Proposition::ResourceComposition(source.clone()));
             }
         });
         // Populate the same query's lazy caches before each measured batch;

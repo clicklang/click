@@ -2,18 +2,18 @@ use super::*;
 use crate::kernel::prelude::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn pending_malloc(state: &CState) -> CState {
-    let paths = execute_c_statement_paths(
+fn pending_malloc(state: &ExecutionState) -> ExecutionState {
+    let paths = execute_execution_statement_paths(
         state,
-        &c_heap_allocate("p", 16),
+        &program_heap_allocate("p", 16),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("actual malloc statement executes");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             ..
         },
     ] = paths.as_slice()
@@ -23,9 +23,9 @@ fn pending_malloc(state: &CState) -> CState {
     *pending.clone()
 }
 
-fn resolved_malloc(pending: &CState, success: bool) -> CState {
+fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
     let local_native_output_27 = pending.locals().get_native("p");
-    let Some(CValue::Pointer(pointer)) = local_native_output_27.as_deref() else {
+    let Some(ProgramValue::Pointer(pointer)) = local_native_output_27.as_deref() else {
         panic!("pending allocation has a result pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
@@ -37,26 +37,26 @@ fn resolved_malloc(pending: &CState, success: bool) -> CState {
 
 #[test]
 fn only_successful_real_malloc_records_creation() {
-    let entry = CState::new()
-        .with_local("p", CValue::pointer(Pointer::null()))
+    let entry = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(Pointer::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&entry);
     let local_native_output_43 = pending.locals().get_native("p");
-    let Some(CValue::Pointer(pending_pointer)) = local_native_output_43.as_deref() else {
+    let Some(ProgramValue::Pointer(pending_pointer)) = local_native_output_43.as_deref() else {
         unreachable!();
     };
     assert!(!pending.population_storage_created_here(pending_pointer));
 
     let failed = resolved_malloc(&pending, false);
     let local_native_output_49 = failed.locals().get_native("p");
-    let Some(CValue::Pointer(failed_pointer)) = local_native_output_49.as_deref() else {
+    let Some(ProgramValue::Pointer(failed_pointer)) = local_native_output_49.as_deref() else {
         unreachable!();
     };
     assert!(!failed.population_storage_created_here(failed_pointer));
 
     let succeeded = resolved_malloc(&pending, true);
     let local_native_output_55 = succeeded.locals().get_native("p");
-    let Some(CValue::Pointer(created)) = local_native_output_55.as_deref() else {
+    let Some(ProgramValue::Pointer(created)) = local_native_output_55.as_deref() else {
         unreachable!();
     };
     assert!(succeeded.population_storage_created_here(created));
@@ -72,29 +72,29 @@ fn only_successful_real_malloc_records_creation() {
         "opt-in cannot reset a live provenance ledger"
     );
 
-    let imported = CState::new()
+    let imported = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_heap_allocation_claim(created.pointer().clone(), HeapExtent::int32(16))
                 .expect("assumed allocation claim"),
         );
     assert!(!imported.population_storage_created_here(created));
 
-    let helper = c_function(
-        CType::Void,
+    let helper = program_function(
+        ProgramType::Void,
         "helper",
-        vec![c_parameter("q", CType::Int32Pointer)],
-        c_return(c_void_value()),
+        vec![program_parameter("q", ProgramType::Int32Pointer)],
+        program_return(program_void_value()),
     );
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &succeeded,
         &helper,
-        &[CValue::pointer(created.pointer().clone())],
+        &[ProgramValue::pointer(created.pointer().clone())],
     )
     .expect("bind actual helper environment");
     let local_native_output_92 = callee.locals().get_native("q");
-    let Some(CValue::Pointer(copied)) = local_native_output_92.as_deref() else {
+    let Some(ProgramValue::Pointer(copied)) = local_native_output_92.as_deref() else {
         unreachable!();
     };
     assert!(!callee.population_storage_created_here(copied));
@@ -133,17 +133,17 @@ fn only_successful_real_malloc_records_creation() {
         "the new identity preserves the caller's creation right"
     );
 
-    let freed = execute_c_statement_paths(
+    let freed = execute_execution_statement_paths(
         &succeeded,
-        &c_heap_free(c_variable("p")),
+        &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free executes");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(after_free),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(after_free),
             ..
         },
     ] = freed.as_slice()
@@ -153,7 +153,9 @@ fn only_successful_real_malloc_records_creation() {
     assert!(!after_free.population_storage_created_here(created));
 
     let untracked = resolved_malloc(
-        &pending_malloc(&CState::new().with_local("p", CValue::pointer(Pointer::null()))),
+        &pending_malloc(
+            &ExecutionState::new().with_local("p", ProgramValue::pointer(Pointer::null())),
+        ),
         true,
     );
     assert!(untracked.population_effects.creation.is_none());
@@ -161,35 +163,35 @@ fn only_successful_real_malloc_records_creation() {
 
 #[test]
 fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
-    let caller = CState::new()
-        .with_local("p", CValue::pointer(Pointer::null()))
+    let caller = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(Pointer::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&caller);
     let local_native_output_163 = pending.locals().get_native("p");
-    let Some(CValue::Pointer(pending_pointer)) = local_native_output_163.as_deref() else {
+    let Some(ProgramValue::Pointer(pending_pointer)) = local_native_output_163.as_deref() else {
         unreachable!();
     };
-    let helper = c_function(
-        CType::Int32,
+    let helper = program_function(
+        ProgramType::Int32,
         "resolve_in_helper",
-        vec![c_parameter("q", CType::Int32Pointer)],
-        c_if(
-            c_variable("q"),
-            c_return(c_int32_literal(1)),
-            c_return(c_int32_literal(0)),
+        vec![program_parameter("q", ProgramType::Int32Pointer)],
+        program_if(
+            crate::kernel::program_expression::variable("q"),
+            program_return(crate::kernel::program_expression::int32_literal(1)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         ),
     );
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &pending,
         &helper,
-        &[CValue::pointer(pending_pointer.pointer().clone())],
+        &[ProgramValue::pointer(pending_pointer.pointer().clone())],
     )
     .expect("bind actual helper environment");
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &callee,
         helper.body(),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("helper decides caller's pending malloc result");
@@ -197,11 +199,11 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
     let mut saw_success = false;
     let mut saw_failure = false;
     for path in paths {
-        let CStatementOutcome::Return { value, state } = path.outcome else {
+        let StatementOutcome::Return { value, state } = path.outcome else {
             panic!("helper must return from both branches");
         };
         let local_native_output_197 = state.locals().get_native("q");
-        let Some(CValue::Pointer(pointer)) = local_native_output_197.as_deref() else {
+        let Some(ProgramValue::Pointer(pointer)) = local_native_output_197.as_deref() else {
             panic!("helper retains its resolved parameter");
         };
         assert!(!state.memory().has_pending_heap_allocation());
@@ -214,11 +216,11 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
         );
         if pointer.pointer() == &Pointer::null() {
             saw_failure = true;
-            assert_eq!(*value.native(), CValue::Int32(0.into()));
+            assert_eq!(*value.native(), ProgramValue::Int32(0.into()));
             assert!(!resumed.population_storage_created_here(pointer));
         } else {
             saw_success = true;
-            assert_eq!(*value.native(), CValue::Int32(1.into()));
+            assert_eq!(*value.native(), ProgramValue::Int32(1.into()));
             assert!(matches!(pointer.block, PointerBlock::Heap(_)));
             assert!(resumed.population_storage_created_here(pointer));
         }
@@ -228,18 +230,18 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
 
 #[test]
 fn actual_stack_declaration_grants_one_lifetime_creation_event() {
-    let entry = CState::new().with_population_creation_tracking();
-    let paths = execute_c_statement_paths(
+    let entry = ExecutionState::new().with_population_creation_tracking();
+    let paths = execute_execution_statement_paths(
         &entry,
-        &c_declare("x", CType::Int32),
+        &program_declare("x", ProgramType::Int32),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("declaration executes");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(declared),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(declared),
             ..
         },
     ] = paths.as_slice()
@@ -254,17 +256,17 @@ fn actual_stack_declaration_grants_one_lifetime_creation_event() {
     let ended = crate::kernel::eval::end_scope_automatic_lifetimes(declared, &["x".to_owned()])
         .expect("scope exit");
     assert!(!ended.population_storage_created_here(&slot));
-    let second = execute_c_statement_paths(
+    let second = execute_execution_statement_paths(
         &ended,
-        &c_declare("x", CType::Int32),
+        &program_declare("x", ProgramType::Int32),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("re-enter declaration");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(second),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(second),
             ..
         },
     ] = second.as_slice()
@@ -364,7 +366,7 @@ fn repeated_entry_recheck_reuses_the_same_creation_environment() {
 }
 
 #[test]
-fn rechecking_c_creation_events_reuses_exact_successor_roots() {
+fn rechecking_storage_creation_events_reuses_exact_successor_roots() {
     let live = PointerBlock::Heap(940_107);
     let start = CreationEvents::new();
     assert_eq!(start.created(live.clone()), start.created(live));
@@ -383,7 +385,7 @@ fn member_description(block: PointerBlock) -> ResourceDescription {
     ResourceDescription::new(
         "reference".into(),
         vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block,
                 offset: PointerOffsetTerm::Constant(0),
             })
@@ -399,7 +401,7 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     let description = ResourceDescription::new(
         "reference".into(),
         vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Variable(Variable(940_110)),
             })
@@ -486,7 +488,7 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     let other = ResourceDescription::new(
         "reference".into(),
         vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Variable(Variable(940_111)),
             })
@@ -514,12 +516,12 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
         Err(CreationRefusal::OpaqueImportConflict)
     );
 
-    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
-    let member = CResourceFact::own(CResource::Composite {
+    let authority = ResourceFact::own(Resource::PopulationAuthority(description.clone()));
+    let member = ResourceFact::own(Resource::Composite {
         name: "reference".into(),
         arguments: description.arguments().to_vec().into(),
     });
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(
             ResourceContext::new().unchecked_with_facts([authority.clone(), member]),
@@ -1229,85 +1231,89 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(940_112)),
     };
-    let selected = CResourceFact::own(CResource::Composite {
+    let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
-        arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+        arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
     });
-    let reference = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let reference = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "reference".into(),
-        vec![c_variable("p")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("p")],
+        vec![ProgramType::Int32Pointer],
     );
-    let authority = CResourceSpec::new(
-        CResourceTerm::PopulationAuthority {
+    let authority = ResourceSpec::new(
+        ResourceTerm::PopulationAuthority {
             population_arity: None,
-            protected: Box::new(CResourceTypeSpec {
+            protected: Box::new(ResourceTypeSpec {
                 resource: Box::new(reference),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
             }),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
     let cell = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
-            pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
+            pointer: Box::new(SpecExpression::ProgramExpression(
+                crate::kernel::program_expression::variable("p"),
+            )),
             elements: Box::new(SpecExpression::Value(int32(0))),
             byte_width: 4,
         }),
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     };
     let count = SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::CExpression(c_variable("p")))],
+        arguments: vec![Some(SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("p"),
+        ))],
     };
-    let mut definition = CCompositeResourceDefinition::new(
+    let mut definition = CompositeResourceDefinition::new(
         "control",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![
-            CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+            ResourceSpec::owned_memory(MemorySegment::new(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             )),
             authority,
         ],
         vec![SpecProposition::Comparison {
             left: cell,
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: count,
         }],
     );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let entry = state.population_effects.creation.as_ref().unwrap();
-    let wildcard = CResourceSpec::new(
-        CResourceTerm::PopulationAuthority {
+    let wildcard = ResourceSpec::new(
+        ResourceTerm::PopulationAuthority {
             population_arity: Some(2),
-            protected: Box::new(CResourceTypeSpec {
-                resource: Box::new(CResourceSpec::composite(
-                    CResourceAccessMode::Own,
+            protected: Box::new(ResourceTypeSpec {
+                resource: Box::new(ResourceSpec::composite(
+                    ResourceAccessMode::Own,
                     "item".into(),
-                    vec![c_variable("p")],
-                    vec![CType::Int32Pointer],
+                    vec![crate::kernel::program_expression::variable("p")],
+                    vec![ProgramType::Int32Pointer],
                 )),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
             }),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
     definition.contains.push(wildcard);
@@ -1365,7 +1371,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
         vec![scope.arguments()[0].clone(), int32(7).into()].into(),
         scope.schema().clone(),
     );
-    let fact = CResourceFact::own(CResource::Composite {
+    let fact = ResourceFact::own(Resource::Composite {
         name: member.family().into(),
         arguments: member.arguments().to_vec().into(),
     });
@@ -1415,12 +1421,12 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
             .is_err()
     );
     let mut wrong_args = member.arguments().to_vec();
-    wrong_args[0] = CValue::pointer(Pointer {
+    wrong_args[0] = ProgramValue::pointer(Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(912),
     })
     .into();
-    let wrong = CResourceFact::own(CResource::Composite {
+    let wrong = ResourceFact::own(Resource::Composite {
         name: member.family().into(),
         arguments: wrong_args.into(),
     });
@@ -1454,64 +1460,68 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(940_112)),
     };
-    let selected = CResourceFact::own(CResource::Composite {
+    let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
-        arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+        arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
     });
-    let reference = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let reference = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "reference".into(),
-        vec![c_variable("p")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("p")],
+        vec![ProgramType::Int32Pointer],
     );
-    let authority = CResourceSpec::new(
-        CResourceTerm::PopulationAuthority {
+    let authority = ResourceSpec::new(
+        ResourceTerm::PopulationAuthority {
             population_arity: None,
-            protected: Box::new(CResourceTypeSpec {
+            protected: Box::new(ResourceTypeSpec {
                 resource: Box::new(reference),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
             }),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
     let cell = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
-            pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
+            pointer: Box::new(SpecExpression::ProgramExpression(
+                crate::kernel::program_expression::variable("p"),
+            )),
             elements: Box::new(SpecExpression::Value(int32(0))),
             byte_width: 4,
         }),
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     };
     let count = SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::CExpression(c_variable("p")))],
+        arguments: vec![Some(SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("p"),
+        ))],
     };
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "control",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![
-            CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+            ResourceSpec::owned_memory(MemorySegment::new(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             )),
             authority,
         ],
         vec![SpecProposition::Comparison {
             left: cell,
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: count,
         }],
     );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let entry = state.population_effects.creation.as_ref().unwrap();
@@ -1520,7 +1530,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         .expect("checked control body authenticates its entry count");
     let description = ResourceDescription::new(
         "reference".into(),
-        vec![CValue::pointer(pointer.clone()).into()].into(),
+        vec![ProgramValue::pointer(pointer.clone()).into()].into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
     let observed = imported.observe_symbolic(&description).unwrap();
@@ -1530,7 +1540,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
     assert!(imported.observe_symbolic(&wrong_population).is_none());
-    let member = CResourceFact::own(CResource::Composite {
+    let member = ResourceFact::own(Resource::Composite {
         name: "reference".into(),
         arguments: description.arguments().to_vec().into(),
     });
@@ -1575,11 +1585,11 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     );
     let count_expression = SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::Value(CValue::pointer(
+        arguments: vec![Some(SpecExpression::Value(ProgramValue::pointer(
             pointer.clone(),
         )))],
     };
-    let evaluate_count = |state: &CState| {
+    let evaluate_count = |state: &ExecutionState| {
         crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
             state,
             &count_expression,
@@ -1597,7 +1607,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     // retains the same count and custody. It grants no import or creator right.
     let mut replacement_definition = definition.clone();
     replacement_definition.name = "replacement".into();
-    let replacement = CResourceFact::own(CResource::Composite {
+    let replacement = ResourceFact::own(Resource::Composite {
         name: "replacement".into(),
         arguments: description.arguments().to_vec().into(),
     });
@@ -1652,11 +1662,10 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let absent_control = folded.clone().with_resource_context(ResourceContext::new());
     assert!(evaluate_count(&absent_control).is_err());
     let viewed_control = folded.clone().with_resource_context(
-        ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::View(selected.resource().clone())),
+        ResourceContext::new().unchecked_with_fact(ResourceFact::View(selected.resource().clone())),
     );
     assert!(evaluate_count(&viewed_control).is_err());
-    let unrelated_control = CResourceFact::own(CResource::Composite {
+    let unrelated_control = ResourceFact::own(Resource::Composite {
         name: "other_control".into(),
         arguments: wrong_population.arguments().to_vec().into(),
     });
@@ -1677,7 +1686,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             .value
             .clone()
             .into_native(),
-        CValue::Int32(MachineTerm::constant(0))
+        ProgramValue::Int32(MachineTerm::constant(0))
     );
     let mut nested_control = folded.clone();
     Arc::make_mut(&mut nested_control.population_effects).creation = Some(imported.enter_call());
@@ -1693,8 +1702,8 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         state
             .clone()
             .with_resource_context(
-                ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-                    CResource::PopulationAuthority(description.clone()),
+                ResourceContext::new().unchecked_with_fact(ResourceFact::own(
+                    Resource::PopulationAuthority(description.clone()),
                 )),
             );
     Arc::make_mut(&mut projected.population_effects).creation = Some(imported.clone());
@@ -1703,7 +1712,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         paths[0].value.clone().into_native(),
-        CValue::Int32(MachineTerm::MemoryLoad(_, _, _))
+        ProgramValue::Int32(MachineTerm::MemoryLoad(_, _, _))
     ));
     // A population entry in the ledger is insufficient without current
     // ownership. Preserve the same ledger while changing only custody.
@@ -1715,8 +1724,8 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         projected
             .clone()
             .with_resource_context(
-                ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-                    CResource::PopulationAuthority(wrong_population.clone()),
+                ResourceContext::new().unchecked_with_fact(ResourceFact::own(
+                    Resource::PopulationAuthority(wrong_population.clone()),
                 )),
             );
     assert!(evaluate_count(&unrelated).is_err());
@@ -1735,7 +1744,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             .value
             .clone()
             .into_native(),
-        CValue::Int32(MachineTerm::constant(0))
+        ProgramValue::Int32(MachineTerm::constant(0))
     );
     assert!(
         evaluate_count(&state).is_err(),
@@ -1757,7 +1766,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let wrong = ResourceDescription::new(
         "reference".into(),
         vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Variable(Variable(940_113)),
             })
@@ -1793,7 +1802,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
             .is_ok()
     );
-    let missing = CState::new().with_population_creation_tracking();
+    let missing = ExecutionState::new().with_population_creation_tracking();
     assert!(
         entry
             .import_checked_control_wrapper(
@@ -1913,7 +1922,7 @@ fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
     let offset = ResourceDescription::new(
         "reference".into(),
         vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: block.clone(),
                 offset: PointerOffsetTerm::Constant(4),
             })
@@ -2157,7 +2166,7 @@ fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
     let wrong_offset = ResourceDescription::new(
         "reference".into(),
         vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: block.clone(),
                 offset: PointerOffsetTerm::Constant(4),
             })
@@ -2432,7 +2441,7 @@ fn opaque_numeric_count_delta_survives_exact_call_custody() {
 fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
     let block = PointerBlock::ExternalArgument;
     let description = member_description(block.clone());
-    let [AlgebraicValue::C(pointer)] = description.arguments() else {
+    let [AlgebraicValue::Program(pointer)] = description.arguments() else {
         panic!("pointer anchor")
     };
     let count = SpecExpression::CountedResourceCount {
@@ -2441,10 +2450,10 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
     };
     let evaluate = |events: CreationEvents| {
         let mut state =
-            CState::new()
+            ExecutionState::new()
                 .with_population_creation_tracking()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own(CResource::PopulationAuthority(description.clone())),
+                    ResourceFact::own(Resource::PopulationAuthority(description.clone())),
                 ));
         Arc::make_mut(&mut state.population_effects).creation = Some(events);
         crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
@@ -2481,11 +2490,11 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
     }
     assert_eq!(
         evaluate(born)[0].value.clone().into_native(),
-        CValue::Int32(MachineTerm::constant(9))
+        ProgramValue::Int32(MachineTerm::constant(9))
     );
     assert_eq!(
         evaluate(spent)[0].value.clone().into_native(),
-        CValue::Int32(MachineTerm::constant(5))
+        ProgramValue::Int32(MachineTerm::constant(5))
     );
     let mut overflow = import((i32::MAX - 1) as u32);
     for _ in 0..2 {
@@ -2505,19 +2514,19 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
 #[test]
 fn count_uses_its_written_anchor_not_a_proven_alias() {
     let description = member_description(PointerBlock::ExternalArgument);
-    let [AlgebraicValue::C(CValue::Pointer(anchor))] = description.arguments() else {
+    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
         panic!("pointer anchor")
     };
     let alias = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
     };
-    let count_of = |pointer: CPointerValue| SpecExpression::CountedResourceCount {
+    let count_of = |pointer: PointerValue| SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::Value(CValue::Pointer(pointer)))],
+        arguments: vec![Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))],
     };
     let anchor_count = count_of(anchor.clone());
-    let alias_count = count_of(CPointerValue::new(alias.clone(), anchor.c_type()));
+    let alias_count = count_of(PointerValue::new(alias.clone(), anchor.program_type()));
     let events = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -2527,36 +2536,37 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
             None,
         )
         .unwrap();
-    let mut state = CState::new()
+    let mut state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-                CResource::PopulationAuthority(description.clone()),
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own(
+                Resource::PopulationAuthority(description.clone()),
             )),
         );
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
     let equal = PureFactContext::new().assume_condition(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(alias, CType::Int32Pointer)),
+            Box::new(PointerValue::new(alias, ProgramType::Int32Pointer)),
             Box::new(anchor.clone()),
         ),
         true,
     );
-    let evaluate = |state: &CState, count: &SpecExpression, assumptions: &PureFactContext| {
-        crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
-            state,
-            count,
-            assumptions,
-            &BTreeMap::new(),
-            &mut ExecutionBudget::default(),
-        )
-    };
+    let evaluate =
+        |state: &ExecutionState, count: &SpecExpression, assumptions: &PureFactContext| {
+            crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                state,
+                count,
+                assumptions,
+                &BTreeMap::new(),
+                &mut ExecutionBudget::default(),
+            )
+        };
     assert_eq!(
         evaluate(&state, &anchor_count, &PureFactContext::new()).unwrap()[0]
             .value
             .clone()
             .into_native(),
-        CValue::Int32(MachineTerm::constant(7))
+        ProgramValue::Int32(MachineTerm::constant(7))
     );
     assert!(
         evaluate(&state, &alias_count, &equal).is_err(),
@@ -2656,13 +2666,13 @@ mod wildcard_scope_tests {
 
     fn description(block: &PointerBlock, keys: &[u32]) -> ResourceDescription {
         let mut arguments = vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: block.clone(),
                 offset: PointerOffsetTerm::Constant(0),
             })
             .into(),
         ];
-        arguments.extend(keys.iter().map(|key| AlgebraicValue::C(int32(*key))));
+        arguments.extend(keys.iter().map(|key| AlgebraicValue::Program(int32(*key))));
         ResourceDescription::new(
             "slot".into(),
             arguments.into(),
@@ -2676,7 +2686,7 @@ mod wildcard_scope_tests {
     }
 
     fn opaque_scope(index: u32) -> (ResourceDescription, ResourceDescription) {
-        let anchor = CValue::pointer(Pointer {
+        let anchor = ProgramValue::pointer(Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
         });
@@ -2856,7 +2866,7 @@ mod wildcard_scope_tests {
             .unwrap();
         let key = MachineTerm::Variable(Variable(9_870_001));
         let mut arguments = member.arguments().to_vec();
-        arguments[1] = AlgebraicValue::C(CValue::Int32(key));
+        arguments[1] = AlgebraicValue::Program(ProgramValue::Int32(key));
         let aliased = ResourceDescription::new(
             member.family().into(),
             arguments.into(),
@@ -3200,7 +3210,7 @@ mod wildcard_scope_tests {
             .unwrap();
         let known = description(&pool, &[7]);
         let mut arguments = known.arguments().to_vec();
-        arguments[1] = AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
+        arguments[1] = AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
             Variable::allocate_fresh().unwrap(),
         )));
         let unknown =
@@ -3225,7 +3235,7 @@ mod wildcard_scope_tests {
             .checked_establish(&pool, &scope)
             .unwrap();
         let mut arguments = description(&pool, &[0]).arguments().to_vec();
-        let pointer = CValue::pointer(Pointer {
+        let pointer = ProgramValue::pointer(Pointer {
             block: PointerBlock::Heap(950_005),
             offset: PointerOffsetTerm::Constant(4),
         });
@@ -3236,12 +3246,12 @@ mod wildcard_scope_tests {
             scope.schema().clone(),
         );
         let (one, _) = empty.checked_member_exchange(&pool, &member, true).unwrap();
-        let CValue::Pointer(pointer) = pointer else {
+        let ProgramValue::Pointer(pointer) = pointer else {
             unreachable!()
         };
-        arguments[1] = CValue::Pointer(
+        arguments[1] = ProgramValue::Pointer(
             pointer
-                .with_type(CType::VoidPointer)
+                .with_type(ProgramType::VoidPointer)
                 .with_pointee_constant(true),
         )
         .into();
@@ -3333,7 +3343,7 @@ mod wildcard_scope_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!(
-            "../../../scaling_tests/kernel/population_authority/c_creation/tests/wildcard_scope_tests.rs"
+            "../../../scaling_tests/kernel/population_authority/storage_creation/tests/wildcard_scope_tests.rs"
         );
     }
 }
@@ -3491,13 +3501,15 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
 #[test]
 fn local_named_wildcard_members_count_occurrences_not_field_values() {
     let block = PointerBlock::Heap(940_502);
-    let anchor = CValue::pointer(Pointer {
+    let anchor = ProgramValue::pointer(Pointer {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     });
-    let schema =
-        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "serial".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let scope = ResourceDescription::new(
         "ticket".into(),
         vec![anchor.clone().into()].into(),
@@ -3638,67 +3650,67 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
     let description = ResourceDescription::new(
         "reference".into(),
         vec![
-            CValue::typed_pointer(
+            ProgramValue::typed_pointer(
                 Pointer {
                     block,
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )
             .into(),
         ]
         .into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
-    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
-    let member = CResourceFact::own(CResource::Composite {
+    let authority = ResourceFact::own(Resource::PopulationAuthority(description.clone()));
+    let member = ResourceFact::own(Resource::Composite {
         name: description.family().into(),
         arguments: description.arguments().to_vec().into(),
     });
-    let member_spec = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let member_spec = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "reference".into(),
-        vec![c_variable("p")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("p")],
+        vec![ProgramType::Int32Pointer],
     );
-    let authority_spec = CResourceSpec::new(
-        CResourceTerm::PopulationAuthority {
+    let authority_spec = ResourceSpec::new(
+        ResourceTerm::PopulationAuthority {
             population_arity: None,
-            protected: Box::new(CResourceTypeSpec {
+            protected: Box::new(ResourceTypeSpec {
                 resource: Box::new(member_spec.clone()),
                 schema: description.schema().clone(),
             }),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Current,
     )
     .unwrap();
-    let function = c_function(
-        CType::Void,
+    let function = program_function(
+        ProgramType::Void,
         "inspect",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        c_return(c_void_value()),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(program_void_value()),
     )
     .with_resource_summary(vec![authority_spec, member_spec.clone()], vec![])
-    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
         "reference",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
         vec![],
     )]);
-    let AlgebraicValue::C(pointer) = &description.arguments()[0] else {
+    let AlgebraicValue::Program(pointer) = &description.arguments()[0] else {
         unreachable!();
     };
     let member_only_function = function
         .clone()
         .with_resource_summary(vec![member_spec], vec![]);
     for tracked_quantity in [0, 1] {
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_resource_context(
                 ResourceContext::new().unchecked_with_facts([authority.clone(), member.clone()]),
@@ -3713,9 +3725,12 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
             .observe_symbolic(&description)
             .unwrap()
             .entry_count;
-        let entry =
-            c_function_contract_entry(&state, &function, &[CExpression::Value(pointer.clone())])
-                .unwrap();
+        let entry = program_function_contract_entry(
+            &state,
+            &function,
+            &[ProgramExpression::Value(pointer.clone())],
+        )
+        .unwrap();
         let lower_bound = Proposition::ConditionIs(
             // `states` is an exact lookup. Match the count evaluator's
             // canonical orientation, rather than asking it to prove `1 <= n`.
@@ -3732,10 +3747,10 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         );
         let without_authority =
             state.with_resource_context(ResourceContext::new().unchecked_with_fact(member.clone()));
-        let entry_without_authority = c_function_contract_entry(
+        let entry_without_authority = program_function_contract_entry(
             &without_authority,
             &member_only_function,
-            &[CExpression::Value(pointer.clone())],
+            &[ProgramExpression::Value(pointer.clone())],
         )
         .unwrap();
         assert!(
@@ -3759,9 +3774,11 @@ fn wildcard_named_authority_import_is_read_only_and_lookup_scales() {
 
 fn check_named_authority_import(arity: Option<usize>) {
     let base = member_description(PointerBlock::ExternalArgument);
-    let schema =
-        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "serial".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let mut description = ResourceDescription::new(
         "ticket".into(),
         base.arguments().to_vec().into(),
@@ -3793,12 +3810,12 @@ fn check_named_authority_import(arity: Option<usize>) {
     )
     .unwrap();
     let reference = ResourceReference::from_instance(&instance);
-    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let authority = ResourceFact::own(Resource::PopulationAuthority(description.clone()));
     let resources = ResourceContext::new().unchecked_with_facts([
         authority.clone(),
-        CResourceFact::own(CResource::Instance(instance.clone())),
+        ResourceFact::own(Resource::Instance(instance.clone())),
     ]);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(resources);
     let imported = if arity.is_some() {
@@ -3818,8 +3835,8 @@ fn check_named_authority_import(arity: Option<usize>) {
             .import_opaque_population_inputs(&authority)
             .is_err()
     );
-    let doubled = CResourceFact::own_quantity(
-        CResource::PopulationAuthority(description.clone()),
+    let doubled = ResourceFact::own_quantity(
+        Resource::PopulationAuthority(description.clone()),
         MachineTerm::constant(2),
     );
     assert!(
@@ -3845,12 +3862,12 @@ fn check_named_authority_import(arity: Option<usize>) {
         // Same family, different explicit anchor: field recovery must not
         // select the first imported population merely by family or block.
         let other_pattern = pattern.map_values(|_| {
-            AlgebraicValue::C(CValue::typed_pointer(
+            AlgebraicValue::Program(ProgramValue::typed_pointer(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Constant(4),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             ))
         });
         let mut other_description = ResourceDescription::new(
@@ -3928,8 +3945,11 @@ fn check_named_authority_import(arity: Option<usize>) {
         let mut wrong_schema = ResourceDescription::new(
             "ticket".into(),
             description.arguments().to_vec().into(),
-            ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::UInt8))])
-                .unwrap(),
+            ResourceFieldSchema::new(vec![(
+                "serial".into(),
+                ResourceFieldType::Program(ProgramType::UInt8),
+            )])
+            .unwrap(),
         );
         if let Some(arity) = arity {
             wrong_schema = wrong_schema.with_population_arity(arity).unwrap();
@@ -4074,13 +4094,15 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
 
 #[test]
 fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
-    let anchor = CValue::pointer(Pointer {
+    let anchor = ProgramValue::pointer(Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     });
-    let schema =
-        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "serial".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let scope = ResourceDescription::new(
         "ticket".into(),
         vec![anchor.clone().into()].into(),
@@ -4094,7 +4116,7 @@ fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
             "ticket".into(),
             vec![
                 anchor.clone().into(),
-                CValue::Int32(MachineTerm::Variable(Variable(tag))).into(),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(tag))).into(),
             ]
             .into(),
             schema.clone(),
@@ -4171,5 +4193,5 @@ fn diverged_paths_that_create_the_same_storage_record_the_same_state() {
 
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../../scaling_tests/kernel/population_authority/c_creation/tests.rs");
+    include!("../../../scaling_tests/kernel/population_authority/storage_creation/tests.rs");
 }

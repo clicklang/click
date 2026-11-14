@@ -8,7 +8,7 @@ fn nested_typed_uses_share_pointer_origin_analysis() {
         for _ in 0..count {
             expression = SpecExpression::PureFunctionApplication {
                 name: "pointer_identity".to_string(),
-                result_type: CType::Int32Pointer,
+                result_type: ProgramType::Int32Pointer,
                 result_object_class: None,
                 projection: None,
                 pointer_result: Some(Arc::new(PurePointerResult {
@@ -45,18 +45,18 @@ fn conditional_origins_form_a_shared_graph_instead_of_expanded_prefix_sets() {
         for index in 1..count {
             expression = SpecExpression::If {
                 condition: Box::new(SpecProposition::Comparison {
-                    left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
-                    operator: CComparisonOperator::Equal,
-                    right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+                    left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                    operator: ComparisonOperator::Equal,
+                    right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
                 }),
                 then_branch: Box::new(expression),
                 else_branch: Box::new(variable(&format!("p{index}"))),
             };
         }
-        let mut interface = CFunctionContractInterface::new(
-            CType::Void,
+        let mut interface = FunctionContractInterface::new(
+            ProgramType::Void,
             (0..count)
-                .map(|i| CParameter::new(format!("p{i}"), CType::Int32Pointer))
+                .map(|i| ProgramParameter::new(format!("p{i}"), ProgramType::Int32Pointer))
                 .collect(),
         );
         interface.contract_ensures = vec![SpecProposition::Defined(typed(expression))];

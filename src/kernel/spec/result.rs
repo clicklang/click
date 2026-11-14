@@ -15,7 +15,7 @@ impl SpecValue {
         if then_value == else_value {
             return Ok(Some(then_value.clone()));
         }
-        let is_bool = |value: &Self| value.c_type() == CType::Bool;
+        let is_bool = |value: &Self| value.program_type() == ProgramType::Bool;
         if (is_bool(then_value) && else_value.machine().is_some())
             || (is_bool(else_value) && then_value.machine().is_some())
         {
@@ -103,13 +103,13 @@ impl SpecValue {
         }
         let value = self.native();
         IntegerTerm::from_machine(
-            MachineIntegerType::from_c_type(value.c_type())?,
-            c_value_bitvector_term(&value)?,
+            MachineIntegerType::from_program_type(value.program_type())?,
+            program_value_bitvector_term(&value)?,
         )
     }
     pub(super) fn comparison(
         &self,
-        op: CComparisonOperator,
+        op: ComparisonOperator,
         right: &Self,
     ) -> ExecutionResult<Option<Proposition>> {
         if let (Some((format, left)), Some((right_format, right))) =
@@ -124,13 +124,11 @@ impl SpecValue {
             )
         {
             let relation = match op {
-                CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
-                    CompareRelation::Equal
-                }
-                CComparisonOperator::LessThan => CompareRelation::LessThan,
-                CComparisonOperator::LessEqual => CompareRelation::LessEqual,
-                CComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
-                CComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
+                ComparisonOperator::Equal | ComparisonOperator::NotEqual => CompareRelation::Equal,
+                ComparisonOperator::LessThan => CompareRelation::LessThan,
+                ComparisonOperator::LessEqual => CompareRelation::LessEqual,
+                ComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
+                ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
             };
             return Ok(Some(Proposition::ConditionIs(
                 crate::kernel::machine_integer::comparison::condition_for_operand_views(
@@ -138,14 +136,14 @@ impl SpecValue {
                     relation,
                     [left, right],
                 ),
-                op != CComparisonOperator::NotEqual,
+                op != ComparisonOperator::NotEqual,
             )));
         }
         let left = self.native();
         let right = right.native();
         Ok(bool_comparison_proposition(&left, op, &right)
             .transpose()?
-            .or_else(|| c_value_comparison_proposition(&left, op, &right)))
+            .or_else(|| program_value_comparison_proposition(&left, op, &right)))
     }
 }
 
@@ -176,10 +174,11 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
-                let KernelType::C(ty) = value.ty() else {
+                let KernelType::Program(ty) = value.ty() else {
                     unreachable!("machine argument");
                 };
-                let format = MachineIntegerType::from_c_type(*ty).expect("machine argument type");
+                let format =
+                    MachineIntegerType::from_program_type(*ty).expect("machine argument type");
                 PureFunctionArgument::SharedMachine(
                     SharedMachineIntegerTerm::from_shared(format, value)
                         .expect("retained pure-call argument"),

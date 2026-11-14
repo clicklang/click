@@ -7,7 +7,7 @@ void beside_call(int *p, int *q, int *r) { change_both(p, q); }
 
 ```click
 verifying "call.c";
-void change_both(int *p, int *q) { owns *p; owns *q; } by { step(); step(); step(); }
+void change_both(int *p, int *q) { owns *p; owns *q; } by { step(); step(); step(); assumption(); assumption(); assumption(); assumption(); assumption(); }
 void beside_call(int *p, int *q, int *r) {
     owns *p;
     owns *q;
@@ -32,6 +32,8 @@ void beside_call(int *p, int *q, int *r) {
         }
     }
     step();
+    assumption(); assumption(); assumption();
+    assumption(); assumption(); assumption();
 }
 ```
 

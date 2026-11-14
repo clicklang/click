@@ -16,15 +16,15 @@ fn facts_over_one_memory_reserve_its_variables_once() {
             block: PointerBlock::ExternalObject(Variable(7_100_000 + index)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = (0..size).fold(CMemory::new(), |memory, index| {
+        let memory = (0..size).fold(Memory::new(), |memory, index| {
             memory.store(
                 pointer(index),
-                CValue::Int32(MachineTerm::Variable(Variable(7_200_000 + index))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(7_200_000 + index))),
             )
         });
-        crate::kernel::intern_c_memory(memory.clone());
+        crate::kernel::intern_memory(memory.clone());
         let facts = (0..size)
-            .map(|index| Proposition::CMemoryLoadable {
+            .map(|index| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
                 bytes: MachineTerm::constant(4),
@@ -54,15 +54,15 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
             block: PointerBlock::ExternalObject(Variable(7_300_000 + index)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = (0..size).fold(CMemory::new(), |memory, index| {
+        let memory = (0..size).fold(Memory::new(), |memory, index| {
             memory.store(
                 pointer(index),
-                CValue::Int32(MachineTerm::Variable(Variable(7_400_000 + index))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(7_400_000 + index))),
             )
         });
-        crate::kernel::intern_c_memory(memory.clone());
+        crate::kernel::intern_memory(memory.clone());
         let facts = (0..size)
-            .map(|index| Proposition::CMemoryLoadable {
+            .map(|index| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
                 bytes: MachineTerm::constant(4),
@@ -78,7 +78,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         }));
         // Adding one more fact over the same memory walks none of it again.
         let before = crate::kernel::reasoning::memory_bound_cell_visits();
-        let extended = built.with_fact(Proposition::CMemoryLoadable {
+        let extended = built.with_fact(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer(0),
             bytes: MachineTerm::constant(8),

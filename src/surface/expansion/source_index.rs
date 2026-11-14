@@ -52,7 +52,7 @@ impl ProofSourceIndex {
         project: &ClickProject,
         inputs: &ProgramInputs<'_>,
     ) -> Result<Self, ClickError> {
-        let sources = CSourceContext::of(inputs)?.with_click_project(project);
+        let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         let source = project.entry_source().ok_or_else(|| {
             ClickError::new(format!("missing entry module `{}`", project.entry()))
@@ -65,8 +65,8 @@ impl ProofSourceIndex {
     /// The index of a sidecar that is not part of a project, built from its
     /// verification parse as [`Self::for_project`] builds a project's.
     pub fn for_sidecar(click_source: &str, inputs: &ProgramInputs<'_>) -> Result<Self, ClickError> {
-        let sources = CSourceContext::of(inputs)?;
-        let file = parse_source_with_c_layouts_context(click_source, &sources)?;
+        let sources = ProgramSourceContext::of(inputs)?;
+        let file = parse_source_with_program_layouts_context(click_source, &sources)?;
         let mut index = Self::build(click_source, file.source_spans())?;
         index.file = Some(file);
         Ok(index)
@@ -220,7 +220,7 @@ impl ProofSourceIndex {
             .file
             .as_ref()
             .ok_or_else(|| ClickError::new("the source index has no resolved project"))?;
-        c0_tactic_source_positions_with_tokens(
+        tactic_source_positions_with_tokens(
             file,
             project.entry_source().expect("resolved entry source"),
             claim,

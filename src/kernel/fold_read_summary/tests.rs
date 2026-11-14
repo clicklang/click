@@ -10,15 +10,15 @@ const ACCUMULATOR: Variable = Variable(3_200_000);
 const ITEM: Variable = Variable(3_200_001);
 
 fn name(text: &str) -> SpecExpression {
-    SpecExpression::CExpression(CExpression::Variable(text.to_string()))
+    SpecExpression::ProgramExpression(ProgramExpression::Variable(text.to_string()))
 }
 
 fn int(value: u32) -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(MachineTerm::constant(value)))
+    SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value)))
 }
 
 fn item() -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(MachineTerm::Variable(ITEM)))
+    SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(ITEM)))
 }
 
 fn read_at(elements: SpecExpression) -> SpecExpression {
@@ -29,14 +29,14 @@ fn read_at(elements: SpecExpression) -> SpecExpression {
             elements: Box::new(elements),
             byte_width: 4,
         }),
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     }
 }
 
 fn is_zero(value: SpecExpression) -> SpecProposition {
     SpecProposition::Comparison {
         left: value,
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: int(0),
     }
 }
@@ -91,16 +91,16 @@ fn unmarked_body() -> SpecIntegerExpression {
     )
 }
 
-fn parameters() -> Vec<(String, CType)> {
+fn parameters() -> Vec<(String, ProgramType)> {
     vec![
-        ("v".to_string(), CType::Int32Pointer),
-        ("lo".to_string(), CType::Int32),
-        ("hi".to_string(), CType::Int32),
+        ("v".to_string(), ProgramType::Int32Pointer),
+        ("lo".to_string(), ProgramType::Int32),
+        ("hi".to_string(), ProgramType::Int32),
     ]
 }
 
-fn definition(body: SpecIntegerExpression) -> CFoldReadDefinition {
-    CFoldReadDefinition::new("unmarked", parameters(), body)
+fn definition(body: SpecIntegerExpression) -> FoldReadDefinition {
+    FoldReadDefinition::new("unmarked", parameters(), body)
 }
 
 fn check(body: SpecIntegerExpression) -> Result<CheckedFoldReadSummary, FoldReadDecline> {
@@ -185,7 +185,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                     arguments: vec![SpecPureFunctionArgument::ArrayRef {
                         memory: SpecMemory::Current,
                         pointer: name("v"),
-                        element_type: CType::Int32,
+                        element_type: ProgramType::Int32,
                     }],
                 },
             ),
@@ -253,7 +253,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                             elements: Box::new(item()),
                             byte_width: 4,
                         }),
-                        value_type: CType::Int32,
+                        value_type: ProgramType::Int32,
                     },
                     int(1),
                     int(0),
@@ -275,7 +275,7 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
                             elements: Box::new(item()),
                             byte_width: 1,
                         }),
-                        value_type: CType::UInt8,
+                        value_type: ProgramType::UInt8,
                     },
                     int(1),
                     int(0),
@@ -307,9 +307,9 @@ fn each_unsupported_read_pattern_declines_the_whole_definition() {
 #[test]
 fn a_second_array_or_a_non_int32_parameter_declines() {
     let mut two_arrays = parameters();
-    two_arrays.push(("w".to_string(), CType::Int32Pointer));
+    two_arrays.push(("w".to_string(), ProgramType::Int32Pointer));
     assert!(matches!(
-        CheckedFoldReadSummary::check(&CFoldReadDefinition::new(
+        CheckedFoldReadSummary::check(&FoldReadDefinition::new(
             "unmarked",
             two_arrays,
             unmarked_body()
@@ -317,9 +317,9 @@ fn a_second_array_or_a_non_int32_parameter_declines() {
         Err(FoldReadDecline::UnsupportedParameters(_))
     ));
     let mut wide = parameters();
-    wide.push(("x".to_string(), CType::Int64));
+    wide.push(("x".to_string(), ProgramType::Int64));
     assert!(matches!(
-        CheckedFoldReadSummary::check(&CFoldReadDefinition::new("unmarked", wide, unmarked_body())),
+        CheckedFoldReadSummary::check(&FoldReadDefinition::new("unmarked", wide, unmarked_body())),
         Err(FoldReadDecline::UnsupportedParameters(_))
     ));
 }
@@ -402,12 +402,12 @@ fn byte_offset(pointer: &Pointer, bytes: i64) -> Pointer {
     }
 }
 
-fn one() -> CValue {
-    CValue::Int32(MachineTerm::constant(1))
+fn one() -> ProgramValue {
+    ProgramValue::Int32(MachineTerm::constant(1))
 }
 
 fn application(
-    memory: &CMemory,
+    memory: &Memory,
     base: &Pointer,
     start: MachineTerm,
     end: MachineTerm,
@@ -417,11 +417,14 @@ fn application(
         vec![
             PureFunctionArgument::ArrayRef {
                 memory: memory.clone(),
-                pointer: CValue::Pointer(CPointerValue::new(base.clone(), CType::Int32Pointer)),
-                element_type: CType::Int32,
+                pointer: ProgramValue::Pointer(PointerValue::new(
+                    base.clone(),
+                    ProgramType::Int32Pointer,
+                )),
+                element_type: ProgramType::Int32,
             },
-            PureFunctionArgument::Value(CValue::Int32(start)),
-            PureFunctionArgument::Value(CValue::Int32(end)),
+            PureFunctionArgument::Value(ProgramValue::Int32(start)),
+            PureFunctionArgument::Value(ProgramValue::Int32(end)),
         ],
     )
 }
@@ -486,7 +489,7 @@ fn a_store_at_the_exact_upper_endpoint_misses_the_prefix() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
@@ -500,7 +503,7 @@ fn a_store_inside_the_range_is_refused() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     // `v[hi - 1]`, the last cell of `[lo, hi)`.
     let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
     let after = before.clone().store(element(&v, last.clone()), one());
@@ -518,7 +521,7 @@ fn a_store_below_a_nonzero_lower_endpoint_needs_its_order_fact() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&v, bv(J)), one());
     let old = application(&before, &v, bv(LO), bv(HI));
     let new = application(&after, &v, bv(LO), bv(HI));
@@ -536,10 +539,10 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let old = application(&before, &v, bv(LO), bv(HI));
     let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
-    let wide = CValue::Int64(MachineTerm::int64_constant(0));
+    let wide = ProgramValue::Int64(MachineTerm::int64_constant(0));
     // An eight-byte store at `v + 4*(hi - 1)` covers the last cell and the
     // endpoint cell. Nothing may separate it, even with `hi - 1 >= lo`.
     let after = before
@@ -583,20 +586,20 @@ fn an_alias_needs_a_stated_separation_with_checked_membership() {
     register_unmarked();
     let a = parameter_base(V);
     let b = parameter_base(W);
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&b, bv(J)), one());
     let old = application(&before, &a, MachineTerm::constant(0), bv(N));
     let new = application(&after, &a, MachineTerm::constant(0), bv(N));
     // Distinct parameter names establish nothing: `a` and `b` may be one
     // object.
     assert!(is_store_refusal(&frame(&old, &new, &[])));
-    let separate = Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(CMemoryRange::new(
+    let separate = Proposition::ResourceSeparate {
+        left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
             MachineTerm::constant(0),
             bv(N),
         ))),
-        right: Box::new(CResource::Memory(CMemoryRange::new(
+        right: Box::new(Resource::Memory(MemoryRange::new(
             b.clone(),
             MachineTerm::constant(0),
             bv(N),
@@ -624,7 +627,7 @@ fn changed_endpoints_or_base_pointers_are_not_framed() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let longer = MachineTerm::add(bv(HI), MachineTerm::constant(1));
@@ -645,7 +648,7 @@ fn an_empty_fold_crosses_any_store_only_when_emptiness_is_checked() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&v, bv(J)), one());
     let old = application(&before, &v, bv(LO), bv(HI));
     let new = application(&after, &v, bv(LO), bv(HI));
@@ -665,7 +668,7 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let declared = CMemory::new().with_block(block.clone(), 16);
+    let declared = Memory::new().with_block(block.clone(), 16);
     let ended = declared.without_local_block(&block);
     let old = application(
         &declared,
@@ -711,11 +714,11 @@ fn a_call_is_framed_only_by_its_checked_write_set() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let havoc = |start: MachineTerm, end: MachineTerm| {
         before.clone().with_call_memory_havoc(
             Variable(2_000),
-            &[CMemoryRange::new(v.clone(), start, end)],
+            &[MemoryRange::new(v.clone(), start, end)],
             &PureFactContext::new(),
             None,
         )
@@ -748,10 +751,13 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     // A snapshot built in an earlier session carries no derivation here.
     let foreign = {
         let _session = VerificationSession::enter();
-        CMemory::new().store(element(&v, bv(HI)), CValue::Int32(MachineTerm::constant(2)))
+        Memory::new().store(
+            element(&v, bv(HI)),
+            ProgramValue::Int32(MachineTerm::constant(2)),
+        )
     };
     let _session = VerificationSession::enter();
-    let base = CMemory::new();
+    let base = Memory::new();
     let left = base.clone().store(element(&v, bv(HI)), one());
     let right = base.clone().store(
         Pointer {
@@ -804,7 +810,7 @@ fn a_declined_definition_frames_nothing_even_across_an_unrelated_store() {
     );
     register_fold_read_definition(definition(peek));
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
@@ -822,7 +828,7 @@ fn a_transport_rewrites_only_fold_application_snapshots() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
     let old = IntegerTerm::PureFunctionApplication(application(
         &before,
@@ -897,7 +903,7 @@ fn an_offset_pointer_is_read_by_its_exact_byte_offset() {
     // `[0, i)`. The offset is read exactly, constant included.
     let w = byte_offset(&v, 4);
     let index = MachineTerm::subtract(bv(HI), MachineTerm::constant(2));
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(element(&w, index.clone()), one());
     let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
@@ -915,7 +921,7 @@ fn an_offset_pointer_is_read_by_its_exact_byte_offset() {
 #[test]
 fn byte_fold_summary_checks_the_read_type_and_stride() {
     let mut parameters = parameters();
-    parameters[0].1 = CType::UInt8Pointer;
+    parameters[0].1 = ProgramType::UInt8Pointer;
     let read = |width, value_type| SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
@@ -926,9 +932,9 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
         value_type,
     };
     for (width, value_type, accepted) in [
-        (1, CType::UInt8, true),
-        (4, CType::UInt8, false),
-        (1, CType::Int32, false),
+        (1, ProgramType::UInt8, true),
+        (4, ProgramType::UInt8, false),
+        (1, ProgramType::Int32, false),
     ] {
         let body = fold(
             name("lo"),
@@ -936,10 +942,10 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
             zero(),
             SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Cast(
                 Box::new(read(width, value_type)),
-                CType::Int32,
+                ProgramType::Int32,
             ))),
         );
-        let result = CheckedFoldReadSummary::check(&CFoldReadDefinition::new(
+        let result = CheckedFoldReadSummary::check(&FoldReadDefinition::new(
             "byte_sum",
             parameters.clone(),
             body,
@@ -955,7 +961,7 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
 fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
     let _session = VerificationSession::enter();
     let mut parameters = parameters();
-    parameters[0].1 = CType::UInt8Pointer;
+    parameters[0].1 = ProgramType::UInt8Pointer;
     let read = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
@@ -963,9 +969,9 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             elements: Box::new(item()),
             byte_width: 1,
         }),
-        value_type: CType::UInt8,
+        value_type: ProgramType::UInt8,
     };
-    register_fold_read_definition(CFoldReadDefinition::new(
+    register_fold_read_definition(FoldReadDefinition::new(
         "byte_sum",
         parameters,
         fold(
@@ -979,29 +985,33 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(bv(V), 1),
     };
-    let at = |memory: &CMemory, element_type| {
+    let at = |memory: &Memory, element_type| {
         SharedPureApplication::intern(
             "byte_sum".into(),
             vec![
                 PureFunctionArgument::ArrayRef {
                     memory: memory.clone(),
-                    pointer: CValue::typed_pointer(base.clone(), CType::UInt8Pointer),
+                    pointer: ProgramValue::typed_pointer(base.clone(), ProgramType::UInt8Pointer),
                     element_type,
                 },
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(0))),
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(2))),
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(2))),
             ],
         )
     };
-    let before = CMemory::new();
-    let old = at(&before, CType::UInt8);
+    let before = Memory::new();
+    let old = at(&before, ProgramType::UInt8);
     let summary = registered_fold_read_summary("byte_sum").unwrap();
-    assert!(summary.instantiate(&at(&before, CType::Int32)).is_none());
+    assert!(
+        summary
+            .instantiate(&at(&before, ProgramType::Int32))
+            .is_none()
+    );
     for (offset, outside) in [(0, false), (1, false), (2, true)] {
         let after = before
             .clone()
             .store(byte_offset(&base, offset), crate::kernel::uint8(7));
-        let result = frame(&old, &at(&after, CType::UInt8), &[]);
+        let result = frame(&old, &at(&after, ProgramType::UInt8), &[]);
         if outside {
             assert_eq!(result, Ok(1));
         } else {
@@ -1015,7 +1025,7 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
     let checker = BodyChecker {
         parameters: &[],
         array_name: "v",
-        element_type: CType::Int32,
+        element_type: ProgramType::Int32,
         accumulator: ACCUMULATOR,
         item: ITEM,
     };
@@ -1051,15 +1061,15 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
 #[test]
 fn wide_ranges_refuse_signed_fold_framing_rules() {
     let base = Pointer::symbolic(Variable(984_100));
-    let wide = CMemoryRange::new_wide(
+    let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(1 << 33),
         4,
     );
-    let narrow = CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
+    let narrow = MemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
     let interval = FoldReadInterval {
-        memory: CMemory::new(),
+        memory: Memory::new(),
         base: base.clone(),
         start: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, 0u32.into()),
         end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, 1u32.into()),
@@ -1083,21 +1093,21 @@ fn fold_transport_crosses_unconditional_cache_forgetting_but_not_an_overlapping_
     let _session = VerificationSession::enter();
     register_unmarked();
     let v = parameter_base(V);
-    let before = CMemory::new().with_seeded_cells(
+    let before = Memory::new().with_seeded_cells(
         v.clone(),
         4,
-        CType::Int32,
+        ProgramType::Int32,
         0,
         8,
-        crate::kernel::intern_c_memory(CMemory::new()),
+        crate::kernel::intern_memory(Memory::new()),
     );
     let forgotten =
         before.without_possible_aliasing_cells(&parameter_base(W), 4, &PureFactContext::new());
     assert!(matches!(
-        crate::kernel::intern_c_memory_ref(&forgotten)
+        crate::kernel::intern_memory_ref(&forgotten)
             .derivation()
             .as_deref(),
-        Some(CMemoryDerivation::CellsForgotten { .. })
+        Some(MemoryDerivation::CellsForgotten { .. })
     ));
     let old = application(&before, &v, 0u32.into(), 4u32.into());
     let new = application(&forgotten, &v, 0u32.into(), 4u32.into());
@@ -1115,7 +1125,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
     let _session = VerificationSession::enter();
     let native = MachineTerm::add(MachineTerm::Variable(ITEM), MachineTerm::Variable(ITEM));
-    let x = KernelTerm::variable(KernelType::C(CType::Int32), ITEM);
+    let x = KernelTerm::variable(KernelType::Program(ProgramType::Int32), ITEM);
     let root = KernelTerm::machine_binary_shared(
         MachineIntegerType::Int32,
         MachineBinaryOp::Add,
@@ -1128,7 +1138,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
     };
     let pointer = base.offset_by_shared_elements(index, 4);
     let interval = FoldReadInterval {
-        memory: CMemory::new(),
+        memory: Memory::new(),
         base,
         start: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(0)),
         end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(4)),

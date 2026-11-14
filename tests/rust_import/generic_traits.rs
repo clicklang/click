@@ -11,7 +11,7 @@ fn charon_generic_trait_instances_refine_their_interfaces() {
     let p = Project::from_fixture("design/charon-trial/generic-traits");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // The generic block binds every instance's implementation.
@@ -43,7 +43,7 @@ fn charon_generic_trait_instances_refine_their_interfaces() {
     ] {
         assert!(SIDECAR.contains(before), "{before}");
         let invalid = SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("a claim the interfaces do not justify must fail");
         let rendered = format!("{error:?} {error}");
@@ -65,7 +65,7 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
     let p = Project::from_fixture("design/charon-trial/generic-trait-objects");
     fs::write(p.root.join("borrow.click"), OBJECT_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(OBJECT_SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(OBJECT_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // Keep the original full positive check. Select complete function
     // proofs for local failures; declaration/interface boundary cases
@@ -106,7 +106,7 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
             verify_rust_proof_after(&invalid, &prepared, head)
                 .expect_err("a claim the object state does not justify must fail")
         } else {
-            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
                 .err()
                 .expect("a claim the object state does not justify must fail")
         };
@@ -128,7 +128,7 @@ fn charon_generic_object_state_is_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-state");
     fs::write(p.root.join("borrow.click"), STATE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(STATE_SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(STATE_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (head, before, after, expected) in [
         // The generic implementation answers to the generic interface.
@@ -169,7 +169,7 @@ fn charon_generic_object_state_is_verified_once_for_every_type() {
         1,
     );
     assert_ne!(invalid, STATE_SIDECAR);
-    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
         .err()
         .expect("a narrower generic implementation must be refused");
     let rendered = format!("{error}");
@@ -194,7 +194,7 @@ fn charon_generic_implementations_are_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-impls");
     fs::write(p.root.join("borrow.click"), IMPL_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(IMPL_SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(IMPL_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // The generic implementation answers to the generic interface.
@@ -223,7 +223,7 @@ fn charon_generic_implementations_are_verified_once_for_every_type() {
     ] {
         assert!(IMPL_SIDECAR.contains(before), "{before}");
         let invalid = IMPL_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("a claim the generic contracts do not justify must fail");
         let rendered = format!("{error:?} {error}");
@@ -243,7 +243,7 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-structs");
     fs::write(p.root.join("borrow.click"), STRUCT_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(STRUCT_SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(STRUCT_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // At x = 1 the method caller returns 1, so claiming zero is false.
     // Check the same concrete setup with its valid postcondition first.
@@ -316,7 +316,7 @@ fn charon_references_to_type_parameter_values_are_verified_once() {
     let p = Project::from_fixture("design/charon-trial/generic-refs");
     fs::write(p.root.join("borrow.click"), REFERENCE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(REFERENCE_SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(REFERENCE_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // Two references to `T` are two places.
@@ -334,7 +334,7 @@ fn charon_references_to_type_parameter_values_are_verified_once() {
     ] {
         assert!(REFERENCE_SIDECAR.contains(before), "{before}");
         let invalid = REFERENCE_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("a claim the generic contracts do not justify must fail");
         let rendered = format!("{error:?} {error}");
@@ -363,14 +363,14 @@ fn rust_field_reference_false_postconditions_fail_promptly() {
         let project = Project::from_fixture(directory);
         fs::write(project.root.join("borrow.click"), sidecar).unwrap();
         let prepared = project.prepared().unwrap();
-        C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
         let invalid = sidecar.replace(
             "ensures result == old(slots.a);",
             "ensures result == old(slots.b);",
         );
         assert_ne!(invalid, sidecar);
         let (result, work) = click::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
         });
         let error = result
             .err()
@@ -394,7 +394,7 @@ fn charon_generic_resources_are_checked_once_and_used_at_each_type() {
     let p = Project::from_fixture("design/charon-trial/generic-resources");
     fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(RESOURCE_SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(RESOURCE_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         (
@@ -410,7 +410,7 @@ fn charon_generic_resources_are_checked_once_and_used_at_each_type() {
     ] {
         assert!(RESOURCE_SIDECAR.contains(before), "{before}");
         let invalid = RESOURCE_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("a claim the cell does not justify must fail");
         let rendered = format!("{error:?} {error}");

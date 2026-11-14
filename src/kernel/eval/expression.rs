@@ -125,33 +125,36 @@ fn float64_to_float32_bits(bits: u64) -> u32 {
     }
 }
 
-fn integer_constant_as_sign_magnitude(value: &CValue) -> Option<(bool, u128)> {
+fn integer_constant_as_sign_magnitude(value: &ProgramValue) -> Option<(bool, u128)> {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(bits) => Some((false, u128::from(bits.as_const()?))),
-        narrow @ (CValue::Int8(_) | CValue::UInt8(_) | CValue::Int16(_) | CValue::UInt16(_)) => {
-            let value = MachineIntegerType::from_c_type(narrow.c_type())?
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Bool(bits) => Some((false, u128::from(bits.as_const()?))),
+        narrow @ (ProgramValue::Int8(_)
+        | ProgramValue::UInt8(_)
+        | ProgramValue::Int16(_)
+        | ProgramValue::UInt16(_)) => {
+            let value = MachineIntegerType::from_program_type(narrow.program_type())?
                 .constant_from_value(narrow)?
                 .to_i128()?;
             Some((value < 0, value.unsigned_abs()))
         }
-        CValue::Int32(bits) => {
+        ProgramValue::Int32(bits) => {
             let value = bits.as_const()? as i32;
             Some((value < 0, u128::from(value.unsigned_abs())))
         }
-        CValue::UInt32(bits) => Some((false, u128::from(bits.as_const()?))),
-        CValue::Int64(bits) => {
+        ProgramValue::UInt32(bits) => Some((false, u128::from(bits.as_const()?))),
+        ProgramValue::Int64(bits) => {
             let value = bits.int64_as_const()?;
             Some((value < 0, u128::from(value.unsigned_abs())))
         }
-        CValue::UInt64(bits) => Some((false, u128::from(bits.uint64_as_const()?))),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Float32(_)
-        | CValue::Float64(_)
-        | CValue::Pointer(_)
-        | CValue::Parameter(_) => None,
+        ProgramValue::UInt64(bits) => Some((false, u128::from(bits.uint64_as_const()?))),
+        ProgramValue::Int128(_)
+        | ProgramValue::UInt128(_)
+        | ProgramValue::Void
+        | ProgramValue::Float32(_)
+        | ProgramValue::Float64(_)
+        | ProgramValue::Pointer(_)
+        | ProgramValue::Parameter(_) => None,
     }
 }
 
@@ -194,17 +197,21 @@ fn float_significand_as_integer(
     Some((negative && magnitude != 0, magnitude))
 }
 
-fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -> Option<CValue> {
+fn float_to_integer_value(
+    negative: bool,
+    magnitude: u128,
+    target_type: ProgramType,
+) -> Option<ProgramValue> {
     let signed_limit = |bits: u32| (1i128 << (bits - 1)) - 1;
     let (signed, bits) = match target_type {
-        CType::Int8 => (true, 8),
-        CType::Int16 => (true, 16),
-        CType::Int32 => (true, 32),
-        CType::Int64 => (true, 64),
-        CType::UInt8 => (false, 8),
-        CType::UInt16 => (false, 16),
-        CType::UInt32 => (false, 32),
-        CType::UInt64 => (false, 64),
+        ProgramType::Int8 => (true, 8),
+        ProgramType::Int16 => (true, 16),
+        ProgramType::Int32 => (true, 32),
+        ProgramType::Int64 => (true, 64),
+        ProgramType::UInt8 => (false, 8),
+        ProgramType::UInt16 => (false, 16),
+        ProgramType::UInt32 => (false, 32),
+        ProgramType::UInt64 => (false, 64),
         _ => return None,
     };
     if signed {
@@ -219,10 +226,10 @@ fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -
             magnitude as i128
         };
         return Some(match target_type {
-            CType::Int8 => crate::kernel::int8(value as i32 as u32),
-            CType::Int16 => crate::kernel::int16(value as i32 as u32),
-            CType::Int32 => CValue::Int32(MachineTerm::constant(value as i32 as u32)),
-            CType::Int64 => CValue::Int64(MachineTerm::int64_constant(value as i64)),
+            ProgramType::Int8 => crate::kernel::int8(value as i32 as u32),
+            ProgramType::Int16 => crate::kernel::int16(value as i32 as u32),
+            ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(value as i32 as u32)),
+            ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(value as i64)),
             _ => unreachable!(),
         });
     }
@@ -235,15 +242,15 @@ fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -
     }
     let value = magnitude as u64;
     Some(match target_type {
-        CType::UInt8 => crate::kernel::uint8(value as u32),
-        CType::UInt16 => crate::kernel::uint16(value as u32),
-        CType::UInt32 => CValue::UInt32(MachineTerm::uint32_constant(value as u32)),
-        CType::UInt64 => CValue::UInt64(MachineTerm::uint64_constant(value)),
+        ProgramType::UInt8 => crate::kernel::uint8(value as u32),
+        ProgramType::UInt16 => crate::kernel::uint16(value as u32),
+        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(value as u32)),
+        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(value)),
         _ => unreachable!(),
     })
 }
 
-fn float32_to_integer_value(bits: u32, target_type: CType) -> Option<CValue> {
+fn float32_to_integer_value(bits: u32, target_type: ProgramType) -> Option<ProgramValue> {
     let negative = bits & 0x8000_0000 != 0;
     let exponent = (bits >> 23) & 0xff;
     let fraction = u64::from(bits & 0x007f_ffff);
@@ -252,7 +259,7 @@ fn float32_to_integer_value(bits: u32, target_type: CType) -> Option<CValue> {
     float_to_integer_value(negative, magnitude, target_type)
 }
 
-fn float64_to_integer_value(bits: u64, target_type: CType) -> Option<CValue> {
+fn float64_to_integer_value(bits: u64, target_type: ProgramType) -> Option<ProgramValue> {
     let negative = bits & (1u64 << 63) != 0;
     let exponent = ((bits >> 52) & 0x7ff) as u32;
     let fraction = bits & 0x000f_ffff_ffff_ffff;
@@ -261,37 +268,37 @@ fn float64_to_integer_value(bits: u64, target_type: CType) -> Option<CValue> {
     float_to_integer_value(negative, magnitude, target_type)
 }
 
-fn integer_to_float_value(value: CValue, target_type: CType) -> Option<CValue> {
+fn integer_to_float_value(value: ProgramValue, target_type: ProgramType) -> Option<ProgramValue> {
     let (source_name, term) = match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(term) => ("bool", term),
-        CValue::Int8(term) => ("int8", term),
-        CValue::Int16(term) => ("int16", term),
-        CValue::Int32(term) => ("int32", term),
-        CValue::UInt8(term) => ("uint8", term),
-        CValue::UInt16(term) => ("uint16", term),
-        CValue::UInt32(term) => ("uint32", term),
-        CValue::Int64(term) => ("int64", term),
-        CValue::UInt64(term) => ("uint64", term),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Float32(_)
-        | CValue::Float64(_)
-        | CValue::Pointer(_)
-        | CValue::Parameter(_) => return None,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Bool(term) => ("bool", term),
+        ProgramValue::Int8(term) => ("int8", term),
+        ProgramValue::Int16(term) => ("int16", term),
+        ProgramValue::Int32(term) => ("int32", term),
+        ProgramValue::UInt8(term) => ("uint8", term),
+        ProgramValue::UInt16(term) => ("uint16", term),
+        ProgramValue::UInt32(term) => ("uint32", term),
+        ProgramValue::Int64(term) => ("int64", term),
+        ProgramValue::UInt64(term) => ("uint64", term),
+        ProgramValue::Int128(_)
+        | ProgramValue::UInt128(_)
+        | ProgramValue::Void
+        | ProgramValue::Float32(_)
+        | ProgramValue::Float64(_)
+        | ProgramValue::Pointer(_)
+        | ProgramValue::Parameter(_) => return None,
     };
     let target_name = match target_type {
-        CType::Float32 => "float32",
-        CType::Float64 => "float64",
+        ProgramType::Float32 => "float32",
+        ProgramType::Float64 => "float64",
         _ => return None,
     };
     if let Some((negative, magnitude)) = integer_constant_as_sign_magnitude(&value) {
         return Some(match target_type {
-            CType::Float32 => CValue::Float32(MachineTerm::constant(integer_to_float32_bits(
-                negative, magnitude,
-            ))),
-            CType::Float64 => CValue::Float64(MachineTerm::uint64_constant(
+            ProgramType::Float32 => ProgramValue::Float32(MachineTerm::constant(
+                integer_to_float32_bits(negative, magnitude),
+            )),
+            ProgramType::Float64 => ProgramValue::Float64(MachineTerm::uint64_constant(
                 integer_to_float64_bits(negative, magnitude),
             )),
             _ => unreachable!(),
@@ -300,21 +307,21 @@ fn integer_to_float_value(value: CValue, target_type: CType) -> Option<CValue> {
     let term =
         MachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), term.clone());
     Some(match target_type {
-        CType::Float32 => CValue::Float32(term),
-        CType::Float64 => CValue::Float64(term),
+        ProgramType::Float32 => ProgramValue::Float32(term),
+        ProgramType::Float64 => ProgramValue::Float64(term),
         _ => unreachable!(),
     })
 }
 
 fn float_integer_bound_bits(
-    source_type: CType,
+    source_type: ProgramType,
     exponent: u32,
     negative: bool,
 ) -> Option<MachineTerm> {
     let magnitude = 1u128.checked_shl(exponent)?;
     Some(match source_type {
-        CType::Float32 => MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
-        CType::Float64 => {
+        ProgramType::Float32 => MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
+        ProgramType::Float64 => {
             MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude))
         }
         _ => return None,
@@ -323,28 +330,28 @@ fn float_integer_bound_bits(
 
 fn add_float_to_integer_obligations(
     value: &MachineTerm,
-    source_type: CType,
-    target_type: CType,
+    source_type: ProgramType,
+    target_type: ProgramType,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<()> {
     let (signed, bits) = match target_type {
-        CType::Int8 => (true, 8),
-        CType::Int16 => (true, 16),
-        CType::Int32 => (true, 32),
-        CType::Int64 => (true, 64),
-        CType::UInt8 => (false, 8),
-        CType::UInt16 => (false, 16),
-        CType::UInt32 => (false, 32),
-        CType::UInt64 => (false, 64),
+        ProgramType::Int8 => (true, 8),
+        ProgramType::Int16 => (true, 16),
+        ProgramType::Int32 => (true, 32),
+        ProgramType::Int64 => (true, 64),
+        ProgramType::UInt8 => (false, 8),
+        ProgramType::UInt16 => (false, 16),
+        ProgramType::UInt32 => (false, 32),
+        ProgramType::UInt64 => (false, 64),
         _ => return None,
     };
     let finite = match source_type {
-        CType::Float32 => {
-            ConditionTerm::float32_classification(value.clone(), CFloatClassification::Finite)
+        ProgramType::Float32 => {
+            ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite)
         }
-        CType::Float64 => {
-            ConditionTerm::float64_classification(value.clone(), CFloatClassification::Finite)
+        ProgramType::Float64 => {
+            ConditionTerm::float64_classification(value.clone(), FloatClassification::Finite)
         }
         _ => return None,
     };
@@ -358,24 +365,24 @@ fn add_float_to_integer_obligations(
         let lower = float_integer_bound_bits(source_type, bits - 1, true)?;
         let upper = float_integer_bound_bits(source_type, bits - 1, false)?;
         let lower = match source_type {
-            CType::Float32 => ConditionTerm::float32_compare(
+            ProgramType::Float32 => ConditionTerm::float32_compare(
                 value.clone(),
                 lower,
-                CComparisonOperator::GreaterEqual,
+                ComparisonOperator::GreaterEqual,
             ),
-            CType::Float64 => ConditionTerm::float64_compare(
+            ProgramType::Float64 => ConditionTerm::float64_compare(
                 value.clone(),
                 lower,
-                CComparisonOperator::GreaterEqual,
+                ComparisonOperator::GreaterEqual,
             ),
             _ => unreachable!(),
         };
         let upper = match source_type {
-            CType::Float32 => {
-                ConditionTerm::float32_compare(value.clone(), upper, CComparisonOperator::LessThan)
+            ProgramType::Float32 => {
+                ConditionTerm::float32_compare(value.clone(), upper, ComparisonOperator::LessThan)
             }
-            CType::Float64 => {
-                ConditionTerm::float64_compare(value.clone(), upper, CComparisonOperator::LessThan)
+            ProgramType::Float64 => {
+                ConditionTerm::float64_compare(value.clone(), upper, ComparisonOperator::LessThan)
             }
             _ => unreachable!(),
         };
@@ -391,29 +398,29 @@ fn add_float_to_integer_obligations(
         )?;
     } else {
         let lower = match source_type {
-            CType::Float32 => ConditionTerm::float32_compare(
+            ProgramType::Float32 => ConditionTerm::float32_compare(
                 value.clone(),
                 MachineTerm::constant(0),
-                CComparisonOperator::GreaterEqual,
+                ComparisonOperator::GreaterEqual,
             ),
-            CType::Float64 => ConditionTerm::float64_compare(
+            ProgramType::Float64 => ConditionTerm::float64_compare(
                 value.clone(),
                 MachineTerm::uint64_constant(0),
-                CComparisonOperator::GreaterEqual,
+                ComparisonOperator::GreaterEqual,
             ),
             _ => unreachable!(),
         };
         let upper_bits = float_integer_bound_bits(source_type, bits, false)?;
         let upper = match source_type {
-            CType::Float32 => ConditionTerm::float32_compare(
+            ProgramType::Float32 => ConditionTerm::float32_compare(
                 value.clone(),
                 upper_bits,
-                CComparisonOperator::LessThan,
+                ComparisonOperator::LessThan,
             ),
-            CType::Float64 => ConditionTerm::float64_compare(
+            ProgramType::Float64 => ConditionTerm::float64_compare(
                 value.clone(),
                 upper_bits,
-                CComparisonOperator::LessThan,
+                ComparisonOperator::LessThan,
             ),
             _ => unreachable!(),
         };
@@ -433,49 +440,49 @@ fn add_float_to_integer_obligations(
 
 fn float_to_integer_conversion_value(
     value: MachineTerm,
-    source_type: CType,
-    target_type: CType,
+    source_type: ProgramType,
+    target_type: ProgramType,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     add_float_to_integer_obligations(&value, source_type, target_type, obligations, assumptions)?;
     let source_name = match source_type {
-        CType::Float32 => "float32",
-        CType::Float64 => "float64",
+        ProgramType::Float32 => "float32",
+        ProgramType::Float64 => "float64",
         _ => return None,
     };
     let target_name = match target_type {
-        CType::Int8 => "int8",
-        CType::Int16 => "int16",
-        CType::Int32 => "int32",
-        CType::UInt8 => "uint8",
-        CType::UInt16 => "uint16",
-        CType::UInt32 => "uint32",
-        CType::Int64 => "int64",
-        CType::UInt64 => "uint64",
+        ProgramType::Int8 => "int8",
+        ProgramType::Int16 => "int16",
+        ProgramType::Int32 => "int32",
+        ProgramType::UInt8 => "uint8",
+        ProgramType::UInt16 => "uint16",
+        ProgramType::UInt32 => "uint32",
+        ProgramType::Int64 => "int64",
+        ProgramType::UInt64 => "uint64",
         _ => return None,
     };
     let term = MachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), value);
     Some(match target_type {
-        CType::Int8 => CValue::Int8(term),
-        CType::Int16 => CValue::Int16(term),
-        CType::Int32 => CValue::Int32(term),
-        CType::UInt8 => CValue::UInt8(term),
-        CType::UInt16 => CValue::UInt16(term),
-        CType::UInt32 => CValue::UInt32(term),
-        CType::Int64 => CValue::Int64(term),
-        CType::UInt64 => CValue::UInt64(term),
+        ProgramType::Int8 => ProgramValue::Int8(term),
+        ProgramType::Int16 => ProgramValue::Int16(term),
+        ProgramType::Int32 => ProgramValue::Int32(term),
+        ProgramType::UInt8 => ProgramValue::UInt8(term),
+        ProgramType::UInt16 => ProgramValue::UInt16(term),
+        ProgramType::UInt32 => ProgramValue::UInt32(term),
+        ProgramType::Int64 => ProgramValue::Int64(term),
+        ProgramType::UInt64 => ProgramValue::UInt64(term),
         _ => unreachable!(),
     })
 }
 
-pub(in crate::kernel) fn evaluate_c_expression(
-    state: &CState,
-    expression: &CExpression,
+pub(in crate::kernel) fn evaluate_program_expression(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> Option<CExpressionOutcome> {
-    let paths = evaluate_c_expression_paths(state, expression, assumptions, budget).ok()?;
+) -> Option<ExpressionOutcome> {
+    let paths = evaluate_program_expression_paths(state, expression, assumptions, budget).ok()?;
     let mut paths = paths.into_iter();
     let path = paths.next()?;
     if paths.next().is_some() || !path.obligations.is_empty() {
@@ -609,12 +616,12 @@ impl Drop for WordRepresentationScope {
 pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    value: &CValue,
+    value: &ProgramValue,
 ) {
     if SPECIFICATION_READS.with(|depth| depth.get() > 0) {
         return;
     }
-    let Some(range_facts) = crate::kernel::c_bool_cast_range_facts(value) else {
+    let Some(range_facts) = crate::kernel::program_bool_cast_range_facts(value) else {
         return;
     };
     for proposition in range_facts {
@@ -637,17 +644,17 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
 /// not convert so: one `destination` neither contains nor reads modulo
 /// 2^N as an unsigned type at least as wide, a 128-bit value, a pointer or
 /// a float.
-pub(in crate::kernel) fn promote_c_path_value(
-    value: CValue,
+pub(in crate::kernel) fn promote_program_path_value(
+    value: ProgramValue,
     destination: MachineIntegerType,
 ) -> Option<MachineTerm> {
     let value = value.numeric_value().clone();
     let to = destination.format();
     // Rule C1: a promoted `Bool` is its cast at the operation's format.
-    if let CValue::Bool(word) = value {
+    if let ProgramValue::Bool(word) = value {
         return matches!(to.bits(), 32 | 64).then(|| MachineTerm::bool_word_as(destination, &word));
     }
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
     let from = source.format();
     if from.bits() > 64 || !(to.contains(from) || (!to.is_signed() && from.bits() <= to.bits())) {
         return None;
@@ -669,15 +676,15 @@ pub(in crate::kernel) fn promote_c_path_value(
 /// where a specification's conversion owes its range; every other is the
 /// table's term (σ, a widening, the low word of a 64-bit value). A widening
 /// between two narrow formats reuses the word and is not built here.
-fn convert_c_integer(
-    value: CValue,
-    target: CType,
+fn convert_program_integer(
+    value: ProgramValue,
+    target: ProgramType,
     conversion: IntegerConversion,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+) -> Option<ProgramValue> {
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     let (from, to) = (source.format(), destination.format());
     let sign_cast = from.bits() == 32 && to.bits() == 32;
     if !to.contains(from) && (to.bits() < 32 || (to.is_signed() && !sign_cast)) {
@@ -723,13 +730,13 @@ impl IntegerConversion {
 }
 
 /// Converts a C value at an implicit conversion boundary, by C's rule.
-pub(in crate::kernel) fn coerce_c_value_to_type(
-    value: CValue,
-    target_type: CType,
+pub(in crate::kernel) fn coerce_program_value_to_type(
+    value: ProgramValue,
+    target_type: ProgramType,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
-    coerce_c_value_to_type_as(
+) -> Option<ProgramValue> {
+    coerce_program_value_to_type_as(
         value,
         target_type,
         IntegerConversion::Modular,
@@ -738,37 +745,44 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
     )
 }
 
-pub(in crate::kernel) fn coerce_c_value_to_type_as(
-    value: CValue,
-    target_type: CType,
+pub(in crate::kernel) fn coerce_program_value_to_type_as(
+    value: ProgramValue,
+    target_type: ProgramType,
     conversion: IntegerConversion,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     // Assignment and argument binding preserve complete, unchanged words.
     // Every other numeric conversion starts from a mathematical observation.
-    if matches!(value, CValue::PointerInteger(_)) && value.c_type() == target_type {
+    if matches!(value, ProgramValue::PointerInteger(_)) && value.program_type() == target_type {
         return Some(value);
     }
     let value = value.numeric_value().clone();
     // Integer to `Bool` (Stage 5) is the test `value != 0`, exact at every
     // width: no value is reduced before it is tested.
-    if target_type == CType::Bool && matches!(value.c_type(), CType::Int128 | CType::UInt128) {
-        return ConditionTerm::nonzero_test(&value).map(CValue::of_bool);
-    }
-    if matches!(value.c_type(), CType::Int128 | CType::UInt128)
-        || matches!(target_type, CType::Int128 | CType::UInt128)
+    if target_type == ProgramType::Bool
+        && matches!(
+            value.program_type(),
+            ProgramType::Int128 | ProgramType::UInt128
+        )
     {
-        let destination = MachineIntegerType::from_c_type(target_type)?;
+        return ConditionTerm::nonzero_test(&value).map(ProgramValue::of_bool);
+    }
+    if matches!(
+        value.program_type(),
+        ProgramType::Int128 | ProgramType::UInt128
+    ) || matches!(target_type, ProgramType::Int128 | ProgramType::UInt128)
+    {
+        let destination = MachineIntegerType::from_program_type(target_type)?;
         // Rule C1: a `Bool` widened to 128 bits is its cast, 1 or 0.
-        if let CValue::Bool(word) = &value {
-            let destination = MachineIntegerType::from_c_type(target_type)?;
-            return CValue::from_bitvector_term(
+        if let ProgramValue::Bool(word) = &value {
+            let destination = MachineIntegerType::from_program_type(target_type)?;
+            return ProgramValue::from_bitvector_term(
                 target_type,
                 MachineTerm::bool_word_as(destination, word),
             );
         }
-        let source = MachineIntegerType::from_c_type(value.c_type())?;
+        let source = MachineIntegerType::from_program_type(value.program_type())?;
         // C's conversion is modulo 2^N for a signed destination too; a
         // specification's owes the signed range. An unsigned destination is
         // modulo 2^N under both (the conversion table's policy column).
@@ -779,7 +793,8 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         )
         .owes_range
         {
-            let observed = IntegerTerm::from_machine(source, c_value_bitvector_term(&value)?)?;
+            let observed =
+                IntegerTerm::from_machine(source, program_value_bitvector_term(&value)?)?;
             let (min, max) = destination.format().bounds();
             for (condition, context) in [
                 (
@@ -802,13 +817,13 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         }
         return crate::kernel::machine_integer::conversion::convert_value(value, destination);
     }
-    if let Some(value) = coerce_c_null_pointer_constant(value.clone(), target_type) {
+    if let Some(value) = coerce_program_null_pointer_constant(value.clone(), target_type) {
         return Some(value);
     }
 
-    if matches!(target_type, CType::FunctionPointer(_))
-        && let CValue::Pointer(pointer) = &value
-        && pointer.c_type() == target_type
+    if matches!(target_type, ProgramType::FunctionPointer(_))
+        && let ProgramValue::Pointer(pointer) = &value
+        && pointer.program_type() == target_type
     {
         return Some(value);
     }
@@ -818,110 +833,112 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
     // parameter type before binding; typed stores need the same destination
     // context so a callback field can be initialized without weakening
     // already-typed function-pointer compatibility checks.
-    if let (CType::FunctionPointer(signature), CValue::Pointer(pointer)) = (target_type, &value)
+    if let (ProgramType::FunctionPointer(signature), ProgramValue::Pointer(pointer)) =
+        (target_type, &value)
         && pointer.block.is_function()
-        && pointer.c_type() == CType::FunctionPointer(CallbackSignature::UNSPECIFIED)
+        && pointer.program_type() == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED)
     {
-        return Some(CValue::typed_pointer(
+        return Some(ProgramValue::typed_pointer(
             pointer.pointer().clone(),
-            CType::FunctionPointer(signature),
+            ProgramType::FunctionPointer(signature),
         ));
     }
 
     match (target_type, value) {
-        (CType::Bool, CValue::Bool(value)) => Some(CValue::Bool(value)),
+        (ProgramType::Bool, ProgramValue::Bool(value)) => Some(ProgramValue::Bool(value)),
         // Integer to `Bool` (Stage 5): the test `value != 0`, or a non-null
         // test for a pointer.
-        (CType::Bool, value @ (crate::kernel::integer64_c_value!(_) | CValue::Pointer(_))) => {
-            ConditionTerm::nonzero_test(&value).map(CValue::of_bool)
-        }
+        (
+            ProgramType::Bool,
+            value @ (crate::kernel::integer64_c_value!(_) | ProgramValue::Pointer(_)),
+        ) => ConditionTerm::nonzero_test(&value).map(ProgramValue::of_bool),
         // Rule C1: a `Bool` read as an integer is its cast at the target's
         // format, 1 when it holds and 0 otherwise.
         (
-            target @ (CType::Int8
-            | CType::Int16
-            | CType::Int32
-            | CType::UInt8
-            | CType::UInt16
-            | CType::UInt32
-            | CType::Int64
-            | CType::UInt64),
-            CValue::Bool(word),
-        ) => CValue::from_bitvector_term(
+            target @ (ProgramType::Int8
+            | ProgramType::Int16
+            | ProgramType::Int32
+            | ProgramType::UInt8
+            | ProgramType::UInt16
+            | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::UInt64),
+            ProgramValue::Bool(word),
+        ) => ProgramValue::from_bitvector_term(
             target,
-            MachineTerm::bool_word_as(MachineIntegerType::from_c_type(target)?, &word),
+            MachineTerm::bool_word_as(MachineIntegerType::from_program_type(target)?, &word),
         ),
         // C's widening between narrow formats is a conversion node of the
         // destination's width, as the source writes it.
-        (CType::Int16, CValue::Int8(value)) => {
-            Some(CValue::Int16(MachineTerm::machine_integer_cast(
+        (ProgramType::Int16, ProgramValue::Int8(value)) => {
+            Some(ProgramValue::Int16(MachineTerm::machine_integer_cast(
                 MachineIntegerType::Int8,
                 MachineIntegerType::Int16,
                 value,
             )))
         }
-        (CType::Int16, CValue::UInt8(value)) => {
-            Some(CValue::Int16(MachineTerm::machine_integer_cast(
+        (ProgramType::Int16, ProgramValue::UInt8(value)) => {
+            Some(ProgramValue::Int16(MachineTerm::machine_integer_cast(
                 MachineIntegerType::UInt8,
                 MachineIntegerType::Int16,
                 value,
             )))
         }
-        (CType::UInt16, CValue::UInt8(value)) => {
-            Some(CValue::UInt16(MachineTerm::machine_integer_cast(
+        (ProgramType::UInt16, ProgramValue::UInt8(value)) => {
+            Some(ProgramValue::UInt16(MachineTerm::machine_integer_cast(
                 MachineIntegerType::UInt8,
                 MachineIntegerType::UInt16,
                 value,
             )))
         }
         (
-            target @ (CType::Int8
-            | CType::UInt8
-            | CType::Int16
-            | CType::UInt16
-            | CType::Int32
-            | CType::UInt32
-            | CType::Int64
-            | CType::UInt64),
+            target @ (ProgramType::Int8
+            | ProgramType::UInt8
+            | ProgramType::Int16
+            | ProgramType::UInt16
+            | ProgramType::Int32
+            | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::UInt64),
             value @ crate::kernel::integer64_c_value!(_),
-        ) => convert_c_integer(value, target, conversion, obligations, assumptions),
-        (CType::Float32, CValue::Float32(value)) => Some(CValue::Float32(value)),
-        (CType::Float32, CValue::Float64(value)) => {
+        ) => convert_program_integer(value, target, conversion, obligations, assumptions),
+        (ProgramType::Float32, ProgramValue::Float32(value)) => Some(ProgramValue::Float32(value)),
+        (ProgramType::Float32, ProgramValue::Float64(value)) => {
             let converted = value
                 .float64_as_const()
                 .map(|value| MachineTerm::constant(float64_to_float32_bits(value)))
                 .unwrap_or_else(|| MachineTerm::opaque_conversion("c_float64_to_float32", value));
-            Some(CValue::Float32(converted))
+            Some(ProgramValue::Float32(converted))
         }
-        (CType::Float64, CValue::Float64(value)) => Some(CValue::Float64(value)),
-        (CType::Float64, CValue::Float32(value)) => {
+        (ProgramType::Float64, ProgramValue::Float64(value)) => Some(ProgramValue::Float64(value)),
+        (ProgramType::Float64, ProgramValue::Float32(value)) => {
             let converted = value
                 .float32_as_const()
                 .map(|value| MachineTerm::uint64_constant(float32_to_float64_bits(value)))
                 .unwrap_or_else(|| MachineTerm::opaque_conversion("c_float32_to_float64", value));
-            Some(CValue::Float64(converted))
+            Some(ProgramValue::Float64(converted))
         }
         (
-            target @ (CType::Float32 | CType::Float64),
+            target @ (ProgramType::Float32 | ProgramType::Float64),
             value @ (crate::kernel::integer64_c_value!(_)),
         ) => integer_to_float_value(value, target),
         (
-            target @ (CType::Int8
-            | CType::Int16
-            | CType::Int32
-            | CType::UInt8
-            | CType::UInt16
-            | CType::UInt32
-            | CType::Int64
-            | CType::UInt64),
-            CValue::Float32(value),
+            target @ (ProgramType::Int8
+            | ProgramType::Int16
+            | ProgramType::Int32
+            | ProgramType::UInt8
+            | ProgramType::UInt16
+            | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::UInt64),
+            ProgramValue::Float32(value),
         ) => {
             if let Some(bits) = value.float32_as_const() {
                 float32_to_integer_value(bits, target)
             } else {
                 float_to_integer_conversion_value(
                     value,
-                    CType::Float32,
+                    ProgramType::Float32,
                     target,
                     obligations,
                     assumptions,
@@ -929,22 +946,22 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             }
         }
         (
-            target @ (CType::Int8
-            | CType::Int16
-            | CType::Int32
-            | CType::UInt8
-            | CType::UInt16
-            | CType::UInt32
-            | CType::Int64
-            | CType::UInt64),
-            CValue::Float64(value),
+            target @ (ProgramType::Int8
+            | ProgramType::Int16
+            | ProgramType::Int32
+            | ProgramType::UInt8
+            | ProgramType::UInt16
+            | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::UInt64),
+            ProgramValue::Float64(value),
         ) => {
             if let Some(bits) = value.float64_as_const() {
                 float64_to_integer_value(bits, target)
             } else {
                 float_to_integer_conversion_value(
                     value,
-                    CType::Float64,
+                    ProgramType::Float64,
                     target,
                     obligations,
                     assumptions,
@@ -977,14 +994,14 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
 /// node, and its caller files the node's identity with its operand, which
 /// holds exactly where those obligations do.
 fn narrow_integer(
-    value: CValue,
-    target: CType,
+    value: ProgramValue,
+    target: ProgramType,
     policy: IntegerConversion,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+) -> Option<ProgramValue> {
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     let term = match value {
         crate::kernel::integer_c_value!(term) => term,
         _ => return None,
@@ -1032,7 +1049,7 @@ fn narrow_integer(
                     add_narrowing_bound_obligation(obligations, assumptions, condition, context)?;
                 }
             }
-            Some(CValue::Int32(conversion::convert_term(
+            Some(ProgramValue::Int32(conversion::convert_term(
                 source,
                 destination,
                 term,
@@ -1052,7 +1069,7 @@ fn narrow_integer(
                     "int64 narrowing upper bound",
                 )?;
             }
-            Some(CValue::Int64(conversion::convert_term(
+            Some(ProgramValue::Int64(conversion::convert_term(
                 source,
                 destination,
                 term,
@@ -1103,17 +1120,17 @@ fn narrow_integer(
 /// lowers to. A conversion that cannot change the value, or a folded
 /// constant, has no node and files nothing.
 pub(in crate::kernel) fn checked_narrowing_identity(
-    source: &CValue,
-    converted: &CValue,
+    source: &ProgramValue,
+    converted: &ProgramValue,
 ) -> Vec<Proposition> {
     checked_narrowing_identity_readings(source, converted).unwrap_or_default()
 }
 
 fn checked_narrowing_identity_readings(
-    source: &CValue,
-    converted: &CValue,
+    source: &ProgramValue,
+    converted: &ProgramValue,
 ) -> Option<Vec<Proposition>> {
-    let source_type = MachineIntegerType::from_c_type(source.c_type())?;
+    let source_type = MachineIntegerType::from_program_type(source.program_type())?;
     let operand = match source.numeric_value() {
         crate::kernel::integer_c_value!(term) => term,
         _ => return None,
@@ -1157,11 +1174,12 @@ fn checked_narrowing_identity_readings(
     Some(identities)
 }
 
-fn converted_term(value: &CValue) -> Option<&MachineTerm> {
+fn converted_term(value: &ProgramValue) -> Option<&MachineTerm> {
     match value {
-        CValue::Int8(term) | CValue::UInt8(term) | CValue::Int16(term) | CValue::UInt16(term) => {
-            Some(term)
-        }
+        ProgramValue::Int8(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::UInt16(term) => Some(term),
         _ => None,
     }
 }
@@ -1209,14 +1227,14 @@ fn narrowing_context(destination: MachineIntegerType, lower: bool) -> &'static s
     }
 }
 
-pub(in crate::kernel) fn cast_c_value_to_type(
-    value: CValue,
-    target_type: CType,
+pub(in crate::kernel) fn cast_program_value_to_type(
+    value: ProgramValue,
+    target_type: ProgramType,
     conversion: IntegerConversion,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Result<CValue, CRuntimeError> {
-    cast_c_value_to_type_with_integer_origin(
+) -> Result<ProgramValue, RuntimeError> {
+    cast_program_value_to_type_with_integer_origin(
         value,
         target_type,
         conversion,
@@ -1226,68 +1244,78 @@ pub(in crate::kernel) fn cast_c_value_to_type(
     )
 }
 
-fn cast_c_value_to_type_with_integer_origin(
-    value: CValue,
-    target_type: CType,
+fn cast_program_value_to_type_with_integer_origin(
+    value: ProgramValue,
+    target_type: ProgramType,
     conversion: IntegerConversion,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
     integer_pointer_origin: Option<Pointer>,
-) -> Result<CValue, CRuntimeError> {
+) -> Result<ProgramValue, RuntimeError> {
     if target_type.is_pointer() {
         match value {
-            CValue::PointerInteger(record) if !matches!(target_type, CType::FunctionPointer(_)) => {
+            ProgramValue::PointerInteger(record)
+                if !matches!(target_type, ProgramType::FunctionPointer(_)) =>
+            {
                 // Numeric observations cannot choose the representation carrier.
                 // A checked tagged value must have its tag removed before use.
                 let pointer = match record.kind {
                     PointerIntegerKind::Exact => *record.pointer,
                     PointerIntegerKind::Word { changed_bits } => {
                         if changed_bits != 0 {
-                            return Err(CRuntimeError::PointerConversion(
+                            return Err(RuntimeError::PointerConversion(
                                 "integer-to-pointer cast requires modified tag bits cleared".into(),
                             ));
                         }
-                        let bits = crate::kernel::spec::c_value_bitvector_term(&record.numeric)
-                            .ok_or(CRuntimeError::TypeMismatch)?;
+                        let bits =
+                            crate::kernel::spec::program_value_bitvector_term(&record.numeric)
+                                .ok_or(RuntimeError::TypeMismatch)?;
                         // A logical cast must name the same value before its
                         // own relationship is assumed. Numeric address choices
                         // belong to execution, never to this carrier's name.
                         record.pointer.with_address(Pointer::integer_address(bits))
                     }
                     PointerIntegerKind::Tagged => {
-                        let bits = crate::kernel::spec::c_value_bitvector_term(&record.numeric)
-                            .ok_or(CRuntimeError::TypeMismatch)?;
+                        let bits =
+                            crate::kernel::spec::program_value_bitvector_term(&record.numeric)
+                                .ok_or(RuntimeError::TypeMismatch)?;
                         let recovered = super::pointer_tags::cast_tagged_address_to_pointer(
                             &bits,
                             assumptions,
                             obligations,
                             target_type,
                         )
-                        .map_err(CRuntimeError::PointerConversion)?;
-                        if recovered.as_ref().map(CPointerValue::pointer)
+                        .map_err(RuntimeError::PointerConversion)?;
+                        if recovered.as_ref().map(PointerValue::pointer)
                             != Some(record.pointer.pointer())
                         {
-                            return Err(CRuntimeError::PointerConversion(
+                            return Err(RuntimeError::PointerConversion(
                                 "integer-to-pointer cast requires the original pointer with its tag cleared".into(),
                             ));
                         }
                         *record.pointer
                     }
                 };
-                return Ok(CValue::Pointer(pointer.with_type(target_type)));
+                return Ok(ProgramValue::Pointer(pointer.with_type(target_type)));
             }
-            CValue::Pointer(pointer) => {
+            ProgramValue::Pointer(pointer) => {
                 // Character-to-character casts retain the selected byte view.
                 // Other casts to bytes, and every void cast, widen that view.
-                let byte_to_byte =
-                    matches!(pointer.c_type(), CType::UInt8Pointer | CType::Int8Pointer)
-                        && matches!(target_type, CType::UInt8Pointer | CType::Int8Pointer);
+                let byte_to_byte = matches!(
+                    pointer.program_type(),
+                    ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+                ) && matches!(
+                    target_type,
+                    ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+                );
                 let pointer = pointer.with_type(target_type);
-                return Ok(CValue::Pointer(
+                return Ok(ProgramValue::Pointer(
                     if !byte_to_byte
                         && matches!(
                             target_type,
-                            CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer
+                            ProgramType::VoidPointer
+                                | ProgramType::UInt8Pointer
+                                | ProgramType::Int8Pointer
                         )
                     {
                         pointer.with_root_extent()
@@ -1298,8 +1326,8 @@ fn cast_c_value_to_type_with_integer_origin(
             }
             // An address without a complete representation record reconstructs
             // an opaque designation. Numeric facts cannot supply pointer bounds.
-            CValue::UInt64(term) | CValue::Int64(term)
-                if !matches!(target_type, CType::FunctionPointer(_)) =>
+            ProgramValue::UInt64(term) | ProgramValue::Int64(term)
+                if !matches!(target_type, ProgramType::FunctionPointer(_)) =>
             {
                 if term.uint64_as_const() == Some(0)
                     || assumptions.decide(&ConditionTerm::uint64_equal(
@@ -1307,43 +1335,43 @@ fn cast_c_value_to_type_with_integer_origin(
                         MachineTerm::uint64_constant(0),
                     )) == Some(true)
                 {
-                    return Ok(CValue::typed_pointer(Pointer::null(), target_type));
+                    return Ok(ProgramValue::typed_pointer(Pointer::null(), target_type));
                 }
                 // Numeric tag equations recover coordinates and source object class,
                 // never the original designation or bounds.
                 return match super::pointer_tags::cast_tagged_address_to_pointer(
                     &term, assumptions, obligations, target_type,
                 ) {
-                    Ok(Some(pointer)) if pointer.pointer() == &Pointer::null() => Ok(CValue::Pointer(pointer)),
+                    Ok(Some(pointer)) if pointer.pointer() == &Pointer::null() => Ok(ProgramValue::Pointer(pointer)),
                     Ok(Some(pointer)) => {
-                        let origin = integer_pointer_origin.ok_or_else(|| CRuntimeError::PointerConversion(
+                        let origin = integer_pointer_origin.ok_or_else(|| RuntimeError::PointerConversion(
                             "integer-to-pointer cast requires a complete representation or a fresh cast identity".into(),
                         ))?;
-                        Ok(CValue::Pointer(CPointerValue::new(origin, target_type)
+                        Ok(ProgramValue::Pointer(PointerValue::new(origin, target_type)
                             .with_address(pointer.pointer().clone())
                             .with_declared_object_class(pointer.object_class())))
                     }
-                    Ok(None) => Err(CRuntimeError::PointerConversion(
+                    Ok(None) => Err(RuntimeError::PointerConversion(
                         "integer-to-pointer cast requires an unchanged pointer representation, a recorded address, or zero".to_string(),
                     )),
-                    Err(message) => Err(CRuntimeError::PointerConversion(message)),
+                    Err(message) => Err(RuntimeError::PointerConversion(message)),
                 };
             }
             value => {
-                return coerce_c_value_to_type_as(
+                return coerce_program_value_to_type_as(
                     value,
                     target_type,
                     conversion,
                     obligations,
                     assumptions,
                 )
-                .ok_or(CRuntimeError::TypeMismatch);
+                .ok_or(RuntimeError::TypeMismatch);
             }
         }
     }
-    if let CValue::Pointer(pointer) = &value {
+    if let ProgramValue::Pointer(pointer) = &value {
         if pointer.local_reference().is_some() {
-            return Err(CRuntimeError::LoanRefusal(Box::new(
+            return Err(RuntimeError::LoanRefusal(Box::new(
                 crate::kernel::loans::LoanRefusal::UnsupportedResource
                     .diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
             )));
@@ -1351,32 +1379,34 @@ fn cast_c_value_to_type_with_integer_origin(
         // Pointer-to-integer conversion under LP64: the integer is the
         // pointer's address term, which keeps the exact source pointer. Null
         // is the integer zero; function addresses are not modeled.
-        if !matches!(target_type, CType::UInt64 | CType::Int64) {
-            return Err(CRuntimeError::PointerConversion(
+        if !matches!(target_type, ProgramType::UInt64 | ProgramType::Int64) {
+            return Err(RuntimeError::PointerConversion(
                 "pointer-to-integer cast requires a 64-bit integer type under the LP64 \
                  profile; a narrower integer cannot hold a pointer"
                     .to_string(),
             ));
         }
-        if pointer.block.is_function() || matches!(pointer.c_type(), CType::FunctionPointer(_)) {
-            return Err(CRuntimeError::PointerConversion(
+        if pointer.block.is_function()
+            || matches!(pointer.program_type(), ProgramType::FunctionPointer(_))
+        {
+            return Err(RuntimeError::PointerConversion(
                 "function addresses do not convert to integers".to_string(),
             ));
         }
         let address =
             MachineTerm::object_pointer_address(pointer.pointer().clone(), pointer.object_class());
         let numeric = match target_type {
-            CType::UInt64 => CValue::UInt64(address),
-            _ => CValue::Int64(address),
+            ProgramType::UInt64 => ProgramValue::UInt64(address),
+            _ => ProgramValue::Int64(address),
         };
-        return Ok(CValue::PointerInteger(PointerIntegerValue {
+        return Ok(ProgramValue::PointerInteger(PointerIntegerValue {
             numeric: Box::new(numeric),
             pointer: Box::new(pointer.clone()),
             kind: PointerIntegerKind::Exact,
         }));
     }
-    coerce_c_value_to_type_as(value, target_type, conversion, obligations, assumptions)
-        .ok_or(CRuntimeError::TypeMismatch)
+    coerce_program_value_to_type_as(value, target_type, conversion, obligations, assumptions)
+        .ok_or(RuntimeError::TypeMismatch)
 }
 
 /// The undefined behavior of operating on `value` when it is a pointer into
@@ -1390,14 +1420,14 @@ fn cast_c_value_to_type_with_integer_origin(
 /// converting it to an integer or `_Bool` (by a cast, or implicitly at an
 /// assignment, a `return`, or a call argument) is. The evidence is positive: the pointer's own block holds an
 /// exact deallocated base or an offset into one (see
-/// [`CMemory::deallocated_heap_allocation_holding`]). A pointer whose block
+/// [`Memory::deallocated_heap_allocation_holding`]). A pointer whose block
 /// is neither shown freed nor shown live keeps its ordinary meaning.
 pub(in crate::kernel) fn freed_pointer_use(
-    state: &CState,
-    value: &CValue,
+    state: &ExecutionState,
+    value: &ProgramValue,
     assumptions: &PureFactContext,
-) -> Option<CUndefinedBehavior> {
-    let CValue::Pointer(pointer) = value else {
+) -> Option<UndefinedBehavior> {
+    let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
     if pointer.is_null() || pointer.block.is_function() {
@@ -1406,31 +1436,29 @@ pub(in crate::kernel) fn freed_pointer_use(
     state
         .memory()
         .deallocated_heap_allocation_holding(pointer.pointer(), assumptions)?;
-    Some(CUndefinedBehavior::FreedPointerUse)
+    Some(UndefinedBehavior::FreedPointerUse)
 }
 
 /// Refuses each value path whose value is a pointer into a freed allocation;
 /// see [`freed_pointer_use`]. Every other path is kept as it is.
 pub(in crate::kernel) fn refuse_freed_pointer_value_paths(
-    state: &CState,
-    paths: Vec<CExpressionPath>,
+    state: &ExecutionState,
+    paths: Vec<ExpressionPath>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if state.memory().heap_has_no_deallocations() {
         return paths;
     }
     paths
         .into_iter()
         .map(|path| match &path.outcome {
-            CExpressionOutcome::Value(value) => {
-                match freed_pointer_use(state, value, assumptions) {
-                    Some(undefined_behavior) => CExpressionPath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
-                        ..path
-                    },
-                    None => path,
-                }
-            }
+            ExpressionOutcome::Value(value) => match freed_pointer_use(state, value, assumptions) {
+                Some(undefined_behavior) => ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
+                    ..path
+                },
+                None => path,
+            },
             _ => path,
         })
         .collect()
@@ -1440,41 +1468,41 @@ pub(in crate::kernel) fn refuse_freed_pointer_value_paths(
 /// (`if`, loops, `?:`, `!`, `&&`, `||`, `assert`). Testing a freed pointer's
 /// truth compares it with null, so such a value is refused here; see
 /// [`freed_pointer_use`].
-pub(in crate::kernel) fn evaluate_c_condition_paths(
-    state: &CState,
-    condition: &CExpression,
+pub(in crate::kernel) fn evaluate_program_condition_paths(
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
-    let paths = evaluate_c_expression_paths(state, condition, assumptions, budget)?;
+) -> ExecutionResult<Vec<ExpressionPath>> {
+    let paths = evaluate_program_expression_paths(state, condition, assumptions, budget)?;
     Ok(refuse_freed_pointer_value_paths(state, paths, assumptions))
 }
 
-pub(in crate::kernel) fn coerce_c_null_pointer_constant(
-    value: CValue,
-    target_type: CType,
-) -> Option<CValue> {
+pub(in crate::kernel) fn coerce_program_null_pointer_constant(
+    value: ProgramValue,
+    target_type: ProgramType,
+) -> Option<ProgramValue> {
     if target_type.accepts(&value) {
         return Some(match value {
-            CValue::Pointer(pointer) => CValue::Pointer(pointer.with_type(target_type)),
+            ProgramValue::Pointer(pointer) => ProgramValue::Pointer(pointer.with_type(target_type)),
             value => value,
         });
     }
     match (target_type, value) {
-        (target_type, CValue::Int32(bits32_constant!(0))) if target_type.is_pointer() => {
-            Some(CValue::typed_pointer(Pointer::null(), target_type))
+        (target_type, ProgramValue::Int32(bits32_constant!(0))) if target_type.is_pointer() => {
+            Some(ProgramValue::typed_pointer(Pointer::null(), target_type))
         }
         _ => None,
     }
 }
 
 /// Explicit compatibility boundary for consumers that still require native values.
-pub(in crate::kernel) fn evaluate_c_expression_paths(
-    state: &CState,
-    expression: &CExpression,
+pub(in crate::kernel) fn evaluate_program_expression_paths(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     Ok(
         evaluate_expression_value_paths(state, expression, assumptions, budget)?
             .into_iter()
@@ -1484,27 +1512,27 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
 }
 
 pub(super) fn evaluate_native_expression_paths(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     budget.consume_expression_step()?;
     let mut paths = match expression {
-        CExpression::Value(CValue::Void) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+        ProgramExpression::Value(ProgramValue::Void) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
-        CExpression::Value(value) => {
+        ProgramExpression::Value(value) => {
             // A value the kernel substituted into an expression is introduced
             // to it here, as a read introduces a stored one.
             let mut facts = ExecutionFacts::new();
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(match value {
-                    CValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
-                        CValue::Pointer(assumptions.pointer_value_at_entry(pointer))
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(match value {
+                    ProgramValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
+                        ProgramValue::Pointer(assumptions.pointer_value_at_entry(pointer))
                     }
                     _ => value.clone(),
                 }),
@@ -1512,7 +1540,7 @@ pub(super) fn evaluate_native_expression_paths(
                 obligations: Vec::new(),
             }]
         }
-        CExpression::Variable(name)
+        ProgramExpression::Variable(name)
             if state.locals.is_array_object(name) || state.locals.is_aggregate_object(name) =>
         {
             let pointer = state
@@ -1521,44 +1549,59 @@ pub(super) fn evaluate_native_expression_paths(
                 .expect("array binding must carry a stack slot")
                 .clone();
             let pointee_constant = match state.locals.binding(name) {
-                Some(CLocalBinding::ArrayObject { constant, .. })
-                | Some(CLocalBinding::AggregateObject { constant, .. }) => *constant,
+                Some(LocalBinding::ArrayObject { constant, .. })
+                | Some(LocalBinding::AggregateObject { constant, .. }) => *constant,
                 _ => false,
             };
-            vec![CExpressionPath {
+            vec![ExpressionPath {
                 outcome: if state.memory.has_block(&pointer.block) {
-                    CExpressionOutcome::Value(CValue::typed_pointer_with_pointee_constant(
+                    ExpressionOutcome::Value(ProgramValue::typed_pointer_with_pointee_constant(
                         pointer,
                         if state.locals.is_aggregate_object(name) {
-                            CType::UInt8Pointer
+                            ProgramType::UInt8Pointer
                         } else {
                             state
                                 .locals
                                 .object_type(name)
-                                .and_then(CType::pointer_to)
-                                .unwrap_or(CType::Int32Pointer)
+                                .and_then(ProgramType::pointer_to)
+                                .unwrap_or(ProgramType::Int32Pointer)
                         },
                         pointee_constant,
                     ))
                 } else {
-                    CExpressionOutcome::RuntimeError(CRuntimeError::UnboundVariable(name.clone()))
+                    ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(name.clone()))
                 },
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }]
         }
-        CExpression::Variable(_) => {
-            read_c_lvalue_expression_paths(state, expression, assumptions, budget)?
+        ProgramExpression::Variable(_) => {
+            read_program_lvalue_expression_paths(state, expression, assumptions, budget)?
         }
-        CExpression::FunctionAddress(name) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(CValue::typed_pointer(
+        // The term this statement's own call step returned.
+        ProgramExpression::CallResult { call, .. } => vec![ExpressionPath {
+            outcome: match state
+                .call_results
+                .as_ref()
+                .and_then(|results| results.get(call))
+            {
+                Some(value) => ExpressionOutcome::Value(value.clone()),
+                None => ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(format!(
+                    "the result of call {call}, read before the call ran"
+                ))),
+            },
+            facts: Vec::new().into(),
+            obligations: Vec::new(),
+        }],
+        ProgramExpression::FunctionAddress(name) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::typed_pointer(
                 Pointer::function(name.clone()),
-                CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+                ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
             )),
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
-        CExpression::Cast {
+        ProgramExpression::Cast {
             expression,
             target_type,
             integer_mode,
@@ -1566,7 +1609,7 @@ pub(super) fn evaluate_native_expression_paths(
             pointee_volatile,
             pointee_constant,
             explicit_qualification,
-        } => evaluate_c_cast_paths(
+        } => evaluate_program_cast_paths(
             state,
             expression,
             *target_type,
@@ -1577,11 +1620,11 @@ pub(super) fn evaluate_native_expression_paths(
             assumptions,
             budget,
         )?,
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
-        } => evaluate_c_conditional_paths(
+        } => evaluate_program_conditional_paths(
             state,
             condition,
             then_branch,
@@ -1589,14 +1632,14 @@ pub(super) fn evaluate_native_expression_paths(
             assumptions,
             budget,
         )?,
-        CExpression::FloatNegate(expression) => {
-            evaluate_c_float_negate_paths(state, expression, assumptions, budget)?
+        ProgramExpression::FloatNegate(expression) => {
+            evaluate_program_float_negate_paths(state, expression, assumptions, budget)?
         }
-        CExpression::EnumConstruct {
+        ProgramExpression::EnumConstruct {
             enum_type,
             variant,
             fields,
-        } => evaluate_c_enum_construct_paths(
+        } => evaluate_program_enum_construct_paths(
             state,
             *enum_type,
             variant,
@@ -1604,37 +1647,36 @@ pub(super) fn evaluate_native_expression_paths(
             assumptions,
             budget,
         )?,
-        CExpression::EnumField {
+        ProgramExpression::EnumField {
             value,
             variant,
             index,
-        } => evaluate_c_enum_field_paths(state, value, variant, *index, assumptions, budget)?,
-        CExpression::EnumIs { value, variant } => {
-            evaluate_c_enum_is_paths(state, value, variant, assumptions, budget)?
+        } => evaluate_program_enum_field_paths(state, value, variant, *index, assumptions, budget)?,
+        ProgramExpression::EnumIs { value, variant } => {
+            evaluate_program_enum_is_paths(state, value, variant, assumptions, budget)?
         }
-        CExpression::FloatClassification {
+        ProgramExpression::FloatClassification {
             expression,
             classification,
-        } => evaluate_c_float_classification_paths(
+        } => evaluate_program_float_classification_paths(
             state,
             expression,
             *classification,
             assumptions,
             budget,
         )?,
-        CExpression::AddressOf(target) => {
+        ProgramExpression::AddressOf(target) => {
             address_of_lvalue_paths(state, target, assumptions, budget)?
         }
-        CExpression::CheckedObjectAddress(target) => {
-            let width = c_expression_lvalue_type(state, target)
+        ProgramExpression::CheckedObjectAddress(target) => {
+            let width = program_expression_lvalue_type(state, target)
                 .map(|ty| ty.byte_width())
                 .filter(|width| *width > 0);
             let mut paths = address_of_lvalue_paths(state, target, assumptions, budget)?;
             for path in &mut paths {
-                if let CExpressionOutcome::Value(CValue::Pointer(pointer)) = &path.outcome {
+                if let ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = &path.outcome {
                     let Some(width) = width else {
-                        path.outcome =
-                            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch);
+                        path.outcome = ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch);
                         continue;
                     };
                     let outside_known_block = match (
@@ -1659,9 +1701,8 @@ pub(super) fn evaluate_native_expression_paths(
                             .memory()
                             .is_deallocated_heap_address(pointer.pointer(), assumptions)
                     {
-                        path.outcome = CExpressionOutcome::UndefinedBehavior(
-                            CUndefinedBehavior::InvalidMemory,
-                        );
+                        path.outcome =
+                            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory);
                         continue;
                     }
                     // A wide range states no loadable fact, which counts
@@ -1682,7 +1723,7 @@ pub(super) fn evaluate_native_expression_paths(
                     let _ = add_proof_obligation_with_context(
                         &mut path.obligations,
                         assumptions,
-                        Proposition::CMemoryLoadable {
+                        Proposition::MemoryLoadable {
                             memory: state.memory().clone(),
                             base: pointer.pointer().clone(),
                             bytes: MachineTerm::constant(width),
@@ -1694,11 +1735,11 @@ pub(super) fn evaluate_native_expression_paths(
             }
             paths
         }
-        CExpression::Subobject { pointer, width } => {
-            evaluate_c_expression_paths(state, pointer, assumptions, budget)?
+        ProgramExpression::Subobject { pointer, width } => {
+            evaluate_program_expression_paths(state, pointer, assumptions, budget)?
                 .into_iter()
                 .flat_map(|path| match path.outcome {
-                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => subobject_paths(
+                    ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => subobject_paths(
                         pointer,
                         *width,
                         path.facts,
@@ -1706,12 +1747,12 @@ pub(super) fn evaluate_native_expression_paths(
                         assumptions,
                         state.resources(),
                     ),
-                    CExpressionOutcome::Value(_) => vec![CExpressionPath {
-                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    ExpressionOutcome::Value(_) => vec![ExpressionPath {
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts: path.facts,
                         obligations: path.obligations,
                     }],
-                    outcome => vec![CExpressionPath {
+                    outcome => vec![ExpressionPath {
                         outcome,
                         facts: path.facts,
                         obligations: path.obligations,
@@ -1719,11 +1760,11 @@ pub(super) fn evaluate_native_expression_paths(
                 })
                 .collect()
         }
-        CExpression::PointerOffsetBytes { pointer, bytes } => {
-            evaluate_c_expression_paths(state, pointer, assumptions, budget)?
+        ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
+            evaluate_program_expression_paths(state, pointer, assumptions, budget)?
                 .into_iter()
                 .flat_map(|path| match path.outcome {
-                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => {
+                    ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => {
                         pointer_offset_by_bytes_paths(
                             state,
                             pointer,
@@ -1733,118 +1774,118 @@ pub(super) fn evaluate_native_expression_paths(
                             assumptions,
                         )
                     }
-                    CExpressionOutcome::Value(_) => vec![CExpressionPath {
-                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    ExpressionOutcome::Value(_) => vec![ExpressionPath {
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts: path.facts,
                         obligations: path.obligations,
                     }],
-                    CExpressionOutcome::UndefinedBehavior(error) => vec![CExpressionPath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(error),
+                    ExpressionOutcome::UndefinedBehavior(error) => vec![ExpressionPath {
+                        outcome: ExpressionOutcome::UndefinedBehavior(error),
                         facts: path.facts,
                         obligations: path.obligations,
                     }],
-                    CExpressionOutcome::RuntimeError(error) => vec![CExpressionPath {
-                        outcome: CExpressionOutcome::RuntimeError(error),
+                    ExpressionOutcome::RuntimeError(error) => vec![ExpressionPath {
+                        outcome: ExpressionOutcome::RuntimeError(error),
                         facts: path.facts,
                         obligations: path.obligations,
                     }],
                 })
                 .collect()
         }
-        CExpression::LessThan(left, right) => evaluate_c_comparison_paths(
+        ProgramExpression::LessThan(left, right) => evaluate_program_comparison_paths(
             state,
             left,
             right,
             assumptions,
             budget,
-            CComparisonOperator::LessThan,
+            ComparisonOperator::LessThan,
         )?,
-        CExpression::LessEqual(left, right) => evaluate_c_comparison_paths(
+        ProgramExpression::LessEqual(left, right) => evaluate_program_comparison_paths(
             state,
             left,
             right,
             assumptions,
             budget,
-            CComparisonOperator::LessEqual,
+            ComparisonOperator::LessEqual,
         )?,
-        CExpression::GreaterThan(left, right) => evaluate_c_comparison_paths(
+        ProgramExpression::GreaterThan(left, right) => evaluate_program_comparison_paths(
             state,
             left,
             right,
             assumptions,
             budget,
-            CComparisonOperator::GreaterThan,
+            ComparisonOperator::GreaterThan,
         )?,
-        CExpression::GreaterEqual(left, right) => evaluate_c_comparison_paths(
+        ProgramExpression::GreaterEqual(left, right) => evaluate_program_comparison_paths(
             state,
             left,
             right,
             assumptions,
             budget,
-            CComparisonOperator::GreaterEqual,
+            ComparisonOperator::GreaterEqual,
         )?,
-        CExpression::Equal(left, right) => {
-            evaluate_c_equal_paths(state, left, right, assumptions, budget)?
+        ProgramExpression::Equal(left, right) => {
+            evaluate_program_equal_paths(state, left, right, assumptions, budget)?
         }
-        CExpression::NotEqual(left, right) => {
-            evaluate_c_not_equal_paths(state, left, right, assumptions, budget)?
+        ProgramExpression::NotEqual(left, right) => {
+            evaluate_program_not_equal_paths(state, left, right, assumptions, budget)?
         }
-        CExpression::Not(expression) => {
-            evaluate_c_not_paths(state, expression, assumptions, budget)?
+        ProgramExpression::Not(expression) => {
+            evaluate_program_not_paths(state, expression, assumptions, budget)?
         }
-        CExpression::And(left, right) => {
-            evaluate_c_logical_and_paths(state, left, right, assumptions, budget)?
+        ProgramExpression::And(left, right) => {
+            evaluate_program_logical_and_paths(state, left, right, assumptions, budget)?
         }
-        CExpression::Or(left, right) => {
-            evaluate_c_logical_or_paths(state, left, right, assumptions, budget)?
+        ProgramExpression::Or(left, right) => {
+            evaluate_program_logical_or_paths(state, left, right, assumptions, budget)?
         }
-        CExpression::Add(left, right) => {
-            evaluate_c_add_paths(state, left, right, assumptions, budget)?
+        ProgramExpression::Add(left, right) => {
+            evaluate_program_add_paths(state, left, right, assumptions, budget)?
         }
-        CExpression::Subtract(left, right) => {
-            evaluate_c_subtract_paths(state, left, right, assumptions, budget)?
+        ProgramExpression::Subtract(left, right) => {
+            evaluate_program_subtract_paths(state, left, right, assumptions, budget)?
         }
-        CExpression::Multiply(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::Multiply(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_multiply(left, right, facts, obligations, assumptions)
+                apply_program_multiply(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::Divide(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::Divide(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_divide(left, right, facts, obligations, assumptions)
+                apply_program_divide(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::Remainder(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::Remainder(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_remainder(left, right, facts, obligations, assumptions)
+                apply_program_remainder(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::ShiftLeft(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::ShiftLeft(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_shift_left(left, right, facts, obligations, assumptions)
+                apply_program_shift_left(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::RustShiftLeft(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::RustShiftLeft(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
@@ -1854,17 +1895,17 @@ pub(super) fn evaluate_native_expression_paths(
                 apply_rust_shift_left(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::ShiftRight(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::ShiftRight(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_shift_right(left, right, facts, obligations, assumptions)
+                apply_program_shift_right(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::RustShiftRight(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::RustShiftRight(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
@@ -1874,73 +1915,75 @@ pub(super) fn evaluate_native_expression_paths(
                 apply_rust_shift_right(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::BitwiseAnd(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::BitwiseAnd(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_bitwise_binary(
+                apply_program_bitwise_binary(
                     left,
                     right,
                     facts,
                     obligations,
                     assumptions,
-                    CBitwiseOperation::And,
+                    BitwiseOperation::And,
                 )
             },
         )?,
-        CExpression::BitwiseOr(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::BitwiseOr(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_bitwise_binary(
+                apply_program_bitwise_binary(
                     left,
                     right,
                     facts,
                     obligations,
                     assumptions,
-                    CBitwiseOperation::Or,
+                    BitwiseOperation::Or,
                 )
             },
         )?,
-        CExpression::BitwiseXor(left, right) => evaluate_c_value_binary_paths(
+        ProgramExpression::BitwiseXor(left, right) => evaluate_program_value_binary_paths(
             state,
             left,
             right,
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_bitwise_binary(
+                apply_program_bitwise_binary(
                     left,
                     right,
                     facts,
                     obligations,
                     assumptions,
-                    CBitwiseOperation::Xor,
+                    BitwiseOperation::Xor,
                 )
             },
         )?,
-        CExpression::BitwiseNot(expression) => {
+        ProgramExpression::BitwiseNot(expression) => {
             let mut paths = Vec::new();
-            for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
+            for path in evaluate_program_expression_paths(state, expression, assumptions, budget)? {
                 match path.outcome {
-                    CExpressionOutcome::Value(value) => {
-                        paths.extend(apply_c_bitwise_not(value, path.facts, path.obligations))
-                    }
-                    CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                        paths.push(CExpressionPath {
-                            outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+                    ExpressionOutcome::Value(value) => paths.extend(apply_program_bitwise_not(
+                        value,
+                        path.facts,
+                        path.obligations,
+                    )),
+                    ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                        paths.push(ExpressionPath {
+                            outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                             facts: path.facts,
                             obligations: path.obligations,
                         })
                     }
-                    CExpressionOutcome::RuntimeError(error) => paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::RuntimeError(error),
+                    ExpressionOutcome::RuntimeError(error) => paths.push(ExpressionPath {
+                        outcome: ExpressionOutcome::RuntimeError(error),
                         facts: path.facts,
                         obligations: path.obligations,
                     }),
@@ -1949,42 +1992,45 @@ pub(super) fn evaluate_native_expression_paths(
             paths
         }
         // An inline array field is an lvalue whose value is not represented by
-        // CValue. In an expression context it undergoes C's array-to-pointer
+        // ProgramValue. In an expression context it undergoes C's array-to-pointer
         // conversion, so evaluate the field's address rather than attempting
         // to load an aggregate value.
-        CExpression::TypedLoad {
+        ProgramExpression::TypedLoad {
             pointer,
             value_type:
-                CType::Int32Array(_)
-                | CType::UInt8Array(_)
-                | CType::Int8Array(_)
-                | CType::Int16Array(_)
-                | CType::UInt16Array(_)
-                | CType::UInt32Array(_)
-                | CType::Int128Array(_)
-                | CType::Int64Array(_)
-                | CType::UInt128Array(_)
-                | CType::UInt64Array(_)
-                | CType::PointerArray(_, _),
+                ProgramType::Int32Array(_)
+                | ProgramType::UInt8Array(_)
+                | ProgramType::Int8Array(_)
+                | ProgramType::Int16Array(_)
+                | ProgramType::UInt16Array(_)
+                | ProgramType::UInt32Array(_)
+                | ProgramType::Int128Array(_)
+                | ProgramType::Int64Array(_)
+                | ProgramType::UInt128Array(_)
+                | ProgramType::UInt64Array(_)
+                | ProgramType::PointerArray(_, _),
             ..
-        } => evaluate_c_expression_paths(state, pointer, assumptions, budget)?,
-        CExpression::Load(_) | CExpression::TypedLoad { .. } | CExpression::Index(_, _) => {
-            read_c_lvalue_expression_paths(state, expression, assumptions, budget)?
+        } => evaluate_program_expression_paths(state, pointer, assumptions, budget)?,
+        ProgramExpression::Load(_)
+        | ProgramExpression::TypedLoad { .. }
+        | ProgramExpression::Index(_, _) => {
+            read_program_lvalue_expression_paths(state, expression, assumptions, budget)?
         }
     };
     // A wide wrapper cannot reinterpret a legacy word or arithmetic node.
     // Inspect the root only, including values read from locals or call results.
     for path in &mut paths {
-        if let CExpressionOutcome::Value(value @ (CValue::Int128(_) | CValue::UInt128(_))) =
-            &path.outcome
-            && !value.c_type().accepts(value)
+        if let ExpressionOutcome::Value(
+            value @ (ProgramValue::Int128(_) | ProgramValue::UInt128(_)),
+        ) = &path.outcome
+            && !value.program_type().accepts(value)
         {
-            path.outcome = CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch);
+            path.outcome = ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch);
         }
     }
     budget.check_path_width(paths.len())?;
     for path in &paths {
-        if let CExpressionOutcome::Value(value) = &path.outcome {
+        if let ExpressionOutcome::Value(value) = &path.outcome {
             crate::kernel::debug_assert_widths(
                 "an evaluated expression",
                 || crate::kernel::value_mismatch(value),
@@ -1999,36 +2045,36 @@ pub(super) fn evaluate_native_expression_paths(
 /// `!` or connective, evaluated as the `Bool` it tests, with no path split
 /// ([`ConditionValueScope`]). Its operands are evaluated as usual.
 fn evaluate_bool_value_paths(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let paths = {
         let _condition_values = ConditionValueScope::enter();
-        evaluate_c_expression_paths(state, expression, assumptions, budget)?
+        evaluate_program_expression_paths(state, expression, assumptions, budget)?
     };
     // A Rust comparison whose operands are written without a cast compares
     // values of one type; at 8 or 16 bits it is native at that type, so the
     // promoted comparison the evaluator built is read back as it (rule K8).
     // An operand written with `as` keeps the comparison at the cast's type.
     let native_comparison = match expression {
-        CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right) => {
-            !matches!(left.as_ref(), CExpression::Cast { .. })
-                && !matches!(right.as_ref(), CExpression::Cast { .. })
+        ProgramExpression::Equal(left, right)
+        | ProgramExpression::NotEqual(left, right)
+        | ProgramExpression::LessThan(left, right)
+        | ProgramExpression::LessEqual(left, right)
+        | ProgramExpression::GreaterThan(left, right)
+        | ProgramExpression::GreaterEqual(left, right) => {
+            !matches!(left.as_ref(), ProgramExpression::Cast { .. })
+                && !matches!(right.as_ref(), ProgramExpression::Cast { .. })
         }
         _ => false,
     };
     Ok(paths
         .into_iter()
-        .map(|path| CExpressionPath {
+        .map(|path| ExpressionPath {
             outcome: match path.outcome {
-                CExpressionOutcome::Value(value) => ConditionTerm::nonzero_test(&value)
+                ExpressionOutcome::Value(value) => ConditionTerm::nonzero_test(&value)
                     .map(|condition| {
                         native_comparison
                             .then(|| {
@@ -2039,10 +2085,10 @@ fn evaluate_bool_value_paths(
                             .flatten()
                             .unwrap_or(condition)
                     })
-                    .map(CValue::of_bool)
-                    .map(CExpressionOutcome::Value)
-                    .unwrap_or(CExpressionOutcome::RuntimeError(
-                        CRuntimeError::TypeMismatch,
+                    .map(ProgramValue::of_bool)
+                    .map(ExpressionOutcome::Value)
+                    .unwrap_or(ExpressionOutcome::RuntimeError(
+                        RuntimeError::TypeMismatch,
                     )),
                 outcome => outcome,
             },
@@ -2051,43 +2097,41 @@ fn evaluate_bool_value_paths(
         .collect())
 }
 
-/// A Rust operator on 8- or 16-bit values (`CIntegerCastMode::NarrowArithmetic`):
+/// A Rust operator on 8- or 16-bit values (`IntegerCastMode::NarrowArithmetic`):
 /// the operands are evaluated as written, in order, and the value is the
 /// operator's native node at `target_type`. An operand of another type is a
 /// type mismatch, never a silent promotion.
 fn evaluate_narrow_arithmetic_paths(
-    state: &CState,
-    expression: &CExpression,
-    target_type: CType,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    target_type: ProgramType,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     use crate::kernel::MachineBinaryOp as Op;
-    let format = MachineIntegerType::from_c_type(target_type)
+    let format = MachineIntegerType::from_program_type(target_type)
         .filter(|format| super::operators::is_narrow_format(*format));
-    let outcome = |value: Option<CValue>| match value {
-        Some(value) => CExpressionOutcome::Value(value),
-        None => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+    let outcome = |value: Option<ProgramValue>| match value {
+        Some(value) => ExpressionOutcome::Value(value),
+        None => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
     };
     let (op, left, right) = match expression {
-        CExpression::Add(left, right) => (Op::Add, left, right),
-        CExpression::Subtract(left, right) => (Op::Subtract, left, right),
-        CExpression::Multiply(left, right) => (Op::Multiply, left, right),
-        CExpression::BitwiseAnd(left, right) => (Op::BitwiseAnd, left, right),
-        CExpression::BitwiseOr(left, right) => (Op::BitwiseOr, left, right),
-        CExpression::BitwiseXor(left, right) => (Op::BitwiseXor, left, right),
-        CExpression::ShiftLeft(left, right) => (Op::ShiftLeft, left, right),
-        CExpression::BitwiseNot(operand) => {
+        ProgramExpression::Add(left, right) => (Op::Add, left, right),
+        ProgramExpression::Subtract(left, right) => (Op::Subtract, left, right),
+        ProgramExpression::Multiply(left, right) => (Op::Multiply, left, right),
+        ProgramExpression::BitwiseAnd(left, right) => (Op::BitwiseAnd, left, right),
+        ProgramExpression::BitwiseOr(left, right) => (Op::BitwiseOr, left, right),
+        ProgramExpression::BitwiseXor(left, right) => (Op::BitwiseXor, left, right),
+        ProgramExpression::ShiftLeft(left, right) => (Op::ShiftLeft, left, right),
+        ProgramExpression::BitwiseNot(operand) => {
             return Ok(
-                evaluate_c_expression_paths(state, operand, assumptions, budget)?
+                evaluate_program_expression_paths(state, operand, assumptions, budget)?
                     .into_iter()
-                    .map(|path| CExpressionPath {
+                    .map(|path| ExpressionPath {
                         outcome: match path.outcome {
-                            CExpressionOutcome::Value(value) => {
-                                outcome(format.and_then(|format| {
-                                    super::operators::native_narrow_not(format, &value)
-                                }))
-                            }
+                            ExpressionOutcome::Value(value) => outcome(format.and_then(|format| {
+                                super::operators::native_narrow_not(format, &value)
+                            })),
                             outcome => outcome,
                         },
                         ..path
@@ -2096,21 +2140,21 @@ fn evaluate_narrow_arithmetic_paths(
             );
         }
         _ => {
-            return Ok(vec![CExpressionPath {
+            return Ok(vec![ExpressionPath {
                 outcome: outcome(None),
                 facts: ExecutionFacts::new(),
                 obligations: Vec::new(),
             }]);
         }
     };
-    evaluate_c_value_binary_paths(
+    evaluate_program_value_binary_paths(
         state,
         left,
         right,
         assumptions,
         budget,
         |left, right, facts, obligations| {
-            vec![CExpressionPath {
+            vec![ExpressionPath {
                 outcome: outcome(format.and_then(|format| {
                     super::operators::native_narrow_binary(format, op, &left, &right)
                 })),
@@ -2122,21 +2166,21 @@ fn evaluate_narrow_arithmetic_paths(
 }
 
 #[allow(clippy::too_many_arguments)] // Cast mode and pointee qualifiers are independent.
-fn evaluate_c_cast_paths(
-    state: &CState,
-    expression: &CExpression,
-    target_type: CType,
-    integer_mode: CIntegerCastMode,
+fn evaluate_program_cast_paths(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    target_type: ProgramType,
+    integer_mode: IntegerCastMode,
     pointee_volatile: bool,
     pointee_constant: bool,
     explicit_qualification: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
-    if integer_mode == CIntegerCastMode::BoolValue {
+) -> ExecutionResult<Vec<ExpressionPath>> {
+    if integer_mode == IntegerCastMode::BoolValue {
         return evaluate_bool_value_paths(state, expression, assumptions, budget);
     }
-    if integer_mode == CIntegerCastMode::NarrowArithmetic {
+    if integer_mode == IntegerCastMode::NarrowArithmetic {
         return evaluate_narrow_arithmetic_paths(
             state,
             expression,
@@ -2149,8 +2193,8 @@ fn evaluate_c_cast_paths(
         .is_pointer()
         .then(|| WordRepresentationScope::enter(true));
     let mut paths = Vec::new();
-    for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
-        let CExpressionPath {
+    for path in evaluate_program_expression_paths(state, expression, assumptions, budget)? {
+        let ExpressionPath {
             outcome,
             mut facts,
             mut obligations,
@@ -2159,18 +2203,18 @@ fn evaluate_c_cast_paths(
         // indeterminate value; a pointer-to-pointer cast only retags it, like
         // a store. See `freed_pointer_use`.
         let outcome = match outcome {
-            CExpressionOutcome::Value(value) if !target_type.is_pointer() => {
+            ExpressionOutcome::Value(value) if !target_type.is_pointer() => {
                 match freed_pointer_use(state, &value, assumptions) {
                     Some(undefined_behavior) => {
-                        CExpressionOutcome::UndefinedBehavior(undefined_behavior)
+                        ExpressionOutcome::UndefinedBehavior(undefined_behavior)
                     }
-                    None => CExpressionOutcome::Value(value),
+                    None => ExpressionOutcome::Value(value),
                 }
             }
             outcome => outcome,
         };
         let outcome = match outcome {
-            CExpressionOutcome::Value(value) => {
+            ExpressionOutcome::Value(value) => {
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 // A cast C source wrote, a C++20 integral conversion and a
@@ -2181,9 +2225,9 @@ fn evaluate_c_cast_paths(
                 // establishes the range the identity needs.
                 let conversion = if matches!(
                     integer_mode,
-                    CIntegerCastMode::CConversion
-                        | CIntegerCastMode::ResultConversion
-                        | CIntegerCastMode::Modulo
+                    IntegerCastMode::CConversion
+                        | IntegerCastMode::ResultConversion
+                        | IntegerCastMode::Modulo
                 ) {
                     IntegerConversion::Modular
                 } else {
@@ -2194,11 +2238,16 @@ fn evaluate_c_cast_paths(
                 let checked_source = (conversion == IntegerConversion::Checked
                     && matches!(
                         target_type,
-                        CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16
+                        ProgramType::Int8
+                            | ProgramType::UInt8
+                            | ProgramType::Int16
+                            | ProgramType::UInt16
                     ))
                 .then(|| value.clone());
                 let needs_integer_origin = match &value {
-                    CValue::Int64(bits) | CValue::UInt64(bits) if target_type.is_pointer() => {
+                    ProgramValue::Int64(bits) | ProgramValue::UInt64(bits)
+                        if target_type.is_pointer() =>
+                    {
                         bits.uint64_as_const() != Some(0)
                             && effective_assumptions.decide(&ConditionTerm::uint64_equal(
                                 bits.clone(),
@@ -2213,62 +2262,62 @@ fn evaluate_c_cast_paths(
                     None
                 };
                 let word_bits = match &value {
-                    CValue::PointerInteger(record)
+                    ProgramValue::PointerInteger(record)
                         if target_type.is_pointer()
                             && matches!(record.kind, PointerIntegerKind::Word { .. })
                             && !SPECIFICATION_READS.with(|depth| depth.get() > 0) =>
                     {
-                        crate::kernel::spec::c_value_bitvector_term(&record.numeric)
+                        crate::kernel::spec::program_value_bitvector_term(&record.numeric)
                     }
                     _ => None,
                 };
                 let implicit_pointer_conversion = matches!(
                     integer_mode,
-                    CIntegerCastMode::CConversion | CIntegerCastMode::ResultConversion
+                    IntegerCastMode::CConversion | IntegerCastMode::ResultConversion
                 ) && !explicit_qualification
                     && target_type.is_pointer()
-                    && matches!(&value, CValue::Pointer(_));
-                let coerced = if integer_mode == CIntegerCastMode::PointerCoercion
+                    && matches!(&value, ProgramValue::Pointer(_));
+                let coerced = if integer_mode == IntegerCastMode::PointerCoercion
                     || implicit_pointer_conversion
                 {
                     match value {
-                        CValue::Pointer(pointer)
+                        ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
-                                && (integer_mode != CIntegerCastMode::PointerCoercion
-                                    || target_type != CType::VoidPointer
-                                    || pointer.c_type().is_object_pointer()) =>
+                                && (integer_mode != IntegerCastMode::PointerCoercion
+                                    || target_type != ProgramType::VoidPointer
+                                    || pointer.program_type().is_object_pointer()) =>
                         {
-                            Ok(CValue::Pointer(pointer.with_type(target_type)))
+                            Ok(ProgramValue::Pointer(pointer.with_type(target_type)))
                         }
-                        _ => Err(CRuntimeError::TypeMismatch),
+                        _ => Err(RuntimeError::TypeMismatch),
                     }
-                } else if integer_mode == CIntegerCastMode::Modulo {
-                    MachineIntegerType::from_c_type(target_type)
+                } else if integer_mode == IntegerCastMode::Modulo {
+                    MachineIntegerType::from_program_type(target_type)
                         .and_then(|destination| {
                             crate::kernel::machine_integer::conversion::convert_value(
                                 value,
                                 destination,
                             )
                         })
-                        .ok_or(CRuntimeError::TypeMismatch)
-                } else if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
+                        .ok_or(RuntimeError::TypeMismatch)
+                } else if integer_mode == IntegerCastMode::UInt64BitsToInt64 {
                     match (target_type, value.numeric_value().clone()) {
-                        (CType::Int64, CValue::UInt64(bits)) => {
-                            Ok(CValue::Int64(MachineTerm::int64_from_uint64_bits(bits)))
-                        }
-                        _ => Err(CRuntimeError::TypeMismatch),
+                        (ProgramType::Int64, ProgramValue::UInt64(bits)) => Ok(
+                            ProgramValue::Int64(MachineTerm::int64_from_uint64_bits(bits)),
+                        ),
+                        _ => Err(RuntimeError::TypeMismatch),
                     }
-                } else if target_type == CType::Int32 {
+                } else if target_type == ProgramType::Int32 {
                     match value {
-                        value @ (CValue::Int8(_)
-                        | CValue::Int16(_)
-                        | CValue::UInt8(_)
-                        | CValue::UInt16(_)) => {
-                            promote_c_path_value(value, MachineIntegerType::Int32)
-                                .map(CValue::Int32)
-                                .ok_or(CRuntimeError::TypeMismatch)
+                        value @ (ProgramValue::Int8(_)
+                        | ProgramValue::Int16(_)
+                        | ProgramValue::UInt8(_)
+                        | ProgramValue::UInt16(_)) => {
+                            promote_program_path_value(value, MachineIntegerType::Int32)
+                                .map(ProgramValue::Int32)
+                                .ok_or(RuntimeError::TypeMismatch)
                         }
-                        value => cast_c_value_to_type_with_integer_origin(
+                        value => cast_program_value_to_type_with_integer_origin(
                             value,
                             target_type,
                             conversion,
@@ -2277,20 +2326,23 @@ fn evaluate_c_cast_paths(
                             integer_pointer_origin,
                         ),
                     }
-                } else if target_type == CType::UInt32
+                } else if target_type == ProgramType::UInt32
                     && matches!(
                         value,
-                        CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)
+                        ProgramValue::Int8(_)
+                            | ProgramValue::Int16(_)
+                            | ProgramValue::UInt8(_)
+                            | ProgramValue::UInt16(_)
                     )
                 {
                     // A narrow value's range was filed where the value was
                     // produced, in both orders for an unsigned type, so the
                     // widened word needs no fact of its own.
-                    promote_c_path_value(value, MachineIntegerType::UInt32)
-                        .map(CValue::UInt32)
-                        .ok_or(CRuntimeError::TypeMismatch)
+                    promote_program_path_value(value, MachineIntegerType::UInt32)
+                        .map(ProgramValue::UInt32)
+                        .ok_or(RuntimeError::TypeMismatch)
                 } else {
-                    cast_c_value_to_type_with_integer_origin(
+                    cast_program_value_to_type_with_integer_origin(
                         value,
                         target_type,
                         conversion,
@@ -2307,7 +2359,7 @@ fn evaluate_c_cast_paths(
                     );
                 }
                 let coerced = coerced.and_then(|value| {
-                    let (Some(bits), CValue::Pointer(pointer)) = (&word_bits, &value) else {
+                    let (Some(bits), ProgramValue::Pointer(pointer)) = (&word_bits, &value) else {
                         return Ok(value);
                     };
                     if effective_assumptions.decide(&ConditionTerm::uint64_equal(
@@ -2315,7 +2367,7 @@ fn evaluate_c_cast_paths(
                         MachineTerm::uint64_constant(0),
                     )) == Some(true)
                     {
-                        return Ok(CValue::typed_pointer(Pointer::null(), target_type));
+                        return Ok(ProgramValue::typed_pointer(Pointer::null(), target_type));
                     }
                     // Only full-value premises supply the selected extent.
                     // Numeric tag equations may then choose address coordinates.
@@ -2326,8 +2378,8 @@ fn evaluate_c_cast_paths(
                         &mut obligations,
                         target_type,
                     )
-                    .map_err(CRuntimeError::PointerConversion)?;
-                    Ok(CValue::Pointer(match address {
+                    .map_err(RuntimeError::PointerConversion)?;
+                    Ok(ProgramValue::Pointer(match address {
                         Some(address) => {
                             let class = pointer.object_class().or_else(|| address.object_class());
                             pointer
@@ -2344,12 +2396,12 @@ fn evaluate_c_cast_paths(
                 if let Ok(value) = &coerced
                     && matches!(
                         integer_mode,
-                        CIntegerCastMode::CConversion
-                            | CIntegerCastMode::ResultConversion
-                            | CIntegerCastMode::Modulo
+                        IntegerCastMode::CConversion
+                            | IntegerCastMode::ResultConversion
+                            | IntegerCastMode::Modulo
                     )
                     && matches!(
-                        crate::kernel::c_narrow_integer_range(value),
+                        crate::kernel::program_narrow_integer_range(value),
                         Some((
                             MachineTerm::Cast {
                                 spelling: MachineCastSpelling::Generic,
@@ -2372,29 +2424,29 @@ fn evaluate_c_cast_paths(
                             || (!explicit_qualification
                                 && matches!(
                                     &value,
-                                    CValue::Pointer(pointer) if pointer.pointee_constant()
+                                    ProgramValue::Pointer(pointer) if pointer.pointee_constant()
                                 ));
                         let pointee_volatile = pointee_volatile
-                            || (integer_mode == CIntegerCastMode::PointerCoercion
+                            || (integer_mode == IntegerCastMode::PointerCoercion
                                 && matches!(
                                     &value,
-                                    CValue::Pointer(pointer) if pointer.pointee_volatile()
+                                    ProgramValue::Pointer(pointer) if pointer.pointee_volatile()
                                 ));
-                        CExpressionOutcome::Value(
+                        ExpressionOutcome::Value(
                             value
                                 .with_pointer_pointee_volatile(pointee_volatile)
                                 .with_pointer_pointee_constant(pointee_constant),
                         )
                     }
-                    Err(error) => CExpressionOutcome::RuntimeError(error),
+                    Err(error) => ExpressionOutcome::RuntimeError(error),
                 }
             }
-            CExpressionOutcome::UndefinedBehavior(error) => {
-                CExpressionOutcome::UndefinedBehavior(error)
+            ExpressionOutcome::UndefinedBehavior(error) => {
+                ExpressionOutcome::UndefinedBehavior(error)
             }
-            CExpressionOutcome::RuntimeError(error) => CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => ExpressionOutcome::RuntimeError(error),
         };
-        paths.push(CExpressionPath {
+        paths.push(ExpressionPath {
             outcome,
             facts,
             obligations,
@@ -2404,44 +2456,44 @@ fn evaluate_c_cast_paths(
     Ok(paths)
 }
 
-fn evaluate_c_float_classification_paths(
-    state: &CState,
-    expression: &CExpression,
-    classification: CFloatClassification,
+fn evaluate_program_float_classification_paths(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    classification: FloatClassification,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
-    for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
+    for path in evaluate_program_expression_paths(state, expression, assumptions, budget)? {
         match path.outcome {
-            CExpressionOutcome::Value(CValue::Float32(value)) => {
-                paths.extend(condition_as_c_int32_paths(
+            ExpressionOutcome::Value(ProgramValue::Float32(value)) => {
+                paths.extend(condition_as_program_int32_paths(
                     ConditionTerm::float32_classification(value, classification),
                     path.facts,
                     path.obligations,
                     assumptions,
                 ));
             }
-            CExpressionOutcome::Value(CValue::Float64(value)) => {
-                paths.extend(condition_as_c_int32_paths(
+            ExpressionOutcome::Value(ProgramValue::Float64(value)) => {
+                paths.extend(condition_as_program_int32_paths(
                     ConditionTerm::float64_classification(value, classification),
                     path.facts,
                     path.obligations,
                     assumptions,
                 ));
             }
-            CExpressionOutcome::Value(_) => paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            ExpressionOutcome::Value(_) => paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                 facts: path.facts,
                 obligations: path.obligations,
             }),
-            CExpressionOutcome::UndefinedBehavior(error) => paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(error),
+            ExpressionOutcome::UndefinedBehavior(error) => paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(error),
                 facts: path.facts,
                 obligations: path.obligations,
             }),
-            CExpressionOutcome::RuntimeError(error) => paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::RuntimeError(error),
                 facts: path.facts,
                 obligations: path.obligations,
             }),
@@ -2451,35 +2503,35 @@ fn evaluate_c_float_classification_paths(
     Ok(paths)
 }
 
-fn evaluate_c_float_negate_paths(
-    state: &CState,
-    expression: &CExpression,
+fn evaluate_program_float_negate_paths(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
-    for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
-        let CExpressionPath {
+    for path in evaluate_program_expression_paths(state, expression, assumptions, budget)? {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = path;
         let outcome = match outcome {
-            CExpressionOutcome::Value(CValue::Float32(value)) => {
-                CExpressionOutcome::Value(CValue::Float32(MachineTerm::float32_negate(value)))
+            ExpressionOutcome::Value(ProgramValue::Float32(value)) => {
+                ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::float32_negate(value)))
             }
-            CExpressionOutcome::Value(CValue::Float64(value)) => {
-                CExpressionOutcome::Value(CValue::Float64(MachineTerm::float64_negate(value)))
+            ExpressionOutcome::Value(ProgramValue::Float64(value)) => {
+                ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::float64_negate(value)))
             }
-            CExpressionOutcome::Value(_) => {
-                CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::Value(_) => {
+                ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
             }
-            CExpressionOutcome::UndefinedBehavior(error) => {
-                CExpressionOutcome::UndefinedBehavior(error)
+            ExpressionOutcome::UndefinedBehavior(error) => {
+                ExpressionOutcome::UndefinedBehavior(error)
             }
-            CExpressionOutcome::RuntimeError(error) => CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => ExpressionOutcome::RuntimeError(error),
         };
-        paths.push(CExpressionPath {
+        paths.push(ExpressionPath {
             outcome,
             facts,
             obligations,
@@ -2492,14 +2544,14 @@ fn evaluate_c_float_negate_paths(
 /// An enum value of `variant` built from `fields`, evaluated in order. Each
 /// field must have its declared type: the frontend's types are checked, not
 /// trusted.
-fn evaluate_c_enum_construct_paths(
-    state: &CState,
+fn evaluate_program_enum_construct_paths(
+    state: &ExecutionState,
     enum_type: TypeParameterName,
     variant: &str,
-    fields: &[CExpression],
+    fields: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let algebraic_type = enum_type.algebraic_type();
     let declared = algebraic_type
         .variants
@@ -2507,7 +2559,7 @@ fn evaluate_c_enum_construct_paths(
         .find(|declared| declared.name == variant)
         .map(|declared| declared.fields.clone());
     let mut paths = Vec::new();
-    for path in crate::kernel::functions::evaluate_c_arguments_paths(
+    for path in crate::kernel::functions::evaluate_program_arguments_paths(
         state,
         fields,
         assumptions,
@@ -2515,11 +2567,11 @@ fn evaluate_c_enum_construct_paths(
         None,
     )? {
         let outcome = match path.outcome {
-            Some(CFunctionOutcome::UndefinedBehavior(error)) => {
-                CExpressionOutcome::UndefinedBehavior(error)
+            Some(FunctionOutcome::UndefinedBehavior(error)) => {
+                ExpressionOutcome::UndefinedBehavior(error)
             }
-            Some(CFunctionOutcome::RuntimeError(error)) => CExpressionOutcome::RuntimeError(error),
-            Some(_) => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            Some(FunctionOutcome::RuntimeError(error)) => ExpressionOutcome::RuntimeError(error),
+            Some(_) => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
             None => match &declared {
                 Some(declared)
                     if !algebraic_type.rigid
@@ -2530,7 +2582,7 @@ fn evaluate_c_enum_construct_paths(
                             .map(|(declared, value)| enum_field_value(declared, value))
                             .collect::<Option<Vec<_>>>() =>
                 {
-                    CExpressionOutcome::Value(CValue::Parameter(Box::new(AlgebraicTerm {
+                    ExpressionOutcome::Value(ProgramValue::Parameter(Box::new(AlgebraicTerm {
                         algebraic_type: algebraic_type.clone(),
                         node: AlgebraicTermNode::Constructor {
                             variant: variant.to_string(),
@@ -2538,13 +2590,13 @@ fn evaluate_c_enum_construct_paths(
                         },
                     })))
                 }
-                _ => CExpressionOutcome::RuntimeError(CRuntimeError::EnumVariant(format!(
+                _ => ExpressionOutcome::RuntimeError(RuntimeError::EnumVariant(format!(
                     "`{}::{variant}` is not a variant of these field types",
                     algebraic_type.name
                 ))),
             },
         };
-        paths.push(CExpressionPath {
+        paths.push(ExpressionPath {
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -2558,16 +2610,16 @@ fn evaluate_c_enum_construct_paths(
 /// `declared`: the value itself, or, for a field of a nested enum type such
 /// as `Result<u32, ParseError>`'s error, the enum value a C local of that
 /// enum holds.
-fn enum_field_value(declared: &AlgebraicValueType, value: CValue) -> Option<AlgebraicValue> {
+fn enum_field_value(declared: &AlgebraicValueType, value: ProgramValue) -> Option<AlgebraicValue> {
     match (declared, value) {
-        (AlgebraicValueType::Algebraic { .. }, CValue::Parameter(term))
+        (AlgebraicValueType::Algebraic { .. }, ProgramValue::Parameter(term))
             if term.algebraic_type.value_type() == *declared =>
         {
             Some(AlgebraicValue::Algebraic(*term))
         }
         (declared, value) => declared
-            .accepts_c_value(&value)
-            .then_some(AlgebraicValue::C(value)),
+            .accepts_program_value(&value)
+            .then_some(AlgebraicValue::Program(value)),
     }
 }
 
@@ -2575,23 +2627,23 @@ fn enum_field_value(declared: &AlgebraicValueType, value: CValue) -> Option<Alge
 /// `variant`: a `match` arm makes the value it matches one, so a field a
 /// Rust arm reads is always that arm's. Anything else is refused rather than
 /// given an unconstrained value.
-fn evaluate_c_enum_field_paths(
-    state: &CState,
-    value: &CExpression,
+fn evaluate_program_enum_field_paths(
+    state: &ExecutionState,
+    value: &ProgramExpression,
     variant: &str,
     index: usize,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
-    for path in evaluate_c_expression_paths(state, value, assumptions, budget)? {
-        let CExpressionPath {
+    for path in evaluate_program_expression_paths(state, value, assumptions, budget)? {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = path;
         let outcome = match outcome {
-            CExpressionOutcome::Value(CValue::Parameter(term)) => {
+            ExpressionOutcome::Value(ProgramValue::Parameter(term)) => {
                 match &known_enum_constructor(&term, &facts, assumptions)
                     .unwrap_or_else(|| term.as_ref().clone())
                     .node
@@ -2600,26 +2652,28 @@ fn evaluate_c_enum_field_paths(
                         variant: actual,
                         fields,
                     } if actual == variant => match fields.get(index) {
-                        Some(AlgebraicValue::C(field)) => CExpressionOutcome::Value(field.clone()),
+                        Some(AlgebraicValue::Program(field)) => {
+                            ExpressionOutcome::Value(field.clone())
+                        }
                         // A nested enum field is the value a C local of that
                         // enum holds.
-                        Some(AlgebraicValue::Algebraic(field)) => {
-                            CExpressionOutcome::Value(CValue::Parameter(Box::new(field.clone())))
-                        }
-                        _ => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        Some(AlgebraicValue::Algebraic(field)) => ExpressionOutcome::Value(
+                            ProgramValue::Parameter(Box::new(field.clone())),
+                        ),
+                        _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     },
-                    _ => CExpressionOutcome::RuntimeError(CRuntimeError::EnumVariant(format!(
+                    _ => ExpressionOutcome::RuntimeError(RuntimeError::EnumVariant(format!(
                         "a field of `{}::{variant}` is read from a value not known to be that variant",
                         term.algebraic_type.name
                     ))),
                 }
             }
-            CExpressionOutcome::Value(_) => {
-                CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::Value(_) => {
+                ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
             }
             outcome => outcome,
         };
-        paths.push(CExpressionPath {
+        paths.push(ExpressionPath {
             outcome,
             facts,
             obligations,
@@ -2662,7 +2716,7 @@ pub(in crate::kernel) fn enum_variant_paths(
     facts: &ExecutionFacts,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Vec<(AlgebraicTerm, ExecutionFacts)>, CRuntimeError>> {
+) -> ExecutionResult<Result<Vec<(AlgebraicTerm, ExecutionFacts)>, RuntimeError>> {
     if let Some(known) = known_enum_constructor(term, facts, assumptions) {
         return Ok(Ok(vec![(known, facts.clone())]));
     }
@@ -2681,18 +2735,18 @@ pub(in crate::kernel) fn enum_variant_paths(
                 }));
                 continue;
             }
-            let Some(value) = field.symbolic_c_value(variable) else {
-                return Ok(Err(CRuntimeError::EnumVariant(format!(
+            let Some(value) = field.symbolic_program_value(variable) else {
+                return Ok(Err(RuntimeError::EnumVariant(format!(
                     "`{}::{}` has a field that is not a C value",
                     term.algebraic_type.name, variant.name
                 ))));
             };
-            fields.push(AlgebraicValue::C(value));
+            fields.push(AlgebraicValue::Program(value));
         }
         let mut case_facts = facts.clone();
         // A fresh narrow field ranges over its type's values only.
         for field in &fields {
-            if let AlgebraicValue::C(value) = field {
+            if let AlgebraicValue::Program(value) = field {
                 add_narrow_integer_range_execution_pure_facts(&mut case_facts, assumptions, value);
             }
         }
@@ -2767,34 +2821,36 @@ fn enum_is_without_witnesses(term: &AlgebraicTerm, variant: &str) -> Option<Cond
     }))
 }
 
-fn evaluate_c_enum_is_paths(
-    state: &CState,
-    value: &CExpression,
+fn evaluate_program_enum_is_paths(
+    state: &ExecutionState,
+    value: &ProgramExpression,
     variant: &str,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
-    for path in evaluate_c_expression_paths(state, value, assumptions, budget)? {
-        let CExpressionPath {
+    for path in evaluate_program_expression_paths(state, value, assumptions, budget)? {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = path;
         let term = match outcome {
-            CExpressionOutcome::Value(CValue::Parameter(term)) if !term.algebraic_type.rigid => {
+            ExpressionOutcome::Value(ProgramValue::Parameter(term))
+                if !term.algebraic_type.rigid =>
+            {
                 term
             }
-            CExpressionOutcome::Value(_) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            ExpressionOutcome::Value(_) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     facts,
                     obligations,
                 });
                 continue;
             }
             outcome => {
-                paths.push(CExpressionPath {
+                paths.push(ExpressionPath {
                     outcome,
                     facts,
                     obligations,
@@ -2806,8 +2862,8 @@ fn evaluate_c_enum_is_paths(
             && known_enum_constructor(&term, &facts, assumptions).is_none()
             && let Some(test) = enum_is_without_witnesses(&term, variant)
         {
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::Value(CValue::of_bool(test)),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::Value(ProgramValue::of_bool(test)),
                 facts,
                 obligations,
             });
@@ -2822,8 +2878,8 @@ fn evaluate_c_enum_is_paths(
                     else {
                         unreachable!("variant paths carry constructors");
                     };
-                    paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::Value(CValue::bool_constant(
+                    paths.push(ExpressionPath {
+                        outcome: ExpressionOutcome::Value(ProgramValue::bool_constant(
                             actual == variant,
                         )),
                         facts: case_facts,
@@ -2831,8 +2887,8 @@ fn evaluate_c_enum_is_paths(
                     });
                 }
             }
-            Err(error) => paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::RuntimeError(error),
+            Err(error) => paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::RuntimeError(error),
                 facts,
                 obligations,
             }),
@@ -2842,23 +2898,23 @@ fn evaluate_c_enum_is_paths(
     Ok(paths)
 }
 
-fn evaluate_c_conditional_paths(
-    state: &CState,
-    condition: &CExpression,
-    then_branch: &CExpression,
-    else_branch: &CExpression,
+fn evaluate_program_conditional_paths(
+    state: &ExecutionState,
+    condition: &ProgramExpression,
+    then_branch: &ProgramExpression,
+    else_branch: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
-    for condition_path in evaluate_c_condition_paths(state, condition, assumptions, budget)? {
-        let CExpressionPath {
+    for condition_path in evaluate_program_condition_paths(state, condition, assumptions, budget)? {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = condition_path;
-        let CExpressionOutcome::Value(value) = outcome else {
-            paths.push(CExpressionPath {
+        let ExpressionOutcome::Value(value) = outcome else {
+            paths.push(ExpressionPath {
                 outcome,
                 facts,
                 obligations,
@@ -2866,7 +2922,7 @@ fn evaluate_c_conditional_paths(
             continue;
         };
 
-        for truthiness in c_truthiness_paths(value, facts, obligations, assumptions) {
+        for truthiness in program_truthiness_paths(value, facts, obligations, assumptions) {
             let branch = if truthiness.is_true {
                 then_branch
             } else {
@@ -2878,7 +2934,7 @@ fn evaluate_c_conditional_paths(
                 &truthiness.obligations,
             );
             for branch_path in
-                evaluate_c_expression_paths(state, branch, &branch_assumptions, budget)?
+                evaluate_program_expression_paths(state, branch, &branch_assumptions, budget)?
             {
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &truthiness.facts,
@@ -2889,7 +2945,7 @@ fn evaluate_c_conditional_paths(
                 ) else {
                     continue;
                 };
-                paths.push(CExpressionPath {
+                paths.push(ExpressionPath {
                     outcome: branch_path.outcome,
                     facts,
                     obligations,
@@ -2901,88 +2957,89 @@ fn evaluate_c_conditional_paths(
     Ok(paths)
 }
 
-pub(in crate::kernel) fn evaluate_c_lvalue_paths(
-    state: &CState,
-    expression: &CExpression,
+pub(in crate::kernel) fn evaluate_program_lvalue_paths(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CLValuePath>> {
+) -> ExecutionResult<Vec<LValuePath>> {
     budget.consume_expression_step()?;
     let paths = match expression {
-        CExpression::Variable(name) => vec![CLValuePath {
+        ProgramExpression::Variable(name) => vec![LValuePath {
             outcome: match state.locals.binding(name) {
-                Some(CLocalBinding::Object {
-                    c_type,
+                Some(LocalBinding::Object {
+                    program_type,
                     volatile,
                     pointee_volatile,
                     constant,
                     pointee_constant,
                     ..
                 })
-                | Some(CLocalBinding::UninitializedObject {
-                    c_type,
+                | Some(LocalBinding::UninitializedObject {
+                    program_type,
                     volatile,
                     pointee_volatile,
                     constant,
                     pointee_constant,
                     ..
                 }) => {
-                    let lvalue = CLValue::local_with_qualifiers(
+                    let lvalue = LValue::local_with_qualifiers(
                         name.clone(),
-                        *c_type,
+                        *program_type,
                         *volatile,
                         *pointee_volatile,
                     )
                     .with_constant(*constant)
                     .with_pointee_constant(*pointee_constant);
-                    CLValueOutcome::LValue(lvalue)
+                    LValueOutcome::LValue(lvalue)
                 }
-                Some(CLocalBinding::GlobalObject {
-                    c_type,
+                Some(LocalBinding::GlobalObject {
+                    program_type,
                     slot,
                     volatile,
                     pointee_volatile,
                     constant,
                     pointee_constant,
-                }) => CLValueOutcome::LValue(
-                    CLValue::memory_with_qualifiers(
+                }) => LValueOutcome::LValue(
+                    LValue::memory_with_qualifiers(
                         slot.clone(),
-                        *c_type,
+                        *program_type,
                         *volatile,
                         *pointee_volatile,
                     )
                     .with_constant(*constant)
                     .with_pointee_constant(*pointee_constant),
                 ),
-                Some(CLocalBinding::ArrayObject { .. }) => {
-                    CLValueOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+                Some(LocalBinding::ArrayObject { .. }) => {
+                    LValueOutcome::RuntimeError(RuntimeError::TypeMismatch)
                 }
                 // A struct object is an lvalue whose address is the object's
                 // slot; its value type is the byte array holding it.
-                Some(CLocalBinding::AggregateObject { layout, .. }) => CLValueOutcome::LValue(
-                    CLValue::local(name.clone(), CType::UInt8Array(layout.size_bytes())),
+                Some(LocalBinding::AggregateObject { layout, .. }) => LValueOutcome::LValue(
+                    LValue::local(name.clone(), ProgramType::UInt8Array(layout.size_bytes())),
                 ),
-                None => CLValueOutcome::RuntimeError(CRuntimeError::UnboundVariable(name.clone())),
+                None => LValueOutcome::RuntimeError(RuntimeError::UnboundVariable(name.clone())),
             },
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
-        CExpression::Load(pointer_expression) => {
-            let Some(value_type) = c_expression_pointee_type(state, pointer_expression) else {
-                return Ok(vec![CLValuePath {
-                    outcome: CLValueOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
+        ProgramExpression::Load(pointer_expression) => {
+            let Some(value_type) = program_expression_pointee_type(state, pointer_expression)
+            else {
+                return Ok(vec![LValuePath {
+                    outcome: LValueOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
                     facts: Vec::new().into(),
                     obligations: Vec::new(),
                 }]);
             };
             let mut paths = Vec::new();
             for pointer_path in
-                evaluate_c_expression_paths(state, pointer_expression, assumptions, budget)?
+                evaluate_program_expression_paths(state, pointer_expression, assumptions, budget)?
             {
                 paths.push(match pointer_path.outcome {
-                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => CLValuePath {
-                        outcome: CLValueOutcome::LValue(
-                            CLValue::memory_with_volatile(
+                    ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => LValuePath {
+                        outcome: LValueOutcome::LValue(
+                            LValue::memory_with_volatile(
                                 pointer.pointer().clone(),
                                 value_type,
                                 pointer.pointee_volatile(),
@@ -2995,18 +3052,18 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::Value(_) => CLValuePath {
-                        outcome: CLValueOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    ExpressionOutcome::Value(_) => LValuePath {
+                        outcome: LValueOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::UndefinedBehavior(undefined_behavior) => CLValuePath {
-                        outcome: CLValueOutcome::UndefinedBehavior(undefined_behavior),
+                    ExpressionOutcome::UndefinedBehavior(undefined_behavior) => LValuePath {
+                        outcome: LValueOutcome::UndefinedBehavior(undefined_behavior),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::RuntimeError(error) => CLValuePath {
-                        outcome: CLValueOutcome::RuntimeError(error),
+                    ExpressionOutcome::RuntimeError(error) => LValuePath {
+                        outcome: LValueOutcome::RuntimeError(error),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
@@ -3014,7 +3071,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
             }
             paths
         }
-        CExpression::TypedLoad {
+        ProgramExpression::TypedLoad {
             pointer: pointer_expression,
             value_type,
             volatile,
@@ -3027,12 +3084,12 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                 .or_else(|| CAccessClass::of_kernel_type(*value_type));
             let mut paths = Vec::new();
             for pointer_path in
-                evaluate_c_expression_paths(state, pointer_expression, assumptions, budget)?
+                evaluate_program_expression_paths(state, pointer_expression, assumptions, budget)?
             {
                 paths.push(match pointer_path.outcome {
-                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => CLValuePath {
-                        outcome: CLValueOutcome::LValue(
-                            CLValue::memory_with_volatile(
+                    ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => LValuePath {
+                        outcome: LValueOutcome::LValue(
+                            LValue::memory_with_volatile(
                                 pointer.pointer().clone(),
                                 *value_type,
                                 *volatile || pointer.pointee_volatile(),
@@ -3046,18 +3103,18 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::Value(_) => CLValuePath {
-                        outcome: CLValueOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    ExpressionOutcome::Value(_) => LValuePath {
+                        outcome: LValueOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::UndefinedBehavior(undefined_behavior) => CLValuePath {
-                        outcome: CLValueOutcome::UndefinedBehavior(undefined_behavior),
+                    ExpressionOutcome::UndefinedBehavior(undefined_behavior) => LValuePath {
+                        outcome: LValueOutcome::UndefinedBehavior(undefined_behavior),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::RuntimeError(error) => CLValuePath {
-                        outcome: CLValueOutcome::RuntimeError(error),
+                    ExpressionOutcome::RuntimeError(error) => LValuePath {
+                        outcome: LValueOutcome::RuntimeError(error),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
@@ -3065,20 +3122,21 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
             }
             paths
         }
-        CExpression::Index(base, index) => {
-            let Some(value_type) = c_expression_pointee_type(state, base) else {
-                return Ok(vec![CLValuePath {
-                    outcome: CLValueOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
+        ProgramExpression::Index(base, index) => {
+            let Some(value_type) = program_expression_pointee_type(state, base) else {
+                return Ok(vec![LValuePath {
+                    outcome: LValueOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
                     facts: Vec::new().into(),
                     obligations: Vec::new(),
                 }]);
             };
             let mut paths = Vec::new();
-            for pointer_path in evaluate_c_add_paths(state, base, index, assumptions, budget)? {
+            for pointer_path in evaluate_program_add_paths(state, base, index, assumptions, budget)?
+            {
                 paths.push(match pointer_path.outcome {
-                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => CLValuePath {
-                        outcome: CLValueOutcome::LValue(
-                            CLValue::memory_with_volatile(
+                    ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => LValuePath {
+                        outcome: LValueOutcome::LValue(
+                            LValue::memory_with_volatile(
                                 pointer.pointer().clone(),
                                 value_type,
                                 pointer.pointee_volatile(),
@@ -3091,18 +3149,18 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::Value(_) => CLValuePath {
-                        outcome: CLValueOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    ExpressionOutcome::Value(_) => LValuePath {
+                        outcome: LValueOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::UndefinedBehavior(undefined_behavior) => CLValuePath {
-                        outcome: CLValueOutcome::UndefinedBehavior(undefined_behavior),
+                    ExpressionOutcome::UndefinedBehavior(undefined_behavior) => LValuePath {
+                        outcome: LValueOutcome::UndefinedBehavior(undefined_behavior),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
-                    CExpressionOutcome::RuntimeError(error) => CLValuePath {
-                        outcome: CLValueOutcome::RuntimeError(error),
+                    ExpressionOutcome::RuntimeError(error) => LValuePath {
+                        outcome: LValueOutcome::RuntimeError(error),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
                     },
@@ -3110,8 +3168,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
             }
             paths
         }
-        _ => vec![CLValuePath {
-            outcome: CLValueOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+        _ => vec![LValuePath {
+            outcome: LValueOutcome::RuntimeError(RuntimeError::TypeMismatch),
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
@@ -3120,12 +3178,12 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
     Ok(paths)
 }
 
-pub(in crate::kernel) fn read_c_lvalue_expression_paths(
-    state: &CState,
-    expression: &CExpression,
+pub(in crate::kernel) fn read_program_lvalue_expression_paths(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     Ok(
         read_retained_lvalue_expression_paths(state, expression, assumptions, budget)?
             .into_iter()
@@ -3134,15 +3192,15 @@ pub(in crate::kernel) fn read_c_lvalue_expression_paths(
     )
 }
 
-pub(in crate::kernel) fn read_c_lvalue_paths(
-    state: &CState,
-    outcome: CLValueOutcome,
+pub(in crate::kernel) fn read_program_lvalue_paths(
+    state: &ExecutionState,
+    outcome: LValueOutcome,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     source: Option<&LoadSourceId>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     Ok(read_retained_lvalue_paths(
         state,
         outcome,
@@ -3157,37 +3215,37 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
     .collect())
 }
 
-fn retained_value_accepted(ty: CType, value: &ExecutionValue) -> bool {
+fn retained_value_accepted(ty: ProgramType, value: &ExecutionValue) -> bool {
     if value.shared().is_some()
         && matches!(
-            value.c_type(),
-            CType::Int8
-                | CType::Int16
-                | CType::Int32
-                | CType::Int64
-                | CType::UInt8
-                | CType::UInt16
-                | CType::UInt32
-                | CType::UInt64
+            value.program_type(),
+            ProgramType::Int8
+                | ProgramType::Int16
+                | ProgramType::Int32
+                | ProgramType::Int64
+                | ProgramType::UInt8
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::UInt64
         )
     {
-        return value.c_type() == ty;
+        return value.program_type() == ty;
     }
     ty.accepts(&value.native())
 }
 
 pub(in crate::kernel) fn read_retained_lvalue_expression_paths(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
     let source = match expression {
-        CExpression::TypedLoad { source, .. } => source.as_ref(),
+        ProgramExpression::TypedLoad { source, .. } => source.as_ref(),
         _ => None,
     };
     let mut paths = Vec::new();
-    for lvalue_path in evaluate_c_lvalue_paths(state, expression, assumptions, budget)? {
+    for lvalue_path in evaluate_program_lvalue_paths(state, expression, assumptions, budget)? {
         paths.extend(read_retained_lvalue_paths(
             state,
             lvalue_path.outcome,
@@ -3209,13 +3267,13 @@ pub(in crate::kernel) fn read_retained_lvalue_expression_paths(
 /// [`crate::kernel::c_narrow_integer_range_facts`]), and a parameter's range
 /// is an entry fact. Every other narrow value an expression can hold -- a
 /// loaded cell, a local a loop or a call gave a fresh value -- enters it
-/// through this read or as a substituted `CExpression::Value`, so the range
+/// through this read or as a substituted `ProgramExpression::Value`, so the range
 /// is filed at those two points, once where the value is produced, and no
 /// operator that later widens the value restates it. A range the context
 /// already holds exactly is not refiled.
 pub(in crate::kernel) fn read_retained_lvalue_paths(
-    state: &CState,
-    outcome: CLValueOutcome,
+    state: &ExecutionState,
+    outcome: LValueOutcome,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     source: Option<&LoadSourceId>,
@@ -3223,7 +3281,7 @@ pub(in crate::kernel) fn read_retained_lvalue_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
     let mut access_state = None;
-    if let CLValueOutcome::LValue(lvalue) = &outcome {
+    if let LValueOutcome::LValue(lvalue) = &outcome {
         if let Some(reference) = &lvalue.local_reference {
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -3244,7 +3302,7 @@ pub(in crate::kernel) fn read_retained_lvalue_paths(
                 }
                 Err(error) => {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(
                             Box::new(
                                 error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
                             ),
@@ -3258,8 +3316,8 @@ pub(in crate::kernel) fn read_retained_lvalue_paths(
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
             let pointer = match &lvalue.storage {
-                CLValueStorage::Memory { pointer } => Some(pointer),
-                CLValueStorage::Local { name } => state
+                LValueStorage::Memory { pointer } => Some(pointer),
+                LValueStorage::Local { name } => state
                     .locals
                     .slot(name)
                     .filter(|pointer| state.memory.requires_explicit_scalar_ownership(pointer)),
@@ -3275,9 +3333,9 @@ pub(in crate::kernel) fn read_retained_lvalue_paths(
                     .is_none()
             {
                 return Ok(vec![ExecutionValuePath {
-                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                        resource: Box::new(CResourceFact::own_memory(
-                            CMemoryRange::new_with_element_width(
+                    outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
+                        resource: Box::new(ResourceFact::own_memory(
+                            MemoryRange::new_with_element_width(
                                 pointer.clone(),
                                 0u32.into(),
                                 1u32.into(),
@@ -3301,7 +3359,7 @@ pub(in crate::kernel) fn read_retained_lvalue_paths(
         budget,
     )?;
     for path in &mut paths {
-        let CExpressionOutcome::Value(value) = &path.outcome else {
+        let ExpressionOutcome::Value(value) = &path.outcome else {
             continue;
         };
         add_retained_local_range_facts(&mut path.facts, assumptions, value);
@@ -3320,8 +3378,8 @@ fn add_retained_local_range_facts(
 }
 
 fn read_retained_lvalue_paths_without_ranges(
-    state: &CState,
-    outcome: CLValueOutcome,
+    state: &ExecutionState,
+    outcome: LValueOutcome,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     source: Option<&LoadSourceId>,
@@ -3331,22 +3389,26 @@ fn read_retained_lvalue_paths_without_ranges(
     // A scalar declared without a value whose storage a callee's checked
     // postcondition states `defined` is read from that storage: the call
     // wrote it through its address, which the name's binding never sees.
-    if let CLValueOutcome::LValue(lvalue) = &outcome
-        && let CLValueStorage::Local { name } = &lvalue.storage
-        && let Some(CLocalBinding::UninitializedObject {
-            c_type,
+    if let LValueOutcome::LValue(lvalue) = &outcome
+        && let LValueStorage::Local { name } = &lvalue.storage
+        && let Some(LocalBinding::UninitializedObject {
+            program_type,
             slot,
             volatile,
             pointee_volatile,
             ..
         }) = state.locals.binding(name)
-        && assumptions.has_memory_read_defined_evidence(&state.memory, slot, *c_type)
+        && assumptions.has_memory_read_defined_evidence(&state.memory, slot, *program_type)
     {
-        let memory =
-            CLValue::memory_with_qualifiers(slot.clone(), *c_type, *volatile, *pointee_volatile);
+        let memory = LValue::memory_with_qualifiers(
+            slot.clone(),
+            *program_type,
+            *volatile,
+            *pointee_volatile,
+        );
         return read_retained_lvalue_paths_without_ranges(
             state,
-            CLValueOutcome::LValue(memory),
+            LValueOutcome::LValue(memory),
             facts,
             obligations,
             source,
@@ -3355,8 +3417,8 @@ fn read_retained_lvalue_paths_without_ranges(
         );
     }
     Ok(match outcome {
-        CLValueOutcome::LValue(lvalue) => match &lvalue.storage {
-            CLValueStorage::Local { name } => {
+        LValueOutcome::LValue(lvalue) => match &lvalue.storage {
+            LValueStorage::Local { name } => {
                 if let Some(pointer) = state.locals.slot(name)
                     && let Some(refusal) = subobject_access_refusal(
                         pointer,
@@ -3368,7 +3430,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     )
                 {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+                        outcome: ExpressionOutcome::UndefinedBehavior(refusal),
                         facts,
                         obligations,
                     }]);
@@ -3388,9 +3450,9 @@ fn read_retained_lvalue_paths_without_ranges(
                     )
                 {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                            resource: Box::new(CResourceFact::view_memory(
-                                CMemoryRange::new_with_element_width(
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
+                            resource: Box::new(ResourceFact::view_memory(
+                                MemoryRange::new_with_element_width(
                                     pointer.clone(),
                                     0u32.into(),
                                     1u32.into(),
@@ -3405,10 +3467,10 @@ fn read_retained_lvalue_paths_without_ranges(
                 if matches!(
                     state.locals.binding(name),
                     Some(
-                        CLocalBinding::Object {
+                        LocalBinding::Object {
                             storage_declared: true,
                             ..
-                        } | CLocalBinding::UninitializedObject { .. }
+                        } | LocalBinding::UninitializedObject { .. }
                     )
                 ) && let Some(pointer) = state.locals.slot(name)
                     && state.memory.requires_explicit_scalar_ownership(pointer)
@@ -3421,9 +3483,9 @@ fn read_retained_lvalue_paths_without_ranges(
                     )
                 {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                            resource: Box::new(CResourceFact::view_memory(
-                                CMemoryRange::new_with_element_width(
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
+                            resource: Box::new(ResourceFact::view_memory(
+                                MemoryRange::new_with_element_width(
                                     pointer.clone(),
                                     0.into(),
                                     1.into(),
@@ -3437,43 +3499,44 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 let outcome = match state.locals.get(name) {
                     Some(value) if retained_value_accepted(lvalue.value_type, value) => {
-                        let value = if value.shared().is_some() && !value.c_type().is_pointer() {
-                            value.clone().into_value()
-                        } else {
-                            let native = value.native();
-                            let native = match native.as_ref() {
-                                CValue::Pointer(pointer)
-                                    if !SpecificationReadScope::is_active() =>
-                                {
-                                    CValue::Pointer(
-                                        local_assumptions.pointer_value_at_entry(pointer),
-                                    )
-                                }
-                                value => value.clone(),
+                        let value =
+                            if value.shared().is_some() && !value.program_type().is_pointer() {
+                                value.clone().into_value()
+                            } else {
+                                let native = value.native();
+                                let native = match native.as_ref() {
+                                    ProgramValue::Pointer(pointer)
+                                        if !SpecificationReadScope::is_active() =>
+                                    {
+                                        ProgramValue::Pointer(
+                                            local_assumptions.pointer_value_at_entry(pointer),
+                                        )
+                                    }
+                                    value => value.clone(),
+                                };
+                                native
+                                    .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
+                                    .with_pointer_pointee_constant(lvalue.pointee_is_constant())
+                                    .into()
                             };
-                            native
-                                .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
-                                .with_pointer_pointee_constant(lvalue.pointee_is_constant())
-                                .into()
-                        };
-                        CExpressionOutcome::Value(value)
+                        ExpressionOutcome::Value(value)
                     }
-                    Some(_) => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    Some(_) => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     None if matches!(
                         state.locals.binding(name),
-                        Some(CLocalBinding::UninitializedObject { .. })
+                        Some(LocalBinding::UninitializedObject { .. })
                     ) =>
                     {
-                        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+                        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
                     }
-                    None => CExpressionOutcome::RuntimeError(CRuntimeError::UnboundVariable(
-                        name.clone(),
-                    )),
+                    None => {
+                        ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(name.clone()))
+                    }
                 };
                 let mut facts = facts;
                 if lvalue.is_volatile()
                     && !SpecificationAccessScope::is_active()
-                    && let CExpressionOutcome::Value(value) = &outcome
+                    && let ExpressionOutcome::Value(value) = &outcome
                     && let Some(pointer) = lvalue.pointer(state)
                 {
                     facts.push(volatile_access_fact(
@@ -3490,7 +3553,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     obligations,
                 }]
             }
-            CLValueStorage::Memory { pointer } => {
+            LValueStorage::Memory { pointer } => {
                 if state
                     .memory
                     .heap
@@ -3499,8 +3562,8 @@ fn read_retained_lvalue_paths_without_ranges(
                     .any(|pending| pending.old_pointer.block == pointer.block)
                 {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::RuntimeError(
-                            CRuntimeError::UnresolvedAllocationOutcome,
+                        outcome: ExpressionOutcome::RuntimeError(
+                            RuntimeError::UnresolvedAllocationOutcome,
                         ),
                         facts,
                         obligations,
@@ -3508,8 +3571,8 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 if state.memory.is_ended_local_address(pointer) {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(
-                            CUndefinedBehavior::InvalidMemory,
+                        outcome: ExpressionOutcome::UndefinedBehavior(
+                            UndefinedBehavior::InvalidMemory,
                         ),
                         facts,
                         obligations,
@@ -3520,8 +3583,8 @@ fn read_retained_lvalue_paths_without_ranges(
                     .is_deallocated_heap_address(pointer, assumptions)
                 {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(
-                            CUndefinedBehavior::InvalidMemory,
+                        outcome: ExpressionOutcome::UndefinedBehavior(
+                            UndefinedBehavior::InvalidMemory,
                         ),
                         facts,
                         obligations,
@@ -3541,7 +3604,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         .flatten()
                 }) {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+                        outcome: ExpressionOutcome::UndefinedBehavior(refusal),
                         facts,
                         obligations,
                     }]);
@@ -3575,9 +3638,9 @@ fn read_retained_lvalue_paths_without_ranges(
                         }));
                 if (is_external || require_owned) && !has_read_resource {
                     return Ok(vec![ExecutionValuePath {
-                        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                            resource: Box::new(CResourceFact::view_memory(
-                                CMemoryRange::new_with_element_width(
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
+                            resource: Box::new(ResourceFact::view_memory(
+                                MemoryRange::new_with_element_width(
                                     pointer.clone(),
                                     MachineTerm::constant(0),
                                     MachineTerm::constant(1),
@@ -3594,7 +3657,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
-                let mut paths = evaluate_c_memory_load_paths(
+                let mut paths = evaluate_memory_load_paths(
                     &state.memory,
                     pointer.clone(),
                     lvalue.value_type,
@@ -3605,15 +3668,15 @@ fn read_retained_lvalue_paths_without_ranges(
                     // A specification names a value, not another C access.
                     lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
                     source,
-                    budget.c_byte_order(),
+                    budget.program_byte_order(),
                 );
                 // A pointer read from memory designates an object of the
                 // class its lvalue's type points to, unless it carries the
                 // class of the declaration that formed it.
                 if let Some(pointee) = lvalue.access_class().and_then(|class| class.pointee()) {
                     for path in &mut paths {
-                        if let CExpressionOutcome::Value(value) = &mut path.outcome
-                            && matches!(value, CValue::Pointer(_))
+                        if let ExpressionOutcome::Value(value) = &mut path.outcome
+                            && matches!(value, ProgramValue::Pointer(_))
                         {
                             *value = value
                                 .clone()
@@ -3625,9 +3688,9 @@ fn read_retained_lvalue_paths_without_ranges(
                     && source.kind == crate::kernel::ReferenceAccessKind::Read
                 {
                     for path in &mut paths {
-                        if matches!(path.outcome, CExpressionOutcome::Value(_)) {
+                        if matches!(path.outcome, ExpressionOutcome::Value(_)) {
                             let mut fact =
-                                ExecutionPureFact::certified(Proposition::CMemoryReadDefined {
+                                ExecutionPureFact::certified(Proposition::MemoryReadDefined {
                                     memory: state.memory.clone(),
                                     pointer: pointer.clone(),
                                     value_type: lvalue.value_type,
@@ -3651,7 +3714,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     return Ok(paths.into_iter().map(Into::into).collect());
                 }
                 for path in &mut paths {
-                    if let CExpressionOutcome::Value(value) = &path.outcome {
+                    if let ExpressionOutcome::Value(value) = &path.outcome {
                         let value = value.clone();
                         path.facts.push(volatile_access_fact(
                             budget,
@@ -3665,13 +3728,13 @@ fn read_retained_lvalue_paths_without_ranges(
                 paths.into_iter().map(Into::into).collect()
             }
         },
-        CLValueOutcome::UndefinedBehavior(undefined_behavior) => vec![ExecutionValuePath {
-            outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+        LValueOutcome::UndefinedBehavior(undefined_behavior) => vec![ExecutionValuePath {
+            outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
             facts,
             obligations,
         }],
-        CLValueOutcome::RuntimeError(error) => vec![ExecutionValuePath {
-            outcome: CExpressionOutcome::RuntimeError(error),
+        LValueOutcome::RuntimeError(error) => vec![ExecutionValuePath {
+            outcome: ExpressionOutcome::RuntimeError(error),
             facts,
             obligations,
         }],
@@ -3679,15 +3742,15 @@ fn read_retained_lvalue_paths_without_ranges(
 }
 
 pub(in crate::kernel) fn address_of_lvalue_paths(
-    state: &CState,
-    target: &CExpression,
+    state: &ExecutionState,
+    target: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
-    for lvalue_path in evaluate_c_lvalue_paths(state, target, assumptions, budget)? {
+    for lvalue_path in evaluate_program_lvalue_paths(state, target, assumptions, budget)? {
         paths.push(match lvalue_path.outcome {
-            CLValueOutcome::LValue(lvalue) => match lvalue.pointer(state) {
+            LValueOutcome::LValue(lvalue) => match lvalue.pointer(state) {
                 Some(pointer) => {
                     // A struct object is stored as its byte array; its
                     // address is a struct pointer, which the C0 front end
@@ -3695,21 +3758,21 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     // of any declared object is intrinsic to its block,
                     // recorded when the block was created.
                     let is_aggregate = match &lvalue.storage {
-                        CLValueStorage::Local { name } => matches!(
+                        LValueStorage::Local { name } => matches!(
                             state.locals.binding(name),
-                            Some(CLocalBinding::AggregateObject { .. })
+                            Some(LocalBinding::AggregateObject { .. })
                         ),
-                        CLValueStorage::Memory { .. } => false,
+                        LValueStorage::Memory { .. } => false,
                     };
                     let pointer_type = if is_aggregate {
-                        Some(CType::Int32Pointer)
+                        Some(ProgramType::Int32Pointer)
                     } else {
                         lvalue.value_type().pointer_to()
                     };
                     match pointer_type {
                         Some(pointer_type) => {
                             let facts = lvalue_path.facts;
-                            let mut address = CPointerValue::new(pointer, pointer_type)
+                            let mut address = PointerValue::new(pointer, pointer_type)
                                 .with_pointee_volatile(lvalue.is_volatile())
                                 .with_pointee_constant(lvalue.is_constant())
                                 .with_extent(lvalue.extent().cloned());
@@ -3724,35 +3787,35 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                             if let Some(reference) = &lvalue.local_reference {
                                 address = address.with_local_reference(*reference);
                             }
-                            let value = CValue::Pointer(address);
-                            CExpressionPath {
-                                outcome: CExpressionOutcome::Value(value),
+                            let value = ProgramValue::Pointer(address);
+                            ExpressionPath {
+                                outcome: ExpressionOutcome::Value(value),
                                 facts,
                                 obligations: lvalue_path.obligations,
                             }
                         }
-                        None => CExpressionPath {
-                            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        None => ExpressionPath {
+                            outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                             facts: lvalue_path.facts,
                             obligations: lvalue_path.obligations,
                         },
                     }
                 }
-                None => CExpressionPath {
-                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::UnboundVariable(
+                None => ExpressionPath {
+                    outcome: ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(
                         format!("{target:?}"),
                     )),
                     facts: lvalue_path.facts,
                     obligations: lvalue_path.obligations,
                 },
             },
-            CLValueOutcome::UndefinedBehavior(undefined_behavior) => CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            LValueOutcome::UndefinedBehavior(undefined_behavior) => ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                 facts: lvalue_path.facts,
                 obligations: lvalue_path.obligations,
             },
-            CLValueOutcome::RuntimeError(error) => CExpressionPath {
-                outcome: CExpressionOutcome::RuntimeError(error),
+            LValueOutcome::RuntimeError(error) => ExpressionPath {
+                outcome: ExpressionOutcome::RuntimeError(error),
                 facts: lvalue_path.facts,
                 obligations: lvalue_path.obligations,
             },
@@ -3771,7 +3834,7 @@ pub(in crate::kernel) fn is_external_memory_pointer(pointer: &Pointer) -> bool {
 }
 
 pub(in crate::kernel) fn resolve_local_pointer_alias(
-    state: &CState,
+    state: &ExecutionState,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> Pointer {
@@ -3786,112 +3849,120 @@ pub(in crate::kernel) fn resolve_local_pointer_alias(
         .unwrap_or_else(|| pointer.clone())
 }
 
-pub(in crate::kernel) fn c_expression_pointee_type(
-    state: &CState,
-    expression: &CExpression,
-) -> Option<CType> {
+pub(in crate::kernel) fn program_expression_pointee_type(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+) -> Option<ProgramType> {
     match expression {
-        CExpression::Value(value) => value.c_type().pointee_type(),
-        CExpression::Variable(name) => match state.locals.binding(name) {
-            Some(CLocalBinding::Object { c_type, .. }) => c_type.pointee_type(),
-            Some(CLocalBinding::UninitializedObject { c_type, .. }) => c_type.pointee_type(),
-            Some(CLocalBinding::GlobalObject { c_type, .. }) => c_type.pointee_type(),
-            Some(CLocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
-            Some(CLocalBinding::AggregateObject { .. }) => Some(CType::UInt8),
+        ProgramExpression::Value(value) => value.program_type().pointee_type(),
+        ProgramExpression::Variable(name) => match state.locals.binding(name) {
+            Some(LocalBinding::Object { program_type, .. }) => program_type.pointee_type(),
+            Some(LocalBinding::UninitializedObject { program_type, .. }) => {
+                program_type.pointee_type()
+            }
+            Some(LocalBinding::GlobalObject { program_type, .. }) => program_type.pointee_type(),
+            Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
+            Some(LocalBinding::AggregateObject { .. }) => Some(ProgramType::UInt8),
             None => None,
         },
-        CExpression::Cast { target_type, .. } => target_type.pointee_type(),
-        CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
-            c_expression_lvalue_type(state, target)
+        // A call's result has the callee's declared type.
+        ProgramExpression::CallResult { call, .. } => {
+            state.call_result(*call)?.program_type().pointee_type()
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => c_expression_pointee_type(state, pointer),
-        CExpression::TypedLoad { value_type, .. } => match value_type {
-            CType::Int32Array(_) => Some(CType::Int32),
-            CType::UInt8Array(_) => Some(CType::UInt8),
-            CType::Int8Array(_) => Some(CType::Int8),
-            CType::Int16Array(_) => Some(CType::Int16),
-            CType::UInt16Array(_) => Some(CType::UInt16),
-            CType::UInt32Array(_) => Some(CType::UInt32),
-            CType::Int64Array(_) => Some(CType::Int64),
-            CType::Int128Array(_) => Some(CType::Int128),
-            CType::UInt64Array(_) => Some(CType::UInt64),
-            CType::UInt128Array(_) => Some(CType::UInt128),
-            CType::PointerArray(element, _) => Some(element.pointer_type()),
+        ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
+        ProgramExpression::AddressOf(target) | ProgramExpression::CheckedObjectAddress(target) => {
+            program_expression_lvalue_type(state, target)
+        }
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
+            program_expression_pointee_type(state, pointer)
+        }
+        ProgramExpression::TypedLoad { value_type, .. } => match value_type {
+            ProgramType::Int32Array(_) => Some(ProgramType::Int32),
+            ProgramType::UInt8Array(_) => Some(ProgramType::UInt8),
+            ProgramType::Int8Array(_) => Some(ProgramType::Int8),
+            ProgramType::Int16Array(_) => Some(ProgramType::Int16),
+            ProgramType::UInt16Array(_) => Some(ProgramType::UInt16),
+            ProgramType::UInt32Array(_) => Some(ProgramType::UInt32),
+            ProgramType::Int64Array(_) => Some(ProgramType::Int64),
+            ProgramType::Int128Array(_) => Some(ProgramType::Int128),
+            ProgramType::UInt64Array(_) => Some(ProgramType::UInt64),
+            ProgramType::UInt128Array(_) => Some(ProgramType::UInt128),
+            ProgramType::PointerArray(element, _) => Some(element.pointer_type()),
             value_type => value_type.pointee_type(),
         },
-        CExpression::Add(left, right) => c_expression_pointee_type(state, left)
-            .or_else(|| c_expression_pointee_type(state, right)),
-        CExpression::Subtract(left, _) => c_expression_pointee_type(state, left),
+        ProgramExpression::Add(left, right) => program_expression_pointee_type(state, left)
+            .or_else(|| program_expression_pointee_type(state, right)),
+        ProgramExpression::Subtract(left, _) => program_expression_pointee_type(state, left),
         // An indexed pointer expression is itself the value stored in the
         // selected cell. For `slots[0]` where `slots` is `int32**`, the
         // lvalue type is `int32*`, so its pointee type is `int32`.
-        CExpression::Index(base, _) => {
-            c_expression_pointee_type(state, base).and_then(CType::pointee_type)
+        ProgramExpression::Index(base, _) => {
+            program_expression_pointee_type(state, base).and_then(ProgramType::pointee_type)
         }
         _ => None,
     }
 }
 
-pub(in crate::kernel) fn c_expression_lvalue_type(
-    state: &CState,
-    expression: &CExpression,
-) -> Option<CType> {
+pub(in crate::kernel) fn program_expression_lvalue_type(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+) -> Option<ProgramType> {
     match expression {
-        CExpression::Variable(name) => state.locals.object_type(name),
-        CExpression::Load(pointer) => c_expression_pointee_type(state, pointer),
-        CExpression::TypedLoad { value_type, .. } => Some(*value_type),
-        CExpression::Index(base, _) => c_expression_pointee_type(state, base),
+        ProgramExpression::Variable(name) => state.locals.object_type(name),
+        ProgramExpression::Load(pointer) => program_expression_pointee_type(state, pointer),
+        ProgramExpression::TypedLoad { value_type, .. } => Some(*value_type),
+        ProgramExpression::Index(base, _) => program_expression_pointee_type(state, base),
         _ => None,
     }
 }
 
-pub(in crate::kernel) fn c_expression_pointer_step_width(
-    state: &CState,
-    expression: &CExpression,
+pub(in crate::kernel) fn program_expression_pointer_step_width(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
 ) -> Option<u32> {
-    c_expression_pointee_type(state, expression).map(CType::byte_width)
+    program_expression_pointee_type(state, expression).map(ProgramType::byte_width)
 }
 
 /// The C `int` a condition evaluates to: `1` when it holds, `0` when it does
 /// not, one path per outcome the facts leave open.
-pub(in crate::kernel) fn condition_as_c_int32_paths(
+pub(in crate::kernel) fn condition_as_program_int32_paths(
     condition: ConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    condition_as_c_int32_paths_valued(condition, facts, obligations, assumptions, false)
+) -> Vec<ExpressionPath> {
+    condition_as_program_int32_paths_valued(condition, facts, obligations, assumptions, false)
 }
 
-/// [`condition_as_c_int32_paths`] for the condition's negation: `0` when it
+/// [`condition_as_program_int32_paths`] for the condition's negation: `0` when it
 /// holds, `1` when it does not.
-pub(in crate::kernel) fn condition_as_c_int32_not_paths(
+pub(in crate::kernel) fn condition_as_program_int32_not_paths(
     condition: ConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    condition_as_c_int32_paths_valued(condition, facts, obligations, assumptions, true)
+) -> Vec<ExpressionPath> {
+    condition_as_program_int32_paths_valued(condition, facts, obligations, assumptions, true)
 }
 
-pub(in crate::kernel) fn condition_as_c_int32_paths_valued(
+pub(in crate::kernel) fn condition_as_program_int32_paths_valued(
     condition: ConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     negated: bool,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let value = |holds: bool| int32(u32::from(holds != negated));
     match decide_with_facts(assumptions, &facts, &condition) {
-        Some(holds) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(value(holds)),
+        Some(holds) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(value(holds)),
             facts,
             obligations,
         }],
         // A Rust `Bool` value (decision D5) is the condition, as its cast.
-        None if ConditionValueScope::is_active() => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(CValue::Int32(MachineTerm::bool_cast(
+        None if ConditionValueScope::is_active() => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::bool_cast(
                 MachineIntegerType::Int32,
                 if negated {
                     ConditionTerm::bool_not(condition)
@@ -3912,13 +3983,13 @@ pub(in crate::kernel) fn condition_as_c_int32_paths_valued(
                 .expect("unknown comparison fact should be consistent");
 
             vec![
-                CExpressionPath {
-                    outcome: CExpressionOutcome::Value(value(true)),
+                ExpressionPath {
+                    outcome: ExpressionOutcome::Value(value(true)),
                     facts: true_facts,
                     obligations: obligations.clone(),
                 },
-                CExpressionPath {
-                    outcome: CExpressionOutcome::Value(value(false)),
+                ExpressionPath {
+                    outcome: ExpressionOutcome::Value(value(false)),
                     facts: false_facts,
                     obligations,
                 },
@@ -3928,32 +3999,34 @@ pub(in crate::kernel) fn condition_as_c_int32_paths_valued(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::kernel) struct CTruthinessPath {
+pub(in crate::kernel) struct TruthinessPath {
     pub(in crate::kernel) is_true: bool,
     pub(in crate::kernel) facts: ExecutionFacts,
     pub(in crate::kernel) obligations: Vec<ProofObligation>,
 }
 
-pub(in crate::kernel) fn c_truthiness_paths(
-    value: CValue,
+pub(in crate::kernel) fn program_truthiness_paths(
+    value: ProgramValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CTruthinessPath> {
+) -> Vec<TruthinessPath> {
     match value.numeric_value().clone() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Parameter(_) => unreachable!("abstract truthiness must be rejected by the caller"),
-        CValue::Void => unreachable!("void truthiness must be rejected by the caller"),
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Parameter(_) => {
+            unreachable!("abstract truthiness must be rejected by the caller")
+        }
+        ProgramValue::Void => unreachable!("void truthiness must be rejected by the caller"),
         // A `Bool` (Stage 5) is tested by its own condition, read through
         // its negations, so `if (b)` for `b = x` splits on `x == 0`.
-        CValue::Bool(bits) => {
+        ProgramValue::Bool(bits) => {
             let Proposition::ConditionIs(condition, holds) =
                 ConditionTerm::truth_of_bool_word(&bits).truth_claim(true)
             else {
                 unreachable!("a truth claim is a condition claim");
             };
             match decide_with_facts(assumptions, &facts, &condition) {
-                Some(value) => vec![CTruthinessPath {
+                Some(value) => vec![TruthinessPath {
                     is_true: value == holds,
                     facts,
                     obligations,
@@ -3966,12 +4039,12 @@ pub(in crate::kernel) fn c_truthiness_paths(
                     add_condition_path_fact(&mut false_facts, assumptions, condition, !holds)
                         .expect("unknown bool truthiness fact should be consistent");
                     vec![
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: true,
                             facts: true_facts,
                             obligations: obligations.clone(),
                         },
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: false,
                             facts: false_facts,
                             obligations,
@@ -3980,15 +4053,15 @@ pub(in crate::kernel) fn c_truthiness_paths(
                 }
             }
         }
-        CValue::Int8(bits) => {
+        ProgramValue::Int8(bits) => {
             let is_zero = ConditionTerm::equal(bits, MachineTerm::constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
-                Some(true) => vec![CTruthinessPath {
+                Some(true) => vec![TruthinessPath {
                     is_true: false,
                     facts,
                     obligations,
                 }],
-                Some(false) => vec![CTruthinessPath {
+                Some(false) => vec![TruthinessPath {
                     is_true: true,
                     facts,
                     obligations,
@@ -4003,12 +4076,12 @@ pub(in crate::kernel) fn c_truthiness_paths(
                         .expect("unknown truthiness fact should be consistent");
 
                     vec![
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: true,
                             facts: true_facts,
                             obligations: obligations.clone(),
                         },
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: false,
                             facts: false_facts,
                             obligations,
@@ -4017,19 +4090,19 @@ pub(in crate::kernel) fn c_truthiness_paths(
                 }
             }
         }
-        CValue::Int16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt8(bits)
-        | CValue::UInt16(bits)
-        | CValue::UInt32(bits) => {
+        ProgramValue::Int16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::UInt16(bits)
+        | ProgramValue::UInt32(bits) => {
             let is_zero = ConditionTerm::equal(bits, MachineTerm::constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
-                Some(true) => vec![CTruthinessPath {
+                Some(true) => vec![TruthinessPath {
                     is_true: false,
                     facts,
                     obligations,
                 }],
-                Some(false) => vec![CTruthinessPath {
+                Some(false) => vec![TruthinessPath {
                     is_true: true,
                     facts,
                     obligations,
@@ -4044,12 +4117,12 @@ pub(in crate::kernel) fn c_truthiness_paths(
                         .expect("unknown truthiness fact should be consistent");
 
                     vec![
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: true,
                             facts: true_facts,
                             obligations: obligations.clone(),
                         },
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: false,
                             facts: false_facts,
                             obligations,
@@ -4058,10 +4131,10 @@ pub(in crate::kernel) fn c_truthiness_paths(
                 }
             }
         }
-        CValue::Int64(bits) => {
+        ProgramValue::Int64(bits) => {
             let is_zero = ConditionTerm::int64_equal(bits, MachineTerm::int64_constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
-                Some(is_zero) => vec![CTruthinessPath {
+                Some(is_zero) => vec![TruthinessPath {
                     is_true: !is_zero,
                     facts,
                     obligations,
@@ -4074,12 +4147,12 @@ pub(in crate::kernel) fn c_truthiness_paths(
                     add_condition_path_fact(&mut false_facts, assumptions, is_zero, true)
                         .expect("unknown truthiness fact should be consistent");
                     vec![
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: true,
                             facts: true_facts,
                             obligations: obligations.clone(),
                         },
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: false,
                             facts: false_facts,
                             obligations,
@@ -4088,10 +4161,10 @@ pub(in crate::kernel) fn c_truthiness_paths(
                 }
             }
         }
-        CValue::UInt64(bits) => {
+        ProgramValue::UInt64(bits) => {
             let is_zero = ConditionTerm::uint64_equal(bits, MachineTerm::uint64_constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
-                Some(is_zero) => vec![CTruthinessPath {
+                Some(is_zero) => vec![TruthinessPath {
                     is_true: !is_zero,
                     facts,
                     obligations,
@@ -4104,12 +4177,12 @@ pub(in crate::kernel) fn c_truthiness_paths(
                     add_condition_path_fact(&mut false_facts, assumptions, is_zero, true)
                         .expect("unknown truthiness fact should be consistent");
                     vec![
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: true,
                             facts: true_facts,
                             obligations: obligations.clone(),
                         },
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: false,
                             facts: false_facts,
                             obligations,
@@ -4118,16 +4191,17 @@ pub(in crate::kernel) fn c_truthiness_paths(
                 }
             }
         }
-        value @ (CValue::Int128(_) | CValue::UInt128(_)) => {
-            let ty = MachineIntegerType::from_c_type(value.c_type()).expect("wide integer");
+        value @ (ProgramValue::Int128(_) | ProgramValue::UInt128(_)) => {
+            let ty =
+                MachineIntegerType::from_program_type(value.program_type()).expect("wide integer");
             let bits = match value {
-                CValue::Int128(bits) | CValue::UInt128(bits) => bits,
+                ProgramValue::Int128(bits) | ProgramValue::UInt128(bits) => bits,
                 _ => unreachable!(),
             };
             let integer = IntegerTerm::from_machine(ty, bits).expect("typed wide integer");
             let is_zero = ConditionTerm::integer_equal(integer, IntegerTerm::constant(0.into()));
             match decide_with_facts(assumptions, &facts, &is_zero) {
-                Some(is_zero) => vec![CTruthinessPath {
+                Some(is_zero) => vec![TruthinessPath {
                     is_true: !is_zero,
                     facts,
                     obligations,
@@ -4140,12 +4214,12 @@ pub(in crate::kernel) fn c_truthiness_paths(
                     add_condition_path_fact(&mut false_facts, assumptions, is_zero, true)
                         .expect("unknown truthiness fact should be consistent");
                     vec![
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: true,
                             facts: true_facts,
                             obligations: obligations.clone(),
                         },
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: false,
                             facts: false_facts,
                             obligations,
@@ -4154,27 +4228,27 @@ pub(in crate::kernel) fn c_truthiness_paths(
                 }
             }
         }
-        CValue::Float32(bits) => c_float_truthiness_paths(
-            ConditionTerm::float32_classification(bits, CFloatClassification::Zero),
+        ProgramValue::Float32(bits) => program_float_truthiness_paths(
+            ConditionTerm::float32_classification(bits, FloatClassification::Zero),
             facts,
             obligations,
             assumptions,
         ),
-        CValue::Float64(bits) => c_float_truthiness_paths(
-            ConditionTerm::float64_classification(bits, CFloatClassification::Zero),
+        ProgramValue::Float64(bits) => program_float_truthiness_paths(
+            ConditionTerm::float64_classification(bits, FloatClassification::Zero),
             facts,
             obligations,
             assumptions,
         ),
-        CValue::Pointer(pointer) => {
+        ProgramValue::Pointer(pointer) => {
             let is_null = pointer_is_null_condition(pointer.pointer().clone());
             match decide_with_facts(assumptions, &facts, &is_null) {
-                Some(true) => vec![CTruthinessPath {
+                Some(true) => vec![TruthinessPath {
                     is_true: false,
                     facts,
                     obligations,
                 }],
-                Some(false) => vec![CTruthinessPath {
+                Some(false) => vec![TruthinessPath {
                     is_true: true,
                     facts,
                     obligations,
@@ -4194,12 +4268,12 @@ pub(in crate::kernel) fn c_truthiness_paths(
                         .expect("unknown pointer truthiness fact should be consistent");
 
                     vec![
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: true,
                             facts: nonnull_facts,
                             obligations: obligations.clone(),
                         },
-                        CTruthinessPath {
+                        TruthinessPath {
                             is_true: false,
                             facts: null_facts,
                             obligations,
@@ -4211,14 +4285,14 @@ pub(in crate::kernel) fn c_truthiness_paths(
     }
 }
 
-fn c_float_truthiness_paths(
+fn program_float_truthiness_paths(
     is_zero: ConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CTruthinessPath> {
+) -> Vec<TruthinessPath> {
     match decide_with_facts(assumptions, &facts, &is_zero) {
-        Some(is_zero) => vec![CTruthinessPath {
+        Some(is_zero) => vec![TruthinessPath {
             is_true: !is_zero,
             facts,
             obligations,
@@ -4231,12 +4305,12 @@ fn c_float_truthiness_paths(
             add_condition_path_fact(&mut false_facts, assumptions, is_zero, true)
                 .expect("unknown floating truthiness fact should be consistent");
             vec![
-                CTruthinessPath {
+                TruthinessPath {
                     is_true: true,
                     facts: true_facts,
                     obligations: obligations.clone(),
                 },
-                CTruthinessPath {
+                TruthinessPath {
                     is_true: false,
                     facts: false_facts,
                     obligations,
@@ -4246,16 +4320,16 @@ fn c_float_truthiness_paths(
     }
 }
 
-pub(in crate::kernel) fn c_truthiness_as_c_int32_paths(
-    value: CValue,
+pub(in crate::kernel) fn program_truthiness_as_program_int32_paths(
+    value: ProgramValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    c_truthiness_paths(value, facts, obligations, assumptions)
+) -> Vec<ExpressionPath> {
+    program_truthiness_paths(value, facts, obligations, assumptions)
         .into_iter()
-        .map(|path| CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(if path.is_true { 1 } else { 0 })),
+        .map(|path| ExpressionPath {
+            outcome: ExpressionOutcome::Value(int32(if path.is_true { 1 } else { 0 })),
             facts: path.facts,
             obligations: path.obligations,
         })
@@ -4266,9 +4340,13 @@ pub(in crate::kernel) fn c_truthiness_as_c_int32_paths(
 mod pointer_integer_tests {
     use super::*;
 
-    fn cast(value: CValue, ty: CType, context: &PureFactContext) -> Result<CValue, CRuntimeError> {
+    fn cast(
+        value: ProgramValue,
+        ty: ProgramType,
+        context: &PureFactContext,
+    ) -> Result<ProgramValue, RuntimeError> {
         let mut obligations = Vec::new();
-        let result = cast_c_value_to_type_with_integer_origin(
+        let result = cast_program_value_to_type_with_integer_origin(
             value,
             ty,
             IntegerConversion::Modular,
@@ -4285,17 +4363,22 @@ mod pointer_integer_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let root = Pointer::symbolic(Variable(991_085));
-        let source = CPointerValue::new(root.clone(), CType::Int32Pointer)
+        let source = PointerValue::new(root.clone(), ProgramType::Int32Pointer)
             .with_object_class(Some(class.clone()))
             .with_extent(Some(SubobjectExtent {
                 start: root,
                 width: 4u32.into(),
             }));
         let context = PureFactContext::new();
-        let encoded = cast(CValue::Pointer(source.clone()), CType::UInt64, &context).unwrap();
-        let CValue::Pointer(decoded) = cast(
+        let encoded = cast(
+            ProgramValue::Pointer(source.clone()),
+            ProgramType::UInt64,
+            &context,
+        )
+        .unwrap();
+        let ProgramValue::Pointer(decoded) = cast(
             encoded.numeric_value().clone(),
-            CType::Float64Pointer,
+            ProgramType::Float64Pointer,
             &context,
         )
         .unwrap() else {
@@ -4309,27 +4392,33 @@ mod pointer_integer_tests {
 
     #[test]
     fn pointer_integer_round_trip_retains_the_complete_pointer() {
-        let root = CPointerValue::new(Pointer::symbolic(Variable(991_001)), CType::Int32Pointer);
+        let root = PointerValue::new(
+            Pointer::symbolic(Variable(991_001)),
+            ProgramType::Int32Pointer,
+        );
         let member = root.clone().with_extent(Some(SubobjectExtent {
             start: root.pointer().clone(),
             width: 4u32.into(),
         }));
         let context = PureFactContext::new();
-        for ty in [CType::Int64, CType::UInt64] {
+        for ty in [ProgramType::Int64, ProgramType::UInt64] {
             for pointer in [
                 member.clone(),
                 member
                     .clone()
                     .with_address(member.pointer().offset_by_bytes(4)),
             ] {
-                let word = cast(CValue::Pointer(pointer.clone()), ty, &context).unwrap();
+                let word = cast(ProgramValue::Pointer(pointer.clone()), ty, &context).unwrap();
                 assert_eq!(
-                    cast(word.clone(), CType::Int32Pointer, &context).unwrap(),
-                    CValue::Pointer(pointer)
+                    cast(word.clone(), ProgramType::Int32Pointer, &context).unwrap(),
+                    ProgramValue::Pointer(pointer)
                 );
-                let CValue::Pointer(opaque) =
-                    cast(word.numeric_value().clone(), CType::Int32Pointer, &context).unwrap()
-                else {
+                let ProgramValue::Pointer(opaque) = cast(
+                    word.numeric_value().clone(),
+                    ProgramType::Int32Pointer,
+                    &context,
+                )
+                .unwrap() else {
                     panic!("pointer")
                 };
                 assert!(!opaque.extent_is_known());
@@ -4340,35 +4429,51 @@ mod pointer_integer_tests {
 
     #[test]
     fn equal_integer_bits_do_not_exchange_pointer_extents() {
-        let root = CPointerValue::new(Pointer::symbolic(Variable(991_002)), CType::Int32Pointer);
+        let root = PointerValue::new(
+            Pointer::symbolic(Variable(991_002)),
+            ProgramType::Int32Pointer,
+        );
         let member = root.clone().with_extent(Some(SubobjectExtent {
             start: root.pointer().clone(),
             width: 4u32.into(),
         }));
         let context = PureFactContext::new();
-        let root_word = cast(CValue::Pointer(root.clone()), CType::UInt64, &context).unwrap();
-        let member_word = cast(CValue::Pointer(member.clone()), CType::UInt64, &context).unwrap();
+        let root_word = cast(
+            ProgramValue::Pointer(root.clone()),
+            ProgramType::UInt64,
+            &context,
+        )
+        .unwrap();
+        let member_word = cast(
+            ProgramValue::Pointer(member.clone()),
+            ProgramType::UInt64,
+            &context,
+        )
+        .unwrap();
         assert_eq!(root_word.numeric_value(), member_word.numeric_value());
         assert_ne!(root_word, member_word);
         assert_eq!(
-            cast(root_word, CType::Int32Pointer, &context).unwrap(),
-            CValue::Pointer(root.clone())
+            cast(root_word, ProgramType::Int32Pointer, &context).unwrap(),
+            ProgramValue::Pointer(root.clone())
         );
         assert_eq!(
-            cast(member_word.clone(), CType::VoidPointer, &context).unwrap(),
-            CValue::Pointer(member.with_type(CType::VoidPointer))
+            cast(member_word.clone(), ProgramType::VoidPointer, &context).unwrap(),
+            ProgramValue::Pointer(member.with_type(ProgramType::VoidPointer))
         );
         let variable = MachineTerm::Variable(Variable(991_003));
         let context = context.assume_condition(
             ConditionTerm::uint64_equal(
                 variable.clone(),
-                c_value_bitvector_term(&member_word).unwrap(),
+                program_value_bitvector_term(&member_word).unwrap(),
             ),
             true,
         );
-        let CValue::Pointer(opaque) =
-            cast(CValue::UInt64(variable), CType::Int32Pointer, &context).unwrap()
-        else {
+        let ProgramValue::Pointer(opaque) = cast(
+            ProgramValue::UInt64(variable),
+            ProgramType::Int32Pointer,
+            &context,
+        )
+        .unwrap() else {
             panic!("pointer")
         };
         assert!(!opaque.extent_is_known());
@@ -4383,12 +4488,12 @@ mod pointer_integer_partial_write_tests {
     #[test]
     fn a_partial_byte_write_discards_the_representation_even_when_bits_are_unchanged() {
         let context = PureFactContext::new();
-        let word = cast_c_value_to_type(
-            CValue::Pointer(CPointerValue::new(
+        let word = cast_program_value_to_type(
+            ProgramValue::Pointer(PointerValue::new(
                 Pointer::symbolic(Variable(995_001)),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )),
-            CType::UInt64,
+            ProgramType::UInt64,
             IntegerConversion::Modular,
             &mut Vec::new(),
             &context,
@@ -4400,10 +4505,12 @@ mod pointer_integer_partial_write_tests {
             value: word,
             byte: 0,
         };
-        let updated =
-            crate::kernel::eval::byte_view::integer_cell_with_byte(&cell, &CValue::UInt8(byte))
-                .unwrap();
-        assert!(matches!(updated, CValue::UInt64(_)));
+        let updated = crate::kernel::eval::byte_view::integer_cell_with_byte(
+            &cell,
+            &ProgramValue::UInt8(byte),
+        )
+        .unwrap();
+        assert!(matches!(updated, ProgramValue::UInt64(_)));
     }
 }
 
@@ -4413,13 +4520,16 @@ mod pointer_integer_cast_identity_tests {
 
     #[test]
     fn identical_numeric_bits_cannot_copy_a_casts_established_bounds() {
-        let source = CPointerValue::new(Pointer::symbolic(Variable(997_001)), CType::Int32Pointer);
+        let source = PointerValue::new(
+            Pointer::symbolic(Variable(997_001)),
+            ProgramType::Int32Pointer,
+        );
         let bits = MachineTerm::pointer_address(source.pointer().clone());
         let context = PureFactContext::new();
         let cast = |origin| {
-            cast_c_value_to_type_with_integer_origin(
-                CValue::UInt64(bits.clone()),
-                CType::Int32Pointer,
+            cast_program_value_to_type_with_integer_origin(
+                ProgramValue::UInt64(bits.clone()),
+                ProgramType::Int32Pointer,
                 IntegerConversion::Modular,
                 &mut Vec::new(),
                 &context,
@@ -4427,10 +4537,10 @@ mod pointer_integer_cast_identity_tests {
             )
             .unwrap()
         };
-        let CValue::Pointer(first) = cast(997_002) else {
+        let ProgramValue::Pointer(first) = cast(997_002) else {
             panic!("pointer")
         };
-        let CValue::Pointer(second) = cast(997_003) else {
+        let ProgramValue::Pointer(second) = cast(997_003) else {
             panic!("pointer")
         };
         assert_eq!(first.pointer(), second.pointer());
@@ -4438,8 +4548,8 @@ mod pointer_integer_cast_identity_tests {
             ConditionTerm::pointer_value_equal(first, source.clone()),
             true,
         );
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::from_pointer_value(&source, 0u32.into(), 1u32.into(), 4),
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::from_pointer_value(&source, 0u32.into(), 1u32.into(), 4),
         ));
         assert!(!resources.permits_designated_memory_read(
             second.pointer(),
@@ -4454,16 +4564,16 @@ mod pointer_integer_cast_identity_tests {
 mod packed_word_contract_tests {
     use super::*;
 
-    fn cast(value: CValue, assumptions: &PureFactContext) -> CPointerValue {
-        let result = cast_c_value_to_type(
+    fn cast(value: ProgramValue, assumptions: &PureFactContext) -> PointerValue {
+        let result = cast_program_value_to_type(
             value,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             IntegerConversion::Modular,
             &mut Vec::new(),
             assumptions,
         )
         .unwrap();
-        let CValue::Pointer(pointer) = result else {
+        let ProgramValue::Pointer(pointer) = result else {
             panic!("pointer cast")
         };
         pointer
@@ -4471,21 +4581,23 @@ mod packed_word_contract_tests {
 
     #[test]
     fn modulo_conversion_observes_bits_and_discards_the_word_carrier() {
-        let word = CValue::UInt64(MachineTerm::uint64_constant(4_294_967_297))
+        let word = ProgramValue::UInt64(MachineTerm::uint64_constant(4_294_967_297))
             .complete_word(Pointer::symbolic(Variable(997_030)));
         assert_eq!(
             crate::kernel::machine_integer::conversion::convert_value(
                 word.clone(),
                 MachineIntegerType::UInt32
             ),
-            Some(CValue::UInt32(MachineTerm::uint32_constant(1)))
+            Some(ProgramValue::UInt32(MachineTerm::uint32_constant(1)))
         );
         assert_eq!(
             crate::kernel::machine_integer::conversion::convert_value(
                 word,
                 MachineIntegerType::UInt64
             ),
-            Some(CValue::UInt64(MachineTerm::uint64_constant(4_294_967_297)))
+            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(
+                4_294_967_297
+            )))
         );
     }
 
@@ -4496,10 +4608,11 @@ mod packed_word_contract_tests {
             ConditionTerm::uint64_equal(bits.clone(), MachineTerm::uint64_constant(41)),
             true,
         );
-        let word = CValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_021)));
+        let word = ProgramValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_021)));
         let narrowed =
-            coerce_c_value_to_type(word, CType::Int32, &mut Vec::new(), &context).unwrap();
-        let term = crate::kernel::spec::c_value_bitvector_term(&narrowed).unwrap();
+            coerce_program_value_to_type(word, ProgramType::Int32, &mut Vec::new(), &context)
+                .unwrap();
+        let term = crate::kernel::spec::program_value_bitvector_term(&narrowed).unwrap();
         assert_eq!(
             context.decide(&ConditionTerm::equal(term, MachineTerm::constant(41))),
             Some(true)
@@ -4510,18 +4623,22 @@ mod packed_word_contract_tests {
     fn incoming_word_carriers_need_full_equality() {
         let _session = crate::kernel::VerificationSession::enter();
         let bits = MachineTerm::Variable(Variable(997_001));
-        let word = CValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_002)));
-        let other = CValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_003)));
+        let word =
+            ProgramValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_002)));
+        let other = ProgramValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_003)));
         let empty = PureFactContext::new();
         let reconstructed = cast(word, &empty);
         let unrelated = cast(other, &empty);
         assert_eq!(reconstructed.pointer(), unrelated.pointer());
         assert!(!empty.pointer_designations_match(&reconstructed, &unrelated));
-        let target = CPointerValue::new(Pointer::symbolic(Variable(997_004)), CType::Int32Pointer)
-            .with_extent(Some(SubobjectExtent {
-                start: Pointer::symbolic(Variable(997_004)),
-                width: 4u32.into(),
-            }));
+        let target = PointerValue::new(
+            Pointer::symbolic(Variable(997_004)),
+            ProgramType::Int32Pointer,
+        )
+        .with_extent(Some(SubobjectExtent {
+            start: Pointer::symbolic(Variable(997_004)),
+            width: 4u32.into(),
+        }));
         let numeric = empty.assume_condition(
             ConditionTerm::pointer_equal(reconstructed.pointer().clone(), target.pointer().clone()),
             true,
@@ -4543,43 +4660,43 @@ mod packed_word_contract_tests {
     fn modified_incoming_word_tag_bits_must_be_cleared_before_casting() {
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
-        let word = CValue::UInt64(MachineTerm::Variable(Variable(997_010)))
+        let word = ProgramValue::UInt64(MachineTerm::Variable(Variable(997_010)))
             .complete_word(Pointer::symbolic(Variable(997_011)));
         let original = cast(word.clone(), &context);
-        let value_of = |paths: Vec<CExpressionPath>| {
+        let value_of = |paths: Vec<ExpressionPath>| {
             let [path] = paths.as_slice() else {
                 panic!("one scalar result")
             };
-            let CExpressionOutcome::Value(value) = &path.outcome else {
+            let ExpressionOutcome::Value(value) = &path.outcome else {
                 panic!("value")
             };
             value.clone()
         };
-        let tagged = value_of(super::super::operators::apply_c_bitwise_binary(
+        let tagged = value_of(super::super::operators::apply_program_bitwise_binary(
             word,
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
             ExecutionFacts::new(),
             Vec::new(),
             &context,
-            super::super::operators::CBitwiseOperation::Or,
+            super::super::operators::BitwiseOperation::Or,
         ));
         assert!(
-            cast_c_value_to_type(
+            cast_program_value_to_type(
                 tagged.clone(),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
                 IntegerConversion::Modular,
                 &mut Vec::new(),
                 &context
             )
             .is_err()
         );
-        let cleared = value_of(super::super::operators::apply_c_bitwise_binary(
+        let cleared = value_of(super::super::operators::apply_program_bitwise_binary(
             tagged,
-            CValue::Int32(MachineTerm::constant(!1)),
+            ProgramValue::Int32(MachineTerm::constant(!1)),
             ExecutionFacts::new(),
             Vec::new(),
             &context,
-            super::super::operators::CBitwiseOperation::And,
+            super::super::operators::BitwiseOperation::And,
         ));
         let restored = cast(cleared, &context);
         assert!(context.pointer_designations_match(&restored, &original));

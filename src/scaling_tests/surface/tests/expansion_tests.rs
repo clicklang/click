@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn selected_pure_expansion_does_not_check_unrelated_proof_bodies() {
     let selected = "theorem selected(x: int32) { ensures x == x by { normalize(); } }\n";
-    expand_c0_claim_source_by_label(selected, &[], "selected.ensures_0").unwrap();
+    expand_c_claim_source_by_label(selected, &[], "selected.ensures_0").unwrap();
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
         let source = format!(
@@ -15,7 +15,7 @@ fn selected_pure_expansion_does_not_check_unrelated_proof_bodies() {
             "have true by { normalize(); } ".repeat(size)
         );
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-            expand_c0_claim_source_by_label(&source, &[], "selected.ensures_0")
+            expand_c_claim_source_by_label(&source, &[], "selected.ensures_0")
         });
         expanded.unwrap_or_else(|error| panic!("{size} unrelated steps: {error}"));
         samples.push((size, work));
@@ -33,16 +33,16 @@ fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
     let samples = [4, 8, 16, 32].map(|size| {
         let source = format!("verifying \"identity.c\";\nint32 identity(int32 x) {{ ensures result == x; }} by {{\nstep_until(function.exit);\n{}{}solve();\n}}\n",
             "have x + 0 == x by solve();\n".repeat(8), "have x == x by solve();\n".repeat(size));
-        let sites = c0_smart_tactic_source_sites(&source, &c).unwrap();
+        let sites = c_smart_tactic_source_sites(&source, &c).unwrap();
         let positions = sites[9..9+size].iter().map(|s| s.position.clone()).collect::<Vec<_>>();
-        let (_, ordinary_views) = proof::count_finalization_view_constructions(|| verify_c0_sources(&source, &c).unwrap());
+        let (_, ordinary_views) = proof::count_finalization_view_constructions(|| verify_c_sources(&source, &c).unwrap());
         let ((expanded, work), runs) = proof::count_finalization_view_constructions(|| {
-            crate::instrumentation::measure_deterministic_work(|| expand_c0_tactics_source_at(&source, &c, &positions))
+            crate::instrumentation::measure_deterministic_work(|| expand_c_tactics_source_at(&source, &c, &positions))
         });
         let expanded = expanded.unwrap_or_else(|error| panic!("{size} selected sites: {error:?}"));
         assert_eq!(runs, ordinary_views, "{size} sites must cost one ordinary claim verification");
         assert_eq!(expanded.source.matches("have x + 0 == x by solve();").count(), 8);
-        verify_c0_sources(&expanded.source, &c).unwrap();
+        verify_c_sources(&expanded.source, &c).unwrap();
         work
     });
     for pair in samples.windows(2) {
@@ -55,12 +55,12 @@ fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
 
 #[test]
 fn smart_inventory_positions_are_compatible_and_scale() {
-    use crate::surface::{c0_smart_tactic_source_sites, c0_tactic_source_position};
+    use crate::surface::{c_smart_tactic_source_sites, c_tactic_source_position};
     let source = "// Unicode: λ\ntheorem named() { ensures 0 == 0 by { have 1 == 1 by { solve(); } solve(); } }\ntheorem implicit() { ensures 0 == 0; }\ntheorem short() { ensures 0 == 0 by solve(); }\n";
-    for site in c0_smart_tactic_source_sites(source, &[]).unwrap() {
+    for site in c_smart_tactic_source_sites(source, &[]).unwrap() {
         assert_eq!(
             site.position,
-            c0_tactic_source_position(source, &[], &site.claim_label, site.source_index).unwrap()
+            c_tactic_source_position(source, &[], &site.claim_label, site.source_index).unwrap()
         );
     }
     for separate_claims in [false, true] {
@@ -77,7 +77,7 @@ fn smart_inventory_positions_are_compatible_and_scale() {
                 )
             };
             let (sites, work) = crate::instrumentation::measure_deterministic_work(|| {
-                c0_smart_tactic_source_sites(&source, &[]).unwrap()
+                c_smart_tactic_source_sites(&source, &[]).unwrap()
             });
             assert_eq!(sites.len(), count);
             measurements.push(work);

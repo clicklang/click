@@ -3,7 +3,10 @@ use super::*;
 #[test]
 fn integer_known_fact_queries_ignore_unrelated_equalities() {
     let _session = crate::kernel::VerificationSession::enter();
-    let ty = model_type("IntegerScaling", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type(
+        "IntegerScaling",
+        AlgebraicValueType::Program(ProgramType::Int32),
+    );
     let a = variable(&ty, 920_201);
     let b = variable(&ty, 920_202);
     let mut previous = None;
@@ -69,7 +72,7 @@ fn retained_call_argument_congruence_is_linear_cold_and_constant_warm() {
         let _session = crate::kernel::VerificationSession::enter();
         let leaf = MachineTerm::ClickFunctionApplication {
             name: "argument_leaf".into(),
-            arguments: vec![PureFunctionArgument::Value(CValue::UInt64(
+            arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt64(
                 MachineTerm::Variable(Variable(982821)),
             ))],
         };

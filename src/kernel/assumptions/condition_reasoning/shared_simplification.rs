@@ -44,6 +44,7 @@ impl PureFactContext {
                 walk(facts, carrier.operand_view(), format, memo)
             } else {
                 match root.node() {
+                    KernelTermNode::Match(_) => retain(root.clone()),
                     KernelTermNode::Fold(fold) => {
                         let arguments = fold.arguments.each_ref().map(|child| {
                             node(&walk(

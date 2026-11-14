@@ -8,8 +8,8 @@ fn class() -> CAccessClass {
 fn pointer(id: u64) -> Pointer {
     Pointer::symbolic(Variable(870_000 + id))
 }
-fn value(pointer: &Pointer, checked: bool) -> CValue {
-    let value = CValue::typed_pointer(pointer.clone(), CType::Int32Pointer);
+fn value(pointer: &Pointer, checked: bool) -> ProgramValue {
+    let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
     if checked {
         value.with_pointer_object_class(Some(class()))
     } else {
@@ -19,7 +19,7 @@ fn value(pointer: &Pointer, checked: bool) -> CValue {
 fn source(name: &str, pointer: &Pointer) -> Proposition {
     Proposition::Predicate {
         name: name.into(),
-        arguments: vec![Term::CValue(value(pointer, true))],
+        arguments: vec![Term::ProgramValue(value(pointer, true))],
     }
 }
 fn equal(a: &Pointer, b: &Pointer) -> Proposition {
@@ -29,21 +29,21 @@ fn can_type(context: &PureFactContext, pointer: &Pointer) -> bool {
     crate::kernel::spec::refine_object_pointer_argument(
         &mut value(pointer, false),
         &class(),
-        &CMemory::new(),
+        &Memory::new(),
         context,
     )
 }
 fn model_source(pointer: &Pointer, condition: bool) -> Proposition {
     let ty = super::algebraic_tests::model_type(
         "Ref",
-        AlgebraicValueType::ObjectPointer(CType::Int32Pointer, class()),
+        AlgebraicValueType::ObjectPointer(ProgramType::Int32Pointer, class()),
     );
     let variable = super::algebraic_tests::variable(&ty, 880_001);
     let constructor = AlgebraicTerm {
         algebraic_type: ty,
         node: AlgebraicTermNode::Constructor {
             variant: "Node".into(),
-            fields: vec![AlgebraicValue::C(value(pointer, true))],
+            fields: vec![AlgebraicValue::Program(value(pointer, true))],
         },
     };
     if condition {
@@ -102,7 +102,7 @@ fn object_type_evidence_follows_early_and_late_pointer_merges() {
         assert!(!crate::kernel::spec::refine_object_pointer_argument(
             &mut value(&r, false),
             &other,
-            &CMemory::new(),
+            &Memory::new(),
             &context
         ));
     }
@@ -166,11 +166,11 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
         Box::new(source("other", &p)),
     ));
     assert!(!can_type(&alternatives, &p));
-    let weak = CValue::typed_pointer(p.clone(), CType::Int32Pointer)
+    let weak = ProgramValue::typed_pointer(p.clone(), ProgramType::Int32Pointer)
         .with_contract_pointer_object_class(Some(class()), None, 0, 91);
     let weak = context.assume_proposition(Proposition::Predicate {
         name: "weak".into(),
-        arguments: vec![Term::CValue(weak)],
+        arguments: vec![Term::ProgramValue(weak)],
     });
     assert!(!can_type(&weak, &p));
 }
@@ -179,7 +179,7 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
 fn object_type_evidence_does_not_bridge_changed_read_snapshots() {
     let _session = VerificationSession::enter();
     let slot = pointer(9);
-    let memory = CMemory::new().with_block(slot.block.clone(), 8);
+    let memory = Memory::new().with_block(slot.block.clone(), 8);
     let changed = memory
         .clone()
         .store(slot.clone(), value(&pointer(10), false));
@@ -209,7 +209,7 @@ fn opaque_call_interning_cannot_supply_another_scopes_type_annotations() {
     assert!(!can_type(&context, &p));
     let ty = super::algebraic_tests::model_type(
         "OpaqueRef",
-        AlgebraicValueType::ObjectPointer(CType::Int32Pointer, class()),
+        AlgebraicValueType::ObjectPointer(ProgramType::Int32Pointer, class()),
     );
     let model = AlgebraicTerm {
         algebraic_type: ty,
@@ -233,7 +233,8 @@ mod scaling_tests {
 fn checked_pointer_value_equalities_retain_their_scoped_type_receipts() {
     let _session = VerificationSession::enter();
     let (p, q) = (pointer(21), pointer(22));
-    let (CValue::Pointer(p_value), CValue::Pointer(q_value)) = (value(&p, true), value(&q, false))
+    let (ProgramValue::Pointer(p_value), ProgramValue::Pointer(q_value)) =
+        (value(&p, true), value(&q, false))
     else {
         unreachable!()
     };

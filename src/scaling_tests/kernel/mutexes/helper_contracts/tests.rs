@@ -19,7 +19,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
             .clone();
         let holder = state.loan_participant.unwrap();
         for index in 0..size {
-            let marker = CResourceFact::own(CResource::Token {
+            let marker = ResourceFact::own(Resource::Token {
                 name: format!("unrelated_helper_frame_{index}"),
                 arguments: vec![].into(),
             });

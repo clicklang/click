@@ -19,12 +19,12 @@ const OPS: [MachineBinaryOp; 5] = [
     MachineBinaryOp::Remainder,
 ];
 
-fn native(format: MachineIntegerType, term: MachineTerm) -> CValue {
+fn native(format: MachineIntegerType, term: MachineTerm) -> ProgramValue {
     match format {
-        MachineIntegerType::Int8 => CValue::Int8(term),
-        MachineIntegerType::UInt8 => CValue::UInt8(term),
-        MachineIntegerType::Int16 => CValue::Int16(term),
-        MachineIntegerType::UInt16 => CValue::UInt16(term),
+        MachineIntegerType::Int8 => ProgramValue::Int8(term),
+        MachineIntegerType::UInt8 => ProgramValue::UInt8(term),
+        MachineIntegerType::Int16 => ProgramValue::Int16(term),
+        MachineIntegerType::UInt16 => ProgramValue::UInt16(term),
         _ => wrap(format, term),
     }
 }
@@ -80,7 +80,7 @@ fn mixed_arithmetic_matches_native_terms_and_domains() {
                 for defined in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
-                    budget.c_definedness = defined;
+                    budget.program_definedness = defined;
                     for case in 0..4 {
                         let term = |format: MachineIntegerType, id| match case {
                             0 => MachineTerm::Variable(Variable(id)),
@@ -125,7 +125,7 @@ fn mixed_arithmetic_matches_native_terms_and_domains() {
                         for o in &mut expected.obligations {
                             o.proposition = native_domain(o.proposition());
                         }
-                        let CExpressionOutcome::Value(expected_value) = expected.outcome else {
+                        let ExpressionOutcome::Value(expected_value) = expected.outcome else {
                             panic!()
                         };
                         for (l_shared, r_shared) in
@@ -193,10 +193,10 @@ fn mixed_arithmetic_evaluator_preserves_nested_results_and_refusals() {
     }
     let mut execution = ExecutionBudget::new();
     let budget = SpecEvaluation::logical(&mut execution);
-    let left = SpecValue::Native(CValue::Int32(MachineTerm::Variable(Variable(995455))));
-    let right = SpecValue::Native(CValue::UInt64(MachineTerm::Variable(Variable(995456))));
+    let left = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995455))));
+    let right = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(995456))));
     assert!(apply_values(Some(MachineBinaryOp::ShiftLeft), &left, &right, &budget).is_some());
-    let wide = SpecValue::Native(CValue::Int128(MachineTerm::Variable(Variable(995457))));
+    let wide = SpecValue::Native(ProgramValue::Int128(MachineTerm::Variable(Variable(995457))));
     assert!(apply_values(Some(MachineBinaryOp::Add), &wide, &right, &budget).is_none());
 }
 

@@ -6,7 +6,7 @@ use crate::kernel::{AlgebraicValueType, int32};
 // original certificate here instead of searching for that same proof again.
 fn expand_checked_grouped_claim(
     source: &str,
-    verified: &[VerifiedCTheorem],
+    verified: &[VerifiedProgramTheorem],
     function: &str,
 ) -> Result<String, ClickError> {
     // An omitted proof of one claim is that claim's own proof.
@@ -40,22 +40,31 @@ fn expand_function_proof_source(
     c_sources: &[(&str, &str)],
     function: &str,
 ) -> Result<String, ClickError> {
-    expand_c0_claim_source(click_source, c_sources, function, CProofClaim::Grouped).or_else(
-        |error| {
-            if error.message().contains("has no source `by` clause") {
-                expand_c0_claim_source(click_source, c_sources, function, CProofClaim::Ensure(0))
-            } else {
-                Err(error)
-            }
-        },
+    expand_c_claim_source(
+        click_source,
+        c_sources,
+        function,
+        ContractProofClaim::Grouped,
     )
+    .or_else(|error| {
+        if error.message().contains("has no source `by` clause") {
+            expand_c_claim_source(
+                click_source,
+                c_sources,
+                function,
+                ContractProofClaim::Ensure(0),
+            )
+        } else {
+            Err(error)
+        }
+    })
 }
 
 // Format every claim while its original verification tables are still live.
 // The callers can then cold-check each independent output in turn.
 fn expand_checked_grouped_claims<'a>(
     source: &str,
-    verified: &[VerifiedCTheorem],
+    verified: &[VerifiedProgramTheorem],
     functions: impl IntoIterator<Item = &'a str>,
 ) -> Vec<(&'a str, String)> {
     functions
@@ -70,7 +79,7 @@ fn expand_checked_grouped_claims<'a>(
 
 fn expand_checked_function_claim(
     source: &str,
-    verified: &[VerifiedCTheorem],
+    verified: &[VerifiedProgramTheorem],
     claim: &str,
 ) -> Result<String, ClickError> {
     expand_verified_function_claim_source_by_label(source, verified, claim)?.ok_or_else(|| {
@@ -177,8 +186,8 @@ fn recursive_child_resources_round_trip_and_expand() {
         "let { tail: t } = unfold(root); have t.model == Chain::End by { solve(); } unfold(t); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
     ] {
         let source = RECURSIVE_CHILD_SOURCE.replace("BODY", body);
-        let verified = verify_c0_sources(&source, &c).unwrap();
-        verify_c0_sources(
+        let verified = verify_c_sources(&source, &c).unwrap();
+        verify_c_sources(
             &source.replace(
                 &format!("by {{ {body} }}"),
                 &verified[0].expanded_proof_source().unwrap(),
@@ -217,8 +226,8 @@ fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
         "int32 middle(int32* p, int32* q, int32* r) { return *q; }",
     )];
     let source = source.replace("BODY", body);
-    let verified = verify_c0_sources(&source, &c).unwrap();
-    verify_c0_sources(
+    let verified = verify_c_sources(&source, &c).unwrap();
+    verify_c_sources(
         &source.replace(
             &format!("by {{ {body} }}"),
             &verified[0].expanded_proof_source().unwrap(),
@@ -227,13 +236,13 @@ fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
     )
     .unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace(body, "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();"),
             &c
         )
         .is_err()
     );
-    assert!(verify_c0_sources(&source.replace("result == 8", "result == 9"), &c).is_err());
+    assert!(verify_c_sources(&source.replace("result == 8", "result == 9"), &c).is_err());
 }
 
 #[test]
@@ -253,7 +262,7 @@ fn recursive_child_resources_do_not_capture_earlier_function_names() {
         &source[function..],
         &source[declaration..function]
     );
-    verify_c0_sources(
+    verify_c_sources(
         &reordered,
         &[(
             "read.c",
@@ -285,16 +294,16 @@ fn recursive_child_resources_reject_bad_lifetimes_and_folds() {
         "let { tail: t } = unfold(root); have root.model == old(root.model) by { solve(); } step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
     ] {
         let source = RECURSIVE_CHILD_SOURCE.replace("BODY", body);
-        assert!(verify_c0_sources(&source, &c).is_err(), "accepted {body}");
+        assert!(verify_c_sources(&source, &c).is_err(), "accepted {body}");
     }
     let source = RECURSIVE_CHILD_SOURCE.replace("BODY", "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();");
-    verify_c0_sources(&source, &c)
+    verify_c_sources(&source, &c)
         .expect("the ownership proof must work before testing the changed store");
     let changed = [(
         "read.c",
         "int32 read(int32* p, int32* next, int32 value) { *p = 0; return *p; }",
     )];
-    assert!(verify_c0_sources(&source, &changed).is_err());
+    assert!(verify_c_sources(&source, &changed).is_err());
 }
 
 #[test]
@@ -388,10 +397,10 @@ fn integer_resource_match_binding_verifies_and_expands() {
     let sources = [("integer_resource_match_binding.c", c)];
 
     let verified_for_expansion =
-        verify_c0_sources(source, &sources).expect("matched Integer resource should verify");
+        verify_c_sources(source, &sources).expect("matched Integer resource should verify");
     let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "keep")
         .expect("matched Integer resource should expand");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("expanded matched Integer resource should re-verify");
 }
 
@@ -399,13 +408,13 @@ fn integer_resource_match_binding_verifies_and_expands() {
 #[ignore = "nightly: 2s in the parallel gate"]
 fn tree_node_init_and_stored_child_links_expand() {
     let (source, c) = tree_node_init_fixture();
-    let verified_for_expansion = verify_c0_sources(source, &c).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &c).unwrap();
     for (_, expanded) in expand_checked_grouped_claims(
         source,
         &verified_for_expansion,
         ["tree_node_init", "read_value", "empty"],
     ) {
-        verify_c0_sources(&expanded, &c).unwrap();
+        verify_c_sources(&expanded, &c).unwrap();
     }
 }
 
@@ -442,7 +451,7 @@ fn tree_node_init_rejects_invalid_models_and_ownership() {
     ] {
         assert!(source.contains(from));
         assert!(
-            verify_c0_sources(&source.replace(from, to), &c).is_err(),
+            verify_c_sources(&source.replace(from, to), &c).is_err(),
             "accepted {from} -> {to}"
         );
     }
@@ -453,7 +462,7 @@ fn tree_node_init_rejects_invalid_models_and_ownership() {
         c[0].1.replace("node->right = right;", ""),
         c[0].1.replace("node->value = value;", "node->value = 0;"),
     ] {
-        assert!(verify_c0_sources(source, &[(c[0].0, broken.as_str())]).is_err());
+        assert!(verify_c_sources(source, &[(c[0].0, broken.as_str())]).is_err());
     }
 }
 
@@ -477,11 +486,11 @@ const INDEPENDENT_CHILDREN_C: &[(&str, &str)] = &[(
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn independent_children_construct_and_expand() {
     let source = independent_children_source();
-    let verified_for_expansion = verify_c0_sources(source, INDEPENDENT_CHILDREN_C).unwrap();
+    let verified_for_expansion = verify_c_sources(source, INDEPENDENT_CHILDREN_C).unwrap();
     for (_, expanded) in
         expand_checked_grouped_claims(source, &verified_for_expansion, ["read_left", "init"])
     {
-        verify_c0_sources(&expanded, INDEPENDENT_CHILDREN_C).unwrap();
+        verify_c_sources(&expanded, INDEPENDENT_CHILDREN_C).unwrap();
         assert!(expanded.contains("let { left: l, right: r } = unfold(root)"));
     }
 }
@@ -500,10 +509,10 @@ fn independent_children_may_change_roles_in_a_new_model() {
             "{ model: old(root.model) }, { left: l, right: r }",
             "{ model: Tree::Branch(1, right, r.model, left, l.model) }, { left: r, right: l }",
         );
-    let verified_for_expansion = verify_c0_sources(&source, INDEPENDENT_CHILDREN_C).unwrap();
+    let verified_for_expansion = verify_c_sources(&source, INDEPENDENT_CHILDREN_C).unwrap();
     let expanded =
         expand_checked_grouped_claim(&source, &verified_for_expansion, "read_left").unwrap();
-    verify_c0_sources(&expanded, INDEPENDENT_CHILDREN_C).unwrap();
+    verify_c_sources(&expanded, INDEPENDENT_CHILDREN_C).unwrap();
 }
 
 #[test]
@@ -541,19 +550,19 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
         ("consumes r: tree(right);", ""),
     ] {
         assert!(
-            verify_c0_sources(&source.replace(from, to), INDEPENDENT_CHILDREN_C).is_err(),
+            verify_c_sources(&source.replace(from, to), INDEPENDENT_CHILDREN_C).is_err(),
             "accepted {from} -> {to}"
         );
     }
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         source,
         INDEPENDENT_CHILDREN_C,
         "read_left",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &expanded.replace("}, { left: l, right: r });", "}, { left: r, right: l });"),
             INDEPENDENT_CHILDREN_C
         )
@@ -586,9 +595,9 @@ fn conditional_explicit_folds_update_models_and_expand() {
         }
     "#;
     let sources = [("cell.c", "void set(int32* p, int32 value) { *p = value; }")];
-    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "set").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     for (from, to) in [
         ("model: Model::Value(value)", "model: Model::Zero"),
         ("model: Model::Value(value)", "model: Model::Value(0)"),
@@ -601,12 +610,12 @@ fn conditional_explicit_folds_update_models_and_expand() {
         ),
     ] {
         assert!(
-            verify_c0_sources(&source.replace(from, to), &sources).is_err(),
+            verify_c_sources(&source.replace(from, to), &sources).is_err(),
             "accepted {from} -> {to}"
         );
     }
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &expanded.replace("model: Model::Value(value)", "model: Model::Zero"),
             &sources
         )
@@ -635,9 +644,9 @@ fn conditional_empty_fold_requires_arm_facts_and_no_live_result() {
         }
     "#;
     let sources = [("empty.c", "void empty(int32* p) { }")];
-    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "empty").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     for (from, to) in [
         ("requires p == 0;", ""),
         ("model: Maybe<int32>::None", "model: Maybe<int32>::Some(0)"),
@@ -647,7 +656,7 @@ fn conditional_empty_fold_requires_arm_facts_and_no_live_result() {
         ),
     ] {
         assert!(
-            verify_c0_sources(&source.replace(from, to), &sources).is_err(),
+            verify_c_sources(&source.replace(from, to), &sources).is_err(),
             "accepted {from} -> {to}"
         );
     }
@@ -677,12 +686,12 @@ fn guarded_explicit_folds_check_each_return_path() {
         "cell.c",
         "void set(int32* p, int32 value) { if (p != 0) *p = value; }",
     )];
-    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "set").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
-    assert!(verify_c0_sources(&source.replace("value: value", "value: 0"), &sources).is_err());
+    verify_c_sources(&expanded, &sources).unwrap();
+    assert!(verify_c_sources(&source.replace("value: value", "value: 0"), &sources).is_err());
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace(
                 "unfold(c); step_until(function.exit);",
                 "unfold(c); unfold(c); step_until(function.exit);"
@@ -699,8 +708,8 @@ fn resource_match_expands_and_rechecks() {
         "read.c",
         "int32 read(int32* p, int32 expected) { return *p; }",
     )];
-    let verified = verify_c0_sources(MATCH_CELL_SOURCE, &c).unwrap();
-    verify_c0_sources(
+    let verified = verify_c_sources(MATCH_CELL_SOURCE, &c).unwrap();
+    verify_c_sources(
         &MATCH_CELL_SOURCE.replace(
             "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
             &verified[0].expanded_proof_source().unwrap(),
@@ -727,7 +736,7 @@ fn resource_match_rejects_unknown_cases_missing_memory_and_invalid_folds() {
         ("result == expected", "result == 42"),
     ] {
         assert!(
-            verify_c0_sources(&MATCH_CELL_SOURCE.replace(from, to), &c).is_err(),
+            verify_c_sources(&MATCH_CELL_SOURCE.replace(from, to), &c).is_err(),
             "accepted {from} -> {to}"
         );
     }
@@ -735,7 +744,7 @@ fn resource_match_rejects_unknown_cases_missing_memory_and_invalid_folds() {
         "read.c",
         "int32 read(int32* p, int32 expected) { *p = 0; return *p; }",
     )];
-    assert!(verify_c0_sources(MATCH_CELL_SOURCE, &changed).is_err());
+    assert!(verify_c_sources(MATCH_CELL_SOURCE, &changed).is_err());
 }
 
 #[test]
@@ -786,7 +795,7 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
         "read.c",
         "int32 read(int32* p, int32 expected) { return *p; }",
     )];
-    verify_c0_sources(source, &c).unwrap();
+    verify_c_sources(source, &c).unwrap();
     let nested = source
         .replace(
             "field model: Boxed<int32*>;",
@@ -804,14 +813,14 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
             "model: Boxed<int32*>::Box(p)",
             "model: Boxed<Boxed<int32>>::Box(old(c.nested))",
         );
-    verify_c0_sources(&nested, &c).unwrap();
+    verify_c_sources(&nested, &c).unwrap();
     let expanded = expand_function_proof_source(&nested, &c, "read").unwrap();
-    verify_c0_sources(&expanded, &c).unwrap();
+    verify_c_sources(&expanded, &c).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn instance_return_folds_follow_distinct_c_results_after_explicit_splits() {
+fn instance_return_folds_follow_distinct_program_results_after_explicit_splits() {
     let source = r#"verifying "read.c";
         resource cell(p: int32*) {
             field value: int32;
@@ -827,9 +836,9 @@ fn instance_return_folds_follow_distinct_c_results_after_explicit_splits() {
         "read.c",
         "int32 read(int32* p, int32 fallback, int32 use_value) { if (use_value == 0) return fallback; return *p; }",
     )];
-    let verified = verify_c0_sources(source, &c).unwrap();
+    let verified = verify_c_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
-    verify_c0_sources(
+    verify_c_sources(
         &source.replace(
             "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
             &expanded,
@@ -838,7 +847,7 @@ fn instance_return_folds_follow_distinct_c_results_after_explicit_splits() {
     )
     .unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace("result == fallback", "result == c.value"),
             &c
         )
@@ -849,8 +858,8 @@ fn instance_return_folds_follow_distinct_c_results_after_explicit_splits() {
         "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
         body,
     );
-    let verified = verify_c0_sources(&branched, &c).unwrap();
-    verify_c0_sources(
+    let verified = verify_c_sources(&branched, &c).unwrap();
+    verify_c_sources(
         &branched.replace(body, &verified[0].expanded_proof_source().unwrap()),
         &c,
     )
@@ -862,9 +871,9 @@ fn guarded_instance_return_paths_expand_and_recheck() {
     let body = "if p == 0 { unfold(c); step_until(function.exit); fold(c); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }";
     let source = GUARDED_CELL_SOURCE.replace("BODY", body);
     let c = [("read.c", GUARDED_CELL_C)];
-    let verified = verify_c0_sources(&source, &c).unwrap();
+    let verified = verify_c_sources(&source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
-    verify_c0_sources(&source.replace(&format!("by {{ {body} }}"), &expanded), &c).unwrap();
+    verify_c_sources(&source.replace(&format!("by {{ {body} }}"), &expanded), &c).unwrap();
 }
 
 #[test]
@@ -874,7 +883,7 @@ fn guarded_instance_return_paths_reject_invalid_folds() {
         "if p == 0 { unfold(c); step_until(function.exit); fold(c); fold(c); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }",
     ] {
         assert!(
-            verify_c0_sources(
+            verify_c_sources(
                 &GUARDED_CELL_SOURCE.replace("BODY", body),
                 &[("read.c", GUARDED_CELL_C)]
             )
@@ -886,7 +895,7 @@ fn guarded_instance_return_paths_reject_invalid_folds() {
     let body = "if p == 0 { unfold(c); step_until(function.exit); fold(c); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }";
     let source = GUARDED_CELL_SOURCE.replace("BODY", body);
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace("p == 0 or result == c.value", "result == c.value"),
             &[("read.c", GUARDED_CELL_C)]
         )
@@ -895,7 +904,7 @@ fn guarded_instance_return_paths_reject_invalid_folds() {
     // Only one branch changes memory: the other branch's valid fold cannot
     // certify this return's stale field relation.
     let changed = "int32 read(int32* p) { if (p == 0) return 0; *p = 0; return *p; }";
-    assert!(verify_c0_sources(&source, &[("read.c", changed)]).is_err());
+    assert!(verify_c_sources(&source, &[("read.c", changed)]).is_err());
 }
 
 #[test]
@@ -916,9 +925,9 @@ fn named_instance_memory_body_round_trip_preserves_fields() {
         } by { unfold(c); step_until(function.exit); fold(c); solve(); }
     "#;
     let c = [("read.c", "int32 read(int32* p) { return *p; }")];
-    let verified = verify_c0_sources(source, &c).unwrap();
+    let verified = verify_c_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
-    verify_c0_sources(
+    verify_c_sources(
         &source.replace(
             "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
             &expanded,
@@ -958,10 +967,10 @@ fn single_cell_adt_initializers_verify_and_expand() {
         let source = source
             .replace("MODEL", model)
             .replace("INITIALIZER", initializer);
-        let verified_for_expansion = verify_c0_sources(&source, &sources).unwrap();
+        let verified_for_expansion = verify_c_sources(&source, &sources).unwrap();
         let expanded =
             expand_checked_grouped_claim(&source, &verified_for_expansion, "init").unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
     }
 }
 
@@ -998,7 +1007,7 @@ fn single_cell_adt_initializers_reject_invalid_models() {
         "Mark::Missing",
     ] {
         assert!(
-            verify_c0_sources(&source.replace("INITIALIZER", initializer), &sources).is_err(),
+            verify_c_sources(&source.replace("INITIALIZER", initializer), &sources).is_err(),
             "accepted {initializer}"
         );
     }
@@ -1013,21 +1022,21 @@ fn single_cell_adt_initializers_reject_invalid_models() {
         );
     for initializer in ["c.model", "old(c.model)"] {
         assert!(
-            verify_c0_sources(&update.replace("INITIALIZER", initializer), &sources).is_err(),
+            verify_c_sources(&update.replace("INITIALIZER", initializer), &sources).is_err(),
             "accepted stale {initializer}"
         );
     }
     // A ghost model can name a total logical read without claiming validity.
     let unconstrained = source.replace("fact model == Mark::Set(p[0]);", "");
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &unconstrained.replace("INITIALIZER", "Mark::Set(q[0])"),
             &sources
         )
         .is_ok()
     );
     let scalar = unconstrained.replace("field model: Mark;", "field model: int32;");
-    assert!(verify_c0_sources(&scalar.replace("INITIALIZER", "q[0]"), &sources).is_ok());
+    assert!(verify_c_sources(&scalar.replace("INITIALIZER", "q[0]"), &sources).is_ok());
 }
 
 #[test]
@@ -1059,10 +1068,11 @@ fn single_cell_adt_initializers_preserve_arbitrary_entry_models() {
         "match old(c.model) { Maybe::None => Maybe<int32>::None, Maybe::Some(x) => Maybe<int32>::Some(x), }",
     ] {
         let source = source.replace("VALUE", value);
-        verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{value}: {error:?}"));
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{value}: {error:?}"));
         let expanded =
-            expand_c0_claim_source(&source, &sources, "preserve", CProofClaim::Grouped).unwrap();
-        verify_c0_sources(&expanded, &sources)
+            expand_c_claim_source(&source, &sources, "preserve", ContractProofClaim::Grouped)
+                .unwrap();
+        verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{value}: {error:?}\n{expanded}"));
     }
     let changed = source
@@ -1075,12 +1085,12 @@ fn single_cell_adt_initializers_preserve_arbitrary_entry_models() {
             "ensures old(c.model) == Maybe<int32>::None;",
         )
         .replace("VALUE", "Maybe<int32>::Some(7)");
-    verify_c0_sources(&changed, &sources).unwrap();
+    verify_c_sources(&changed, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source(&changed, &sources, "preserve", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+        expand_c_claim_source(&changed, &sources, "preserve", ContractProofClaim::Grouped).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &changed.replace(
                 "ensures old(c.model) == Maybe<int32>::None;",
                 "ensures old(c.model) == Maybe<int32>::Some(7);"
@@ -1122,11 +1132,11 @@ fn single_cell_explicit_fold_constructs_updates_and_expands() {
                 "unfold(c); step_until(function.exit);",
             ),
     ] {
-        let verified_for_expansion = verify_c0_sources(&source, &sources).unwrap();
+        let verified_for_expansion = verify_c_sources(&source, &sources).unwrap();
         let expanded =
             expand_checked_grouped_claim(&source, &verified_for_expansion, "init").unwrap();
         assert!(expanded.contains("let c = fold("), "{expanded}");
-        verify_c0_sources(&expanded, &sources).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
     }
 }
 
@@ -1156,7 +1166,7 @@ fn single_cell_explicit_fold_rejects_missing_wrong_and_duplicate_ownership() {
         "let c = fold(cell(p), { value: value }); unfold(c);",
     ] {
         assert!(
-            verify_c0_sources(&source.replace("FOLD", fold), &sources).is_err(),
+            verify_c_sources(&source.replace("FOLD", fold), &sources).is_err(),
             "accepted {fold}"
         );
     }
@@ -1164,7 +1174,7 @@ fn single_cell_explicit_fold_rejects_missing_wrong_and_duplicate_ownership() {
         .replace("consumes p[0..1];", "")
         .replace("step_until(function.exit);", "")
         .replace("FOLD", "let c = fold(cell(p), { value: value });");
-    assert!(verify_c0_sources(&no_ownership, &sources).is_err());
+    assert!(verify_c_sources(&no_ownership, &sources).is_err());
 }
 
 #[test]
@@ -1195,15 +1205,15 @@ fn single_cell_explicit_fold_preserves_entry_fields_and_consumes_names() {
         }
     "#;
     let sources = [("cell.c", "void set(int32* p, int32 value) { *p = value; }")];
-    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "set").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     for stale in [
         source.replace("ensures c.revision == 2;", "ensures c.revision == 1;"),
         source.replace("ensures c.value == value;", "ensures c.value == 7;"),
     ] {
         assert!(
-            verify_c0_sources(&stale, &sources).is_err(),
+            verify_c_sources(&stale, &sources).is_err(),
             "entry fields must not be reused as current fields after an update"
         );
     }
@@ -1213,7 +1223,7 @@ fn single_cell_explicit_fold_preserves_entry_fields_and_consumes_names() {
         1,
     );
     assert!(
-        verify_c0_sources(&invalid, &sources).is_err(),
+        verify_c_sources(&invalid, &sources).is_err(),
         "consumed resource fields are not a live handle"
     );
 }
@@ -1253,7 +1263,7 @@ fn named_instance_memory_body_rejects_invalid_folds() {
             "int32 read(int32* p) { *p = 0; return *p; }",
         ),
     ] {
-        let error = verify_c0_sources(&source.replace("BODY", body), &[("read.c", c)])
+        let error = verify_c_sources(&source.replace("BODY", body), &[("read.c", c)])
             .err()
             .unwrap_or_else(|| panic!("invalid instance proof accepted: {body}, {c}"));
         if c.contains("*p = 0") {
@@ -1280,16 +1290,16 @@ fn checked_original_claim_can_close_after_rewrite_but_unrelated_have_cannot() {
         }
     "#;
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    verify_c0_sources(source, &c).unwrap();
+    verify_c_sources(source, &c).unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace("ensures result == 1;", "ensures result == 2;"),
             &c
         )
         .is_err()
     );
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace("have result == 1 by", "have result == 2 by"),
             &c
         )
@@ -1322,10 +1332,10 @@ fn opaque_resource_call_transports_only_the_selected_instance() {
         "invoke.c",
         "int32 invoke(int32 (*callback)()) { return callback(); }",
     )];
-    let verified = verify_c0_sources(source, &c).unwrap();
+    let verified = verify_c_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     assert!(expanded.contains("step(Touch, { cell: first });"));
-    verify_c0_sources(
+    verify_c_sources(
         &source.replace(
             "by { step(Touch, { cell: first }); step_until(function.exit); solve(); }",
             &expanded,
@@ -1341,7 +1351,7 @@ fn opaque_resource_call_transports_only_the_selected_instance() {
         source.replace("ensures cell.model == old(cell.model);", ""),
         source.replace("{ cell: first }", "{ cell: second }"),
     ] {
-        assert!(verify_c0_sources(&bad, &c).is_err());
+        assert!(verify_c_sources(&bad, &c).is_err());
     }
 }
 
@@ -1472,7 +1482,7 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
         "increment.c",
         "void increment(int32* state) { }\nvoid caller(int32* state) { increment(state); }",
     )];
-    let verified = verify_c0_sources(source, &c).unwrap();
+    let verified = verify_c_sources(source, &c).unwrap();
     let expanded = verified
         .iter()
         .filter_map(|claim| claim.expanded_proof_source().ok())
@@ -1482,7 +1492,7 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
         expanded.contains("step(increment, { first: c });"),
         "{expanded}"
     );
-    verify_c0_sources(
+    verify_c_sources(
         &source.replace(
             "by { step(increment, { first: c }); step_until(function.exit); solve(); }",
             &expanded,
@@ -1569,7 +1579,7 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
         "increment.c",
         "void increment(int32* state) { }\nvoid other(int32* state) { }\nvoid caller(int32* state) { other(state); increment(state); }",
     )];
-    let error = verify_c0_sources(source, &c).unwrap_err();
+    let error = verify_c_sources(source, &c).unwrap_err();
     assert!(
         error
             .message()
@@ -1639,10 +1649,10 @@ fn explicit_contract_empty_application_verifies_and_expands() {
         "invoke.c",
         "int32 invoke(int32 (*callback)(int32), int32 x) { return callback(x); }",
     )];
-    let verified = verify_c0_sources(source, &c).unwrap();
+    let verified = verify_c_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     assert!(expanded.contains("step(Identity);"), "{expanded}");
-    verify_c0_sources(
+    verify_c_sources(
         &source.replace(
             "by { step(Identity); step_until(function.exit); solve(); }",
             &expanded,
@@ -1651,7 +1661,7 @@ fn explicit_contract_empty_application_verifies_and_expands() {
     )
     .unwrap();
     let error =
-        verify_c0_sources(&source.replace("step(Identity)", "step(Identity())"), &c).unwrap_err();
+        verify_c_sources(&source.replace("step(Identity)", "step(Identity())"), &c).unwrap_err();
     assert!(
         error.message().contains("`step(Identity(...))` is retired"),
         "{}",
@@ -1695,18 +1705,18 @@ fn contract_application_binds_each_handle_by_name() {
             "binder `cell` expects resource `marker`, but `second` is `other`",
         ),
     ] {
-        let error = verify_c0_sources(&source.replace("Touch, { cell: first }", application), &c)
+        let error = verify_c_sources(&source.replace("Touch, { cell: first }", application), &c)
             .unwrap_err();
         assert!(error.message().contains(diagnostic), "{}", error.message());
     }
-    verify_c0_sources(source, &c).unwrap();
+    verify_c_sources(source, &c).unwrap();
     let duplicate = source
         .replace(
             "owns cell: marker();",
             "owns cell: marker(); owns another: marker();",
         )
         .replace("{ cell: first }", "{ cell: first, another: first }");
-    let error = verify_c0_sources(&duplicate, &c).unwrap_err();
+    let error = verify_c_sources(&duplicate, &c).unwrap_err();
     assert!(
         error
             .message()
@@ -1715,7 +1725,7 @@ fn contract_application_binds_each_handle_by_name() {
         error.message()
     );
     let handle_free = source.replace("owns cell: marker();", "");
-    let error = verify_c0_sources(&handle_free, &c).unwrap_err();
+    let error = verify_c_sources(&handle_free, &c).unwrap_err();
     assert!(
         error
             .message()
@@ -1748,9 +1758,9 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
         "invoke.c",
         "int32 invoke(int32 (*callback)(int32*), int32* p, int32* q) { callback(p); return callback(p); }",
     )];
-    let verified = verify_c0_sources(source, &c).unwrap();
+    let verified = verify_c_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
-    verify_c0_sources(
+    verify_c_sources(
         &source.replace(
             "by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);\n            rewrite(result == at(region(0).exit, first.revision));\n            rewrite(at(region(0).exit, first.revision) == 1); solve(); }",
             &expanded,
@@ -1759,7 +1769,7 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
     )
     .unwrap();
     let error =
-        verify_c0_sources(&source.replace("{ cell: first }", "{ cell: second }"), &c).unwrap_err();
+        verify_c_sources(&source.replace("{ cell: first }", "{ cell: second }"), &c).unwrap_err();
     assert!(
         error.message().contains("does not match its contract"),
         "{}",
@@ -1769,7 +1779,7 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
     assert!(!error.message().contains("ResourceFieldSchema"));
     assert!(!error.message().contains("diagnostic truncated"));
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace(
                 "ensures result == 1;",
                 "ensures result == old(first.revision);"
@@ -1802,11 +1812,11 @@ fn named_resource_bindings_preserve_symbolic_fields_and_recheck_expansion() {
         "identity.c",
         "int32 identity(int32 value) { return value; }",
     )];
-    let verified = verify_c0_sources(source, &sources).unwrap();
+    let verified = verify_c_sources(source, &sources).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     let expanded_source =
         source.replacen("by { step_until(function.exit); solve(); }", &expanded, 1);
-    verify_c0_sources(&expanded_source, &sources)
+    verify_c_sources(&expanded_source, &sources)
         .expect("expanded resource-field proof must recheck");
     for false_claim in [
         "cell.model == Mark::Clear",
@@ -1815,7 +1825,7 @@ fn named_resource_bindings_preserve_symbolic_fields_and_recheck_expansion() {
     ] {
         let wrong = source.replace("cell.model == old(cell.model)", false_claim);
         assert!(
-            verify_c0_sources(&wrong, &sources).is_err(),
+            verify_c_sources(&wrong, &sources).is_err(),
             "an arbitrary field cannot prove {false_claim}"
         );
     }
@@ -1841,14 +1851,14 @@ fn named_resource_bindings_are_scoped_and_have_distinct_state() {
         extern int32 f() {{ owns cell: marked_cell(); }}
         int32 g() {{ ensures cell.model == Mark::Clear; }}"#
     );
-    assert!(verify_c0_sources(&out_of_scope, &[("g.c", "int32 g(void) { return 0; }")]).is_err());
+    assert!(verify_c_sources(&out_of_scope, &[("g.c", "int32 g(void) { return 0; }")]).is_err());
     let source = format!(
         r#"verifying "f.c"; {header}
         int32 f() {{ owns first: marked_cell(); owns second: marked_cell();
             ensures first.model == second.model;
         }}"#
     );
-    assert!(verify_c0_sources(&source, &[("f.c", "int32 f(void) { return 0; }")]).is_err());
+    assert!(verify_c_sources(&source, &[("f.c", "int32 f(void) { return 0; }")]).is_err());
     let file = parser::parse(&source).unwrap();
     let function = &file.function_blocks()[0];
     let Requirement::Resource(ResourceClause::Named { binding: first, .. }) =
@@ -1932,12 +1942,12 @@ fn named_resource_binding_grants_reads_of_its_memory_body_and_no_writes() {
             ensures cell.model == old(cell.model);
         }
     "#;
-    verify_c0_sources(
+    verify_c_sources(
         contract,
         &[("cell.c", "int32 touch(int32* p) { return *p; }")],
     )
     .expect("holding the instance authorizes a read of its body");
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         contract,
         &[("cell.c", "int32 touch(int32* p) { *p = 1; return 0; }")],
     )
@@ -1963,7 +1973,7 @@ fn a_call_binds_the_one_possible_instance_and_refuses_to_choose() {
             ensures cell.revision == old(cell.revision);
         }
     "#;
-    verify_c0_sources(unique, &[("calls.c", c_source)])
+    verify_c_sources(unique, &[("calls.c", c_source)])
         .expect("the caller owns exactly one instance the callee's binder can be");
     let ambiguous = r#"verifying "calls.c";
         resource marker() { field revision: int32; }
@@ -1974,7 +1984,7 @@ fn a_call_binds_the_one_possible_instance_and_refuses_to_choose() {
             ensures cell.revision == old(cell.revision);
         }
     "#;
-    let error = verify_c0_sources(ambiguous, &[("calls.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(ambiguous, &[("calls.c", c_source)]).unwrap_err();
     assert!(
         error.message().contains(
             "`callee` has an unbound instance binder `cell`; bind it in `step(..., { cell: instance })`"
@@ -2017,16 +2027,16 @@ fn resource_fields_preserve_checked_types_in_their_lowered_schema() {
         ty.arguments,
         vec![AlgebraicValueType::Algebraic {
             name: "List".into(),
-            arguments: vec![AlgebraicValueType::C(CType::Int32)],
+            arguments: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         }]
     );
     assert_eq!(
         schema.fields()[2].1,
-        crate::kernel::ResourceFieldType::C(CType::Int32)
+        crate::kernel::ResourceFieldType::Program(ProgramType::Int32)
     );
     assert_eq!(
         schema.fields()[3].1,
-        crate::kernel::ResourceFieldType::C(CType::Int32Pointer)
+        crate::kernel::ResourceFieldType::Program(ProgramType::Int32Pointer)
     );
     assert!(file.resource_definitions()[1].is_fieldless());
     let lowered = composite_resource_definitions(
@@ -2175,7 +2185,7 @@ fn modeled_binary_tree_laws_reject_wrong_mirror_and_size() {
     // This regression is about the generic laws, independent of the C heap
     // resource and initializer contract that now precede them in the example.
     let source = &example[example.find("spec enum Tree<T>").unwrap()..];
-    verify_c0_sources(source, &[]).expect("generic tree laws should verify");
+    verify_c_sources(source, &[]).expect("generic tree laws should verify");
     for (from, to) in [("right", "left"), ("left", "right")] {
         let wrong_mirror = source.replacen(
             &format!("tree_mirror({from})"),
@@ -2183,7 +2193,7 @@ fn modeled_binary_tree_laws_reject_wrong_mirror_and_size() {
             1,
         );
         assert!(
-            verify_c0_sources(&wrong_mirror, &[]).is_err(),
+            verify_c_sources(&wrong_mirror, &[]).is_err(),
             "mirroring must not duplicate the {to} subtree"
         );
     }
@@ -2191,7 +2201,7 @@ fn modeled_binary_tree_laws_reject_wrong_mirror_and_size() {
         "ensures tree_size(tree_mirror(tree)) == tree_size(tree)",
         "ensures tree_size(tree_mirror(tree)) == Nat::Succ(tree_size(tree))",
     );
-    assert!(verify_c0_sources(&wrong_size, &[]).is_err());
+    assert!(verify_c_sources(&wrong_size, &[]).is_err());
 
     let client = format!(
         "{source}\n\
@@ -2204,7 +2214,7 @@ fn modeled_binary_tree_laws_reject_wrong_mirror_and_size() {
              }}\n\
          }}"
     );
-    verify_c0_sources(&client, &[]).expect("tree laws should apply to nested generic payloads");
+    verify_c_sources(&client, &[]).expect("tree laws should apply to nested generic payloads");
 }
 
 const FILL3_C: &str = r#"
@@ -2229,12 +2239,12 @@ const FILL3_CLICK: &str = r#"
         }
     "#;
 
-fn current(expression: CExpression) -> ContractExpression {
-    ContractExpression::CFragment(expression)
+fn current(expression: ProgramExpression) -> ContractExpression {
+    ContractExpression::ProgramExpression(expression)
 }
 
 fn current_var(name: &str) -> ContractExpression {
-    current(CExpression::Variable(name.to_string()))
+    current(ProgramExpression::Variable(name.to_string()))
 }
 
 fn current_int(value: u32) -> ContractExpression {
@@ -2248,7 +2258,7 @@ fn current_index(base: &str, index: u32) -> ContractExpression {
 #[test]
 fn contract_substitution_renames_colliding_logical_binders() {
     let proposition = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "i".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -2298,7 +2308,7 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     };
     let let_expression = ContractExpression::Let {
         name: "i".to_string(),
-        click_type: Some(ClickType::C(C0Type::Int32)),
+        click_type: Some(ClickType::Program(InterfaceType::Int32)),
         value: Box::new(current_int(0)),
         body: Box::new(ContractExpression::Add(
             Box::new(current_var("argument")),
@@ -2359,7 +2369,7 @@ int32 keep(int32 x, int32 y) {
         "integer_affine_fixed_execution.c",
         "int32 keep(int32 x, int32 y) { return x; }",
     )];
-    let verified_for_label = verify_c0_sources(source, &c_sources)
+    let verified_for_label = verify_c_sources(source, &c_sources)
         .expect("execution-context Integer weakening should verify");
     let expanded = expand_checked_function_claim(source, &verified_for_label, "keep.weakened")
         .expect("Integer weakening should expand to a checked certificate");
@@ -2367,7 +2377,7 @@ int32 keep(int32 x, int32 y) {
         expanded.contains("arithmetic_certificate"),
         "execution-context expansion should contain its checked certificate: {expanded}"
     );
-    verify_c0_sources(&expanded, &c_sources)
+    verify_c_sources(&expanded, &c_sources)
         .expect("expanded execution-context Integer weakening should recheck");
 }
 
@@ -2387,7 +2397,7 @@ theorem integer_affine_two_premise_constant_weakening(x: Integer, y: Integer) {
 "#;
     verify_click_theorems(source)
         .expect("two Integer premises should lower through the surface mapper");
-    let expanded = expand_c0_claim_source_by_label(
+    let expanded = expand_c_claim_source_by_label(
         source,
         &[],
         "integer_affine_two_premise_constant_weakening.ensures_0",
@@ -2425,7 +2435,7 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
         "integer_affine_fixed_scaled.c",
         "int32 fixed_c_params(int32 i, int32 total, int32 value) { return total; }",
     )];
-    let verified_for_label = verify_c0_sources(source, &c_sources)
+    let verified_for_label = verify_c_sources(source, &c_sources)
         .expect("fixed execution scaled lower bound should verify");
     let expanded =
         expand_checked_function_claim(source, &verified_for_label, "fixed_c_params.bounded")
@@ -2434,7 +2444,7 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
         expanded.contains("arithmetic_certificate"),
         "scaled lower bound expansion should contain its checked certificate: {expanded}"
     );
-    verify_c0_sources(&expanded, &c_sources)
+    verify_c_sources(&expanded, &c_sources)
         .expect("expanded fixed execution scaled lower bound should recheck");
 }
 
@@ -2452,7 +2462,7 @@ theorem integer_affine_terminal_constant(x: Integer) {
 "#;
     verify_click_theorems(source).expect("a true terminal constant should close an Integer goal");
     let expanded =
-        expand_c0_claim_source_by_label(source, &[], "integer_affine_terminal_constant.ensures_0")
+        expand_c_claim_source_by_label(source, &[], "integer_affine_terminal_constant.ensures_0")
             .expect("the terminal constant certificate should expand");
     verify_click_theorems(&expanded)
         .expect("expanded terminal constant certificate should recheck");
@@ -2594,6 +2604,7 @@ macro_rules! test_batches {
 mod authority_private_body_tests;
 mod authority_transfer_wrapper_tests;
 mod back_edge_tests;
+mod contract_closing_tests;
 mod contract_tests;
 mod diagnostic_tests;
 mod execution_tests;
@@ -2630,7 +2641,7 @@ fn integer_resource_fields_enforce_types_facts_and_snapshots() {
             solve();
         }
     "#;
-    verify_c0_sources(source, &[("change.c", c_source)]).unwrap();
+    verify_c_sources(source, &[("change.c", c_source)]).unwrap();
     for invalid in [
         source.replace("total: 18446744073709551617", "total: -1"),
         source.replace("total: 18446744073709551617", "total: 1u32"),
@@ -2644,7 +2655,7 @@ fn integer_resource_fields_enforce_types_facts_and_snapshots() {
         ),
     ] {
         assert!(
-            verify_c0_sources(&invalid, &[("change.c", c_source)]).is_err(),
+            verify_c_sources(&invalid, &[("change.c", c_source)]).is_err(),
             "{invalid}"
         );
     }
@@ -2653,11 +2664,11 @@ fn integer_resource_fields_enforce_types_facts_and_snapshots() {
     let negative = source
         .replace("total: 18446744073709551617", "total: -1")
         .replace("ensures model.total == 18446744073709551617;", "");
-    assert!(verify_c0_sources(&negative, &[("change.c", c_source)]).is_err());
+    assert!(verify_c_sources(&negative, &[("change.c", c_source)]).is_err());
     let expanded =
-        expand_c0_claim_source_by_label(source, &[("change.c", c_source)], "change.contract")
+        expand_c_claim_source_by_label(source, &[("change.c", c_source)], "change.contract")
             .unwrap();
-    verify_c0_sources(&expanded, &[("change.c", c_source)]).unwrap();
+    verify_c_sources(&expanded, &[("change.c", c_source)]).unwrap();
 }
 
 #[test]
@@ -2771,7 +2782,7 @@ fn fold_read_summaries_are_checked_from_the_lowered_declarations() {
 }
 
 #[test]
-fn integer_resource_field_observes_unchanged_c_memory_read() {
+fn integer_resource_field_observes_unchanged_memory_read() {
     let c_source = "int32 read(int32* p) { return *p; }";
     let source = r#"
         verifying "read.c";
@@ -2791,7 +2802,7 @@ fn integer_resource_field_observes_unchanged_c_memory_read() {
             solve();
         }
     "#;
-    verify_c0_sources(source, &[("read.c", c_source)]).unwrap();
+    verify_c_sources(source, &[("read.c", c_source)]).unwrap();
 }
 
 #[test]
@@ -2799,9 +2810,9 @@ fn automatic_scope_exit_preserves_expanded_execution() {
     let c = "int32 f(int32 n) { if (n == 0) { int32 a[2]; a[0] = 5; return a[0]; } else { int32 b[2]; b[0] = 5; return b[0]; } }";
     let source = r#"verifying "scope.c"; int32 f(int32 n) { ensures result == 5; } by { if n == 0 { step_until(function.exit); } else { step_until(function.exit); } }"#;
     let inputs = [("scope.c", c)];
-    let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &inputs).unwrap();
     let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "f").unwrap();
-    verify_c0_sources(&expanded, &inputs).unwrap();
+    verify_c_sources(&expanded, &inputs).unwrap();
 }
 
 #[test]
@@ -2819,14 +2830,14 @@ fn bounded_population_increment_expands_and_checks() {
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_project(project, &inputs).unwrap();
+    verify_c_project(project, &inputs).unwrap();
     let expanded = expand_project_claim_source_by_label(
         project,
         &ProgramInputs::Bundle(inputs.to_vec()),
         "increment.contract",
     )
     .unwrap();
-    verify_c0_project(&project.with_entry_source(expanded), &inputs).unwrap();
+    verify_c_project(&project.with_entry_source(expanded), &inputs).unwrap();
 }
 
 #[test]
@@ -2840,11 +2851,11 @@ fn aggregate_parameter_values_expand_and_check() {
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &inputs).unwrap();
     for (_, expanded) in
         expand_checked_grouped_claims(source, &verified_for_expansion, ["nested", "copy"])
     {
-        verify_c0_sources(&expanded, &inputs).unwrap();
+        verify_c_sources(&expanded, &inputs).unwrap();
     }
 }
 
@@ -2859,10 +2870,10 @@ fn aggregate_parameter_symbolic_index_expands_and_checks() {
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
+    let verified_for_expansion = verify_c_sources(source, &inputs).unwrap();
     let expanded =
         expand_checked_grouped_claim(source, &verified_for_expansion, "indexed").unwrap();
-    verify_c0_sources(&expanded, &inputs).unwrap();
+    verify_c_sources(&expanded, &inputs).unwrap();
 }
 
 #[test]
@@ -2890,10 +2901,10 @@ fn resource_contract_regressions_expand_and_check() {
             .iter()
             .map(|(name, body)| (name.as_str(), body.as_str()))
             .collect::<Vec<_>>();
-        let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
+        let verified_for_expansion = verify_c_sources(source, &inputs).unwrap();
         let expanded =
             expand_checked_grouped_claim(source, &verified_for_expansion, function_name).unwrap();
-        verify_c0_sources(&expanded, &inputs)
+        verify_c_sources(&expanded, &inputs)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
     }
 }
@@ -2903,7 +2914,7 @@ fn reports_syntax_and_type_failures_separately() {
     assert_eq!(syntax.kind(), ClickErrorKind::Syntax);
     assert!(syntax.report().contains("error kind: syntax error"));
 
-    let type_error = verify_c0_sources(
+    let type_error = verify_c_sources(
         "verifying \"f.c\"; int32 read(const int32 *p) { ensures result == 0; }",
         &[("f.c", "int32 read(int32 *p) { return p[0]; }")],
     )
@@ -3158,11 +3169,11 @@ fn solve_folds_returned_instances_and_expands_to_explicit_folds() {
         ),
     ] {
         let sources = [("read.c", c)];
-        let verified = verify_c0_sources(&source, &sources).unwrap();
+        let verified = verify_c_sources(&source, &sources).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
         assert!(expanded.contains("fold("), "{expanded}");
         crate::surface::proof::without_implicit_solve(|| {
-            verify_c0_sources(&source.replace(body, &expanded), &sources)
+            verify_c_sources(&source.replace(body, &expanded), &sources)
         })
         .unwrap();
     }

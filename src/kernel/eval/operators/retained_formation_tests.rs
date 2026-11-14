@@ -166,7 +166,8 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
             block: PointerBlock::Concrete("retained-formation".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let state = CState::new().with_memory(CMemory::new().with_block(base.block.clone(), 64));
+        let state =
+            ExecutionState::new().with_memory(Memory::new().with_block(base.block.clone(), 64));
         let variable = MachineTerm::Variable(Variable(993200));
         let pointer = Pointer {
             block: base.block.clone(),
@@ -218,17 +219,17 @@ fn coordinate_reconstruction_keeps_the_selected_read_snapshot() {
         block: PointerBlock::Concrete("coordinate-snapshot".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = CMemory::new().with_block(pointer.block.clone(), 8).store(
+    let before = Memory::new().with_block(pointer.block.clone(), 8).store(
         pointer.clone(),
-        CValue::Int64(MachineTerm::int64_constant(2)),
+        ProgramValue::Int64(MachineTerm::int64_constant(2)),
     );
     let after = before.clone().store(
         pointer.clone(),
-        CValue::Int64(MachineTerm::int64_constant(3)),
+        ProgramValue::Int64(MachineTerm::int64_constant(3)),
     );
     let mut results = vec![];
     for memory in [before, after] {
-        let memory = crate::kernel::intern_c_memory(memory);
+        let memory = crate::kernel::intern_memory(memory);
         let read =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64);
         let offset = PointerOffsetTerm::Int64Scaled {

@@ -4,13 +4,13 @@ use crate::kernel::int32;
 #[test]
 fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
     use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
-    use crate::kernel::prelude::CCheckedResourceFact;
-    use crate::kernel::{CResourceSnapshot, CResourceTransferRole};
-    let state = CState::new()
+    use crate::kernel::prelude::CheckedResourceFact;
+    use crate::kernel::{ResourceSnapshot, ResourceTransferRole};
+    let state = ExecutionState::new()
         .with_local("selected", int32(5))
-        .with_memory(CMemory::new().with_block("local:selected", 4));
+        .with_memory(Memory::new().with_block("local:selected", 4));
     let pointer = state.locals().slot("selected").unwrap().clone();
-    let viewed = CResourceFact::view_memory(CMemoryRange::new(pointer.clone(), 0.into(), 1.into()));
+    let viewed = ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0.into(), 1.into()));
     let ledger = LoanLedger::new();
     let caller = ledger.fresh_participant().unwrap();
     let callee = ledger.fresh_participant().unwrap();
@@ -26,10 +26,10 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
     .unwrap();
     plan.lend_local_views(
         state.memory(),
-        &[CCheckedResourceFact {
+        &[CheckedResourceFact {
             fact: viewed,
-            role: CResourceTransferRole::Borrow,
-            snapshot: CResourceSnapshot::Entry,
+            role: ResourceTransferRole::Borrow,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
@@ -55,9 +55,9 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
 
 #[test]
 fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("holder", int32(0))
-        .with_memory(CMemory::new().with_block("local:holder", 48));
+        .with_memory(Memory::new().with_block("local:holder", 48));
     let address = state.locals().slot("holder").unwrap().offset_by_bytes(8);
     let context = crate::kernel::mutexes::MutexContext::new(state)
         .initialize_empty(address.clone(), 40)
@@ -67,7 +67,7 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     assert!(matches!(
         core.record_automatic_lifetime_end(state, &names),
-        Err(CRuntimeError::MutexStorageScopeEnd { .. })
+        Err(RuntimeError::MutexStorageScopeEnd { .. })
     ));
     let forged = CheckedAutomaticLifetimeEnd {
         before_state: state.clone(),
@@ -95,9 +95,9 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
 
 #[test]
 fn automatic_lifetime_end_records_the_retired_storage_footprint() {
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("selected", int32(5))
-        .with_memory(CMemory::new().with_block("local:selected", 4));
+        .with_memory(Memory::new().with_block("local:selected", 4));
     let slot = state.locals().slot("selected").unwrap().clone();
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     let after = core
@@ -109,7 +109,7 @@ fn automatic_lifetime_end_records_the_retired_storage_footprint() {
         .expect("scope cleanup has a footprint");
     assert_eq!(footprint.before, *state.memory());
     assert_eq!(footprint.after, *after.memory());
-    let retired = CResource::Memory(CMemoryRange::new_with_element_width(
+    let retired = Resource::Memory(MemoryRange::new_with_element_width(
         slot,
         0u32.into(),
         4u32.into(),
@@ -124,19 +124,19 @@ fn automatic_lifetime_end_records_the_retired_storage_footprint() {
         &ExecutionFacts::new(),
     );
     let whole_statement = crate::kernel::RegionFootprint::with_scope_cleanup(&statement, footprint);
-    let outside = CResource::Memory(CMemoryRange::new_with_element_width(
-        CMemory::frame_local_pointer(0, "outside"),
+    let outside = Resource::Memory(MemoryRange::new_with_element_width(
+        Memory::frame_local_pointer(0, "outside"),
         0u32.into(),
         4u32.into(),
         1,
     ));
     assert!(crate::kernel::region_footprint::separate_using(
-        &CResource::Footprint(whole_statement),
+        &Resource::Footprint(whole_statement),
         &outside,
         &PureFactContext::new(),
     ));
     assert!(!crate::kernel::region_footprint::separate_using(
-        &CResource::Footprint(footprint.clone()),
+        &Resource::Footprint(footprint.clone()),
         &retired,
         &PureFactContext::new(),
     ));

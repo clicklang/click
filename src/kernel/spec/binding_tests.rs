@@ -2,10 +2,10 @@ use super::*;
 use crate::kernel::VerificationSession;
 
 fn name(name: &str) -> SpecExpression {
-    SpecExpression::CExpression(CExpression::Variable(name.into()))
+    SpecExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
 }
 fn word(value: u64) -> SpecExpression {
-    SpecExpression::Value(CValue::UInt64(MachineTerm::uint64_constant(value)))
+    SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(value)))
 }
 fn add(left: SpecExpression, right: SpecExpression) -> SpecExpression {
     SpecExpression::Add(Box::new(left), Box::new(right))
@@ -33,9 +33,12 @@ fn evaluate(scope: SpecScope<'_>, expression: &SpecExpression) -> SpecExpression
 #[test]
 fn shared_let_values_keep_identity_shadowing_and_snapshot_scope() {
     let _session = VerificationSession::enter();
-    let state =
-        CState::new().with_local("x", CValue::UInt64(MachineTerm::Variable(Variable(992400))));
-    let old = CState::new().with_local("v", CValue::UInt64(MachineTerm::uint64_constant(99)));
+    let state = ExecutionState::new().with_local(
+        "x",
+        ProgramValue::UInt64(MachineTerm::Variable(Variable(992400))),
+    );
+    let old = ExecutionState::new()
+        .with_local("v", ProgramValue::UInt64(MachineTerm::uint64_constant(99)));
     let scope = SpecScope::unbound(&state, Some(&old));
     let value = add(name("x"), word(1));
     let expected = evaluate(scope, &value);
@@ -74,8 +77,10 @@ fn shared_let_values_keep_identity_shadowing_and_snapshot_scope() {
 #[test]
 fn unused_shared_binding_keeps_its_shift_domain() {
     let _session = VerificationSession::enter();
-    let state =
-        CState::new().with_local("x", CValue::UInt64(MachineTerm::Variable(Variable(992401))));
+    let state = ExecutionState::new().with_local(
+        "x",
+        ProgramValue::UInt64(MachineTerm::Variable(Variable(992401))),
+    );
     let scope = SpecScope::unbound(&state, None);
     for count in [word(3), word(64), name("x")] {
         let value = SpecExpression::ShiftLeft(Box::new(name("x")), Box::new(count));
@@ -89,18 +94,20 @@ fn unused_shared_binding_keeps_its_shift_domain() {
 }
 
 fn word_value(value: u64) -> SpecValue {
-    CValue::UInt64(MachineTerm::uint64_constant(value)).into()
+    ProgramValue::UInt64(MachineTerm::uint64_constant(value)).into()
 }
 
 #[test]
 fn native_expression_reads_only_selected_shared_bindings() {
     let _session = VerificationSession::enter();
-    let state =
-        CState::new().with_local("x", CValue::UInt64(MachineTerm::Variable(Variable(992402))));
+    let state = ExecutionState::new().with_local(
+        "x",
+        ProgramValue::UInt64(MachineTerm::Variable(Variable(992402))),
+    );
     let scope = SpecScope::unbound(&state, None);
-    let body = SpecExpression::CExpression(CExpression::Add(
-        Box::new(CExpression::Variable("v".into())),
-        Box::new(CExpression::Value(CValue::UInt64(
+    let body = SpecExpression::ProgramExpression(ProgramExpression::Add(
+        Box::new(ProgramExpression::Variable("v".into())),
+        Box::new(ProgramExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(2),
         ))),
     ));
@@ -112,7 +119,8 @@ fn native_expression_reads_only_selected_shared_bindings() {
 #[test]
 fn native_fold_binders_shadow_shared_let_bindings() {
     let _session = VerificationSession::enter();
-    let state = CState::new().with_local("x", int32(MachineTerm::Variable(Variable(992403))));
+    let state =
+        ExecutionState::new().with_local("x", int32(MachineTerm::Variable(Variable(992403))));
     let fold = SpecExpression::RangeFold {
         start: Box::new(SpecExpression::Value(int32(0))),
         end: Box::new(SpecExpression::Value(int32(2))),

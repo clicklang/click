@@ -26,7 +26,7 @@ pub(super) fn verify_execution_theorem(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
     theorems: &TheoremEnvironment,
-    environment: Option<&CExecutionEnvironment>,
+    environment: Option<&ExecutionEnvironment>,
     resources: &ResourceEnvironment,
     function_source_registry: std::sync::Arc<FunctionSourceRegistry>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
@@ -105,7 +105,7 @@ pub(super) fn verify_execution_theorem(
     }
     let is_callback = |arguments: &[ContractExpression]| {
         matches!(arguments.first(), Some(ContractExpression::Binding(name)) if name == &execution.callback)
-            || matches!(arguments.first(), Some(ContractExpression::CFragment(CExpression::Variable(name))) if name == &execution.callback)
+            || matches!(arguments.first(), Some(ContractExpression::ProgramExpression(ProgramExpression::Variable(name))) if name == &execution.callback)
     };
     if concrete_callee.is_none() && !is_callback(arguments) {
         return Err(error("the conclusion must describe the executed callback"));
@@ -138,7 +138,7 @@ pub(super) fn verify_execution_theorem(
     let mut sources = Vec::new();
     if let Some(callback) = callback {
         if callback.name() == "result"
-            && target.function_block().signature().return_type() != C0Type::Void
+            && target.function_block().signature().return_type() != InterfaceType::Void
         {
             return Err(error(
                 "a return-valued callback parameter must not be named result",
@@ -164,7 +164,7 @@ pub(super) fn verify_execution_theorem(
                     "the source assumption must describe the executed callback",
                 ));
             }
-            if callback.c_type() != source.function_pointer_type() {
+            if callback.interface_type() != source.function_pointer_type() {
                 return Err(error(
                     "executes signature does not match the source contract",
                 ));
@@ -187,17 +187,19 @@ pub(super) fn verify_execution_theorem(
     // against the target contract's interface.
     if let Some(callee) = concrete_callee {
         let (parameter_types, return_type) =
-            crate::kernel::c_project_function_signature(environment, callee).ok_or_else(|| {
-                error(&format!(
-                    "`{callee}` is not a verified or external function in this project"
-                ))
-            })?;
+            crate::kernel::program_project_function_signature(environment, callee).ok_or_else(
+                || {
+                    error(&format!(
+                        "`{callee}` is not a verified or external function in this project"
+                    ))
+                },
+            )?;
         if parameter_types.len() != execution.parameters.len()
             || execution
                 .parameters
                 .iter()
                 .zip(&parameter_types)
-                .any(|(written, declared)| &written.c_type().to_kernel_type() != declared)
+                .any(|(written, declared)| &written.interface_type().to_kernel_type() != declared)
             || target
                 .function_block()
                 .signature()
@@ -214,14 +216,14 @@ pub(super) fn verify_execution_theorem(
     let target_parameters = target.function_block().signature().parameters();
     let (call_parameters, value_parameters) =
         target_parameters.split_at(target_parameters.len() - target_values.len());
-    if callback.is_some_and(|callback| callback.c_type() != target.function_pointer_type())
+    if callback.is_some_and(|callback| callback.interface_type() != target.function_pointer_type())
         || execution.parameters.len() != call_parameters.len()
         || execution
             .parameters
             .iter()
             .zip(call_parameters)
             .any(|(written, declared)| {
-                written.c_type() != declared.c_type()
+                written.interface_type() != declared.interface_type()
                     || written.struct_name() != declared.struct_name()
                     || written.pointee_is_constant() != declared.pointee_is_constant()
                     || written.is_reference() != declared.is_reference()
@@ -243,7 +245,9 @@ pub(super) fn verify_execution_theorem(
         .map(|(declared, written)| {
             (
                 declared.name().to_string(),
-                ContractExpression::CFragment(CExpression::Variable(written.name().to_string())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    written.name().to_string(),
+                )),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -310,11 +314,13 @@ pub(super) fn verify_execution_theorem(
             .zip(&target_values)
             .map(|(parameter, value)| {
                 Requirement::Proposition(ClickProposition::Comparison {
-                    left: ContractExpression::CFragment(CExpression::Variable(
+                    left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         parameter.name().to_string(),
                     )),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::CFragment(CExpression::Value(value.clone())),
+                    right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        value.clone(),
+                    )),
                 })
             }),
     );
@@ -335,7 +341,7 @@ pub(super) fn verify_execution_theorem(
         .iter()
         .map(|p| syntax::C0Expression::Variable(p.name().to_string()))
         .collect();
-    let body = if block.signature().return_type() == C0Type::Void {
+    let body = if block.signature().return_type() == InterfaceType::Void {
         syntax::C0Statement::Call {
             function_name: call_name.to_string(),
             arguments,
@@ -355,7 +361,7 @@ pub(super) fn verify_execution_theorem(
             )),
         )
     };
-    let parsed = crate::surface::verification::external_c0_function(&block).with_proof_body(body);
+    let parsed = crate::surface::verification::external_c_function(&block).with_proof_body(body);
     let claims = function_claims(&block);
     let verified = prove_claims_by_grouped_script(
         None,
@@ -418,16 +424,16 @@ pub(super) fn verify_execution_theorem(
     )?;
     let artifacts = crate::surface::verification::distinct_checked_executions(&verified)
         .into_iter()
-        .map(|execution| CCheckedFunctionExecution::clone(execution))
+        .map(|execution| CheckedFunctionExecution::clone(execution))
         .collect::<Vec<_>>();
     let execution =
-        prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
+        prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
             state,
             function.clone(),
             arguments,
             environment.clone(),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
-            CFunctionContractExecutionMode::VerifyLoops,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
+            FunctionContractExecutionMode::VerifyLoops,
             &artifacts,
             &[],
         );
@@ -435,9 +441,10 @@ pub(super) fn verify_execution_theorem(
         .iter()
         .filter_map(|v| v.checked_proposition.clone())
         .collect::<Vec<_>>();
-    let claims = c_function_contract_claims_from_completions(&function, &execution, &propositions)
-        .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
-    let rule = c_verified_function_rule(function, &claims)
+    let claims =
+        program_function_contract_claims_from_completions(&function, &execution, &propositions)
+            .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
+    let rule = program_verified_function_rule(function, &claims)
         .ok_or_else(|| error("the one-call proof did not establish a checked contract"))?;
     let authority = match concrete_callee {
         Some(callee) => crate::kernel::prove_executed_concrete_contract_refinement(

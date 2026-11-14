@@ -24,6 +24,8 @@ void keep(uint8* p, uint8* q) {
         }
     }
     step_until(function.exit);
+    assumption();
+    assumption(); assumption(); assumption();
 }
 ```
 

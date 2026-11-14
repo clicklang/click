@@ -4,13 +4,13 @@ use super::*;
 /// resolves every bound occurrence to the binder's variable; the kernel
 /// never binds a quantifier by its source spelling.
 fn bound(variable: Variable) -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable)))
+    SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable)))
 }
 
 fn positive(expression: SpecExpression) -> SpecProposition {
     SpecProposition::Comparison {
         left: expression,
-        operator: CComparisonOperator::GreaterThan,
+        operator: ComparisonOperator::GreaterThan,
         right: SpecExpression::Value(int32(0)),
     }
 }
@@ -25,8 +25,8 @@ fn universal(body: SpecProposition) -> SpecProposition {
 
 fn introductions(proposition: &SpecProposition) -> LoweringIntroductions {
     let (_, _, _, introductions) =
-        crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-            &CState::new(),
+        crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+            &ExecutionState::new(),
             proposition,
             None,
             &PureFactContext::new(),
@@ -57,8 +57,8 @@ fn inequality_lowering_records_its_negation() {
             },
         ] {
             let (goal, _, _, recorded) =
-                crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-                    &CState::new(),
+                crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+                    &ExecutionState::new(),
                     &source,
                     None,
                     &PureFactContext::new(),
@@ -146,8 +146,8 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
         Box::new(SpecExpression::Value(int32(1))),
     );
     let (goal, facts, obligations, recorded) =
-        crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-            &CState::new(),
+        crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+            &ExecutionState::new(),
             &existential(positive(incremented)),
             None,
             &PureFactContext::new(),
@@ -203,13 +203,14 @@ fn an_integer_existential_does_not_expose_nested_introductions_at_its_head() {
         body: Box::new(body),
     };
 
-    let (_, _, _, recorded) = crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-        &CState::new(),
-        &proposition,
-        None,
-        &PureFactContext::new(),
-    )
-    .expect("the nested quantified proposition lowers on one path");
+    let (_, _, _, recorded) =
+        crate::kernel::program_lower_spec_proposition_at_state_with_provenance(
+            &ExecutionState::new(),
+            &proposition,
+            None,
+            &PureFactContext::new(),
+        )
+        .expect("the nested quantified proposition lowers on one path");
 
     // The `witness`/`choose` step must consume the existential before any
     // introduction below its body becomes reachable.
@@ -229,12 +230,12 @@ fn native_existential_conversion_obligations_share_the_claim_witness() {
     };
     let claim = existential(SpecProposition::Comparison {
         left: narrowed,
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(crate::kernel::uint8(255u32)),
     });
     let (goal, _, obligations, _) =
-        crate::kernel::c_lower_spec_proposition_with_checked_obligations(
-            &CState::new(),
+        crate::kernel::program_lower_spec_proposition_with_checked_obligations(
+            &ExecutionState::new(),
             &claim,
             None,
             &PureFactContext::new(),

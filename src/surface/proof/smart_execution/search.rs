@@ -975,7 +975,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 integer_values = integer_values.with_inserted(name, value.clone());
             }
         }
-        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
         let recorded_snapshots = RecordedSnapshots::new();
         let algebraic_values = application
             .arguments
@@ -1179,8 +1179,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .zip(&application.arguments)
             .filter(|(parameter, argument)| {
                 matches!(parameter.click_type(), ClickType::Algebraic(_))
-                    || matches!(parameter.click_type(), ClickType::C(ty)
-                        if crate::kernel::MachineIntegerType::from_c_type(ty.to_kernel_type()).is_some())
+                    || matches!(parameter.click_type(), ClickType::Program(ty)
+                        if crate::kernel::MachineIntegerType::from_program_type(ty.to_kernel_type()).is_some())
                     || (parameter.click_type() == &ClickType::Integer
                         && crate::surface::lowering::lower_contract_integer_to_spec(
                             argument,
@@ -1205,7 +1205,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             );
         }
         for (argument_type, argument) in arguments {
-            if matches!(argument_type, ClickType::C(_)) {
+            if matches!(argument_type, ClickType::Program(_)) {
                 let bindings = contract_expression_referenced_names(argument)
                     .into_iter()
                     .filter_map(|name| {

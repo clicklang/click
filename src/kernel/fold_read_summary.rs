@@ -56,7 +56,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::primitives::*;
-use super::resource_tracker::{Resource, step_effect};
+use super::resource_tracker::{TrackedResource, step_effect};
 
 /// One declared `Integer` function body, in the kernel's specification
 /// vocabulary, with its parameters left as the names the body refers to.
@@ -64,16 +64,16 @@ use super::resource_tracker::{Resource, step_effect};
 /// This is program data: registering it states nothing. The kernel decides
 /// whether it admits a read summary.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct CFoldReadDefinition {
+pub struct FoldReadDefinition {
     name: String,
-    parameters: Vec<(String, CType)>,
+    parameters: Vec<(String, ProgramType)>,
     body: SpecIntegerExpression,
 }
 
-impl CFoldReadDefinition {
+impl FoldReadDefinition {
     pub fn new(
         name: impl Into<String>,
-        parameters: Vec<(String, CType)>,
+        parameters: Vec<(String, ProgramType)>,
         body: SpecIntegerExpression,
     ) -> Self {
         Self {
@@ -115,7 +115,7 @@ enum FoldEndpointTemplate {
 pub struct CheckedFoldReadSummary {
     name: String,
     fingerprint: u64,
-    parameter_types: Vec<CType>,
+    parameter_types: Vec<ProgramType>,
     array_parameter: usize,
     element_width: u32,
     start: FoldEndpointTemplate,
@@ -176,7 +176,7 @@ impl std::fmt::Display for FoldReadDecline {
 /// `base + element_width * k` for `start <= k < end`, read at `memory`.
 #[derive(Clone, Debug)]
 pub(crate) struct FoldReadInterval {
-    pub(crate) memory: CMemory,
+    pub(crate) memory: Memory,
     pub(crate) base: Pointer,
     pub(crate) start: SharedMachineIntegerTerm,
     pub(crate) end: SharedMachineIntegerTerm,
@@ -193,9 +193,9 @@ enum Scope {
 }
 
 struct BodyChecker<'a> {
-    parameters: &'a [(String, CType)],
+    parameters: &'a [(String, ProgramType)],
     array_name: &'a str,
-    element_type: CType,
+    element_type: ProgramType,
     accumulator: Variable,
     item: Variable,
 }
@@ -204,20 +204,20 @@ impl CheckedFoldReadSummary {
     /// Validates one declared body and returns its read summary, or the reason
     /// the definition declines. Work is one unit per visited specification
     /// node, so the check is linear in the selected body.
-    pub fn check(definition: &CFoldReadDefinition) -> Result<Self, FoldReadDecline> {
+    pub fn check(definition: &FoldReadDefinition) -> Result<Self, FoldReadDecline> {
         let parameters = &definition.parameters;
         let mut array_parameter = None;
-        for (index, (name, c_type)) in parameters.iter().enumerate() {
+        for (index, (name, program_type)) in parameters.iter().enumerate() {
             crate::instrumentation::record_deterministic_work(1);
-            match c_type {
-                CType::Int32Pointer | CType::UInt8Pointer => {
+            match program_type {
+                ProgramType::Int32Pointer | ProgramType::UInt8Pointer => {
                     if array_parameter.replace(index).is_some() {
                         return Err(FoldReadDecline::UnsupportedParameters(format!(
                             "a second array parameter `{name}`"
                         )));
                     }
                 }
-                CType::Int32 => {}
+                ProgramType::Int32 => {}
                 other => {
                     return Err(FoldReadDecline::UnsupportedParameters(format!(
                         "`{name}` has type {other:?}"
@@ -250,10 +250,10 @@ impl CheckedFoldReadSummary {
             array_name: &parameters[array_parameter].0,
             accumulator: *accumulator,
             item: *item,
-            element_type: if parameters[array_parameter].1 == CType::UInt8Pointer {
-                CType::UInt8
+            element_type: if parameters[array_parameter].1 == ProgramType::UInt8Pointer {
+                ProgramType::UInt8
             } else {
-                CType::Int32
+                ProgramType::Int32
             },
         };
         let start = checker.endpoint(start)?;
@@ -273,7 +273,10 @@ impl CheckedFoldReadSummary {
         Ok(Self {
             name: definition.name.clone(),
             fingerprint: definition.fingerprint(),
-            parameter_types: parameters.iter().map(|(_, c_type)| *c_type).collect(),
+            parameter_types: parameters
+                .iter()
+                .map(|(_, program_type)| *program_type)
+                .collect(),
             array_parameter,
             element_width: checker.element_type.byte_width(),
             start,
@@ -304,7 +307,7 @@ impl CheckedFoldReadSummary {
         if application.name() != self.name || arguments.len() != self.parameter_types.len() {
             return None;
         }
-        for (position, (argument, c_type)) in
+        for (position, (argument, program_type)) in
             arguments.iter().zip(&self.parameter_types).enumerate()
         {
             crate::instrumentation::record_deterministic_work(1);
@@ -317,15 +320,15 @@ impl CheckedFoldReadSummary {
                     position == self.array_parameter
                         && element_type.byte_width() == self.element_width
                         && self.parameter_types[position].pointee_type() == Some(*element_type)
-                        && matches!(pointer, CValue::Pointer(_))
+                        && matches!(pointer, ProgramValue::Pointer(_))
                 }
                 PureFunctionArgument::SharedMachine(value) => {
                     position != self.array_parameter
-                        && *c_type == CType::Int32
+                        && *program_type == ProgramType::Int32
                         && value.ty() == MachineIntegerType::Int32
                 }
-                PureFunctionArgument::Value(CValue::Int32(_)) => {
-                    position != self.array_parameter && *c_type == CType::Int32
+                PureFunctionArgument::Value(ProgramValue::Int32(_)) => {
+                    position != self.array_parameter && *program_type == ProgramType::Int32
                 }
                 _ => false,
             };
@@ -335,7 +338,7 @@ impl CheckedFoldReadSummary {
         }
         let PureFunctionArgument::ArrayRef {
             memory,
-            pointer: CValue::Pointer(pointer),
+            pointer: ProgramValue::Pointer(pointer),
             ..
         } = &arguments[self.array_parameter]
         else {
@@ -352,7 +355,7 @@ impl CheckedFoldReadSummary {
                 {
                     Some(value.clone())
                 }
-                PureFunctionArgument::Value(CValue::Int32(value)) => Some(
+                PureFunctionArgument::Value(ProgramValue::Int32(value)) => Some(
                     SharedMachineIntegerTerm::index(MachineIntegerType::Int32, value.clone()),
                 ),
                 _ => None,
@@ -372,17 +375,19 @@ impl BodyChecker<'_> {
     fn scalar_parameter(&self, name: &str) -> Option<usize> {
         self.parameters
             .iter()
-            .position(|(parameter, c_type)| parameter == name && *c_type == CType::Int32)
+            .position(|(parameter, program_type)| {
+                parameter == name && *program_type == ProgramType::Int32
+            })
     }
 
     fn endpoint(&self, endpoint: &SpecExpression) -> Result<FoldEndpointTemplate, FoldReadDecline> {
         crate::instrumentation::record_deterministic_work(1);
         match endpoint {
-            SpecExpression::CExpression(CExpression::Variable(name)) => self
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .scalar_parameter(name)
                 .map(FoldEndpointTemplate::Parameter)
                 .ok_or(FoldReadDecline::UnsupportedEndpoint),
-            SpecExpression::Value(CValue::Int32(bits32_constant!(value))) => {
+            SpecExpression::Value(ProgramValue::Int32(bits32_constant!(value))) => {
                 Ok(FoldEndpointTemplate::Literal(constant_u32(*value)))
             }
             _ => Err(FoldReadDecline::UnsupportedEndpoint),
@@ -505,11 +510,11 @@ impl BodyChecker<'_> {
         *byte_width == self.element_type.byte_width()
             && matches!(
                 pointer.as_ref(),
-                SpecExpression::CExpression(CExpression::Variable(name)) if name == self.array_name
+                SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == self.array_name
             )
             && matches!(
                 elements.as_ref(),
-                SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable)))
+                SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable)))
                     if *variable == self.item
             )
     }
@@ -517,11 +522,11 @@ impl BodyChecker<'_> {
     fn machine(&self, expression: &SpecExpression, scope: Scope) -> Result<(), FoldReadDecline> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            SpecExpression::Value(CValue::Int32(term) | CValue::Bool(term)) => {
+            SpecExpression::Value(ProgramValue::Int32(term) | ProgramValue::Bool(term)) => {
                 self.bitvector(term, scope)
             }
             SpecExpression::Value(_) => Err(Self::unsupported("a non-int32 value")),
-            SpecExpression::CExpression(CExpression::Variable(name)) => {
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 if self.scalar_parameter(name).is_some() {
                     Ok(())
                 } else if name == self.array_name {
@@ -530,7 +535,9 @@ impl BodyChecker<'_> {
                     Err(Self::unsupported("a name that is not an int32 parameter"))
                 }
             }
-            SpecExpression::CExpression(_) => Err(Self::unsupported("an unlowered C expression")),
+            SpecExpression::ProgramExpression(_) => {
+                Err(Self::unsupported("an unlowered C expression"))
+            }
             SpecExpression::MemoryLoad {
                 memory,
                 pointer,
@@ -547,7 +554,9 @@ impl BodyChecker<'_> {
                 }
                 Ok(())
             }
-            SpecExpression::Cast(inner, CType::Int32) if self.element_type == CType::UInt8 => {
+            SpecExpression::Cast(inner, ProgramType::Int32)
+                if self.element_type == ProgramType::UInt8 =>
+            {
                 self.machine(inner, scope)
             }
             SpecExpression::Add(left, right)
@@ -628,7 +637,7 @@ thread_local! {
 /// verification session. Registering a *different* body under a name already
 /// registered poisons the name for the rest of the session: framing must
 /// never follow a summary of a body other than the one unfolding states.
-pub fn register_fold_read_definition(definition: CFoldReadDefinition) {
+pub fn register_fold_read_definition(definition: FoldReadDefinition) {
     let fingerprint = definition.fingerprint();
     let checked = match CheckedFoldReadSummary::check(&definition) {
         Ok(summary) => RegisteredFoldRead::Checked(Arc::new(summary)),
@@ -924,8 +933,8 @@ pub(crate) fn frame_fold_applications(
     else {
         return Err(differ());
     };
-    let left_snapshot = intern_c_memory_ref(&left_interval.memory);
-    let right_snapshot = intern_c_memory_ref(right_memory);
+    let left_snapshot = intern_memory_ref(&left_interval.memory);
+    let right_snapshot = intern_memory_ref(right_memory);
     if left_snapshot == right_snapshot {
         return Ok(0);
     }
@@ -965,7 +974,7 @@ pub(crate) fn frame_fold_applications(
     Ok(crossed)
 }
 
-fn later_than(left: &SharedCMemory, right: &SharedCMemory) -> bool {
+fn later_than(left: &SharedMemory, right: &SharedMemory) -> bool {
     let (left_arena, left_id) = left.arena_id();
     let (right_arena, right_id) = right.arena_id();
     left_arena == right_arena && left_id > right_id
@@ -973,8 +982,8 @@ fn later_than(left: &SharedCMemory, right: &SharedCMemory) -> bool {
 
 /// Whether one recorded step leaves every cell of the interval unchanged.
 fn step_misses_interval(
-    step: &CMemoryDerivation,
-    produced: &SharedCMemory,
+    step: &MemoryDerivation,
+    produced: &SharedMemory,
     interval: &FoldReadInterval,
     empty: bool,
     assumptions: &PureFactContext,
@@ -986,7 +995,7 @@ fn step_misses_interval(
         step_effect::affects(
             step,
             produced,
-            Resource::Block(&interval.base.block),
+            TrackedResource::Block(&interval.base.block),
             &step_effect::Evidence {
                 assumptions: &PureFactContext::new(),
                 cross_loop_havoc: false,
@@ -1001,8 +1010,8 @@ fn step_misses_interval(
         // This edge changes only cached knowledge, not any byte or lifetime.
         // Its producer records it only for unconditional forgetting, never
         // for havoc or assumption-dependent pruning.
-        CMemoryDerivation::CellsForgotten { .. } => Ok(()),
-        CMemoryDerivation::Store { pointer, value, .. } => {
+        MemoryDerivation::CellsForgotten { .. } => Ok(()),
+        MemoryDerivation::Store { pointer, value, .. } => {
             if empty || access_misses_interval(pointer, value.byte_width(), interval, assumptions) {
                 Ok(())
             } else {
@@ -1013,7 +1022,7 @@ fn step_misses_interval(
             }
         }
         // A seeded run is the stores it stands for, each framed as one.
-        CMemoryDerivation::CellsSeeded { .. } => {
+        MemoryDerivation::CellsSeeded { .. } => {
             let stores = step.seeded_stores().expect("a CellsSeeded edge");
             if empty
                 || stores.iter().all(|(pointer, value)| {
@@ -1028,7 +1037,7 @@ fn step_misses_interval(
                 ))
             }
         }
-        CMemoryDerivation::CallHavoc { mutable_ranges, .. } => {
+        MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
             if empty
                 || mutable_ranges
                     .iter()
@@ -1290,7 +1299,7 @@ fn access_misses_interval(
 
 /// Whether one range a callee may write misses every cell of the interval.
 fn range_misses_interval(
-    written: &CMemoryRange,
+    written: &MemoryRange,
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -1337,8 +1346,8 @@ fn range_misses_interval(
 /// A stated `separate(memory(L), memory(R))` with the interval inside one side
 /// and the write inside the other, both decided by exact order facts.
 fn separated_by_stated_fact(
-    holds_interval: impl Fn(&CMemoryRange) -> bool,
-    holds_write: impl Fn(&CMemoryRange) -> bool,
+    holds_interval: impl Fn(&MemoryRange) -> bool,
+    holds_write: impl Fn(&MemoryRange) -> bool,
     interval_block: &PointerBlock,
     write_block: &PointerBlock,
     assumptions: &PureFactContext,
@@ -1361,7 +1370,7 @@ fn separated_by_stated_fact(
 /// The interval's cells lie inside `range`: the same base and element width,
 /// `range.start <= start` and `end <= range.end`.
 fn range_contains_interval(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -1387,7 +1396,7 @@ fn range_contains_interval(
 
 /// The `bytes` bytes at `pointer` lie inside one cell of `range`.
 fn range_contains_access(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1417,8 +1426,8 @@ fn range_contains_access(
 /// `inner` lies inside `outer`: the same base and element width and nested
 /// endpoints.
 fn range_contains_range(
-    outer: &CMemoryRange,
-    inner: &CMemoryRange,
+    outer: &MemoryRange,
+    inner: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.

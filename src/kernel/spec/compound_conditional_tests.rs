@@ -13,7 +13,7 @@ fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
             Proposition::Or(left, right)
         };
         let value = conditional_spec_value(&guard, int32(7), int32(9)).unwrap();
-        let CValue::Int32(bits) = value else {
+        let ProgramValue::Int32(bits) = value else {
             panic!("int32 conditional");
         };
         let is_seven = ConditionTerm::equal(bits, MachineTerm::constant(7));

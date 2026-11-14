@@ -59,8 +59,8 @@ impl TermRewrite<'_> {
         self.ensure_replacement_carriers();
         if !self.source_variables_reserved {
             let mut variables = self.new_carrier_variables();
-            variables.c.insert(fold.accumulator);
-            variables.c.insert(fold.item);
+            variables.program_values.insert(fold.accumulator);
+            variables.program_values.insert(fold.item);
             for child in &fold.arguments {
                 collect_machine_operand_carriers(MachineOperandView::Shared(child), &mut variables);
                 if variables.exhausted() {
@@ -80,8 +80,8 @@ impl TermRewrite<'_> {
         let saved_shadowed = self.integer_shadowed;
         let mut changes = Vec::new();
         let result = (|| {
-            let accumulator = self.rewrite_c_binder(fold.accumulator, &mut changes)?;
-            let item = self.rewrite_c_binder(fold.item, &mut changes)?;
+            let accumulator = self.rewrite_program_binder(fold.accumulator, &mut changes)?;
+            let item = self.rewrite_program_binder(fold.item, &mut changes)?;
             let body = if self.conditions.is_some() {
                 fold.arguments[3].clone()
             } else {
@@ -131,18 +131,18 @@ mod tests {
             let mut new = TermRewrite::for_bits(&source, &replacement);
             let actual = new.retained_fold(&fold).unwrap();
             assert_eq!(actual.export_machine().unwrap(), expected);
-            assert!(new.scope.c.is_empty());
+            assert!(new.scope.program_values.is_empty());
         }
     }
 
     #[test]
     fn common_fold_pointer_transport_preserves_snapshot_and_condition_scope() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let source = Variable(55);
         let replacement = Pointer::symbolic(Variable(56));
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(Pointer::symbolic(source)),
             LoadKind::Int32,
         );
@@ -167,7 +167,7 @@ mod tests {
         let MachineTerm::MemoryLoad(snapshot, pointer, _) = *body else {
             unreachable!()
         };
-        assert_eq!(snapshot, crate::kernel::intern_c_memory_ref(&memory));
+        assert_eq!(snapshot, crate::kernel::intern_memory_ref(&memory));
         assert_eq!(*pointer, replacement);
 
         let condition = ConditionTerm::Variable(Variable(59));

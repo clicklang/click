@@ -239,9 +239,9 @@ fn instantiate_lowered_predicate_definition(
             Some(parameter.click_type().clone())
         } else {
             let actual = match arguments.get(argument_index) {
-                Some(Term::CValue(value)) => {
-                    Some(ClickType::C(generics::c0_type_from_kernel(value.c_type())))
-                }
+                Some(Term::ProgramValue(value)) => Some(ClickType::Program(
+                    generics::interface_type_from_program_type(value.program_type()),
+                )),
                 Some(Term::Algebraic(value)) => {
                     Some(generics::click_type_from_algebraic_value_type(
                         &value.algebraic_type.value_type(),
@@ -289,7 +289,14 @@ pub(in crate::surface) fn instantiate_predicate_definition(
 pub(in crate::surface) fn decode_predicate_arguments(
     definition: &PredicateDefinition,
     arguments: &[Term],
-) -> Result<(CState, BTreeMap<String, CValue>, ClickArrayRefs), String> {
+) -> Result<
+    (
+        ExecutionState,
+        BTreeMap<String, ProgramValue>,
+        ClickArrayRefs,
+    ),
+    String,
+> {
     let expanded_len = 1 + definition
         .parameters()
         .iter()
@@ -303,7 +310,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
         .sum::<usize>();
 
     if arguments.len() == expanded_len {
-        let Some(Term::CState(state)) = arguments.first() else {
+        let Some(Term::ExecutionState(state)) = arguments.first() else {
             return Err(format!(
                 "predicate `{}` is missing its resource-state snapshot",
                 definition.name()
@@ -315,14 +322,16 @@ pub(in crate::surface) fn decode_predicate_arguments(
         let mut index = 1;
         for parameter in definition.parameters() {
             if parameter_is_click_array_ref(parameter) {
-                let Some(Term::CMemory(memory)) = arguments.get(index) else {
+                let Some(Term::Memory(memory)) = arguments.get(index) else {
                     return Err(format!(
                         "predicate `{}` argument `{}` is missing its array-ref memory",
                         definition.name(),
                         parameter.name()
                     ));
                 };
-                let Some(Term::CValue(CValue::Pointer(pointer))) = arguments.get(index + 1) else {
+                let Some(Term::ProgramValue(ProgramValue::Pointer(pointer))) =
+                    arguments.get(index + 1)
+                else {
                     return Err(format!(
                         "predicate `{}` argument `{}` is missing its array-ref pointer",
                         definition.name(),
@@ -330,8 +339,8 @@ pub(in crate::surface) fn decode_predicate_arguments(
                     ));
                 };
                 default_memory.get_or_insert_with(|| memory.clone());
-                let element_type =
-                    click_array_element_type(parameter.c_type()).ok_or_else(|| {
+                let element_type = click_array_element_type(parameter.interface_type())
+                    .ok_or_else(|| {
                         format!(
                             "predicate `{}` argument `{}` is not an array-ref parameter",
                             definition.name(),
@@ -340,7 +349,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                     })?;
                 values.insert(
                     parameter.name().to_string(),
-                    CValue::typed_pointer(
+                    ProgramValue::typed_pointer(
                         pointer.pointer().clone(),
                         element_type.pointer_to().unwrap(),
                     ),
@@ -355,7 +364,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                 );
                 index += 2;
             } else {
-                let Some(Term::CValue(value)) = arguments.get(index) else {
+                let Some(Term::ProgramValue(value)) = arguments.get(index) else {
                     return Err(format!(
                         "predicate `{}` argument `{}` did not lower to a C value",
                         definition.name(),

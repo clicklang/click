@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::{
-    CType, IntegerTerm, KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
+    IntegerTerm, KernelTerm, KernelType, MachineBinaryOp, ProgramType, SharedMachineIntegerTerm,
 };
 
 #[test]
@@ -9,7 +9,8 @@ fn signed_wide_shared_prefix_bounds_do_not_materialize_operands() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int64;
-        let mut term = KernelTerm::variable(KernelType::C(CType::Int64), Variable(982001));
+        let mut term =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(982001));
         let mut index = CheckedOrderBounds::default();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -49,7 +50,8 @@ fn shared_word_prefix_bounds_do_not_materialize_operands() {
         let mut samples = Vec::new();
         for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut term = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982002));
+            let mut term =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982002));
             let mut index = CheckedOrderBounds::default();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
@@ -106,7 +108,7 @@ fn native_order_premises_select_retained_promoted_call_bounds() {
             let _session = crate::kernel::VerificationSession::enter();
             let call = MachineTerm::ClickFunctionApplication {
                 name: "indexed_digit".into(),
-                arguments: vec![PureFunctionArgument::Value(CValue::UInt64(
+                arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt64(
                     MachineTerm::uint64_constant(7),
                 ))],
             };

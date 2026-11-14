@@ -25,7 +25,7 @@ fn pure_witness_integer_aliases_keep_shared_term_scaling() {
             }
             source.push_str(&format!("ensures exists (q: Integer) {{ q == a{depth} }} by {{ witness {{ q: a{depth} }}; solve(); }} }}"));
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&source, &[])
+                verify_c_sources(&source, &[])
             });
             result.unwrap_or_else(|error| {
                 panic!(

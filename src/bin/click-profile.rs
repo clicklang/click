@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use click::cli::{
-    CInput, DEFAULT_SIMPLE_TACTIC_LIMIT, MdTestExpectation, RunLimits, TargetSelection,
+    DEFAULT_SIMPLE_TACTIC_LIMIT, MdTestExpectation, RunLimits, TargetSelection, VerificationInput,
     format_duration, format_fractional_duration, load_sidecar_inputs, looks_like_mdtest,
     parse_duration, parse_work_limit, prepare_mdtest_inputs, read_mdtest,
     read_mdtest_project_if_needed, select_targets, shell_quote, source_refs,
@@ -12,8 +12,7 @@ use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, Verifica
 use click::surface::{
     ClickError, ClickProject, ProofSourceIndex, SourcePosition, project_smart_tactic_source_sites,
     project_tactic_source_position, smart_tactic_source_sites, tactic_source_position,
-    verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
-    verify_program_prepared_project,
+    verify_c_prepared_project, verify_c_project, verify_c_sources, verify_program_prepared_project,
 };
 
 /// The crash-containment bound per profiled project; see
@@ -1474,7 +1473,7 @@ fn parse_step_key(rest: &str, source_path: &Path) -> Option<StepKey> {
 /// needed to turn a position inside it into a position in that file.
 struct ProfiledSource {
     click_source: String,
-    inputs: CInput,
+    inputs: VerificationInput,
     project: Option<ClickProject>,
     /// Added to a one-based line inside the sidecar. Zero for a `.click`
     /// file; the offset of the ```click block for an mdtest, so reported
@@ -1680,14 +1679,16 @@ fn verify_mdtest(path: &Path) -> Result<(), String> {
     }
     let project = read_mdtest_project_if_needed(path, click_source, &inputs)?;
     let result = match (&inputs, &project) {
-        (CInput::Bundle(sources), Some(project)) => {
-            verify_c0_project(project, &source_refs(sources))
+        (VerificationInput::Bundle(sources), Some(project)) => {
+            verify_c_project(project, &source_refs(sources))
         }
-        (CInput::Bundle(sources), None) => verify_c0_sources(click_source, &source_refs(sources)),
-        (CInput::PreparedProgram(import), Some(project)) => {
+        (VerificationInput::Bundle(sources), None) => {
+            verify_c_sources(click_source, &source_refs(sources))
+        }
+        (VerificationInput::PreparedProgram(import), Some(project)) => {
             verify_program_prepared_project(project, import)
         }
-        (CInput::PreparedProgram(_), None) | (CInput::Prepared(_), _) => {
+        (VerificationInput::PreparedProgram(_), None) | (VerificationInput::Prepared(_), _) => {
             unreachable!("mdtests have no C compiler-import fence")
         }
     };
@@ -1754,9 +1755,13 @@ fn verify_sidecars(
         }
         within_work_limit(work_limit, work_exhausted, || {
             match &inputs {
-                CInput::Bundle(sources) => verify_c0_project(&click_project, &source_refs(sources)),
-                CInput::Prepared(imports) => verify_c0_prepared_project(&click_project, imports),
-                CInput::PreparedProgram(import) => {
+                VerificationInput::Bundle(sources) => {
+                    verify_c_project(&click_project, &source_refs(sources))
+                }
+                VerificationInput::Prepared(imports) => {
+                    verify_c_prepared_project(&click_project, imports)
+                }
+                VerificationInput::PreparedProgram(import) => {
                     verify_program_prepared_project(&click_project, import)
                 }
             }

@@ -1638,23 +1638,21 @@ mod tests {
     #[test]
     fn fold_atom_identity_retains_the_exact_memory_snapshot() {
         use crate::kernel::{
-            CMemory, CValue, IntegerRangeFoldIndex, MachineIntegerType, MachineTerm, Pointer,
-            PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
+            IntegerRangeFoldIndex, MachineIntegerType, MachineTerm, Memory, Pointer,
+            PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
         };
         let pointer = Pointer {
             block: "affine-fold-snapshot".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
         let before =
-            crate::kernel::intern_c_memory(CMemory::new().with_block("affine-fold-snapshot", 8));
-        let after = crate::kernel::intern_c_memory(
-            before
-                .as_ref()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7))),
-        );
+            crate::kernel::intern_memory(Memory::new().with_block("affine-fold-snapshot", 8));
+        let after = crate::kernel::intern_memory(before.as_ref().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
         let load_fold =
-            |memory: &crate::kernel::SharedCMemory, accumulator: u64, item: u64| -> IntegerTerm {
+            |memory: &crate::kernel::SharedMemory, accumulator: u64, item: u64| -> IntegerTerm {
                 IntegerTerm::range_fold(
                     IntegerRangeFoldIndex::Int32 {
                         start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),

@@ -421,9 +421,9 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         pointer_element_widths,)?;
     let spec = IterativeSpecPropositionDrop::new(spec);
     let lower = if assumed_interface {
-        crate::kernel::c_lower_assumed_interface_proposition_with_checked_obligations
+        crate::kernel::program_lower_assumed_interface_proposition_with_checked_obligations
     } else {
-        crate::kernel::c_lower_spec_proposition_with_checked_obligations
+        crate::kernel::program_lower_spec_proposition_with_checked_obligations
     };
     let (lowered, facts, obligations, introductions) = lower(
         &states.lowering_state,
@@ -447,7 +447,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         ),
         None => match refusal.dropped_comparison {
             Some((left, operator, right)) => {
-                use crate::kernel::CComparisonOperator::*;
+                use crate::kernel::ComparisonOperator::*;
                 let operator = match operator {
                     Equal => "==",
                     NotEqual => "!=",
@@ -458,8 +458,12 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
                 };
                 format!(
                     "cannot compare `{}` and `{}` with `{operator}`",
-                    describe_c0_type(crate::surface::generics::c0_type_from_kernel(left)),
-                    describe_c0_type(crate::surface::generics::c0_type_from_kernel(right))
+                    describe_interface_type(
+                        crate::surface::generics::interface_type_from_program_type(left)
+                    ),
+                    describe_interface_type(
+                        crate::surface::generics::interface_type_from_program_type(right)
+                    )
                 )
             }
             None => refusal.message,
@@ -486,7 +490,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
         expression,
         assumptions,
@@ -507,7 +511,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
         expression,
         assumptions,
@@ -530,7 +534,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     capture_fixed_state_native_expression_with_guards(
         expression,
         assumptions,
@@ -556,7 +560,7 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<(CValue, Vec<Proposition>), String> {
+) -> Result<(ProgramValue, Vec<Proposition>), String> {
     let mut click_function_calls = BTreeSet::new();
     crate::surface::validation::collect_click_function_calls(expression, &mut click_function_calls);
     let symbolic_load_assumptions =
@@ -583,12 +587,13 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
         opaque_click_functions.clone(),
         BTreeMap::new(),
     )?;
-    let (value, obligations) = crate::kernel::c_evaluate_spec_expression_with_checked_obligations(
-        &states.lowering_state,
-        &spec,
-        Some(&states.entry_state),
-        assumptions,
-    )?;
+    let (value, obligations) =
+        crate::kernel::program_evaluate_speprogram_expression_with_checked_obligations(
+            &states.lowering_state,
+            &spec,
+            Some(&states.entry_state),
+            assumptions,
+        )?;
     refuse_unproved_conversion_bounds(
         &obligations,
         assumptions,
@@ -754,8 +759,8 @@ pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
-    pre_state: &CState,
-    state: &CState,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<crate::kernel::AlgebraicTerm, String> {
@@ -795,8 +800,8 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
     ty: &crate::kernel::ResourceFieldType,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    pre_state: &CState,
-    state: &CState,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<
@@ -814,7 +819,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
         None,
     );
     match ty {
-        crate::kernel::ResourceFieldType::C(expected) => {
+        crate::kernel::ResourceFieldType::Program(expected) => {
             let spec = crate::surface::lowering::elaborate_fixed_state_expression(
                 expression,
                 states.element_types,
@@ -828,16 +833,16 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 BTreeMap::new(),
             )?;
             let (value, obligations) =
-                crate::kernel::c_evaluate_spec_expression_with_checked_obligations(
+                crate::kernel::program_evaluate_speprogram_expression_with_checked_obligations(
                     &states.lowering_state,
                     &spec,
                     Some(&states.entry_state),
                     assumptions,
                 )?;
-            if value.c_type() != *expected {
+            if value.program_type() != *expected {
                 return Err("fold initializer has the wrong type".into());
             }
-            Ok((crate::kernel::AlgebraicValue::C(value), obligations))
+            Ok((crate::kernel::AlgebraicValue::Program(value), obligations))
         }
         crate::kernel::ResourceFieldType::Integer => {
             let spec = crate::surface::lowering::elaborate_fixed_state_integer_expression(
@@ -895,14 +900,14 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
 /// justify is refused unless `assumptions` allow symbolic contract loads, in
 /// which case the load stays the symbolic term kernel execution spells it
 /// as, and certification discharges its loadability from the path's facts.
-pub(in crate::surface) fn evaluate_c_fragment_through_kernel(
-    expression: &CExpression,
+pub(in crate::surface) fn evaluate_program_expression_through_kernel(
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
-) -> Result<CValue, String> {
-    evaluate_c_fragment_with_binding_policy(
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
+) -> Result<ProgramValue, String> {
+    evaluate_program_expression_with_binding_policy(
         expression,
         assumptions,
         contract_environment,
@@ -916,13 +921,13 @@ pub(in crate::surface) fn evaluate_c_fragment_through_kernel(
 /// Resource clauses use stable logical arguments even after the C parameter
 /// changes; static addresses and memory still belong to the exact frontier.
 pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
-) -> Result<CValue, String> {
-    evaluate_c_fragment_with_binding_policy(
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
+) -> Result<ProgramValue, String> {
+    evaluate_program_expression_with_binding_policy(
         expression,
         assumptions,
         contract_environment,
@@ -935,25 +940,25 @@ pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
 
 pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     original: &ContractExpression,
-    lowered: &CExpression,
+    lowered: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
-) -> Result<CValue, String> {
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
+) -> Result<ProgramValue, String> {
     // Most resource fragments already carry their resolved C spelling.
     // Retain the source expression only where its `c(result)` distinction
     // matters, and keep the typed null supplied by parameter lowering.
     let original = if result.is_none()
         || !crate::surface::lowering::contract_expression_referenced_names(original)
             .contains("result")
-        || matches!(lowered, CExpression::Value(CValue::Pointer(pointer)) if pointer.is_null())
+        || matches!(lowered, ProgramExpression::Value(ProgramValue::Pointer(pointer)) if pointer.is_null())
     {
         None
     } else {
         Some(original)
     };
-    evaluate_c_fragment_with_binding_policy(
+    evaluate_program_expression_with_binding_policy(
         lowered,
         assumptions,
         contract_environment,
@@ -965,16 +970,16 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn evaluate_c_fragment_with_binding_policy(
-    expression: &CExpression,
+fn evaluate_program_expression_with_binding_policy(
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
     logical_arguments: bool,
     original: Option<&ContractExpression>,
-) -> Result<CValue, String> {
-    let fragment = ContractExpression::CFragment(expression.clone());
+) -> Result<ProgramValue, String> {
+    let fragment = ContractExpression::ProgramExpression(expression.clone());
     let elaborated = original.unwrap_or(&fragment);
     // Bind only the names the fragment reads: a contract evaluates one
     // fragment per clause, and binding every value in scope for each would
@@ -1005,7 +1010,7 @@ fn evaluate_c_fragment_with_binding_policy(
         BTreeMap::new(),
     )?;
     let (value, obligations) =
-        crate::kernel::c_evaluate_spec_resource_expression_with_checked_obligations(
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
             &states.lowering_state,
             &spec,
             Some(&states.entry_state),
@@ -1015,7 +1020,7 @@ fn evaluate_c_fragment_with_binding_policy(
         &obligations,
         assumptions,
         &StatedSite::new(
-            StatedForm::CFragment(expression),
+            StatedForm::ProgramExpression(expression),
             state,
             contract_environment.values,
         ),
@@ -1027,7 +1032,7 @@ fn evaluate_c_fragment_with_binding_policy(
     refuse_impossible_loads(&obligations, assumptions)?;
     if !assumptions.should_allow_symbolic_contract_loads()
         && let Some(obligation) = obligations.iter().find(|obligation| {
-            !crate::kernel::c_state_justifies_loadability_obligation(
+            !crate::kernel::execution_state_justifies_loadability_obligation(
                 &states.lowering_state,
                 obligation,
                 assumptions,
@@ -1056,12 +1061,12 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(ClickArrayRef, crate::kernel::CPointerValue), String> {
+) -> Result<(ClickArrayRef, crate::kernel::PointerValue), String> {
     if let ContractExpression::Binding(name)
-    | ContractExpression::CFragment(CExpression::Variable(name))
+    | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
     | ContractExpression::CBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
-        && let Some(CValue::Pointer(value)) = contract_environment.values.get(name)
+        && let Some(ProgramValue::Pointer(value)) = contract_environment.values.get(name)
     {
         return Ok((array_ref.clone(), value.clone()));
     }
@@ -1073,10 +1078,13 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
         spec_definitions,
         &std::collections::BTreeSet::new(),
     )?;
-    let CValue::Pointer(pointer) = value else {
+    let ProgramValue::Pointer(pointer) = value else {
         return Err(format!(
             "array reference expression did not evaluate to a pointer: `{}`",
-            crate::surface::diagnostics::describe_c_value(&value, ParameterBinding::default())
+            crate::surface::diagnostics::describe_program_value(
+                &value,
+                ParameterBinding::default()
+            )
         ));
     };
     let memory = match expression {
@@ -1091,7 +1099,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
         _ => fixed_state.state.memory().clone(),
     };
     let element_type = contract_array_ref_element_type(contract_environment.array_refs, expression)
-        .or_else(|| pointer.c_type().pointee_type())
+        .or_else(|| pointer.program_type().pointee_type())
         .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
     Ok((
         ClickArrayRef {
@@ -1111,7 +1119,10 @@ fn refuse_impossible_loads(
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
     if let Some(obligation) = obligations.iter().find(|obligation| {
-        crate::kernel::c_loadability_obligation_impossible_with_assumptions(obligation, assumptions)
+        crate::kernel::program_loadability_obligation_impossible_with_assumptions(
+            obligation,
+            assumptions,
+        )
     }) {
         // `Debug` on a loadability obligation prints the whole memory
         // snapshot it is indexed by; the bounded sentence names the base and
@@ -1132,14 +1143,14 @@ fn refuse_impossible_loads(
 /// parameter and proof-local values where the state does not bind the name,
 /// and `result` bound on the current state.
 pub(in crate::surface::proof) struct FixedStateLowering {
-    pub(in crate::surface::proof) entry_state: CState,
-    pub(in crate::surface::proof) lowering_state: CState,
-    pub(in crate::surface::proof) element_types: BTreeMap<String, CType>,
-    pub(in crate::surface::proof) entry_values: BTreeMap<String, CValue>,
-    pub(in crate::surface::proof) current_values: BTreeMap<String, CValue>,
+    pub(in crate::surface::proof) entry_state: ExecutionState,
+    pub(in crate::surface::proof) lowering_state: ExecutionState,
+    pub(in crate::surface::proof) element_types: BTreeMap<String, ProgramType>,
+    pub(in crate::surface::proof) entry_values: BTreeMap<String, ProgramValue>,
+    pub(in crate::surface::proof) current_values: BTreeMap<String, ProgramValue>,
 }
 
-fn has_live_aggregate_binding(state: &CState, name: &str) -> bool {
+fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
     state
         .locals()
         .aggregate_object_pointer(name)
@@ -1153,9 +1164,9 @@ impl FixedStateLowering {
     fn for_expression(
         expression: &ContractExpression,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
         Self::for_names(
             crate::surface::lowering::contract_expression_referenced_names(expression),
@@ -1172,9 +1183,9 @@ impl FixedStateLowering {
     fn for_expression_values(
         expression: &ContractExpression,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
         Self::for_names(
             crate::surface::lowering::contract_expression_referenced_names(expression),
@@ -1189,9 +1200,9 @@ impl FixedStateLowering {
     fn for_proposition(
         proposition: &ClickProposition,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
         let mut names = BTreeSet::new();
         crate::surface::lowering::collect_click_proposition_referenced_names(
@@ -1208,9 +1219,9 @@ impl FixedStateLowering {
     fn for_names(
         names: BTreeSet<String>,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
         preserve_place_bindings: bool,
     ) -> Self {
         let mut entry_state = pre_state.clone();
@@ -1280,11 +1291,11 @@ impl FixedStateLowering {
 
     pub(in crate::surface::proof) fn new(
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
-        let bound = |state: &CState| {
+        let bound = |state: &ExecutionState| {
             let mut bound = state.clone();
             for (name, value) in contract_environment.values {
                 if bound.locals().get(name).is_none()
@@ -1424,24 +1435,24 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     units: Vec<Proof<'a>>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claims: &[FunctionClaimRef<'_>],
     require_explicit_closers: bool,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
-    function_environment: &CExecutionEnvironment,
-    function: &CFunction,
-    arguments: &[CExpression],
+    function_environment: &ExecutionEnvironment,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     tactics: &[ProofTactic],
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     // Every theorem the contexts issue shares these two copies. A theorem is
     // issued per path and claim, and each used to carry its own copy of the
     // grouped proof, so finishing cost the proof's size times the number of
     // theorems.
     let shared_function_block = std::sync::Arc::new(function_block.clone());
     let shared_tactics: std::sync::Arc<[ProofTactic]> = std::sync::Arc::from(tactics);
-    let mut verified: Vec<VerifiedCTheorem> = Vec::new();
+    let mut verified: Vec<VerifiedProgramTheorem> = Vec::new();
     // The positions of `verified` by claim and by claim and theorem. A
     // theorem already issued by another context equals one filed under its
     // own claim and theorem, so a duplicate is found there instead of by

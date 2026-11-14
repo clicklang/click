@@ -10,50 +10,55 @@ use std::fmt;
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    AlgebraicValue, BitvectorEqualityDerivationStep, CCheckedFunctionExecution,
-    CCheckedFunctionProposition, CComparisonOperator, CCompositeResourceDefinition,
-    CConditionOutcome, CExecutionEnvironment, CExecutionSemantics, CExpression, CExpressionOutcome,
-    CFunction, CFunctionContract, CFunctionContractClaim, CFunctionContractClaimKey,
-    CFunctionContractClaimTarget, CFunctionContractExecutionMode, CFunctionExecutionCandidates,
-    CFunctionOutcome, CFunctionSpecification, CLoopBreakExit, CLoopEffect, CLoopEffectCheck,
-    CLoopEffectSpan, CLoopFinalExitCandidate, CLoopInvariantCheck, CLoopReturnExit, CMemory,
-    CMemoryRange, CMemorySegment, CResource, CResourceAccessMode, CResourceFact, CResourceSnapshot,
-    CResourceSpec, CResourceTransferRole, CState, CStatement, CStatementOutcome,
-    CTerminationRefusal, CTerminationVerdicts, CType, CUnsuitableCallback, CValue,
-    CVerifiedLoopRule, CVerifiedPureTheorem, ConditionTerm, ExecutionBudget, ExecutionPureFact,
-    MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, ProofObligation, Proposition,
-    PropositionDerivation, PureFactContext, ResourceContext, ResourceContextValidityError,
-    ResourceFamily, Sort, SpecAlgebraicExpression, SpecExpression, SpecMemory,
-    SpecPredicateArgument, SpecProposition, SpecResource, SymbolicCExecution, Term, Theorem,
-    Variable, abstract_c_state_for_join, assume_universally_quantified_pure_implication, c_assign,
-    c_condition_fact_memories, c_contract_refinement_context, c_declare,
-    c_do_while_preservation_contexts, c_do_while_with_invariant_and_effect_checks, c_function,
-    c_function_contract_claims_from_completions, c_function_contract_entry_state,
-    c_function_contract_refinement_arguments, c_function_contract_refinement_context,
-    c_function_entry_state, c_function_termination_plan, c_if, c_loop_invariants_hold_at_entry,
-    c_loop_preservation_contexts, c_pointer_offsets_proven_equal_for_effect,
-    c_resources_directly_match, c_seq, c_termination_height_plan, c_typed_pointer_value,
-    c_unverified_function_contract_claims_diagnostic, c_verified_function_rule,
-    c_verified_function_termination_rules, c_while_with_invariant_and_effect_checks, int32,
-    prove_c_condition_fact_transport,
-    prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems,
-    prove_c_function_contract_refinement, prove_int32_le_antisymmetric,
-    prove_owned_resource_quantity_nonnegative, prove_symbolic_c_condition_evaluation,
-    prove_symbolic_c_loop_exit_with_proven_phases_using_budget,
-    prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget,
-    prove_universally_quantified_pure_implication,
-    prove_universally_quantified_pure_implication_by_int32_rewrites,
+    AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,
+    CheckedFunctionProposition, ComparisonOperator as KernelComparisonOperator,
+    CompositeResourceDefinition, ConditionOutcome, ConditionTerm, ExecutionBudget,
+    ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome,
+    FunctionContract, FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
+    FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
+    FunctionSpecification, LoopBreakExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
+    LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MachineTerm, Memory, MemoryRange,
+    MemorySegment, Pointer, PointerBlock, PointerOffsetTerm, ProgramExpression, ProgramFunction,
+    ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
+    PropositionDerivation, PureFactContext, Resource,
+    ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
+    ResourceFact, ResourceFamily, ResourceSnapshot, ResourceSpec, ResourceTransferRole, Sort,
+    SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
+    SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal,
+    TerminationVerdicts, Theorem, UnsuitableCallback, Variable, VerifiedLoopRule,
+    VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_execution_state_for_join,
+    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
+    loop_invariants_hold_at_entry, loop_preservation_contexts, program_assign,
+    program_condition_fact_memories, program_declare, program_do_while_preservation_contexts,
+    program_do_while_with_invariant_and_effect_checks, program_function,
+    program_function_contract_claims_from_completions, program_function_contract_entry_state,
+    program_function_contract_refinement_arguments, program_function_contract_refinement_context,
+    program_function_entry_state, program_function_termination_plan, program_if,
+    program_pointer_offsets_proven_equal_for_effect, program_seq, program_termination_height_plan,
+    program_unverified_function_contract_claims_diagnostic, program_verified_function_rule,
+    program_verified_function_termination_rules, program_while_with_invariant_and_effect_checks,
+    prove_int32_le_antisymmetric, prove_owned_resource_quantity_nonnegative,
+    prove_program_condition_fact_transport,
+    prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems,
+    prove_program_function_contract_refinement,
+    prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
+    prove_symbolic_loop_exit_with_proven_phases_using_budget,
+    prove_symbolic_program_condition_evaluation, prove_universally_quantified_pure_implication,
+    prove_universally_quantified_pure_implication_by_int32_rewrites, resources_directly_match,
     substitute_int32_variable_in_proposition,
 };
-use crate::languages::c::syntax::{self, C0Expression, C0Type, LongRank};
+use crate::languages::c::syntax::{self, C0Expression, LongRank};
+use crate::languages::interface::InterfaceType;
 use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {
     match expression {
-        ContractExpression::CFragment(CExpression::FunctionAddress(name)) => Some(name),
-        ContractExpression::CFragment(CExpression::AddressOf(expression)) => {
+        ContractExpression::ProgramExpression(ProgramExpression::FunctionAddress(name)) => {
+            Some(name)
+        }
+        ContractExpression::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
             match expression.as_ref() {
-                CExpression::Variable(name) => Some(name),
+                ProgramExpression::Variable(name) => Some(name),
                 _ => None,
             }
         }
@@ -95,13 +100,13 @@ pub use crate::source::SourceContainer;
 use checking::*;
 pub(crate) use expansion::click_import_sites_in_container;
 pub use expansion::{
-    CProofClaim, ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite,
+    ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite, ContractProofClaim,
     ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate, SmartTacticSelectionError,
-    SmartTacticSourceSite, SourceClaim, SourcePosition, c0_select_smart_tactic,
-    c0_smart_tactic_source_sites, c0_tactic_source_position, claim_at,
-    click_declaration_source_position, click_import_sites, expand_c0_claim_source,
-    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
-    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at, expand_c0_tactics_source_at,
+    SmartTacticSourceSite, SourceClaim, SourcePosition, c_select_smart_tactic,
+    c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
+    click_declaration_source_position, click_import_sites, expand_c_claim_source,
+    expand_c_claim_source_by_label, expand_c_prepared_claim_source_by_label,
+    expand_c_prepared_tactic_source_at, expand_c_tactic_source_at, expand_c_tactics_source_at,
     expand_claim_by_label, expand_program_prepared_claim_source_by_label,
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
@@ -137,24 +142,23 @@ use validation::proof_theorem_definitions;
 use validation::{
     combined_click_function_definitions, combined_external_function_blocks,
     combined_predicate_definitions, combined_resource_definitions, contains_at_expression,
-    contains_old_expression, describe_c0_type, describe_resource_clause,
+    contains_old_expression, describe_interface_type, describe_resource_clause,
     proposition_contains_at_expression, proposition_contains_liveness_claim,
     proposition_contains_old_expression, proposition_contains_resource_count,
     standard_library_theorem_definitions, standard_library_theorem_index,
 };
-pub(in crate::surface) use verification::CSourceContext;
+pub(in crate::surface) use verification::ProgramSourceContext;
 pub(in crate::surface) use verification::*;
 pub use verification::{
-    C0IncrementalSelection, CProjectSummary, CProofArtifactIdentity, ModelAssumption, ModelFamily,
-    ProgramInputs, SorryAdmission, SummarizedVerification, c0_external_dependencies,
-    c0_function_names, c0_incremental_selection, c0_prepared_external_dependencies,
-    c0_project_function_names, parse, project_selected_proof_names, project_summary,
-    take_sorry_admissions, verify_c0_prepared_project, verify_c0_prepared_sources,
-    verify_c0_prepared_sources_functions, verify_c0_project, verify_c0_sources,
-    verify_c0_sources_at, verify_c0_sources_functions, verify_click_theorems,
-    verify_program_prepared_project, verify_project_at, verify_project_functions,
-    verify_project_theorem, verify_project_with_summary, verify_sources_at,
-    verify_standard_library, with_allow_sorry,
+    IncrementalSelection, ModelAssumption, ModelFamily, ProgramInputs, ProjectVerificationSummary,
+    ProofArtifactIdentity, SorryAdmission, SummarizedVerification, c_external_dependencies,
+    c_incremental_selection, c_prepared_external_dependencies, c_project_function_names,
+    c_source_function_names, parse, project_selected_proof_names, project_summary,
+    take_sorry_admissions, verify_c_prepared_project, verify_c_prepared_sources,
+    verify_c_prepared_sources_functions, verify_c_project, verify_c_sources, verify_c_sources_at,
+    verify_c_sources_functions, verify_click_theorems, verify_program_prepared_project,
+    verify_project_at, verify_project_functions, verify_project_theorem,
+    verify_project_with_summary, verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
 pub use proof::{without_implicit_solve, without_implicit_solve_for_claim};
@@ -459,56 +463,67 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 6] =
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
 /// and `end` fields, and a `RangeInclusive`'s `start()` and `end()`.
-pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'static [&'static str] {
+pub(crate) fn rust_iterator_accessors(
+    kind: crate::languages::interface::RustIteratorKind,
+) -> &'static [&'static str] {
     match kind {
-        syntax::RustIteratorKind::Slice => &["len()", "as_slice()"],
-        syntax::RustIteratorKind::Enumerate => &["len()"],
-        syntax::RustIteratorKind::Range => &["start", "end", "len()"],
-        syntax::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::SliceLibrary(_) => &[],
+        crate::languages::interface::RustIteratorKind::Slice => &["len()", "as_slice()"],
+        crate::languages::interface::RustIteratorKind::Enumerate => &["len()"],
+        crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
+        crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        crate::languages::interface::RustIteratorKind::Chunks
+        | crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
     }
 }
 
 /// The local that holds loop iterator `iterator`'s value, when it is a value
 /// of a Click library type: a proof names it `iter` and reads it with that
 /// type's methods.
-pub(crate) fn rust_library_iterator(iterator: &syntax::RustLoopIterator) -> Option<&str> {
+pub(crate) fn rust_library_iterator(
+    iterator: &crate::languages::interface::RustLoopIterator,
+) -> Option<&str> {
     matches!(
         iterator.kind,
-        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::SliceLibrary(_)
+        crate::languages::interface::RustIteratorKind::Chunks
+            | crate::languages::interface::RustIteratorKind::SliceLibrary(_)
     )
     .then_some(iterator.local.as_str())
 }
 
 /// The Click type of a library-valued loop iterator: `ChunksExact<uint8>`,
 /// or `SliceIter` at the slice's element type.
-pub(crate) fn rust_library_iterator_type(iterator: &syntax::RustLoopIterator) -> Option<ClickType> {
+pub(crate) fn rust_library_iterator_type(
+    iterator: &crate::languages::interface::RustLoopIterator,
+) -> Option<ClickType> {
     rust_library_iterator(iterator)?;
-    if let syntax::RustIteratorKind::SliceLibrary(name) = iterator.kind {
-        return generics::primitive_instance_value_type(&ClickType::C(C0Type::Parameter(name)));
+    if let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind {
+        return generics::primitive_instance_value_type(&ClickType::Program(
+            InterfaceType::Parameter(name),
+        ));
     }
     Some(ClickType::Algebraic(AlgebraicTypeApplication {
         rigid: false,
         name: "ChunksExact".to_string(),
-        arguments: vec![ClickType::C(C0Type::UInt8)],
+        arguments: vec![ClickType::Program(InterfaceType::UInt8)],
     }))
 }
 
 /// `iter.<accessor>` of `iterator`, read from the state the importer keeps
 /// for it. `iter.as_slice()` reads as a slice parameter does, its data.
 pub(crate) fn rust_iterator_method(
-    iterator: &syntax::RustLoopIterator,
+    iterator: &crate::languages::interface::RustLoopIterator,
     accessor: &str,
 ) -> Result<ContractExpression, String> {
-    use syntax::RustIteratorKind as K;
-    let variable = |suffix: &str| CExpression::Variable(format!("{}_{suffix}", iterator.local));
+    use crate::languages::interface::RustIteratorKind as K;
+    let variable =
+        |suffix: &str| ProgramExpression::Variable(format!("{}_{suffix}", iterator.local));
     let expression = match (iterator.kind, accessor) {
         (K::Slice | K::Enumerate, "len()") => variable("remaining"),
         // The remaining elements start `length - remaining` into the slice
         // the iterator was built from.
-        (K::Slice, "as_slice()") => CExpression::Add(
+        (K::Slice, "as_slice()") => ProgramExpression::Add(
             Box::new(variable("base")),
-            Box::new(CExpression::Subtract(
+            Box::new(ProgramExpression::Subtract(
                 Box::new(variable("length")),
                 Box::new(variable("remaining")),
             )),
@@ -518,7 +533,7 @@ pub(crate) fn rust_iterator_method(
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
         (K::Range, "len()") => {
-            CExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
+            ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
         _ => {
             return Err(format!(
@@ -545,7 +560,7 @@ pub(crate) fn rust_iterator_method(
             ));
         }
     };
-    Ok(ContractExpression::CFragment(expression))
+    Ok(ContractExpression::ProgramExpression(expression))
 }
 
 /// The Rust spelling of the importer's iterator state variable `name` in a
@@ -554,7 +569,7 @@ pub(crate) fn rust_iterator_method(
 /// bare `iter.len()` for the iterator of `current`, the loop whose phases
 /// are being checked.
 pub(crate) fn rust_iterator_spelling(
-    iterators: &[Option<syntax::RustLoopIterator>],
+    iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     current: Option<usize>,
     name: &str,
 ) -> Option<String> {
@@ -572,7 +587,9 @@ pub(crate) fn rust_iterator_spelling(
             .iter()
             .find_map(|accessor| {
                 (rust_iterator_method(iterator, accessor).ok()?
-                    == ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+                    == ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        name.to_string(),
+                    )))
                 .then(|| {
                     if current == Some(index) {
                         format!("iter.{accessor}")
@@ -602,7 +619,7 @@ pub(crate) fn loop_iterator_bindings(
     if let Some(local) = rust_library_iterator(&iterator) {
         return vec![(
             "iter".to_string(),
-            ContractExpression::CFragment(CExpression::Variable(local.to_string())),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(local.to_string())),
         )];
     }
     rust_iterator_accessors(iterator.kind)
@@ -765,7 +782,7 @@ pub struct ClickFile {
     /// Physical struct strides retained for generic theorem instantiation.
     struct_sizes: std::sync::Arc<BTreeMap<String, u32>>,
     /// Unique source spelling to C execution identity, shared by specification lowering.
-    c_function_names: std::sync::Arc<BTreeMap<String, String>>,
+    program_function_names: std::sync::Arc<BTreeMap<String, String>>,
     imports: Vec<ImportDeclaration>,
     /// Click library modules this file imports with `import click::...;`, as
     /// their `library/` identities, once each in source order.
@@ -814,7 +831,7 @@ enum DeclarationIdentity {
     Resource(String),
     Theorem(String),
     Contract(String),
-    CFunction(String),
+    ProgramFunction(String),
     Tactic(String),
 }
 
@@ -827,7 +844,7 @@ impl std::fmt::Display for DeclarationIdentity {
             Self::Resource(name) => ("resource", name),
             Self::Theorem(name) => ("theorem", name),
             Self::Contract(name) => ("contract", name),
-            Self::CFunction(name) => ("C function", name),
+            Self::ProgramFunction(name) => ("C function", name),
             Self::Tactic(name) => ("tactic", name),
         };
         write!(f, "{kind} `{name}`")
@@ -1014,7 +1031,7 @@ pub enum AlgebraicFieldType {
     /// field carries it, so a pointer read from a model keeps its
     /// strict-aliasing and loop object-class checks.
     C {
-        c_type: C0Type,
+        interface_type: InterfaceType,
         struct_name: Option<String>,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
@@ -1030,10 +1047,10 @@ impl AlgebraicFieldType {
     pub fn struct_pointer_name(&self) -> Option<&str> {
         match self {
             Self::C {
-                c_type,
+                interface_type,
                 struct_name,
                 ..
-            } if c_type.is_pointer() => struct_name.as_deref(),
+            } if interface_type.is_pointer() => struct_name.as_deref(),
             _ => None,
         }
     }
@@ -1048,7 +1065,7 @@ impl AlgebraicFieldType {
                 struct_name: Some(name),
                 ..
             } => format!("struct {name}*"),
-            Self::C { c_type, .. } => describe_c0_type(*c_type),
+            Self::C { interface_type, .. } => describe_interface_type(*interface_type),
             Self::Algebraic { name, .. } => name.clone(),
         }
     }
@@ -1064,10 +1081,10 @@ pub enum ClickType {
     /// instantiated to concrete types at applications, or rigid arbitrary
     /// types when checking theorem declarations, before crossing into Kernel Click.
     Parameter(String),
-    C(C0Type),
+    Program(InterfaceType),
     /// A C pointer type whose generic payload retains its declared struct.
     CObjectPointer {
-        c_type: C0Type,
+        interface_type: InterfaceType,
         struct_name: String,
     },
     /// An exact, specification-only signed integer with no C representation.
@@ -1076,11 +1093,13 @@ pub enum ClickType {
 }
 
 impl ClickType {
-    pub fn c_type(&self) -> Option<C0Type> {
+    pub fn interface_type(&self) -> Option<InterfaceType> {
         match self {
             Self::Resource => None,
             Self::Parameter(_) => None,
-            Self::C(c_type) | Self::CObjectPointer { c_type, .. } => Some(*c_type),
+            Self::Program(interface_type) | Self::CObjectPointer { interface_type, .. } => {
+                Some(*interface_type)
+            }
             Self::Integer => None,
             Self::Algebraic(_) => None,
         }
@@ -1121,17 +1140,19 @@ pub struct AlgebraicTypeApplication {
 }
 
 impl AlgebraicTypeApplication {
-    /// The `spec enum` a C value of `c_type` holds, when it holds a Rust
+    /// The `spec enum` a C value of `interface_type` holds, when it holds a Rust
     /// enum's: an enum parameter or result is that enum's value.
-    pub(in crate::surface) fn of_enum_c_type(c_type: C0Type) -> Option<Self> {
+    pub(in crate::surface) fn of_enum_interface_type(
+        interface_type: InterfaceType,
+    ) -> Option<Self> {
         // A Rust `Vec<u32>` is the library's primitive `Vec<uint32>`.
         if let Some(ClickType::Algebraic(application)) =
-            generics::primitive_instance_value_type(&ClickType::C(c_type))
+            generics::primitive_instance_value_type(&ClickType::Program(interface_type))
         {
             return Some(application);
         }
-        match c_type {
-            C0Type::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
+        match interface_type {
+            InterfaceType::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
                 rigid: false,
                 name: enum_type.name().to_string(),
                 arguments: enum_type
@@ -1139,9 +1160,13 @@ impl AlgebraicTypeApplication {
                     .arguments
                     .iter()
                     .map(|argument| match argument {
-                        crate::kernel::AlgebraicValueType::C(c_type) => Some(ClickType::C(
-                            crate::surface::generics::c0_type_from_kernel(*c_type),
-                        )),
+                        crate::kernel::AlgebraicValueType::Program(interface_type) => {
+                            Some(ClickType::Program(
+                                crate::surface::generics::interface_type_from_program_type(
+                                    *interface_type,
+                                ),
+                            ))
+                        }
                         // A crate enum payload, `Result<u32, ParseError>`'s
                         // error, is that enum's `spec enum`.
                         crate::kernel::AlgebraicValueType::Algebraic { name, arguments }
@@ -1236,7 +1261,7 @@ pub struct ResourceChildBody {
     resource: String,
     identity: Variable,
     arguments: Vec<ContractExpression>,
-    field_bindings: Vec<crate::kernel::CResourceChildField>,
+    field_bindings: Vec<crate::kernel::ResourceChildField>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1272,7 +1297,7 @@ impl ResourceFieldDefinition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResourceWitness {
     name: String,
-    c_type: C0Type,
+    interface_type: InterfaceType,
 }
 
 impl ResourceWitness {
@@ -1280,8 +1305,8 @@ impl ResourceWitness {
         &self.name
     }
 
-    pub fn c_type(&self) -> C0Type {
-        self.c_type
+    pub fn interface_type(&self) -> InterfaceType {
+        self.interface_type
     }
 }
 
@@ -1660,7 +1685,7 @@ pub struct FunctionBlock {
     /// Where the parser read this block's clauses.
     body: parser::DeclarationBody,
     /// C objects visible in this declaration, supplied by the source frontend.
-    c_object_names: std::sync::Arc<BTreeSet<String>>,
+    program_object_names: std::sync::Arc<BTreeSet<String>>,
     signature: FunctionSignature,
     external: bool,
     /// Internal source grouping for an `executes` theorem's call and return.
@@ -1678,7 +1703,7 @@ pub struct FunctionBlock {
     /// Empty when the block was built without a source (tests), in which
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
-    decreases: Option<CFunctionDecrease>,
+    decreases: Option<FunctionDecrease>,
     /// Rust arguments pass through MIR temporaries. Rank numeric recursion
     /// at the checked call rather than by the C body's direct `n - K` shape.
     /// This is selected by the source language, not signature presentation.
@@ -1749,11 +1774,11 @@ fn source_positions(sources: impl Iterator<Item = Option<usize>>) -> Vec<(usize,
 ///
 /// Decision D6: the clause is one expression, and functions and resources
 /// share one namespace, so the parser cannot tell which kind of measure it
-/// read. It stores [`CFunctionDecrease::Unresolved`], and declared-resource
+/// read. It stores [`FunctionDecrease::Unresolved`], and declared-resource
 /// expansion — the pass that knows every declared resource and every contract
 /// binder — classifies it into one of the resolved forms below.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CFunctionDecrease {
+pub enum FunctionDecrease {
     /// The parsed expression, before resolution decides what it names.
     Unresolved(ContractExpression),
     Numeric(ContractExpression),
@@ -1768,7 +1793,7 @@ pub enum CFunctionDecrease {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSignature {
-    return_type: C0Type,
+    return_type: InterfaceType,
     /// Declared nominal type of a pointer result, independent of its C carrier.
     return_struct_name: Option<String>,
     return_pointee_constant: bool,
@@ -1779,7 +1804,7 @@ pub struct FunctionSignature {
     parameters: Vec<FunctionParameter>,
     /// The payload type of the function's declared exceptional outcome.
     /// This surface slice currently accepts only `throws int32`.
-    exceptional_type: Option<C0Type>,
+    exceptional_type: Option<InterfaceType>,
     /// Whether the signature declares `diverges`: the function may not
     /// return. Termination is opt-in today, so the marker changes no
     /// judgment; it withholds the whole-function termination evidence a
@@ -1803,7 +1828,7 @@ pub struct FunctionSignature {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RustSignatureSpelling(
     Option<Vec<String>>,
-    std::sync::Arc<[Option<syntax::RustLoopIterator>]>,
+    std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]>,
 );
 
 impl RustSignatureSpelling {
@@ -1815,7 +1840,9 @@ impl RustSignatureSpelling {
         self.0.as_deref()
     }
 
-    pub(crate) fn loop_iterators(&self) -> &std::sync::Arc<[Option<syntax::RustLoopIterator>]> {
+    pub(crate) fn loop_iterators(
+        &self,
+    ) -> &std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]> {
         &self.1
     }
 }
@@ -1833,7 +1860,7 @@ pub struct FunctionParameter {
     click_type: ClickType,
     name: String,
     struct_name: Option<String>,
-    function_pointer_signature: Option<syntax::C0FunctionPointerSignature>,
+    function_pointer_signature: Option<crate::languages::interface::CallbackInterface>,
     constant: bool,
     pointee_constant: bool,
     /// Whether the source declares the parameter as a reference. Its name
@@ -1847,7 +1874,7 @@ pub struct FunctionParameter {
 pub(in crate::surface) struct FieldPlace {
     name: String,
     offset_bytes: u32,
-    value_type: CType,
+    value_type: ProgramType,
     pointee_constant: bool,
     /// For a pointer to a struct, that struct: a read through the loaded
     /// pointer names the struct's fields, `p->next->second`.
@@ -1862,7 +1889,7 @@ pub(in crate::surface) struct FieldPlace {
 /// start of `layout`, and its arrays of scalars, each one place whose
 /// elements a read names by index. A union is not one place and is left out.
 pub(in crate::surface) fn scalar_field_places(
-    layout: &syntax::C0StructLayout,
+    layout: &crate::languages::interface::RecordLayout,
     layouts: &impl syntax::StructLayouts,
 ) -> Vec<FieldPlace> {
     // Each nested struct is entered once per field that holds it, so the
@@ -1870,7 +1897,7 @@ pub(in crate::surface) fn scalar_field_places(
     // cannot contain itself by value; the depth bound is for a malformed
     // layout map and never for a real one.
     fn collect(
-        layout: &syntax::C0StructLayout,
+        layout: &crate::languages::interface::RecordLayout,
         layouts: &impl syntax::StructLayouts,
         prefix: &str,
         base: u32,
@@ -1884,10 +1911,10 @@ pub(in crate::surface) fn scalar_field_places(
             let name = format!("{prefix}{name}");
             let offset_bytes = base + field.offset_bytes();
             if field.array_element_width().is_some() {
-                let element = match field.c_type() {
-                    C0Type::Int32Array(length) => Some((CType::Int32, 4, length)),
-                    C0Type::UInt32Array(length) => Some((CType::UInt32, 4, length)),
-                    C0Type::UInt8Array(length) => Some((CType::UInt8, 1, length)),
+                let element = match field.interface_type() {
+                    InterfaceType::Int32Array(length) => Some((ProgramType::Int32, 4, length)),
+                    InterfaceType::UInt32Array(length) => Some((ProgramType::UInt32, 4, length)),
+                    InterfaceType::UInt8Array(length) => Some((ProgramType::UInt8, 1, length)),
                     _ => None,
                 };
                 if let Some((value_type, width, length)) = element
@@ -1907,7 +1934,7 @@ pub(in crate::surface) fn scalar_field_places(
             // A struct held by value is entered; a pointer to one is a
             // scalar place like any other pointer field.
             match field.struct_name() {
-                Some(nested) if !field.c_type().is_pointer() => {
+                Some(nested) if !field.interface_type().is_pointer() => {
                     if let Some(nested) = layouts.struct_layout(nested)
                         && depth < 8
                     {
@@ -1924,11 +1951,11 @@ pub(in crate::surface) fn scalar_field_places(
                 _ => places.push(FieldPlace {
                     name,
                     offset_bytes,
-                    value_type: field.c_type().to_kernel_type(),
+                    value_type: field.interface_type().to_kernel_type(),
                     pointee_constant: field.pointee_is_constant(),
                     pointee_struct: field
                         .struct_name()
-                        .filter(|_| field.c_type().is_pointer())
+                        .filter(|_| field.interface_type().is_pointer())
                         .map(str::to_string),
                     array: None,
                 }),
@@ -2153,7 +2180,7 @@ pub enum ResourceClause {
         /// Resource types passed as arguments, independently of named instances.
         resource_type_arguments: Vec<ResourceClause>,
         resource_arguments: Vec<ResourceInstanceBinding>,
-        parameter_types: Vec<C0Type>,
+        parameter_types: Vec<InterfaceType>,
     },
     /// `forall (k: int32) where lo <= k and k < hi { if g[k] == v { owns
     /// base[..]; } }` in a resource body: iterated guarded ownership. Only a
@@ -2262,7 +2289,7 @@ pub enum ResourceSubject {
         index: usize,
     },
     Captured {
-        value: crate::kernel::CResource,
+        value: crate::kernel::Resource,
         source: Box<ResourceSubject>,
     },
     Memory(ContractSegment),
@@ -2277,7 +2304,7 @@ pub enum ResourceSubject {
         kind: ResourceKind,
         name: String,
         arguments: Vec<ContractExpression>,
-        parameter_types: Vec<C0Type>,
+        parameter_types: Vec<InterfaceType>,
     },
 }
 
@@ -2454,15 +2481,17 @@ thread_local! {
 /// The specification `bool` literal `true` or `false`: a C `bool` value,
 /// exactly `1` or `0`.
 pub(crate) fn bool_literal(value: bool) -> ContractExpression {
-    ContractExpression::CFragment(CExpression::Value(CValue::bool_constant(value)))
+    ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::bool_constant(
+        value,
+    )))
 }
 
 /// The value of a `bool` literal written as `true` or `false`.
 pub(crate) fn bool_literal_value(expression: &ContractExpression) -> Option<bool> {
     match expression {
-        ContractExpression::CFragment(CExpression::Value(CValue::Bool(value))) => {
-            value.bool_constant_value()
-        }
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Bool(
+            value,
+        ))) => value.bool_constant_value(),
         _ => None,
     }
 }
@@ -2828,55 +2857,57 @@ impl ClickProposition {
     }
 }
 
-pub(crate) fn collect_c_expression_variables(
-    expression: &CExpression,
+pub(crate) fn collect_program_expression_variables(
+    expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
-        CExpression::Variable(name) => {
+        ProgramExpression::Value(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        CExpression::Cast { expression, .. } => {
-            collect_c_expression_variables(expression, names);
+        ProgramExpression::Cast { expression, .. } => {
+            collect_program_expression_variables(expression, names);
         }
-        CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
-            collect_c_expression_variables(expression, names);
+            collect_program_expression_variables(expression, names);
         }
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_c_expression_variables(field, names);
+                collect_program_expression_variables(field, names);
             }
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_variables(condition, names);
-            collect_c_expression_variables(then_branch, names);
-            collect_c_expression_variables(else_branch, names);
+            collect_program_expression_variables(condition, names);
+            collect_program_expression_variables(then_branch, names);
+            collect_program_expression_variables(else_branch, names);
         }
-        CExpression::AddressOf(inner)
-        | CExpression::CheckedObjectAddress(inner)
-        | CExpression::PointerOffsetBytes { pointer: inner, .. }
-        | CExpression::Subobject { pointer: inner, .. }
-        | CExpression::Not(inner)
-        | CExpression::BitwiseNot(inner)
-        | CExpression::Load(inner)
-        | CExpression::TypedLoad { pointer: inner, .. } => {
-            collect_c_expression_variables(inner, names);
+        ProgramExpression::AddressOf(inner)
+        | ProgramExpression::CheckedObjectAddress(inner)
+        | ProgramExpression::PointerOffsetBytes { pointer: inner, .. }
+        | ProgramExpression::Subobject { pointer: inner, .. }
+        | ProgramExpression::Not(inner)
+        | ProgramExpression::BitwiseNot(inner)
+        | ProgramExpression::Load(inner)
+        | ProgramExpression::TypedLoad { pointer: inner, .. } => {
+            collect_program_expression_variables(inner, names);
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_c_expression_variables(left, names);
-            collect_c_expression_variables(right, names);
+            collect_program_expression_variables(left, names);
+            collect_program_expression_variables(right, names);
         }
     }
 }
@@ -2885,9 +2916,9 @@ fn collect_current_segment_variables(segment: &ContractSegment, names: &mut BTre
     if segment.state != ContractSegmentState::Current {
         return;
     }
-    collect_c_expression_variables(&segment.base, names);
-    collect_c_expression_variables(&segment.start, names);
-    collect_c_expression_variables(&segment.end, names);
+    collect_program_expression_variables(&segment.base, names);
+    collect_program_expression_variables(&segment.start, names);
+    collect_program_expression_variables(&segment.end, names);
 }
 
 fn collect_current_resource_clause_variables(
@@ -3015,12 +3046,12 @@ pub(crate) fn collect_current_contract_expression_variables(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression) => {
-            collect_c_expression_variables(expression, names);
+        | ContractExpression::ProgramExpression(expression) => {
+            collect_program_expression_variables(expression, names);
         }
         ContractExpression::Field { base, lowered, .. } => {
             collect_current_contract_expression_variables(base, names);
-            collect_c_expression_variables(lowered, names);
+            collect_program_expression_variables(lowered, names);
         }
         ContractExpression::ArrayIndex {
             base,
@@ -3032,7 +3063,7 @@ pub(crate) fn collect_current_contract_expression_variables(
             for index in indexes {
                 collect_current_contract_expression_variables(index, names);
             }
-            collect_c_expression_variables(lowered, names);
+            collect_program_expression_variables(lowered, names);
         }
         ContractExpression::Binding(name) => {
             names.insert(name.clone());
@@ -3181,7 +3212,7 @@ pub enum SurfaceTerm {
     /// proof expansion while lowering its stable storage identity, not a local.
     QualifiedC {
         name: String,
-        lowered: CExpression,
+        lowered: ProgramExpression,
     },
     ResourceField(ResourceFieldAccess),
     /// A fully type-applied constructor of a specification-only algebraic
@@ -3226,14 +3257,14 @@ pub enum SurfaceTerm {
     /// it does not denote C pointer arithmetic or allocate C memory.
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C expression fragment appearing inside Surface Click.
-    CFragment(CExpression),
+    ProgramExpression(ProgramExpression),
     /// A C unary operation whose operand retains source and binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
     /// in that case `lowered` retains the cast metadata with a placeholder, and
     /// conversion back to a C fragment must rebuild from `operand` or refuse.
     CUnary {
         operand: Box<ContractExpression>,
-        lowered: CExpression,
+        lowered: ProgramExpression,
     },
     /// A source-level struct field place paired with its lowered C expression.
     ///
@@ -3245,7 +3276,7 @@ pub enum SurfaceTerm {
         pointee_struct: Option<String>,
         base: Box<ContractExpression>,
         field: String,
-        lowered: CExpression,
+        lowered: ProgramExpression,
         /// Byte offset of `field` from the address denoted by `base`.
         /// Keeping this separately lets lowering rebuild the field load when
         /// `base` is evaluated in a different snapshot from the field value.
@@ -3307,7 +3338,7 @@ pub enum SurfaceTerm {
         base: Box<ContractExpression>,
         indexes: Vec<ContractExpression>,
         dimensions: Vec<u32>,
-        lowered: CExpression,
+        lowered: ProgramExpression,
     },
     If {
         condition: Box<ClickProposition>,
@@ -3357,9 +3388,9 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: CMemory,
+    memory: Memory,
     pointer: Pointer,
-    element_type: CType,
+    element_type: ProgramType,
 }
 
 type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
@@ -3368,12 +3399,12 @@ type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
 /// references, as `contract_environment_at_state` builds them.
 #[derive(Clone, Copy)]
 struct ContractEnvironment<'a> {
-    values: &'a BTreeMap<String, CValue>,
+    values: &'a BTreeMap<String, ProgramValue>,
     array_refs: &'a ClickArrayRefs,
 }
 
 impl<'a> ContractEnvironment<'a> {
-    fn new(values: &'a BTreeMap<String, CValue>, array_refs: &'a ClickArrayRefs) -> Self {
+    fn new(values: &'a BTreeMap<String, ProgramValue>, array_refs: &'a ClickArrayRefs) -> Self {
         Self { values, array_refs }
     }
 }
@@ -3389,19 +3420,19 @@ fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::C(CValue::Parameter(term)) => match term.node {
+        AlgebraicValue::Program(ProgramValue::Parameter(term)) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::C(crate::kernel::integer_c_value!(MachineTerm::Variable(variable))) => {
-            Some(*variable)
-        }
+        AlgebraicValue::Program(
+            crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
+        ) => Some(*variable),
         _ => None,
     }
 }
 
 fn instance_holds_field_value(
-    state: &CState,
+    state: &ExecutionState,
     identity: crate::kernel::Variable,
     field_index: usize,
     variable: crate::kernel::Variable,
@@ -3429,13 +3460,13 @@ struct RecordedHistoryMark(Option<std::sync::Arc<RecordedSnapshotChange>>);
 /// Points one path recorded at a range of regions, with their call results.
 #[derive(Clone, Default)]
 struct RecordedRegionPoints {
-    snapshots: Vec<(SnapshotSelector, CState)>,
-    call_results: Vec<(usize, CValue)>,
+    snapshots: Vec<(SnapshotSelector, ExecutionState)>,
+    call_results: Vec<(usize, ProgramValue)>,
 }
 
 #[derive(Clone)]
 struct RecordedSnapshots {
-    effect_log: imbl::Vector<crate::kernel::CResource>,
+    effect_log: imbl::Vector<crate::kernel::Resource>,
     effect_gaps: imbl::Vector<usize>,
     effect_offsets: imbl::OrdMap<SnapshotSelector, usize>,
     footprint_values: std::sync::Arc<
@@ -3446,11 +3477,11 @@ struct RecordedSnapshots {
                     SnapshotSelector,
                     usize,
                     usize,
-                    Option<crate::kernel::CResource>,
-                    crate::kernel::SharedCMemory,
-                    crate::kernel::SharedCMemory,
+                    Option<crate::kernel::Resource>,
+                    crate::kernel::SharedMemory,
+                    crate::kernel::SharedMemory,
                 ),
-                crate::kernel::CResource,
+                crate::kernel::Resource,
             >,
         >,
     >,
@@ -3489,15 +3520,15 @@ struct RecordedSnapshots {
     /// of later pointer reads or assignments to the result local.
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Pointer, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
-    call_results: crate::persistent::PersistentMap<usize, CValue>,
+    call_results: crate::persistent::PersistentMap<usize, ProgramValue>,
     /// The points inside a loop that left at several places, by the loop
     /// and its number of leaving paths: each path recorded the point at its
     /// own state, so after the loop the name has no one state.
     ambiguous_exit_points: crate::persistent::PersistentMap<SnapshotSelector, (usize, usize)>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
-    read_event_results: crate::persistent::PersistentMap<(usize, usize), CValue>,
+    read_event_results: crate::persistent::PersistentMap<(usize, usize), ProgramValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
-    read_event_names: ReadEventNames<CValue>,
+    read_event_names: ReadEventNames<ProgramValue>,
     read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
     read_event_pointer_names: ReadEventNames<crate::kernel::Pointer>,
     /// The call that produced each algebraic value a call returned, a Rust
@@ -3516,7 +3547,7 @@ struct RecordedSnapshots {
     field_points: crate::persistent::PersistentMap<crate::kernel::Variable, SnapshotSelector>,
     /// The locals of the state inserted last, against which the next insert
     /// finds the locals it changed.
-    last_locals: Option<crate::kernel::CLocalEnvironment>,
+    last_locals: Option<crate::kernel::LocalEnvironment>,
     /// The resources of the state inserted last, against which the next
     /// insert finds the instances it changed.
     last_resources: Option<crate::kernel::ResourceContext>,
@@ -3530,7 +3561,7 @@ struct RecordedSnapshots {
     cell_points: crate::persistent::PersistentMap<(u64, usize), SnapshotSelector>,
     /// The memory of the state inserted last, against which the next insert
     /// finds the cells it changed.
-    last_memory: Option<crate::kernel::CMemory>,
+    last_memory: Option<crate::kernel::Memory>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -3588,7 +3619,7 @@ impl Default for RecordedSnapshots {
 #[derive(Clone)]
 struct RecordedSnapshotNode {
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
     left: Option<std::sync::Arc<RecordedSnapshotNode>>,
     right: Option<std::sync::Arc<RecordedSnapshotNode>>,
     height: u8,
@@ -3685,7 +3716,7 @@ impl<'a> RecordedSnapshotRange<'a> {
 }
 
 impl<'a> Iterator for RecordedSnapshotRange<'a> {
-    type Item = (&'a SnapshotSelector, &'a CState);
+    type Item = (&'a SnapshotSelector, &'a ExecutionState);
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stopped {
@@ -3715,11 +3746,11 @@ impl RecordedSnapshots {
     fn record_effect(&mut self, effect: Option<&std::sync::Arc<crate::kernel::RegionFootprint>>) {
         if let Some(effect) = effect {
             let gap = self.effect_log.back().is_some_and(|previous| {
-                let crate::kernel::CResource::Footprint(previous) = previous else {
+                let crate::kernel::Resource::Footprint(previous) = previous else {
                     unreachable!()
                 };
-                crate::kernel::intern_c_memory_ref(&previous.after)
-                    != crate::kernel::intern_c_memory_ref(&effect.before)
+                crate::kernel::intern_memory_ref(&previous.after)
+                    != crate::kernel::intern_memory_ref(&effect.before)
                     || !previous
                         .after_resources
                         .shares_storage_with(&effect.before_resources)
@@ -3727,11 +3758,11 @@ impl RecordedSnapshots {
             self.effect_gaps
                 .push_back(self.effect_gaps.back().copied().unwrap_or(0) + usize::from(gap));
             self.effect_log
-                .push_back(crate::kernel::CResource::Footprint(effect.clone()));
+                .push_back(crate::kernel::Resource::Footprint(effect.clone()));
         }
     }
 
-    fn footprint(&self, region: &CodeRegionRef) -> Result<crate::kernel::CResource, String> {
+    fn footprint(&self, region: &CodeRegionRef) -> Result<crate::kernel::Resource, String> {
         let before = self.recorded_spelling(SnapshotSelector::ProgramPoint(ProgramPointRef {
             region: region.clone(),
             kind: ProgramPointKind::Entry,
@@ -3753,8 +3784,8 @@ impl RecordedSnapshots {
         }
         let before_state = self.get(&before).ok_or("missing footprint entry")?;
         let after_state = self.get(&after).ok_or("missing footprint exit")?;
-        let memory_is = |a: &crate::kernel::CMemory, b: &crate::kernel::CMemory| {
-            crate::kernel::intern_c_memory_ref(a) == crate::kernel::intern_c_memory_ref(b)
+        let memory_is = |a: &crate::kernel::Memory, b: &crate::kernel::Memory| {
+            crate::kernel::intern_memory_ref(a) == crate::kernel::intern_memory_ref(b)
         };
         let covered = if start == end {
             memory_is(before_state.memory(), after_state.memory())
@@ -3764,8 +3795,8 @@ impl RecordedSnapshots {
         } else {
             match (self.effect_log.get(start), self.effect_log.get(end - 1)) {
                 (
-                    Some(crate::kernel::CResource::Footprint(first)),
-                    Some(crate::kernel::CResource::Footprint(last)),
+                    Some(crate::kernel::Resource::Footprint(first)),
+                    Some(crate::kernel::Resource::Footprint(last)),
                 ) => {
                     memory_is(before_state.memory(), &first.before)
                         && memory_is(after_state.memory(), &last.after)
@@ -3786,9 +3817,9 @@ impl RecordedSnapshots {
         // A single atomic effect already is the execution-produced descriptor.
         // Keep its identity so its published containment fact names this term.
         if end == start + 1
-            && let Some(crate::kernel::CResource::Footprint(effect)) = self.effect_log.get(start)
+            && let Some(crate::kernel::Resource::Footprint(effect)) = self.effect_log.get(start)
         {
-            return Ok(crate::kernel::CResource::Footprint(effect.clone()));
+            return Ok(crate::kernel::Resource::Footprint(effect.clone()));
         }
         let key = (
             before.clone(),
@@ -3797,8 +3828,8 @@ impl RecordedSnapshots {
             end,
             end.checked_sub(1)
                 .and_then(|i| self.effect_log.get(i).cloned()),
-            crate::kernel::intern_c_memory_ref(before_state.memory()),
-            crate::kernel::intern_c_memory_ref(after_state.memory()),
+            crate::kernel::intern_memory_ref(before_state.memory()),
+            crate::kernel::intern_memory_ref(after_state.memory()),
         );
         if let Some(value) = self.footprint_values.lock().unwrap().get(&key) {
             return Ok(value.clone());
@@ -3818,11 +3849,11 @@ impl RecordedSnapshots {
                     region: CodeRegionRef::Region(b),
                     ..
                 }),
-                Some(crate::kernel::CResource::Footprint(effect)),
+                Some(crate::kernel::Resource::Footprint(effect)),
             ) => a == b && members.len() == 1 && effect.source == format!("region({a}).footprint"),
             _ => false,
         };
-        let value = crate::kernel::CResource::Footprint(crate::kernel::RegionFootprint::sequence(
+        let value = crate::kernel::Resource::Footprint(crate::kernel::RegionFootprint::sequence(
             format!(
                 "{}.footprint",
                 diagnostics::describe_code_region_ref(region)
@@ -3843,7 +3874,7 @@ impl RecordedSnapshots {
         Self::default()
     }
 
-    fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
+    fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
         if self.loop_labels.is_some() || key.is_source_path() {
             let selector = self.recorded_spelling(key.to_selector());
             return self.get_exact(&selector);
@@ -3983,7 +4014,7 @@ impl RecordedSnapshots {
     fn record_read_event_values<'a>(
         &mut self,
         index: usize,
-        values: impl Iterator<Item = &'a CValue>,
+        values: impl Iterator<Item = &'a ProgramValue>,
     ) {
         // Only this completed statement's output is visited, never prior facts.
         for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
@@ -3993,10 +4024,10 @@ impl RecordedSnapshots {
                 self.read_event_results.remove(&key);
                 Self::remove_read_event_name(&mut self.read_event_names, &value, key);
                 match &value {
-                    CValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
+                    ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
                         Self::remove_read_event_name(&mut self.read_event_scalar_names, term, key);
                     }
-                    CValue::Pointer(pointer) => {
+                    ProgramValue::Pointer(pointer) => {
                         Self::remove_read_event_name(
                             &mut self.read_event_pointer_names,
                             pointer.pointer(),
@@ -4014,10 +4045,10 @@ impl RecordedSnapshots {
             self.read_event_results.insert(key, value.clone());
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
-                CValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
+                ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
                     Self::add_read_event_name(&mut self.read_event_scalar_names, term, key);
                 }
-                CValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer) => {
                     Self::add_read_event_name(
                         &mut self.read_event_pointer_names,
                         pointer.pointer(),
@@ -4035,7 +4066,7 @@ impl RecordedSnapshots {
         }
     }
 
-    fn read_event_values(&self, index: usize) -> impl Iterator<Item = &CValue> {
+    fn read_event_values(&self, index: usize) -> impl Iterator<Item = &ProgramValue> {
         (0..self.read_event_counts.get(&index).copied().unwrap_or(0)).map(move |event| {
             self.read_event_results
                 .get(&(index, event))
@@ -4043,7 +4074,7 @@ impl RecordedSnapshots {
         })
     }
 
-    fn read_event_naming_value(&self, value: &CValue) -> Option<CodeRegionRef> {
+    fn read_event_naming_value(&self, value: &ProgramValue) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let &(index, event) = self.read_event_names.get(value)?.last()?;
         Some(self.read_event_region(index, event))
@@ -4064,7 +4095,7 @@ impl RecordedSnapshots {
         Some(self.read_event_region(index, event))
     }
 
-    fn region_result_value(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+    fn region_result_value(&self, region: &CodeRegionRef) -> Result<ProgramValue, String> {
         if let CodeRegionRef::Path(steps) = region
             && let Some((SourcePathStep::ReadEvent(event), parent)) = steps.split_last()
         {
@@ -4190,27 +4221,32 @@ impl RecordedSnapshots {
         }
     }
 
-    fn record_call_result(&mut self, index: usize, value: Option<CValue>) {
+    fn record_call_result(&mut self, index: usize, value: Option<ProgramValue>) {
         crate::instrumentation::record_deterministic_work(1);
-        if let Some(CValue::Bool(term) | crate::kernel::integer_c_value!(term)) =
-            self.call_results.get(&index)
+        // A pointer-sized integer is named by its numeric value.
+        if let Some(ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term)) = self
+            .call_results
+            .get(&index)
+            .map(ProgramValue::numeric_value)
         {
             self.call_result_points
                 .remove(&(crate::kernel::held_term_fingerprint(term), index));
         }
-        if let Some(CValue::Parameter(term)) = self.call_results.get(&index)
+        if let Some(ProgramValue::Parameter(term)) = self.call_results.get(&index)
             && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
         self.call_results.remove(&index);
-        if let Some(value) = value.filter(|value| *value != CValue::Void) {
-            if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) = &value {
+        if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
+            if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
+                value.numeric_value()
+            {
                 self.call_result_points
                     .insert((crate::kernel::held_term_fingerprint(term), index), ());
             }
             // The first call to produce an algebraic value names it.
-            if let CValue::Parameter(term) = &value
+            if let ProgramValue::Parameter(term) = &value
                 && self.algebraic_call_results.get(term.as_ref()).is_none()
             {
                 self.algebraic_call_results
@@ -4257,6 +4293,27 @@ impl RecordedSnapshots {
             .map(|(index, term)| (loop_iterations_spelling(*index), term))
     }
 
+    /// Each recorded call's result with the source spelling that names it,
+    /// `<call>.result`. Diagnostics only.
+    pub(in crate::surface) fn call_result_bindings(&self) -> Vec<(String, &ProgramValue)> {
+        let Some(layout) = self.source_layout.as_ref() else {
+            return Vec::new();
+        };
+        self.call_results
+            .iter()
+            .filter_map(|(index, value)| {
+                let steps = layout.source_path_spelling(*index, ProgramPointKind::Exit)?;
+                Some((
+                    format!(
+                        "{}.result",
+                        diagnostics::describe_code_region_ref(&CodeRegionRef::Path(steps))
+                    ),
+                    value,
+                ))
+            })
+            .collect()
+    }
+
     /// The call that produced the algebraic value `term`: one index lookup.
     fn call_result_naming_algebraic(
         &self,
@@ -4264,7 +4321,7 @@ impl RecordedSnapshots {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
-        matches!(self.call_results.get(&index), Some(CValue::Parameter(held)) if held.as_ref() == term)
+        matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4282,7 +4339,7 @@ impl RecordedSnapshots {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if matches!(self.call_results.get(index), Some(CValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
+            if matches!(self.call_results.get(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
             {
                 return Some(CodeRegionRef::Region(*index));
             }
@@ -4291,7 +4348,7 @@ impl RecordedSnapshots {
         }
     }
 
-    fn region_allocation(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+    fn region_allocation(&self, region: &CodeRegionRef) -> Result<ProgramValue, String> {
         let (point, local) = self.region_result(region)?;
         let CodeRegionRef::Region(index) = &point.region else {
             unreachable!("resolved region")
@@ -4308,13 +4365,13 @@ impl RecordedSnapshots {
             .get(&SnapshotSelector::ProgramPoint(point))
             .ok_or("`.allocation` names an allocation this proof has not executed yet")?;
         let result_value = state.locals().get_native(&local);
-        let Some(CValue::Pointer(result)) = result_value.as_deref() else {
+        let Some(ProgramValue::Pointer(result)) = result_value.as_deref() else {
             return Err("allocation result was not recorded at its exit".to_string());
         };
         state
             .memory()
             .fresh_allocation_identity(result)
-            .map(CValue::Pointer)
+            .map(ProgramValue::Pointer)
             .ok_or_else(|| "region has no fresh allocation identity".to_string())
     }
 
@@ -4403,7 +4460,7 @@ impl RecordedSnapshots {
         }
     }
 
-    fn get_exact<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
+    fn get_exact<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
         let mut node = self.version.root.as_deref();
         while let Some(current) = node {
             match key.compare(&current.selector) {
@@ -4419,8 +4476,8 @@ impl RecordedSnapshots {
     /// as `memory`, with its state. One hash lookup; no snapshot is visited.
     fn point_reading_memory(
         &self,
-        memory: &crate::kernel::SharedCMemory,
-    ) -> Option<(&SnapshotSelector, &CState)> {
+        memory: &crate::kernel::SharedMemory,
+    ) -> Option<(&SnapshotSelector, &ExecutionState)> {
         let selector = self.memory_points.get(&memory.read_identity())?;
         Some((selector, self.get_exact(selector)?))
     }
@@ -4431,7 +4488,7 @@ impl RecordedSnapshots {
     fn point_naming_integer(
         &self,
         term: &crate::kernel::MachineTerm,
-    ) -> Option<(&SnapshotSelector, &str, &CState)> {
+    ) -> Option<(&SnapshotSelector, &str, &ExecutionState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, String::new());
         let mut found = self.value_points.get_key_value(&key);
@@ -4456,7 +4513,7 @@ impl RecordedSnapshots {
     /// `state`'s locals hold and the state inserted before it did not, at
     /// `selector`. A value keeps the first
     /// point that names it while that point's state still holds it.
-    fn record_value_points(&mut self, selector: &SnapshotSelector, state: &CState) {
+    fn record_value_points(&mut self, selector: &SnapshotSelector, state: &ExecutionState) {
         for (name, term) in state
             .locals()
             .changed_integer_holdings(self.last_locals.as_ref())
@@ -4533,8 +4590,8 @@ impl RecordedSnapshots {
     fn update_allocation_result(
         &mut self,
         selector: &SnapshotSelector,
-        prior: Option<&CState>,
-        next: Option<&CState>,
+        prior: Option<&ExecutionState>,
+        next: Option<&ExecutionState>,
     ) {
         let SnapshotSelector::ProgramPoint(ProgramPointRef {
             region: CodeRegionRef::Region(index),
@@ -4550,9 +4607,9 @@ impl RecordedSnapshots {
         else {
             return;
         };
-        let result = |state: &CState| {
+        let result = |state: &ExecutionState| {
             let native = state.locals().get_native(local)?;
-            let CValue::Pointer(value) = native.as_ref() else {
+            let ProgramValue::Pointer(value) = native.as_ref() else {
                 return None;
             };
             state
@@ -4588,8 +4645,8 @@ impl RecordedSnapshots {
     /// read. At most [`MEMORY_POINTS_NEAR`] are offered on each side.
     fn points_near_memory(
         &self,
-        memory: &crate::kernel::SharedCMemory,
-    ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
+        memory: &crate::kernel::SharedMemory,
+    ) -> impl Iterator<Item = (&SnapshotSelector, &ExecutionState)> {
         let identity = memory.read_identity();
         let after = self
             .memory_points
@@ -4613,7 +4670,7 @@ impl RecordedSnapshots {
     fn points_holding_pointer_block<'a>(
         &'a self,
         block: &'a crate::kernel::PointerBlock,
-    ) -> impl Iterator<Item = (&'a SnapshotSelector, &'a CState)> {
+    ) -> impl Iterator<Item = (&'a SnapshotSelector, &'a ExecutionState)> {
         let mut key = (block.clone(), String::new());
         let mut found = self.pointer_points.get_key_value(&key);
         std::iter::from_fn(move || {
@@ -4642,7 +4699,7 @@ impl RecordedSnapshots {
     fn points_holding_cell_integer(
         &self,
         term: &crate::kernel::MachineTerm,
-    ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
+    ) -> impl Iterator<Item = (&SnapshotSelector, &ExecutionState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);
         let mut first = true;
@@ -4672,7 +4729,7 @@ impl RecordedSnapshots {
     fn point_holding_field_value(
         &self,
         variable: crate::kernel::Variable,
-    ) -> Option<(&SnapshotSelector, &CState)> {
+    ) -> Option<(&SnapshotSelector, &ExecutionState)> {
         let selector = self.field_points.get(&variable)?;
         let state = self.get_exact(selector)?;
         let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
@@ -4684,7 +4741,11 @@ impl RecordedSnapshots {
         self.get(key).is_some()
     }
 
-    fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
+    fn insert(
+        &mut self,
+        selector: impl Into<SnapshotSelector>,
+        state: ExecutionState,
+    ) -> Option<ExecutionState> {
         let selector = self.recorded_spelling(selector.into());
         self.ambiguous_exit_points.remove(&selector);
         self.effect_offsets
@@ -4700,12 +4761,18 @@ impl RecordedSnapshots {
             kind: ProgramPointKind::Exit,
         }) = &selector
         {
-            let result = self
-                .source_layout
-                .as_ref()
-                .and_then(|layout| layout.call_result_local(*index))
-                .and_then(|local| state.locals().get(local))
-                .map(|value| value.clone().into_native());
+            // A call inside an expression leaves its result in the state by
+            // its number; one assigned to a local leaves it there.
+            let result =
+                self.source_layout
+                    .as_ref()
+                    .and_then(|layout| match layout.call_number(*index) {
+                        Some(call) => state.call_result(call).cloned(),
+                        None => layout
+                            .call_result_local(*index)
+                            .and_then(|local| state.locals().get(local))
+                            .map(|value| value.clone().into_native()),
+                    });
             self.record_call_result(*index, result);
         }
         self.record_value_points(&selector, &state);
@@ -4751,7 +4818,7 @@ impl RecordedSnapshots {
         None
     }
 
-    fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
+    fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<ExecutionState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), None);
@@ -4865,7 +4932,7 @@ impl RecordedSnapshots {
         Some(common)
     }
 
-    fn iter(&self) -> std::vec::IntoIter<(&SnapshotSelector, &CState)> {
+    fn iter(&self) -> std::vec::IntoIter<(&SnapshotSelector, &ExecutionState)> {
         let mut entries = Vec::new();
         recorded_snapshot_entries(self.version.root.as_deref(), &mut entries);
         entries.into_iter()
@@ -4892,7 +4959,7 @@ impl RecordedSnapshots {
     fn statement_entries_nearest(
         &self,
         anchor: usize,
-    ) -> impl Iterator<Item = (&ProgramPointRef, &CState)> {
+    ) -> impl Iterator<Item = (&ProgramPointRef, &ExecutionState)> {
         let selector = |index, kind| {
             SnapshotSelector::ProgramPoint(ProgramPointRef {
                 region: CodeRegionRef::Region(index),
@@ -4921,7 +4988,7 @@ impl RecordedSnapshots {
 
     /// Bounded, newest-first source points for diagnostic reconstruction.
     /// History can repeat a key; only its currently recorded state is returned.
-    fn recent(&self, limit: usize) -> Vec<(&SnapshotSelector, &CState)> {
+    fn recent(&self, limit: usize) -> Vec<(&SnapshotSelector, &ExecutionState)> {
         let mut result = Vec::new();
         let mut seen = BTreeSet::new();
         let mut change = self.version.history.as_ref();
@@ -4942,14 +5009,14 @@ impl RecordedSnapshots {
     /// The proof's marks, at most `limit` of them. `Mark` selectors sort
     /// after every program point, so they lead the newest-first walk and
     /// the walk stops at the first program point.
-    fn marks(&self, limit: usize) -> Vec<(&SnapshotSelector, &CState)> {
+    fn marks(&self, limit: usize) -> Vec<(&SnapshotSelector, &ExecutionState)> {
         self.iter_newest_first()
             .take_while(|(selector, _)| matches!(selector, SnapshotSelector::Mark(_)))
             .take(limit)
             .collect()
     }
 
-    fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut CState) -> bool) {
+    fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut ExecutionState) -> bool) {
         let mut retained = Self::new();
         retained.loop_labels = self.loop_labels.clone();
         retained.source_layout = self.source_layout.clone();
@@ -5034,7 +5101,7 @@ fn recorded_snapshot_height(node: Option<&std::sync::Arc<RecordedSnapshotNode>>)
 
 fn recorded_snapshot_node(
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
     left: Option<std::sync::Arc<RecordedSnapshotNode>>,
     right: Option<std::sync::Arc<RecordedSnapshotNode>>,
 ) -> std::sync::Arc<RecordedSnapshotNode> {
@@ -5053,7 +5120,7 @@ fn recorded_snapshot_node(
 
 fn recorded_snapshot_balance(
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
     mut left: Option<std::sync::Arc<RecordedSnapshotNode>>,
     mut right: Option<std::sync::Arc<RecordedSnapshotNode>>,
 ) -> std::sync::Arc<RecordedSnapshotNode> {
@@ -5135,7 +5202,7 @@ fn recorded_snapshot_balance(
 fn recorded_snapshot_insert(
     root: Option<&std::sync::Arc<RecordedSnapshotNode>>,
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
 ) -> std::sync::Arc<RecordedSnapshotNode> {
     let Some(root) = root else {
         return recorded_snapshot_node(selector, state, None, None);
@@ -5182,7 +5249,7 @@ impl<'a> RecordedSnapshotsNewestFirst<'a> {
 }
 
 impl<'a> Iterator for RecordedSnapshotsNewestFirst<'a> {
-    type Item = (&'a SnapshotSelector, &'a CState);
+    type Item = (&'a SnapshotSelector, &'a ExecutionState);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(node) = self.pending.pop() {
@@ -5197,7 +5264,7 @@ impl<'a> Iterator for RecordedSnapshotsNewestFirst<'a> {
 
 fn recorded_snapshot_entries<'a>(
     node: Option<&'a RecordedSnapshotNode>,
-    entries: &mut Vec<(&'a SnapshotSelector, &'a CState)>,
+    entries: &mut Vec<(&'a SnapshotSelector, &'a ExecutionState)>,
 ) {
     let Some(node) = node else {
         return;
@@ -5213,7 +5280,7 @@ fn recorded_snapshot_entries<'a>(
 struct SpecArrayRef {
     memory: SpecMemory,
     pointer: SpecExpression,
-    element_type: CType,
+    element_type: ProgramType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5239,7 +5306,7 @@ struct SpecElaborationContext {
     /// The recorded state a proof snapshot names, when the context is one:
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
-    snapshot_state: Option<CState>,
+    snapshot_state: Option<ExecutionState>,
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
@@ -5299,8 +5366,8 @@ impl SpecElaborationContext {
 
     fn old_state(
         &self,
-        entry_values: &BTreeMap<String, CValue>,
-        entry_memory: &CMemory,
+        entry_values: &BTreeMap<String, ProgramValue>,
+        entry_memory: &Memory,
     ) -> Result<Self, String> {
         if self.function_contract {
             return Ok(Self {
@@ -5356,9 +5423,9 @@ impl SpecElaborationContext {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ContractSegment {
     state: ContractSegmentState,
-    base: CExpression,
-    start: CExpression,
-    end: CExpression,
+    base: ProgramExpression,
+    start: ProgramExpression,
+    end: ProgramExpression,
     surface: ContractSegmentSurface,
     /// `uninitialized(p[a..b])`: the callee holds these bytes but makes no
     /// claim that they are initialized. The callee's proof starts with them
@@ -5382,12 +5449,12 @@ enum ContractSegmentSurface {
     Field {
         /// How the contract spelled the struct the field belongs to, when the
         /// parse had it. A base reached through a link reads as `old->left`
-        /// there, which is what the user wrote; the lowered `CExpression` for
+        /// there, which is what the user wrote; the lowered `ProgramExpression` for
         /// the same place reads as `load_int32_pointer(old)`, which is not.
         base: Option<Box<ContractExpression>>,
         name: String,
         element_width: Option<u32>,
-        element_type: Option<CType>,
+        element_type: Option<ProgramType>,
         /// A scalar field's slot runs to the next field, so its trailing
         /// bytes are padding: the value is this many bytes at its start.
         value_bytes: Option<u32>,
@@ -5405,7 +5472,7 @@ enum ContractSegmentSurface {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct StructRangeLayout {
     name: String,
-    layout: syntax::C0StructLayout,
+    layout: crate::languages::interface::RecordLayout,
 }
 
 impl std::hash::Hash for StructRangeLayout {
@@ -5467,7 +5534,7 @@ impl ContractSegment {
         }
     }
 
-    pub(crate) fn field_element_type(&self) -> Option<CType> {
+    pub(crate) fn field_element_type(&self) -> Option<ProgramType> {
         match &self.surface {
             ContractSegmentSurface::Field { element_type, .. } => *element_type,
             ContractSegmentSurface::Range { .. }
@@ -5521,7 +5588,7 @@ pub enum SourceProof {
 #[doc(hidden)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
-    pub(crate) call_result: Option<CValue>,
+    pub(crate) call_result: Option<ProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
     pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
@@ -5529,7 +5596,7 @@ pub struct CertifiedStatementTransition {
     /// The kernel fact context the theorem was proved under; retained with
     /// the theorem so the proof object checks its premises against exactly that.
     pub(crate) context: PureFactContext,
-    pub(crate) outcome: CStatementOutcome,
+    pub(crate) outcome: StatementOutcome,
     pub(crate) execution_facts: crate::kernel::ExecutionFacts,
     pub(crate) path_facts: Vec<Proposition>,
     pub(crate) obligations: Vec<ProofObligation>,
@@ -6666,7 +6733,7 @@ impl ProofMatch {
     /// The C local an execution-generated `match` splits on.
     pub(in crate::surface) fn scrutinee_name(&self) -> &str {
         match &self.scrutinee {
-            ContractExpression::CFragment(CExpression::Variable(name)) => name,
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name,
             _ => "",
         }
     }
@@ -7388,17 +7455,17 @@ pub enum SmartTactic {
 /// recorded at named snapshots.
 #[derive(Clone, Copy)]
 pub(in crate::surface) struct FixedStateFrame<'a> {
-    pub(in crate::surface) pre_state: &'a CState,
-    pub(in crate::surface) state: &'a CState,
-    pub(in crate::surface) result: Option<&'a CValue>,
+    pub(in crate::surface) pre_state: &'a ExecutionState,
+    pub(in crate::surface) state: &'a ExecutionState,
+    pub(in crate::surface) result: Option<&'a ProgramValue>,
     pub(in crate::surface) recorded_snapshots: &'a RecordedSnapshots,
 }
 
 impl<'a> FixedStateFrame<'a> {
     pub(in crate::surface) fn new(
-        pre_state: &'a CState,
-        state: &'a CState,
-        result: Option<&'a CValue>,
+        pre_state: &'a ExecutionState,
+        state: &'a ExecutionState,
+        result: Option<&'a ProgramValue>,
         recorded_snapshots: &'a RecordedSnapshots,
     ) -> Self {
         Self {
@@ -7414,8 +7481,8 @@ impl<'a> FixedStateFrame<'a> {
 /// position by position.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ParameterBinding<'a> {
-    pub(crate) parameters: &'a [syntax::C0Parameter],
-    pub(crate) arguments: &'a [CExpression],
+    pub(crate) parameters: &'a [crate::languages::interface::ImportedParameter],
+    pub(crate) arguments: &'a [ProgramExpression],
     /// Each parameter's position by name, when the caller built one: a
     /// lowering that reads a few parameters then looks up only those
     /// instead of building a map over every parameter.
@@ -7427,7 +7494,10 @@ pub(crate) struct ParameterBinding<'a> {
 }
 
 impl<'a> ParameterBinding<'a> {
-    pub(crate) fn new(parameters: &'a [syntax::C0Parameter], arguments: &'a [CExpression]) -> Self {
+    pub(crate) fn new(
+        parameters: &'a [crate::languages::interface::ImportedParameter],
+        arguments: &'a [ProgramExpression],
+    ) -> Self {
         Self {
             parameters,
             arguments,
@@ -7460,13 +7530,16 @@ impl<'a> ParameterBinding<'a> {
 /// One copy of a proof's parameter declarations and argument expressions,
 /// shared by every diagnostic the proof captures.
 pub(crate) struct ParameterNaming {
-    pub(crate) parameters: std::sync::Arc<[syntax::C0Parameter]>,
-    pub(crate) arguments: std::sync::Arc<[CExpression]>,
+    pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
+    pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
     pointer_sources: BTreeMap<Pointer, usize>,
 }
 
 impl ParameterNaming {
-    pub(crate) fn new(parameters: &[syntax::C0Parameter], arguments: &[CExpression]) -> Self {
+    pub(crate) fn new(
+        parameters: &[crate::languages::interface::ImportedParameter],
+        arguments: &[ProgramExpression],
+    ) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
         Self {
             parameters: parameters.into(),
@@ -7474,7 +7547,7 @@ impl ParameterNaming {
             pointer_sources: arguments.iter().enumerate().fold(
                 BTreeMap::new(),
                 |mut sources, (index, argument)| {
-                    if let CExpression::Value(CValue::Pointer(pointer)) = argument {
+                    if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
                         sources.entry(pointer.pointer().clone()).or_insert(index);
                     }
                     sources
@@ -7486,7 +7559,10 @@ impl ParameterNaming {
     pub(crate) fn pointer_source(
         &self,
         pointer: &Pointer,
-    ) -> Option<(&syntax::C0Parameter, &CExpression)> {
+    ) -> Option<(
+        &crate::languages::interface::ImportedParameter,
+        &ProgramExpression,
+    )> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_sources.get(pointer)?;
         Some((self.parameters.get(index)?, self.arguments.get(index)?))
@@ -7500,7 +7576,7 @@ pub(crate) struct ParameterIndex {
 }
 
 impl ParameterIndex {
-    pub(crate) fn new(parameters: &[syntax::C0Parameter]) -> Self {
+    pub(crate) fn new(parameters: &[crate::languages::interface::ImportedParameter]) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len());
         Self {
             positions: parameters
@@ -7545,7 +7621,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::CPointerValue) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::PointerValue) -> Result<u32, String> {
         if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
             pointer.object_class()
         {
@@ -7556,19 +7632,19 @@ impl<'a> SpecDefinitions<'a> {
                 .ok_or_else(|| format!("struct `{}` has no known layout", class.tag()));
         }
         pointer
-            .c_type()
+            .program_type()
             .pointee_type()
-            .map(CType::byte_width)
+            .map(ProgramType::byte_width)
             .ok_or_else(|| "expected a sized pointer element".to_string())
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PredicateEnvironment {
-    c_function_names: std::sync::Arc<BTreeMap<String, String>>,
+    program_function_names: std::sync::Arc<BTreeMap<String, String>>,
     definitions: BTreeMap<String, PredicateDefinition>,
     resource_state_dependent: BTreeSet<String>,
-    contract_signatures: BTreeMap<String, C0Type>,
+    contract_signatures: BTreeMap<String, InterfaceType>,
     contract_definitions: BTreeMap<String, ContractDefinition>,
 }
 
@@ -7607,7 +7683,7 @@ impl PredicateEnvironment {
                 .iter()
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
-            c_function_names: Default::default(),
+            program_function_names: Default::default(),
             contract_signatures: BTreeMap::new(),
             contract_definitions: BTreeMap::new(),
         }
@@ -7618,7 +7694,7 @@ impl PredicateEnvironment {
         definitions: &[ContractDefinition],
         names: &std::sync::Arc<BTreeMap<String, String>>,
     ) -> Self {
-        self.c_function_names = names.clone();
+        self.program_function_names = names.clone();
         self.contract_signatures = definitions
             .iter()
             .map(|definition| {
@@ -7640,12 +7716,12 @@ impl PredicateEnvironment {
     }
 
     fn function_execution_name<'a>(&'a self, source: &'a str) -> &'a str {
-        self.c_function_names
+        self.program_function_names
             .get(source)
             .map_or(source, String::as_str)
     }
 
-    fn contract_signature(&self, name: &str) -> Option<C0Type> {
+    fn contract_signature(&self, name: &str) -> Option<InterfaceType> {
         self.contract_signatures.get(name).copied()
     }
 
@@ -7675,7 +7751,9 @@ fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kerne
     let names = |expression: &ContractExpression| match expression {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name.clone()),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            Some(name.clone())
+        }
         _ => None,
     };
     let ContractExpression::AlgebraicMatch { scrutinee, arms } = definition.body()? else {
@@ -7826,31 +7904,33 @@ fn contract_expression_reads_memory(
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
-        | ContractExpression::CFragment(CExpression::Variable(_) | CExpression::Value(_)) => false,
+        | ContractExpression::ProgramExpression(
+            ProgramExpression::Variable(_) | ProgramExpression::Value(_),
+        ) => false,
         // `address(p)` of a name is that pointer value's integer
         // representation: it reads nothing its operand does not.
         ContractExpression::CUnary {
             operand,
             lowered:
-                CExpression::Cast {
+                ProgramExpression::Cast {
                     expression,
-                    target_type: CType::UInt64,
+                    target_type: ProgramType::UInt64,
                     ..
                 },
         } if matches!(
             expression.as_ref(),
-            CExpression::Variable(_) | CExpression::Value(_)
+            ProgramExpression::Variable(_) | ProgramExpression::Value(_)
         ) =>
         {
             contract_expression_reads_memory(operand, callees)
         }
-        ContractExpression::CFragment(CExpression::Cast {
+        ContractExpression::ProgramExpression(ProgramExpression::Cast {
             expression,
-            target_type: CType::UInt64,
+            target_type: ProgramType::UInt64,
             ..
         }) if matches!(
             expression.as_ref(),
-            CExpression::Variable(_) | CExpression::Value(_)
+            ProgramExpression::Variable(_) | ProgramExpression::Value(_)
         ) =>
         {
             false
@@ -7861,7 +7941,7 @@ fn contract_expression_reads_memory(
         | ContractExpression::ResourceField(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CUnary { .. }
         | ContractExpression::Field { .. }
         | ContractExpression::Index(_, _)
@@ -7993,7 +8073,7 @@ pub(super) struct ResourceEnvironment {
     /// C layouts are file-local, but resource bodies are shared by every
     /// function in that file. Retain them so struct-pointer arithmetic in a
     /// composite body keeps its physical element width.
-    struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
 }
 
 #[derive(Debug)]
@@ -8016,7 +8096,7 @@ impl ResourceEnvironment {
 
     fn with_struct_layouts(
         definitions: &[ResourceDefinition],
-        struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+        struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
     ) -> Self {
         Self {
             fold_sources: Default::default(),
@@ -8039,7 +8119,7 @@ impl ResourceEnvironment {
             .ok_or_else(|| ClickError::new("resource fold source metadata was not prepared"))
     }
 
-    fn struct_layouts(&self) -> &BTreeMap<String, syntax::C0StructLayout> {
+    fn struct_layouts(&self) -> &BTreeMap<String, crate::languages::interface::RecordLayout> {
         &self.struct_layouts
     }
 }
@@ -8130,7 +8210,7 @@ impl TheoremEnvironment {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-pub struct VerifiedCTheorem {
+pub struct VerifiedProgramTheorem {
     pub source_path: String,
     /// Fixed-size identity of all selected compiler imports on which this
     /// theorem depends, when verification used the prepared-import route.
@@ -8139,13 +8219,13 @@ pub struct VerifiedCTheorem {
     /// and resource semantics under which this theorem was checked. `None`
     /// denotes a theorem assembled by a legacy internal path that has not yet
     /// crossed the shared verification boundary.
-    pub artifact_identity: Option<verification::CProofArtifactIdentity>,
+    pub artifact_identity: Option<verification::ProofArtifactIdentity>,
     /// The C implementation target this theorem was checked under. Set when
     /// the artifact crosses the shared verification boundary; a legacy
     /// internal path leaves the default target in place.
     pub target: crate::languages::c::target::CTarget,
     /// The CLI proof boundary under which this artifact was produced.
-    pub selection: Option<CProofSelection>,
+    pub selection: Option<ProofSelection>,
     /// Shared by every theorem one proof issued, like `proof_tactics`: the
     /// block carries the whole grouped proof, and a proof issues a theorem
     /// per path and claim.
@@ -8156,20 +8236,20 @@ pub struct VerifiedCTheorem {
     pub proof_tactics: Option<std::sync::Arc<[ProofTactic]>>,
     pub expanded_proof: Option<ProofCertificate>,
     pub expansion_blocker: Option<String>,
-    pub specification: CFunctionSpecification,
+    pub specification: FunctionSpecification,
     pub theorem: Theorem,
     pub concrete_loop_execution: bool,
     /// Shared by every theorem one proof issued: a grouped proof issues one
     /// theorem per path and claim over the same checked execution, so the
     /// `Arc` both avoids a per-theorem copy of every path and gives
     /// finalization an exact identity to visit that execution once.
-    pub(crate) checked_execution: std::sync::Arc<CCheckedFunctionExecution>,
+    pub(crate) checked_execution: std::sync::Arc<CheckedFunctionExecution>,
     /// Exact proposition authority issued by the completed kernel proof and
     /// bound to this theorem's function path. Resource and effect claims keep
     /// their dedicated finalization checks instead.
-    pub(crate) checked_proposition: Option<CCheckedFunctionProposition>,
+    pub(crate) checked_proposition: Option<CheckedFunctionProposition>,
     pub(crate) frontier_loop_clauses: std::sync::Arc<[StructuralClause]>,
-    pub(crate) frontier_loop_rules: std::sync::Arc<[CVerifiedLoopRule]>,
+    pub(crate) frontier_loop_rules: std::sync::Arc<[VerifiedLoopRule]>,
     /// The entry the proof that issued this theorem was built from, shared
     /// by every theorem of that proof.
     pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
@@ -8178,13 +8258,13 @@ pub struct VerifiedCTheorem {
 // Retained executions and proof states share large graphs. Formatting a
 // verification result (notably unwrap_err's unexpected-success panic) must
 // identify the artifact without recursively dumping those graphs.
-impl fmt::Debug for VerifiedCTheorem {
+impl fmt::Debug for VerifiedProgramTheorem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let claim = match &self.claim {
             VerifiedClaim::Ensure { index, .. } => ("ensures", *index),
             VerifiedClaim::ExceptionalEnsure { index, .. } => ("exceptional ensures", *index),
         };
-        f.debug_struct("VerifiedCTheorem")
+        f.debug_struct("VerifiedProgramTheorem")
             .field("source_path", &self.source_path)
             .field("function", &self.function_block.signature().name())
             .field("claim", &claim)
@@ -8195,7 +8275,7 @@ impl fmt::Debug for VerifiedCTheorem {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CProofSelection {
+pub struct ProofSelection {
     pub entry_module: Option<String>,
     pub selected_proofs: Vec<String>,
     pub assumed_theorems: Vec<String>,
@@ -8216,7 +8296,7 @@ pub struct VerifiedPureTheorem {
     pub proof: Option<ProofCertificate>,
     pub requires: Vec<Proposition>,
     pub conclusion: Proposition,
-    pub(crate) kernel_authority: Option<CVerifiedPureTheorem>,
+    pub(crate) kernel_authority: Option<KernelVerifiedPureTheorem>,
     /// Retained source-proof evidence. Kernel axioms and execution/refinement
     /// rules retain their authority through their dedicated checker instead.
     pub(crate) checked_completion: Option<TheoremProofCompletion>,
@@ -8294,7 +8374,7 @@ struct ReportDetail {
     /// The resource fact a refused C operation needed and the state did not
     /// hold. Planning input, like an unresolved requirement: execution search opens the
     /// one folded resource whose body holds it (design/proof-reuse.md R4).
-    missing_resource: Option<crate::kernel::CResourceFact>,
+    missing_resource: Option<crate::kernel::ResourceFact>,
     /// The proposition a refused C operation needed, for the report's
     /// `goal:` line when no unresolved requirement carries it. Diagnostics
     /// only: no planner reads it.
@@ -8463,7 +8543,7 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// For the truthiness obligation an `assert` leaves on its false path
     /// (`0 == 1`, which holds only where that path is unreachable), the
     /// asserted condition: what a proof at the step's pre-state shows.
-    pub(in crate::surface) assertion_condition: Option<crate::kernel::CExpression>,
+    pub(in crate::surface) assertion_condition: Option<crate::kernel::ProgramExpression>,
     /// The Surface spelling the tactic that owes this requirement gave it
     /// where it created it, such as a `fold` body fact with the resource's
     /// arguments substituted. Proofs state the requirement this way.
@@ -8504,14 +8584,14 @@ fn current_timing_tactic() -> Option<TimingTacticContext> {
 }
 
 #[derive(Clone)]
-pub struct C0VerificationSession {
+pub struct ProgramVerificationSession {
     c_sources: Vec<(String, String)>,
     click_project: Option<ClickProject>,
     pub(crate) prepared_imports: Option<Vec<crate::languages::c::compiler_import::PreparedCImport>>,
     pub(crate) prepared_program_import: Option<crate::languages::PreparedProgram>,
     baseline_file: ClickFile,
-    verified_function_environment: CExecutionEnvironment,
-    environment_identity: verification::CProofArtifactIdentity,
+    verified_function_environment: ExecutionEnvironment,
+    environment_identity: verification::ProofArtifactIdentity,
     /// The kernel generation `verified_function_environment` was built
     /// under. Its snapshots live in this thread's kernel tables, which the
     /// next fresh verification on the thread replaces.
@@ -8609,7 +8689,7 @@ impl ClickFile {
 
     fn function_is_selected(&self, name: &str) -> bool {
         self.entry_module.as_ref().is_none_or(|entry| {
-            self.declaration_owner(&DeclarationIdentity::CFunction(name.to_string()))
+            self.declaration_owner(&DeclarationIdentity::ProgramFunction(name.to_string()))
                 .or_else(|| self.declaration_owner(&DeclarationIdentity::Tactic(name.to_string())))
                 == Some(entry.as_str())
         })
@@ -8965,25 +9045,27 @@ impl ContractDefinition {
         &parameters[..parameters.len() - self.value_parameters.len()]
     }
 
-    pub fn function_pointer_type(&self) -> C0Type {
+    pub fn function_pointer_type(&self) -> InterfaceType {
         let parameter_types = self
             .call_parameters()
             .iter()
             .map(|parameter| {
                 (
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                     parameter.pointee_is_constant(),
                 )
             })
             .collect::<Vec<_>>();
-        C0Type::FunctionPointer(crate::kernel::CType::qualified_function_pointer_signature(
-            self.function_block
-                .signature()
-                .return_type()
-                .to_kernel_type(),
-            self.function_block.signature().return_pointee_is_constant(),
-            &parameter_types,
-        ))
+        InterfaceType::FunctionPointer(
+            crate::kernel::ProgramType::qualified_function_pointer_signature(
+                self.function_block
+                    .signature()
+                    .return_type()
+                    .to_kernel_type(),
+                self.function_block.signature().return_pointee_is_constant(),
+                &parameter_types,
+            ),
+        )
     }
 }
 
@@ -9036,7 +9118,9 @@ impl FunctionBlock {
             .map(|(from, to)| {
                 (
                     from.clone(),
-                    ContractExpression::CFragment(crate::kernel::c_variable(to.clone())),
+                    ContractExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(to.clone()),
+                    ),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -9104,8 +9188,8 @@ impl FunctionBlock {
     pub(in crate::surface) fn generic_instance_alias(
         &self,
         name: &str,
-        parameter_types: &[C0Type],
-        return_type: C0Type,
+        parameter_types: &[InterfaceType],
+        return_type: InterfaceType,
     ) -> Result<FunctionBlock, String> {
         if parameter_types.len() != self.signature.parameters.len() {
             return Err(format!(
@@ -9115,12 +9199,17 @@ impl FunctionBlock {
             ));
         }
         let mut alias = self.dispatch_alias(name);
-        for (parameter, c_type) in alias.signature.parameters.iter_mut().zip(parameter_types) {
-            if matches!(parameter.click_type, ClickType::C(C0Type::Parameter(_))) {
-                parameter.click_type = ClickType::C(*c_type);
+        for (parameter, interface_type) in
+            alias.signature.parameters.iter_mut().zip(parameter_types)
+        {
+            if matches!(
+                parameter.click_type,
+                ClickType::Program(InterfaceType::Parameter(_))
+            ) {
+                parameter.click_type = ClickType::Program(*interface_type);
             }
         }
-        if matches!(alias.signature.return_type, C0Type::Parameter(_)) {
+        if matches!(alias.signature.return_type, InterfaceType::Parameter(_)) {
             alias.signature.return_type = return_type;
         }
         Ok(alias)
@@ -9256,13 +9345,13 @@ impl FunctionBlock {
     }
 
     /// The label of `claim`.
-    pub(in crate::surface) fn claim_label(&self, claim: expansion::CProofClaim) -> String {
+    pub(in crate::surface) fn claim_label(&self, claim: expansion::ContractProofClaim) -> String {
         match claim {
-            expansion::CProofClaim::Ensure(index) => self.ensure_claim_label(index),
-            expansion::CProofClaim::ExceptionalEnsure(index) => {
+            expansion::ContractProofClaim::Ensure(index) => self.ensure_claim_label(index),
+            expansion::ContractProofClaim::ExceptionalEnsure(index) => {
                 self.exceptional_ensure_claim_label(index)
             }
-            expansion::CProofClaim::Grouped => self.contract_claim_label(),
+            expansion::ContractProofClaim::Grouped => self.contract_claim_label(),
         }
     }
 
@@ -9270,21 +9359,24 @@ impl FunctionBlock {
     /// when the block has one, then the first ensure or exceptional ensure
     /// with that label. A flattened aggregate clause's members share their
     /// clause's label; this selects the first, whose source proof they share.
-    pub(in crate::surface) fn claim_by_label(&self, label: &str) -> Option<expansion::CProofClaim> {
+    pub(in crate::surface) fn claim_by_label(
+        &self,
+        label: &str,
+    ) -> Option<expansion::ContractProofClaim> {
         // Every label of this block starts with its name and a dot.
         label
             .strip_prefix(self.signature.name())?
             .strip_prefix('.')?;
         if label == self.contract_claim_label() && self.covering_proof().is_some() {
-            return Some(expansion::CProofClaim::Grouped);
+            return Some(expansion::ContractProofClaim::Grouped);
         }
         (0..self.ensures.len())
             .find(|index| self.ensure_claim_label(*index) == label)
-            .map(expansion::CProofClaim::Ensure)
+            .map(expansion::ContractProofClaim::Ensure)
             .or_else(|| {
                 (0..self.exceptional_ensures.len())
                     .find(|index| self.exceptional_ensure_claim_label(*index) == label)
-                    .map(expansion::CProofClaim::ExceptionalEnsure)
+                    .map(expansion::ContractProofClaim::ExceptionalEnsure)
             })
     }
 
@@ -9300,7 +9392,7 @@ impl FunctionBlock {
         )
     }
 
-    pub fn decreases(&self) -> Option<&CFunctionDecrease> {
+    pub fn decreases(&self) -> Option<&FunctionDecrease> {
         self.decreases.as_ref()
     }
 
@@ -9411,7 +9503,11 @@ impl FunctionBlock {
 }
 
 impl FunctionSignature {
-    fn matches_c_definition(&self, source_path: &str, function: &syntax::C0Function) -> bool {
+    fn matches_c_definition(
+        &self,
+        source_path: &str,
+        function: &crate::languages::interface::ImportedFunction,
+    ) -> bool {
         let name = if let Some(source) = &self.c_source {
             if source != source_path {
                 return false;
@@ -9426,7 +9522,7 @@ impl FunctionSignature {
     }
 
     pub fn new(
-        return_type: C0Type,
+        return_type: InterfaceType,
         name: impl Into<String>,
         parameters: Vec<FunctionParameter>,
     ) -> Self {
@@ -9454,13 +9550,13 @@ impl FunctionSignature {
     /// The iterator each loop of this Rust function advances, by loop index.
     pub(crate) fn rust_loop_iterators(
         &self,
-    ) -> &std::sync::Arc<[Option<syntax::RustLoopIterator>]> {
+    ) -> &std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]> {
         self.rust_spelling.loop_iterators()
     }
 
     pub(crate) fn with_rust_loop_iterators(
         mut self,
-        iterators: &[Option<syntax::RustLoopIterator>],
+        iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     ) -> Self {
         self.rust_spelling.1 = std::sync::Arc::from(iterators);
         self
@@ -9488,17 +9584,17 @@ impl FunctionSignature {
         &self.declared_loadable_bytes
     }
 
-    pub fn return_type(&self) -> C0Type {
+    pub fn return_type(&self) -> InterfaceType {
         self.return_type
     }
 
     pub(crate) fn return_click_type(&self) -> ClickType {
         match &self.return_struct_name {
             Some(struct_name) if self.return_type.is_pointer() => ClickType::CObjectPointer {
-                c_type: self.return_type,
+                interface_type: self.return_type,
                 struct_name: struct_name.clone(),
             },
-            _ => ClickType::C(self.return_type),
+            _ => ClickType::Program(self.return_type),
         }
     }
 
@@ -9510,7 +9606,7 @@ impl FunctionSignature {
         &self.parameters
     }
 
-    pub fn exceptional_type(&self) -> Option<C0Type> {
+    pub fn exceptional_type(&self) -> Option<InterfaceType> {
         self.exceptional_type
     }
 
@@ -9531,28 +9627,30 @@ impl FunctionSignature {
             use crate::kernel::AlgebraicValueType as V;
             match ty {
                 V::Parameter(_) => true,
-                V::C(crate::kernel::CType::Parameter(name)) => abstract_type(*name),
+                V::Program(crate::kernel::ProgramType::Parameter(name)) => abstract_type(*name),
                 V::Algebraic { arguments, .. } => arguments.iter().any(abstract_value_type),
                 _ => false,
             }
         }
-        let is_abstract = |ty: C0Type| matches!(ty, C0Type::Parameter(name) if abstract_type(name));
+        let is_abstract =
+            |ty: InterfaceType| matches!(ty, InterfaceType::Parameter(name) if abstract_type(name));
         is_abstract(self.return_type)
             || self
                 .parameters
                 .iter()
-                .any(|parameter| is_abstract(parameter.c_type()))
+                .any(|parameter| is_abstract(parameter.interface_type()))
     }
 }
 
 impl FunctionParameter {
-    pub fn c_type(&self) -> C0Type {
+    pub fn interface_type(&self) -> InterfaceType {
         match &self.click_type {
             ClickType::Resource => panic!("a Resource parameter has no C type"),
             ClickType::Parameter(_) => {
                 panic!("a generic Click parameter has no concrete C type")
             }
-            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => *c_type,
+            ClickType::Program(interface_type)
+            | ClickType::CObjectPointer { interface_type, .. } => *interface_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
@@ -9575,7 +9673,9 @@ impl FunctionParameter {
         })
     }
 
-    pub fn function_pointer_signature(&self) -> Option<&syntax::C0FunctionPointerSignature> {
+    pub fn function_pointer_signature(
+        &self,
+    ) -> Option<&crate::languages::interface::CallbackInterface> {
         self.function_pointer_signature.as_ref()
     }
 
@@ -9656,12 +9756,14 @@ fn requirement_contains_resource(requirement: &Requirement) -> bool {
 fn parameter_is_click_array_ref(parameter: &FunctionParameter) -> bool {
     parameter
         .click_type()
-        .c_type()
-        .is_some_and(|c_type| click_array_element_type(c_type).is_some())
+        .interface_type()
+        .is_some_and(|interface_type| click_array_element_type(interface_type).is_some())
 }
 
-fn click_array_element_type(c_type: C0Type) -> Option<CType> {
-    c_type.pointee_type().map(C0Type::to_kernel_type)
+fn click_array_element_type(interface_type: InterfaceType) -> Option<ProgramType> {
+    interface_type
+        .pointee_type()
+        .map(InterfaceType::to_kernel_type)
 }
 
 impl EnsureClause {
@@ -10015,7 +10117,7 @@ fn collect_unfold_tactic_names(tactics: &[ProofTactic], names: &mut Vec<String>)
     }
 }
 
-impl VerifiedCTheorem {
+impl VerifiedProgramTheorem {
     /// The concrete C implementation assumptions used by this verifier.
     /// Results are not claims of portability to other target profiles.
     pub fn target(&self) -> crate::languages::c::target::CTarget {
@@ -10840,13 +10942,13 @@ impl ClickError {
         self
     }
 
-    pub(in crate::surface) fn missing_resource(&self) -> Option<&crate::kernel::CResourceFact> {
+    pub(in crate::surface) fn missing_resource(&self) -> Option<&crate::kernel::ResourceFact> {
         self.report_detail.as_ref()?.missing_resource.as_ref()
     }
 
     pub(in crate::surface) fn with_missing_resource(
         mut self,
-        resource: &crate::kernel::CResourceFact,
+        resource: &crate::kernel::ResourceFact,
     ) -> Self {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).missing_resource =
             Some(resource.clone());
@@ -10857,10 +10959,10 @@ impl ClickError {
     /// what refused it.
     pub(in crate::surface) fn with_runtime_missing_resource(
         self,
-        error: &crate::kernel::CRuntimeError,
+        error: &crate::kernel::RuntimeError,
     ) -> Self {
         match error {
-            crate::kernel::CRuntimeError::MissingResource { resource } => {
+            crate::kernel::RuntimeError::MissingResource { resource } => {
                 self.with_missing_resource(resource)
             }
             _ => self,
@@ -11022,7 +11124,7 @@ impl ClickError {
     /// truthiness requirement; see [`UnresolvedRequirement::assertion_condition`].
     pub(in crate::surface) fn with_assertion_condition(
         mut self,
-        condition: Option<&crate::kernel::CExpression>,
+        condition: Option<&crate::kernel::ProgramExpression>,
     ) -> Self {
         if let (Some(condition), Some(requirement)) =
             (condition, self.unresolved_requirement.as_mut())

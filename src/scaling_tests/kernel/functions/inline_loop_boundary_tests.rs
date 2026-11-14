@@ -15,8 +15,8 @@ fn symbolic_inline_loop_refusal_work_is_independent_of_unroll_allowance() {
             call(int32(MachineTerm::Variable(Variable(7))), &mut budget)
         });
         let paths = result.unwrap();
-        assert!(matches!(paths.as_slice(), [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)), ..
+        assert!(matches!(paths.as_slice(), [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)), ..
         }] if message.contains("drain_to_zero") && message.contains("loop guard cannot be decided at the call site")));
         assert_eq!(budget.loop_unrolls, limit - 1);
         assert!(budget.inline_call_name.is_none());

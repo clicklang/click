@@ -63,31 +63,31 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
 
 #[test]
 fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
-    use crate::kernel::{CMemory, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{Memory, Pointer, PointerBlock, PointerOffsetTerm};
     let target = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
-        let mut before = CMemory::new();
+        let mut before = Memory::new();
         for index in 0..count {
             before = before.store(
                 Pointer {
                     block: PointerBlock::Heap(index),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(MachineTerm::constant(7)),
             );
         }
         let name = crate::kernel::canonical_form_of_load(
-            crate::kernel::intern_c_memory(before.clone()),
+            crate::kernel::intern_memory(before.clone()),
             target.clone(),
             crate::kernel::LoadKind::Int32,
         );
         let after = before
             .clone()
-            .materialize_named_cell(target.clone(), CValue::Int32(name));
+            .materialize_named_cell(target.clone(), ProgramValue::Int32(name));
         let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
             super::super::memory_only_adds_named_cells(&before, &after)
         });
@@ -103,21 +103,20 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
 
 #[test]
 fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_facts() {
-    let (core, mut value) = constructor_partition_fixture_with_type(2, CType::Int32Pointer);
+    let (core, mut value) = constructor_partition_fixture_with_type(2, ProgramType::Int32Pointer);
     let payload = Pointer::symbolic(Variable(7_000_000));
     let program = Pointer::symbolic(Variable(1_000_001));
     value.node = crate::kernel::AlgebraicTermNode::Constructor {
         variant: "C0".into(),
-        fields: vec![crate::kernel::AlgebraicValue::C(CValue::typed_pointer(
-            payload.clone(),
-            CType::Int32Pointer,
-        ))],
+        fields: vec![crate::kernel::AlgebraicValue::Program(
+            ProgramValue::typed_pointer(payload.clone(), ProgramType::Int32Pointer),
+        )],
     };
     let alias = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::pointer_equal(payload.clone(), program.clone()),
         true,
     );
-    let env = crate::kernel::CExecutionEnvironment::new();
+    let env = crate::kernel::ExecutionEnvironment::new();
     let mut samples = Vec::new();
     for size in [8, 32, 128] {
         let mut facts = ProofFacts::default().with_fact(alias.clone());
@@ -218,7 +217,7 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
     assert!(crate::kernel::arm_algebraic_payload_spelling(&value, "Other", 0).is_none());
     assert!(crate::kernel::arm_algebraic_payload_spelling(&value, "Pair", 2).is_none());
     assert!(crate::kernel::arm_algebraic_payload_spelling(&payload, "Pair", 0).is_none());
-    let environment = crate::kernel::CExecutionEnvironment::new();
+    let environment = crate::kernel::ExecutionEnvironment::new();
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let facts = ProofFacts::from_ordered(
@@ -265,7 +264,7 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
 
 #[test]
 fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
-    let before = (0..2048).fold(CMemory::new(), |memory, index| {
+    let before = (0..2048).fold(Memory::new(), |memory, index| {
         memory.store(
             Pointer {
                 block: "ambient".into(),
@@ -276,20 +275,20 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
     });
     for size in [16u32, 32, 64, 128] {
         let cached = (0..size).fold(before.clone(), |memory, index| {
-            let source = crate::kernel::intern_c_memory_ref(&memory);
+            let source = crate::kernel::intern_memory_ref(&memory);
             memory.with_seeded_cells(
                 Pointer {
                     block: format!("cache-{index}").into(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(0),
                 },
                 4,
-                crate::kernel::CType::Int32,
+                crate::kernel::ProgramType::Int32,
                 0,
                 2,
                 source,
             )
         });
-        let view = |memory, index| Proposition::CMemoryLoadable {
+        let view = |memory, index| Proposition::MemoryLoadable {
             memory,
             base: Pointer {
                 block: "body".into(),
@@ -321,18 +320,18 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
 #[test]
 fn return_materialized_reads_scale_with_the_selected_cells() {
     let samples = [16, 32, 64, 128].map(|size| {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let pointers: Vec<_> = (0..size).map(|i| Pointer::symbolic(Variable(i))).collect();
         for pointer in &pointers {
             memory = memory.store(pointer.clone(), int32(7));
         }
-        let state = CState::new().with_memory(memory.clone());
+        let state = ExecutionState::new().with_memory(memory.clone());
         let mut base = ProofFacts::default();
         let (function, mut events) = returned_proposition_trace(&state, &base);
         let initial = base.clone();
         let context = returned_proposition_context(&state);
         for pointer in pointers {
-            let fact = Proposition::CMemoryLoadable {
+            let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer,
                 bytes: MachineTerm::constant(4),
@@ -359,7 +358,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
 #[test]
 fn return_proposition_context_validation_scales_with_introductions() {
     let samples = [16, 32, 64, 128].map(|size| {
-        let state = CState::new();
+        let state = ExecutionState::new();
         let mut base = ProofFacts::default();
         let premises: Vec<_> = (0..size)
             .map(|i| {
@@ -404,9 +403,11 @@ fn return_proposition_context_validation_scales_with_introductions() {
 #[test]
 fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let instance = ResourceInstance::new(
         Variable(1),
         "cell".into(),
@@ -415,20 +416,20 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![],
         None,
         false,
-        vec![crate::kernel::CResourceSpec::owned_memory(
-            crate::kernel::CMemorySegment {
+        vec![crate::kernel::ResourceSpec::owned_memory(
+            crate::kernel::MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: CExpression::Value(CValue::pointer(crate::kernel::Pointer::symbolic(
-                    Variable(100),
-                ))),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Value(ProgramValue::pointer(
+                    crate::kernel::Pointer::symbolic(Variable(100)),
+                )),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 element_width: 4,
                 guard: None,
             },
@@ -436,11 +437,11 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         vec![],
     )
     .with_instance_schema(Some(schema));
-    let statement = CStatement::Return(CExpression::Value(int32(7)));
-    let function = c_function(CType::Int32, "test", vec![], statement.clone())
+    let statement = ProgramStatement::Return(ProgramExpression::Value(int32(7)));
+    let function = program_function(ProgramType::Int32, "test", vec![], statement.clone())
         .with_composite_resource_definitions(vec![definition.clone()]);
-    let selected = CResourceFact::own(CResource::Instance(instance.clone()));
-    let folded = CState::new()
+    let selected = ResourceFact::own(Resource::Instance(instance.clone()));
+    let folded = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
     let (open, _) = crate::kernel::rewrite_resource_instance(
@@ -451,13 +452,13 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         true,
     )
     .unwrap();
-    let trace = |state: CState| {
+    let trace = |state: ExecutionState| {
         let mut trace = ExecutionEvidence::default();
         trace.push(CheckedExecutionEvent::Statement(Theorem::new(
-            Proposition::CStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement.clone()),
-                outcome: CStatementOutcome::Return {
+                outcome: StatementOutcome::Return {
                     value: int32(7).into(),
                     state: Box::new(state),
                 },
@@ -477,7 +478,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 // A sibling lacks the body ownership. Its state cannot be used
                 // to satisfy this path's fold, or vice versa.
                 trace(if index == size - 1 {
-                    CState::new()
+                    ExecutionState::new()
                 } else {
                     open.clone()
                 })
@@ -488,11 +489,11 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         core.return_proof_contexts = core.return_proof_contexts.with_inserted(
             size / 2,
             Arc::new(CheckedReturnContext {
-                origin: CStatementOutcome::Return {
+                origin: StatementOutcome::Return {
                     value: int32(7).into(),
                     state: Box::new(open.clone()),
                 },
-                published: CFunctionOutcome::Return {
+                published: FunctionOutcome::Return {
                     value: int32(7).into(),
                     state: Box::new(open.clone()),
                 },
@@ -542,7 +543,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             trace_completion(&function, &events, facts.assumptions(), false).unwrap();
         // The fold publishes read authority for the cells it consumed;
         // apart from that observation the state is the folded one.
-        let CStatementOutcome::Return { value, state } = outcome else {
+        let StatementOutcome::Return { value, state } = outcome else {
             panic!("the completion returns");
         };
         assert_eq!(*value.native(), int32(7));
@@ -634,9 +635,11 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
 #[test]
 fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let instance = ResourceInstance::new(
         Variable(1),
         "cell".into(),
@@ -645,17 +648,17 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new("cell", vec![], None, false, vec![], vec![])
+    let definition = CompositeResourceDefinition::new("cell", vec![], None, false, vec![], vec![])
         .with_instance_schema(Some(schema));
-    let function = c_function(
-        CType::Void,
+    let function = program_function(
+        ProgramType::Void,
         "test",
         vec![],
-        CStatement::Return(CExpression::Value(CValue::Void)),
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
-    let selected = CResourceFact::own(CResource::Instance(instance.clone()));
-    let before = CState::new()
+    let selected = ResourceFact::own(Resource::Instance(instance.clone()));
+    let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
     let (opened, _) = crate::kernel::rewrite_resource_instance(
@@ -675,7 +678,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
         opened
             .resources()
             .clone()
-            .unchecked_with_fact(CResourceFact::own_token("forged".into(), vec![])),
+            .unchecked_with_fact(ResourceFact::own_token("forged".into(), vec![])),
     );
     assert!(
         CheckedResourceRewrite::check(
@@ -685,7 +688,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     );
     let forged = opened
         .clone()
-        .with_memory(CMemory::new().with_block("invented", 4));
+        .with_memory(Memory::new().with_block("invented", 4));
     assert!(
         CheckedResourceRewrite::check(
             &function, &before, &facts, &selected, &forged, &facts, &calls
@@ -737,7 +740,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
             unrelated.identity = Variable(identity);
             state.resources = state
                 .resources
-                .unchecked_with_fact(CResourceFact::own(CResource::Instance(unrelated)));
+                .unchecked_with_fact(ResourceFact::own(Resource::Instance(unrelated)));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let (open, _) = crate::kernel::rewrite_resource_instance(
@@ -776,7 +779,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     assert!(
         CheckedResourceRewrite::check(
             &function,
-            &CState::new(),
+            &ExecutionState::new(),
             &facts,
             &selected,
             &before,
@@ -791,8 +794,8 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
 fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
     let mut samples = Vec::new();
     for size in [64_u32, 128, 256, 512] {
-        let mut memory = CMemory::new();
-        let mut then_state = CState::new().with_local("changed", int32(1));
+        let mut memory = Memory::new();
+        let mut then_state = ExecutionState::new().with_local("changed", int32(1));
         let mut stable_locals = BTreeMap::new();
         for index in 0..size {
             let name = format!("stable_{index}");
@@ -813,13 +816,13 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
         let ((then_join, else_join), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 (
-                    crate::kernel::abstract_c_state_for_interface_join_across(
+                    crate::kernel::abstract_execution_state_for_interface_join_across(
                         &then_state,
                         &siblings,
                         0,
                     )
                     .expect("the then arm should abstract"),
-                    crate::kernel::abstract_c_state_for_interface_join_across(
+                    crate::kernel::abstract_execution_state_for_interface_join_across(
                         &else_state,
                         &siblings,
                         0,
@@ -900,27 +903,26 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
-    use crate::kernel::{CPointerValue, ConditionTerm, SpecMemory};
+    use crate::kernel::{ConditionTerm, PointerValue, SpecMemory};
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Pointer::symbolic(Variable(951_000));
     let alias = Pointer::symbolic(Variable(951_001));
     let value = MachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
-        pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
-            alias.clone(),
-            CType::UInt64Pointer,
-        )))),
-        value_type: CType::UInt64,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+            PointerValue::new(alias.clone(), ProgramType::UInt64Pointer),
+        ))),
+        value_type: ProgramType::UInt64,
     };
     let spec = SpecProposition::Comparison {
         left: load.clone(),
-        operator: CComparisonOperator::Equal,
-        right: SpecExpression::Value(CValue::UInt64(value.clone())),
+        operator: ComparisonOperator::Equal,
+        right: SpecExpression::Value(ProgramValue::UInt64(value.clone())),
     };
     let mut previous = None;
     for count in [16_u32, 64, 256, 1024] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut parent = ProofFacts::default();
         for index in 0..count {
             memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
@@ -932,13 +934,13 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
                 true,
             ));
         }
-        memory = memory.store(owner.clone(), CValue::UInt64(value.clone()));
-        let state = CState::new().with_memory(memory.clone());
+        memory = memory.store(owner.clone(), ProgramValue::UInt64(value.clone()));
+        let state = ExecutionState::new().with_memory(memory.clone());
         let arm = parent.with_fact(Proposition::ConditionIs(
             ConditionTerm::pointer_equal(alias.clone(), owner.clone()),
             true,
         ));
-        let check = |state: &CState, facts: &ProofFacts, spec: &SpecProposition| {
+        let check = |state: &ExecutionState, facts: &ProofFacts, spec: &SpecProposition| {
             CheckedInterfaceLowering::check(
                 spec,
                 state,
@@ -964,7 +966,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
             "logical value evidence does not authorize a C read"
         );
         for (offset, overwrite) in [
-            (0, CValue::UInt64(MachineTerm::uint64_constant(7))),
+            (0, ProgramValue::UInt64(MachineTerm::uint64_constant(7))),
             (4, int32(7)),
         ] {
             let address = owner.offset_by_bytes(offset);
@@ -985,9 +987,9 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
 
 #[test]
 fn interface_read_premises_are_indexed_and_check_the_exact_range() {
-    use crate::kernel::{CMemory, Pointer};
-    let memory = CMemory::new();
-    let readable = |memory: CMemory, block: String, width| Proposition::CMemoryLoadable {
+    use crate::kernel::{Memory, Pointer};
+    let memory = Memory::new();
+    let readable = |memory: Memory, block: String, width| Proposition::MemoryLoadable {
         memory,
         base: Pointer {
             block: block.into(),
@@ -1017,7 +1019,7 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
                 selected
             ));
             assert!(!interface_read_is_subrange(
-                &readable(CMemory::new().with_block("other", 4), "selected".into(), 4),
+                &readable(Memory::new().with_block("other", 4), "selected".into(), 4),
                 selected
             ));
         });
@@ -1035,12 +1037,12 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
 fn interface_lowering_retention_shares_unrelated_history() {
     let spec = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(1)),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(1)),
     };
     let samples = [16, 32, 64, 128].map(|size| {
         let mut facts = ProofFacts::default();
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for index in 0..size {
             facts = facts.with_fact(Proposition::Predicate {
                 name: format!("unrelated_{index}"),
@@ -1080,9 +1082,11 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
     let mut samples = Vec::new();
     for size in [4u32, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
-        let schema =
-            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        let schema = ResourceFieldSchema::new(vec![(
+            "tag".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap();
         let instance = ResourceInstance::new(
             Variable(995_800),
             "cell".into(),
@@ -1093,22 +1097,26 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
         .unwrap();
         let clauses = (0..size)
             .map(|index| crate::kernel::SpecProposition::Comparison {
-                left: crate::kernel::SpecExpression::CExpression(CExpression::Value(int32(index))),
-                operator: crate::kernel::CComparisonOperator::Equal,
-                right: crate::kernel::SpecExpression::CExpression(CExpression::Value(int32(index))),
+                left: crate::kernel::SpecExpression::ProgramExpression(ProgramExpression::Value(
+                    int32(index),
+                )),
+                operator: crate::kernel::ComparisonOperator::Equal,
+                right: crate::kernel::SpecExpression::ProgramExpression(ProgramExpression::Value(
+                    int32(index),
+                )),
             })
             .collect();
         let definition =
-            CCompositeResourceDefinition::new("cell", vec![], None, false, vec![], clauses)
+            CompositeResourceDefinition::new("cell", vec![], None, false, vec![], clauses)
                 .with_instance_schema(Some(schema));
-        let function = c_function(
-            CType::Void,
+        let function = program_function(
+            ProgramType::Void,
             "test",
             vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
+            ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         )
         .with_composite_resource_definitions(vec![definition.clone()]);
-        let before = CState::new();
+        let before = ExecutionState::new();
         let facts = ProofFacts::default();
         let (_, direct) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::rewrite_resource_instance_selecting_children(
@@ -1154,12 +1162,12 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.store(base.offset_by_bytes(index * 4), int32(index));
         }
         let range =
-            crate::kernel::CMemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 4);
+            crate::kernel::MemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 4);
         let assumptions = PureFactContext::new();
         let after = memory.clone().with_call_memory_havoc(
             Variable(9_940_000),
@@ -1167,11 +1175,11 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
             &assumptions,
             None,
         );
-        let before_state = CState::new().with_memory(memory.clone());
+        let before_state = ExecutionState::new().with_memory(memory.clone());
         let after_state = before_state.clone().with_memory(after.clone());
         let parent =
             ExecutionProofCore::at_entry(before_state.clone(), ExecutionFrontier::default());
-        let effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+        let effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
             before: memory.clone(),
             after: after.clone(),
             mutable_ranges: vec![range.clone()],
@@ -1199,7 +1207,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
             )
         });
         let joined = joined.unwrap();
-        assert!(joined.iter().any(|fact| fact.is_join_summary() && matches!(fact.proposition(), Proposition::CMemoryEffectSummary { mutable_ranges, .. } if mutable_ranges == std::slice::from_ref(&range))));
+        assert!(joined.iter().any(|fact| fact.is_join_summary() && matches!(fact.proposition(), Proposition::MemoryEffectSummary { mutable_ranges, .. } if mutable_ranges == std::slice::from_ref(&range))));
         samples.push(work);
     }
     assert!(
@@ -1215,12 +1223,12 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
         let (core, mut value) = constructor_partition_fixture(2);
         value.node = crate::kernel::AlgebraicTermNode::Constructor {
             variant: "C0".into(),
-            fields: vec![crate::kernel::AlgebraicValue::C(CValue::Int32(
+            fields: vec![crate::kernel::AlgebraicValue::Program(ProgramValue::Int32(
                 MachineTerm::ClickFunctionApplication {
                     name: "opaque_payload".into(),
                     arguments: (0..count)
                         .map(|i| {
-                            crate::kernel::PureFunctionArgument::Value(CValue::Int32(
+                            crate::kernel::PureFunctionArgument::Value(ProgramValue::Int32(
                                 MachineTerm::Variable(Variable(8_100_000 + i)),
                             ))
                         })
@@ -1233,7 +1241,7 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
             .algebraic_case_partition(
                 &root,
                 &value,
-                &crate::kernel::CExecutionEnvironment::new(),
+                &crate::kernel::ExecutionEnvironment::new(),
                 &[],
                 None,
                 4_000_000,

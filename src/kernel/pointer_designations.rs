@@ -1,5 +1,5 @@
 //! Value-origin equality. Address congruence must never enter this index.
-use super::CPointerValue;
+use super::PointerValue;
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// Persistent union by size. Insertion touches two root paths; a branch
@@ -112,7 +112,7 @@ impl<K: Ord + Clone> ValueClasses<K> {
     }
 }
 
-pub(super) fn prefer_pointer(left: &CPointerValue, right: &CPointerValue) -> CPointerValue {
+pub(super) fn prefer_pointer(left: &PointerValue, right: &PointerValue) -> PointerValue {
     // A contract supplies the designation of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over an unknown extent.
     if !left.extent_is_known() && right.extent_is_known()
@@ -150,10 +150,10 @@ mod tests {
         assert!(!sibling.equal(&100, &500));
     }
 
-    fn value(id: u64) -> CPointerValue {
-        CPointerValue::new(Pointer::symbolic(Variable(id)), CType::Int32Pointer)
+    fn value(id: u64) -> PointerValue {
+        PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equality(a: &CPointerValue, b: &CPointerValue) -> Proposition {
+    fn equality(a: &PointerValue, b: &PointerValue) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
@@ -164,12 +164,12 @@ mod tests {
         let a = MachineTerm::Variable(Variable(809_998));
         let b = MachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
-            CPointerValue::new(
+            PointerValue::new(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(index, 4),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )
         };
         let equality = ConditionTerm::PointerValueEqual(
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = CPointerValue::new(Pointer::null(), CType::Int32Pointer);
+        let null = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_designations_match(&pointer, &null));
         let context = empty.assume_condition(
@@ -194,8 +194,8 @@ mod tests {
         );
         assert!(context.pointer_designations_match(&pointer, &null));
         assert!(crate::kernel::resource_arguments_proven_equal(
-            &CValue::Pointer(pointer).into(),
-            &CValue::Pointer(null).into(),
+            &ProgramValue::Pointer(pointer).into(),
+            &ProgramValue::Pointer(null).into(),
             &context,
         ));
     }
@@ -208,8 +208,8 @@ mod tests {
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
             true,
         );
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::from_pointer_value(&b, 0u32.into(), 1u32.into(), 4),
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::from_pointer_value(&b, 0u32.into(), 1u32.into(), 4),
         ));
         assert!(context.pointers_known_equal(a.pointer(), b.pointer()));
         assert!(resources.permits_memory_read(a.pointer(), 4, &context));
@@ -254,8 +254,8 @@ mod tests {
         let byte_view = input.clone().with_root_extent();
         let parent_view = parent.clone().with_root_extent();
         let context = PureFactContext::new().assume_proposition(equality(&byte_view, &parent_view));
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::from_pointer_value(&parent, 0u32.into(), 2u32.into(), 4),
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::from_pointer_value(&parent, 0u32.into(), 2u32.into(), 4),
         ));
         assert!(context.designations_equal(input.designation(), parent.designation()));
         assert!(!resources.permits_designated_memory_read(
@@ -271,13 +271,13 @@ mod tests {
             &context
         ));
         let split = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::from_pointer_value(
                 &input,
                 0u32.into(),
                 1u32.into(),
                 4,
             )))
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::from_pointer_value(
                 &parent,
                 1u32.into(),
                 2u32.into(),
@@ -296,8 +296,8 @@ mod tests {
             width: 4u32.into(),
         }));
         let selected_resources =
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4),
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4),
             ));
         assert!(!selected_resources.permits_designated_memory_read(
             input.pointer(),
@@ -331,10 +331,11 @@ mod tests {
             start: parent.pointer().clone(),
             width: 4u32.into(),
         }));
-        let snapshot = crate::kernel::intern_c_memory(CMemory::new());
+        let snapshot = crate::kernel::intern_memory(Memory::new());
         let cell = Pointer::symbolic(Variable(824_002));
         let read_address = Pointer::symbolic(Variable(824_003));
-        let read = CPointerValue::from_read(read_address, CType::Int32Pointer, &snapshot, &cell);
+        let read =
+            PointerValue::from_read(read_address, ProgramType::Int32Pointer, &snapshot, &cell);
         let context = PureFactContext::new().assume_proposition(equality(&read, &member));
         assert!(context.pointer_value_at_entry(&read).extent().is_some());
         assert!(context.pointer_value_at_entry(&parent).extent().is_none());
@@ -346,16 +347,16 @@ mod tests {
     fn equal_storage_addresses_preserve_a_complete_pointer_reads_designation() {
         let a = value(825_001);
         let b = value(825_002);
-        let snapshot = crate::kernel::intern_c_memory(CMemory::new());
-        let x = CPointerValue::from_read(
+        let snapshot = crate::kernel::intern_memory(Memory::new());
+        let x = PointerValue::from_read(
             Pointer::symbolic(Variable(825_003)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &snapshot,
             a.pointer(),
         );
-        let y = CPointerValue::from_read(
+        let y = PointerValue::from_read(
             Pointer::symbolic(Variable(825_004)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &snapshot,
             b.pointer(),
         );

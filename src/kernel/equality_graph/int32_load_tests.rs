@@ -10,7 +10,7 @@ fn address(id: u64) -> Pointer {
         offset: PointerOffsetTerm::scale_int32(var(id), 4),
     }
 }
-fn load(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
+fn load(memory: &SharedMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
     MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -18,8 +18,8 @@ fn load(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
         bytes,
     ))
 }
-fn memory() -> SharedCMemory {
-    intern_c_memory(CMemory::new().with_block("array", 4096))
+fn memory() -> SharedMemory {
+    intern_memory(Memory::new().with_block("array", 4096))
 }
 
 #[test]
@@ -49,11 +49,11 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_snapshot() {
     let before = memory();
     let left = load(&before, &address(1), 4);
     let right = load(&before, &address(2), 4);
-    let after = intern_c_memory(
+    let after = intern_memory(
         before
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(MachineTerm::constant(9))),
+            .store(address(1), ProgramValue::Int32(MachineTerm::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let context =
@@ -82,11 +82,11 @@ fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
     let memory = memory();
     let left = load(&memory, &address(1), 4);
     let right = load(&memory, &address(2), 4);
-    let after = intern_c_memory(
+    let after = intern_memory(
         memory
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(MachineTerm::constant(9))),
+            .store(address(1), ProgramValue::Int32(MachineTerm::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let mut other_block = address(2);
@@ -131,11 +131,11 @@ fn int32_load_congruence_is_branch_local() {
 fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = memory();
-    let after = intern_c_memory(
+    let after = intern_memory(
         before
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(MachineTerm::constant(9))),
+            .store(address(1), ProgramValue::Int32(MachineTerm::constant(9))),
     );
     let left = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
@@ -170,7 +170,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&var(1), &var(2));
     assert!(!graph.are_int32_equal(&left, &right));
-    let raw = |m: &SharedCMemory| {
+    let raw = |m: &SharedMemory| {
         MachineTerm::MemoryLoad(
             m.clone(),
             Box::new(address(1)),
@@ -198,11 +198,11 @@ fn int32_load_registration_can_follow_a_later_width_declaration() {
 fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = memory();
-    let after = intern_c_memory(
+    let after = intern_memory(
         before
             .memory()
             .clone()
-            .store(address(3), CValue::Int32(MachineTerm::constant(9))),
+            .store(address(3), ProgramValue::Int32(MachineTerm::constant(9))),
     );
     let old_i = load(&before, &address(1), 4);
     let new_i = load(&after, &address(1), 4);
@@ -235,21 +235,17 @@ fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
 #[test]
 fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_c_memory(
-        CMemory::new()
-            .with_block("left", 64)
-            .with_block("right", 64),
-    );
+    let memory = intern_memory(Memory::new().with_block("left", 64).with_block("right", 64));
     let at = |block: &str, bytes: i64| Pointer {
         block: block.into(),
         offset: PointerOffsetTerm::Constant(bytes),
     };
     let address_of = |pointer: Pointer| MachineTerm::pointer_address(pointer);
-    let after = intern_c_memory(
+    let after = intern_memory(
         memory
             .memory()
             .clone()
-            .store(at("left", 8), CValue::Int32(MachineTerm::constant(9))),
+            .store(at("left", 8), ProgramValue::Int32(MachineTerm::constant(9))),
     );
     for field in [0, 8] {
         let left = load(&memory, &at("left", field), 4);
@@ -491,12 +487,12 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     crate::kernel::eval::record_load_access_width(before.memory(), &pointer, 4);
     let named =
         crate::kernel::canonical_form_of_load(before.clone(), pointer.clone(), LoadKind::Int32);
-    let beside = intern_c_memory(before.memory().clone().store(
+    let beside = intern_memory(before.memory().clone().store(
         Pointer {
             block: "beside-array".into(),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CValue::Int32(var(993182)),
+        ProgramValue::Int32(var(993182)),
     ));
     let raw = MachineTerm::MemoryLoad(beside, Box::new(pointer.clone()), LoadKind::Int32);
     let root = KernelTermImport::default()
@@ -513,11 +509,11 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     );
     assert_eq!(root.machine_read_leaf(), Some(&raw));
     let changed = MachineTerm::MemoryLoad(
-        intern_c_memory(
+        intern_memory(
             before
                 .memory()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(var(993183))),
+                .store(pointer.clone(), ProgramValue::Int32(var(993183))),
         ),
         Box::new(pointer),
         LoadKind::Int32,
@@ -539,11 +535,11 @@ fn structural_read_graph_keeps_native_only_stored_values() {
         arguments: vec![var(993184)],
     };
     let pointer = address(993185);
-    let snapshot = intern_c_memory(
+    let snapshot = intern_memory(
         memory()
             .memory()
             .clone()
-            .store(pointer.clone(), CValue::Int32(value.clone())),
+            .store(pointer.clone(), ProgramValue::Int32(value.clone())),
     );
     let read = MachineTerm::MemoryLoad(snapshot, Box::new(pointer), LoadKind::Int32);
     let shared = KernelTermImport::default()

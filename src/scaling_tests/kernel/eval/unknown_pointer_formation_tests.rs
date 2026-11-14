@@ -7,7 +7,7 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
         let _session = crate::kernel::VerificationSession::enter();
         let (p, position, facts, mut resources, _) = split_formation_fixture();
         for i in 0..size {
-            let other = CPointerValue::new(
+            let other = PointerValue::new(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(
@@ -15,10 +15,10 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
                         4,
                     ),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             );
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::from_pointer_value(&other, 0u32.into(), 3u32.into(), 4),
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::from_pointer_value(&other, 0u32.into(), 3u32.into(), 4),
             ));
         }
         resources.synchronize_memory_equalities(&facts);
@@ -47,7 +47,7 @@ fn pointer_formation_uses_selected_bounds_beside_unrelated_ranges_and_facts() {
             resources = resources.unchecked_with_fact(view(&other, 0, 3));
             facts = facts.assume_proposition(
                 other
-                    .opaque_coverage_fact(&CMemoryRange::from_pointer_value(
+                    .opaque_coverage_fact(&MemoryRange::from_pointer_value(
                         &other,
                         0u32.into(),
                         3u32.into(),
@@ -87,8 +87,8 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         }
         let before = crate::persistent::persistent_node_allocations();
         let result = pointer_offset_by_elements_paths(
-            &CState::new(),
-            CPointerValue::new(Pointer::null(), CType::Int32Pointer),
+            &ExecutionState::new(),
+            PointerValue::new(Pointer::null(), ProgramType::Int32Pointer),
             MachineTerm::Variable(Variable(934_001)),
             4,
             false,
@@ -100,10 +100,8 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let allocated = crate::persistent::persistent_node_allocations() - before;
         assert!(matches!(
             result.as_slice(),
-            [CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(
-                    CUndefinedBehavior::PointerArithmetic
-                ),
+            [ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
                 ..
             }]
         ));

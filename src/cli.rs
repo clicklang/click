@@ -180,7 +180,7 @@ pub fn parse_claim_location(
 pub fn claim_at(
     project: Option<&ClickProject>,
     click_source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     line: usize,
     column: Option<usize>,
     scope: crate::surface::ClaimLocationScope,
@@ -236,7 +236,7 @@ pub fn claim_at_argument(
     line_offset: usize,
     project: Option<&ClickProject>,
     click_source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     scope: crate::surface::ClaimLocationScope,
 ) -> Option<Result<crate::surface::SourceClaim, String>> {
     let location = parse_claim_location(argument)?;
@@ -830,13 +830,13 @@ pub fn read_verifying_sources_for_target(
 /// malformed or missing locked artifacts are errors rather than a legacy
 /// source-bundle fallback.
 #[derive(Clone)]
-pub enum CInput {
+pub enum VerificationInput {
     Bundle(Vec<(String, String)>),
     Prepared(Vec<PreparedCImport>),
     PreparedProgram(PreparedProgram),
 }
 
-impl CInput {
+impl VerificationInput {
     pub fn is_prepared(&self) -> bool {
         matches!(self, Self::Prepared(_) | Self::PreparedProgram(_))
     }
@@ -851,7 +851,10 @@ impl CInput {
     }
 }
 
-pub fn read_c_inputs(sidecar: &Path, click_source: &str) -> Result<CInput, String> {
+pub fn read_verification_inputs(
+    sidecar: &Path,
+    click_source: &str,
+) -> Result<VerificationInput, String> {
     read_lone_sidecar_inputs(sidecar, click_source).map(|(_, inputs)| inputs)
 }
 
@@ -861,27 +864,27 @@ pub fn read_c_inputs(sidecar: &Path, click_source: &str) -> Result<CInput, Strin
 pub fn read_lone_sidecar_inputs(
     sidecar: &Path,
     click_source: &str,
-) -> Result<(ClickProject, CInput), String> {
+) -> Result<(ClickProject, VerificationInput), String> {
     let project = read_click_project(sidecar, click_source)?;
-    let inputs = read_c_inputs_for_project(sidecar, click_source, &project)?;
+    let inputs = read_verification_inputs_for_project(sidecar, click_source, &project)?;
     Ok((project, inputs))
 }
 
-pub fn read_c_inputs_for_project(
+pub fn read_verification_inputs_for_project(
     sidecar: &Path,
     click_source: &str,
     project: &ClickProject,
-) -> Result<CInput, String> {
+) -> Result<VerificationInput, String> {
     let target =
         crate::surface::selected_project_c_target(project).map_err(|error| error.report())?;
-    read_c_inputs_for_target(sidecar, click_source, target)
+    read_verification_inputs_with_c_target(sidecar, click_source, target)
 }
 
-fn read_c_inputs_for_target(
+fn read_verification_inputs_with_c_target(
     sidecar: &Path,
     click_source: &str,
     target: crate::languages::c::target::CTarget,
-) -> Result<CInput, String> {
+) -> Result<VerificationInput, String> {
     let name = sidecar
         .file_name()
         .and_then(|name| name.to_str())
@@ -901,16 +904,16 @@ fn read_c_inputs_for_target(
                 .prepared_sources(&requested)?
                 .expect("the project lists the selected sources")
             {
-                crate::project::UnitSelection::C(imports) => CInput::Prepared(imports),
-                crate::project::UnitSelection::Program(program) => CInput::PreparedProgram(program),
+                crate::project::UnitSelection::C(imports) => VerificationInput::Prepared(imports),
+                crate::project::UnitSelection::Program(program) => {
+                    VerificationInput::PreparedProgram(program)
+                }
             },
         );
     }
-    Ok(CInput::Bundle(read_verifying_sources_for_target(
-        sidecar,
-        click_source,
-        target,
-    )?))
+    Ok(VerificationInput::Bundle(
+        read_verifying_sources_for_target(sidecar, click_source, target)?,
+    ))
 }
 
 /// The refusal of a per-sidecar `<sidecar>.import.json`, naming its
@@ -1422,14 +1425,14 @@ pub fn directory_contains_mdtests(path: &Path) -> Result<bool, String> {
 pub fn load_sidecar_inputs(
     click_path: &Path,
     project_root: Option<&Path>,
-) -> Result<(String, ClickProject, CInput), String> {
+) -> Result<(String, ClickProject, VerificationInput), String> {
     let click_source = fs::read_to_string(click_path)
         .map_err(|error| format!("failed to read `{}`: {error}", click_path.display()))?;
     let project = match project_root {
         Some(root) => read_click_project_at_root(click_path, &click_source, root)?,
         None => read_click_project(click_path, &click_source)?,
     };
-    let inputs = read_c_inputs_for_project(click_path, &click_source, &project)?;
+    let inputs = read_verification_inputs_for_project(click_path, &click_source, &project)?;
     Ok((click_source, project, inputs))
 }
 
@@ -1438,7 +1441,7 @@ pub fn load_sidecar_inputs(
 pub struct LoadedTarget {
     pub click_source: String,
     pub project: ClickProject,
-    pub inputs: CInput,
+    pub inputs: VerificationInput,
     /// The parsed container when the target is an mdtest. Its
     /// `click_start_line` maps lines of the Click block to lines of the file.
     pub mdtest: Option<MdTest>,
@@ -1765,7 +1768,7 @@ pub fn read_mdtest(path: &Path) -> Result<MdTest, String> {
 pub fn read_mdtest_project_if_needed(
     path: &Path,
     click_source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
 ) -> Result<Option<ClickProject>, String> {
     let mdtest = read_mdtest(path)?;
     let container = SourceContainer::new(
@@ -1781,7 +1784,7 @@ pub fn read_mdtest_project_if_needed(
             // Project discovery must not turn an expected lexical refusal into
             // a fixture setup failure. The direct verifier will report the same
             // tokenizer error before it can use any declaration or import.
-            Err(_) if matches!(inputs, CInput::Bundle(_)) => return Ok(None),
+            Err(_) if matches!(inputs, VerificationInput::Bundle(_)) => return Ok(None),
             Err(error) => return Err(error.concise_report()),
         };
     let has_imports = !sites.is_empty();
@@ -1796,7 +1799,7 @@ pub fn read_mdtest_project_if_needed(
             ));
         }
     };
-    if has_imports || has_config || matches!(inputs, CInput::PreparedProgram(_)) {
+    if has_imports || has_config || matches!(inputs, VerificationInput::PreparedProgram(_)) {
         read_mdtest_click_project(path, &mdtest, click_source).map(Some)
     } else {
         Ok(None)
@@ -1879,9 +1882,9 @@ fn copy_cpp_import(from: &Path, to: &Path) -> Result<(), String> {
 /// Prepares the source representation consumed by every mdtest driver. C++
 /// fences go through the same locked semantic import as ordinary C++ sidecars;
 /// they never fall back to the C parser.
-pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<CInput, String> {
+pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<VerificationInput, String> {
     let Some(cpp) = &mdtest.cpp_source else {
-        return Ok(CInput::Bundle(mdtest.c_sources.clone()));
+        return Ok(VerificationInput::Bundle(mdtest.c_sources.clone()));
     };
     let fixture = CppMdTestProject::materialize(cpp)?;
     let checked_in = cpp
@@ -1910,7 +1913,7 @@ pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<CInput, String> {
         .map_err(|error| format!("{error}\n  for a C++ mdtest, {CPP_IMPORT_REFRESH}"))?;
     match prepared {
         Some(crate::project::UnitSelection::Program(program)) => {
-            Ok(CInput::PreparedProgram(program))
+            Ok(VerificationInput::PreparedProgram(program))
         }
         _ => Err("the C++ mdtest project does not prepare its source".into()),
     }
@@ -2227,7 +2230,7 @@ mod tests {
         .unwrap();
         fs::write(&sidecar, source).unwrap();
         fs::write(directory.path().join("main.click.import.json"), "{}").unwrap();
-        let error = read_c_inputs(&sidecar, source).err().unwrap();
+        let error = read_verification_inputs(&sidecar, source).err().unwrap();
         assert!(error.contains("main.click.import.json"), "{error}");
         assert!(error.contains("per-sidecar import config"), "{error}");
         assert!(error.contains(crate::project::FILE_NAME), "{error}");
@@ -2389,7 +2392,8 @@ mod tests {
         )
         .unwrap();
         fs::write(root.join("kern.h"), "int kernel_helper(void);\n").unwrap();
-        let CInput::Bundle(sources) = read_c_inputs(&path, click).unwrap() else {
+        let VerificationInput::Bundle(sources) = read_verification_inputs(&path, click).unwrap()
+        else {
             panic!("a lone sidecar without a manifest reads a source bundle");
         };
         assert!(
@@ -2422,11 +2426,12 @@ mod tests {
         )
         .unwrap();
         let project = read_click_project(&path, click).unwrap();
-        let CInput::Bundle(sources) = read_c_inputs_for_project(&path, click, &project).unwrap()
+        let VerificationInput::Bundle(sources) =
+            read_verification_inputs_for_project(&path, click, &project).unwrap()
         else {
             panic!("a project without an import manifest loads its C source bundle");
         };
-        let verified = crate::surface::verify_c0_project(&project, &source_refs(&sources)).unwrap();
+        let verified = crate::surface::verify_c_project(&project, &source_refs(&sources)).unwrap();
         assert_eq!(verified.len(), 1);
         assert!(
             verified[0]
@@ -2450,7 +2455,7 @@ mod tests {
         .unwrap();
         let without_runtime = read_click_project(&path, click).unwrap();
         let ordinary =
-            crate::surface::verify_c0_project(&without_runtime, &source_refs(&sources)).unwrap();
+            crate::surface::verify_c_project(&without_runtime, &source_refs(&sources)).unwrap();
         assert_ne!(verified[0].artifact_identity, ordinary[0].artifact_identity);
         assert!(
             ordinary[0]
@@ -2570,11 +2575,12 @@ mod tests {
         )
         .unwrap();
         let project = read_click_project(&path, click).unwrap();
-        let CInput::Bundle(sources) = read_c_inputs_for_project(&path, click, &project).unwrap()
+        let VerificationInput::Bundle(sources) =
+            read_verification_inputs_for_project(&path, click, &project).unwrap()
         else {
             panic!("nested sidecar should use the root-configured bundle");
         };
-        crate::surface::verify_c0_project(&project, &source_refs(&sources)).unwrap();
+        crate::surface::verify_c_project(&project, &source_refs(&sources)).unwrap();
         // A project file in the subdirectory makes it a project of its own:
         // the nearest file wins.
         fs::write(nested.join("click.project.json"), r#"{"mode":"kernel"}"#).unwrap();

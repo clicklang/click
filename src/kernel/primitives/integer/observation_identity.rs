@@ -17,16 +17,16 @@ fn machine_payload(term: &KernelTerm) -> Option<&MachineTerm> {
         && let PureFunctionArgument::Value(value) = value.value()
     {
         return match value {
-            CValue::Int8(value)
-            | CValue::UInt8(value)
-            | CValue::Int16(value)
-            | CValue::UInt16(value)
-            | CValue::Int32(value)
-            | CValue::UInt32(value)
-            | CValue::Int64(value)
-            | CValue::UInt64(value)
-            | CValue::Int128(value)
-            | CValue::UInt128(value) => Some(value),
+            ProgramValue::Int8(value)
+            | ProgramValue::UInt8(value)
+            | ProgramValue::Int16(value)
+            | ProgramValue::UInt16(value)
+            | ProgramValue::Int32(value)
+            | ProgramValue::UInt32(value)
+            | ProgramValue::Int64(value)
+            | ProgramValue::UInt64(value)
+            | ProgramValue::Int128(value)
+            | ProgramValue::UInt128(value) => Some(value),
             _ => None,
         };
     }
@@ -54,8 +54,8 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let format = match term.ty() {
-                KernelType::C(ty) => {
-                    MachineIntegerType::from_c_type(*ty).unwrap_or(MachineIntegerType::UInt8)
+                KernelType::Program(ty) => {
+                    MachineIntegerType::from_program_type(*ty).unwrap_or(MachineIntegerType::UInt8)
                 }
                 _ => MachineIntegerType::UInt8,
             };
@@ -68,7 +68,10 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 if view.binary().is_some()
                     || view.unary().is_some()
                     || view.cast().is_some()
-                    || matches!(value, MachineTerm::If { .. })
+                    || matches!(
+                        value,
+                        MachineTerm::If { .. } | MachineTerm::AlgebraicMatch { .. }
+                    )
                 {
                     let replacement = KernelTerm::retained_machine_operand(format, view);
                     expanded.insert(term.id(), replacement.clone());
@@ -83,6 +86,12 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let children = match term.node() {
+                KernelTermNode::Match(matched) => matched
+                    .arguments
+                    .iter()
+                    .chain(matched.arms.iter().flat_map(|arm| arm.bindings.iter()))
+                    .cloned()
+                    .collect(),
                 KernelTermNode::Fold(fold) => fold.arguments.to_vec(),
                 KernelTermNode::MachineBinary { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
@@ -104,6 +113,14 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let normalized = match term.node() {
+                KernelTermNode::Match(matched) => {
+                    let mut matched = matched.clone();
+                    matched.arguments = matched.arguments.iter().map(|child| get(child)).collect();
+                    for arm in &mut matched.arms {
+                        arm.bindings = arm.bindings.iter().map(|child| get(child)).collect();
+                    }
+                    matched.into_term().with_machine_observation_type(format)
+                }
                 KernelTermNode::Fold(fold) => KernelFold {
                     index: fold.index,
                     accumulator: fold.accumulator,
@@ -121,6 +138,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                         value.clone(),
                     ));
                     KernelTerm::machine_observation_leaf(format, value.clone(), identity)
+                }
+                KernelTermNode::Legacy(value) => {
+                    KernelTerm::native_observation_leaf(value.value().clone())
                 }
                 KernelTermNode::LegacyBool(_) => {
                     let condition = KernelTermExport::condition(&term).expect("retained guard");
@@ -243,7 +263,7 @@ mod recursive_call_tests {
             name: "math_guard_length".into(),
             arguments: vec![argument],
         };
-        let native = call(PureFunctionArgument::Value(CValue::UInt64(argument)));
+        let native = call(PureFunctionArgument::Value(ProgramValue::UInt64(argument)));
         let retained = call(PureFunctionArgument::SharedMachine(shared));
         let guard = |call: &MachineTerm| {
             let observation = KernelTerm::intern(
@@ -296,7 +316,7 @@ mod recursive_call_tests {
             KernelTermExport::condition(&shared_guard).unwrap(),
             shared_written
         );
-        let different = guard(&call(PureFunctionArgument::Value(CValue::UInt64(
+        let different = guard(&call(PureFunctionArgument::Value(ProgramValue::UInt64(
             MachineTerm::constant(8),
         ))));
         assert_ne!(normalize(&native_guard), normalize(&different));
@@ -338,7 +358,7 @@ mod recursive_call_tests {
             name: "exact_call_carriers".into(),
             arguments,
         };
-        let native_argument = PureFunctionArgument::Value(CValue::Int32(argument));
+        let native_argument = PureFunctionArgument::Value(ProgramValue::Int32(argument));
         let shared_argument = PureFunctionArgument::SharedMachine(retained);
         let marker = PureFunctionArgument::Integer(IntegerTerm::constant(9.into()).into());
         let native = call(vec![native_argument.clone(), marker.clone()]);
@@ -357,7 +377,7 @@ mod recursive_call_tests {
             SharedMachineIntegerTerm::intern(format, call(vec![marker, shared_argument]))
         );
         let different_argument_sort = call(vec![
-            PureFunctionArgument::Value(CValue::UInt32(MachineTerm::constant(7))),
+            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::constant(7))),
             PureFunctionArgument::Integer(IntegerTerm::constant(9.into()).into()),
         ]);
         assert_ne!(

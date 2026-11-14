@@ -54,7 +54,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             context.tactic_index,
             "source proof `if`",
         )?;
-        let CStatement::If {
+        let ProgramStatement::If {
             condition: c_condition,
             ..
         } = statement
@@ -63,7 +63,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         };
         let source_fact =
             driver_proof.lower_surface_proposition(condition, "proof `if` condition")?;
-        let c_surface = surface_c_condition(&c_condition, &current_state)?;
+        let c_surface = surface_program_condition(&c_condition, &current_state)?;
         let c_fact =
             driver_proof.lower_surface_proposition(&c_surface, "current C `if` condition")?;
         if !path_condition_equivalent(&source_fact, &c_fact) {

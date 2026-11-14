@@ -15,14 +15,14 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
                     4,
                 ),
             };
-            let separation = |left, right| Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            let separation = |left, right| Proposition::ResourceSeparate {
+                left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                     left,
                     0u32.into(),
                     8u32.into(),
                     1,
                 ))),
-                right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                     right,
                     0u32.into(),
                     8u32.into(),

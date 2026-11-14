@@ -11,7 +11,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// this.
     pub(in crate::surface::proof) fn try_open_for_missing_resource(
         search_input: &Proof<'a>,
-        missing: &CResourceFact,
+        missing: &ResourceFact,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_open_for_missing_resource");
@@ -26,7 +26,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let assumptions = search_input.facts().assumptions();
         let mut opening = None;
         for held in state.resources().composite_facts() {
-            let CResourceFact::Own(CResource::Composite { name, arguments }, _) = held else {
+            let ResourceFact::Own(Resource::Composite { name, arguments }, _) = held else {
                 continue;
             };
             let Some(definition) = context.resource_environment.get(name) else {
@@ -95,7 +95,7 @@ fn held_composite_resource_clause(
     definition: &ResourceDefinition,
     arguments: &[AlgebraicValue],
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ResourceClause> {
     if arguments.len() != definition.parameters().len() {
         return None;
@@ -103,7 +103,7 @@ fn held_composite_resource_clause(
     let arguments = arguments
         .iter()
         .map(|argument| match argument {
-            AlgebraicValue::C(value) => {
+            AlgebraicValue::Program(value) => {
                 crate::surface::proof::surface_synthesis::synthesize_surface_value(
                     value,
                     parameter_binding,
@@ -116,7 +116,7 @@ fn held_composite_resource_clause(
     let parameter_types = definition
         .parameters()
         .iter()
-        .map(|parameter| parameter.click_type().c_type())
+        .map(|parameter| parameter.click_type().interface_type())
         .collect::<Option<Vec<_>>>()?;
     Some(ResourceClause::Declared {
         access: ResourceAccessMode::Own,

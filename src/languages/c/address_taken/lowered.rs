@@ -3,23 +3,25 @@
 //! summary: unlike source address expressions, it can name arbitrary storage.
 
 use super::AddressTakenSummary;
-use crate::kernel::{CExpression, CFunction, CStatement, CType, CValue};
+use crate::kernel::{
+    ProgramExpression, ProgramFunction, ProgramStatement, ProgramType, ProgramValue,
+};
 
-fn declare(summary: &mut AddressTakenSummary, name: &str, ty: CType) {
+fn declare(summary: &mut AddressTakenSummary, name: &str, ty: ProgramType) {
     if ty.is_pointer()
         || matches!(
             ty,
-            CType::Bool
-                | CType::Int8
-                | CType::UInt8
-                | CType::Int16
-                | CType::UInt16
-                | CType::Int32
-                | CType::UInt32
-                | CType::Int64
-                | CType::UInt64
-                | CType::Float32
-                | CType::Float64
+            ProgramType::Bool
+                | ProgramType::Int8
+                | ProgramType::UInt8
+                | ProgramType::Int16
+                | ProgramType::UInt16
+                | ProgramType::Int32
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
+                | ProgramType::Float32
+                | ProgramType::Float64
         )
     {
         summary.scalar_declarations.insert(name.to_owned());
@@ -28,13 +30,13 @@ fn declare(summary: &mut AddressTakenSummary, name: &str, ty: CType) {
     }
 }
 
-pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary) -> bool {
+pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSummary) -> bool {
     for parameter in function.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if parameter.aggregate_layout().is_some() {
             summary.taken.insert(parameter.name().to_owned());
         } else {
-            declare(summary, parameter.name(), parameter.c_type());
+            declare(summary, parameter.name(), parameter.program_type());
         }
     }
     let mut statements = vec![function.body()];
@@ -42,70 +44,71 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
     while let Some(statement) = statements.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match statement {
-            CStatement::Declare {
+            ProgramStatement::Declare {
                 name,
-                c_type,
+                program_type,
                 initializer,
                 ..
             } => {
-                declare(summary, name, *c_type);
+                declare(summary, name, *program_type);
                 expressions.extend(initializer.iter().map(|expression| (expression, false)));
             }
-            CStatement::DeclareAggregate { name, .. } => {
+            ProgramStatement::DeclareAggregate { name, .. } => {
                 summary.taken.insert(name.clone());
             }
-            CStatement::Skip
-            | CStatement::EndScalarReference(_)
-            | CStatement::ScalarReferenceScope(_)
-            | CStatement::Break
-            | CStatement::Continue
-            | CStatement::Goto { .. }
-            | CStatement::EndAutomaticLifetimes { .. } => {}
-            CStatement::Assign { expression, .. }
-            | CStatement::Return(expression)
-            | CStatement::Throw(expression)
-            | CStatement::Switch { expression, .. } => {
+            ProgramStatement::Skip
+            | ProgramStatement::EndScalarReference(_)
+            | ProgramStatement::ScalarReferenceScope(_)
+            | ProgramStatement::Break
+            | ProgramStatement::Continue
+            | ProgramStatement::Goto { .. }
+            | ProgramStatement::EndAutomaticLifetimes { .. } => {}
+            ProgramStatement::Assign { expression, .. }
+            | ProgramStatement::Return(expression)
+            | ProgramStatement::Throw(expression)
+            | ProgramStatement::Switch { expression, .. } => {
                 expressions.push((expression, false));
-                if let CStatement::Switch { cases, .. } = statement {
+                if let ProgramStatement::Switch { cases, .. } = statement {
                     statements.extend(cases.iter().map(|case| case.body.as_ref()));
                 }
             }
-            CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. } => {
+            ProgramStatement::Call { arguments, .. }
+            | ProgramStatement::CallResult { arguments, .. }
+            | ProgramStatement::CallAssign { arguments, .. } => {
                 expressions.extend(arguments.iter().map(|argument| (argument, false)));
             }
-            CStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),
-            CStatement::HeapFree { pointer } => expressions.push((pointer, false)),
-            CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
-                expressions.push((condition, false))
-            }
-            CStatement::Store { pointer, value }
-            | CStatement::TypedStore { pointer, value, .. } => {
+            ProgramStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),
+            ProgramStatement::HeapFree { pointer } => expressions.push((pointer, false)),
+            ProgramStatement::Assert { condition, .. }
+            | ProgramStatement::LoopTest { condition } => expressions.push((condition, false)),
+            ProgramStatement::Store { pointer, value }
+            | ProgramStatement::TypedStore { pointer, value, .. } => {
                 expressions.extend([(pointer, false), (value, false)]);
             }
-            CStatement::CopyAggregate { target, source, .. }
-            | CStatement::InitializeScalarArray { target, source, .. }
-            | CStatement::Update {
+            ProgramStatement::CopyAggregate { target, source, .. }
+            | ProgramStatement::InitializeScalarArray { target, source, .. }
+            | ProgramStatement::Update {
                 target,
                 operand: source,
                 ..
             } => {
                 expressions.extend([(target, false), (source, false)]);
             }
-            CStatement::Seq(sequence) => {
+            ProgramStatement::Seq(sequence) => {
                 // The pair nodes beyond the first the tree held.
                 crate::instrumentation::record_deterministic_work(sequence.len() - 2);
                 statements.extend(sequence.iter().map(|statement| statement.as_ref()))
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 binding,
                 handler,
                 ..
             } => {
-                declare(summary, binding, CType::Int32);
+                declare(summary, binding, ProgramType::Int32);
                 statements.extend([try_body.as_ref(), handler.as_ref()]);
             }
-            CStatement::If {
+            ProgramStatement::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -113,52 +116,53 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
                 expressions.push((condition, false));
                 statements.extend([then_branch.as_ref(), else_branch.as_ref()]);
             }
-            CStatement::While {
+            ProgramStatement::While {
                 condition, body, ..
             } => {
                 expressions.push((condition, false));
                 statements.push(body);
             }
-            CStatement::ForStep { step, .. } => statements.push(step),
+            ProgramStatement::ForStep { step, .. } => statements.push(step),
         }
     }
     while let Some((expression, addressed)) = expressions.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            CExpression::Value(value) => {
-                if matches!(value, CValue::Pointer(pointer) if pointer.pointer() != &crate::kernel::Pointer::null())
+            ProgramExpression::Value(value) => {
+                if matches!(value, ProgramValue::Pointer(pointer) if pointer.pointer() != &crate::kernel::Pointer::null())
                 {
                     return false;
                 }
             }
-            CExpression::Variable(name) => {
+            ProgramExpression::Variable(name) => {
                 if addressed {
                     summary.taken.insert(name.clone());
                 }
             }
-            CExpression::FunctionAddress(_) => {}
-            CExpression::AddressOf(value) | CExpression::CheckedObjectAddress(value) => {
+            ProgramExpression::FunctionAddress(_) | ProgramExpression::CallResult { .. } => {}
+            ProgramExpression::AddressOf(value)
+            | ProgramExpression::CheckedObjectAddress(value) => {
                 expressions.push((value, true));
             }
-            CExpression::Cast {
+            ProgramExpression::Cast {
                 expression: value, ..
             }
-            | CExpression::FloatNegate(value)
-            | CExpression::FloatClassification {
+            | ProgramExpression::FloatNegate(value)
+            | ProgramExpression::FloatClassification {
                 expression: value, ..
             }
-            | CExpression::PointerOffsetBytes { pointer: value, .. }
-            | CExpression::Subobject { pointer: value, .. }
-            | CExpression::Not(value)
-            | CExpression::BitwiseNot(value)
-            | CExpression::Load(value)
-            | CExpression::TypedLoad { pointer: value, .. }
-            | CExpression::EnumField { value, .. }
-            | CExpression::EnumIs { value, .. } => expressions.push((value, addressed)),
-            CExpression::EnumConstruct { fields, .. } => {
+            | ProgramExpression::PointerOffsetBytes { pointer: value, .. }
+            | ProgramExpression::Subobject { pointer: value, .. }
+            | ProgramExpression::Not(value)
+            | ProgramExpression::BitwiseNot(value)
+            | ProgramExpression::Load(value)
+            | ProgramExpression::TypedLoad { pointer: value, .. }
+            | ProgramExpression::EnumField { value, .. }
+            | ProgramExpression::EnumIs { value, .. } => expressions.push((value, addressed)),
+            ProgramExpression::EnumConstruct { fields, .. } => {
                 expressions.extend(fields.iter().map(|field| (field, addressed)))
             }
-            CExpression::Conditional {
+            ProgramExpression::Conditional {
                 condition,
                 then_branch,
                 else_branch,
@@ -182,28 +186,35 @@ mod tests {
     use crate::kernel::*;
     use crate::languages::c::{
         address_taken::summarize_address_taken,
-        syntax::{C0Function, C0Type},
+        syntax::{ImportedFunction, InterfaceType},
     };
 
-    fn imported(body: CStatement) -> C0Function {
-        C0Function::external(C0Type::Void, "imported".into(), vec![])
-            .with_prelowered_kernel_function(c_function(CType::Void, "imported", vec![], body))
+    fn imported(body: ProgramStatement) -> ImportedFunction {
+        ImportedFunction::external(InterfaceType::Void, "imported".into(), vec![])
+            .with_prelowered_kernel_function(program_function(
+                ProgramType::Void,
+                "imported",
+                vec![],
+                body,
+            ))
     }
 
     // Imported bodies must participate in the same whole-program name rule as
     // C bodies, and array/aggregate names already expose their storage address.
     #[test]
     fn imported_addressability_tracks_captures_escapes_and_arrays() {
-        let first = imported(c_seq(
-            c_declare("capture", CType::Int32Pointer),
-            c_seq(
-                c_declare("escaped", CType::Int32),
-                c_declare("array", CType::Int32Array(2)),
+        let first = imported(program_seq(
+            program_declare("capture", ProgramType::Int32Pointer),
+            program_seq(
+                program_declare("escaped", ProgramType::Int32),
+                program_declare("array", ProgramType::Int32Array(2)),
             ),
         ));
-        let second = imported(c_call(
+        let second = imported(program_call(
             "callee",
-            vec![CExpression::AddressOf(Box::new(c_variable("escaped")))],
+            vec![ProgramExpression::AddressOf(Box::new(
+                crate::kernel::program_expression::variable("escaped"),
+            ))],
         ));
         let summary = summarize_address_taken([&first, &second]);
         assert!(summary.never_taken().contains("capture"));
@@ -213,9 +224,9 @@ mod tests {
 
     #[test]
     fn opaque_imported_pointer_literals_disable_the_bundle_summary() {
-        let function = imported(c_seq(
-            c_declare("capture", CType::Int32),
-            c_return(c_pointer_value(Pointer {
+        let function = imported(program_seq(
+            program_declare("capture", ProgramType::Int32),
+            program_return(crate::kernel::program_expression::pointer_value(Pointer {
                 block: "local:capture".into(),
                 offset: PointerOffsetTerm::Constant(0),
             })),

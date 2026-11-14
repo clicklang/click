@@ -256,7 +256,7 @@ fn shared_call_argument_readers_keep_dags_through_collection_and_rewrite() {
         let format = MachineIntegerType::Int32;
         let variable = Variable(998_720);
         let replacement_variable = Variable(998_721);
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -312,11 +312,12 @@ fn repeated_call_payloads_share_identity_without_accumulating_versions() {
             next_id: 0,
         };
         let variable = Variable(998_730);
-        let native = PureFunctionArgument::Value(CValue::UInt32(MachineTerm::Variable(variable)));
+        let native =
+            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::Variable(variable)));
         let shared = PureFunctionArgument::SharedMachine(
             SharedMachineIntegerTerm::from_shared(
                 MachineIntegerType::UInt32,
-                KernelTerm::variable(KernelType::C(CType::UInt32), variable),
+                KernelTerm::variable(KernelType::Program(ProgramType::UInt32), variable),
             )
             .unwrap(),
         );

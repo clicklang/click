@@ -82,15 +82,15 @@ fn many_small_unmeasured_cycles_cost_linear_termination_work() {
             for index in [0, groups - 1] {
                 assert!(matches!(
                     verdicts.refusals[&ping(index)],
-                    CTerminationRefusal::UnmeasuredRecursion { .. }
+                    TerminationRefusal::UnmeasuredRecursion { .. }
                 ));
                 assert!(matches!(
                     verdicts.refusals[&pong(index)],
-                    CTerminationRefusal::UnmeasuredRecursion { .. }
+                    TerminationRefusal::UnmeasuredRecursion { .. }
                 ));
                 assert_eq!(
                     verdicts.refusals[&caller(index)],
-                    CTerminationRefusal::Callee {
+                    TerminationRefusal::Callee {
                         callee: ping(index)
                     }
                 );
@@ -121,7 +121,7 @@ fn one_large_cycle_costs_linear_termination_work() {
             assert!(
                 (0..size).all(|index| matches!(
                     verdicts.refusals[&name(index)],
-                    CTerminationRefusal::UnmeasuredRecursion { .. }
+                    TerminationRefusal::UnmeasuredRecursion { .. }
                 )),
                 "every member of an unmeasured cycle is refused for it"
             );
@@ -178,48 +178,51 @@ fn a_layered_dag_costs_linear_termination_work() {
 #[test]
 fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
     let ranked_loop = || {
-        let i = CExpression::Variable("i".to_string());
-        CStatement::While {
-            condition: CExpression::LessThan(
+        let i = ProgramExpression::Variable("i".to_string());
+        ProgramStatement::While {
+            condition: ProgramExpression::LessThan(
                 Box::new(i.clone()),
-                Box::new(crate::kernel::c_int32_literal(4)),
+                Box::new(crate::kernel::program_expression::int32_literal(4)),
             ),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
             resource_specs: Vec::new(),
-            ranking_measures: vec![CRankingComponent::CExpression(CExpression::Subtract(
-                Box::new(crate::kernel::c_int32_literal(4)),
-                Box::new(i),
-            ))],
+            ranking_measures: vec![RankingComponent::ProgramExpression(
+                ProgramExpression::Subtract(
+                    Box::new(crate::kernel::program_expression::int32_literal(4)),
+                    Box::new(i),
+                ),
+            )],
             structural_measure: None,
             do_while: false,
             backedge_target: None,
             natural_exit_target: None,
-            body: Box::new(CStatement::Skip),
+            body: Box::new(ProgramStatement::Skip),
         }
     };
     // Balanced, as `calls_body` builds its calls, so the walks measure work
     // rather than the host's stack.
-    fn sequence(statements: &[CStatement]) -> CStatement {
+    fn sequence(statements: &[ProgramStatement]) -> ProgramStatement {
         match statements {
-            [] => CStatement::Skip,
+            [] => ProgramStatement::Skip,
             [only] => only.clone(),
             _ => {
                 let (left, right) = statements.split_at(statements.len() / 2);
-                CStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+                ProgramStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
             }
         }
     }
     let mut samples = Vec::new();
     for size in SIZES {
         let loops = (0..size).map(|_| ranked_loop()).collect::<Vec<_>>();
-        let function = CFunction::new(CType::Void, "loops", Vec::new(), sequence(&loops));
+        let function =
+            ProgramFunction::new(ProgramType::Void, "loops", Vec::new(), sequence(&loops));
         let loop_rules = BTreeMap::from([(
             "loops".to_string(),
             (0..size)
-                .map(|index| CVerifiedLoopRule {
-                    symbolic_entry_state: CState::default(),
+                .map(|index| VerifiedLoopRule {
+                    symbolic_entry_state: ExecutionState::default(),
                     loop_statement: ranked_loop(),
                     loop_index: Some(index),
                     required_assumptions: PureFactContext::new(),
@@ -230,16 +233,16 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
                 })
                 .collect::<Vec<_>>(),
         )]);
-        let rules = [CVerifiedFunctionRule {
+        let rules = [VerifiedFunctionRule {
             pointer_result: None,
             function,
-            loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
         }];
-        let heights = c_termination_height_plan(&rules, &[]);
+        let heights = program_termination_height_plan(&rules, &[]);
         let (verdicts, check_work) = crate::instrumentation::measure_deterministic_work(|| {
-            c_verified_function_termination_rules(
+            program_verified_function_termination_rules(
                 &rules,
                 &[],
                 &loop_rules,

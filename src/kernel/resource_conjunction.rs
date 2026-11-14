@@ -1,6 +1,6 @@
 //! Session-interned conjunction nodes. Index keys contain only the two direct
 //! operands; an operand conjunction is compared and hashed by its node id.
-use super::CResource;
+use super::Resource;
 use std::{
     cell::RefCell,
     sync::{
@@ -12,10 +12,10 @@ use std::{
 #[derive(Debug)]
 pub struct ResourceConjunction {
     id: u64,
-    children: (CResource, CResource),
+    children: (Resource, Resource),
 }
 impl std::ops::Deref for ResourceConjunction {
-    type Target = (CResource, CResource);
+    type Target = (Resource, Resource);
     fn deref(&self) -> &Self::Target {
         &self.children
     }
@@ -45,10 +45,10 @@ impl std::hash::Hash for ResourceConjunction {
 }
 
 pub(super) type Registry =
-    crate::persistent::PersistentMap<(CResource, CResource), Arc<ResourceConjunction>>;
+    crate::persistent::PersistentMap<(Resource, Resource), Arc<ResourceConjunction>>;
 thread_local! { static NODES: RefCell<Registry> = RefCell::new(Registry::default()); }
 static NEXT: AtomicU64 = AtomicU64::new(1);
-pub(super) fn intern(left: CResource, right: CResource) -> Arc<ResourceConjunction> {
+pub(super) fn intern(left: Resource, right: Resource) -> Arc<ResourceConjunction> {
     crate::instrumentation::record_deterministic_work(1);
     NODES.with(|nodes| {
         let mut nodes = nodes.borrow_mut();

@@ -145,7 +145,7 @@ impl ResourceClauseIntervalIndex {
         self.query_node(&right, query_start, query_end, candidates);
     }
 
-    pub(super) fn candidates_for_fact(&self, fact: &CResourceFact) -> BTreeSet<usize> {
+    pub(super) fn candidates_for_fact(&self, fact: &ResourceFact) -> BTreeSet<usize> {
         let mut candidates = BTreeSet::new();
         let Some(range) = fact.memory_range() else {
             return candidates;
@@ -165,9 +165,7 @@ impl ResourceClauseIntervalIndex {
     }
 }
 
-pub(super) fn resource_clause_coarse_keys(
-    fact: &CResourceFact,
-) -> Vec<ResourceClauseDependencyKey> {
+pub(super) fn resource_clause_coarse_keys(fact: &ResourceFact) -> Vec<ResourceClauseDependencyKey> {
     let mut keys = vec![ResourceClauseDependencyKey::Fact(fact.clone())];
     if let Some(range) = fact.memory_range() {
         keys.push(ResourceClauseDependencyKey::MemoryBase(
@@ -181,7 +179,7 @@ pub(super) fn resource_clause_coarse_keys(
 }
 
 impl ResourceClauseWaiterIndex {
-    pub(super) fn register(&mut self, clause: usize, dependencies: &[CResourceFact]) {
+    pub(super) fn register(&mut self, clause: usize, dependencies: &[ResourceFact]) {
         for (dependency_index, dependency) in dependencies.iter().enumerate() {
             if let Some((space, start, end)) = dependency
                 .memory_range()
@@ -208,7 +206,7 @@ impl ResourceClauseWaiterIndex {
         }
     }
 
-    pub(super) fn unregister(&mut self, clause: usize, dependencies: &[CResourceFact]) {
+    pub(super) fn unregister(&mut self, clause: usize, dependencies: &[ResourceFact]) {
         for (dependency_index, dependency) in dependencies.iter().enumerate() {
             if let Some((space, start, end)) = dependency
                 .memory_range()
@@ -251,7 +249,7 @@ impl ResourceClauseWaiterIndex {
         }
     }
 
-    pub(super) fn candidates_for_supplied(&self, supplied: &CResourceFact) -> BTreeSet<usize> {
+    pub(super) fn candidates_for_supplied(&self, supplied: &ResourceFact) -> BTreeSet<usize> {
         let mut candidates = self.intervals.candidates_for_fact(supplied);
         // Concrete supplied facts use only exact/interval events.  The
         // fallback below is deliberately reserved for symbolic or otherwise
@@ -279,8 +277,8 @@ impl ResourceClauseWaiterIndex {
 
 pub(super) fn resource_clause_register_waiters(
     index: usize,
-    missing: Vec<CResourceFact>,
-    dependencies: &mut [Vec<CResourceFact>],
+    missing: Vec<ResourceFact>,
+    dependencies: &mut [Vec<ResourceFact>],
     waiters: &mut ResourceClauseWaiterIndex,
 ) {
     let mut unique = Vec::new();
@@ -296,7 +294,7 @@ pub(super) fn resource_clause_register_waiters(
 
 pub(super) fn resource_clause_unregister_waiters(
     index: usize,
-    dependencies: &mut [Vec<CResourceFact>],
+    dependencies: &mut [Vec<ResourceFact>],
     waiters: &mut ResourceClauseWaiterIndex,
 ) {
     let previous = std::mem::take(&mut dependencies[index]);
@@ -304,13 +302,13 @@ pub(super) fn resource_clause_unregister_waiters(
 }
 
 pub(super) fn resource_clause_enqueue_waiters(
-    supplied: &CResourceFact,
+    supplied: &ResourceFact,
     assumptions: &PureFactContext,
     section_supply: &ResourceContext,
-    evaluated: &[Option<CResourceFact>],
+    evaluated: &[Option<ResourceFact>],
     queued: &mut [bool],
     pending: &mut VecDeque<usize>,
-    dependencies: &[Vec<CResourceFact>],
+    dependencies: &[Vec<ResourceFact>],
     waiters: &ResourceClauseWaiterIndex,
 ) {
     let candidates = waiters.candidates_for_supplied(supplied);

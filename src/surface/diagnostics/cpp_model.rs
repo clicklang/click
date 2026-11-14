@@ -36,7 +36,7 @@ pub(in crate::surface) struct ModelAccessorScope {
 
 impl ModelAccessorScope {
     pub(in crate::surface) fn enter(
-        layouts: &BTreeMap<String, syntax::C0StructLayout>,
+        layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
     ) -> Option<Self> {
         let accessors = crate::languages::cpp::standard_library::model_accessors(layouts);
         if accessors.is_empty() {
@@ -79,7 +79,7 @@ pub(super) fn describe_model_field_place(base: &str, field: &str) -> Option<Stri
 pub(super) fn describe_model_field_at(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-) -> Option<(String, CType)> {
+) -> Option<(String, ProgramType)> {
     MODEL_ACCESSORS.with(|bound| {
         let bound = bound.borrow();
         let bound = bound.as_ref()?;
@@ -107,7 +107,7 @@ pub(super) fn describe_model_field_at(
             {
                 continue;
             }
-            let CExpression::Value(CValue::Pointer(base)) = argument else {
+            let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 continue;
             };
             let Some(layout) = parameter
@@ -136,7 +136,7 @@ pub(super) fn describe_model_field_at(
                     continue;
                 }
                 let receiver = object_at_address(parameter.name()).unwrap_or(parameter.name());
-                return Some((format!("{accessor}({receiver})"), field.c_type()));
+                return Some((format!("{accessor}({receiver})"), field.program_type()));
             }
         }
         None

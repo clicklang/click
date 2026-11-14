@@ -38,12 +38,12 @@ pub(in crate::kernel) enum ResourceArgumentKey {
 pub(in crate::kernel) enum ResourceKey {
     Composite(String, Vec<ResourceArgumentKey>),
     Token(String, Vec<ResourceArgumentKey>),
-    Exact(CResource),
+    Exact(Resource),
 }
 impl ResourceKey {
-    fn new(resource: &CResource) -> Self {
+    fn new(resource: &Resource) -> Self {
         let (name, arguments) = match resource {
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 (name, arguments)
             }
             _ => return Self::Exact(resource.clone()),
@@ -52,22 +52,22 @@ impl ResourceKey {
             .iter()
             .map(|argument| {
                 crate::instrumentation::record_deterministic_work(1);
-                if let AlgebraicValue::C(value) = argument {
+                if let AlgebraicValue::Program(value) = argument {
                     let term = match value {
-                        CValue::Int8(t)
-                        | CValue::UInt8(t)
-                        | CValue::Int16(t)
-                        | CValue::UInt16(t)
-                        | CValue::Int32(t)
-                        | CValue::UInt32(t)
-                        | CValue::Int64(t)
-                        | CValue::UInt64(t)
-                        | CValue::Int128(t)
-                        | CValue::UInt128(t) => Some(t),
+                        ProgramValue::Int8(t)
+                        | ProgramValue::UInt8(t)
+                        | ProgramValue::Int16(t)
+                        | ProgramValue::UInt16(t)
+                        | ProgramValue::Int32(t)
+                        | ProgramValue::UInt32(t)
+                        | ProgramValue::Int64(t)
+                        | ProgramValue::UInt64(t)
+                        | ProgramValue::Int128(t)
+                        | ProgramValue::UInt128(t) => Some(t),
                         _ => None,
                     };
                     if let Some(term) = term {
-                        let format = MachineIntegerType::from_c_type(value.c_type())
+                        let format = MachineIntegerType::from_program_type(value.program_type())
                             .expect("integer argument");
                         return ResourceArgumentKey::Machine(
                             format,
@@ -82,7 +82,7 @@ impl ResourceKey {
             })
             .collect();
         match resource {
-            CResource::Composite { .. } => Self::Composite(name.clone(), arguments),
+            Resource::Composite { .. } => Self::Composite(name.clone(), arguments),
             _ => Self::Token(name.clone(), arguments),
         }
     }
@@ -150,14 +150,14 @@ impl PropositionKey {
                         (Self::Exact(proposition.clone()), false)
                     }
                 }
-                Proposition::CResourceContains { parent, child } => (
+                Proposition::ResourceContains { parent, child } => (
                     Self::Contains(
                         Box::new(ResourceKey::new(parent)),
                         Box::new(ResourceKey::new(child)),
                     ),
                     true,
                 ),
-                Proposition::CResourceSeparate { left, right } => (
+                Proposition::ResourceSeparate { left, right } => (
                     Self::Separate(
                         Box::new(ResourceKey::new(left)),
                         Box::new(ResourceKey::new(right)),
@@ -600,7 +600,7 @@ mod compound_observation_lookup_tests {
     fn scaled_word_sources_retain_shared_indices_and_exact_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(991440));
+        let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(991440));
         let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let zero = MachineTerm::constant(0);
         for truth in [false, true] {
@@ -723,8 +723,8 @@ mod compound_observation_lookup_tests {
             ty,
             MachineBinaryOp::Multiply,
             [
-                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989001)),
-                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989002)),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(989001)),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(989002)),
             ],
         );
         let retained = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
@@ -894,18 +894,21 @@ impl PureFactContext {
 #[cfg(test)]
 mod resource_relation_tests {
     use super::*;
-    use crate::kernel::{CPointerValue, CType, LoadKind, Pointer, Variable};
+    use crate::kernel::{LoadKind, Pointer, PointerValue, ProgramType, Variable};
 
-    fn relation(term: MachineTerm, pointer: CPointerValue, separate: bool) -> Proposition {
-        let left = CResource::Composite {
+    fn relation(term: MachineTerm, pointer: PointerValue, separate: bool) -> Proposition {
+        let left = Resource::Composite {
             name: "storage".into(),
-            arguments: vec![AlgebraicValue::C(CValue::Pointer(pointer.clone()))].into(),
+            arguments: vec![AlgebraicValue::Program(ProgramValue::Pointer(
+                pointer.clone(),
+            ))]
+            .into(),
         };
-        let right = CResource::Composite {
+        let right = Resource::Composite {
             name: "allocation".into(),
             arguments: vec![
-                AlgebraicValue::C(CValue::Pointer(pointer)),
-                AlgebraicValue::C(CValue::Int32(MachineTerm::machine_binary(
+                AlgebraicValue::Program(ProgramValue::Pointer(pointer)),
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::machine_binary(
                     MachineIntegerType::Int32,
                     crate::kernel::MachineBinaryOp::Multiply,
                     term,
@@ -915,12 +918,12 @@ mod resource_relation_tests {
             .into(),
         };
         if separate {
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: Box::new(left),
                 right: Box::new(right),
             }
         } else {
-            Proposition::CResourceContains {
+            Proposition::ResourceContains {
                 parent: Box::new(left),
                 child: Box::new(right),
             }
@@ -931,9 +934,9 @@ mod resource_relation_tests {
     fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(3_219_300));
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let other_memory = crate::kernel::intern_c_memory(
-            CMemory::new().store(address.clone(), CValue::Int32(9u32.into())),
+        let memory = crate::kernel::intern_memory(Memory::new());
+        let other_memory = crate::kernel::intern_memory(
+            Memory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
         );
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -941,7 +944,7 @@ mod resource_relation_tests {
             LoadKind::Int32,
             4,
         );
-        let pointer = CPointerValue::new(address.clone(), CType::Int32Pointer);
+        let pointer = PointerValue::new(address.clone(), ProgramType::Int32Pointer);
         let read = |memory, address, kind| MachineTerm::MemoryLoad(memory, Box::new(address), kind);
         for separate in [false, true] {
             let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
@@ -972,7 +975,8 @@ mod resource_relation_tests {
                     different_designation,
                     separate
                 )));
-                let different_pointer = CPointerValue::new(address.clone(), CType::Int8Pointer);
+                let different_pointer =
+                    PointerValue::new(address.clone(), ProgramType::Int8Pointer);
                 assert!(!facts.proves_exact(&relation(
                     MachineTerm::Variable(name),
                     different_pointer,

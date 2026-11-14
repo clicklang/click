@@ -8,8 +8,8 @@
 //! kernel boundary.
 
 use super::super::{
-    CComparisonOperator, CFloatClassification, CFloatCondition, CPointerValue, ConditionTerm,
-    MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
+    ComparisonOperator, ConditionTerm, FloatClassification, FloatCondition, MachineTerm, Pointer,
+    PointerBlock, PointerOffsetTerm, PointerValue, Proposition, SignedDefinedWidth,
 };
 #[cfg(test)]
 use crate::kernel::binary_node;
@@ -860,15 +860,15 @@ fn condition_identity_as_written(left: &ConditionTerm, right: &ConditionTerm) ->
     }
 }
 
-fn float_condition_identity(left: &CFloatCondition, right: &CFloatCondition) -> bool {
+fn float_condition_identity(left: &FloatCondition, right: &FloatCondition) -> bool {
     match (left, right) {
         (
-            CFloatCondition::Comparison {
+            FloatCondition::Comparison {
                 operator: left_operator,
                 left: left_first,
                 right: left_second,
             },
-            CFloatCondition::Comparison {
+            FloatCondition::Comparison {
                 operator: right_operator,
                 left: right_first,
                 right: right_second,
@@ -883,11 +883,11 @@ fn float_condition_identity(left: &CFloatCondition, right: &CFloatCondition) -> 
                 && bitvector_equal(left_second, right_second)
         }
         (
-            CFloatCondition::Classification {
+            FloatCondition::Classification {
                 classification: left_classification,
                 value: left_value,
             },
-            CFloatCondition::Classification {
+            FloatCondition::Classification {
                 classification: right_classification,
                 value: right_value,
             },
@@ -2104,7 +2104,7 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
-        let same_domain = |a: &CPointerValue, b: &CPointerValue| {
+        let same_domain = |a: &PointerValue, b: &PointerValue| {
             a.designation() == b.designation()
                 && a.extent() == b.extent()
                 && a.extent_is_known() == b.extent_is_known()
@@ -3444,13 +3444,13 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
         return false;
     };
     let (finite_expression, finite_width) = match finite_condition {
-        ConditionTerm::Float32(CFloatCondition::Classification {
+        ConditionTerm::Float32(FloatCondition::Classification {
             value: expression,
-            classification: CFloatClassification::Finite,
+            classification: FloatClassification::Finite,
         }) => (expression.as_ref(), 32),
-        ConditionTerm::Float64(CFloatCondition::Classification {
+        ConditionTerm::Float64(FloatCondition::Classification {
             value: expression,
-            classification: CFloatClassification::Finite,
+            classification: FloatClassification::Finite,
         }) => (expression.as_ref(), 64),
         _ => return false,
     };
@@ -3461,12 +3461,12 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
         return false;
     };
     let (operator, left, right, width) = match condition {
-        ConditionTerm::Float32(CFloatCondition::Comparison {
+        ConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
         }) => (*operator, left.as_ref(), right.as_ref(), 32),
-        ConditionTerm::Float64(CFloatCondition::Comparison {
+        ConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
@@ -3483,9 +3483,9 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     }
     let reflexive = matches!(
         operator,
-        CComparisonOperator::Equal
-            | CComparisonOperator::LessEqual
-            | CComparisonOperator::GreaterEqual
+        ComparisonOperator::Equal
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::GreaterEqual
     );
     *expected == reflexive
 }
@@ -4669,7 +4669,7 @@ mod tests {
         let next = pointer(PointerOffsetTerm::Constant(0));
         let address = MachineTerm::pointer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(crate::kernel::CMemory::new()),
+            crate::kernel::intern_memory(crate::kernel::Memory::new()),
             Box::new(next.clone()),
             crate::kernel::LoadKind::Bits64,
         );
@@ -5014,15 +5014,11 @@ mod tests {
     fn finite_float_certificate_rejects_wrong_width_expression_and_operator() {
         let value = MachineTerm::Variable(crate::kernel::Variable(22));
         let finite = Proposition::ConditionIs(
-            ConditionTerm::float32_classification(value.clone(), CFloatClassification::Finite),
+            ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite),
             true,
         );
         let good = Proposition::ConditionIs(
-            ConditionTerm::float32_compare(
-                value.clone(),
-                value.clone(),
-                CComparisonOperator::Equal,
-            ),
+            ConditionTerm::float32_compare(value.clone(), value.clone(), ComparisonOperator::Equal),
             true,
         );
         SpecialArithmeticCertificate {
@@ -5035,7 +5031,7 @@ mod tests {
         .check(&good, std::slice::from_ref(&finite))
         .unwrap();
         let bad = Proposition::ConditionIs(
-            ConditionTerm::float32_compare(value.clone(), value, CComparisonOperator::LessThan),
+            ConditionTerm::float32_compare(value.clone(), value, ComparisonOperator::LessThan),
             true,
         );
         assert!(matches!(
@@ -5294,11 +5290,11 @@ mod tests {
             );
         }
         let finite = Proposition::ConditionIs(
-            ConditionTerm::float32_classification(value.clone(), CFloatClassification::Finite),
+            ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite),
             true,
         );
         let goal = Proposition::ConditionIs(
-            ConditionTerm::float32_compare(value.clone(), value, CComparisonOperator::Equal),
+            ConditionTerm::float32_compare(value.clone(), value, ComparisonOperator::Equal),
             true,
         );
         assert!(matches!(

@@ -191,7 +191,7 @@ impl ResourceDescription {
             || self.arguments().len() != 1
             || !matches!(
                 self.arguments()[0],
-                AlgebraicValue::C(super::CValue::Pointer(_))
+                AlgebraicValue::Program(super::ProgramValue::Pointer(_))
             )
             || !self.resource_arguments().is_empty()
         {
@@ -249,7 +249,7 @@ impl ResourceDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CType, ResourceFieldType, Variable, int32};
+    use crate::kernel::{ProgramType, ResourceFieldType, Variable, int32};
     use std::collections::BTreeSet;
     use std::hash::{Hash, Hasher};
 
@@ -258,8 +258,11 @@ mod tests {
             Variable(identity),
             family.into(),
             vec![int32(argument).into()].into(),
-            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            ResourceFieldSchema::new(vec![(
+                "value".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(observed).into()].into(),
         )
         .unwrap()
@@ -311,9 +314,11 @@ mod tests {
             ResourceDescription::from_instance(&instance(3, "state", 8, 10))
         );
         let mut different_schema = later;
-        different_schema.schema =
-            ResourceFieldSchema::new(vec![("other".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        different_schema.schema = ResourceFieldSchema::new(vec![(
+            "other".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap();
         assert_ne!(
             description,
             ResourceDescription::from_instance(&different_schema)
@@ -343,27 +348,27 @@ mod tests {
     #[test]
     fn contract_identity_includes_resource_arguments() {
         use crate::kernel::{
-            CResourceAccessMode, CResourceSnapshot, CResourceSpec, CResourceTransferRole,
-            ResourceFamily,
+            ResourceAccessMode, ResourceFamily, ResourceSnapshot, ResourceSpec,
+            ResourceTransferRole,
         };
-        let spec = CResourceSpec::declared(
+        let spec = ResourceSpec::declared(
             ResourceFamily::Composite,
-            CResourceAccessMode::Own,
+            ResourceAccessMode::Own,
             "wrapper".into(),
             vec![],
             vec![],
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Current,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Current,
         )
         .unwrap();
         let first = spec.clone().with_resource_arguments(vec![Variable(1)]);
         let second = spec.with_resource_arguments(vec![Variable(2)]);
         assert!(
-            CResourceSpec::quantified(
-                crate::kernel::CExpression::Value(int32(1)),
+            ResourceSpec::quantified(
+                crate::kernel::ProgramExpression::Value(int32(1)),
                 first.clone(),
-                CResourceTransferRole::Borrow,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Borrow,
+                ResourceSnapshot::Current,
             )
             .is_err()
         );
@@ -374,13 +379,13 @@ mod tests {
 
     #[test]
     fn containing_a_reference_does_not_own_its_target() {
-        use crate::kernel::{CResource, CResourceFact, ResourceContext};
+        use crate::kernel::{Resource, ResourceContext, ResourceFact};
         let target = instance(1, "cell", 7, 10);
         let wrapper = instance(2, "wrapper", 7, 0)
             .with_resource_arguments(vec![ResourceReference::from_instance(&target)]);
         let context = ResourceContext::new()
             .try_compose_with_fact(
-                CResourceFact::own(CResource::Instance(wrapper)),
+                ResourceFact::own(Resource::Instance(wrapper)),
                 &PureFactContext::new(),
             )
             .unwrap();
@@ -389,7 +394,7 @@ mod tests {
 
     #[test]
     fn descriptions_and_ownership_matching_do_not_erase_resource_arguments() {
-        use crate::kernel::{CResource, CResourceFact, ResourceContext};
+        use crate::kernel::{Resource, ResourceContext, ResourceFact};
         let target = instance(1, "cell", 7, 10);
         let other_target = instance(2, "cell", 7, 10);
         let wrapper = instance(3, "wrapper", 7, 0)
@@ -400,23 +405,18 @@ mod tests {
         assert!(
             !ResourceDescription::from_instance(&wrapper).matches_instance(&wrong, &assumptions)
         );
-        assert!(
-            !crate::kernel::memory_provenance::c_resources_directly_match(
-                &CResource::Instance(wrapper.clone()),
-                &CResource::Instance(wrong.clone()),
-                &assumptions,
-            )
-        );
+        assert!(!crate::kernel::memory_provenance::resources_directly_match(
+            &Resource::Instance(wrapper.clone()),
+            &Resource::Instance(wrong.clone()),
+            &assumptions,
+        ));
         let context = ResourceContext::new()
-            .try_compose_with_fact(
-                CResourceFact::own(CResource::Instance(wrapper)),
-                &assumptions,
-            )
+            .try_compose_with_fact(ResourceFact::own(Resource::Instance(wrapper)), &assumptions)
             .unwrap();
         assert!(
             context
                 .without_fact_incrementally(
-                    &CResourceFact::own(CResource::Instance(wrong)),
+                    &ResourceFact::own(Resource::Instance(wrong)),
                     &assumptions,
                 )
                 .is_none()

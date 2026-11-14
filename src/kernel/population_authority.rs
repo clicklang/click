@@ -8,7 +8,7 @@
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub(in crate::kernel) mod c_creation;
+pub(in crate::kernel) mod storage_creation;
 
 fn fresh() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);

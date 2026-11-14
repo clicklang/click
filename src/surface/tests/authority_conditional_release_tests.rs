@@ -73,7 +73,7 @@ void release_one(struct child* obj) {
 }
 "#;
 
-fn verify(source: &str) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+fn verify(source: &str) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let project = ClickProject::new(
         "conditional_release.click",
         [ClickModuleSource::new(
@@ -86,7 +86,7 @@ fn verify(source: &str) -> Result<Vec<VerifiedCTheorem>, ClickError> {
         target: None,
         runtime: None,
     });
-    verify_c0_project(&project, &[("conditional_release.c", C)])
+    verify_c_project(&project, &[("conditional_release.c", C)])
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
         target: None,
         runtime: None,
     });
-    verify_c0_project(&project, &c).expect("the original handoff proof verifies");
+    verify_c_project(&project, &c).expect("the original handoff proof verifies");
     let sites =
         project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     assert!(!sites.is_empty());
@@ -283,7 +283,7 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
     };
     crate::instrumentation::with_default_tactic_limits(|| {
         let project = project_for(source);
-        verify_c0_project(&project, &c).expect("the original named-output proof verifies");
+        verify_c_project(&project, &c).expect("the original named-output proof verifies");
         let sites = project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec()))
             .unwrap()
             .into_iter()
@@ -305,7 +305,7 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
                 position.column,
             )
             .unwrap();
-            verify_c0_project(&project_for(&expanded), &c).expect(
+            verify_c_project(&project_for(&expanded), &c).expect(
                 "the named-output expansion preserves one survivor and one output instance",
             );
         }
@@ -315,7 +315,7 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
         );
         assert_ne!(duplicated_survivor, source);
         assert!(
-            verify_c0_project(&project_for(&duplicated_survivor), &c).is_err(),
+            verify_c_project(&project_for(&duplicated_survivor), &c).is_err(),
             "a checked output cannot create an extra surviving unit"
         );
     });
@@ -337,10 +337,10 @@ void bound(int32 value) {
 "#;
     let c = [("bound.c", "void bound(int32 value) {}")];
     crate::instrumentation::with_default_tactic_limits(|| {
-        verify_c0_sources(source, &c).expect("execution compares the same signed value");
-        let expansion = expand_c0_tactic_source_at(source, &c, 8, 9)
+        verify_c_sources(source, &c).expect("execution compares the same signed value");
+        let expansion = expand_c_tactic_source_at(source, &c, 8, 9)
             .expect("the mirrored execution closure expands");
-        verify_c0_sources(&expansion, &c)
+        verify_c_sources(&expansion, &c)
             .expect("the mirrored execution closure has a checked normalization");
     });
 }
@@ -349,10 +349,10 @@ void bound(int32 value) {
 fn mirrored_strict_signed_bound_expands_to_checked_successor_rule() {
     let source = "theorem bound(value: int32) {\nrequires 2 <= value;\nensures value > 1 by {\nsolve();\n}\n}\n";
     crate::instrumentation::with_default_tactic_limits(|| {
-        verify_c0_sources(source, &[])
+        verify_c_sources(source, &[])
             .expect("a mirrored strict bound follows from its successor bound");
-        let expanded = expand_c0_tactic_source_at(source, &[], 4, 1).unwrap();
-        verify_c0_sources(&expanded, &[]).expect("the mirrored successor certificate verifies");
+        let expanded = expand_c_tactic_source_at(source, &[], 4, 1).unwrap();
+        verify_c_sources(&expanded, &[]).expect("the mirrored successor certificate verifies");
     });
 }
 
@@ -361,7 +361,7 @@ fn strict_successor_bound_does_not_wrap_signed_maximum() {
     let source = "theorem bound(value: int32) {\nrequires 2147483647 <= value;\nensures value > 2147483647 by { solve(); }\n}\n";
     crate::instrumentation::with_default_tactic_limits(|| {
         assert!(
-            verify_c0_sources(source, &[]).is_err(),
+            verify_c_sources(source, &[]).is_err(),
             "signed maximum has no successor"
         );
     });
@@ -387,7 +387,7 @@ fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
             })
         };
         let project = project_for(source);
-        verify_c0_project(&project, &c).expect("the original parent lifecycle verifies");
+        verify_c_project(&project, &c).expect("the original parent lifecycle verifies");
         let line = source
             .lines()
             .enumerate()

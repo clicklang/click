@@ -38,8 +38,8 @@ impl EqualityGraph {
         enum Work<'a> {
             Term(&'a Term),
             Model(&'a AlgebraicTerm),
-            Value(&'a CValue),
-            Pointer(&'a CPointerValue),
+            Value(&'a ProgramValue),
+            Pointer(&'a PointerValue),
         }
         let mut pending = match proposition {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
@@ -56,7 +56,7 @@ impl EqualityGraph {
         while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match work {
-                Work::Term(Term::CValue(value)) => pending.push(Work::Value(value)),
+                Work::Term(Term::ProgramValue(value)) => pending.push(Work::Value(value)),
                 Work::Term(Term::Algebraic(model)) => pending.push(Work::Model(model)),
                 Work::Model(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { fields, .. },
@@ -64,13 +64,13 @@ impl EqualityGraph {
                 }) => {
                     for field in fields {
                         match field {
-                            AlgebraicValue::C(value) => pending.push(Work::Value(value)),
+                            AlgebraicValue::Program(value) => pending.push(Work::Value(value)),
                             AlgebraicValue::Algebraic(model) => pending.push(Work::Model(model)),
                             AlgebraicValue::Integer(_) => {}
                         }
                     }
                 }
-                Work::Value(CValue::Pointer(pointer)) => pending.push(Work::Pointer(pointer)),
+                Work::Value(ProgramValue::Pointer(pointer)) => pending.push(Work::Pointer(pointer)),
                 Work::Pointer(pointer) => {
                     if let Some(evidence) = pointer.object_type_evidence() {
                         keys.insert((
@@ -98,7 +98,7 @@ impl EqualityGraph {
     fn pointer_predicate_key(
         proposition: &crate::kernel::Proposition,
     ) -> Option<(Pointer, terms::PointerFactKey)> {
-        use crate::kernel::{CValue, Proposition, Term};
+        use crate::kernel::{ProgramValue, Proposition, Term};
         let Proposition::Predicate { name, arguments } = proposition else {
             return None;
         };
@@ -107,7 +107,7 @@ impl EqualityGraph {
                 .iter()
                 .enumerate()
                 .find_map(|(position, argument)| {
-                    if let Term::CValue(CValue::Pointer(pointer)) = argument {
+                    if let Term::ProgramValue(ProgramValue::Pointer(pointer)) = argument {
                         Some((position, pointer))
                     } else {
                         None
@@ -122,7 +122,7 @@ impl EqualityGraph {
                     crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arguments.len(),
                     position,
-                    pointer.c_type(),
+                    pointer.program_type(),
                 ),
             ));
         }
@@ -133,7 +133,7 @@ impl EqualityGraph {
                     name.clone(),
                     arguments.len(),
                     position,
-                    pointer.c_type(),
+                    pointer.program_type(),
                 )
             });
         Some((pointer.pointer().clone(), key))
@@ -155,7 +155,7 @@ impl EqualityGraph {
         source: &std::sync::Arc<dyn terms::PointerFactSource>,
         insert: bool,
     ) {
-        use crate::kernel::{CFunctionContract, CValue, Proposition, Term};
+        use crate::kernel::{FunctionContract, ProgramValue, Proposition, Term};
         let proposition = source.proposition();
         if self.adjust_address_separation_source(source, insert) {
             return;
@@ -195,11 +195,11 @@ impl EqualityGraph {
         // A contract fact names its function value first; the values after
         // it fix the contract's value parameters.
         if let Proposition::Predicate { name, arguments } = proposition
-            && CFunctionContract::surface_name_from_predicate(name).is_some()
+            && FunctionContract::surface_name_from_predicate(name).is_some()
             && matches!(
                 arguments.as_slice(),
-                [Term::CState(_), Term::CValue(CValue::Pointer(_)), values @ ..]
-                    if values.iter().all(|value| matches!(value, Term::CValue(_)))
+                [Term::ExecutionState(_), Term::ProgramValue(ProgramValue::Pointer(_)), values @ ..]
+                    if values.iter().all(|value| matches!(value, Term::ProgramValue(_)))
             )
         {
             let address = state.register_pointer_address(&predicate.expect("contract pointer").0);
@@ -232,7 +232,7 @@ impl EqualityGraph {
         &self,
         proposition: &crate::kernel::Proposition,
     ) -> bool {
-        use crate::kernel::{CValue, Proposition, Term};
+        use crate::kernel::{ProgramValue, Proposition, Term};
         let Some((pointer, key)) = Self::pointer_predicate_key(proposition) else {
             return false;
         };
@@ -259,10 +259,10 @@ impl EqualityGraph {
                         crate::instrumentation::record_deterministic_work(1);
                         match (left, right) {
                             (
-                                Term::CValue(CValue::Pointer(left)),
-                                Term::CValue(CValue::Pointer(right)),
+                                Term::ProgramValue(ProgramValue::Pointer(left)),
+                                Term::ProgramValue(ProgramValue::Pointer(right)),
                             ) => {
-                                left.c_type() == right.c_type()
+                                left.program_type() == right.program_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
                                     && self.knows_condition(
                                         &crate::kernel::ConditionTerm::PointerValueEqual(
@@ -284,7 +284,7 @@ impl EqualityGraph {
         &self,
         start: &Pointer,
     ) -> Vec<crate::kernel::Proposition> {
-        use crate::kernel::{CPointerValue, CType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
+        use crate::kernel::{PointerValue, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
         [3, 4]
             .into_iter()
             .flat_map(|arity| {
@@ -292,7 +292,7 @@ impl EqualityGraph {
                     SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arity,
                     0,
-                    CPointerValue::new(start.clone(), CType::VoidPointer).c_type(),
+                    PointerValue::new(start.clone(), ProgramType::VoidPointer).program_type(),
                 );
                 self.pointer_fact_candidates(start, &key)
                     .iter()

@@ -42,12 +42,12 @@ fn proof_match_fields_survive_function_unfold_in_have() {
             .replace("p[0] == value", "p[0] == 0")
             .replace("result == value", "result == 0"),
     ] {
-        verify_c0_sources(&source, &sources).unwrap();
+        verify_c_sources(&source, &sources).unwrap();
         let expanded =
-            expand_c0_claim_source(&source, &sources, "read", CProofClaim::Grouped).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+            expand_c_claim_source(&source, &sources, "read", ContractProofClaim::Grouped).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
         let bad = source.replace("== Maybe::Some(value) by", "== Maybe::None by");
-        assert!(verify_c0_sources(&bad, &sources).is_err());
+        assert!(verify_c_sources(&bad, &sources).is_err());
     }
 }
 
@@ -61,15 +61,20 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         ("modeled_binary_tree.c", c),
         ("modeled_binary_tree.h", header),
     ];
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded =
-        expand_c0_claim_source(source, &sources, "tree_rotate_left", CProofClaim::Grouped).unwrap();
+    verify_c_sources(source, &sources).unwrap();
+    let expanded = expand_c_claim_source(
+        source,
+        &sources,
+        "tree_rotate_left",
+        ContractProofClaim::Grouped,
+    )
+    .unwrap();
     super::super::expansion_tests::assert_only_function_proof_changed(
         source,
         &expanded,
         "tree_rotate_left",
     );
-    let checked = crate::surface::verify_c0_sources_functions(
+    let checked = crate::surface::verify_c_sources_functions(
         &expanded,
         &sources,
         ["tree_rotate_left".to_string()],
@@ -87,7 +92,7 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         "ensures heap_inorder(heap_rotate_left(tree)) == List<struct tree_node*>::Nil by",
     );
     assert_ne!(bad_theorem, source);
-    assert!(verify_c0_sources(&bad_theorem, &sources).is_err());
+    assert!(verify_c_sources(&bad_theorem, &sources).is_err());
     // Other mutants change only rotation contracts/bodies. Check both complete
     // rotations because their identical postcondition is mutated together.
     let outside_rotations = |text: &str| {
@@ -129,7 +134,7 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
     ] {
         assert_ne!(bad, source);
         assert_eq!(outside_rotations(&bad), outside);
-        assert!(crate::surface::verify_c0_sources_functions(
+        assert!(crate::surface::verify_c_sources_functions(
             &bad, &sources, ["tree_rotate_left".to_string(), "tree_rotate_right".to_string()],
         ).is_err());
     }
@@ -155,7 +160,7 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         assert_eq!(&c[..before_body], &bad_c[..after_body]);
         assert_eq!(&c[before_end..], &bad_c[after_end..]);
         assert!(
-            crate::surface::verify_c0_sources_functions(
+            crate::surface::verify_c_sources_functions(
                 source,
                 &[
                     ("modeled_binary_tree.c", &bad_c),
@@ -194,24 +199,24 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
         source.replace("        Maybe::None => { contradiction(c.model == Maybe::None); },\n", "")
             .replace("        },\n    }\n}\n", "        },\n        Maybe::None => { contradiction(c.model == Maybe::None); },\n    }\n}\n"),
     ] {
-        verify_c0_sources(&good, &sources)
+        verify_c_sources(&good, &sources)
             .expect("excluded arm has no memory and does not execute");
         let expanded =
-            expand_c0_claim_source(&good, &sources, "read", CProofClaim::Grouped).unwrap();
-        verify_c0_sources(&expanded, &sources)
+            expand_c_claim_source(&good, &sources, "read", ContractProofClaim::Grouped).unwrap();
+        verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
         assert!(expanded.contains("contradiction("));
         // `have` is one selectable C-proof tactic, including its nested proof.
         for offset in [good.find("step_until(function.exit);").unwrap(), good.find("have result").unwrap(), good.rfind("solve();").unwrap()] {
             let position = expansion::position_at_offset(&good, offset);
             let selected =
-                expand_c0_tactic_source_at(&good, &sources, position.line, position.column)
+                expand_c_tactic_source_at(&good, &sources, position.line, position.column)
                     .unwrap();
-            verify_c0_sources(&selected, &sources).expect("selected live arm expansion");
+            verify_c_sources(&selected, &sources).expect("selected live arm expansion");
         }
     }
     // The live arm's solve may reconstruct the omitted resource fold.
-    verify_c0_sources(&source.replace("            fold(c);", ""), &sources)
+    verify_c_sources(&source.replace("            fold(c);", ""), &sources)
         .expect("the live arm may refold implicitly");
     for bad in [
         source.replace("    requires c.model != Maybe::None;", ""),
@@ -234,7 +239,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
         source.replace("have result == value", "have result == value + 1"),
     ] {
         assert!(
-            verify_c0_sources(&bad, &sources).is_err(),
+            verify_c_sources(&bad, &sources).is_err(),
             "invalid exclusion or live proof accepted"
         );
     }
@@ -265,17 +270,18 @@ int id(int x) {
 }
 "#;
     let sources = [("id.c", "int id(int x) { return x; }")];
-    verify_c0_sources(source, &sources).expect("nested excluded constructors");
-    let expanded = expand_c0_claim_source(source, &sources, "id", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).expect("nested exclusion certificate");
+    verify_c_sources(source, &sources).expect("nested excluded constructors");
+    let expanded =
+        expand_c_claim_source(source, &sources, "id", ContractProofClaim::Grouped).unwrap();
+    verify_c_sources(&expanded, &sources).expect("nested exclusion certificate");
 }
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
-    verify_c0_sources(SOURCE, &[("read.c", C)])
+    verify_c_sources(SOURCE, &[("read.c", C)])
         .expect("arbitrary scoped field and return-state fold");
-    verify_c0_sources(
+    verify_c_sources(
         &SOURCE.replace("            fold(c);", ""),
         &[("read.c", C)],
     )
@@ -334,7 +340,7 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
         ),
     ] {
         assert!(
-            verify_c0_sources(&bad, &[("read.c", C)]).is_err(),
+            verify_c_sources(&bad, &[("read.c", C)]).is_err(),
             "accepted invalid match: {label}"
         );
     }
@@ -344,10 +350,11 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn proof_match_expands_and_rechecks() {
     let sources = [("read.c", C)];
-    verify_c0_sources(SOURCE, &sources).unwrap();
-    let expanded = expand_c0_claim_source(SOURCE, &sources, "read", CProofClaim::Grouped).unwrap();
+    verify_c_sources(SOURCE, &sources).unwrap();
+    let expanded =
+        expand_c_claim_source(SOURCE, &sources, "read", ContractProofClaim::Grouped).unwrap();
     assert!(expanded.contains("match c.model"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("expanded constructor proof rechecks: {error:?}\n{expanded}")
     });
     for offset in [
@@ -357,8 +364,8 @@ fn proof_match_expands_and_rechecks() {
     ] {
         let position = expansion::position_at_offset(SOURCE, offset);
         let selected =
-            expand_c0_tactic_source_at(SOURCE, &sources, position.line, position.column).unwrap();
-        verify_c0_sources(&selected, &sources).expect("selected match-arm expansion rechecks");
+            expand_c_tactic_source_at(SOURCE, &sources, position.line, position.column).unwrap();
+        verify_c_sources(&selected, &sources).expect("selected match-arm expansion rechecks");
     }
 }
 
@@ -367,7 +374,7 @@ fn proof_match_expands_and_rechecks() {
 fn proof_match_int64_payloads_are_typed() {
     let source = SOURCE.replace("int", "int64");
     let c = C.replace("int", "int64");
-    verify_c0_sources(&source, &[("read.c", c.as_str())]).expect("64-bit constructor witness");
+    verify_c_sources(&source, &[("read.c", c.as_str())]).expect("64-bit constructor witness");
 }
 
 #[test]
@@ -394,12 +401,12 @@ int read(int x) {
             .replace("match (match", "match match")
             .replace(" }) {", " } {"),
     ] {
-        verify_c0_sources(&source, &sources).expect("compound symbolic scrutinee");
+        verify_c_sources(&source, &sources).expect("compound symbolic scrutinee");
         let offset = source.find("step_until(function.exit);").unwrap();
         let position = expansion::position_at_offset(&source, offset);
         let expanded =
-            expand_c0_tactic_source_at(&source, &sources, position.line, position.column).unwrap();
-        verify_c0_sources(&expanded, &sources).expect("compound scrutinee expansion");
+            expand_c_tactic_source_at(&source, &sources, position.line, position.column).unwrap();
+        verify_c_sources(&expanded, &sources).expect("compound scrutinee expansion");
     }
 }
 
@@ -427,11 +434,11 @@ int id(int x) {
 }
 "#;
     let c = [("id.c", "int id(int x) { return x; }")];
-    verify_c0_sources(source, &c).expect("nested generic ADT fields stay symbolic");
-    verify_c0_sources(&source.replace("match tail {", "match list.model {"), &c)
+    verify_c_sources(source, &c).expect("nested generic ADT fields stay symbolic");
+    verify_c_sources(&source.replace("match tail {", "match list.model {"), &c)
         .expect("repeated matching gets fresh witnesses, not a second model");
-    let expanded = expand_c0_claim_source(source, &c, "id", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &c).expect("nested match certificate");
+    let expanded = expand_c_claim_source(source, &c, "id", ContractProofClaim::Grouped).unwrap();
+    verify_c_sources(&expanded, &c).expect("nested match certificate");
 }
 
 #[cfg(feature = "fast-gate")]

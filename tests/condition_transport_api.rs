@@ -11,7 +11,7 @@ fn inconsistent_context_retains_its_false_premise() {
     let target = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
     let context = PureFactContext::new().assume_proposition(target.clone());
 
-    let theorem = prove_c_condition_fact_target_transport(&source, &target, &context)
+    let theorem = prove_program_condition_fact_target_transport(&source, &target, &context)
         .expect("supplied contextual assumption gets accepted");
     let closed = Proposition::Implies(Box::new(source.clone()), Box::new(target.clone()));
     assert_ne!(theorem.proposition(), &closed);
@@ -34,12 +34,12 @@ fn consistent_context_retains_its_symbolic_premise() {
         true,
     );
     assert!(
-        prove_c_condition_fact_target_transport(&source, &target, &PureFactContext::new())
+        prove_program_condition_fact_target_transport(&source, &target, &PureFactContext::new())
             .is_none()
     );
     let context = PureFactContext::new().assume_proposition(target.clone());
 
-    let theorem = prove_c_condition_fact_target_transport(&source, &target, &context)
+    let theorem = prove_program_condition_fact_target_transport(&source, &target, &context)
         .expect("supplied contextual assumption gets accepted");
     let closed = Proposition::Implies(Box::new(source.clone()), Box::new(target.clone()));
     assert_ne!(theorem.proposition(), &closed);
@@ -51,7 +51,7 @@ fn consistent_context_retains_its_symbolic_premise() {
 
 #[test]
 fn context_free_disjoint_store_transport_stays_closed() {
-    let before = CMemory::new();
+    let before = Memory::new();
     let written = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -62,12 +62,12 @@ fn context_free_disjoint_store_transport_stays_closed() {
     };
     let after = before.clone().store(written, int32(7));
     let old_load = MachineTerm::MemoryLoad(
-        click::kernel::intern_c_memory(before),
+        click::kernel::intern_memory(before),
         Box::new(preserved.clone()),
         LoadKind::Int32,
     );
     let new_load = MachineTerm::MemoryLoad(
-        click::kernel::intern_c_memory(after),
+        click::kernel::intern_memory(after),
         Box::new(preserved),
         LoadKind::Int32,
     );
@@ -91,7 +91,7 @@ fn context_free_disjoint_store_transport_stays_closed() {
     );
 
     let theorem =
-        prove_c_condition_fact_target_transport(&source, &target, &PureFactContext::new())
+        prove_program_condition_fact_target_transport(&source, &target, &PureFactContext::new())
             .expect("a structurally disjoint store needs no contextual premise");
     assert_eq!(
         theorem.proposition(),
@@ -128,7 +128,7 @@ fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
             ));
         }
         let (theorem, work) = click::instrumentation::measure_deterministic_work(|| {
-            prove_c_condition_fact_target_transport(&source, &target, &context)
+            prove_program_condition_fact_target_transport(&source, &target, &context)
                 .expect("the exact target premise is indexed")
         });
         assert_eq!(theorem.proposition(), &expected);

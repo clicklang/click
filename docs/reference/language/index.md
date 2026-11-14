@@ -771,7 +771,7 @@ that itself takes callbacks needs a measure on its named contract, which is
 not supported yet. The refusal names the unranked loop or the callee
 responsible, and offers the two repairs: a `decreases` clause, or the
 `diverges` marker. The kernel records termination evidence separately from
-`CVerifiedFunctionRule`, so an ordinary `ensures` is still exactly a statement
+`VerifiedFunctionRule`, so an ordinary `ensures` is still exactly a statement
 about return states.
 
 ### Functions that may not return
@@ -3391,7 +3391,7 @@ pointer is `base` and whose extent is `bytes` bytes. A successful `malloc`,
 `calloc` or `realloc` produces it beside ownership of the block's cells, and a
 nonnull `free(p)` consumes it with complete ownership of the block, and is
 refused when it is not held. The kernel names it
-`CResourceFact::ALLOCATION_RESOURCE_NAME`: it is an exclusive token with no
+`ResourceFact::ALLOCATION_RESOURCE_NAME`: it is an exclusive token with no
 body, it grants no read or write access by itself, and an owned positive
 instance supplies the fact that `base[0..bytes]` lies inside one block. The base
 argument accepts any modeled data, pointer-array or struct pointer; the owned

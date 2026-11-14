@@ -1,12 +1,14 @@
 use super::*;
-use crate::kernel::{CResourceAccessMode, CResourceSpec, CType, c_function, int32};
+use crate::kernel::{ProgramType, ResourceAccessMode, ResourceSpec, int32, program_function};
 
 #[test]
 fn authority_named_memory_rewrite_preserves_population_ledger() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let instance = ResourceInstance::new(
         Variable(9_850_001),
         "cell".into(),
@@ -15,20 +17,20 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![],
         None,
         false,
-        vec![crate::kernel::CResourceSpec::owned_memory(
-            crate::kernel::CMemorySegment {
+        vec![crate::kernel::ResourceSpec::owned_memory(
+            crate::kernel::MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: CExpression::Value(CValue::pointer(crate::kernel::Pointer::symbolic(
-                    Variable(9_850_002),
-                ))),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Value(ProgramValue::pointer(
+                    crate::kernel::Pointer::symbolic(Variable(9_850_002)),
+                )),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 element_width: 4,
                 guard: None,
             },
@@ -36,15 +38,15 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         vec![],
     )
     .with_instance_schema(Some(schema));
-    let function = c_function(
-        CType::Int32,
+    let function = program_function(
+        ProgramType::Int32,
         "test",
         vec![],
-        CStatement::Return(CExpression::Value(int32(7))),
+        ProgramStatement::Return(ProgramExpression::Value(int32(7))),
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
-    let selected = CResourceFact::own(CResource::Instance(instance.clone()));
-    let folded = CState::new()
+    let selected = ResourceFact::own(Resource::Instance(instance.clone()));
+    let folded = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
@@ -71,10 +73,10 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
     .expect("ordinary named memory is a checked representation exchange");
     let forged_facts = open_facts
         .clone()
-        .with_fact(Proposition::CMemoryReadDefined {
+        .with_fact(Proposition::MemoryReadDefined {
             memory: open.memory().clone(),
             pointer: crate::kernel::Pointer::symbolic(Variable(9_850_004)),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         });
     assert!(
         CheckedResourceRewrite::check(

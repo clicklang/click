@@ -25,7 +25,7 @@ fn widening_casts_retain_growing_arithmetic_prefixes_without_exports() {
                         );
                         let cast = shared_machine::cast_widening(
                             &SpecValue::Shared(root.clone()),
-                            destination.c_type(),
+                            destination.program_type(),
                         )
                         .unwrap();
                         assert_eq!(cast.children()[0], root);

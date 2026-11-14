@@ -161,15 +161,15 @@ fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
         for index in 0..size {
             resources = resources.unchecked_with_fact(token(&format!("frame {index}")));
         }
-        let required = CCheckedResourceFact {
-            fact: CResourceFact::own(CResource::MutexUse(crate::kernel::MutexUseIdentity {
+        let required = CheckedResourceFact {
+            fact: ResourceFact::own(Resource::MutexUse(crate::kernel::MutexUseIdentity {
                 binding: None,
                 protected: None,
                 initialization: None,
                 mutex: Pointer::symbolic(Variable(100)),
             })),
-            role: CResourceTransferRole::Borrow,
-            snapshot: CResourceSnapshot::Entry,
+            role: ResourceTransferRole::Borrow,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: None,

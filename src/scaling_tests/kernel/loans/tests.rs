@@ -306,7 +306,7 @@ fn split_owner_reconciliation_ignores_duplicate_observations() {
         resources.synchronize_memory_equalities(&assumptions);
         let original = resources.occurrences_for_fact(&owner)[0];
         let mut consume = checked(memory(0, 4, true));
-        consume.role = CResourceTransferRole::Consume;
+        consume.role = ResourceTransferRole::Consume;
         let requirements = [consume, checked(read)];
         let (ledger, caller, callee) = participants();
         let (residual, _, origins) = resources
@@ -399,9 +399,9 @@ fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
         let (owner, requested) = opaque_memory_borrow_fixture();
         let requested = requested.fact.memory_own_range().unwrap();
         let views = [
-            checked(CResourceFact::view_memory(requested.clone())),
-            checked(CResourceFact::view_memory(
-                crate::kernel::CMemoryRange::new_with_element_width(
+            checked(ResourceFact::view_memory(requested.clone())),
+            checked(ResourceFact::view_memory(
+                crate::kernel::MemoryRange::new_with_element_width(
                     requested.base().clone(),
                     2u32.into(),
                     3u32.into(),
@@ -412,8 +412,8 @@ fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
         ];
         let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
         for extra in 0..size {
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                crate::kernel::CMemoryRange::new(
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                crate::kernel::MemoryRange::new(
                     Pointer {
                         block: format!("unrelated-view-carrier-{extra}").into(),
                         offset: PointerOffsetTerm::Constant(0),
@@ -451,7 +451,7 @@ fn partial_borrow_carrier_return_ignores_unrelated_owners() {
         let (owner, requested) = opaque_memory_borrow_fixture();
         let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
         for extra in 0..size {
-            let range = crate::kernel::CMemoryRange::new(
+            let range = crate::kernel::MemoryRange::new(
                 Pointer {
                     block: format!("unrelated-carrier-{extra}").into(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -459,7 +459,7 @@ fn partial_borrow_carrier_return_ignores_unrelated_owners() {
                 0u32.into(),
                 4u32.into(),
             );
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(range));
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(range));
         }
         let (ledger, caller, callee) = participants();
         let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -799,14 +799,14 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
                 block: crate::kernel::PointerBlock::Concrete(format!("overlap-{index}")),
                 offset: crate::kernel::PointerOffsetTerm::Constant(0),
             };
-            let owner = CResourceFact::own_memory(CMemoryRange::new(
+            let owner = ResourceFact::own_memory(MemoryRange::new(
                 base.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(6),
             ));
             caller_resources = caller_resources.unchecked_with_fact(owner);
             let view = |start, end| {
-                checked(CResourceFact::view_memory(CMemoryRange::new(
+                checked(ResourceFact::view_memory(MemoryRange::new(
                     base.clone(),
                     MachineTerm::constant(start),
                     MachineTerm::constant(end),
@@ -982,7 +982,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         block: p.block.clone(),
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(600)), 1),
     };
-    let protected = CMemoryRange::new_with_element_width(
+    let protected = MemoryRange::new_with_element_width(
         p.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -1012,7 +1012,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
                 PointerOffsetTerm::Constant(offset),
             );
             let context = assumptions.clone().assume_condition(equality.clone(), true);
-            let query = CMemoryRange::new_with_element_width(
+            let query = MemoryRange::new_with_element_width(
                 q.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -1135,7 +1135,7 @@ fn active_memory_witness_ignores_unrelated_live_loans() {
 fn mixed_width_view_backing_joins_only_its_own_pieces() {
     let (ledger, caller, callee) = participants();
     let piece = |start: u32, end: u32, width: u32| {
-        CResourceFact::own_memory(crate::kernel::CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(crate::kernel::MemoryRange::new_with_element_width(
             crate::kernel::Pointer {
                 block: "buffer".into(),
                 offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -1442,7 +1442,7 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
                 } else {
                     MachineTerm::constant(1)
                 };
-                let range = CMemoryRange::new_with_element_width(base, 0u32.into(), end, 4);
+                let range = MemoryRange::new_with_element_width(base, 0u32.into(), end, 4);
                 for repeat in 0..3 {
                     let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                         ledger.permits_memory_access_with_assumptions(&range, &facts)

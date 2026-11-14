@@ -9,9 +9,9 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use super::{CCompositeResourceDefinition, CResource, CResourceFact};
+use super::{CompositeResourceDefinition, Resource, ResourceFact};
 
-pub(super) fn propagate_thread_confinement(definitions: &mut [CCompositeResourceDefinition]) {
+pub(super) fn propagate_thread_confinement(definitions: &mut [CompositeResourceDefinition]) {
     for definition in definitions.iter_mut() {
         definition.contains_mutex_authority = definition
             .contains
@@ -58,13 +58,13 @@ pub(super) fn propagate_thread_confinement(definitions: &mut [CCompositeResource
 /// Marks each definition that is authorized, holds a population authority,
 /// or contains or names such a definition. The surface's own definition list
 /// and the kernel-installed one must agree, so both run this pass.
-pub(crate) fn propagate_population_reach(definitions: &mut [CCompositeResourceDefinition]) {
+pub(crate) fn propagate_population_reach(definitions: &mut [CompositeResourceDefinition]) {
     let dependents = definition_dependents(definitions);
     propagate_population_reach_with(definitions, &dependents);
 }
 
 fn propagate_population_reach_with(
-    definitions: &mut [CCompositeResourceDefinition],
+    definitions: &mut [CompositeResourceDefinition],
     dependents: &[Vec<usize>],
 ) {
     for definition in definitions.iter_mut() {
@@ -79,12 +79,7 @@ fn propagate_population_reach_with(
                         .flat_map(|body| body.arms.iter())
                         .flat_map(|arm| arm.contains.iter()),
                 )
-                .any(|spec| {
-                    matches!(
-                        spec.term(),
-                        super::CResourceTerm::PopulationAuthority { .. }
-                    )
-                });
+                .any(|spec| matches!(spec.term(), super::ResourceTerm::PopulationAuthority { .. }));
     }
     let mut reaching: VecDeque<_> = definitions
         .iter()
@@ -102,7 +97,7 @@ fn propagate_population_reach_with(
 }
 
 /// For each definition, the definitions that contain or name it as a child.
-fn definition_dependents(definitions: &[CCompositeResourceDefinition]) -> Vec<Vec<usize>> {
+fn definition_dependents(definitions: &[CompositeResourceDefinition]) -> Vec<Vec<usize>> {
     let by_name: BTreeMap<&str, usize> = definitions
         .iter()
         .enumerate()
@@ -138,41 +133,42 @@ fn definition_dependents(definitions: &[CCompositeResourceDefinition]) -> Vec<Ve
 }
 
 pub(super) fn confined_resource_name<'a>(
-    fact: &'a CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &'a ResourceFact,
+    definitions: &[CompositeResourceDefinition],
 ) -> Option<&'a str> {
     let name = match fact {
-        CResourceFact::Own(
-            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        ResourceFact::Own(
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
             _,
         )
-        | CResourceFact::View(
-            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        | ResourceFact::View(
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
         ) => return None,
         // Moving the atom alone does not transfer its loan share/hold custody.
-        CResourceFact::Own(CResource::PopulationAuthority(description), _)
-        | CResourceFact::View(CResource::PopulationAuthority(description)) => {
+        ResourceFact::Own(Resource::PopulationAuthority(description), _)
+        | ResourceFact::View(Resource::PopulationAuthority(description)) => {
             return Some(description.family());
         }
-        CResourceFact::Own(CResource::MutexUse(_), _)
-        | CResourceFact::View(CResource::MutexUse(_)) => return Some("mutex use"),
-        CResourceFact::Own(CResource::MutexLive(_), _)
-        | CResourceFact::View(CResource::MutexLive(_)) => return Some("mutex lifetime"),
-        CResourceFact::Own(CResource::MutexGuard(_), _)
-        | CResourceFact::View(CResource::MutexGuard(_)) => return Some("mutex guard"),
-        CResourceFact::Own(CResource::Composite { name, .. }, _)
-        | CResourceFact::View(CResource::Composite { name, .. })
-        | CResourceFact::Own(CResource::Token { name, .. }, _)
-        | CResourceFact::View(CResource::Token { name, .. }) => name.as_str(),
-        CResourceFact::Own(CResource::Instance(instance), _)
-        | CResourceFact::View(CResource::Instance(instance)) => instance.name.as_str(),
+        ResourceFact::Own(Resource::MutexUse(_), _) | ResourceFact::View(Resource::MutexUse(_)) => {
+            return Some("mutex use");
+        }
+        ResourceFact::Own(Resource::MutexLive(_), _)
+        | ResourceFact::View(Resource::MutexLive(_)) => return Some("mutex lifetime"),
+        ResourceFact::Own(Resource::MutexGuard(_), _)
+        | ResourceFact::View(Resource::MutexGuard(_)) => return Some("mutex guard"),
+        ResourceFact::Own(Resource::Composite { name, .. }, _)
+        | ResourceFact::View(Resource::Composite { name, .. })
+        | ResourceFact::Own(Resource::Token { name, .. }, _)
+        | ResourceFact::View(Resource::Token { name, .. }) => name.as_str(),
+        ResourceFact::Own(Resource::Instance(instance), _)
+        | ResourceFact::View(Resource::Instance(instance)) => instance.name.as_str(),
         // A publication right is the handoff itself: a worker may hold it.
-        CResourceFact::Own(
-            CResource::Memory(_) | CResource::Iterated(_) | CResource::Publication(_),
+        ResourceFact::Own(
+            Resource::Memory(_) | Resource::Iterated(_) | Resource::Publication(_),
             _,
         )
-        | CResourceFact::View(
-            CResource::Memory(_) | CResource::Iterated(_) | CResource::Publication(_),
+        | ResourceFact::View(
+            Resource::Memory(_) | Resource::Iterated(_) | Resource::Publication(_),
         ) => {
             return None;
         }
@@ -187,14 +183,14 @@ pub(super) fn confined_resource_name<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CResourceAccessMode, CResourceSpec, SpecProposition};
+    use crate::kernel::{ResourceAccessMode, ResourceSpec, SpecProposition};
 
     #[test]
     fn a_bodyless_member_can_move_but_an_authority_control_is_confined() {
         let member =
-            CCompositeResourceDefinition::new("member", vec![], None, false, vec![], vec![])
+            CompositeResourceDefinition::new("member", vec![], None, false, vec![], vec![])
                 .with_authorized(true);
-        let control = CCompositeResourceDefinition::authority_control(
+        let control = CompositeResourceDefinition::authority_control(
             "control",
             vec![],
             None,
@@ -214,29 +210,31 @@ mod tests {
     #[test]
     fn guard_ingredient_confines_its_transitive_wrappers() {
         use crate::kernel::{
-            CExpression, CResourceQuantity, CResourceSnapshot, CResourceTerm,
-            CResourceTransferRole, CValue, Pointer,
+            Pointer, ProgramExpression, ProgramValue, ResourceQuantity, ResourceSnapshot,
+            ResourceTerm, ResourceTransferRole,
         };
-        let guard = CResourceSpec::new(
-            CResourceTerm::MutexGuard {
-                mutex: Box::new(CExpression::Value(CValue::pointer(Pointer::null()))),
-                snapshot: CResourceSnapshot::Current,
+        let guard = ResourceSpec::new(
+            ResourceTerm::MutexGuard {
+                mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(
+                    Pointer::null(),
+                ))),
+                snapshot: ResourceSnapshot::Current,
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Current,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Consume,
+            ResourceSnapshot::Current,
         )
         .unwrap();
         let inner =
-            CCompositeResourceDefinition::new("inner", vec![], None, false, vec![guard], vec![]);
-        let outer = CCompositeResourceDefinition::new(
+            CompositeResourceDefinition::new("inner", vec![], None, false, vec![guard], vec![]);
+        let outer = CompositeResourceDefinition::new(
             "outer",
             vec![],
             None,
             false,
-            vec![CResourceSpec::composite(
-                CResourceAccessMode::Own,
+            vec![ResourceSpec::composite(
+                ResourceAccessMode::Own,
                 "inner".into(),
                 vec![],
                 vec![],
@@ -248,11 +246,11 @@ mod tests {
         assert!(
             definitions
                 .iter()
-                .all(CCompositeResourceDefinition::is_thread_confined)
+                .all(CompositeResourceDefinition::is_thread_confined)
         );
         assert_eq!(
             confined_resource_name(
-                &CResourceFact::own_composite("outer".into(), vec![]),
+                &ResourceFact::own_composite("outer".into(), vec![]),
                 &definitions
             ),
             Some("outer")
@@ -262,8 +260,8 @@ mod tests {
     #[test]
     fn containing_a_confined_resource_inherits_confinement() {
         let contained =
-            CResourceSpec::composite(CResourceAccessMode::Own, "reference".into(), vec![], vec![]);
-        let outer = CCompositeResourceDefinition::new(
+            ResourceSpec::composite(ResourceAccessMode::Own, "reference".into(), vec![], vec![]);
+        let outer = CompositeResourceDefinition::new(
             "wrapper",
             vec![],
             None,
@@ -271,7 +269,7 @@ mod tests {
             vec![contained],
             vec![],
         );
-        let inner = CCompositeResourceDefinition::authority_control(
+        let inner = CompositeResourceDefinition::authority_control(
             "reference",
             vec![],
             None,
@@ -285,7 +283,7 @@ mod tests {
         let mut definitions = vec![inner, outer];
         propagate_thread_confinement(&mut definitions);
         assert!(definitions[1].is_thread_confined());
-        let wrapped = CResourceFact::view_composite("wrapper".into(), vec![]);
+        let wrapped = ResourceFact::view_composite("wrapper".into(), vec![]);
         assert_eq!(
             confined_resource_name(&wrapped, &definitions),
             Some("wrapper")

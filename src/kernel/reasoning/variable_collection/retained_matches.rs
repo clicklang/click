@@ -12,8 +12,17 @@ pub(crate) fn collect_match_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     let mut summaries = std::collections::HashMap::new();
+    let result = match_variables(matched, mode, &mut summaries);
+    variables.extend(result.iter().copied());
+}
+
+pub(super) fn match_variables(
+    matched: &KernelMatch,
+    mode: FoldVariableRead,
+    summaries: &mut std::collections::HashMap<u64, Variables>,
+) -> Variables {
     let integer_result = matched.result_type == KernelType::Integer;
-    let machine_result = matches!(matched.result_type, KernelType::C(_));
+    let machine_result = matches!(matched.result_type, KernelType::Program(_));
     let scrutinee = &matched.arguments[0];
     let mut result = if mode == FoldVariableRead::ExpressionFree
         && machine_result
@@ -35,16 +44,16 @@ pub(crate) fn collect_match_variables(
             }
             result
         } else {
-            common_variables(scrutinee, mode, &mut summaries)
+            common_variables(scrutinee, mode, summaries)
         }
     } else {
-        common_variables(scrutinee, mode, &mut summaries)
+        common_variables(scrutinee, mode, summaries)
     };
     for (arm, body) in matched.arms.iter().zip(&matched.arguments[1..]) {
         if checked_collection_checkpoint() {
             break;
         }
-        let mut body = common_variables(body, mode, &mut summaries);
+        let mut body = common_variables(body, mode, summaries);
         if mode == FoldVariableRead::IntegerFree && integer_result {
             for binding in &arm.bindings {
                 if checked_collection_checkpoint() {
@@ -63,13 +72,13 @@ pub(crate) fn collect_match_variables(
                 if checked_collection_checkpoint() {
                     break;
                 }
-                let binding = common_variables(binding, mode, &mut summaries);
+                let binding = common_variables(binding, mode, summaries);
                 body = union(&body, &binding);
             }
         }
         result = union(&result, &body);
     }
-    variables.extend(result.iter().copied());
+    result
 }
 
 #[cfg(test)]
@@ -152,14 +161,14 @@ mod tests {
     #[test]
     fn retained_machine_match_readers_preserve_declaration_and_connection_rules() {
         let native = MachineTerm::AlgebraicMatch {
-            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(
-                CType::Int32,
-            )])),
+            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32),
+            ])),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
-                bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                    Variable(2),
-                )))],
+                bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                    MachineTerm::Variable(Variable(2)),
+                ))],
                 binding_names: Default::default(),
                 body: MachineTerm::Binary {
                     format: MachineIntegerType::Int32,

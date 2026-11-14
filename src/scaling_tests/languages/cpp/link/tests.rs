@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::languages::c::syntax::{C0Function, C0Type};
+use crate::languages::interface::{ImportedFunction, InterfaceType};
 
 /// Linking charges one unit for each function, layout, record spelling and
 /// library contract each source holds, whatever the other sources hold: a
@@ -15,11 +15,15 @@ fn linking_work_scales_with_the_functions_each_source_holds() {
         let functions = |prefix: &str| {
             (0..size)
                 .map(|index| {
-                    C0Function::external(C0Type::Void, format!("{prefix}{index:04}"), vec![])
+                    ImportedFunction::external(
+                        InterfaceType::Void,
+                        format!("{prefix}{index:04}"),
+                        vec![],
+                    )
                 })
                 .collect::<Vec<_>>()
         };
-        let execution = |functions: Vec<C0Function>| PreparedExecution {
+        let execution = |functions: Vec<ImportedFunction>| PreparedExecution {
             functions,
             layouts: Default::default(),
             library_contracts: String::new(),

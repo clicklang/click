@@ -4,8 +4,8 @@ fn retained_fold_affine_matching_counts_shared_dag_occurrences() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(CType::Int32), Variable(999201));
-        let y = KernelTerm::variable(KernelType::C(CType::Int32), Variable(999202));
+        let x = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999201));
+        let y = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999202));
         let mut left = KernelTerm::machine_binary_shared(format, Op::Add, [x.clone(), y.clone()]);
         let mut right = KernelTerm::machine_binary_shared(format, Op::Add, [y, x]);
         for _ in 0..depth {
@@ -33,7 +33,7 @@ fn retained_fold_affine_matching_counts_shared_dag_occurrences() {
 fn affine_occurrence_counts_wrap_only_at_the_word_width() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(999250));
+    let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999250));
     for _ in 0..31 {
         root = KernelTerm::machine_binary_shared(format, Op::Add, [root.clone(), root]);
     }
@@ -58,7 +58,8 @@ fn fold_endpoint_constant_spines_do_not_rewalk_growing_prefixes() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let one = KernelTermImport::default().machine(format, &MachineTerm::constant(1));
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(999301));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999301));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..count {
@@ -67,7 +68,10 @@ fn fold_endpoint_constant_spines_do_not_rewalk_growing_prefixes() {
                     Op::Add,
                     [
                         root.clone(),
-                        KernelTerm::variable(KernelType::C(CType::Int32), Variable(999302 + index)),
+                        KernelTerm::variable(
+                            KernelType::Program(ProgramType::Int32),
+                            Variable(999302 + index),
+                        ),
                     ],
                 );
                 let predecessor = KernelTerm::machine_binary_shared(
@@ -98,12 +102,15 @@ fn repeated_affine_equalities_reuse_the_previous_shared_roots() {
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(CType::Int32), Variable(999801));
-        let y = KernelTerm::variable(KernelType::C(CType::Int32), Variable(999802));
+        let x = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999801));
+        let y = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999802));
         let mut left = KernelTerm::machine_binary_shared(format, Op::Add, [x.clone(), y.clone()]);
         let mut right = KernelTerm::machine_binary_shared(format, Op::Add, [y, x]);
         for index in 0..size {
-            let leaf = KernelTerm::variable(KernelType::C(CType::Int32), Variable(1000000 + index));
+            let leaf = KernelTerm::variable(
+                KernelType::Program(ProgramType::Int32),
+                Variable(1000000 + index),
+            );
             left = KernelTerm::machine_binary_shared(format, Op::Add, [left, leaf.clone()]);
             right = KernelTerm::machine_binary_shared(format, Op::Add, [right, leaf]);
         }
@@ -145,7 +152,7 @@ fn selected_endpoint_equality_looks_up_one_pair_in_growing_source_stars() {
                     true,
                 );
             }
-            let root = |v| KernelTerm::variable(KernelType::C(format.c_type()), v);
+            let root = |v| KernelTerm::variable(KernelType::Program(format.program_type()), v);
             let left = root(anchor);
             let right = root(Variable(1001100));
             let missing = root(Variable(1001500));

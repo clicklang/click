@@ -209,7 +209,7 @@ steps.
 ## Execution state inside a proof
 
 Kernel `ExecutionProofCore` owns the semantic execution state for one proof
-path: the `CState`, typed frontier (program point, region, region start state,
+path: the `ExecutionState`, typed frontier (program point, region, region start state,
 and continuations), checked execution facts and loop rules, function-entry
 prerequisites and derivations, freshness counters, loop-effect goal, region
 flags, structured-branch flags, and unfolded kernel predicates.
@@ -344,7 +344,7 @@ live allocations, keeps a tombstone only when every arm agrees that the
 allocation is retired, and forgets branch-local cell values behind a memory
 provenance barrier. It then checks that the exported resource expands to the
 allocation on the retaining arm and not on the freeing arm. A conditional
-`CHeapAllocationFreed` fact is therefore validated inside the branch evidence
+`HeapAllocationFreed` fact is therefore validated inside the branch evidence
 but is not published as an unconditional free effect for the joined state.
 An unrelated resource cannot hide the lifetime difference.
 
@@ -398,12 +398,20 @@ clauses first and then these three closing goals. Completing an outcome branch
 requires both sets of goals to have been opened and every applicable goal to
 be closed; finishing the last written clause alone does not complete it.
 Closing goal state is fixed-size and shared proof forks retain independent
-updates. The ordered Surface driver currently supplies these closing proofs
-through the existing kernel checkers. Resource claim receipts describe individual
-clauses; a checked resource transition alone does not discharge lifetime or
-joint boundary obligations. The closer checks those obligations against the
-retained outcome, receipts and body effects before producing an opaque exit
-completion. A clause-specific proof closes the joint resource prefix through
+updates. An explicit `assumption()` discharges the selected closing goal using
+its retained outcome, receipts and body effects. Written `solve()` selects the
+same operation; the implicit solver schedules it for each omitted closing proof.
+Expansion records one `assumption()` per completed goal, so rechecking requires
+no implicit proof of these obligations. A checked resource transition retains
+resource/lifetime evidence without silently closing either goal. Explicit
+resource changes reopen the affected goals. Packaging an exit completion reads
+only the closed-goal state and packages the checked path; it performs no
+additional resource or effect check. With implicit solving disabled, an omitted closing step leaves its goal
+open. Diagnostics name that goal and distinguish a written tactic refusal from
+an implicit solver failure; a proposition-only closer names the actual closing
+goal instead of claiming there is no goal.
+
+A clause-specific proof closes the joint resource prefix through
 its last selected resource clause; it cannot certify later clauses whose
 separate proofs have not run. Only a completion of the entire resource prefix
 supplies whole-boundary/body-safety evidence, which registration requires for
@@ -420,7 +428,7 @@ is established before opening goals; a failed registered contract goal never
 falls back to a local lowering.
 
 There is one lowering. A claim goal is the contract's elaborated ensure
-lowered by the kernel at the path's outcome (`c_function_ensure_goals`); a
+lowered by the kernel at the path's outcome (`program_function_ensure_goals`); a
 registered predicate ensure is the predicate identity, which the proof
 unfolds on the goal, and an explicit closer also tries the unfolded body
 when the proof unfolded that predicate. Every proposition a proof states,
@@ -429,7 +437,7 @@ goes the same way: elaborated into the kernel's spec form exactly as a
 contract clause is (`elaborate_fixed_state_proposition`, with the proof's
 recorded snapshots, `old(...)` as the function entry, `result`, and the
 proof's current locals as fixed values) and lowered by the kernel
-(`c_lower_spec_proposition_at_state`), under one reasoning policy
+(`program_lower_spec_proposition_at_state`), under one reasoning policy
 (`proof_lowering_assumptions`): a proposition that applies a pure function
 keeps its memory reads symbolic. A `branch ensuring` or proof `if ensuring`
 fact is checked in each arm under that same policy and the arm's facts, and
@@ -437,7 +445,7 @@ its elaboration reads a local array by its element type and binds
 quantifiers as a `have` does, so an arm holds an interface fact exactly when
 a `have` of the same text there would; an expression a proof evaluates goes
 the same way (`elaborate_fixed_state_expression`,
-`c_evaluate_spec_expression_at_state`). Every pure-function call stays a
+`program_evaluate_speprogram_expression_at_state`). Every pure-function call stays a
 typed logical application during lowering, including calls whose arguments
 are constants. Only the checked `unfold(function(args))` proof step exposes
 one instantiated defining equation; lowering itself never executes Click.
@@ -448,7 +456,7 @@ goal are elaborated and lowered the same way, so a declared standard
 theorem matches its kernel axiom by spelling. So are the C fragments stated
 outside proofs: a resource clause's quantity, arguments, and segment bounds,
 an effect footprint, a resource definition's reads
-(`evaluate_c_fragment_through_kernel`), and a predicate body unfolded on a
+(`evaluate_program_expression_through_kernel`), and a predicate body unfolded on a
 kernel proposition, which is elaborated with the parameters bound to the
 decoded arguments and lowered at the decoded state. A C fragment stated at
 a state that does not justify a load it makes is refused there, unless the
@@ -501,7 +509,7 @@ claim goal the proof was rooted at rather than the rewritten form.
 That lowering is not an isomorphism, so it reports what it did. A quantified
 body's path facts are folded into kernel implications that no written
 connective produced, and a quantifier binds its written name to a kernel
-variable the written syntax never names. `c_lower_spec_proposition_at_state`
+variable the written syntax never names. `program_lower_spec_proposition_at_state`
 therefore also returns the head chain of the proposition it built: per
 outermost node, whether lowering inserted it as a path-fact or obligation
 guard, or the spec wrote it, and, for a written universal, the written name
@@ -533,9 +541,9 @@ guard excludes. Nothing under an existential binder is reachable before a
 `witness` names its value, so the head chain stops at the binder and the
 proof reaches a guard conjunct with `both`.
 
-`RecordedSnapshots` is a persistent map from `SnapshotSelector` to `CState`.
+`RecordedSnapshots` is a persistent map from `SnapshotSelector` to `ExecutionState`.
 A selector is either a static C `ProgramPointRef` or a proof-local mark. A
-recorded `CState` is logically complete, but its memory, facts, and resources
+recorded `ExecutionState` is logically complete, but its memory, facts, and resources
 are immutable shared roots: recording or branching a snapshot copies only
 small roots and changed map paths rather than materializing the whole state.
 
@@ -556,7 +564,7 @@ the presentation and its kernel core (`ExecutionProofState::view`, or
 planner's scratch state); nothing in it borrows a cursor.
 
 A surviving source or expansion cursor may own syntax position, focus,
-attribution, and diagnostics. It must not own facts, resources, `CState`, an
+attribution, and diagnostics. It must not own facts, resources, `ExecutionState`, an
 execution frontier, or authority to construct a successor.
 
 ## Smart planning

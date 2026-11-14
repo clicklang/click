@@ -57,14 +57,14 @@ theorem typed_membership(xs: List<struct node*>, target: struct node*) {
         by { normalize(); }
 }
 "#;
-    verify_c0_sources(source, &[("node.c", c)])
+    verify_c_sources(source, &[("node.c", c)])
         .unwrap_or_else(|error| panic!("{}", error.message()));
     for field_type in ["int32*", "struct other*"] {
         let wrong = source.replace(
             "Link(struct node*, Nodes)",
             &format!("Link({field_type}, Nodes)"),
         );
-        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+        let error = verify_c_sources(&wrong, &[("node.c", c)])
             .expect_err("a matched payload must retain its own declared class");
         assert!(
             error.message().contains("function `first`"),
@@ -72,7 +72,7 @@ theorem typed_membership(xs: List<struct node*>, target: struct node*) {
             error.message()
         );
         let wrong = source.replace("target: struct node*", &format!("target: {field_type}"));
-        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+        let error = verify_c_sources(&wrong, &[("node.c", c)])
             .expect_err("a bool result does not remove its arguments' nominal requirements");
         assert!(
             error.message().contains("cannot infer type arguments")
@@ -118,11 +118,11 @@ theorem list_has_typed_heads(xs: List<struct node*>) {
     }
 }
 "#;
-    verify_c0_sources(source, &[("node.c", c)])
+    verify_c_sources(source, &[("node.c", c)])
         .unwrap_or_else(|error| panic!("{}", error.message()));
     for element in ["int32*", "struct other*"] {
         let wrong = source.replace("List<struct node*>", &format!("List<{element}>"));
-        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+        let error = verify_c_sources(&wrong, &[("node.c", c)])
             .expect_err("an untyped or differently typed payload cannot acquire node's class");
         assert!(
             error
@@ -148,13 +148,13 @@ fn callback_refinement_preserves_generated_address_obligations() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
     let incompatible = source.replacen(
         "ensures node->left == old(node->left);",
         "ensures node->left != old(node->left);",
         1,
     );
-    let error = verify_c0_sources(&incompatible, &sources)
+    let error = verify_c_sources(&incompatible, &sources)
         .expect_err("a no-op callback cannot refine the incompatible named guarantee");
     assert!(
         error
@@ -179,13 +179,13 @@ fn aggregate_leaf_resources_retain_enclosing_subobject_bounds() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources_functions(source, &sources, ["read_inner".to_string()])
+    verify_c_sources_functions(source, &sources, ["read_inner".to_string()])
         .unwrap_or_else(|error| panic!("{}", error.message()));
     let changed =
         fixture.c_sources[0]
             .1
             .replacen("return packet->inner.count;", "return packet->tail;", 1);
-    let error = verify_c0_sources_functions(
+    let error = verify_c_sources_functions(
         source,
         &[(fixture.c_sources[0].0.as_str(), changed.as_str())],
         ["read_inner".to_string()],
@@ -214,15 +214,18 @@ fn retained_caller_expansion_preserves_declared_object_return_evidence() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let (session, verified) = C0VerificationSession::new(source, &sources).unwrap();
+    let (session, verified) = ProgramVerificationSession::new(source, &sources).unwrap();
     let expanded =
         expand_verified_function_claim_source_by_label(source, &verified, "caller.contract")
             .unwrap()
             .unwrap();
-    let position = c0_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
+    let position = c_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
     without_implicit_solve(|| session.verify_at(&expanded, position.line, position.column))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    crate::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -239,11 +242,11 @@ fn grouped_expansion_keeps_postexecution_closers_in_source_order() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let (_session, verified) = C0VerificationSession::new(source, &sources).unwrap();
+    let (_session, verified) = ProgramVerificationSession::new(source, &sources).unwrap();
     let expanded = expand_verified_function_claim_source_by_label(source, &verified, "f.contract")
         .unwrap()
         .unwrap();
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
@@ -265,14 +268,14 @@ int32 skip(int32* p) {
         ],
     );
     let sources = [("skip.c", "int32 skip(int32* p) { return 0; }")];
-    verify_c0_project(&project, &sources).expect("the imported resource contract verifies");
+    verify_c_project(&project, &sources).expect("the imported resource contract verifies");
     let expanded = expand_project_claim_source_by_label(
         &project,
         &ProgramInputs::Bundle(sources.to_vec()),
         "skip.contract",
     )
     .expect("validation must retain the imported resource declaration");
-    verify_c0_project(&project.with_entry_source(expanded), &sources)
+    verify_c_project(&project.with_entry_source(expanded), &sources)
         .expect("the expanded imported-resource proof must reverify");
 }
 
@@ -282,7 +285,7 @@ int32 skip(int32* p) {
 fn retained_function_expansion_formats_without_reverification_and_rechecks() {
     let c = "int32 id(int32 x) { return x; }";
     let source = "verifying \"id.c\"; int32 id(int32 x) { ensures result == x; }";
-    let (_session, verified) = C0VerificationSession::new(source, &[("id.c", c)]).unwrap();
+    let (_session, verified) = ProgramVerificationSession::new(source, &[("id.c", c)]).unwrap();
     let (rewritten, events) = instrumentation::collect(|| {
         expand_verified_function_claim_source_by_label(source, &verified, "id.ensures_0")
             .unwrap()
@@ -295,10 +298,10 @@ fn retained_function_expansion_formats_without_reverification_and_rechecks() {
     );
     assert_eq!(
         rewritten,
-        expand_c0_claim_source_by_label(source, &[("id.c", c)], "id.ensures_0").unwrap()
+        expand_c_claim_source_by_label(source, &[("id.c", c)], "id.ensures_0").unwrap()
     );
-    verify_c0_sources(&rewritten, &[("id.c", c)]).unwrap();
-    assert!(verify_c0_sources(&rewritten, &[("id.c", "int32 id(int32 x) { return 0; }")]).is_err());
+    verify_c_sources(&rewritten, &[("id.c", c)]).unwrap();
+    assert!(verify_c_sources(&rewritten, &[("id.c", "int32 id(int32 x) { return 0; }")]).is_err());
 }
 
 #[test]
@@ -329,11 +332,11 @@ int32 identity(int32 x) { ensures result == x; } by {
 }
 "#;
     let sources = [("identity.c", c)];
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded = expand_c0_claim_source_by_label(source, &sources, "identity.contract").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "identity.contract").unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &expanded.replace("ensures result == x;", "ensures result == x + 1;"),
             &sources,
         )
@@ -460,19 +463,19 @@ void use(struct root* root) {
 }
 "#;
     let sources = [("callbacks_outcome.c", c)];
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded = expand_c0_claim_source_by_label(source, &sources, "use.contract").unwrap();
+    verify_c_sources(source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "use.contract").unwrap();
     assert!(
         expanded.contains("have whole.model == old(cell.model) by"),
         "the expansion should read the unfolded child through the produced binder: {expanded}"
     );
     crate::surface::proof::without_implicit_solve_for_claim("use.contract", || {
-        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
     assert!(
         crate::surface::proof::without_implicit_solve_for_claim("use.contract", || {
-            verify_c0_sources(
+            verify_c_sources(
                 &expanded.replace(
                     "ensures whole.model == old(cell.model);",
                     "ensures whole.model == old(cell.model) + 1;",
@@ -502,25 +505,25 @@ int32 shadowed_c(int32 x) {
 }
 "#;
     let sources = [("shadowed.c", c_source)];
-    verify_c0_sources(click_source, &sources).expect("C proof should retain the outer x");
+    verify_c_sources(click_source, &sources).expect("C proof should retain the outer x");
     let position = position_at_offset(click_source, click_source.find("solve();").unwrap());
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
         expanded.contains("have outer.x == 0 by {\n        assumption();"),
         "{expanded}"
     );
     assert!(expanded.contains("outer.x"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).expect("expanded C proof must reverify");
+    verify_c_sources(&expanded, &sources).expect("expanded C proof must reverify");
 
     let wrong_binder = click_source.replace("have outer.x == 0", "have x == 0");
-    verify_c0_sources(&wrong_binder, &sources)
+    verify_c_sources(&wrong_binder, &sources)
         .expect_err("the fresh universal x must not inherit the parameter's equality");
 }
 
 #[test]
-fn tactic_expansion_can_name_two_outer_c_binders_after_intro() {
+fn tactic_expansion_can_name_two_outer_program_binders_after_intro() {
     let c_source = "int32 shadowed_twice_c(int32 x) { return 0; }";
     let click_source = r#"
 verifying "shadowed.c";
@@ -537,16 +540,16 @@ int32 shadowed_twice_c(int32 x) {
 }
 "#;
     let sources = [("shadowed.c", c_source)];
-    verify_c0_sources(click_source, &sources).expect("both shadowed binders stay distinct");
+    verify_c_sources(click_source, &sources).expect("both shadowed binders stay distinct");
     let position = position_at_offset(click_source, click_source.find("solve();").unwrap());
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
         expanded.contains("have outer.outer.x == 0 by {\n        assumption();"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).expect("expanded nested C proof must reverify");
+    verify_c_sources(&expanded, &sources).expect("expanded nested C proof must reverify");
 }
 
 #[test]
@@ -562,17 +565,17 @@ theorem shadowed_twice(x: int32) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("the oldest x should remain available");
+    verify_c_sources(source, &[]).expect("the oldest x should remain available");
     let position = position_at_offset(source, source.find("solve();").unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("selected smart tactic should expand");
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(expanded.contains("outer.outer.x"), "{expanded}");
-    verify_c0_sources(&expanded, &[]).expect("expanded proof must reverify");
+    verify_c_sources(&expanded, &[]).expect("expanded proof must reverify");
 
     let wrong_depth = source.replace("outer.outer.x", "outer.outer.outer.x");
-    verify_c0_sources(&wrong_depth, &[])
+    verify_c_sources(&wrong_depth, &[])
         .expect_err("a qualifier beyond the enclosing x bindings must fail");
 }
 
@@ -651,10 +654,10 @@ theorem successor_expansion(z: Integer) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("Integer successor source verifies");
-    let expanded = expand_c0_claim_source_by_label(source, &[], "successor_expansion.ensures_0")
+    verify_c_sources(source, &[]).expect("Integer successor source verifies");
+    let expanded = expand_c_claim_source_by_label(source, &[], "successor_expansion.ensures_0")
         .expect("Integer successor claim expands");
-    verify_c0_sources(&expanded, &[]).expect("expanded Integer successor re-verifies");
+    verify_c_sources(&expanded, &[]).expect("expanded Integer successor re-verifies");
 }
 
 #[test]
@@ -666,13 +669,13 @@ theorem nat_integer_client(n: Nat) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("Nat conversion law verifies");
-    let expanded = expand_c0_claim_source_by_label(source, &[], "nat_integer_client.ensures_0")
+    verify_c_sources(source, &[]).expect("Nat conversion law verifies");
+    let expanded = expand_c_claim_source_by_label(source, &[], "nat_integer_client.ensures_0")
         .expect("Nat conversion claim expands");
-    verify_c0_sources(&expanded, &[]).expect("expanded Nat conversion re-verifies");
+    verify_c_sources(&expanded, &[]).expect("expanded Nat conversion re-verifies");
 
     let invalid = source.replace("+ 1", "+ 2");
-    assert!(verify_c0_sources(&invalid, &[]).is_err());
+    assert!(verify_c_sources(&invalid, &[]).is_err());
 }
 
 #[test]
@@ -686,23 +689,23 @@ theorem checked_to_nat(z: Integer) {
     ensures to_nat(z) == to_nat(z) by { normalize(); }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("Nat/Integer conversion dispatch verifies");
+    verify_c_sources(source, &[]).expect("Nat/Integer conversion dispatch verifies");
     let missing_bound = r#"
 theorem missing_to_nat_bound(z: Integer) {
     ensures to_nat(z) == to_nat(z) by { normalize(); }
 }
 "#;
-    assert!(verify_c0_sources(missing_bound, &[]).is_err());
+    assert!(verify_c_sources(missing_bound, &[]).is_err());
     let nested_missing_bound = r#"
 theorem nested_missing_to_nat_bound(z: Integer) {
     ensures Nat::Succ(to_nat(z)) == Nat::Succ(to_nat(z)) by { normalize(); }
 }
 "#;
-    assert!(verify_c0_sources(nested_missing_bound, &[]).is_err());
+    assert!(verify_c_sources(nested_missing_bound, &[]).is_err());
     let shadowed = r#"
 function to_nat(z: Integer) -> Nat { Nat::Zero }
 "#;
-    assert!(verify_c0_sources(shadowed, &[]).is_err());
+    assert!(verify_c_sources(shadowed, &[]).is_err());
 }
 
 #[test]
@@ -724,17 +727,17 @@ theorem singleton<T>(x: T) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("successive explicit unfolds verify");
+    verify_c_sources(source, &[]).expect("successive explicit unfolds verify");
     let smart_source = source.replace("normalize();", "solve();");
-    verify_c0_sources(&smart_source, &[]).expect("smart closers have checked certificates");
+    verify_c_sources(&smart_source, &[]).expect("smart closers have checked certificates");
     for (claim, index) in [("add_two.ensures_0", 3), ("singleton.ensures_0", 2)] {
-        let position = c0_tactic_source_position(&smart_source, &[], claim, index).unwrap();
+        let position = c_tactic_source_position(&smart_source, &[], claim, index).unwrap();
         let expanded =
-            expand_c0_tactic_source_at(&smart_source, &[], position.line, position.column).unwrap();
-        verify_c0_sources(&expanded, &[]).expect("successive unfolds expand and recheck");
+            expand_c_tactic_source_at(&smart_source, &[], position.line, position.column).unwrap();
+        verify_c_sources(&expanded, &[]).expect("successive unfolds expand and recheck");
     }
     let tampered = source.replace("== Nat::Succ(Nat::Succ(n))", "== Nat::Succ(n)");
-    assert!(verify_c0_sources(&tampered, &[]).is_err());
+    assert!(verify_c_sources(&tampered, &[]).is_err());
 }
 
 #[test]
@@ -757,12 +760,12 @@ theorem lists<T>(xs: List<List<T>>) {
         "independent.ensures_1",
         "lists.ensures_0",
     ] {
-        let position = c0_tactic_source_position(source, &[], claim, 0).unwrap();
+        let position = c_tactic_source_position(source, &[], claim, 0).unwrap();
         let expanded =
-            expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
+            expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
         assert!(expanded.contains("independent<T, U>"));
         assert!(expanded.contains("lists<T>"));
-        verify_c0_sources(&expanded, &[]).expect("expanded parametric certificate rechecks");
+        verify_c_sources(&expanded, &[]).expect("expanded parametric certificate rechecks");
     }
 }
 
@@ -776,19 +779,19 @@ theorem client(xs: List<int32>, ys: List<int32>) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("conditional client verifies before expansion");
-    let position = c0_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    verify_c_sources(source, &[]).expect("conditional client verifies before expansion");
+    let position = c_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("simple conditional normalization roundtrips");
     assert!(expanded.contains("normalize() using"));
-    verify_c0_sources(&expanded, &[]).expect("conditional certificate rechecks");
+    verify_c_sources(&expanded, &[]).expect("conditional certificate rechecks");
     for tampered in [
         expanded.replace("requires not(xs == ys);", "requires xs == ys;"),
         expanded.replace("not(xs == ys)", "xs == ys"),
         expanded.replace("else { 0 }) == 0", "else { 0 }) == 1"),
     ] {
         assert_ne!(tampered, expanded);
-        assert!(verify_c0_sources(&tampered, &[]).is_err());
+        assert!(verify_c_sources(&tampered, &[]).is_err());
     }
 }
 
@@ -802,13 +805,13 @@ theorem client<T>(xs: List<T>, ys: List<T>) {
     }
 }
 "#;
-    let position = c0_tactic_source_position(source, &[], "client.ensures_0", 0)
+    let position = c_tactic_source_position(source, &[], "client.ensures_0", 0)
         .expect("generic parameter lists have source locations");
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("a template has a checked parametric certificate");
-    verify_c0_sources(&expanded, &[]).expect("expanded template rechecks without a client");
+    verify_c_sources(&expanded, &[]).expect("expanded template rechecks without a client");
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &expanded.replace("requires not(xs == ys);", "requires xs == ys;"),
             &[]
         )
@@ -827,14 +830,14 @@ theorem client(xs: List<int32>, ys: List<int32>) {
     ensures same_list(xs, ys) == 0 by { solve(); }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("smart conditional proof verifies");
-    let position = c0_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    verify_c_sources(source, &[]).expect("smart conditional proof verifies");
+    let position = c_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("smart conditional proof expands");
     assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c0_sources(&expanded, &[]).expect("emitted conditional evidence rechecks");
+    verify_c_sources(&expanded, &[]).expect("emitted conditional evidence rechecks");
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &expanded.replace("requires not(xs == ys);", "requires xs == ys;"),
             &[],
         )
@@ -852,11 +855,11 @@ theorem client(xs: List<List<int32>>, ys: List<List<int32>>, value: List<int32>)
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("nested-list client verifies before expansion");
-    let position = c0_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    verify_c_sources(source, &[]).expect("nested-list client verifies before expansion");
+    let position = c_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("nested-list application expands");
-    verify_c0_sources(&expanded, &[]).expect("expanded nested-list client rechecks");
+    verify_c_sources(&expanded, &[]).expect("expanded nested-list client rechecks");
 }
 
 #[test]
@@ -870,13 +873,13 @@ theorem client(xs: List<int32>, ys: List<int32>, value: int32) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("rewrite client verifies before expansion");
-    let position = c0_tactic_source_position(source, &[], "client.ensures_0", 1).unwrap();
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    verify_c_sources(source, &[]).expect("rewrite client verifies before expansion");
+    let position = c_tactic_source_position(source, &[], "client.ensures_0", 1).unwrap();
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("rewritten scalar goal expands");
-    verify_c0_sources(&expanded, &[]).expect("expanded rewrite client rechecks");
+    verify_c_sources(&expanded, &[]).expect("expanded rewrite client rechecks");
     let tampered = expanded.replace("requires xs == ys;", "requires xs == xs;");
-    assert!(verify_c0_sources(&tampered, &[]).is_err());
+    assert!(verify_c_sources(&tampered, &[]).is_err());
 }
 
 #[test]
@@ -888,12 +891,12 @@ theorem client(xs: List<int32>, ys: List<int32>, zs: List<int32>) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).expect("library client verifies before expansion");
-    let position = c0_tactic_source_position(source, &[], "client.ensures_0", 0)
+    verify_c_sources(source, &[]).expect("library client verifies before expansion");
+    let position = c_tactic_source_position(source, &[], "client.ensures_0", 0)
         .expect("application has a source position");
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("library theorem application expands");
-    verify_c0_sources(&expanded, &[]).expect("expanded library client rechecks");
+    verify_c_sources(&expanded, &[]).expect("expanded library client rechecks");
 }
 
 #[test]
@@ -1001,7 +1004,7 @@ theorem reflexive(xs: TestList<int32>) {
     }
 }
 "#;
-    let sites = c0_smart_tactic_source_sites(click_source, &[])
+    let sites = c_smart_tactic_source_sites(click_source, &[])
         .expect("structural induction sites should be indexed");
     assert_eq!(
         sites,
@@ -1020,20 +1023,20 @@ theorem reflexive(xs: TestList<int32>) {
             },
         ]
     );
-    let position = c0_tactic_source_position(click_source, &[], "reflexive.ensures_0", 1)
+    let position = c_tactic_source_position(click_source, &[], "reflexive.ensures_0", 1)
         .expect("the first induction arm should have a source position");
-    let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
+    let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("a smart tactic in an induction arm should expand");
     assert!(expanded.contains("TestList::Nil => {\n                normalize();"));
     assert!(expanded.contains("TestList::Cons(head, tail) => {\n                assumption();"));
-    verify_c0_sources(&expanded, &[]).expect("the expanded structural proof should re-verify");
+    verify_c_sources(&expanded, &[]).expect("the expanded structural proof should re-verify");
 }
 
 fn expand_top_level_tactic_for_test(
     click_source: &str,
     c_sources: &[(&str, &str)],
     function_name: &str,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
     tactic_index: usize,
 ) -> Result<String, ClickError> {
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
@@ -1044,7 +1047,7 @@ fn expand_top_level_tactic_for_test(
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let function = DeclarationSources::new(&tokens).function(function_block)?;
-    if claim == CProofClaim::Grouped && function.grouped.is_none() {
+    if claim == ContractProofClaim::Grouped && function.grouped.is_none() {
         // The omitted proof is the implicit tail alone. It sits at the
         // contract's closing brace when it covers several claims, and at
         // the claim itself when there is one.
@@ -1059,17 +1062,17 @@ fn expand_top_level_tactic_for_test(
             tokens[*clause].span.start
         };
         let position = position_at_offset(click_source, at);
-        return expand_c0_tactic_source_at(click_source, c_sources, position.line, position.column);
+        return expand_c_tactic_source_at(click_source, c_sources, position.line, position.column);
     }
     let proof = match claim {
-        CProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
-        CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
+        ContractProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
+        ContractProofClaim::Ensure(_) | ContractProofClaim::ExceptionalEnsure(_) => {
             find_claim_proof_span(&tokens, &function, function_block, claim)?
         }
     };
     let span = find_tactic_span(&ProofTokens::new(&file, &tokens), &proof, tactic_index)?;
     let position = position_at_offset(click_source, span.start);
-    expand_c0_tactic_source_at(click_source, c_sources, position.line, position.column)
+    expand_c_tactic_source_at(click_source, c_sources, position.line, position.column)
 }
 
 #[test]
@@ -1090,14 +1093,14 @@ int32 identity(int32 x) {
         click_source,
         &[("identity.c", c_source)],
         "identity",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         0,
     )
     .expect("the first grouped tactic should expand");
 
     assert!(!expanded.contains("step_until(function.exit);"));
     assert!(expanded.contains("    step();\n    solve();"));
-    verify_c0_sources(&expanded, &[("identity.c", c_source)])
+    verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the source with one expanded tactic should re-verify");
 }
 
@@ -1117,14 +1120,14 @@ int32 read_first(int32 p[1]) {
         click_source,
         &[("read.c", c_source)],
         "read_first",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         0,
     )
     .expect("the grouped immutable read should have one common expansion");
 
     assert!(!expanded.contains("step_until(function.exit);"));
     assert!(expanded.contains("step();"), "{expanded}");
-    verify_c0_sources(&expanded, &[("read.c", c_source)])
+    verify_c_sources(&expanded, &[("read.c", c_source)])
         .expect("the expanded immutable read should re-verify every grouped claim");
 }
 
@@ -1153,7 +1156,7 @@ int32 identity(int32 x) {
     let position = position_at_offset(click_source, then_offset);
     let (expanded, capture_flat_units) = super::super::proof::count_flat_proof_units(|| {
         {
-            expand_c0_tactic_source_at(
+            expand_c_tactic_source_at(
                 click_source,
                 &[("identity.c", c_source)],
                 position.line,
@@ -1170,7 +1173,7 @@ int32 identity(int32 x) {
         "{expanded}"
     );
     let (reverified, reverify_flat_units) = super::super::proof::count_flat_proof_units(|| {
-        verify_c0_sources(&expanded, &[("identity.c", c_source)])
+        verify_c_sources(&expanded, &[("identity.c", c_source)])
     });
     reverified.expect("the source with one nested expansion should re-verify");
     assert_eq!(
@@ -1201,7 +1204,7 @@ int32 identity(int32 x) {
 "#;
     let sources = [("identity.c", c_source)];
 
-    let nested = c0_tactic_source_position(click_source, &sources, "identity.contract", 1)
+    let nested = c_tactic_source_position(click_source, &sources, "identity.contract", 1)
         .expect("the tactic inside `open` should have a source position");
     assert_eq!(
         nested,
@@ -1212,7 +1215,7 @@ int32 identity(int32 x) {
         }
     );
 
-    let continuation = c0_tactic_source_position(click_source, &sources, "identity.contract", 2)
+    let continuation = c_tactic_source_position(click_source, &sources, "identity.contract", 2)
         .expect("the tactic after `open` should retain its source position");
     assert_eq!(
         continuation,
@@ -1264,7 +1267,7 @@ int32 increment_selected(int32 x) {
         .expect("common step should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("increment.c", c_source)],
         position.line,
@@ -1272,7 +1275,7 @@ int32 increment_selected(int32 x) {
     )
     .expect("common step should expand");
 
-    verify_c0_sources(&expanded, &[("increment.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("increment.c", c_source)]).unwrap_or_else(|error| {
         panic!("expanded common step should check:\n{error:?}\n{expanded}")
     });
 }
@@ -1317,7 +1320,7 @@ int32 positive_after_branch(int32 x) {
         .expect("solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("positive.c", c_source)],
         position.line,
@@ -1325,7 +1328,7 @@ int32 positive_after_branch(int32 x) {
     )
     .expect("deferred solve should expand");
 
-    verify_c0_sources(&expanded, &[("positive.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("positive.c", c_source)]).unwrap_or_else(|error| {
         panic!("expanded deferred solve should check:\n{error:?}\n{expanded}")
     });
 }
@@ -1360,7 +1363,7 @@ int32 same_after_branch(int32 x, int32 flag) {
         .expect("solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("same.c", c_source)],
         position.line,
@@ -1369,7 +1372,7 @@ int32 same_after_branch(int32 x, int32 flag) {
     .expect("equal deferred certificates should expand");
 
     assert!(!expanded.contains("if at(region(1).entry"), "{expanded}");
-    verify_c0_sources(&expanded, &[("same.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("same.c", c_source)]).unwrap_or_else(|error| {
         panic!("shared deferred expansion should check:\n{error:?}\n{expanded}")
     });
 }
@@ -1403,7 +1406,7 @@ int32 clamp_nonnegative(int32 x) {
         .expect("common solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("returning.c", c_source)],
         position.line,
@@ -1411,7 +1414,7 @@ int32 clamp_nonnegative(int32 x) {
     )
     .expect("reachable continuation solve should expand");
 
-    verify_c0_sources(&expanded, &[("returning.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("returning.c", c_source)]).unwrap_or_else(|error| {
         panic!("returning-arm deferred expansion should check:\n{error:?}\n{expanded}")
     });
 }
@@ -1452,7 +1455,7 @@ int32 nested_nonnegative(int32 x, int32 flag) {
 }
 "#;
     let (verified, flat_units) = super::super::proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("nested.c", c_source)])
+        verify_c_sources(click_source, &[("nested.c", c_source)])
     });
     let verified = verified.expect("nested end-of-arm interfaces should verify through Proof");
     assert_eq!(flat_units, 1, "the nested script should retain one Proof");
@@ -1481,7 +1484,7 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         .expect("common solve should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("nested.c", c_source)],
         position.line,
@@ -1489,7 +1492,7 @@ int32 nested_nonnegative(int32 x, int32 flag) {
     );
     let expanded = expanded.expect("nested deferred solve should expand");
 
-    verify_c0_sources(&expanded, &[("nested.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("nested.c", c_source)]).unwrap_or_else(|error| {
         panic!("nested deferred expansion should check:\n{error:?}\n{expanded}")
     });
 
@@ -1498,14 +1501,14 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         .expect("inner branch should exist")
         + 12;
     let inner_position = position_at_offset(click_source, inner_offset);
-    let inner = expand_c0_tactic_source_at(
+    let inner = expand_c_tactic_source_at(
         click_source,
         &[("nested.c", c_source)],
         inner_position.line,
         inner_position.column,
     );
     let inner = inner.expect("the retained inner branch should expand");
-    verify_c0_sources(&inner, &[("nested.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&inner, &[("nested.c", c_source)]).unwrap_or_else(|error| {
         panic!("inner branch expansion should reverify:\n{error:?}\n{inner}")
     });
 }
@@ -1557,12 +1560,17 @@ int32 caller() {
 "#;
     let sources = [("zero.c", zero_c), ("caller.c", caller_c)];
 
-    let expanded =
-        expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
-            .expect("opaque call internals should not become surface premises");
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &sources,
+        "caller",
+        ContractProofClaim::Grouped,
+        0,
+    )
+    .expect("opaque call internals should not become surface premises");
 
     assert_eq!(expanded.matches("step_until(function.exit);").count(), 1);
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the caller with one expanded tactic should re-verify");
 }
 
@@ -1588,13 +1596,18 @@ int32 caller(int32 x) {
 "#;
     let sources = [("positive.c", positive_c), ("caller.c", caller_c)];
 
-    let expanded =
-        expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
-            .expect("the call should expand with its consumed precondition");
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &sources,
+        "caller",
+        ContractProofClaim::Grouped,
+        0,
+    )
+    .expect("the call should expand with its consumed precondition");
     // The call retains an explicit proof of its known precondition.
     assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
     assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
-    verify_c0_sources(&expanded, &sources).expect("the call steps should check");
+    verify_c_sources(&expanded, &sources).expect("the call steps should check");
 }
 
 #[test]
@@ -1626,13 +1639,18 @@ int32 caller(struct box* p, int32 x) {
 "#;
     let sources = [("positive_at.c", positive_at_c), ("caller.c", caller_c)];
 
-    let expanded =
-        expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
-            .expect("the memory-reading precondition should expand");
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &sources,
+        "caller",
+        ContractProofClaim::Grouped,
+        0,
+    )
+    .expect("the memory-reading precondition should expand");
     // The memory-reading prerequisite retains its explicit proof.
     assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
     assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the condition and its ambient view should verify normally");
 }
 
@@ -1684,18 +1702,18 @@ int32 caller() {
     let position = position_at_offset(click_source, final_solve);
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("public call facts should compose through their receiving locals");
 
     assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("call-havoc"), "{expanded}");
     assert!(!expanded.contains("symbolic-pointer"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the expanded public fact chain should independently re-verify");
 }
 
 #[test]
-fn grouped_solve_distinguishes_c_local_result_from_contract_result() {
+fn grouped_solve_distinguishes_program_local_result_from_contract_result() {
     let zero_c = "int32 zero() { return 0; }";
     let caller_c = "int32 caller() { int32 result; result = zero(); return result; }";
     let click_source = r#"
@@ -1723,10 +1741,10 @@ int32 caller() {
     let position = position_at_offset(click_source, final_solve);
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the grouped solve should expand across the local result assignment");
 
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the explicit C result binding should check without aliasing contract result");
 
     let explicit_source = r#"
@@ -1753,7 +1771,7 @@ int32 caller() {
     assumption();
 }
 "#;
-    verify_c0_sources(explicit_source, &sources)
+    verify_c_sources(explicit_source, &sources)
         .expect("`c(result)` should denote the C local rather than contract result");
 }
 
@@ -1779,11 +1797,16 @@ int32 caller() {
 "#;
     let sources = [("zero.c", zero_c), ("caller.c", caller_c)];
 
-    let expanded =
-        expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
-            .expect("capture should use the well-formed unselected callee contract");
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &sources,
+        "caller",
+        ContractProofClaim::Grouped,
+        0,
+    )
+    .expect("capture should use the well-formed unselected callee contract");
     assert!(expanded.contains("step();"));
-    let error = verify_c0_sources(&expanded, &sources)
+    let error = verify_c_sources(&expanded, &sources)
         .expect_err("whole-file verification must still reject the callee implementation proof");
     assert!(error.message().contains("zero.ensures_0"));
     assert!(error.message().contains("unclosed goal:"));
@@ -1812,7 +1835,7 @@ int32 identity(int32 x) {
         click_source,
         &sources,
         "identity",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         1,
     )
     .expect("grouped solve should expand");
@@ -1823,7 +1846,7 @@ int32 identity(int32 x) {
         "the first solve should close only its own claim:\n{expanded}"
     );
     assert!(expanded.contains("\n    solve();"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the second solve should still have its goal after expansion");
 }
 
@@ -1849,12 +1872,13 @@ int32 f(int32* p) {
     solve();
 }
 "#;
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded = expand_top_level_tactic_for_test(source, &sources, "f", CProofClaim::Grouped, 3)
-        .expect("the returned fold's final closer expands");
-    verify_c0_sources(&expanded, &sources).expect("the checked have survives explicit closers");
+    verify_c_sources(source, &sources).unwrap();
+    let expanded =
+        expand_top_level_tactic_for_test(source, &sources, "f", ContractProofClaim::Grouped, 3)
+            .expect("the returned fold's final closer expands");
+    verify_c_sources(&expanded, &sources).expect("the checked have survives explicit closers");
     let false_body = source.replace("if p == p { 1 }", "if p == p { 0 }");
-    assert!(verify_c0_sources(&false_body, &sources).is_err());
+    assert!(verify_c_sources(&false_body, &sources).is_err());
 }
 
 #[test]
@@ -1883,13 +1907,13 @@ int32 inspect(int32 p[1], int32 x) {
         click_source,
         &sources,
         "inspect",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         1,
     )
     .expect("grouped solve should capture every newly closed claim");
 
     assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the grouped transition certificate should re-verify");
 }
 
@@ -1921,14 +1945,14 @@ int32 increment_and_return_old(int32 p[1]) {
         click_source,
         &sources,
         "increment_and_return_old",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         1,
     )
     .expect("grouped solve should capture frame-dependent claims");
 
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the grouped frame transition certificate should re-verify");
 }
 
@@ -1984,7 +2008,7 @@ int32 inspect(struct box* owner) {
         click_source,
         &[("inspect.c", c_source)],
         "inspect",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         2,
     )
     .expect("the declaration should expand with unfolded surface facts");
@@ -1993,7 +2017,7 @@ int32 inspect(struct box* owner) {
     // predicate facts are visible to it without being spelled as premises,
     // and the expansion keeps the step as written.
     assert!(expanded.contains("step();"), "{expanded}");
-    verify_c0_sources(&expanded, &[("inspect.c", c_source)])
+    verify_c_sources(&expanded, &[("inspect.c", c_source)])
         .expect("the expansion with unfolded facts in context should verify");
 }
 
@@ -2006,7 +2030,7 @@ int32 identity(int32 x) {
 }
 "#;
     assert_eq!(
-        c0_tactic_source_position(
+        c_tactic_source_position(
             implicit,
             &[("identity.c", c_source)],
             "identity.ensures_0",
@@ -2020,7 +2044,7 @@ int32 identity(int32 x) {
         }
     );
     assert!(
-        c0_tactic_source_position(
+        c_tactic_source_position(
             implicit,
             &[("identity.c", c_source)],
             "identity.ensures_0",
@@ -2052,7 +2076,7 @@ int32 contains(uint8 p[], int32 n) {
         .rfind("solve")
         .expect("solve should be present");
     let position = position_at_offset(click_source, offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("contains.c", c_source)],
         position.line,
@@ -2066,7 +2090,7 @@ int32 contains(uint8 p[], int32 n) {
         expanded.contains("witness { k: found };\n        assumption();"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &[("contains.c", c_source)])
+    verify_c_sources(&expanded, &[("contains.c", c_source)])
         .expect("the expansion should re-verify");
     // A uint8 fact still prints as a parseable typed literal.
     let file = parse_source_with_c_layouts(click_source, &[("contains.c", c_source)])
@@ -2093,7 +2117,7 @@ int32 all_bits() {
         .find("ensures")
         .expect("the claim should be present");
     let position = position_at_offset(click_source, offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("all_bits.c", c_source)],
         position.line,
@@ -2102,7 +2126,7 @@ int32 all_bits() {
     .expect("bitvector proposition should expand");
 
     assert!(expanded.contains("result == -1"));
-    verify_c0_sources(&expanded, &[("all_bits.c", c_source)])
+    verify_c_sources(&expanded, &[("all_bits.c", c_source)])
         .expect("printed negative literal should parse and re-verify");
 }
 
@@ -2131,12 +2155,12 @@ int32 compare_swap2(int32 p[2]) {
         click_source,
         &[("compare_swap2.c", c_source)],
         "compare_swap2",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         0,
     );
     let expanded_tail = expanded_tail
         .expect("the implicit tail should expand its branch from retained Proof steps");
-    verify_c0_sources(&expanded_tail, &[("compare_swap2.c", c_source)])
+    verify_c_sources(&expanded_tail, &[("compare_swap2.c", c_source)])
         .expect("the expanded implicit tail should verify normally");
     let original_condition = "if at(region(1).entry, p[1]) < at(region(1).entry, p[0]) {";
     let corrupted_condition = "if at(region(1).entry, p[1]) >= at(region(1).entry, p[0]) {";
@@ -2145,7 +2169,7 @@ int32 compare_swap2(int32 p[2]) {
         corrupted_tail, expanded_tail,
         "the retained branch condition should be present"
     );
-    verify_c0_sources(&corrupted_tail, &[("compare_swap2.c", c_source)])
+    verify_c_sources(&corrupted_tail, &[("compare_swap2.c", c_source)])
         .expect_err("ordinary verification should reject a corrupted branch condition");
 }
 
@@ -2159,7 +2183,7 @@ fn expanded_branch_condition_names_a_struct_pointer_field() {
         click_source,
         &[("pick.c", c_source)],
         "pick",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         0,
     )
     .expect("a branch over a field should expand");
@@ -2167,7 +2191,7 @@ fn expanded_branch_condition_names_a_struct_pointer_field() {
         expanded.contains("if at(region(0).entry, p->second) > at(region(0).entry, 0) {"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+    verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the field should verify");
 }
 
@@ -2180,13 +2204,13 @@ fn expanded_branch_condition_names_a_local_struct_pointer_field() {
         click_source,
         &[("pick.c", c_source)],
         "pick",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         0,
     )
     .expect("a branch over a field should expand");
     assert!(!expanded.contains("load_int32("), "{expanded}");
     assert!(expanded.contains("->second) > "), "{expanded}");
-    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+    verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the field should verify");
 }
 
@@ -2200,14 +2224,14 @@ fn expanded_branch_condition_names_nested_and_pointer_fields() {
         click_source,
         &[("pick.c", c_source)],
         "pick",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         0,
     )
     .expect("branches over nested fields should expand");
     assert!(expanded.contains("p->in.y) > "), "{expanded}");
     assert!(expanded.contains("p->next"), "{expanded}");
     assert!(!expanded.contains("load_"), "{expanded}");
-    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+    verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the fields should verify");
 }
 
@@ -2221,13 +2245,13 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
         click_source,
         &[("pick.c", c_source)],
         "pick",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
         0,
     )
     .expect("a branch over a field through a loaded pointer should expand");
     assert!(expanded.contains("p->next->second) > "), "{expanded}");
     assert!(!expanded.contains("load_"), "{expanded}");
-    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+    verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the field should verify");
 }
 
@@ -2240,8 +2264,8 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
 #[test]
 fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires to_integer(i + 1u64) < to_integer(length);\n    requires length <= 2147483647u64;\n    ensures to_integer(i + 2u64) <= to_integer(length) by {\n        solve() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; }\n    }\n}\n";
-    verify_c0_sources(source, &[]).expect("the uint64 goal verifies");
-    let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
+    verify_c_sources(source, &[]).expect("the uint64 goal verifies");
+    let expanded = expand_c_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the uint64 arithmetic step expands");
     for step in [
         "have to_integer((i + 1u64)) < to_integer(length) by {\n            assumption();",
@@ -2253,11 +2277,11 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     }
     assert!(!expanded.contains("apply("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
+    verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
     let unbounded = source.replace("i <= length; to_integer(i + 1u64)", "to_integer(i + 1u64)");
     assert_ne!(unbounded, source);
-    let error = verify_c0_sources(&unbounded, &[]).expect_err("the sum may wrap");
+    let error = verify_c_sources(&unbounded, &[]).expect_err("the sum may wrap");
     assert!(
         error.message().contains("stays within uint64"),
         "{}",
@@ -2273,20 +2297,20 @@ fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_certificates() {
             "theorem span(n: {carrier}) {{ requires 4{suffix} <= n; requires n <= 16{suffix}; \
              ensures (16 - n) + 4 <= 16 by {{ solve() using {{ 4 <= n; n <= 16; }} }} }}"
         );
-        verify_c0_sources(&source, &[]).expect("implicit wide literals must verify");
-        let expanded = expand_c0_claim_source_by_label(&source, &[], "span.ensures_0")
+        verify_c_sources(&source, &[]).expect("implicit wide literals must verify");
+        let expanded = expand_c_claim_source_by_label(&source, &[], "span.ensures_0")
             .expect("the promoted literals must expand to a checked certificate");
         // Normalization can discharge the arithmetic without explicit
         // operation-identity bridges. Check the certificate independently.
         assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");
-        verify_c0_sources(&expanded, &[])
+        verify_c_sources(&expanded, &[])
             .expect("the explicit certificate must independently verify");
         let missing_bound = source.replace("4 <= n; n <= 16;", "n <= 16;");
-        verify_c0_sources(&missing_bound, &[])
+        verify_c_sources(&missing_bound, &[])
             .expect_err("the final inequality lacks its lower bound");
         let false_result = source.replace("+ 4 <= 16 by", "+ 5 <= 16 by");
-        verify_c0_sources(&false_result, &[]).expect_err("promotion cannot prove a false bound");
+        verify_c_sources(&false_result, &[]).expect_err("promotion cannot prove a false bound");
     }
 }
 
@@ -2320,16 +2344,16 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
 }}"#
         );
         let sources = [("advance.c", c_source.as_str())];
-        verify_c0_sources(&source, &sources).expect("snapshot bounds must verify");
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "advance.ensures_0")
+        verify_c_sources(&source, &sources).expect("snapshot bounds must verify");
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "advance.ensures_0")
             .expect("snapshot bridges must expand");
         assert!(!expanded.contains("solve() using"), "{expanded}");
-        verify_c0_sources(&expanded, &sources).expect("snapshot bridges must independently verify");
+        verify_c_sources(&expanded, &sources).expect("snapshot bridges must independently verify");
         let missing_bound = source.replace("to_integer(at(before, n)) <= 16;", "");
-        verify_c0_sources(&missing_bound, &sources)
+        verify_c_sources(&missing_bound, &sources)
             .expect_err("a historical upper bound cannot be inferred from type bounds");
         let false_result = source.replace("result <= 12", "result <= 11");
-        verify_c0_sources(&false_result, &sources)
+        verify_c_sources(&false_result, &sources)
             .expect_err("snapshot facts cannot prove a false bound");
     }
 }
@@ -2340,8 +2364,8 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
 #[test]
 fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires length <= 2147483647i64;\n    requires i <= length;\n    requires to_integer(i + 1i64) < to_integer(length);\n    ensures to_integer(i + 2i64) <= to_integer(length) by {\n        solve() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; }\n    }\n}\n";
-    verify_c0_sources(source, &[]).expect("the int64 goal verifies");
-    let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
+    verify_c_sources(source, &[]).expect("the int64 goal verifies");
+    let expanded = expand_c_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the int64 arithmetic step expands");
     for step in [
         "have (to_integer(i) + 1) <= 9223372036854775807 by {",
@@ -2352,13 +2376,13 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     }
     assert!(!expanded.contains("apply("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
+    verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without an upper bound on `i`, `i + 1` may overflow above. (A lower
     // bound is not needed: `i`'s own `int64` range keeps `i + 1` above
     // `INT64_MIN`.)
     let unbounded = source.replace("{ 0i64 <= i; i <= length;", "{ 0i64 <= i;");
     assert_ne!(unbounded, source);
-    let error = verify_c0_sources(&unbounded, &[]).expect_err("the sum may overflow");
+    let error = verify_c_sources(&unbounded, &[]).expect_err("the sum may overflow");
     assert!(
         error.message().contains("stays within int64"),
         "{}",
@@ -2416,7 +2440,7 @@ int32 increment(int32 x) {
         .find("ensures")
         .expect("the claim should be present");
     let position = position_at_offset(click_source, offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("increment.c", c_source)],
         position.line,
@@ -2426,9 +2450,9 @@ int32 increment(int32 x) {
 
     // The step runs in the whole context; the contract `let` needs no
     // spelling as a premise. The expansion must still verify.
-    verify_c0_sources(&expanded, &[("increment.c", c_source)])
+    verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("parenthesized contract lets should re-verify");
-    c0_tactic_source_position(
+    c_tactic_source_position(
         &expanded,
         &[("increment.c", c_source)],
         "increment.result_value",
@@ -2453,7 +2477,7 @@ int32 inspect(uint8 p[], uint64 len) {
 }"#;
     let offset = click_source.find("apply").expect("apply should be present");
     let position = position_at_offset(click_source, offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("inspect.c", c_source)],
         position.line,
@@ -2462,7 +2486,7 @@ int32 inspect(uint8 p[], uint64 len) {
     .expect("post-execution apply should expand");
 
     assert!(expanded.contains("apply(cstr::len_has_terminator(p, len)) using"));
-    verify_c0_sources(&expanded, &[("inspect.c", c_source)])
+    verify_c_sources(&expanded, &[("inspect.c", c_source)])
         .expect("explicit apply conclusions should remain available to the trailing solve");
 }
 
@@ -2501,13 +2525,13 @@ int32 set_then_read(int32 p[], int32 value) {
         ("set_cell.c", callee_source),
         ("set_then_read.c", caller_source),
     ];
-    let position = c0_tactic_source_position(click_source, &sources, "set_then_read.ensures_0", 0)
+    let position = c_tactic_source_position(click_source, &sources, "set_then_read.ensures_0", 0)
         .expect("later claim should have a source tactic");
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected later-claim tactic should expand with the callee available");
 
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("expanded later claim should re-verify with its earlier claim");
 }
 
@@ -2556,9 +2580,8 @@ int32 nested(int32 x) {
         .map(|start| start + needle.rfind("solve").unwrap())
         .expect("inner else solve should be present");
     let position = position_at_offset(click_source, offset);
-    let (verified, original_flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("nested.c", c_source)])
-    });
+    let (verified, original_flat_units) =
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, &[("nested.c", c_source)]));
     verified.expect("nested source proof should stay on Proof");
     assert_eq!(
         original_flat_units, 1,
@@ -2568,7 +2591,7 @@ int32 nested(int32 x) {
     let (expanded, expansion_flat_units) = proof::count_flat_proof_units(|| {
         {
             {
-                expand_c0_tactic_source_at(
+                expand_c_tactic_source_at(
                     click_source,
                     &[("nested.c", c_source)],
                     position.line,
@@ -2582,7 +2605,7 @@ int32 nested(int32 x) {
 
     assert_eq!(expanded.matches("solve();").count(), 2);
     let (reverified, reverify_flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(&expanded, &[("nested.c", c_source)]));
+        proof::count_flat_proof_units(|| verify_c_sources(&expanded, &[("nested.c", c_source)]));
     reverified.expect("sibling proof cases must not steal the deferred capture");
     assert_eq!(
         reverify_flat_units, 1,
@@ -2598,7 +2621,7 @@ int32 nested(int32 x) {
     let (leading_expanded, leading_flat_units) = proof::count_flat_proof_units(|| {
         {
             {
-                expand_c0_tactic_source_at(
+                expand_c_tactic_source_at(
                     click_source,
                     &[("nested.c", c_source)],
                     leading_position.line,
@@ -2615,7 +2638,7 @@ int32 nested(int32 x) {
         "leading smart step did not extract its checked operation: {leading_expanded}"
     );
     let (leading_reverified, _) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(&leading_expanded, &[("nested.c", c_source)])
+        verify_c_sources(&leading_expanded, &[("nested.c", c_source)])
     });
     leading_reverified.expect("expanded leading branch step should reverify");
 }
@@ -2632,7 +2655,7 @@ int32 identity(int32 x, int32 n) {
         .find("ensures")
         .expect("the claim should be present");
     let position = position_at_offset(click_source, offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("identity.c", c_source)],
         position.line,
@@ -2641,7 +2664,7 @@ int32 identity(int32 x, int32 n) {
     .expect("symbolic range proposition should expand");
 
     assert!(expanded.contains("(0..n).any(|k| { k == x })"));
-    verify_c0_sources(&expanded, &[("identity.c", c_source)])
+    verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("printed symbolic range proposition should re-verify");
 }
 
@@ -2654,7 +2677,7 @@ int32 identity(int32 x) {
 }
 "#;
     let smart_position = position_at_offset(smart, smart.find("solve").unwrap());
-    let smart_expanded = expand_c0_tactic_source_at(
+    let smart_expanded = expand_c_tactic_source_at(
         smart,
         &[("identity.c", c_source)],
         smart_position.line,
@@ -2663,7 +2686,7 @@ int32 identity(int32 x) {
     .expect("single smart proof should expand as a whole proof");
     assert!(smart_expanded.contains("step_until(function.exit);"));
     assert!(!smart_expanded.contains("solve();"));
-    verify_c0_sources(&smart_expanded, &[("identity.c", c_source)]).unwrap();
+    verify_c_sources(&smart_expanded, &[("identity.c", c_source)]).unwrap();
 
     let implicit = r#"verifying "identity.c";
 int32 identity(int32 x) {
@@ -2671,7 +2694,7 @@ int32 identity(int32 x) {
 }
 "#;
     let implicit_position = position_at_offset(implicit, implicit.find("ensures").unwrap());
-    let implicit_expanded = expand_c0_tactic_source_at(
+    let implicit_expanded = expand_c_tactic_source_at(
         implicit,
         &[("identity.c", c_source)],
         implicit_position.line,
@@ -2679,7 +2702,7 @@ int32 identity(int32 x) {
     )
     .expect("default proof should expand from its clause coordinate");
     assert!(implicit_expanded.contains("ensures result == x by {"));
-    verify_c0_sources(&implicit_expanded, &[("identity.c", c_source)]).unwrap();
+    verify_c_sources(&implicit_expanded, &[("identity.c", c_source)]).unwrap();
 }
 
 #[test]
@@ -2696,16 +2719,16 @@ int32 bad(int32 x) {
 }
 "#;
     let sources = [("good.c", good_c), ("bad.c", bad_c)];
-    verify_c0_sources(click_source, &sources)
+    verify_c_sources(click_source, &sources)
         .expect_err("the unrelated bad proof should fail complete verification");
     let selected = position_at_offset(click_source, click_source.find("ensures").unwrap());
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, selected.line, selected.column)
+        expand_c_tactic_source_at(click_source, &sources, selected.line, selected.column)
             .expect("whole-proof expansion should verify only the selected function");
 
     assert!(expanded.contains("ensures result == x by {"));
-    verify_c0_sources_at(&expanded, &sources, selected.line, selected.column)
+    verify_c_sources_at(&expanded, &sources, selected.line, selected.column)
         .expect("the expanded selected function should verify independently");
 }
 
@@ -2723,13 +2746,13 @@ int32 bad(int32 x) {
 }
 "#;
     let sources = [("good.c", good_c), ("bad.c", bad_c)];
-    verify_c0_sources(click_source, &sources)
+    verify_c_sources(click_source, &sources)
         .expect_err("the unrelated bad proof should fail complete verification");
     let selected_offset = click_source.find("step_until(function.exit);").unwrap();
     let selected = position_at_offset(click_source, selected_offset);
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, selected.line, selected.column)
+        expand_c_tactic_source_at(click_source, &sources, selected.line, selected.column)
             .expect("partial expansion should verify only the selected function");
 
     assert_ne!(expanded, click_source);
@@ -2739,10 +2762,10 @@ int32 bad(int32 x) {
     );
     let unselected_suffix = &click_source[selected_offset + "step_until(function.exit);".len()..];
     assert!(expanded.ends_with(unselected_suffix));
-    let relocated = c0_tactic_source_position(&expanded, &sources, "good.ensures_0", 0).unwrap();
-    verify_c0_sources_at(&expanded, &sources, relocated.line, relocated.column)
+    let relocated = c_tactic_source_position(&expanded, &sources, "good.ensures_0", 0).unwrap();
+    verify_c_sources_at(&expanded, &sources, relocated.line, relocated.column)
         .expect("the expanded selected function should verify independently");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect_err("whole-file verification should still see the unrelated failure");
 }
 
@@ -2761,16 +2784,16 @@ int32 caller(int32 x) {
 "#;
     let sources = [("callee.c", callee_c), ("caller.c", caller_c)];
     let selected = position_at_offset(click_source, click_source.rfind("ensures").unwrap());
-    verify_c0_sources_at(click_source, &sources, selected.line, selected.column)
+    verify_c_sources_at(click_source, &sources, selected.line, selected.column)
         .expect("the selected caller should verify under the callee interface");
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, selected.line, selected.column)
+        expand_c_tactic_source_at(click_source, &sources, selected.line, selected.column)
             .expect("the selected caller expansion should assume the callee contract");
-    let relocated = c0_tactic_source_position(&expanded, &sources, "caller.ensures_0", 0).unwrap();
-    verify_c0_sources_at(&expanded, &sources, relocated.line, relocated.column)
+    let relocated = c_tactic_source_position(&expanded, &sources, "caller.ensures_0", 0).unwrap();
+    verify_c_sources_at(&expanded, &sources, relocated.line, relocated.column)
         .expect("the expanded caller should verify under the callee interface");
-    let error = verify_c0_sources(&expanded, &sources)
+    let error = verify_c_sources(&expanded, &sources)
         .expect_err("whole-file verification must still reject the callee proof");
     assert!(error.message().contains("callee.ensures_0"));
 }
@@ -2801,7 +2824,7 @@ int32 write_selected(int32 p[2], int32 flag) {
 }
 "#;
     let sources = [("write_selected.c", c_source)];
-    let verified = verify_c0_sources(click_source, &sources);
+    let verified = verify_c_sources(click_source, &sources);
     verified.expect("branched baseline should verify");
     for (selected_text, selected_smart) in [
         ("have result + 1", "have result + 1 == 1 by solve()"),
@@ -2811,12 +2834,12 @@ int32 write_selected(int32 p[2], int32 flag) {
         let selected = position_at_offset(click_source, selected_offset);
 
         let expanded =
-            expand_c0_tactic_source_at(click_source, &sources, selected.line, selected.column)
+            expand_c_tactic_source_at(click_source, &sources, selected.line, selected.column)
                 .expect("one branch's smart have should expand by its execution path");
 
         assert!(!expanded.contains(selected_smart));
         assert!(expanded.contains("if flag != 0"));
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
             .expect("path-aligned branch expansion should check as a complete proof");
     }
 }
@@ -2908,7 +2931,7 @@ theorem set_one_is_make_positive() {
     assert!(theorem.contains("intro();"), "{theorem}");
     assert!(theorem.contains("extract("), "{theorem}");
     assert!(!theorem.contains("solve();"), "{theorem}");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("expanded contract-refinement theorem should re-verify with its C target");
 }
 
@@ -3071,9 +3094,8 @@ int32 parent(int32 x) {
 }
 "#;
     let c_sources = [("calls.c", c_source)];
-    verify_c0_sources(source, &c_sources)
-        .expect("the caller verifies against the assumed contract");
-    let sites = c0_smart_tactic_source_sites(source, &c_sources).unwrap();
+    verify_c_sources(source, &c_sources).expect("the caller verifies against the assumed contract");
+    let sites = c_smart_tactic_source_sites(source, &c_sources).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -3096,13 +3118,13 @@ theorem ordinary(x: int32) {
     ensures x == x by { solve(); }
 }
 "#;
-    verify_click_theorems_with_c_sources(source, &[]).unwrap();
-    let sites = c0_smart_tactic_source_sites(source, &[]).unwrap();
+    verify_click_theorems_with_program_sources(source, &[]).unwrap();
+    let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].claim_label, "ordinary.ensures_0");
     assert_eq!(sites[0].tactic_name, "solve");
     assert!(
-        verify_click_theorems_with_c_sources(
+        verify_click_theorems_with_program_sources(
             &source.replace("ensures left == right", "ensures left != right"),
             &[]
         )
@@ -3119,7 +3141,7 @@ theorem int32_le_antisymmetric() {
     ensures Identity(&identity) by { unfold(Identity); solve(); }
 }
 "#;
-    let sites = c0_smart_tactic_source_sites(source, &[]).unwrap();
+    let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].claim_label, "int32_le_antisymmetric.ensures_0");
     assert_eq!(sites[0].tactic_name, "solve");
@@ -3163,10 +3185,10 @@ fn builtin_nat_integer_laws_expand_and_reject_invalid_conversions() {
         let source = format!(
             "theorem client({parameters}) {{ {requirements} ensures {goal} by {{ apply({application}); }} }}"
         );
-        verify_c0_sources(&source, &[])
+        verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
-        let expanded = expand_c0_claim_source_by_label(&source, &[], "client.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &[], "client.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
     }
     for source in [
         "theorem bad(z: Integer) { ensures to_integer(to_nat(z)) == z by { apply(nat::to_integer_to_nat(z)); } }",
@@ -3176,18 +3198,18 @@ fn builtin_nat_integer_laws_expand_and_reject_invalid_conversions() {
         "theorem bad() { ensures to_nat() == Nat::Zero by normalize; }",
         "theorem bad(z: Integer) { requires z >= 0; ensures to_nat(z, z) == to_nat(z) by normalize; }",
     ] {
-        assert!(verify_c0_sources(source, &[]).is_err(), "{source}");
+        assert!(verify_c_sources(source, &[]).is_err(), "{source}");
     }
 }
 
 #[test]
 fn nat_addition_agrees_with_integer_addition_and_rechecks_expansion() {
     let source = "theorem client(a: Nat, b: Nat) { ensures to_integer(nat::add(a, b)) == to_integer(a) + to_integer(b) by { apply(nat::to_integer_add(a, b)); } }";
-    verify_c0_sources(source, &[]).unwrap();
-    let expanded = expand_c0_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
-    verify_c0_sources(&expanded, &[]).unwrap();
+    verify_c_sources(source, &[]).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
+    verify_c_sources(&expanded, &[]).unwrap();
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace("+ to_integer(b)", "+ to_integer(b) + 1"),
             &[]
         )
@@ -3201,11 +3223,11 @@ fn signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides() {
         let source = format!(
             "theorem cast_bound(x: int32) {{ requires 0 < x; requires x <= 4; ensures {goal} by {{ solve() using {{ 0 < x; x <= 4; }} }} }}"
         );
-        verify_c0_sources(&source, &[]).unwrap();
+        verify_c_sources(&source, &[]).unwrap();
         let expanded =
-            expand_c0_claim_source_by_label(&source, &[], "cast_bound.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
-        assert!(verify_c0_sources(&source.replace(goal, "5u32 <= (x as uint32)"), &[]).is_err());
+            expand_c_claim_source_by_label(&source, &[], "cast_bound.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
+        assert!(verify_c_sources(&source.replace(goal, "5u32 <= (x as uint32)"), &[]).is_err());
     }
 }
 
@@ -3220,10 +3242,10 @@ fn arithmetic_certificates_accept_checked_mixed_atoms_without_erasing_domains() 
         let source = format!(
             "function f(x: int32) -> Integer {{ to_integer(x) }} theorem client({parameters}) {{ {requirements} ensures {term} == {term} by {{ arithmetic_certificate {{ trivial => {term} == {term}; conclusion 0; }} }} }}"
         );
-        verify_c0_sources(&source, &[])
+        verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
         if !requirements.is_empty() {
-            assert!(verify_c0_sources(&source.replace(requirements, ""), &[]).is_err());
+            assert!(verify_c_sources(&source.replace(requirements, ""), &[]).is_err());
         }
     }
 }
@@ -3253,7 +3275,7 @@ theorem pick_nonzero(r: int32) {
     }
 }
 "#;
-    let sites = c0_smart_tactic_source_sites(source, &[]).expect("cases sites are indexed");
+    let sites = c_smart_tactic_source_sites(source, &[]).expect("cases sites are indexed");
     let indexes = sites
         .iter()
         .map(|site| (site.source_index, site.tactic_name.as_str()))
@@ -3265,7 +3287,7 @@ theorem pick_nonzero(r: int32) {
     );
     let final_solve = "solve();\n    }\n}";
     for (index, needle) in [(1, "have r > 0"), (2, "have r < 0"), (3, final_solve)] {
-        let position = c0_tactic_source_position(source, &[], "pick_nonzero.ensures_0", index)
+        let position = c_tactic_source_position(source, &[], "pick_nonzero.ensures_0", index)
             .unwrap_or_else(|error| panic!("site {index} has no source position: {error:?}"));
         assert_eq!(
             position,
@@ -3274,9 +3296,9 @@ theorem pick_nonzero(r: int32) {
         );
     }
     let after = position_at_offset(source, source.find(final_solve).unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &[], after.line, after.column)
+    let expanded = expand_c_tactic_source_at(source, &[], after.line, after.column)
         .expect("the smart tactic after `cases` expands");
-    verify_c0_sources(&expanded, &[]).expect("the expanded `cases` proof re-verifies");
+    verify_c_sources(&expanded, &[]).expect("the expanded `cases` proof re-verifies");
 
     let c_source =
         "int32 helper(int32 x) { return x; }\nint32 client(int32 x) { return helper(x); }\n";
@@ -3298,7 +3320,7 @@ int32 client(int32 x) {
 "#;
     let c_sources = [("outcomes_sites.c", c_source)];
     let sites =
-        c0_smart_tactic_source_sites(outcomes, &c_sources).expect("outcomes sites are indexed");
+        c_smart_tactic_source_sites(outcomes, &c_sources).expect("outcomes sites are indexed");
     let indexes = sites
         .iter()
         .map(|site| (site.source_index, site.tactic_name.as_str()))
@@ -3313,7 +3335,7 @@ int32 client(int32 x) {
         (3, "solve();\n        }\n    }"),
         (4, "solve();\n}"),
     ] {
-        let position = c0_tactic_source_position(outcomes, &c_sources, "client.contract", index)
+        let position = c_tactic_source_position(outcomes, &c_sources, "client.contract", index)
             .unwrap_or_else(|error| panic!("site {index} has no source position: {error:?}"));
         assert_eq!(
             position,
@@ -3330,7 +3352,7 @@ fn specification_pointer_load_equality_expands_to_checked_normalization() {
     let fixture = crate::cli::read_mdtest(&path).expect("pointer-load fixture");
     let source = fixture.click_source.as_deref().expect("Click source");
     let sources = crate::cli::source_refs(&fixture.c_sources);
-    verify_c0_sources(source, &sources).expect("original specification equality verifies");
+    verify_c_sources(source, &sources).expect("original specification equality verifies");
     let equality = source
         .find("have p->next == id->next")
         .expect("load equality claim");
@@ -3339,14 +3361,14 @@ fn specification_pointer_load_equality_expands_to_checked_normalization() {
             .find("solve();")
             .expect("equality tactic");
     let position = position_at_offset(source, tactic);
-    let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
+    let expanded = expand_c_tactic_source_at(source, &sources, position.line, position.column)
         .expect("logical load equality should expand");
     assert!(expanded.contains("normalize();"), "{expanded}");
     assert!(
         !expanded.contains("MemoryLoad") && !expanded.contains("__click_"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).expect("expanded normalization independently verifies");
+    verify_c_sources(&expanded, &sources).expect("expanded normalization independently verifies");
 }
 
 #[test]
@@ -3357,14 +3379,14 @@ fn recursive_child_alias_fold_expands_and_rechecks_without_load_claims() {
     let fixture = crate::cli::read_mdtest(&path).expect("recursive child fixture");
     let source = fixture.click_source.as_deref().expect("Click source");
     let sources = crate::cli::source_refs(&fixture.c_sources);
-    verify_c0_sources(source, &sources).expect("unfold/refold through an equal address");
-    let expanded = expand_c0_claim_source_by_label(source, &sources, "roundtrip.contract")
+    verify_c_sources(source, &sources).expect("unfold/refold through an equal address");
+    let expanded = expand_c_claim_source_by_label(source, &sources, "roundtrip.contract")
         .expect("recursive child fold should expand");
     assert!(
         !expanded.contains("MemoryLoad") && !expanded.contains("__click_"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).expect("expanded fold independently verifies");
+    verify_c_sources(&expanded, &sources).expect("expanded fold independently verifies");
 }
 
 #[test]
@@ -3374,15 +3396,15 @@ fn pointer_read_single_store_normalization_expands_and_rechecks() {
     let fixture = crate::cli::read_mdtest(&path).expect("single-store fixture");
     let source = fixture.click_source.as_deref().expect("Click source");
     let sources = crate::cli::source_refs(&fixture.c_sources);
-    verify_c0_sources(source, &sources).expect("ordinary pointer claim verifies");
-    let expanded = expand_c0_claim_source_by_label(source, &sources, "touch.contract")
+    verify_c_sources(source, &sources).expect("ordinary pointer claim verifies");
+    let expanded = expand_c_claim_source_by_label(source, &sources, "touch.contract")
         .expect("single-store pointer claim expands");
-    verify_c0_sources(&expanded, &sources).expect("expanded claim independently rechecks");
+    verify_c_sources(&expanded, &sources).expect("expanded claim independently rechecks");
     let mut changed_sources = fixture.c_sources.clone();
     changed_sources[0].1 = changed_sources[0].1.replace("p->tag = 1", "p->left = 0");
     let changed = crate::cli::source_refs(&changed_sources);
     assert!(
-        verify_c0_sources(&expanded, &changed).is_err(),
+        verify_c_sources(&expanded, &changed).is_err(),
         "a write to the pointer field cannot reuse sibling-write equality"
     );
 }
@@ -3395,13 +3417,13 @@ fn recursive_child_sibling_write_fold_expands_and_rechecks() {
     let fixture = crate::cli::read_mdtest(&path).expect("sibling-write fixture");
     let source = fixture.click_source.as_deref().expect("Click source");
     let sources = crate::cli::source_refs(&fixture.c_sources);
-    verify_c0_sources(source, &sources).expect("unfold/write/refold verifies");
-    let expanded = expand_c0_claim_source_by_label(source, &sources, "roundtrip.contract")
+    verify_c_sources(source, &sources).expect("unfold/write/refold verifies");
+    let expanded = expand_c_claim_source_by_label(source, &sources, "roundtrip.contract")
         .expect("sibling-write fold expands");
-    verify_c0_sources(&expanded, &sources).expect("expanded sibling-write fold rechecks");
+    verify_c_sources(&expanded, &sources).expect("expanded sibling-write fold rechecks");
     let mut changed_sources = fixture.c_sources.clone();
     changed_sources[0].1 = changed_sources[0].1.replace("p->tag = 1", "p->left = 0");
-    assert!(verify_c0_sources(&expanded, &crate::cli::source_refs(&changed_sources)).is_err());
+    assert!(verify_c_sources(&expanded, &crate::cli::source_refs(&changed_sources)).is_err());
 }
 
 /// A declaration is a name followed by `(` outside every brace. A use of the
@@ -3536,7 +3558,7 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
             }
         }
     "#;
-    let sites = c0_smart_tactic_source_sites(source, &[]).unwrap();
+    let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -3550,10 +3572,10 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
             .iter()
             .any(|site| site.claim_label == "computed.ensures_0")
     );
-    verify_c0_sources(source, &[]).unwrap();
-    assert!(verify_c0_sources(&source.replace("requires defined(x + 1i64);", ""), &[]).is_err());
+    verify_c_sources(source, &[]).unwrap();
+    assert!(verify_c_sources(&source.replace("requires defined(x + 1i64);", ""), &[]).is_err());
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace(
                 "requires x == 0;\n            ensures",
                 "requires x == 1;\n            ensures"
@@ -3713,12 +3735,12 @@ theorem client(xs: List<int32>) {
     }
 }
 "#;
-    verify_c0_sources(source, &[]).unwrap();
-    let expanded = expand_c0_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
-    verify_c0_sources(&expanded, &[]).unwrap();
+    verify_c_sources(source, &[]).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
+    verify_c_sources(&expanded, &[]).unwrap();
     assert!(expanded.contains("/* # ; theorem fake() {} */"));
     assert!(
-        verify_c0_sources(&expanded.replace("== xs by", "== List<int32>::Nil by"), &[]).is_err()
+        verify_c_sources(&expanded.replace("== xs by", "== List<int32>::Nil by"), &[]).is_err()
     );
 }
 
@@ -3733,14 +3755,14 @@ fn resource_and_theorem_name_namespaces_roundtrip_with_commented_imports() {
         .next()
         .unwrap();
     let sources = [("keep.c", "void keep(int32* p) { }")];
-    verify_c0_sources(source, &sources).unwrap();
+    verify_c_sources(source, &sources).unwrap();
     for label in [
         "client.ensures_0",
         "keep.contract",
         "int32_positive_is_nonnegative.ensures_0",
     ] {
-        let expanded = expand_c0_claim_source_by_label(source, &sources, label).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &sources, label).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
     }
 }
 
@@ -3774,45 +3796,64 @@ fn implicit_proof_blocks_are_the_tactics_the_parser_read() {
 
 #[test]
 fn branch_transfers_cannot_claim_an_unreachable_return() {
-    use crate::kernel::{c_if, c_int32_literal, c_return, c_seq, c_skip};
-    let branch = |body| c_if(c_int32_literal(1), body, c_skip());
-    assert!(returning_then_arms(&branch(c_return(c_int32_literal(0)))).contains(&0));
+    use crate::kernel::{program_if, program_return, program_seq, program_skip};
+    let branch = |body| {
+        program_if(
+            crate::kernel::program_expression::int32_literal(1),
+            body,
+            program_skip(),
+        )
+    };
     assert!(
-        returning_then_arms(&branch(c_seq(c_skip(), c_return(c_int32_literal(0))))).contains(&0)
+        returning_then_arms(&branch(program_return(
+            crate::kernel::program_expression::int32_literal(0)
+        )))
+        .contains(&0)
+    );
+    assert!(
+        returning_then_arms(&branch(program_seq(
+            program_skip(),
+            program_return(crate::kernel::program_expression::int32_literal(0))
+        )))
+        .contains(&0)
     );
     for transfer in [
-        CStatement::Break,
-        CStatement::Continue,
-        CStatement::Goto {
-            target: crate::kernel::CControlTargetId(7),
+        ProgramStatement::Break,
+        ProgramStatement::Continue,
+        ProgramStatement::Goto {
+            target: crate::kernel::ControlTargetId(7),
         },
-        CStatement::Throw(c_int32_literal(0)),
+        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(0)),
     ] {
         assert!(
-            returning_then_arms(&branch(c_seq(transfer, c_return(c_int32_literal(0))))).is_empty()
+            returning_then_arms(&branch(program_seq(
+                transfer,
+                program_return(crate::kernel::program_expression::int32_literal(0))
+            )))
+            .is_empty()
         );
     }
 }
 
 #[test]
 fn a_caught_call_can_bypass_its_branch_return() {
-    use crate::kernel::{c_if, c_int32_literal, c_return, c_seq, c_skip};
-    let body = c_if(
-        c_int32_literal(1),
-        c_seq(
-            CStatement::Call {
+    use crate::kernel::{program_if, program_return, program_seq, program_skip};
+    let body = program_if(
+        crate::kernel::program_expression::int32_literal(1),
+        program_seq(
+            ProgramStatement::Call {
                 function_name: "may_throw".into(),
                 arguments: Vec::new(),
             },
-            c_return(c_int32_literal(0)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         ),
-        c_skip(),
+        program_skip(),
     );
     assert!(returning_then_arms(&body).contains(&0));
-    let caught = CStatement::TryCatchInt32 {
+    let caught = ProgramStatement::TryCatchInt32 {
         try_body: Box::new(body),
         binding: "error".into(),
-        handler: Box::new(c_skip()),
+        handler: Box::new(program_skip()),
         cleanup_unwind: false,
     };
     assert!(
@@ -3843,13 +3884,13 @@ int64 inc(int64 q) {
 }
 "#;
     let sources = [("inc.c", c_source)];
-    let expanded = expand_c0_claim_source_by_label(source, &sources, "inc.contract")
+    let expanded = expand_c_claim_source_by_label(source, &sources, "inc.contract")
         .expect("the sum identity expands");
     assert!(
         !expanded.contains("at(function.entry, -9223372036854775808)"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).expect("the expansion verifies");
+    verify_c_sources(&expanded, &sources).expect("the expansion verifies");
 }
 
 /// A written script that stops with C left ends in the implicit tail, which
@@ -3870,17 +3911,17 @@ int32 f(int32 x) {
 }
 "#;
     assert!(
-        c0_smart_tactic_source_sites(click_source, &sources)
+        c_smart_tactic_source_sites(click_source, &sources)
             .unwrap()
             .is_empty()
     );
-    let expanded = expand_c0_tactic_source_at(click_source, &sources, 6, 1).unwrap();
+    let expanded = expand_c_tactic_source_at(click_source, &sources, 6, 1).unwrap();
     assert!(
         expanded.contains("    step();\n    step();\n    if "),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).expect("the expanded tail should verify");
-    let refused = without_implicit_solve(|| verify_c0_sources(click_source, &sources))
+    verify_c_sources(&expanded, &sources).expect("the expanded tail should verify");
+    let refused = without_implicit_solve(|| verify_c_sources(click_source, &sources))
         .expect_err("with the implicit closer off the tail runs no C");
     assert!(
         refused.message().contains("the implicit tail is off"),
@@ -3900,16 +3941,16 @@ fn common_machine_call_certificates_preserve_calls_and_definedness() {
         let source = format!(
             "function f(x: int32) -> int32 {{ x }} theorem client(x: int32) {{ {requirements} ensures {term} == {term} by {{ arithmetic_certificate {{ trivial => {term} == {term}; conclusion 0; }} }} }}"
         );
-        verify_c0_sources(&source, &[])
+        verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
         let altered = source.replacen(
             &format!("ensures {term} == {term}"),
             &format!("ensures {term} != {term}"),
             1,
         );
-        assert!(verify_c0_sources(&altered, &[]).is_err());
+        assert!(verify_c_sources(&altered, &[]).is_err());
         if !requirements.is_empty() {
-            assert!(verify_c0_sources(&source.replace(requirements, ""), &[]).is_err());
+            assert!(verify_c_sources(&source.replace(requirements, ""), &[]).is_err());
         }
     }
 }
@@ -3917,13 +3958,13 @@ fn common_machine_call_certificates_preserve_calls_and_definedness() {
 #[test]
 fn common_machine_call_expansion_rechecks_selected_call_premises() {
     let source = "function f(x: int32) -> int32 { x } theorem client(x: int32) { requires f(x) == 7; requires defined(f(x) + 1); ensures f(x) + 1 == 8 by { solve() using { f(x) == 7; defined(f(x) + 1); } } }";
-    verify_c0_sources(source, &[]).unwrap();
-    let expanded = expand_c0_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
-    verify_c0_sources(&expanded, &[]).unwrap();
+    verify_c_sources(source, &[]).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
+    verify_c_sources(&expanded, &[]).unwrap();
     assert!(expanded.contains("f(x)"));
-    assert!(verify_c0_sources(&expanded.replace("requires f(x) == 7;", ""), &[]).is_err());
+    assert!(verify_c_sources(&expanded.replace("requires f(x) == 7;", ""), &[]).is_err());
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &expanded.replace("ensures f(x) + 1 == 8", "ensures f(x) + 1 == 9"),
             &[]
         )

@@ -5,16 +5,16 @@
 //! shared DAG, include whole memory snapshots, and grow without relation to
 //! the useful part of a diagnostic.
 
-use crate::kernel::CResourceFact;
 use crate::kernel::MachineCastSpelling;
+use crate::kernel::ResourceFact;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, CExpressionOutcome,
-    CMemory, CResource, CState, ConditionTerm, IntegerRangeFoldIndex, IntegerTerm, MachineTerm,
-    Pointer, PointerOffsetTerm, Proposition, PureFunctionArgument, Sort, SpecCaptureRefusal, Term,
-    Variable,
+    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, ConditionTerm,
+    ExecutionState, ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, MachineTerm, Memory,
+    Pointer, PointerOffsetTerm, Proposition, PureFunctionArgument, Resource, Sort,
+    SpecCaptureRefusal, Term, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
@@ -50,24 +50,24 @@ const MAX_SNAPSHOT_LABELS: usize = 32;
 /// one, or distinct alphabetic labels when it does not.
 #[derive(Clone, Default)]
 pub(crate) struct SnapshotLabels {
-    memories: Vec<CMemory>,
+    memories: Vec<Memory>,
     memory_identities: HashMap<(usize, usize, usize, usize, usize), usize>,
     trace_labels: bool,
     range_collisions: Option<range_collisions::RangeCollisions>,
     pointer_values: HashMap<Pointer, usize>,
     pointer_sources: HashMap<Pointer, String>,
-    source_memories: Vec<(CMemory, String, std::sync::Arc<NamingTables>)>,
+    source_memories: Vec<(Memory, String, std::sync::Arc<NamingTables>)>,
     /// Persistent source-point index, consulted only while printing. Older
     /// loop heads must not lose their name when the recent display fills up.
     recorded_snapshots: Option<crate::surface::RecordedSnapshots>,
     source_names: HashMap<Variable, String>,
     /// Exact structural reads held by source locals or recorded snapshots.
     source_read_names: HashMap<MachineTerm, String>,
-    source_types: HashMap<Variable, crate::kernel::CType>,
+    source_types: HashMap<Variable, crate::kernel::ProgramType>,
     anonymous_names: HashMap<Variable, String>,
     /// Memories a source spelling names only by a report-local `<state A>`,
     /// defined after the report.
-    unknown_states: Vec<CMemory>,
+    unknown_states: Vec<Memory>,
     /// Addresses a source spelling names only by a report-local
     /// `<pointer A>`.
     unnamed_pointers: HashMap<Pointer, String>,
@@ -77,7 +77,7 @@ pub(crate) struct SnapshotLabels {
     /// Typed values a recorded snapshot names that the current state no
     /// longer holds: a call's result, `<region>.result`. A range over one is
     /// spelled from that name.
-    snapshot_values: Vec<(String, crate::kernel::CValue)>,
+    snapshot_values: Vec<(String, crate::kernel::ProgramValue)>,
     /// Source names of mathematical `Integer` variables. Kept apart from
     /// `source_names` because the kernel numbers `Integer` variables
     /// separately from machine ones.
@@ -112,14 +112,18 @@ fn value_binder(term: &MachineTerm) -> Option<Variable> {
 }
 
 impl SnapshotLabels {
-    pub(crate) fn source_type(&mut self, variable: Variable, c_type: crate::kernel::CType) {
-        self.source_types.insert(variable, c_type);
+    pub(crate) fn source_type(
+        &mut self,
+        variable: Variable,
+        interface_type: crate::kernel::ProgramType,
+    ) {
+        self.source_types.insert(variable, interface_type);
     }
-    pub(crate) fn source_value_type(&mut self, value: &crate::kernel::CValue) {
+    pub(crate) fn source_value_type(&mut self, value: &crate::kernel::ProgramValue) {
         if let crate::kernel::arithmetic_c_value!(term) = value
             && let MachineTerm::Variable(variable) = widened_word(term)
         {
-            self.source_type(*variable, value.c_type());
+            self.source_type(*variable, value.program_type());
         }
     }
 
@@ -128,7 +132,7 @@ impl SnapshotLabels {
     /// already registered, a read (`old(g[0])`), a model field, or an
     /// address's structural spelling (`&q[1]`) says more. Only the returned
     /// value itself is named; a part of it keeps its own spelling.
-    pub(crate) fn source_result(&mut self, value: &crate::kernel::CValue) {
+    pub(crate) fn source_result(&mut self, value: &crate::kernel::ProgramValue) {
         self.source_value_type(value);
         match value {
             crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable))
@@ -137,7 +141,7 @@ impl SnapshotLabels {
             {
                 self.source_name(*variable, "result".into());
             }
-            crate::kernel::CValue::Pointer(pointer) => {
+            crate::kernel::ProgramValue::Pointer(pointer) => {
                 // A reference result's carrier is the address of `result`.
                 let name = if crate::surface::diagnostics::reference_result_source() {
                     "&result"
@@ -172,24 +176,24 @@ impl SnapshotLabels {
             .iter()
             .zip(parameter_binding.arguments)
         {
-            let crate::kernel::CExpression::Value(value) = argument else {
+            let crate::kernel::ProgramExpression::Value(value) = argument else {
                 continue;
             };
-            if let crate::kernel::CValue::Pointer(pointer) = value {
+            if let crate::kernel::ProgramValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(pointer.pointer(), parameter.name());
             }
             let term = match value.numeric_value() {
-                crate::kernel::CValue::Bool(term)
-                | crate::kernel::CValue::Int8(term)
-                | crate::kernel::CValue::Int16(term)
-                | crate::kernel::CValue::Int32(term)
-                | crate::kernel::CValue::UInt8(term)
-                | crate::kernel::CValue::UInt16(term)
-                | crate::kernel::CValue::UInt32(term)
-                | crate::kernel::CValue::Int64(term)
-                | crate::kernel::CValue::UInt64(term)
-                | crate::kernel::CValue::Float32(term)
-                | crate::kernel::CValue::Float64(term) => term,
+                crate::kernel::ProgramValue::Bool(term)
+                | crate::kernel::ProgramValue::Int8(term)
+                | crate::kernel::ProgramValue::Int16(term)
+                | crate::kernel::ProgramValue::Int32(term)
+                | crate::kernel::ProgramValue::UInt8(term)
+                | crate::kernel::ProgramValue::UInt16(term)
+                | crate::kernel::ProgramValue::UInt32(term)
+                | crate::kernel::ProgramValue::Int64(term)
+                | crate::kernel::ProgramValue::UInt64(term)
+                | crate::kernel::ProgramValue::Float32(term)
+                | crate::kernel::ProgramValue::Float64(term) => term,
                 _ => continue,
             };
             if matches!(widened_word(term), MachineTerm::MemoryLoad(..)) {
@@ -208,7 +212,7 @@ impl SnapshotLabels {
                     crate::surface::diagnostics::rust_variable_spelling(parameter.name())
                         .unwrap_or_else(|| parameter.name().to_string()),
                 );
-                labels.source_types.insert(*variable, value.c_type());
+                labels.source_types.insert(*variable, value.program_type());
             }
         }
         labels.naming = Some(std::sync::Arc::new((
@@ -238,7 +242,7 @@ impl SnapshotLabels {
 
     /// A memory as a phrase: `this state`, `function entry`, a recorded
     /// point, or a report-local `<state A>`.
-    pub(crate) fn state_phrase(&mut self, memory: &CMemory) -> String {
+    pub(crate) fn state_phrase(&mut self, memory: &Memory) -> String {
         match self
             .source_memory_context(memory)
             .map(|(point, _)| point.to_owned())
@@ -251,7 +255,7 @@ impl SnapshotLabels {
     }
 
     /// The report-local name of a memory no recorded state names.
-    pub(crate) fn state_label(&mut self, memory: &CMemory) -> String {
+    pub(crate) fn state_label(&mut self, memory: &Memory) -> String {
         if let Some(index) = self
             .unknown_states
             .iter()
@@ -318,7 +322,10 @@ impl SnapshotLabels {
 
     /// Current locals take precedence over entry values. This is diagnostic
     /// data only; no proof decision consults these names.
-    pub(crate) fn with_state(parameter_binding: ParameterBinding<'_>, state: &CState) -> Self {
+    pub(crate) fn with_state(
+        parameter_binding: ParameterBinding<'_>,
+        state: &ExecutionState,
+    ) -> Self {
         let mut labels = Self::naming(parameter_binding);
         labels.register_current_state(state);
         labels
@@ -338,7 +345,7 @@ impl SnapshotLabels {
         }
     }
 
-    pub(crate) fn register_current_state(&mut self, state: &CState) {
+    pub(crate) fn register_current_state(&mut self, state: &ExecutionState) {
         let (names, values) = crate::surface::diagnostics::local_naming_tables(state);
         let current = Self::naming(ParameterBinding::new(&names, &values));
         // A reassigned parameter's entry value is not its current value.
@@ -403,8 +410,8 @@ impl SnapshotLabels {
         self.recorded_snapshots = Some(snapshots.clone());
     }
 
-    fn recorded_memory_point(&self, memory: &CMemory) -> Option<String> {
-        let memory = crate::kernel::intern_c_memory_ref(memory);
+    fn recorded_memory_point(&self, memory: &Memory) -> Option<String> {
+        let memory = crate::kernel::intern_memory_ref(memory);
         let (selector, _) = self
             .recorded_snapshots
             .as_ref()?
@@ -414,7 +421,7 @@ impl SnapshotLabels {
         ))
     }
 
-    pub(crate) fn source_state(&mut self, state: &CState, point: String) {
+    pub(crate) fn source_state(&mut self, state: &ExecutionState, point: String) {
         if self.source_memories.len() < MAX_SNAPSHOT_LABELS {
             let tables = crate::surface::diagnostics::local_naming_tables(state);
             self.source_memories
@@ -422,7 +429,7 @@ impl SnapshotLabels {
         }
     }
 
-    fn source_memory_context(&self, memory: &CMemory) -> Option<(&str, &NamingTables)> {
+    fn source_memory_context(&self, memory: &Memory) -> Option<(&str, &NamingTables)> {
         // Exact storage roots identify a state without walking memory. When
         // one memory is both the current state and another recorded one,
         // the unqualified current spelling wins.
@@ -477,11 +484,11 @@ impl SnapshotLabels {
     }
 
     /// One state in source terms: the program event that produced it.
-    fn describe_state(&mut self, memory: &CMemory) -> String {
-        use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation};
+    fn describe_state(&mut self, memory: &Memory) -> String {
+        use crate::kernel::{MemoryConstructionKind, MemoryDerivation};
         if !matches!(
             memory.diagnostic_construction(),
-            Some(CMemoryConstructionKind::Transform {
+            Some(MemoryConstructionKind::Transform {
                 operation: "project memory for pointer read",
                 ..
             })
@@ -493,11 +500,11 @@ impl SnapshotLabels {
             return "the memory before the function runs".into();
         }
         let edge = match memory.diagnostic_construction() {
-            Some(CMemoryConstructionKind::Transition(edge)) => edge.clone(),
+            Some(MemoryConstructionKind::Transition(edge)) => edge.clone(),
             // A read's projection holds that read's value as its one source
             // does, so the program event that produced it is the source's.
             // The source is an earlier memory, so this ends.
-            Some(CMemoryConstructionKind::Transform {
+            Some(MemoryConstructionKind::Transform {
                 operation: "project memory for pointer read",
                 sources,
                 ..
@@ -518,10 +525,10 @@ impl SnapshotLabels {
                 // the source state, without leaking that internal binder.
                 return format!("{described}, projected for one read");
             }
-            Some(CMemoryConstructionKind::Transform { .. }) => {
+            Some(MemoryConstructionKind::Transform { .. }) => {
                 return "a memory derived from another state for one read".into();
             }
-            None => match crate::kernel::intern_c_memory_ref(memory).derivation() {
+            None => match crate::kernel::intern_memory_ref(memory).derivation() {
                 Some(edge) => edge,
                 None => return "an intermediate memory".into(),
             },
@@ -532,27 +539,27 @@ impl SnapshotLabels {
             .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
         let binding = ParameterBinding::new(parameters, arguments);
         match edge.as_ref() {
-            CMemoryDerivation::Store { pointer, .. } => {
+            MemoryDerivation::Store { pointer, .. } => {
                 match crate::surface::diagnostics::diagnostic_source_cell(pointer, binding) {
                     Some(cell) => format!("the memory after the store to `{cell}`"),
                     None => "the memory after a store".into(),
                 }
             }
-            CMemoryDerivation::BranchJoin { .. } => "the memory where branches join".into(),
-            CMemoryDerivation::CellsForgotten { .. } => {
+            MemoryDerivation::BranchJoin { .. } => "the memory where branches join".into(),
+            MemoryDerivation::CellsForgotten { .. } => {
                 "the memory after cached cells were forgotten".into()
             }
-            CMemoryDerivation::CallHavoc { .. } => "the memory after a call".into(),
-            CMemoryDerivation::LoopHavoc { .. } => "the memory a loop may have changed".into(),
-            CMemoryDerivation::BlockDeclared { .. } => {
+            MemoryDerivation::CallHavoc { .. } => "the memory after a call".into(),
+            MemoryDerivation::LoopHavoc { .. } => "the memory a loop may have changed".into(),
+            MemoryDerivation::BlockDeclared { .. } => {
                 "the memory after a local was declared".into()
             }
-            CMemoryDerivation::LocalLifetimeEnded { .. } => {
+            MemoryDerivation::LocalLifetimeEnded { .. } => {
                 "the memory after a local's lifetime ended".into()
             }
-            CMemoryDerivation::HeapAllocated { .. } => "the memory after an allocation".into(),
-            CMemoryDerivation::HeapFreed { .. } => "the memory after a `free`".into(),
-            CMemoryDerivation::CellsSeeded { .. } => {
+            MemoryDerivation::HeapAllocated { .. } => "the memory after an allocation".into(),
+            MemoryDerivation::HeapFreed { .. } => "the memory after a `free`".into(),
+            MemoryDerivation::CellsSeeded { .. } => {
                 "the memory before the function runs, with its cells named".into()
             }
             _ => format!("the memory after a `{}` step", edge.kind_name()),
@@ -562,8 +569,8 @@ impl SnapshotLabels {
     pub(crate) fn naming_tables(
         &self,
     ) -> Option<(
-        &[crate::languages::c::syntax::C0Parameter],
-        &[crate::kernel::CExpression],
+        &[crate::languages::interface::ImportedParameter],
+        &[crate::kernel::ProgramExpression],
     )> {
         self.naming
             .as_ref()
@@ -604,7 +611,7 @@ impl SnapshotLabels {
 
     /// Records `value` under `name` for spellings that need a typed value,
     /// a memory range's base, when nothing current names it.
-    pub(crate) fn fallback_value_name(&mut self, name: String, value: crate::kernel::CValue) {
+    pub(crate) fn fallback_value_name(&mut self, name: String, value: crate::kernel::ProgramValue) {
         if self.snapshot_values.len() < 128 && !self.snapshot_values.iter().any(|(n, _)| n == &name)
         {
             self.snapshot_values.push((name, value));
@@ -615,8 +622,8 @@ impl SnapshotLabels {
     pub(crate) fn naming_with_snapshot_values(
         &self,
     ) -> (
-        Vec<crate::languages::c::syntax::C0Parameter>,
-        Vec<crate::kernel::CExpression>,
+        Vec<crate::languages::interface::ImportedParameter>,
+        Vec<crate::kernel::ProgramExpression>,
     ) {
         let (mut parameters, mut arguments) = self
             .naming
@@ -633,7 +640,7 @@ impl SnapshotLabels {
 
     /// Whether a read of `memory` is qualified by a recorded point rather
     /// than a report-local `<state A>`.
-    pub(crate) fn names_memory(&self, memory: &CMemory) -> bool {
+    pub(crate) fn names_memory(&self, memory: &Memory) -> bool {
         self.source_memory_context(memory).is_some()
     }
 
@@ -642,12 +649,12 @@ impl SnapshotLabels {
         &mut self,
         variable: Variable,
         name: String,
-        c_type: crate::kernel::CType,
+        interface_type: crate::kernel::ProgramType,
     ) {
         if let std::collections::hash_map::Entry::Vacant(entry) = self.source_names.entry(variable)
         {
             entry.insert(name);
-            self.source_types.entry(variable).or_insert(c_type);
+            self.source_types.entry(variable).or_insert(interface_type);
         }
     }
 
@@ -691,7 +698,7 @@ impl SnapshotLabels {
 
     /// The label of this memory: an existing ordinal when an equal memory has
     /// already been labeled, otherwise the next one.
-    fn label(&mut self, memory: &CMemory) -> Option<usize> {
+    fn label(&mut self, memory: &Memory) -> Option<usize> {
         if let Some(index) = self.memory_identities.get(&memory.diagnostic_identity()) {
             return Some(*index);
         }
@@ -718,7 +725,7 @@ impl SnapshotLabels {
         Some(self.memories.len())
     }
 
-    pub(crate) fn snapshot_name(&mut self, memory: &CMemory) -> String {
+    pub(crate) fn snapshot_name(&mut self, memory: &Memory) -> String {
         self.label(memory).map_or_else(
             || "snapshot<untracked>".to_owned(),
             |index| format!("snapshot#{index}"),
@@ -782,8 +789,10 @@ pub(crate) fn render_read_resolution(
     if let Some(value) = &resolution.recovered {
         let equality = render_proposition_labeled(
             &Proposition::Equal(
-                Term::CValue(value.clone()),
-                Term::CValue(crate::kernel::CValue::UInt64(resolution.expected.clone())),
+                Term::ProgramValue(value.clone()),
+                Term::ProgramValue(crate::kernel::ProgramValue::UInt64(
+                    resolution.expected.clone(),
+                )),
             ),
             labels,
         );
@@ -893,15 +902,15 @@ pub(crate) fn render_proposition(proposition: &Proposition) -> String {
 }
 
 type NamingTables = (
-    Vec<crate::languages::c::syntax::C0Parameter>,
-    Vec<crate::kernel::CExpression>,
+    Vec<crate::languages::interface::ImportedParameter>,
+    Vec<crate::kernel::ProgramExpression>,
 );
 
 /// Shared entry naming captured without walking parameters or memory. The
 /// terminal proof state takes precedence; this preserves ambient names when
 /// a search-only error is rendered after the verification session unwinds.
 #[derive(Clone, Default)]
-pub(crate) struct CapturedNaming(Option<(CMemory, std::sync::Arc<NamingTables>)>);
+pub(crate) struct CapturedNaming(Option<(Memory, std::sync::Arc<NamingTables>)>);
 
 impl std::fmt::Debug for CapturedNaming {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -953,21 +962,21 @@ impl CapturedNaming {
 /// Whether `memory` is the initial memory, or it with cells seeded from it:
 /// either holds exactly the values memory had before the code ran. A bounded
 /// walk, done only while printing a failure.
-fn is_entry_memory(memory: &CMemory) -> bool {
+fn is_entry_memory(memory: &Memory) -> bool {
     let mut current = memory.clone();
     for _ in 0..8 {
         if current.is_initial_diagnostic_memory() {
             return true;
         }
         let edge = match current.diagnostic_construction() {
-            Some(crate::kernel::CMemoryConstructionKind::Transition(edge)) => edge.clone(),
+            Some(crate::kernel::MemoryConstructionKind::Transition(edge)) => edge.clone(),
             Some(_) => return false,
-            None => match crate::kernel::intern_c_memory_ref(&current).derivation() {
+            None => match crate::kernel::intern_memory_ref(&current).derivation() {
                 Some(edge) => edge,
                 None => return false,
             },
         };
-        let crate::kernel::CMemoryDerivation::CellsSeeded { base, .. } = edge.as_ref() else {
+        let crate::kernel::MemoryDerivation::CellsSeeded { base, .. } = edge.as_ref() else {
             return false;
         };
         current = base.memory().clone();
@@ -986,7 +995,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     /// That function's entry memory, so a read of it spells as `old(...)`.
     /// One retained handle per verified function; diagnostics only.
-    static AMBIENT_ENTRY: std::cell::RefCell<Option<(CMemory, std::sync::Arc<NamingTables>)>> =
+    static AMBIENT_ENTRY: std::cell::RefCell<Option<(Memory, std::sync::Arc<NamingTables>)>> =
         const { std::cell::RefCell::new(None) };
     /// Set while a `--trace-proof` trace is rendered: traces keep their
     /// typed notation, which names each read's width and snapshot.
@@ -995,7 +1004,7 @@ thread_local! {
 
 /// Starts verifying a C function whose parameters hold `arguments` in the
 /// memory `entry`.
-pub(crate) fn enter_ambient_naming(parameter_binding: ParameterBinding<'_>, entry: &CMemory) {
+pub(crate) fn enter_ambient_naming(parameter_binding: ParameterBinding<'_>, entry: &Memory) {
     let tables = std::sync::Arc::new((
         parameter_binding.parameters.to_vec(),
         parameter_binding.arguments.to_vec(),
@@ -1014,7 +1023,7 @@ pub(crate) fn clear_ambient_naming() {
 /// diagnostic's current-state naming table contains only kernel types.
 pub(in crate::surface) fn ambient_source_parameter(
     name: &str,
-) -> Option<crate::languages::c::syntax::C0Parameter> {
+) -> Option<crate::languages::interface::ImportedParameter> {
     AMBIENT_NAMING.with(|slot| {
         slot.borrow()
             .as_ref()?
@@ -1046,13 +1055,13 @@ fn typed_notation() -> bool {
 
 /// A bounded view of one exact resource representation for a proof trace.
 #[cfg(test)]
-pub(crate) fn render_resource_fact(fact: &CResourceFact) -> String {
+pub(crate) fn render_resource_fact(fact: &ResourceFact) -> String {
     let mut labels = SnapshotLabels::default();
     render_resource_fact_labeled(fact, &mut labels)
 }
 
 pub(crate) fn render_resource_fact_labeled(
-    fact: &CResourceFact,
+    fact: &ResourceFact,
     labels: &mut SnapshotLabels,
 ) -> String {
     labels.trace_labels = true;
@@ -1066,13 +1075,13 @@ pub(crate) fn render_resource_fact_labeled(
         trace_facts: true,
     };
     match fact {
-        CResourceFact::Own(resource, quantity) => {
+        ResourceFact::Own(resource, quantity) => {
             renderer.push("owns ");
             renderer.resource(resource);
             renderer.push(" x ");
             renderer.bitvector(quantity);
         }
-        CResourceFact::View(resource) => {
+        ResourceFact::View(resource) => {
             renderer.push("views ");
             renderer.resource(resource);
         }
@@ -1085,7 +1094,7 @@ pub(crate) fn render_resource_fact_labeled(
 
 /// Resource facts follow the same source/typed policy as propositions.
 pub(crate) fn render_resource_fact_spelled(
-    fact: &CResourceFact,
+    fact: &ResourceFact,
     labels: &mut SnapshotLabels,
 ) -> String {
     if typed_notation() {
@@ -1096,7 +1105,7 @@ pub(crate) fn render_resource_fact_spelled(
 }
 
 pub(in crate::surface) fn render_resource_fact_diagnostic(
-    fact: &CResourceFact,
+    fact: &ResourceFact,
     binding: ParameterBinding<'_>,
 ) -> String {
     let mut labels = SnapshotLabels::naming(binding);
@@ -1106,7 +1115,7 @@ pub(in crate::surface) fn render_resource_fact_diagnostic(
 }
 
 pub(in crate::surface) fn render_resource_facts_diagnostic(
-    facts: &[CResourceFact],
+    facts: &[ResourceFact],
     binding: ParameterBinding<'_>,
 ) -> String {
     let mut labels = SnapshotLabels::naming(binding);
@@ -1122,7 +1131,7 @@ pub(in crate::surface) fn render_resource_facts_diagnostic(
 /// same value the report's pure facts call `<unnamed A>`. The caller appends
 /// the shared legend once.
 pub(in crate::surface) fn render_resource_facts_labeled(
-    facts: &[CResourceFact],
+    facts: &[ResourceFact],
     labels: &mut SnapshotLabels,
 ) -> String {
     crate::surface::diagnostics::describe_bounded_list(facts, |fact| {
@@ -1142,7 +1151,7 @@ pub(in crate::surface) fn render_hidden_record_instance_labeled(
 ) -> Option<String> {
     let record = surface::source_hidden_record(schema, fields, labels)?;
     let application = surface::source_resource(
-        &crate::kernel::CResource::Composite {
+        &crate::kernel::Resource::Composite {
             name: name.to_owned(),
             arguments: arguments.into(),
         },
@@ -1152,13 +1161,12 @@ pub(in crate::surface) fn render_hidden_record_instance_labeled(
 }
 
 pub(in crate::surface) fn render_resource_diagnostic(
-    resource: &CResource,
+    resource: &Resource,
     binding: ParameterBinding<'_>,
 ) -> String {
     let mut labels = SnapshotLabels::naming(binding);
     let mut text = if typed_notation() {
-        let fact =
-            render_resource_fact_labeled(&CResourceFact::View(resource.clone()), &mut labels);
+        let fact = render_resource_fact_labeled(&ResourceFact::View(resource.clone()), &mut labels);
         fact.strip_prefix("views ").unwrap_or(&fact).to_owned()
     } else {
         surface::source_resource(resource, &mut labels)
@@ -1249,8 +1257,8 @@ pub(crate) fn render_integer_term_labeled(
 }
 
 /// One C value in source syntax, under the report's labels.
-pub(crate) fn render_c_value_labeled(
-    value: &crate::kernel::CValue,
+pub(crate) fn render_program_value_labeled(
+    value: &crate::kernel::ProgramValue,
     labels: &mut SnapshotLabels,
 ) -> String {
     surface::source_value(value, labels)
@@ -1431,7 +1439,7 @@ impl Renderer<'_> {
                 self.proposition(body);
                 self.bound_names.pop();
             }
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -1449,7 +1457,7 @@ impl Renderer<'_> {
                 self.bitvector(bytes);
                 self.push(")");
             }
-            Proposition::CMemoryCanStore {
+            Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
@@ -1460,7 +1468,7 @@ impl Renderer<'_> {
                 self.pointer(pointer);
                 self.fmt(format_args!(", bytes={byte_width})"));
             }
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory, pointer, ..
             } => {
                 self.push("defined-read(");
@@ -1469,7 +1477,7 @@ impl Renderer<'_> {
                 self.pointer(pointer);
                 self.push(")");
             }
-            Proposition::CMemoryLoads {
+            Proposition::MemoryLoads {
                 memory,
                 pointer,
                 outcome,
@@ -1482,25 +1490,25 @@ impl Renderer<'_> {
                 self.outcome(outcome);
                 self.push(")");
             }
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 self.resource(left);
                 self.push(" separate ");
                 self.resource(right);
             }
-            Proposition::CResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable { memory, resource } => {
                 self.push("viewable(");
                 self.resource(resource);
                 self.push(" in ");
                 self.memory(memory);
                 self.push(")");
             }
-            Proposition::CResourceContains { parent, child } => {
+            Proposition::ResourceContains { parent, child } => {
                 self.resource(parent);
                 self.push(" contains ");
                 self.resource(child);
             }
-            Proposition::CResourceComposition(context) => self.resource_composition(context),
-            Proposition::CMemoryMutatesOnly {
+            Proposition::ResourceComposition(context) => self.resource_composition(context),
+            Proposition::MemoryMutatesOnly {
                 before,
                 after,
                 writes,
@@ -1522,7 +1530,7 @@ impl Renderer<'_> {
                 }
                 self.push(")");
             }
-            Proposition::CMemoryEffectSummary {
+            Proposition::MemoryEffectSummary {
                 before,
                 after,
                 mutable_ranges,
@@ -1533,7 +1541,7 @@ impl Renderer<'_> {
                 self.memory(after);
                 self.fmt(format_args!(", ranges={})", mutable_ranges.len()));
             }
-            Proposition::CHeapAllocationFreed {
+            Proposition::HeapAllocationFreed {
                 before,
                 after,
                 allocation_base,
@@ -1549,7 +1557,7 @@ impl Renderer<'_> {
                 self.bitvector(bytes.bytes());
                 self.push(")");
             }
-            Proposition::CExpressionEvaluates {
+            Proposition::ProgramExpressionEvaluates {
                 state,
                 expression: _,
                 outcome,
@@ -1560,7 +1568,7 @@ impl Renderer<'_> {
                 self.outcome(outcome);
                 self.push(")");
             }
-            Proposition::CConditionEvaluates {
+            Proposition::ProgramConditionEvaluates {
                 state,
                 condition: _,
                 outcome,
@@ -1571,19 +1579,19 @@ impl Renderer<'_> {
                 self.condition_outcome(outcome);
                 self.push(")");
             }
-            Proposition::CStatementExecutes {
+            Proposition::ProgramStatementExecutes {
                 state,
                 statement: _,
                 outcome,
             }
-            | Proposition::CStatementVerifies {
+            | Proposition::ProgramStatementVerifies {
                 state,
                 statement: _,
                 outcome,
             } => {
                 self.push("statement-");
                 self.push(
-                    if matches!(proposition, Proposition::CStatementVerifies { .. }) {
+                    if matches!(proposition, Proposition::ProgramStatementVerifies { .. }) {
                         "verifies"
                     } else {
                         "executes"
@@ -1595,13 +1603,13 @@ impl Renderer<'_> {
                 self.statement_outcome(outcome);
                 self.push(")");
             }
-            Proposition::CFunctionExecutes {
+            Proposition::ProgramFunctionExecutes {
                 state,
                 function: _,
                 arguments,
                 outcome,
             }
-            | Proposition::CFunctionVerifies {
+            | Proposition::ProgramFunctionVerifies {
                 state,
                 function: _,
                 arguments,
@@ -1616,10 +1624,10 @@ impl Renderer<'_> {
                 self.function_outcome(outcome);
                 self.push(")");
             }
-            Proposition::CFunctionSatisfiesSpecification { .. } => {
+            Proposition::ProgramFunctionSatisfiesSpecification { .. } => {
                 self.push("function-satisfies(<C function specification>)")
             }
-            Proposition::CFunctionPartiallySatisfiesSpecification { .. } => {
+            Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => {
                 self.push("function-partially-satisfies(<C function specification>)")
             }
         }
@@ -1663,7 +1671,7 @@ impl Renderer<'_> {
             AlgebraicValueType::ObjectPointer(_, class) => {
                 self.push(&format!("{}*", class.spelling()))
             }
-            AlgebraicValueType::C(ty) => self.fmt(format_args!("{ty:?}")),
+            AlgebraicValueType::Program(ty) => self.fmt(format_args!("{ty:?}")),
             AlgebraicValueType::Integer => self.push("Integer"),
             AlgebraicValueType::Algebraic { name, arguments } => {
                 self.push(name);
@@ -1705,12 +1713,12 @@ impl Renderer<'_> {
             Term::Bitvector32(v) => self.bitvector(v),
             Term::Integer(i) => self.integer(i),
             Term::PointerOffset(o) => self.offset(o, 0),
-            Term::CValue(v) => self.cvalue(v),
-            Term::CExpressionOutcome(o) => self.outcome(o),
-            Term::CStatementOutcome(_) => self.push("statement-outcome(<state snapshot>)"),
-            Term::CFunctionOutcome(_) => self.push("function-outcome(<state snapshot>)"),
-            Term::CMemory(m) => self.memory(m),
-            Term::CState(s) => self.state(s),
+            Term::ProgramValue(v) => self.cvalue(v),
+            Term::ExpressionOutcome(o) => self.outcome(o),
+            Term::StatementOutcome(_) => self.push("statement-outcome(<state snapshot>)"),
+            Term::FunctionOutcome(_) => self.push("function-outcome(<state snapshot>)"),
+            Term::Memory(m) => self.memory(m),
+            Term::ExecutionState(s) => self.state(s),
             Term::Sequence(_) => self.push("sequence(<bounded opaque value>)"),
             Term::Algebraic(value) => self.algebraic(value),
         }
@@ -1799,7 +1807,7 @@ impl Renderer<'_> {
         }
         self.depth += 1;
         match value {
-            AlgebraicValue::C(value) => self.cvalue(value),
+            AlgebraicValue::Program(value) => self.cvalue(value),
             AlgebraicValue::Integer(value) => self.integer(value),
             AlgebraicValue::Algebraic(value) => self.algebraic(value),
         }
@@ -1845,7 +1853,7 @@ impl Renderer<'_> {
                 if self.trace_facts {
                     self.fmt(format_args!(
                         "array-ref<{}>(",
-                        crate::kernel::c_type_spelling(*element_type)
+                        crate::kernel::program_type_spelling(*element_type)
                     ));
                 } else {
                     self.push("array-ref(");
@@ -1863,7 +1871,7 @@ impl Renderer<'_> {
         // capture or evaluation refusal most often names, so print the
         // operation instead of a placeholder.
         if let Some((operator, a, b)) = c.as_bitvector_comparison() {
-            let symbol = operator.c_symbol();
+            let symbol = operator.program_symbol();
             if operator.is_overflow() {
                 self.overflow_condition_bv(a, b, operator.operand_type(), symbol);
             } else {
@@ -1953,7 +1961,7 @@ impl Renderer<'_> {
         let unsigned_equality = label == "int32 ="
             && [a, b].iter().any(|value| {
                 matches!(value, MachineTerm::Variable(variable)
-                if self.labels.source_types.get(variable) == Some(&crate::kernel::CType::UInt32))
+                if self.labels.source_types.get(variable) == Some(&crate::kernel::ProgramType::UInt32))
             });
         self.push(if unsigned_equality { "uint32 =" } else { label });
         self.push("(");
@@ -2405,29 +2413,29 @@ impl Renderer<'_> {
         self.offset(&p.offset, 0);
         self.push(")");
     }
-    fn resource(&mut self, resource: &CResource) {
+    fn resource(&mut self, resource: &Resource) {
         match resource {
-            CResource::Emp => self.push("separation::emp"),
-            CResource::Star(pair) => {
+            Resource::Emp => self.push("separation::emp"),
+            Resource::Star(pair) => {
                 self.push("(");
                 self.resource(&pair.0);
                 self.push(" * ");
                 self.resource(&pair.1);
                 self.push(")");
             }
-            CResource::Footprint(fp) => self.push(&fp.source),
-            CResource::Parameter(v) => self.push(&format!("resource#{:?}", v)),
-            CResource::MutexGuard(identity) => {
+            Resource::Footprint(fp) => self.push(&fp.source),
+            Resource::Parameter(v) => self.push(&format!("resource#{:?}", v)),
+            Resource::MutexGuard(identity) => {
                 self.push("mutex_guard(");
                 self.pointer(identity.mutex());
                 self.push(")");
             }
-            CResource::MutexLive(identity) => {
+            Resource::MutexLive(identity) => {
                 self.push("mutex_live(");
                 self.pointer(identity.mutex());
                 self.push(")");
             }
-            CResource::MutexUse(identity) => {
+            Resource::MutexUse(identity) => {
                 self.push("mutex_use(");
                 self.pointer(identity.mutex());
                 if let Some(ty) = identity.protected_type() {
@@ -2437,7 +2445,7 @@ impl Renderer<'_> {
                 }
                 self.push(")");
             }
-            CResource::Publication(right) => {
+            Resource::Publication(right) => {
                 self.push(right.side().keyword());
                 self.push("(");
                 self.pointer(right.flag());
@@ -2450,7 +2458,7 @@ impl Renderer<'_> {
                 }
                 self.push(")");
             }
-            CResource::PopulationAuthority(description) => {
+            Resource::PopulationAuthority(description) => {
                 self.push("authority(");
                 self.push(description.family());
                 self.push("(");
@@ -2467,7 +2475,7 @@ impl Renderer<'_> {
                 }
                 self.push("))");
             }
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 let start = self.output.len();
                 self.push("memory(");
                 self.pointer(range.base());
@@ -2487,11 +2495,11 @@ impl Renderer<'_> {
                     }
                 }
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 self.push(name);
                 self.resource_arguments(arguments);
             }
-            CResource::Instance(instance) => {
+            Resource::Instance(instance) => {
                 self.push("{");
                 let identity = self.variable_name(instance.identity(), "instance");
                 self.push(&identity);
@@ -2508,7 +2516,7 @@ impl Renderer<'_> {
                 }
                 self.push("}");
             }
-            CResource::Iterated(iterated) => {
+            Resource::Iterated(iterated) => {
                 self.push("iterated-resource(");
                 self.push(iterated.owner());
                 self.push(", ");
@@ -2528,7 +2536,7 @@ impl Renderer<'_> {
                 });
                 self.bitvector(iterated.guard().value());
                 self.push(", element=");
-                self.resource(&CResource::Memory(
+                self.resource(&Resource::Memory(
                     iterated.element_range(&MachineTerm::Variable(index)),
                 ));
                 self.bound_names.pop();
@@ -2547,92 +2555,92 @@ impl Renderer<'_> {
         }
     }
 
-    fn memory(&mut self, memory: &CMemory) {
+    fn memory(&mut self, memory: &Memory) {
         match self.labels.label(memory) {
             Some(label) => self.fmt(format_args!("snapshot#{label}")),
             None => self.push("snapshot<untracked>"),
         }
     }
-    fn state(&mut self, state: &CState) {
+    fn state(&mut self, state: &ExecutionState) {
         self.push("state(");
         self.memory(state.memory());
         self.push(")");
     }
-    fn cvalue(&mut self, value: &crate::kernel::CValue) {
+    fn cvalue(&mut self, value: &crate::kernel::ProgramValue) {
         match value.numeric_value() {
-            crate::kernel::CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            crate::kernel::CValue::Parameter(term) => self.algebraic(term),
-            crate::kernel::CValue::Void => self.push("void"),
-            crate::kernel::CValue::Bool(v) => {
+            crate::kernel::ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            crate::kernel::ProgramValue::Parameter(term) => self.algebraic(term),
+            crate::kernel::ProgramValue::Void => self.push("void"),
+            crate::kernel::ProgramValue::Bool(v) => {
                 self.push("bool(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Int128(v) => {
+            crate::kernel::ProgramValue::Int128(v) => {
                 self.push("int128(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::UInt128(v) => {
+            crate::kernel::ProgramValue::UInt128(v) => {
                 self.push("uint128(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Int8(v) => {
+            crate::kernel::ProgramValue::Int8(v) => {
                 self.push("int8(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Int16(v) => {
+            crate::kernel::ProgramValue::Int16(v) => {
                 self.push("int16(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Int32(v) => {
+            crate::kernel::ProgramValue::Int32(v) => {
                 self.push("int32(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::UInt8(v) => {
+            crate::kernel::ProgramValue::UInt8(v) => {
                 self.push("uint8(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::UInt16(v) => {
+            crate::kernel::ProgramValue::UInt16(v) => {
                 self.push("uint16(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::UInt32(v) => {
+            crate::kernel::ProgramValue::UInt32(v) => {
                 self.push("uint32(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Int64(v) => {
+            crate::kernel::ProgramValue::Int64(v) => {
                 self.push("int64(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::UInt64(v) => {
+            crate::kernel::ProgramValue::UInt64(v) => {
                 self.push("uint64(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Float32(v) => {
+            crate::kernel::ProgramValue::Float32(v) => {
                 self.push("float32(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Float64(v) => {
+            crate::kernel::ProgramValue::Float64(v) => {
                 self.push("float64(");
                 self.bitvector(v);
                 self.push(")");
             }
-            crate::kernel::CValue::Pointer(p) => {
+            crate::kernel::ProgramValue::Pointer(p) => {
                 if self.trace_facts {
                     self.fmt(format_args!(
                         "ptr<{}>(",
-                        crate::kernel::c_type_spelling(p.c_type())
+                        crate::kernel::program_type_spelling(p.program_type())
                     ));
                     self.pointer(p);
                     self.push(")");
@@ -2642,41 +2650,41 @@ impl Renderer<'_> {
             }
         }
     }
-    fn outcome(&mut self, outcome: &CExpressionOutcome) {
+    fn outcome(&mut self, outcome: &ExpressionOutcome) {
         match outcome {
-            CExpressionOutcome::Value(value) => self.cvalue(value),
-            CExpressionOutcome::UndefinedBehavior(_) => self.push("undefined-behavior"),
-            CExpressionOutcome::RuntimeError(_) => self.push("runtime-error"),
+            ExpressionOutcome::Value(value) => self.cvalue(value),
+            ExpressionOutcome::UndefinedBehavior(_) => self.push("undefined-behavior"),
+            ExpressionOutcome::RuntimeError(_) => self.push("runtime-error"),
         }
     }
-    fn condition_outcome(&mut self, outcome: &crate::kernel::CConditionOutcome) {
+    fn condition_outcome(&mut self, outcome: &crate::kernel::ConditionOutcome) {
         self.push(match outcome {
-            crate::kernel::CConditionOutcome::Value(true) => "true",
-            crate::kernel::CConditionOutcome::Value(false) => "false",
-            crate::kernel::CConditionOutcome::UndefinedBehavior(_) => "undefined-behavior",
-            crate::kernel::CConditionOutcome::RuntimeError(_) => "runtime-error",
+            crate::kernel::ConditionOutcome::Value(true) => "true",
+            crate::kernel::ConditionOutcome::Value(false) => "false",
+            crate::kernel::ConditionOutcome::UndefinedBehavior(_) => "undefined-behavior",
+            crate::kernel::ConditionOutcome::RuntimeError(_) => "runtime-error",
         });
     }
-    fn statement_outcome(&mut self, outcome: &crate::kernel::CStatementOutcome) {
+    fn statement_outcome(&mut self, outcome: &crate::kernel::StatementOutcome) {
         self.push(match outcome {
-            crate::kernel::CStatementOutcome::Normal(_) => "normal",
-            crate::kernel::CStatementOutcome::Break(_) => "break",
-            crate::kernel::CStatementOutcome::Continue(_) => "continue",
-            crate::kernel::CStatementOutcome::Jump { .. } => "jump",
-            crate::kernel::CStatementOutcome::Return { .. } => "return",
-            crate::kernel::CStatementOutcome::Throw { .. } => "throw",
-            crate::kernel::CStatementOutcome::VerificationDiverges => "verification-diverges",
-            crate::kernel::CStatementOutcome::UndefinedBehavior(_) => "undefined-behavior",
-            crate::kernel::CStatementOutcome::RuntimeError(_) => "runtime-error",
+            crate::kernel::StatementOutcome::Normal(_) => "normal",
+            crate::kernel::StatementOutcome::Break(_) => "break",
+            crate::kernel::StatementOutcome::Continue(_) => "continue",
+            crate::kernel::StatementOutcome::Jump { .. } => "jump",
+            crate::kernel::StatementOutcome::Return { .. } => "return",
+            crate::kernel::StatementOutcome::Throw { .. } => "throw",
+            crate::kernel::StatementOutcome::VerificationDiverges => "verification-diverges",
+            crate::kernel::StatementOutcome::UndefinedBehavior(_) => "undefined-behavior",
+            crate::kernel::StatementOutcome::RuntimeError(_) => "runtime-error",
         });
     }
-    fn function_outcome(&mut self, outcome: &crate::kernel::CFunctionOutcome) {
+    fn function_outcome(&mut self, outcome: &crate::kernel::FunctionOutcome) {
         self.push(match outcome {
-            crate::kernel::CFunctionOutcome::Return { .. } => "return",
-            crate::kernel::CFunctionOutcome::Throw { .. } => "throw",
-            crate::kernel::CFunctionOutcome::VerificationDiverges => "verification-diverges",
-            crate::kernel::CFunctionOutcome::UndefinedBehavior(_) => "undefined-behavior",
-            crate::kernel::CFunctionOutcome::RuntimeError(_) => "runtime-error",
+            crate::kernel::FunctionOutcome::Return { .. } => "return",
+            crate::kernel::FunctionOutcome::Throw { .. } => "throw",
+            crate::kernel::FunctionOutcome::VerificationDiverges => "verification-diverges",
+            crate::kernel::FunctionOutcome::UndefinedBehavior(_) => "undefined-behavior",
+            crate::kernel::FunctionOutcome::RuntimeError(_) => "runtime-error",
         });
     }
 }
@@ -2703,9 +2711,9 @@ mod tests {
         use crate::surface::{CodeRegionRef, ProgramPointKind, ProgramPointRef, RecordedSnapshots};
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Pointer::symbolic(Variable(989_100));
-        let memory = CMemory::new().with_block("unrelated", 4);
-        let projected = crate::kernel::canonical_c_memory_for_pointer_load(&memory, &cell);
-        let head = CState::new().with_memory(memory.clone());
+        let memory = Memory::new().with_block("unrelated", 4);
+        let projected = crate::kernel::canonical_program_memory_for_pointer_load(&memory, &cell);
+        let head = ExecutionState::new().with_memory(memory.clone());
         let mut snapshots = RecordedSnapshots::new();
         snapshots.insert(
             ProgramPointRef {
@@ -2718,8 +2726,8 @@ mod tests {
         // Fill the recent display with later, distinct memories. The exact
         // read-identity index must still name the old iteration entry.
         for index in 0..40 {
-            let state =
-                CState::new().with_memory(CMemory::new().with_block(format!("later{index}"), 4));
+            let state = ExecutionState::new()
+                .with_memory(Memory::new().with_block(format!("later{index}"), 4));
             snapshots.insert(
                 ProgramPointRef {
                     region: CodeRegionRef::Region(index),
@@ -2842,12 +2850,10 @@ mod tests {
                 block: format!("local:{local}").into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let memory = CMemory::new()
-                .with_block(format!("local:{local}"), 4)
-                .store(
-                    pointer,
-                    crate::kernel::CValue::Int32(MachineTerm::constant(7)),
-                );
+            let memory = Memory::new().with_block(format!("local:{local}"), 4).store(
+                pointer,
+                crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
+            );
             assert_eq!(SnapshotLabels::default().describe_state(&memory), expected);
         }
     }
@@ -2967,8 +2973,8 @@ mod tests {
         assert!(rendered.contains("body=value A"), "{rendered}");
     }
 
-    fn loadable_at(memory: CMemory) -> Proposition {
-        Proposition::CMemoryLoadable {
+    fn loadable_at(memory: Memory) -> Proposition {
+        Proposition::MemoryLoadable {
             memory,
             base: Pointer {
                 block: crate::kernel::PointerBlock::ExternalArgument,
@@ -2985,10 +2991,10 @@ mod tests {
     /// separately built empty snapshots look like different memory.
     #[test]
     fn equal_snapshots_share_one_label_and_different_memory_does_not() {
-        let first = CMemory::default();
+        let first = Memory::default();
         let shared = first.clone();
-        let rebuilt = CMemory::default();
-        let different = CMemory::new().with_block("block", 16);
+        let rebuilt = Memory::default();
+        let different = Memory::new().with_block("block", 16);
         assert_ne!(first.diagnostic_identity(), rebuilt.diagnostic_identity());
 
         let first_text = render_proposition(&loadable_at(first));
@@ -2999,7 +3005,7 @@ mod tests {
         // Within one report the labels are the order of first appearance, so
         // two different memories are visibly two.
         let mut labels = SnapshotLabels::default();
-        let empty = render_proposition_labeled(&loadable_at(CMemory::default()), &mut labels);
+        let empty = render_proposition_labeled(&loadable_at(Memory::default()), &mut labels);
         let blocked = render_proposition_labeled(&loadable_at(different), &mut labels);
         assert!(empty.contains("snapshot#1"), "{empty}");
         assert!(blocked.contains("snapshot#2"), "{blocked}");
@@ -3010,16 +3016,16 @@ mod tests {
     fn snapshot_labels_stop_comparing_past_their_cap() {
         let mut labels = SnapshotLabels::default();
         for size in 0..MAX_SNAPSHOT_LABELS as u32 {
-            let memory = CMemory::new().with_block(format!("block{size}"), 16);
+            let memory = Memory::new().with_block(format!("block{size}"), 16);
             assert_eq!(labels.label(&memory), Some(size as usize + 1));
         }
-        let overflowing = CMemory::new().with_block("block0", 16);
+        let overflowing = Memory::new().with_block("block0", 16);
         assert_eq!(
             labels.label(&overflowing),
             Some(1),
             "an earlier label still wins"
         );
-        let beyond = CMemory::new().with_block("beyond", 16);
+        let beyond = Memory::new().with_block("beyond", 16);
         assert_eq!(labels.label(&beyond), None);
         let rendered = render_proposition_labeled(&loadable_at(beyond), &mut labels);
         assert!(rendered.contains("snapshot<untracked>"), "{rendered}");
@@ -3099,10 +3105,12 @@ mod tests {
     }
 
     #[test]
-    fn machine_and_c_value_types_remain_visible() {
+    fn machine_and_program_value_types_remain_visible() {
         let int32 = render_proposition(&Proposition::Equal(
-            Term::CValue(crate::kernel::CValue::Int32(MachineTerm::constant(1))),
-            Term::CValue(crate::kernel::CValue::UInt32(MachineTerm::constant(1))),
+            Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(1))),
+            Term::ProgramValue(crate::kernel::ProgramValue::UInt32(MachineTerm::constant(
+                1,
+            ))),
         ));
         assert!(int32.contains("int32(1)"));
         assert!(int32.contains("uint32(1)"));
@@ -3110,11 +3118,11 @@ mod tests {
 
     #[test]
     fn trace_resource_names_its_arguments_without_debug_state() {
-        let resource = CResourceFact::View(CResource::Token {
+        let resource = ResourceFact::View(Resource::Token {
             name: "child_ref".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::C(crate::kernel::CValue::Int32(
-                MachineTerm::constant(7),
-            ))]),
+            arguments: std::sync::Arc::from([AlgebraicValue::Program(
+                crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
+            )]),
         });
         assert_eq!(render_resource_fact(&resource), "views child_ref(int32(7))");
     }
@@ -3123,19 +3131,19 @@ mod tests {
 #[cfg(test)]
 mod wide_range_reader_tests {
     use super::*;
-    use crate::kernel::CMemoryRange;
+    use crate::kernel::MemoryRange;
     // Even fallback rendering may receive native memory resources.
     #[test]
     fn wide_resource_diagnostics_keep_the_high_bits_of_bounds() {
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             Pointer::symbolic(Variable(985_500)),
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(1 << 33),
             4,
         );
-        let fact = Proposition::CResourceContains {
-            parent: Box::new(CResource::Memory(wide.clone())),
-            child: Box::new(CResource::Memory(wide)),
+        let fact = Proposition::ResourceContains {
+            parent: Box::new(Resource::Memory(wide.clone())),
+            child: Box::new(Resource::Memory(wide)),
         };
         let text = render_internal_proposition_labeled(&fact, &mut SnapshotLabels::default());
         assert!(text.contains("8589934592"), "{text}");
@@ -3146,8 +3154,8 @@ mod wide_range_reader_tests {
 mod resource_detail_tests {
     use super::*;
     use crate::kernel::{
-        CIteratedGuard, CIteratedMemory, CType, CValue, PublicationRight, PublicationSide,
-        ResourceDescription, ResourceFieldSchema,
+        IteratedGuard, IteratedMemory, ProgramType, ProgramValue, PublicationRight,
+        PublicationSide, ResourceDescription, ResourceFieldSchema,
     };
 
     #[test]
@@ -3157,14 +3165,14 @@ mod resource_detail_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let publication = |value| {
-            CResourceFact::own(CResource::Publication(PublicationRight::new(
+            ResourceFact::own(Resource::Publication(PublicationRight::new(
                 PublicationSide::Publisher,
                 flag.clone(),
                 ResourceDescription::new(
                     "payload".into(),
-                    vec![AlgebraicValue::C(CValue::Int32(MachineTerm::constant(
-                        value,
-                    )))]
+                    vec![AlgebraicValue::Program(ProgramValue::Int32(
+                        MachineTerm::constant(value),
+                    ))]
                     .into(),
                     ResourceFieldSchema::new(vec![]).unwrap(),
                 ),
@@ -3187,7 +3195,7 @@ mod resource_detail_tests {
             block: "flags".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let iterated = CIteratedMemory::new(
+        let iterated = IteratedMemory::new(
             "selected",
             base,
             4,
@@ -3196,11 +3204,11 @@ mod resource_detail_tests {
             1,
             MachineTerm::constant(0),
             MachineTerm::constant(8),
-            CIteratedGuard::new(guard, CType::Int32, 4, true, MachineTerm::constant(1)),
+            IteratedGuard::new(guard, ProgramType::Int32, 4, true, MachineTerm::constant(1)),
         )
         .unwrap();
         let render = |hole| {
-            let fact = CResourceFact::own(CResource::Iterated(std::sync::Arc::new(
+            let fact = ResourceFact::own(Resource::Iterated(std::sync::Arc::new(
                 iterated.with_hole(MachineTerm::constant(hole)),
             )));
             let mut labels = SnapshotLabels::default();

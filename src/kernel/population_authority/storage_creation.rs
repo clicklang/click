@@ -6,8 +6,8 @@
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{
-    AlgebraicValue, CCompositeResourceDefinition, CResource, CResourceFact, CState, CValue,
-    MachineTerm, PointerBlock, PointerOffsetTerm, PureFactContext, ResourceDescription,
+    AlgebraicValue, CompositeResourceDefinition, ExecutionState, MachineTerm, PointerBlock,
+    PointerOffsetTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
     ResourceReference,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
@@ -89,7 +89,7 @@ struct Root {
     transfers:
         Mutex<BTreeMap<(Holder, Holder, super::Population, bool, MachineTerm), CreationEvents>>,
     returns: Mutex<BTreeMap<u64, CreationEvents>>,
-    c_events: Mutex<BTreeMap<CEvent, CreationEvents>>,
+    storage_events: Mutex<BTreeMap<StorageEvent, CreationEvents>>,
     invocation: Holder,
     /// Standalone proof entry preserves only declared opaque custody; the C
     /// invocation remains fresh and cannot inherit storage creation rights.
@@ -141,7 +141,7 @@ struct OpaqueImport {
     exact_entry_counts: Arc<Mutex<BTreeMap<ResourceDescription, MachineTerm>>>,
     /// The checked definition used to open this exact entry control for a
     /// read-only count observation. Current ownership is checked on each read.
-    control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
+    control: Option<(ResourceFact, Arc<CompositeResourceDefinition>)>,
     entry_owned_members: u32,
     owned_members: u32,
     /// Symbolic cardinality is admitted only through a checked control wrapper.
@@ -212,8 +212,8 @@ impl OpaqueImport {
 /// Inputs of a checked C lifetime event. Each key is proportional to the
 /// pointer or family named by that one operation.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
-enum CEvent {
-    Control(CResourceFact),
+enum StorageEvent {
+    Control(ResourceFact),
     Pending(PointerBlock),
     Resolve(PointerBlock, Option<PointerBlock>),
     Created(PointerBlock),
@@ -409,7 +409,7 @@ impl CreationEvents {
             proof_entry: OnceLock::new(),
             transfers: Mutex::new(BTreeMap::new()),
             returns: Mutex::new(BTreeMap::new()),
-            c_events: Mutex::new(BTreeMap::new()),
+            storage_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
@@ -509,13 +509,19 @@ impl CreationEvents {
             && left.empty_populations == right.empty_populations
     }
 
-    fn memoized_c_event(&self, key: CEvent, create: impl FnOnce() -> Self) -> Self {
-        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+    fn memoized_storage_event(&self, key: StorageEvent, create: impl FnOnce() -> Self) -> Self {
+        if let Some(existing) = self
+            .0
+            .storage_events
+            .lock()
+            .expect("C event cache")
+            .get(&key)
+        {
             return existing.clone();
         }
         let next = create();
         self.0
-            .c_events
+            .storage_events
             .lock()
             .expect("C event cache")
             .entry(key)
@@ -531,8 +537,14 @@ impl CreationEvents {
         description: &ResourceDescription,
         owned_members: u32,
     ) -> Result<Self, CreationRefusal> {
-        let key = CEvent::AcquiredControl(description.clone(), owned_members);
-        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+        let key = StorageEvent::AcquiredControl(description.clone(), owned_members);
+        if let Some(existing) = self
+            .0
+            .storage_events
+            .lock()
+            .expect("C event cache")
+            .get(&key)
+        {
             return Ok(existing.clone());
         }
         let next = self.import_opaque_contract_population_with_member(
@@ -543,7 +555,7 @@ impl CreationEvents {
             None,
             OpaqueMemberInputs::Acquired,
         )?;
-        Ok(self.memoized_c_event(key, || next))
+        Ok(self.memoized_storage_event(key, || next))
     }
 
     #[cfg(test)]
@@ -725,9 +737,9 @@ impl CreationEvents {
     #[cfg(test)]
     pub(in crate::kernel) fn import_checked_control_wrapper(
         &self,
-        state: &CState,
-        selected: &CResourceFact,
-        definition: &CCompositeResourceDefinition,
+        state: &ExecutionState,
+        selected: &ResourceFact,
+        definition: &CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Self, String> {
         self.import_checked_control_wrapper_with_members(
@@ -741,11 +753,11 @@ impl CreationEvents {
 
     pub(in crate::kernel) fn import_checked_control_wrapper_with_members(
         &self,
-        state: &CState,
-        selected: &CResourceFact,
-        definition: &CCompositeResourceDefinition,
+        state: &ExecutionState,
+        selected: &ResourceFact,
+        definition: &CompositeResourceDefinition,
         assumptions: &PureFactContext,
-        wildcard_members: &BTreeMap<ResourceDescription, Vec<CResourceFact>>,
+        wildcard_members: &BTreeMap<ResourceDescription, Vec<ResourceFact>>,
     ) -> Result<Self, String> {
         if state.population_effects.creation.as_ref() != Some(self) {
             return Err("control import requires the current creation ledger".into());
@@ -784,7 +796,7 @@ impl CreationEvents {
                 match wildcard_members.get(&description).map(Vec::as_slice) {
                     None | Some([]) => None,
                     Some([fact]) => {
-                        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) =
+                        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) =
                             fact
                         else {
                             return Err("Requires one owned wildcard member".into());
@@ -814,7 +826,7 @@ impl CreationEvents {
             } else {
                 None
             };
-            let member = CResource::Composite {
+            let member = Resource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),
             };
@@ -859,7 +871,7 @@ impl CreationEvents {
         owned_members: u32,
         entry_count: Option<MachineTerm>,
         symbolic_members: Option<MachineTerm>,
-        control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
+        control: Option<(ResourceFact, Arc<CompositeResourceDefinition>)>,
     ) -> Result<Self, CreationRefusal> {
         if description.population_arity().is_some() {
             return Err(CreationRefusal::InvalidMember);
@@ -880,7 +892,7 @@ impl CreationEvents {
         owned_members: u32,
         entry_count: Option<MachineTerm>,
         symbolic_members: Option<MachineTerm>,
-        control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
+        control: Option<(ResourceFact, Arc<CompositeResourceDefinition>)>,
         members: OpaqueMemberInputs,
     ) -> Result<Self, CreationRefusal> {
         let named_authority = matches!(members, OpaqueMemberInputs::NamedAuthority);
@@ -897,7 +909,8 @@ impl CreationEvents {
             OpaqueMemberInputs::Quantity(member) => member,
             OpaqueMemberInputs::NamedAuthority | OpaqueMemberInputs::Acquired => None,
         };
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return Err(CreationRefusal::InvalidMember);
         };
         if (description.population_arity().is_none() && wildcard_member.is_some())
@@ -1016,7 +1029,8 @@ impl CreationEvents {
         {
             return true;
         }
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return false;
         };
         let Ok(block) = self.exact_member_block(&pointer.pointer().block, description) else {
@@ -1041,9 +1055,9 @@ impl CreationEvents {
     /// This changes no identity, cardinality, custody, or creation rights.
     pub(in crate::kernel) fn checked_current_control_wrapper(
         &self,
-        state: &CState,
-        selected: &CResourceFact,
-        definition: &CCompositeResourceDefinition,
+        state: &ExecutionState,
+        selected: &ResourceFact,
+        definition: &CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Self, String> {
         if state.population_effects.creation.as_ref() != Some(self) {
@@ -1054,7 +1068,7 @@ impl CreationEvents {
         let descriptions = children
             .iter()
             .filter_map(|child| match child.resource() {
-                CResource::PopulationAuthority(description) => Some(description.clone()),
+                Resource::PopulationAuthority(description) => Some(description.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1070,7 +1084,7 @@ impl CreationEvents {
         if !changed {
             return Ok(self.clone());
         }
-        let next = self.memoized_c_event(CEvent::Control(selected.clone()), || {
+        let next = self.memoized_storage_event(StorageEvent::Control(selected.clone()), || {
             let mut imports = self.0.opaque_imports.clone();
             let body = Arc::new(definition.clone());
             for description in &descriptions {
@@ -1108,7 +1122,7 @@ impl CreationEvents {
     /// `unfold(control)`. No projected memory or authority is published.
     pub(in crate::kernel) fn checked_control_count_permission(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         description: &ResourceDescription,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -1136,7 +1150,8 @@ impl CreationEvents {
         if self.owns_imported_population_member(description) {
             return true;
         }
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return false;
         };
         let Ok(block) = self.exact_member_block(&pointer.pointer().block, description) else {
@@ -1638,7 +1653,8 @@ impl CreationEvents {
         if let Some(import) = self.0.opaque_imports.get(description) {
             return import.description == *description && import.retired_authority;
         }
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return false;
         };
         let block = &pointer.pointer().block;
@@ -1660,7 +1676,9 @@ impl CreationEvents {
         if let Some(description) = self.0.opaque_types.get(pattern) {
             return description.clone();
         }
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = pattern.arguments().first() else {
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            pattern.arguments().first()
+        else {
             return pattern.clone();
         };
         self.0
@@ -1680,7 +1698,8 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Option<ResourceDescription> {
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            description.arguments().first()
         else {
             return None;
         };
@@ -1735,7 +1754,8 @@ impl CreationEvents {
         block: &'a PointerBlock,
         description: &ResourceDescription,
     ) -> Result<&'a PointerBlock, CreationRefusal> {
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            description.arguments().first()
         else {
             return Err(CreationRefusal::InvalidMember);
         };
@@ -1779,7 +1799,9 @@ impl CreationEvents {
     fn fresh_member_entry_count(member: &ResourceDescription) -> MachineTerm {
         let variable =
             crate::kernel::Variable::allocate_fresh().expect("exact count identity exhausted");
-        if let Some(AlgebraicValue::C(CValue::Pointer(anchor))) = member.arguments().first() {
+        if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
+            member.arguments().first()
+        {
             crate::kernel::model_fields::register_population_entry_count(
                 variable,
                 crate::kernel::model_fields::PopulationEntryCount {
@@ -1866,7 +1888,7 @@ impl CreationEvents {
                     .iter()
                     .zip(description.arguments())
                     .all(|(a, b)| match (a, b) {
-                        (AlgebraicValue::C(a), AlgebraicValue::C(b)) => {
+                        (AlgebraicValue::Program(a), AlgebraicValue::Program(b)) => {
                             a.numeric_value() == b.numeric_value()
                         }
                         _ => a == b,
@@ -1906,7 +1928,7 @@ impl CreationEvents {
                 symbolic_delta: None,
             });
         }
-        let [AlgebraicValue::C(CValue::Pointer(anchor))] = scope.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = scope.arguments() else {
             return Err(CreationRefusal::InvalidMember);
         };
         if self
@@ -1950,19 +1972,19 @@ impl CreationEvents {
         // Casts, qualifiers, and equivalent constant expressions preserve
         // resource index identity. The key never includes C pointee metadata.
         description.map_values(|value| match value {
-            AlgebraicValue::C(CValue::Pointer(pointer)) => {
+            AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.pointer().clone();
                 if let Some(offset) = address.offset.as_const() {
                     address.offset = PointerOffsetTerm::Constant(offset);
                 }
-                AlgebraicValue::C(CValue::pointer(address))
+                AlgebraicValue::Program(ProgramValue::pointer(address))
             }
-            AlgebraicValue::C(CValue::Int32(value)) => {
+            AlgebraicValue::Program(ProgramValue::Int32(value)) => {
                 // A read of a stored cell is the index stored there (the
                 // read-over-write authority), as the index was when the
                 // member was created.
                 let value = crate::kernel::read_over_write_value(value).unwrap_or(value.clone());
-                AlgebraicValue::C(CValue::Int32(
+                AlgebraicValue::Program(ProgramValue::Int32(
                     value.as_const().map(MachineTerm::constant).unwrap_or(value),
                 ))
             }
@@ -1972,14 +1994,14 @@ impl CreationEvents {
 
     fn has_concrete_indices(description: &ResourceDescription) -> bool {
         description.arguments().iter().all(|value| match value {
-            AlgebraicValue::C(CValue::Pointer(pointer)) => {
+            AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 matches!(pointer.pointer().block, PointerBlock::Heap(_))
                     || pointer.pointer().block.is_local_block()
             }
-            AlgebraicValue::C(CValue::Int32(value)) => value.as_const().is_some(),
+            AlgebraicValue::Program(ProgramValue::Int32(value)) => value.as_const().is_some(),
             _ => false,
         }) && description.arguments().iter().all(|value| match value {
-            AlgebraicValue::C(CValue::Pointer(pointer)) => {
+            AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 pointer.pointer().offset.as_const().is_some()
             }
             _ => true,
@@ -2340,7 +2362,8 @@ impl CreationEvents {
         } else {
             Some((produce, quantity.clone()))
         };
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return Err(CreationRefusal::InvalidMember);
         };
         if &pointer.pointer().block != block {
@@ -2437,8 +2460,14 @@ impl CreationEvents {
         if import.retired_authority || import.authority_holder != self.0.opaque_actor {
             return Err(CreationRefusal::MissingAuthority);
         }
-        let key = CEvent::InstanceMember(reference.clone(), produce);
-        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+        let key = StorageEvent::InstanceMember(reference.clone(), produce);
+        if let Some(existing) = self
+            .0
+            .storage_events
+            .lock()
+            .expect("C event cache")
+            .get(&key)
+        {
             return Ok(existing.clone());
         }
         if import.consumed_named.contains_key(&instance.identity()) {
@@ -2499,7 +2528,7 @@ impl CreationEvents {
             named_counts.insert(exact.clone(), change);
         }
         let unresolved = description.arguments().iter().skip(1).any(|value| {
-            !matches!(value, AlgebraicValue::C(CValue::Int32(value)) if value.as_const().is_some())
+            !matches!(value, AlgebraicValue::Program(ProgramValue::Int32(value)) if value.as_const().is_some())
         });
         let named_ambiguous = import.named_ambiguous
             || import
@@ -2547,7 +2576,7 @@ impl CreationEvents {
         }));
         Ok(self
             .0
-            .c_events
+            .storage_events
             .lock()
             .expect("C event cache")
             .entry(key)
@@ -2578,7 +2607,8 @@ impl CreationEvents {
         produce: bool,
     ) -> Result<Self, CreationRefusal> {
         let description = reference.description();
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            description.arguments().first()
         else {
             return Err(CreationRefusal::InvalidMember);
         };
@@ -2588,8 +2618,14 @@ impl CreationEvents {
         {
             return Err(CreationRefusal::InvalidMember);
         }
-        let key = CEvent::InstanceMember(reference.clone(), produce);
-        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+        let key = StorageEvent::InstanceMember(reference.clone(), produce);
+        if let Some(existing) = self
+            .0
+            .storage_events
+            .lock()
+            .expect("C event cache")
+            .get(&key)
+        {
             return Ok(existing.clone());
         }
         let (next, _) = self.checked_member_exchange_with_context(
@@ -2602,7 +2638,7 @@ impl CreationEvents {
         )?;
         Ok(self
             .0
-            .c_events
+            .storage_events
             .lock()
             .expect("C event cache")
             .entry(key)
@@ -2729,7 +2765,8 @@ impl CreationEvents {
             }
             // Opaque custody follows only checked exact contract transfers;
             // numeric exchanges change the global fragment total separately.
-            let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+            let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+                description.arguments().first()
             else {
                 return Err(CreationRefusal::InvalidMember);
             };
@@ -2904,7 +2941,7 @@ impl CreationEvents {
             proof_entry: OnceLock::new(),
             transfers: Mutex::new(BTreeMap::new()),
             returns: Mutex::new(BTreeMap::new()),
-            c_events: Mutex::new(BTreeMap::new()),
+            storage_events: Mutex::new(BTreeMap::new()),
             invocation: Holder::fresh(),
             opaque_actor: Holder::fresh(),
             pending: PersistentMap::default(),
@@ -3042,7 +3079,8 @@ impl CreationEvents {
                 assumptions,
             );
         }
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            description.arguments().first()
         else {
             return Err(CreationRefusal::InvalidMember);
         };
@@ -3156,8 +3194,8 @@ impl CreationEvents {
             .authority
             .transfer_anchor(from.0.invocation, to.0.invocation, anchor)
             .map_err(CreationRefusal::from)?;
-        Ok(self.memoized_c_event(
-            CEvent::TransferredAnchor(from.0.invocation, to.0.invocation, block.clone()),
+        Ok(self.memoized_storage_event(
+            StorageEvent::TransferredAnchor(from.0.invocation, to.0.invocation, block.clone()),
             || {
                 Self(Arc::new(Root {
                     authority,
@@ -3171,7 +3209,8 @@ impl CreationEvents {
         if self.recognizes_imported_population(description) {
             return true;
         }
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            description.arguments().first()
         else {
             return false;
         };
@@ -3235,7 +3274,7 @@ impl CreationEvents {
     /// its creator before another function can test the pointer and resolve
     /// the outcome. This is not yet a live-storage creation grant.
     pub(in crate::kernel) fn pending_creation(&self, block: PointerBlock) -> Self {
-        self.memoized_c_event(CEvent::Pending(block.clone()), || {
+        self.memoized_storage_event(StorageEvent::Pending(block.clone()), || {
             self.pending_creation_uncached(block)
         })
     }
@@ -3262,8 +3301,8 @@ impl CreationEvents {
         pending_block: &PointerBlock,
         live_block: Option<PointerBlock>,
     ) -> Self {
-        self.memoized_c_event(
-            CEvent::Resolve(pending_block.clone(), live_block.clone()),
+        self.memoized_storage_event(
+            StorageEvent::Resolve(pending_block.clone(), live_block.clone()),
             || self.resolve_pending_uncached(pending_block, live_block),
         )
     }
@@ -3312,7 +3351,7 @@ impl CreationEvents {
     /// Called only at checked C storage creation, never at resource lowering,
     /// contract allocation import, or generic memory-block construction.
     pub(in crate::kernel) fn created(&self, block: PointerBlock) -> Self {
-        self.memoized_c_event(CEvent::Created(block.clone()), || {
+        self.memoized_storage_event(StorageEvent::Created(block.clone()), || {
             self.created_uncached(block)
         })
     }
@@ -3360,8 +3399,8 @@ impl CreationEvents {
         if !self.0.creators.contains_key(block) && !self.0.pending.contains_key(block) {
             return self.clone();
         }
-        self.memoized_c_event(
-            CEvent::MemberCreated(block.clone(), family.to_owned()),
+        self.memoized_storage_event(
+            StorageEvent::MemberCreated(block.clone(), family.to_owned()),
             || self.member_created_uncached(block, family),
         )
     }
@@ -3439,7 +3478,8 @@ impl CreationEvents {
         block: &PointerBlock,
         description: &ResourceDescription,
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return Err(CreationRefusal::InvalidMember);
         };
         if &pointer.pointer().block != block
@@ -3597,10 +3637,12 @@ impl CreationEvents {
         if let Some(refusal) = self.retirement_refusal(block) {
             return Err(refusal);
         }
-        Ok(self.memoized_c_event(CEvent::Retired(block.clone()), || {
-            self.retired_uncached(block)
-                .expect("retirement was checked before memoizing")
-        }))
+        Ok(
+            self.memoized_storage_event(StorageEvent::Retired(block.clone()), || {
+                self.retired_uncached(block)
+                    .expect("retirement was checked before memoizing")
+            }),
+        )
     }
 
     fn retired_uncached(&self, block: &PointerBlock) -> Result<Self, CreationRefusal> {

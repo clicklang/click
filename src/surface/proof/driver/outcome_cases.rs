@@ -85,7 +85,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             if retained.is_none() {
                 provenance.checked_leaf_facts = None;
             }
-            let CFunctionOutcome::Return { value, state } = path.outcome() else {
+            let FunctionOutcome::Return { value, state } = path.outcome() else {
                 paths.push(path.clone());
                 outcome_provenance.push(provenance);
                 evidence_plan.push(OutcomeEvidenceFork::Keep);
@@ -243,7 +243,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .map(ExecutionPureFact::new)
                         .collect::<ExecutionFacts>();
                     let published =
-                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                        crate::kernel::program_function_execution_candidate_with_additional_facts(
                             path,
                             &additional,
                         );
@@ -269,7 +269,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             })?;
             evidence_plan.push(fork);
         }
-        let candidates = crate::kernel::c_function_execution_candidates_from_retained_paths(
+        let candidates = crate::kernel::program_function_execution_candidates_from_retained_paths(
             checked.state().clone(),
             checked.function().clone(),
             checked.arguments().to_vec(),

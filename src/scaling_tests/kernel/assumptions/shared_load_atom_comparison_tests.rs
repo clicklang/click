@@ -15,7 +15,7 @@ fn growing_shared_snapshot_comparisons_reuse_syntax_but_recheck_loads() {
                             .machine_arithmetic(ty, read)
                             .unwrap()
                     } else {
-                        KernelTerm::variable(KernelType::C(ty.c_type()), variable)
+                        KernelTerm::variable(KernelType::Program(ty.program_type()), variable)
                     }
                 };
                 let mut left = leaf(&left_read, a);

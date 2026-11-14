@@ -1,6 +1,6 @@
 use super::*;
 
-fn deep_literal_add_type(expression: &ContractExpression) -> Option<C0Type> {
+fn deep_literal_add_type(expression: &ContractExpression) -> Option<InterfaceType> {
     let mut operands = Vec::new();
     let mut current = expression;
     while let ContractExpression::Add(left, right) = current {
@@ -18,11 +18,11 @@ fn deep_literal_add_type(expression: &ContractExpression) -> Option<C0Type> {
         };
         let value = value.parse::<u64>().ok()?;
         let value_type = if value <= i32::MAX as u64 {
-            C0Type::Int32
+            InterfaceType::Int32
         } else if value <= i64::MAX as u64 {
-            C0Type::Int64(LongRank::Long)
+            InterfaceType::Int64(LongRank::Long)
         } else {
-            C0Type::UInt64(LongRank::Long)
+            InterfaceType::UInt64(LongRank::Long)
         };
         result = arithmetic_result_type(result, Some(value_type)).or(Some(value_type));
     }
@@ -32,34 +32,36 @@ fn deep_literal_add_type(expression: &ContractExpression) -> Option<C0Type> {
 pub(super) fn function_signature_type_environment(
     signature: &FunctionSignature,
     include_result: bool,
-) -> BTreeMap<String, C0Type> {
+) -> BTreeMap<String, InterfaceType> {
     let mut variables = signature
         .parameters()
         .iter()
-        .map(|parameter| (parameter.name().to_string(), parameter.c_type()))
+        .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
         .collect::<BTreeMap<_, _>>();
-    if include_result && signature.return_type() != C0Type::Void {
+    if include_result && signature.return_type() != InterfaceType::Void {
         variables.insert("result".to_string(), signature.return_type());
     }
     variables
 }
 
-pub(super) fn theorem_type_environment(theorem: &TheoremDefinition) -> BTreeMap<String, C0Type> {
+pub(super) fn theorem_type_environment(
+    theorem: &TheoremDefinition,
+) -> BTreeMap<String, InterfaceType> {
     theorem
         .parameters()
         .iter()
         .filter_map(|parameter| {
             parameter
                 .click_type()
-                .c_type()
-                .map(|c_type| (parameter.name().to_string(), c_type))
+                .interface_type()
+                .map(|interface_type| (parameter.name().to_string(), interface_type))
         })
         .collect()
 }
 
 pub(super) fn validate_proposition_expression_types(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -85,7 +87,7 @@ pub(super) fn validate_proposition_expression_types(
 
 fn validate_proposition_expression_types_one(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -117,7 +119,7 @@ fn validate_proposition_expression_types_one(
             {
                 return Err(ClickError::new(format!(
                     "float classification expects a float expression in {context}, got {}",
-                    describe_c0_type(actual)
+                    describe_interface_type(actual)
                 )));
             }
             Ok(())
@@ -176,18 +178,18 @@ fn validate_proposition_expression_types_one(
             context,
         ),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
         }
         | ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
         } => {
-            if matches!(c_type, ClickType::Algebraic(_)) {
+            if matches!(interface_type, ClickType::Algebraic(_)) {
                 // Algebraic validation carries the datatype schema and
                 // validates the complete body. This C-only pass has no
                 // algebraic binding environment to add the name to.
@@ -196,7 +198,7 @@ fn validate_proposition_expression_types_one(
             let mut body_variables = variables.clone();
             body_variables.insert(
                 name.clone(),
-                c_type.c_type().ok_or_else(|| {
+                interface_type.interface_type().ok_or_else(|| {
                     ClickError::new("only C quantifier binders are currently supported")
                 })?,
             );
@@ -234,7 +236,7 @@ fn validate_proposition_expression_types_one(
                 };
                 let actual =
                     infer_contract_expression_type(mutex, variables, click_functions, context)?;
-                if !actual.is_some_and(C0Type::is_object_pointer) {
+                if !actual.is_some_and(InterfaceType::is_object_pointer) {
                     return Err(ClickError::new(format!(
                         "held expects a mutex pointer in {context}"
                     )));
@@ -262,10 +264,13 @@ fn validate_proposition_expression_types_one(
                         click_functions,
                         context,
                     )?;
-                    if !actual.is_some_and(C0Type::is_object_pointer) {
+                    if !actual.is_some_and(InterfaceType::is_object_pointer) {
                         return Err(ClickError::new(format!(
                             "same_object expects pointer arguments in {context}, got {}",
-                            actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type)
+                            actual.map_or_else(
+                                || "an unknown type".to_string(),
+                                describe_interface_type
+                            )
                         )));
                     }
                 }
@@ -285,7 +290,7 @@ fn validate_proposition_expression_types_one(
 /// place for every proposition that is still entirely C-valued.
 pub(super) fn validate_theorem_proposition_expression_types(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     integer_bindings: &BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
@@ -303,7 +308,7 @@ pub(super) fn validate_theorem_proposition_expression_types(
 
 fn validate_scoped_integer_proposition(
     proposition: &ClickProposition,
-    variables: &mut BTreeMap<String, C0Type>,
+    variables: &mut BTreeMap<String, InterfaceType>,
     integer_bindings: &mut BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
@@ -331,7 +336,7 @@ fn validate_scoped_integer_proposition(
 
 fn validate_scoped_integer_proposition_one(
     proposition: &ClickProposition,
-    variables: &mut BTreeMap<String, C0Type>,
+    variables: &mut BTreeMap<String, InterfaceType>,
     integer_bindings: &mut BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
@@ -474,8 +479,9 @@ fn validate_scoped_integer_proposition_one(
             let previous_c = variables.remove(name);
             let previous_integer = integer_bindings.remove(name);
             match click_type {
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
-                    variables.insert(name.clone(), *c_type);
+                ClickType::Program(interface_type)
+                | ClickType::CObjectPointer { interface_type, .. } => {
+                    variables.insert(name.clone(), *interface_type);
                 }
                 ClickType::Integer => {
                     integer_bindings.insert(name.clone());
@@ -501,8 +507,8 @@ fn validate_scoped_integer_proposition_one(
             );
             variables.remove(name);
             integer_bindings.remove(name);
-            if let Some(c_type) = previous_c {
-                variables.insert(name.clone(), c_type);
+            if let Some(interface_type) = previous_c {
+                variables.insert(name.clone(), interface_type);
             }
             if previous_integer {
                 integer_bindings.insert(name.clone());
@@ -537,8 +543,8 @@ fn validate_scoped_integer_proposition_one(
                 context,
             );
             variables.remove(item);
-            if let Some(c_type) = previous_c {
-                variables.insert(item.clone(), c_type);
+            if let Some(interface_type) = previous_c {
+                variables.insert(item.clone(), interface_type);
             }
             if previous_integer {
                 integer_bindings.insert(item.clone());
@@ -582,7 +588,7 @@ fn integer_expression_kind(
         ContractExpression::Binding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
@@ -831,7 +837,7 @@ fn contains_scoped_expression_shape(
         | ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard => false,
@@ -862,7 +868,7 @@ fn contains_integer_expression_signal(
         ContractExpression::Binding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
@@ -960,20 +966,23 @@ fn contains_integer_expression_signal(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum SpecValueType {
-    Scalar(Option<C0Type>),
+    Scalar(Option<InterfaceType>),
     Integer,
-    Sequence(Option<C0Type>),
+    Sequence(Option<InterfaceType>),
     Algebraic(AlgebraicTypeApplication),
 }
 
 fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -> bool {
     match (actual, expected) {
-        (SpecValueType::Scalar(None), ClickType::C(_) | ClickType::CObjectPointer { .. }) => true,
+        (SpecValueType::Scalar(None), ClickType::Program(_) | ClickType::CObjectPointer { .. }) => {
+            true
+        }
         (
             SpecValueType::Scalar(Some(actual)),
-            ClickType::C(expected)
+            ClickType::Program(expected)
             | ClickType::CObjectPointer {
-                c_type: expected, ..
+                interface_type: expected,
+                ..
             },
         ) => click_types_compatible(*actual, *expected),
         (SpecValueType::Integer, ClickType::Integer) => true,
@@ -993,14 +1002,18 @@ pub(super) fn narrow_arithmetic_value_type(
     position: &str,
     infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
 ) -> Result<Option<SpecValueType>, ClickError> {
-    let ClickType::C(c_type @ (C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16)) =
-        expected
+    let ClickType::Program(
+        interface_type @ (InterfaceType::Int8
+        | InterfaceType::UInt8
+        | InterfaceType::Int16
+        | InterfaceType::UInt16),
+    ) = expected
     else {
         return Ok(None);
     };
     fn spine(
         value: &ContractExpression,
-        c_type: C0Type,
+        interface_type: InterfaceType,
         position: &str,
         infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
         root: bool,
@@ -1012,28 +1025,31 @@ pub(super) fn narrow_arithmetic_value_type(
             | ContractExpression::BitwiseAnd(left, right)
             | ContractExpression::BitwiseOr(left, right)
             | ContractExpression::BitwiseXor(left, right) => {
-                Ok(spine(left, c_type, position, infer, false)?
-                    && spine(right, c_type, position, infer, false)?)
+                Ok(spine(left, interface_type, position, infer, false)?
+                    && spine(right, interface_type, position, infer, false)?)
             }
             ContractExpression::BitwiseNot(operand) => {
-                spine(operand, c_type, position, infer, false)
+                spine(operand, interface_type, position, infer, false)
             }
             _ if root => Ok(false),
             ContractExpression::IntegerLiteral(_) => Ok(true),
             leaf => match infer(leaf)? {
-                SpecValueType::Scalar(Some(actual)) if actual == c_type => Ok(true),
+                SpecValueType::Scalar(Some(actual)) if actual == interface_type => Ok(true),
                 // An operand of another machine type: a conversion that can
                 // change its value is written.
                 SpecValueType::Scalar(Some(actual))
                     if !actual.is_pointer()
-                        && !matches!(actual, C0Type::Float32 | C0Type::Float64 | C0Type::Bool) =>
+                        && !matches!(
+                            actual,
+                            InterfaceType::Float32 | InterfaceType::Float64 | InterfaceType::Bool
+                        ) =>
                 {
                     Err(ClickError::new(
                         crate::surface::parser::mixed_narrow_arithmetic_message(
                             position,
-                            &describe_c0_type(c_type),
+                            &describe_interface_type(interface_type),
                             &crate::surface::diagnostics::describe_contract_expression(leaf),
-                            &describe_c0_type(actual),
+                            &describe_interface_type(actual),
                         ),
                     ))
                 }
@@ -1041,13 +1057,13 @@ pub(super) fn narrow_arithmetic_value_type(
             },
         }
     }
-    Ok(spine(value, *c_type, position, infer, true)?
-        .then_some(SpecValueType::Scalar(Some(*c_type))))
+    Ok(spine(value, *interface_type, position, infer, true)?
+        .then_some(SpecValueType::Scalar(Some(*interface_type))))
 }
 
 pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
     match value_type {
-        SpecValueType::Scalar(Some(c_type)) => describe_c0_type(*c_type),
+        SpecValueType::Scalar(Some(interface_type)) => describe_interface_type(*interface_type),
         SpecValueType::Scalar(None) => "a C value".to_string(),
         SpecValueType::Integer => "Integer".to_string(),
         SpecValueType::Sequence(_) => "a sequence".to_string(),
@@ -1066,7 +1082,7 @@ pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
 /// remains a C value and is rejected when it is mixed with Integer arithmetic.
 pub(super) fn infer_scoped_spec_value_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     integer_bindings: &BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
@@ -1082,7 +1098,7 @@ pub(super) fn infer_scoped_spec_value_type(
         ContractExpression::Binding(name) if integer_bindings.contains(name) => {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name)
             if integer_bindings.contains(name) =>
         {
@@ -1099,7 +1115,7 @@ pub(super) fn infer_scoped_spec_value_type(
             )?;
             match inner {
                 SpecValueType::Integer => Ok(SpecValueType::Integer),
-                SpecValueType::Scalar(c_type) => Ok(SpecValueType::Scalar(c_type)),
+                SpecValueType::Scalar(interface_type) => Ok(SpecValueType::Scalar(interface_type)),
                 other => Err(ClickError::new(format!(
                     "negation expects a scalar or Integer in {context}, got {}",
                     describe_spec_value_type(&other)
@@ -1208,8 +1224,10 @@ pub(super) fn infer_scoped_spec_value_type(
             }
             Ok(SpecValueType::Scalar(
                 scoped_scalar_type(&inner)
-                    .filter(|c_type| type_is_scalar(*c_type))
-                    .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)),
+                    .filter(|interface_type| type_is_scalar(*interface_type))
+                    .map(|interface_type| {
+                        scalar_arithmetic_result_type(interface_type, interface_type)
+                    }),
             ))
         }
         ContractExpression::Index(base, index) => {
@@ -1339,8 +1357,8 @@ pub(super) fn infer_scoped_spec_value_type(
                 (SpecValueType::Integer, _) | (_, Some(ClickType::Integer)) => {
                     body_integer_bindings.insert(name.clone());
                 }
-                (SpecValueType::Scalar(Some(c_type)), _) => {
-                    body_variables.insert(name.clone(), *c_type);
+                (SpecValueType::Scalar(Some(interface_type)), _) => {
+                    body_variables.insert(name.clone(), *interface_type);
                 }
                 _ => {}
             }
@@ -1389,9 +1407,9 @@ pub(super) fn infer_scoped_spec_value_type(
                 {
                     Ok(SpecValueType::Integer)
                 }
-                SpecValueType::Scalar(c_type) => {
-                    if let Some(c_type) = c_type
-                        && !machine_integer_source_type(c_type)
+                SpecValueType::Scalar(interface_type) => {
+                    if let Some(interface_type) = interface_type
+                        && !machine_integer_source_type(interface_type)
                     {
                         return Err(ClickError::new(
                             "to_integer expects a signed or unsigned machine integer",
@@ -1444,20 +1462,22 @@ pub(super) fn infer_scoped_spec_value_type(
                     // The C null pointer constant types as any pointer
                     // parameter, in a pure function exactly as in a resource
                     // argument.
-                    ClickType::C(expected)
+                    ClickType::Program(expected)
                     | ClickType::CObjectPointer {
-                        c_type: expected, ..
+                        interface_type: expected,
+                        ..
                     } if crate::surface::lowering::argument_is_null_pointer_constant(
                         argument, *expected,
                     ) => {}
-                    ClickType::C(expected)
+                    ClickType::Program(expected)
                     | ClickType::CObjectPointer {
-                        c_type: expected, ..
+                        interface_type: expected,
+                        ..
                     } => {
                         if matches!(&actual, SpecValueType::Integer) {
                             return Err(ClickError::new(format!(
                                 "function `{name}` argument {index} expects {}, got Integer in {context}",
-                                describe_c0_type(*expected)
+                                describe_interface_type(*expected)
                             )));
                         }
                         if let SpecValueType::Scalar(Some(actual)) = &actual
@@ -1465,8 +1485,8 @@ pub(super) fn infer_scoped_spec_value_type(
                         {
                             return Err(ClickError::new(format!(
                                 "function `{name}` argument {index} expects {}, got {} in {context}",
-                                describe_c0_type(*expected),
-                                describe_c0_type(*actual)
+                                describe_interface_type(*expected),
+                                describe_interface_type(*actual)
                             )));
                         }
                     }
@@ -1480,8 +1500,9 @@ pub(super) fn infer_scoped_spec_value_type(
                     ));
                 }
                 ClickType::Integer => SpecValueType::Integer,
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
-                    SpecValueType::Scalar(Some(*c_type))
+                ClickType::Program(interface_type)
+                | ClickType::CObjectPointer { interface_type, .. } => {
+                    SpecValueType::Scalar(Some(*interface_type))
                 }
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application.clone()),
                 ClickType::Parameter(_) => SpecValueType::Scalar(None),
@@ -1505,7 +1526,7 @@ pub(super) fn infer_scoped_spec_value_type(
 fn infer_scoped_arithmetic_operands(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     integer_bindings: &BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
@@ -1562,26 +1583,28 @@ fn infer_scoped_arithmetic_operands(
     Ok((left_type, right_type))
 }
 
-fn scoped_scalar_type(value_type: &SpecValueType) -> Option<C0Type> {
+fn scoped_scalar_type(value_type: &SpecValueType) -> Option<InterfaceType> {
     match value_type {
-        SpecValueType::Scalar(c_type) => *c_type,
+        SpecValueType::Scalar(interface_type) => *interface_type,
         _ => None,
     }
 }
 
 /// The item type of a `.all`/`.any` range: a `uint64` when either endpoint
 /// is one, as for a range fold, and otherwise an `int32`.
-fn range_item_type(start: Option<C0Type>, end: Option<C0Type>) -> C0Type {
-    if matches!(start, Some(C0Type::UInt64(_))) || matches!(end, Some(C0Type::UInt64(_))) {
-        C0Type::UInt64(LongRank::Long)
+fn range_item_type(start: Option<InterfaceType>, end: Option<InterfaceType>) -> InterfaceType {
+    if matches!(start, Some(InterfaceType::UInt64(_)))
+        || matches!(end, Some(InterfaceType::UInt64(_)))
+    {
+        InterfaceType::UInt64(LongRank::Long)
     } else {
-        C0Type::Int32
+        InterfaceType::Int32
     }
 }
 
 pub(super) fn infer_scoped_range_fold_bindings(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     integer_bindings: &BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
@@ -1617,12 +1640,13 @@ pub(super) fn infer_scoped_range_fold_bindings(
     // A range with a `uint64` endpoint ranges over `uint64` values. The
     // other endpoint is a `uint64` too, or a literal, which is that number.
     let uint64_index = {
-        let uint64 =
-            |ty: &SpecValueType| matches!(ty, SpecValueType::Scalar(Some(C0Type::UInt64(_))));
+        let uint64 = |ty: &SpecValueType| {
+            matches!(ty, SpecValueType::Scalar(Some(InterfaceType::UInt64(_))))
+        };
         let literal = |expression: &ContractExpression| {
             matches!(
-                contract_expression_as_c_fragment(expression),
-                Some(CExpression::Value(CValue::Int32(value)))
+                contract_expression_as_program_expression(expression),
+                Some(ProgramExpression::Value(ProgramValue::Int32(value)))
                     if value.as_const().is_some_and(|value| value <= i32::MAX as u32)
             )
         };
@@ -1637,7 +1661,8 @@ pub(super) fn infer_scoped_range_fold_bindings(
             )));
         }
         (SpecValueType::Scalar(Some(start)), SpecValueType::Scalar(Some(end)))
-            if (*start != C0Type::Int32 || *end != C0Type::Int32) && !uint64_index =>
+            if (*start != InterfaceType::Int32 || *end != InterfaceType::Int32)
+                && !uint64_index =>
         {
             return Err(ClickError::new(format!(
                 "range fold bounds must both be int32 or both be uint64 in {context}"
@@ -1685,26 +1710,26 @@ pub(super) fn infer_scoped_range_fold_bindings(
                 "range fold with uint64 bounds requires an Integer accumulator in {context}; C-valued range folds support only int32 bounds"
             )));
         }
-        if initial_type != SpecValueType::Scalar(Some(C0Type::Int32)) {
+        if initial_type != SpecValueType::Scalar(Some(InterfaceType::Int32)) {
             return Err(ClickError::new(format!(
                 "C-valued range fold requires an int32 accumulator in {context}; other C accumulator types are not supported"
             )));
         }
-        ClickType::C(C0Type::Int32)
+        ClickType::Program(InterfaceType::Int32)
     };
     let item_type = if integer_index {
         ClickType::Integer
     } else if uint64_index {
-        ClickType::C(C0Type::UInt64(LongRank::Long))
+        ClickType::Program(InterfaceType::UInt64(LongRank::Long))
     } else {
-        ClickType::C(C0Type::Int32)
+        ClickType::Program(InterfaceType::Int32)
     };
     Ok((accumulator_type, item_type))
 }
 
 fn infer_scoped_range_fold_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     integer_bindings: &BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
@@ -1736,7 +1761,10 @@ fn infer_scoped_range_fold_type(
             ClickType::Integer => {
                 body_integer_bindings.insert(name.clone());
             }
-            ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
+            ClickType::Program(ty)
+            | ClickType::CObjectPointer {
+                interface_type: ty, ..
+            } => {
                 body_variables.insert(name.clone(), *ty);
             }
             _ => unreachable!(),
@@ -1756,9 +1784,10 @@ fn infer_scoped_range_fold_type(
             "range fold body must preserve Integer accumulator in {context}"
         ))),
         (
-            ClickType::C(initial)
+            ClickType::Program(initial)
             | ClickType::CObjectPointer {
-                c_type: initial, ..
+                interface_type: initial,
+                ..
             },
             SpecValueType::Scalar(body),
         ) if body.is_none_or(|body| click_types_compatible(initial, body)) => {
@@ -1774,7 +1803,7 @@ fn validate_comparison_expression_types(
     left: &ContractExpression,
     operator: ComparisonOperator,
     right: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -1810,8 +1839,8 @@ fn validate_comparison_expression_types(
             {
                 return Err(ClickError::new(format!(
                     "membership element type does not match sequence element type in {context}: {} and {}",
-                    describe_c0_type(element),
-                    describe_c0_type(sequence)
+                    describe_interface_type(element),
+                    describe_interface_type(sequence)
                 )));
             }
             Ok(())
@@ -1826,8 +1855,8 @@ fn validate_comparison_expression_types(
             {
                 return Err(ClickError::new(format!(
                     "incompatible pointer comparison in {context}: {} and {}; use a checked byte-view cast to compare byte views",
-                    describe_c0_type(left_type),
-                    describe_c0_type(right_type)
+                    describe_interface_type(left_type),
+                    describe_interface_type(right_type)
                 )));
             }
             if operator == ComparisonOperator::In {
@@ -1852,8 +1881,8 @@ fn validate_comparison_expression_types(
             {
                 return Err(ClickError::new(format!(
                     "sequence element types do not match in {context}: {} and {}",
-                    describe_c0_type(left),
-                    describe_c0_type(right)
+                    describe_interface_type(left),
+                    describe_interface_type(right)
                 )));
             }
             Ok(())
@@ -1879,13 +1908,13 @@ fn validate_comparison_expression_types(
         // A Rust enum's value read through a reference, `*o`, is a value of
         // that enum's spec type.
         (
-            SpecValueType::Scalar(Some(C0Type::Parameter(name))),
+            SpecValueType::Scalar(Some(InterfaceType::Parameter(name))),
             SpecValueType::Algebraic(application),
         )
         | (
             SpecValueType::Algebraic(application),
-            SpecValueType::Scalar(Some(C0Type::Parameter(name))),
-        ) if AlgebraicTypeApplication::of_enum_c_type(C0Type::Parameter(name))
+            SpecValueType::Scalar(Some(InterfaceType::Parameter(name))),
+        ) if AlgebraicTypeApplication::of_enum_interface_type(InterfaceType::Parameter(name))
             .is_some_and(|value| value.name() == application.name())
             && matches!(
                 operator,
@@ -1911,11 +1940,11 @@ fn validate_comparison_expression_types(
 /// left to lowering.
 pub(super) fn refuse_bool_literal_comparisons(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
-    let mut pending = vec![(proposition, None::<BTreeMap<String, C0Type>>)];
+    let mut pending = vec![(proposition, None::<BTreeMap<String, InterfaceType>>)];
     while let Some((proposition, scoped)) = pending.pop() {
         let scope = scoped.as_ref().unwrap_or(variables);
         match proposition {
@@ -1926,7 +1955,7 @@ pub(super) fn refuse_bool_literal_comparisons(
             } => {
                 let infer = |expression: &ContractExpression| {
                     if crate::surface::bool_literal_value(expression).is_some() {
-                        return SpecValueType::Scalar(Some(C0Type::Bool));
+                        return SpecValueType::Scalar(Some(InterfaceType::Bool));
                     }
                     infer_contract_expression_type(expression, scope, click_functions, context)
                         .map(SpecValueType::Scalar)
@@ -1968,8 +1997,8 @@ pub(super) fn refuse_bool_literal_comparisons(
                 ..
             } => {
                 let mut body_variables = scope.clone();
-                match click_type.c_type() {
-                    Some(c_type) => body_variables.insert(name.clone(), c_type),
+                match click_type.interface_type() {
+                    Some(interface_type) => body_variables.insert(name.clone(), interface_type),
                     None => body_variables.remove(name),
                 };
                 pending.push((body, Some(body_variables)));
@@ -1999,13 +2028,13 @@ fn refuse_bool_integer_comparison(
     context: &str,
 ) -> Result<(), ClickError> {
     let is_bool = |value_type: &SpecValueType| {
-        matches!(value_type, SpecValueType::Scalar(Some(C0Type::Bool)))
+        matches!(value_type, SpecValueType::Scalar(Some(InterfaceType::Bool)))
     };
     let is_integer = |expression: &ContractExpression, value_type: &SpecValueType| match value_type
     {
-        SpecValueType::Scalar(Some(C0Type::Bool)) => false,
-        SpecValueType::Scalar(Some(c_type)) => {
-            type_is_arithmetic(*c_type) && !type_is_float(*c_type)
+        SpecValueType::Scalar(Some(InterfaceType::Bool)) => false,
+        SpecValueType::Scalar(Some(interface_type)) => {
+            type_is_arithmetic(*interface_type) && !type_is_float(*interface_type)
         }
         SpecValueType::Integer => true,
         SpecValueType::Scalar(None) => is_untyped_integer_literal_expression(expression),
@@ -2045,11 +2074,11 @@ fn refuse_bool_integer_comparison(
 /// implicit promotion included, is refused; its integer value is the
 /// written cast `b as int32`. Reads the operand types already inferred.
 fn refuse_bool_arithmetic_operands(
-    operands: [(&ContractExpression, Option<C0Type>); 2],
+    operands: [(&ContractExpression, Option<InterfaceType>); 2],
     context: &str,
 ) -> Result<(), ClickError> {
     for (operand, operand_type) in operands {
-        if operand_type == Some(C0Type::Bool)
+        if operand_type == Some(InterfaceType::Bool)
             || crate::surface::bool_literal_value(operand).is_some()
         {
             let operand = crate::surface::diagnostics::describe_contract_expression(operand);
@@ -2077,8 +2106,8 @@ fn refuse_bool_literal_comparison(
             continue;
         };
         let other_type = match other_type {
-            SpecValueType::Scalar(Some(C0Type::Bool)) => continue,
-            SpecValueType::Scalar(Some(c_type)) => describe_c0_type(*c_type),
+            SpecValueType::Scalar(Some(InterfaceType::Bool)) => continue,
+            SpecValueType::Scalar(Some(interface_type)) => describe_interface_type(*interface_type),
             SpecValueType::Scalar(None) => continue,
             other_type => describe_spec_value_type(other_type),
         };
@@ -2094,7 +2123,7 @@ fn refuse_bool_literal_comparison(
 
 pub(super) fn validate_to_nat_argument_type(
     argument: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -2136,18 +2165,18 @@ pub(super) fn validate_to_nat_argument_type(
 fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
     match click_type {
         ClickType::Resource => false,
-        ClickType::Parameter(_) | ClickType::C(C0Type::ParameterPointer(_)) => true,
+        ClickType::Parameter(_) | ClickType::Program(InterfaceType::ParameterPointer(_)) => true,
         ClickType::Algebraic(application) => application
             .arguments
             .iter()
             .any(return_type_needs_instantiation),
-        ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Integer => false,
+        ClickType::Program(_) | ClickType::CObjectPointer { .. } | ClickType::Integer => false,
     }
 }
 
 fn infer_spec_value_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<SpecValueType, ClickError> {
@@ -2195,7 +2224,7 @@ fn infer_spec_value_type(
                 {
                     return Err(ClickError::new(format!(
                         "{} is not a supported sequence element type in {context}",
-                        describe_c0_type(actual)
+                        describe_interface_type(actual)
                     )));
                 }
                 if let (Some(expected), Some(actual)) = (element_type, actual)
@@ -2203,8 +2232,8 @@ fn infer_spec_value_type(
                 {
                     return Err(ClickError::new(format!(
                         "sequence literal mixes {} and {} elements in {context}",
-                        describe_c0_type(expected),
-                        describe_c0_type(actual)
+                        describe_interface_type(expected),
+                        describe_interface_type(actual)
                     )));
                 }
                 element_type = element_type.or(actual);
@@ -2231,8 +2260,8 @@ fn infer_spec_value_type(
             {
                 return Err(ClickError::new(format!(
                     "`++` element types do not match in {context}: {} and {}",
-                    describe_c0_type(left),
-                    describe_c0_type(right)
+                    describe_interface_type(left),
+                    describe_interface_type(right)
                 )));
             }
             Ok(SpecValueType::Sequence(left.or(right)))
@@ -2363,7 +2392,9 @@ fn infer_spec_value_type(
                                 SpecValueType::Algebraic(application) => {
                                     Some(ClickType::Algebraic(application))
                                 }
-                                SpecValueType::Scalar(c_type) => c_type.map(ClickType::C),
+                                SpecValueType::Scalar(interface_type) => {
+                                    interface_type.map(ClickType::Program)
+                                }
                                 SpecValueType::Integer => Some(ClickType::Integer),
                                 SpecValueType::Sequence(_) => None,
                             },
@@ -2399,8 +2430,9 @@ fn infer_spec_value_type(
                     ));
                 }
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application),
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
-                    SpecValueType::Scalar(Some(c_type))
+                ClickType::Program(interface_type)
+                | ClickType::CObjectPointer { interface_type, .. } => {
+                    SpecValueType::Scalar(Some(interface_type))
                 }
                 ClickType::Integer => SpecValueType::Integer,
                 ClickType::Parameter(_) => SpecValueType::Scalar(None),
@@ -2429,30 +2461,30 @@ fn is_untyped_integer_literal_expression(expression: &ContractExpression) -> boo
     }
 }
 
-fn sequence_element_type_supported(c_type: C0Type) -> bool {
+fn sequence_element_type_supported(interface_type: InterfaceType) -> bool {
     !matches!(
-        c_type,
-        C0Type::Void
-            | C0Type::FunctionPointer(_)
-            | C0Type::Int32Array(_)
-            | C0Type::CharArray(_, _)
-            | C0Type::UInt8Array(_)
-            | C0Type::Int8Array(_)
-            | C0Type::Int16Array(_)
-            | C0Type::UInt16Array(_)
-            | C0Type::UInt32Array(_)
-            | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_, _)
-            | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_, _)
-            | C0Type::Float32Array(_)
-            | C0Type::Float64Array(_)
+        interface_type,
+        InterfaceType::Void
+            | InterfaceType::FunctionPointer(_)
+            | InterfaceType::Int32Array(_)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
+            | InterfaceType::Int8Array(_)
+            | InterfaceType::Int16Array(_)
+            | InterfaceType::UInt16Array(_)
+            | InterfaceType::UInt32Array(_)
+            | InterfaceType::Int128Array(_)
+            | InterfaceType::Int64Array(_, _)
+            | InterfaceType::UInt128Array(_)
+            | InterfaceType::UInt64Array(_, _)
+            | InterfaceType::Float32Array(_)
+            | InterfaceType::Float64Array(_)
     )
 }
 
 fn validate_resource_subject_expression_types(
     resource: &ResourceSubject,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -2804,58 +2836,58 @@ fn describe_callback_signature(signature: crate::kernel::CallbackSignature) -> S
     )
 }
 
-pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
-    match c_type {
-        C0Type::Parameter(name) => name.name().to_string(),
-        C0Type::ParameterPointer(name) => format!("{}*", name.name()),
-        C0Type::Int128 => "int128".to_string(),
-        C0Type::UInt128 => "uint128".to_string(),
+pub(in crate::surface) fn describe_interface_type(interface_type: InterfaceType) -> String {
+    match interface_type {
+        InterfaceType::Parameter(name) => name.name().to_string(),
+        InterfaceType::ParameterPointer(name) => format!("{}*", name.name()),
+        InterfaceType::Int128 => "int128".to_string(),
+        InterfaceType::UInt128 => "uint128".to_string(),
 
         // Click's logical sort (Stage 5); a head's own spelling is its
         // language's.
-        C0Type::Bool => "Bool".to_string(),
-        C0Type::Void => "void".to_string(),
-        C0Type::VoidPointer => "void*".to_string(),
-        C0Type::VoidPointerPointer => "void**".to_string(),
-        C0Type::Int8 => "int8".to_string(),
-        C0Type::Int16 => "int16".to_string(),
-        C0Type::Int32 => "int32".to_string(),
-        C0Type::Char(_) => "char".to_string(),
-        C0Type::UInt8 => "uint8".to_string(),
-        C0Type::UInt16 => "uint16".to_string(),
-        C0Type::UInt32 => "uint32".to_string(),
-        C0Type::Int64(_) => "int64".to_string(),
-        C0Type::UInt64(_) => "uint64".to_string(),
-        C0Type::Float32 => "float".to_string(),
-        C0Type::Float64 => "double".to_string(),
-        C0Type::Int8Pointer | C0Type::Int8Array(_) => "int8*".to_string(),
-        C0Type::Int16Pointer | C0Type::Int16Array(_) => "int16*".to_string(),
-        C0Type::UInt16Pointer | C0Type::UInt16Array(_) => "uint16*".to_string(),
-        C0Type::Int32Pointer | C0Type::Int32Array(_) => "int32*".to_string(),
-        C0Type::CharPointer(_) | C0Type::CharArray(_, _) => "char*".to_string(),
-        C0Type::UInt8Pointer | C0Type::UInt8Array(_) => "uint8*".to_string(),
-        C0Type::UInt32Pointer | C0Type::UInt32Array(_) => "uint32*".to_string(),
-        C0Type::Int64Pointer(_) | C0Type::Int64Array(_, _) => "int64*".to_string(),
-        C0Type::Int128Pointer | C0Type::Int128Array(_) => "int128*".to_string(),
-        C0Type::UInt64Pointer(_) | C0Type::UInt64Array(_, _) => "uint64*".to_string(),
-        C0Type::UInt128Pointer | C0Type::UInt128Array(_) => "uint128*".to_string(),
-        C0Type::Float32Pointer | C0Type::Float32Array(_) => "float*".to_string(),
-        C0Type::Float64Pointer | C0Type::Float64Array(_) => "double*".to_string(),
-        C0Type::Int8PointerPointer => "int8**".to_string(),
-        C0Type::Int16PointerPointer => "int16**".to_string(),
-        C0Type::UInt16PointerPointer => "uint16**".to_string(),
-        C0Type::Int32PointerPointer => "int32**".to_string(),
-        C0Type::CharPointerPointer(_) => "char**".to_string(),
-        C0Type::UInt8PointerPointer => "uint8**".to_string(),
-        C0Type::UInt32PointerPointer => "uint32**".to_string(),
-        C0Type::Int64PointerPointer(_) => "int64**".to_string(),
-        C0Type::Int128PointerPointer => "int128**".to_string(),
-        C0Type::UInt64PointerPointer(_) => "uint64**".to_string(),
-        C0Type::UInt128PointerPointer => "uint128**".to_string(),
-        C0Type::Float32PointerPointer => "float**".to_string(),
-        C0Type::Float64PointerPointer => "double**".to_string(),
-        C0Type::FunctionPointer(signature) => describe_callback_signature(signature),
-        C0Type::PointerArray(element, _, length) => {
+        InterfaceType::Bool => "Bool".to_string(),
+        InterfaceType::Void => "void".to_string(),
+        InterfaceType::VoidPointer => "void*".to_string(),
+        InterfaceType::VoidPointerPointer => "void**".to_string(),
+        InterfaceType::Int8 => "int8".to_string(),
+        InterfaceType::Int16 => "int16".to_string(),
+        InterfaceType::Int32 => "int32".to_string(),
+        InterfaceType::Char(_) => "char".to_string(),
+        InterfaceType::UInt8 => "uint8".to_string(),
+        InterfaceType::UInt16 => "uint16".to_string(),
+        InterfaceType::UInt32 => "uint32".to_string(),
+        InterfaceType::Int64(_) => "int64".to_string(),
+        InterfaceType::UInt64(_) => "uint64".to_string(),
+        InterfaceType::Float32 => "float".to_string(),
+        InterfaceType::Float64 => "double".to_string(),
+        InterfaceType::Int8Pointer | InterfaceType::Int8Array(_) => "int8*".to_string(),
+        InterfaceType::Int16Pointer | InterfaceType::Int16Array(_) => "int16*".to_string(),
+        InterfaceType::UInt16Pointer | InterfaceType::UInt16Array(_) => "uint16*".to_string(),
+        InterfaceType::Int32Pointer | InterfaceType::Int32Array(_) => "int32*".to_string(),
+        InterfaceType::CharPointer(_) | InterfaceType::CharArray(_, _) => "char*".to_string(),
+        InterfaceType::UInt8Pointer | InterfaceType::UInt8Array(_) => "uint8*".to_string(),
+        InterfaceType::UInt32Pointer | InterfaceType::UInt32Array(_) => "uint32*".to_string(),
+        InterfaceType::Int64Pointer(_) | InterfaceType::Int64Array(_, _) => "int64*".to_string(),
+        InterfaceType::Int128Pointer | InterfaceType::Int128Array(_) => "int128*".to_string(),
+        InterfaceType::UInt64Pointer(_) | InterfaceType::UInt64Array(_, _) => "uint64*".to_string(),
+        InterfaceType::UInt128Pointer | InterfaceType::UInt128Array(_) => "uint128*".to_string(),
+        InterfaceType::Float32Pointer | InterfaceType::Float32Array(_) => "float*".to_string(),
+        InterfaceType::Float64Pointer | InterfaceType::Float64Array(_) => "double*".to_string(),
+        InterfaceType::Int8PointerPointer => "int8**".to_string(),
+        InterfaceType::Int16PointerPointer => "int16**".to_string(),
+        InterfaceType::UInt16PointerPointer => "uint16**".to_string(),
+        InterfaceType::Int32PointerPointer => "int32**".to_string(),
+        InterfaceType::CharPointerPointer(_) => "char**".to_string(),
+        InterfaceType::UInt8PointerPointer => "uint8**".to_string(),
+        InterfaceType::UInt32PointerPointer => "uint32**".to_string(),
+        InterfaceType::Int64PointerPointer(_) => "int64**".to_string(),
+        InterfaceType::Int128PointerPointer => "int128**".to_string(),
+        InterfaceType::UInt64PointerPointer(_) => "uint64**".to_string(),
+        InterfaceType::UInt128PointerPointer => "uint128**".to_string(),
+        InterfaceType::Float32PointerPointer => "float**".to_string(),
+        InterfaceType::Float64PointerPointer => "double**".to_string(),
+        InterfaceType::FunctionPointer(signature) => describe_callback_signature(signature),
+        InterfaceType::PointerArray(element, _, length) => {
             format!("{}[{length}]", element.decayed_type_spelling())
         }
     }
@@ -2865,14 +2897,14 @@ pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String 
     match click_type {
         ClickType::Resource => "Resource".into(),
         ClickType::Parameter(name) => name.clone(),
-        ClickType::C(c_type) => describe_c0_type(*c_type),
+        ClickType::Program(interface_type) => describe_interface_type(*interface_type),
         ClickType::CObjectPointer {
-            c_type,
+            interface_type,
             struct_name,
         } => format!(
             "struct {struct_name}{}",
             "*".repeat(
-                describe_c0_type(*c_type)
+                describe_interface_type(*interface_type)
                     .chars()
                     .filter(|ch| *ch == '*')
                     .count()
@@ -2903,14 +2935,14 @@ pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String 
 /// whose one-byte cells the kernel reads through either signedness as the
 /// same eight bits.
 pub(crate) fn array_ref_elements_compatible(
-    actual: crate::kernel::CType,
-    expected: crate::kernel::CType,
+    actual: crate::kernel::ProgramType,
+    expected: crate::kernel::ProgramType,
 ) -> bool {
-    use crate::kernel::CType;
+    use crate::kernel::ProgramType;
     actual == expected
         || matches!(
             (actual, expected),
-            (CType::Int8, CType::UInt8) | (CType::UInt8, CType::Int8)
+            (ProgramType::Int8, ProgramType::UInt8) | (ProgramType::UInt8, ProgramType::Int8)
         )
 }
 
@@ -2922,17 +2954,17 @@ pub(crate) fn array_ref_elements_compatible(
 /// same eight bits (C11 6.5p7), so `bytes[k] == '\0'` holds exactly when the
 /// string's `char` is zero. C signatures keep the types distinct.
 pub(in crate::surface) fn click_argument_types_compatible(
-    actual: C0Type,
-    expected: C0Type,
+    actual: InterfaceType,
+    expected: InterfaceType,
 ) -> bool {
     matches!(
         (actual, expected),
         (
-            C0Type::CharPointer(_)
-                | C0Type::CharArray(_, _)
-                | C0Type::Int8Pointer
-                | C0Type::Int8Array(_),
-            C0Type::UInt8Pointer | C0Type::UInt8Array(_),
+            InterfaceType::CharPointer(_)
+                | InterfaceType::CharArray(_, _)
+                | InterfaceType::Int8Pointer
+                | InterfaceType::Int8Array(_),
+            InterfaceType::UInt8Pointer | InterfaceType::UInt8Array(_),
         )
     ) || click_types_compatible(actual, expected)
 }
@@ -2942,25 +2974,29 @@ pub(in crate::surface) fn click_argument_types_compatible(
 /// value of `expected`, so the conversion never changes a value. Narrowing,
 /// a change of sign and a float's integer part must be written. C source
 /// keeps C's own conversions; this is the rule for Click's typed positions.
-pub(in crate::surface) fn implicitly_converts(actual: C0Type, expected: C0Type) -> bool {
-    use crate::kernel::{CType, MachineIntegerType};
+pub(in crate::surface) fn implicitly_converts(
+    actual: InterfaceType,
+    expected: InterfaceType,
+) -> bool {
+    use crate::kernel::{MachineIntegerType, ProgramType};
     let (actual, expected) = (actual.to_kernel_type(), expected.to_kernel_type());
     if actual == expected {
         return true;
     }
-    let integer = |ty: CType| MachineIntegerType::from_c_type(ty).map(MachineIntegerType::format);
+    let integer =
+        |ty: ProgramType| MachineIntegerType::from_program_type(ty).map(MachineIntegerType::format);
     // A float holds an integer exactly when its significand covers the
     // integer's magnitude bits: 24 for `float`, 53 for `double`.
-    let significand = |ty: CType| match ty {
-        CType::Float32 => Some(24),
-        CType::Float64 => Some(53),
+    let significand = |ty: ProgramType| match ty {
+        ProgramType::Float32 => Some(24),
+        ProgramType::Float64 => Some(53),
         _ => None,
     };
     match (integer(actual), integer(expected)) {
         (Some(from), Some(to)) => to.contains(from),
         (Some(from), None) => significand(expected)
             .is_some_and(|digits| from.bits() - u32::from(from.is_signed()) <= digits),
-        (None, None) => actual == CType::Float32 && expected == CType::Float64,
+        (None, None) => actual == ProgramType::Float32 && expected == ProgramType::Float64,
         (None, Some(_)) => false,
     }
 }
@@ -2971,7 +3007,7 @@ pub(in crate::surface) fn implicitly_converts(actual: C0Type, expected: C0Type) 
 /// is refused rather than wrapped when it does not.
 pub(in crate::surface) fn literal_fits(
     argument: &ContractExpression,
-    expected: C0Type,
+    expected: InterfaceType,
 ) -> Option<bool> {
     let text = match argument {
         ContractExpression::IntegerLiteral(text) => text.clone(),
@@ -2981,51 +3017,59 @@ pub(in crate::surface) fn literal_fits(
         },
         _ => return None,
     };
-    let ty = crate::kernel::MachineIntegerType::from_c_type(expected.to_kernel_type())?;
+    let ty = crate::kernel::MachineIntegerType::from_program_type(expected.to_kernel_type())?;
     Some(crate::kernel::MachineIntegerConstant::parse_decimal(ty.format(), &text).is_some())
 }
 
-pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Type) -> bool {
+pub(in crate::surface) fn click_types_compatible(
+    actual: InterfaceType,
+    expected: InterfaceType,
+) -> bool {
     match (actual, expected) {
-        (C0Type::Int32Array(_), C0Type::Int32Pointer)
-        | (C0Type::Int32Pointer, C0Type::Int32Array(_)) => true,
-        (C0Type::Int8Array(_), C0Type::Int8Pointer)
-        | (C0Type::Int8Pointer, C0Type::Int8Array(_)) => true,
-        (C0Type::CharArray(left, _), C0Type::CharPointer(right))
-        | (C0Type::CharPointer(left), C0Type::CharArray(right, _))
+        (InterfaceType::Int32Array(_), InterfaceType::Int32Pointer)
+        | (InterfaceType::Int32Pointer, InterfaceType::Int32Array(_)) => true,
+        (InterfaceType::Int8Array(_), InterfaceType::Int8Pointer)
+        | (InterfaceType::Int8Pointer, InterfaceType::Int8Array(_)) => true,
+        (InterfaceType::CharArray(left, _), InterfaceType::CharPointer(right))
+        | (InterfaceType::CharPointer(left), InterfaceType::CharArray(right, _))
             if left == right =>
         {
             true
         }
-        (C0Type::UInt8Array(_), C0Type::UInt8Pointer)
-        | (C0Type::UInt8Pointer, C0Type::UInt8Array(_))
-        | (C0Type::Int16Array(_), C0Type::Int16Pointer)
-        | (C0Type::Int16Pointer, C0Type::Int16Array(_))
-        | (C0Type::UInt16Array(_), C0Type::UInt16Pointer)
-        | (C0Type::UInt16Pointer, C0Type::UInt16Array(_))
-        | (C0Type::UInt32Array(_), C0Type::UInt32Pointer)
-        | (C0Type::UInt32Pointer, C0Type::UInt32Array(_))
-        | (C0Type::Int128Array(_), C0Type::Int128Pointer)
-        | (C0Type::Int64Array(_, _), C0Type::Int64Pointer(_))
-        | (C0Type::Int128Pointer, C0Type::Int128Array(_))
-        | (C0Type::Int64Pointer(_), C0Type::Int64Array(_, _))
-        | (C0Type::UInt128Array(_), C0Type::UInt128Pointer)
-        | (C0Type::UInt64Array(_, _), C0Type::UInt64Pointer(_))
-        | (C0Type::UInt128Pointer, C0Type::UInt128Array(_))
-        | (C0Type::UInt64Pointer(_), C0Type::UInt64Array(_, _))
-        | (C0Type::Float32Array(_), C0Type::Float32Pointer)
-        | (C0Type::Float32Pointer, C0Type::Float32Array(_))
-        | (C0Type::Float64Array(_), C0Type::Float64Pointer)
-        | (C0Type::Float64Pointer, C0Type::Float64Array(_)) => true,
-        (actual, C0Type::Bool) if actual.is_pointer() => true,
+        (InterfaceType::UInt8Array(_), InterfaceType::UInt8Pointer)
+        | (InterfaceType::UInt8Pointer, InterfaceType::UInt8Array(_))
+        | (InterfaceType::Int16Array(_), InterfaceType::Int16Pointer)
+        | (InterfaceType::Int16Pointer, InterfaceType::Int16Array(_))
+        | (InterfaceType::UInt16Array(_), InterfaceType::UInt16Pointer)
+        | (InterfaceType::UInt16Pointer, InterfaceType::UInt16Array(_))
+        | (InterfaceType::UInt32Array(_), InterfaceType::UInt32Pointer)
+        | (InterfaceType::UInt32Pointer, InterfaceType::UInt32Array(_))
+        | (InterfaceType::Int128Array(_), InterfaceType::Int128Pointer)
+        | (InterfaceType::Int64Array(_, _), InterfaceType::Int64Pointer(_))
+        | (InterfaceType::Int128Pointer, InterfaceType::Int128Array(_))
+        | (InterfaceType::Int64Pointer(_), InterfaceType::Int64Array(_, _))
+        | (InterfaceType::UInt128Array(_), InterfaceType::UInt128Pointer)
+        | (InterfaceType::UInt64Array(_, _), InterfaceType::UInt64Pointer(_))
+        | (InterfaceType::UInt128Pointer, InterfaceType::UInt128Array(_))
+        | (InterfaceType::UInt64Pointer(_), InterfaceType::UInt64Array(_, _))
+        | (InterfaceType::Float32Array(_), InterfaceType::Float32Pointer)
+        | (InterfaceType::Float32Pointer, InterfaceType::Float32Array(_))
+        | (InterfaceType::Float64Array(_), InterfaceType::Float64Pointer)
+        | (InterfaceType::Float64Pointer, InterfaceType::Float64Array(_)) => true,
+        (actual, InterfaceType::Bool) if actual.is_pointer() => true,
         (
-            C0Type::Int8 | C0Type::Int16 | C0Type::Int32 | C0Type::UInt8 | C0Type::UInt16,
-            C0Type::UInt32,
+            InterfaceType::Int8
+            | InterfaceType::Int16
+            | InterfaceType::Int32
+            | InterfaceType::UInt8
+            | InterfaceType::UInt16,
+            InterfaceType::UInt32,
         ) => true,
         (actual, expected)
             if actual.is_object_pointer()
                 && expected.is_object_pointer()
-                && (actual == C0Type::VoidPointer || expected == C0Type::VoidPointer) =>
+                && (actual == InterfaceType::VoidPointer
+                    || expected == InterfaceType::VoidPointer) =>
         {
             true
         }
@@ -3045,81 +3089,86 @@ pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Typ
 fn resource_argument_type_message(
     name: &str,
     index: usize,
-    expected: C0Type,
-    actual: C0Type,
+    expected: InterfaceType,
+    actual: InterfaceType,
     context: &str,
 ) -> String {
-    if name == CResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
+    if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
         return format!(
             "resource `{name}` argument {index} expects int32 or uint64, got {} in {context}: \
              the byte count is a heap block's extent, a 32-bit `int32` or a 64-bit `uint64` \
              (`size_t`) one; a signed 64-bit size is stated through its `size_t` conversion, \
              such as `allocation(result, bytes as uint64)`",
-            describe_c0_type(actual)
+            describe_interface_type(actual)
         );
     }
     format!(
         "resource `{name}` argument {index} expects {}, got {} in {context}",
-        describe_c0_type(expected),
-        describe_c0_type(actual)
+        describe_interface_type(expected),
+        describe_interface_type(actual)
     )
 }
 
 /// Argument 1 of `allocation` is the heap block's extent: declared `int32`,
 /// it also takes a 64-bit `uint64` (`size_t`) byte count, the extent of a
 /// block whose size is a symbolic `size_t` (`design/heap-extents.md`, D4).
-fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected: C0Type) -> bool {
-    if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+fn resource_types_compatible(
+    name: &str,
+    index: usize,
+    actual: InterfaceType,
+    expected: InterfaceType,
+) -> bool {
+    if name == ResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 1
-        && matches!(actual, C0Type::UInt64(_))
+        && matches!(actual, InterfaceType::UInt64(_))
     {
         return true;
     }
-    if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+    if name == ResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 0
-        && expected == C0Type::Int32Pointer
+        && expected == InterfaceType::Int32Pointer
     {
         return matches!(
             actual,
-            C0Type::Int8Pointer
-                | C0Type::Int16Pointer
-                | C0Type::UInt16Pointer
-                | C0Type::Int32Pointer
-                | C0Type::CharPointer(_)
-                | C0Type::UInt8Pointer
-                | C0Type::UInt32Pointer
-                | C0Type::Int128Pointer
-                | C0Type::Int64Pointer(_)
-                | C0Type::UInt128Pointer
-                | C0Type::UInt64Pointer(_)
-                | C0Type::Int8PointerPointer
-                | C0Type::Int16PointerPointer
-                | C0Type::UInt16PointerPointer
-                | C0Type::Int32PointerPointer
-                | C0Type::CharPointerPointer(_)
-                | C0Type::UInt8PointerPointer
-                | C0Type::UInt32PointerPointer
-                | C0Type::Int128PointerPointer
-                | C0Type::Int64PointerPointer(_)
-                | C0Type::UInt128PointerPointer
-                | C0Type::UInt64PointerPointer(_)
-                | C0Type::Float32Pointer
-                | C0Type::Float64Pointer
-                | C0Type::Float32PointerPointer
-                | C0Type::Float64PointerPointer
-                | C0Type::Int32Array(_)
-                | C0Type::CharArray(_, _)
-                | C0Type::UInt8Array(_)
-                | C0Type::Int8Array(_)
-                | C0Type::Int16Array(_)
-                | C0Type::UInt16Array(_)
-                | C0Type::UInt32Array(_)
-                | C0Type::Int128Array(_)
-                | C0Type::Int64Array(_, _)
-                | C0Type::UInt128Array(_)
-                | C0Type::UInt64Array(_, _)
-                | C0Type::Float32Array(_)
-                | C0Type::Float64Array(_)
+            InterfaceType::Int8Pointer
+                | InterfaceType::Int16Pointer
+                | InterfaceType::UInt16Pointer
+                | InterfaceType::Int32Pointer
+                | InterfaceType::CharPointer(_)
+                | InterfaceType::UInt8Pointer
+                | InterfaceType::UInt32Pointer
+                | InterfaceType::Int128Pointer
+                | InterfaceType::Int64Pointer(_)
+                | InterfaceType::UInt128Pointer
+                | InterfaceType::UInt64Pointer(_)
+                | InterfaceType::Int8PointerPointer
+                | InterfaceType::Int16PointerPointer
+                | InterfaceType::UInt16PointerPointer
+                | InterfaceType::Int32PointerPointer
+                | InterfaceType::CharPointerPointer(_)
+                | InterfaceType::UInt8PointerPointer
+                | InterfaceType::UInt32PointerPointer
+                | InterfaceType::Int128PointerPointer
+                | InterfaceType::Int64PointerPointer(_)
+                | InterfaceType::UInt128PointerPointer
+                | InterfaceType::UInt64PointerPointer(_)
+                | InterfaceType::Float32Pointer
+                | InterfaceType::Float64Pointer
+                | InterfaceType::Float32PointerPointer
+                | InterfaceType::Float64PointerPointer
+                | InterfaceType::Int32Array(_)
+                | InterfaceType::CharArray(_, _)
+                | InterfaceType::UInt8Array(_)
+                | InterfaceType::Int8Array(_)
+                | InterfaceType::Int16Array(_)
+                | InterfaceType::UInt16Array(_)
+                | InterfaceType::UInt32Array(_)
+                | InterfaceType::Int128Array(_)
+                | InterfaceType::Int64Array(_, _)
+                | InterfaceType::UInt128Array(_)
+                | InterfaceType::UInt64Array(_, _)
+                | InterfaceType::Float32Array(_)
+                | InterfaceType::Float64Array(_)
         );
     }
     click_argument_types_compatible(actual, expected)
@@ -3127,10 +3176,10 @@ fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected:
 
 pub(super) fn infer_contract_expression_type(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
-) -> Result<Option<C0Type>, ClickError> {
+) -> Result<Option<InterfaceType>, ClickError> {
     if let Some(value_type) = deep_literal_add_type(expression) {
         return Ok(Some(value_type));
     }
@@ -3142,7 +3191,7 @@ pub(super) fn infer_contract_expression_type(
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(None),
         ContractExpression::ResourceField(access) => match &access.click_type {
-            Some(ClickType::C(ty)) => Ok(Some(*ty)),
+            Some(ClickType::Program(ty)) => Ok(Some(*ty)),
             Some(ClickType::Integer) => Ok(None),
             _ => Err(ClickError::new("expected a scalar resource field")),
         },
@@ -3153,11 +3202,11 @@ pub(super) fn infer_contract_expression_type(
                 ))
             })?;
             Ok(Some(if value <= i32::MAX as u64 {
-                C0Type::Int32
+                InterfaceType::Int32
             } else if value <= i64::MAX as u64 {
-                C0Type::Int64(LongRank::Long)
+                InterfaceType::Int64(LongRank::Long)
             } else {
-                C0Type::UInt64(LongRank::Long)
+                InterfaceType::UInt64(LongRank::Long)
             }))
         }
         ContractExpression::Negate(inner) => {
@@ -3166,7 +3215,7 @@ pub(super) fn infer_contract_expression_type(
                     .parse::<u64>()
                     .is_ok_and(|value| value <= (i32::MAX as u64) + 1)
             {
-                return Ok(Some(C0Type::Int32));
+                return Ok(Some(InterfaceType::Int32));
             }
             infer_contract_expression_type(inner, variables, click_functions, context)
         }
@@ -3186,10 +3235,10 @@ pub(super) fn infer_contract_expression_type(
             };
             let mut arm_variables = variables.clone();
             for (binding, argument) in arm.bindings.iter().zip(arguments) {
-                if let Some(c_type) =
+                if let Some(interface_type) =
                     infer_contract_expression_type(argument, variables, click_functions, context)?
                 {
-                    arm_variables.insert(binding.clone(), c_type);
+                    arm_variables.insert(binding.clone(), interface_type);
                 }
             }
             infer_contract_expression_type(&arm.body, &arm_variables, click_functions, context)
@@ -3207,27 +3256,30 @@ pub(super) fn infer_contract_expression_type(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression)
+        | ContractExpression::ProgramExpression(expression)
         | ContractExpression::Field {
             lowered: expression,
             ..
         } => {
-            if !variables.contains_key("result") && c_expression_uses_variable(expression, "result")
+            if !variables.contains_key("result")
+                && program_expression_uses_variable(expression, "result")
             {
                 return Err(ClickError::new(format!(
                     "`result` is not available in {context}"
                 )));
             }
             validate_pointer_cast_operands(expression, variables, context)?;
-            Ok(infer_c_expression_type(expression, variables))
+            Ok(infer_program_expression_type(expression, variables))
         }
         ContractExpression::ArrayIndex { lowered, .. } => {
-            if !variables.contains_key("result") && c_expression_uses_variable(lowered, "result") {
+            if !variables.contains_key("result")
+                && program_expression_uses_variable(lowered, "result")
+            {
                 return Err(ClickError::new(format!(
                     "`result` is not available in {context}"
                 )));
             }
-            Ok(infer_c_expression_type(lowered, variables))
+            Ok(infer_program_expression_type(lowered, variables))
         }
         ContractExpression::Binding(name) => Ok(variables.get(name).copied()),
         // C locals are resolved against the concrete program state during
@@ -3235,7 +3287,7 @@ pub(super) fn infer_contract_expression_type(
         // particular, `c(result)` must not inherit the type of built-in
         // contract `result`.
         ContractExpression::CBinding(_) => Ok(None),
-        ContractExpression::ResourceCount(_) => Ok(Some(C0Type::Int32)),
+        ContractExpression::ResourceCount(_) => Ok(Some(InterfaceType::Int32)),
         ContractExpression::ResourceWildcard => Err(ClickError::new(
             "`_` is only valid inside a `count(...)` resource pattern",
         )),
@@ -3299,8 +3351,10 @@ pub(super) fn infer_contract_expression_type(
                 context,
             )?;
             Ok(expression
-                .filter(|c_type| type_is_scalar(*c_type))
-                .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)))
+                .filter(|interface_type| type_is_scalar(*interface_type))
+                .map(|interface_type| {
+                    scalar_arithmetic_result_type(interface_type, interface_type)
+                }))
         }
         ContractExpression::Index(base, index) => {
             let _ = infer_contract_expression_type(index, variables, click_functions, context)?;
@@ -3325,13 +3379,13 @@ pub(super) fn infer_contract_expression_type(
                     Some(then_type)
                 }
                 (Some(_), Some(_)) => None,
-                (Some(c_type), None) | (None, Some(c_type)) => Some(c_type),
+                (Some(interface_type), None) | (None, Some(interface_type)) => Some(interface_type),
                 (None, None) => None,
             })
         }
         expression @ ContractExpression::RangeFold { .. } => Ok(
             match infer_spec_value_type(expression, variables, click_functions, context)? {
-                SpecValueType::Scalar(Some(c_type)) => Some(c_type),
+                SpecValueType::Scalar(Some(interface_type)) => Some(interface_type),
                 SpecValueType::Integer
                 | SpecValueType::Scalar(None)
                 | SpecValueType::Sequence(_)
@@ -3416,7 +3470,7 @@ pub(super) fn infer_contract_expression_type(
             for (index, (parameter, argument)) in
                 function.parameters.iter().zip(arguments).enumerate()
             {
-                let Some(expected) = parameter.click_type().c_type() else {
+                let Some(expected) = parameter.click_type().interface_type() else {
                     continue;
                 };
                 // The C null pointer constant types as any pointer parameter,
@@ -3430,8 +3484,8 @@ pub(super) fn infer_contract_expression_type(
                 {
                     return Err(ClickError::new(format!(
                         "function `{name}` argument {index} expects {}, got {} in {context}",
-                        describe_c0_type(expected),
-                        describe_c0_type(actual)
+                        describe_interface_type(expected),
+                        describe_interface_type(actual)
                     )));
                 }
             }
@@ -3439,8 +3493,8 @@ pub(super) fn infer_contract_expression_type(
             // `as_ptr<T>(s: Slice<T>) -> T*`, has a C type only at the
             // instance the arguments select, which the algebraic check
             // infers; its declared `T*` is no C type of the call.
-            let return_type = function.return_type.c_type();
-            if let Some(C0Type::ParameterPointer(parameter)) = return_type
+            let return_type = function.return_type.interface_type();
+            if let Some(InterfaceType::ParameterPointer(parameter)) = return_type
                 && function
                     .type_parameters
                     .iter()
@@ -3457,14 +3511,14 @@ pub(super) fn infer_contract_expression_type(
 /// Native byte-view casts retag scalar object pointers without changing
 /// allocation identity, permissions, or initialized storage.
 pub(in crate::surface) fn validate_void_pointer_cast_source(
-    operand: &CExpression,
-    variables: &BTreeMap<String, C0Type>,
+    operand: &ProgramExpression,
+    variables: &BTreeMap<String, InterfaceType>,
     context: &str,
 ) -> Result<(), ClickError> {
-    let actual = infer_c_expression_type(operand, variables);
+    let actual = infer_program_expression_type(operand, variables);
     if actual.is_some_and(|ty| {
-        !ty.is_object_pointer() && !matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_))
-    }) || matches!(operand, CExpression::FunctionAddress(_))
+        !ty.is_object_pointer() && !matches!(ty, InterfaceType::Int64(_) | InterfaceType::UInt64(_))
+    }) || matches!(operand, ProgramExpression::FunctionAddress(_))
     {
         return Err(ClickError::new(format!(
             "contract void-pointer cast in {context} expects an object pointer operand, got {actual:?}"
@@ -3474,32 +3528,32 @@ pub(in crate::surface) fn validate_void_pointer_cast_source(
 }
 
 fn validate_pointer_cast_operands(
-    expression: &CExpression,
-    variables: &BTreeMap<String, C0Type>,
+    expression: &ProgramExpression,
+    variables: &BTreeMap<String, InterfaceType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match expression {
-        CExpression::Cast {
+        ProgramExpression::Cast {
             expression: operand,
             target_type,
             pointee_struct,
             ..
         } => {
             if target_type.is_pointer() {
-                if !matches!(target_type, CType::FunctionPointer(_))
+                if !matches!(target_type, ProgramType::FunctionPointer(_))
                     && matches!(
-                        infer_c_expression_type(operand, variables),
-                        Some(C0Type::Int64(_) | C0Type::UInt64(_))
+                        infer_program_expression_type(operand, variables),
+                        Some(InterfaceType::Int64(_) | InterfaceType::UInt64(_))
                     )
                 {
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
-                if *target_type == CType::VoidPointer {
+                if *target_type == ProgramType::VoidPointer {
                     validate_void_pointer_cast_source(operand, variables, context)?;
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
-                if *target_type == CType::UInt8Pointer && pointee_struct.is_none() {
-                    let actual = infer_c_expression_type(operand, variables);
+                if *target_type == ProgramType::UInt8Pointer && pointee_struct.is_none() {
+                    let actual = infer_program_expression_type(operand, variables);
                     if actual.is_some()
                         && !actual.is_some_and(|ty| {
                             ty.to_kernel_type().pointee_type().is_some_and(|element| {
@@ -3513,8 +3567,8 @@ fn validate_pointer_cast_operands(
                     }
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
-                match infer_c_expression_type(operand, variables) {
-                    None | Some(C0Type::VoidPointer) => {}
+                match infer_program_expression_type(operand, variables) {
+                    None | Some(InterfaceType::VoidPointer) => {}
                     Some(actual) => {
                         return Err(ClickError::new(format!(
                             "pointer cast in {context} expects a `void *` operand, got `{actual:?}`"
@@ -3524,29 +3578,30 @@ fn validate_pointer_cast_operands(
             }
             validate_pointer_cast_operands(operand, variables, context)
         }
-        CExpression::Value(_) | CExpression::FunctionAddress(_) | CExpression::Variable(_) => {
-            Ok(())
-        }
-        CExpression::FloatNegate(inner)
-        | CExpression::FloatClassification {
+        ProgramExpression::Value(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::Variable(_)
+        | ProgramExpression::CallResult { .. } => Ok(()),
+        ProgramExpression::FloatNegate(inner)
+        | ProgramExpression::FloatClassification {
             expression: inner, ..
         }
-        | CExpression::AddressOf(inner)
-        | CExpression::CheckedObjectAddress(inner)
-        | CExpression::Not(inner)
-        | CExpression::BitwiseNot(inner)
-        | CExpression::Load(inner)
-        | CExpression::TypedLoad { pointer: inner, .. }
-        | CExpression::PointerOffsetBytes { pointer: inner, .. }
-        | CExpression::Subobject { pointer: inner, .. }
-        | CExpression::EnumField { value: inner, .. }
-        | CExpression::EnumIs { value: inner, .. } => {
+        | ProgramExpression::AddressOf(inner)
+        | ProgramExpression::CheckedObjectAddress(inner)
+        | ProgramExpression::Not(inner)
+        | ProgramExpression::BitwiseNot(inner)
+        | ProgramExpression::Load(inner)
+        | ProgramExpression::TypedLoad { pointer: inner, .. }
+        | ProgramExpression::PointerOffsetBytes { pointer: inner, .. }
+        | ProgramExpression::Subobject { pointer: inner, .. }
+        | ProgramExpression::EnumField { value: inner, .. }
+        | ProgramExpression::EnumIs { value: inner, .. } => {
             validate_pointer_cast_operands(inner, variables, context)
         }
-        CExpression::EnumConstruct { fields, .. } => fields
+        ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .try_for_each(|field| validate_pointer_cast_operands(field, variables, context)),
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -3562,173 +3617,189 @@ fn validate_pointer_cast_operands(
     }
 }
 
-pub(in crate::surface) fn infer_c_expression_type(
-    expression: &CExpression,
-    variables: &BTreeMap<String, C0Type>,
-) -> Option<C0Type> {
+pub(in crate::surface) fn infer_program_expression_type(
+    expression: &ProgramExpression,
+    variables: &BTreeMap<String, InterfaceType>,
+) -> Option<InterfaceType> {
     match expression {
-        CExpression::Value(CValue::PointerInteger(_)) => infer_c_expression_type(
-            &CExpression::Value(match expression {
-                CExpression::Value(v) => v.numeric_value().clone(),
+        ProgramExpression::Value(ProgramValue::PointerInteger(_)) => infer_program_expression_type(
+            &ProgramExpression::Value(match expression {
+                ProgramExpression::Value(v) => v.numeric_value().clone(),
                 _ => unreachable!(),
             }),
             variables,
         ),
-        CExpression::Value(CValue::Int128(_)) => Some(C0Type::Int128),
-        CExpression::Value(CValue::UInt128(_)) => Some(C0Type::UInt128),
+        ProgramExpression::Value(ProgramValue::Int128(_)) => Some(InterfaceType::Int128),
+        ProgramExpression::Value(ProgramValue::UInt128(_)) => Some(InterfaceType::UInt128),
 
-        CExpression::Value(CValue::Void) => Some(C0Type::Void),
-        CExpression::Value(CValue::Bool(_)) => Some(C0Type::Bool),
-        CExpression::Value(CValue::Int8(_)) => Some(C0Type::Int8),
-        CExpression::Value(CValue::Int16(_)) => Some(C0Type::Int16),
-        CExpression::Value(CValue::Int32(_)) => Some(C0Type::Int32),
-        CExpression::Value(CValue::UInt8(_)) => Some(C0Type::UInt8),
-        CExpression::Value(CValue::UInt16(_)) => Some(C0Type::UInt16),
-        CExpression::Value(CValue::UInt32(_)) => Some(C0Type::UInt32),
-        CExpression::Value(CValue::Int64(_)) => Some(C0Type::Int64(LongRank::Long)),
-        CExpression::Value(CValue::UInt64(_)) => Some(C0Type::UInt64(LongRank::Long)),
-        CExpression::Value(CValue::Float32(_)) => Some(C0Type::Float32),
-        CExpression::Value(CValue::Float64(_)) => Some(C0Type::Float64),
-        CExpression::Value(CValue::Parameter(term)) => Some(C0Type::Parameter(
+        ProgramExpression::Value(ProgramValue::Void) => Some(InterfaceType::Void),
+        ProgramExpression::Value(ProgramValue::Bool(_)) => Some(InterfaceType::Bool),
+        ProgramExpression::Value(ProgramValue::Int8(_)) => Some(InterfaceType::Int8),
+        ProgramExpression::Value(ProgramValue::Int16(_)) => Some(InterfaceType::Int16),
+        ProgramExpression::Value(ProgramValue::Int32(_)) => Some(InterfaceType::Int32),
+        ProgramExpression::Value(ProgramValue::UInt8(_)) => Some(InterfaceType::UInt8),
+        ProgramExpression::Value(ProgramValue::UInt16(_)) => Some(InterfaceType::UInt16),
+        ProgramExpression::Value(ProgramValue::UInt32(_)) => Some(InterfaceType::UInt32),
+        ProgramExpression::Value(ProgramValue::Int64(_)) => {
+            Some(InterfaceType::Int64(LongRank::Long))
+        }
+        ProgramExpression::Value(ProgramValue::UInt64(_)) => {
+            Some(InterfaceType::UInt64(LongRank::Long))
+        }
+        ProgramExpression::Value(ProgramValue::Float32(_)) => Some(InterfaceType::Float32),
+        ProgramExpression::Value(ProgramValue::Float64(_)) => Some(InterfaceType::Float64),
+        ProgramExpression::Value(ProgramValue::Parameter(term)) => Some(InterfaceType::Parameter(
             crate::kernel::TypeParameterName::of(&term.algebraic_type),
         )),
-        CExpression::Value(CValue::Pointer(_)) => None,
-        CExpression::Variable(name) => variables.get(name).copied(),
-        CExpression::Cast {
+        ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
+        ProgramExpression::Variable(name) => variables.get(name).copied(),
+        ProgramExpression::Cast {
             expression: _,
             target_type,
             ..
         } => match target_type {
-            CType::Parameter(name) => Some(C0Type::Parameter(*name)),
-            CType::ParameterPointer(name) => Some(C0Type::ParameterPointer(*name)),
-            CType::Int128 => Some(C0Type::Int128),
-            CType::UInt128 => Some(C0Type::UInt128),
+            ProgramType::Parameter(name) => Some(InterfaceType::Parameter(*name)),
+            ProgramType::ParameterPointer(name) => Some(InterfaceType::ParameterPointer(*name)),
+            ProgramType::Int128 => Some(InterfaceType::Int128),
+            ProgramType::UInt128 => Some(InterfaceType::UInt128),
 
-            CType::Bool => Some(C0Type::Bool),
-            CType::Int8 => Some(C0Type::Int8),
-            CType::Int16 => Some(C0Type::Int16),
-            CType::Int32 => Some(C0Type::Int32),
-            CType::UInt8 => Some(C0Type::UInt8),
-            CType::UInt16 => Some(C0Type::UInt16),
-            CType::UInt32 => Some(C0Type::UInt32),
-            CType::Int32Pointer => Some(C0Type::Int32Pointer),
-            CType::UInt8Pointer => Some(C0Type::UInt8Pointer),
-            CType::Int32PointerPointer => Some(C0Type::Int32PointerPointer),
-            CType::UInt8PointerPointer => Some(C0Type::UInt8PointerPointer),
-            CType::FunctionPointer(signature) => Some(C0Type::FunctionPointer(*signature)),
-            CType::Void | CType::Int32Array(_) | CType::UInt8Array(_) => None,
-            CType::Int64 => Some(C0Type::Int64(LongRank::Long)),
-            CType::UInt64 => Some(C0Type::UInt64(LongRank::Long)),
-            CType::Float32 => Some(C0Type::Float32),
-            CType::Float64 => Some(C0Type::Float64),
-            CType::VoidPointer => Some(C0Type::VoidPointer),
-            CType::VoidPointerPointer => Some(C0Type::VoidPointerPointer),
-            CType::Int8Pointer => Some(C0Type::Int8Pointer),
-            CType::Int16Pointer => Some(C0Type::Int16Pointer),
-            CType::UInt16Pointer => Some(C0Type::UInt16Pointer),
-            CType::UInt32Pointer => Some(C0Type::UInt32Pointer),
-            CType::Int64Pointer => Some(C0Type::Int64Pointer(LongRank::Long)),
-            CType::Int128Pointer => Some(C0Type::Int128Pointer),
-            CType::UInt64Pointer => Some(C0Type::UInt64Pointer(LongRank::Long)),
-            CType::UInt128Pointer => Some(C0Type::UInt128Pointer),
-            CType::Int8PointerPointer => Some(C0Type::Int8PointerPointer),
-            CType::Int16PointerPointer => Some(C0Type::Int16PointerPointer),
-            CType::UInt16PointerPointer => Some(C0Type::UInt16PointerPointer),
-            CType::UInt32PointerPointer => Some(C0Type::UInt32PointerPointer),
-            CType::Int64PointerPointer => Some(C0Type::Int64PointerPointer(LongRank::Long)),
-            CType::Int128PointerPointer => Some(C0Type::Int128PointerPointer),
-            CType::UInt64PointerPointer => Some(C0Type::UInt64PointerPointer(LongRank::Long)),
-            CType::UInt128PointerPointer => Some(C0Type::UInt128PointerPointer),
-            CType::Float32Pointer => Some(C0Type::Float32Pointer),
-            CType::Float64Pointer => Some(C0Type::Float64Pointer),
-            CType::Float32PointerPointer => Some(C0Type::Float32PointerPointer),
-            CType::Float64PointerPointer => Some(C0Type::Float64PointerPointer),
-            CType::Int8Array(_) => None,
-            CType::Int16Array(_)
-            | CType::UInt16Array(_)
-            | CType::UInt32Array(_)
-            | CType::Int128Array(_)
-            | CType::Int64Array(_)
-            | CType::UInt128Array(_)
-            | CType::UInt64Array(_)
-            | CType::Float32Array(_)
-            | CType::Float64Array(_)
-            | CType::PointerArray(_, _) => None,
+            ProgramType::Bool => Some(InterfaceType::Bool),
+            ProgramType::Int8 => Some(InterfaceType::Int8),
+            ProgramType::Int16 => Some(InterfaceType::Int16),
+            ProgramType::Int32 => Some(InterfaceType::Int32),
+            ProgramType::UInt8 => Some(InterfaceType::UInt8),
+            ProgramType::UInt16 => Some(InterfaceType::UInt16),
+            ProgramType::UInt32 => Some(InterfaceType::UInt32),
+            ProgramType::Int32Pointer => Some(InterfaceType::Int32Pointer),
+            ProgramType::UInt8Pointer => Some(InterfaceType::UInt8Pointer),
+            ProgramType::Int32PointerPointer => Some(InterfaceType::Int32PointerPointer),
+            ProgramType::UInt8PointerPointer => Some(InterfaceType::UInt8PointerPointer),
+            ProgramType::FunctionPointer(signature) => {
+                Some(InterfaceType::FunctionPointer(*signature))
+            }
+            ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
+            ProgramType::Int64 => Some(InterfaceType::Int64(LongRank::Long)),
+            ProgramType::UInt64 => Some(InterfaceType::UInt64(LongRank::Long)),
+            ProgramType::Float32 => Some(InterfaceType::Float32),
+            ProgramType::Float64 => Some(InterfaceType::Float64),
+            ProgramType::VoidPointer => Some(InterfaceType::VoidPointer),
+            ProgramType::VoidPointerPointer => Some(InterfaceType::VoidPointerPointer),
+            ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
+            ProgramType::Int16Pointer => Some(InterfaceType::Int16Pointer),
+            ProgramType::UInt16Pointer => Some(InterfaceType::UInt16Pointer),
+            ProgramType::UInt32Pointer => Some(InterfaceType::UInt32Pointer),
+            ProgramType::Int64Pointer => Some(InterfaceType::Int64Pointer(LongRank::Long)),
+            ProgramType::Int128Pointer => Some(InterfaceType::Int128Pointer),
+            ProgramType::UInt64Pointer => Some(InterfaceType::UInt64Pointer(LongRank::Long)),
+            ProgramType::UInt128Pointer => Some(InterfaceType::UInt128Pointer),
+            ProgramType::Int8PointerPointer => Some(InterfaceType::Int8PointerPointer),
+            ProgramType::Int16PointerPointer => Some(InterfaceType::Int16PointerPointer),
+            ProgramType::UInt16PointerPointer => Some(InterfaceType::UInt16PointerPointer),
+            ProgramType::UInt32PointerPointer => Some(InterfaceType::UInt32PointerPointer),
+            ProgramType::Int64PointerPointer => {
+                Some(InterfaceType::Int64PointerPointer(LongRank::Long))
+            }
+            ProgramType::Int128PointerPointer => Some(InterfaceType::Int128PointerPointer),
+            ProgramType::UInt64PointerPointer => {
+                Some(InterfaceType::UInt64PointerPointer(LongRank::Long))
+            }
+            ProgramType::UInt128PointerPointer => Some(InterfaceType::UInt128PointerPointer),
+            ProgramType::Float32Pointer => Some(InterfaceType::Float32Pointer),
+            ProgramType::Float64Pointer => Some(InterfaceType::Float64Pointer),
+            ProgramType::Float32PointerPointer => Some(InterfaceType::Float32PointerPointer),
+            ProgramType::Float64PointerPointer => Some(InterfaceType::Float64PointerPointer),
+            ProgramType::Int8Array(_) => None,
+            ProgramType::Int16Array(_)
+            | ProgramType::UInt16Array(_)
+            | ProgramType::UInt32Array(_)
+            | ProgramType::Int128Array(_)
+            | ProgramType::Int64Array(_)
+            | ProgramType::UInt128Array(_)
+            | ProgramType::UInt64Array(_)
+            | ProgramType::Float32Array(_)
+            | ProgramType::Float64Array(_)
+            | ProgramType::PointerArray(_, _) => None,
         },
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            let _ = infer_c_expression_type(condition, variables)?;
-            let then_type = infer_c_expression_type(then_branch, variables);
-            let else_type = infer_c_expression_type(else_branch, variables);
+            let _ = infer_program_expression_type(condition, variables)?;
+            let then_type = infer_program_expression_type(then_branch, variables);
+            let else_type = infer_program_expression_type(else_branch, variables);
             match (then_type, else_type) {
                 (Some(left), Some(right)) => arithmetic_result_type(Some(left), Some(right)),
                 _ => None,
             }
         }
-        CExpression::EnumConstruct { enum_type, .. } => Some(C0Type::Parameter(*enum_type)),
+        ProgramExpression::EnumConstruct { enum_type, .. } => {
+            Some(InterfaceType::Parameter(*enum_type))
+        }
         // A field's type is its variant's declared field type.
-        CExpression::EnumField {
+        ProgramExpression::EnumField {
             value,
             variant,
             index,
-        } => match infer_c_expression_type(value, variables)? {
-            C0Type::Parameter(enum_type) => enum_type
+        } => match infer_program_expression_type(value, variables)? {
+            InterfaceType::Parameter(enum_type) => enum_type
                 .algebraic_type()
                 .variants
                 .iter()
                 .find(|declared| &declared.name == variant)
                 .and_then(|declared| declared.fields.get(*index))
                 .and_then(|field| match field {
-                    crate::kernel::AlgebraicValueType::C(c_type) => {
-                        Some(crate::surface::generics::c0_type_from_kernel(*c_type))
-                    }
+                    crate::kernel::AlgebraicValueType::Program(interface_type) => Some(
+                        crate::surface::generics::interface_type_from_program_type(*interface_type),
+                    ),
                     _ => None,
                 }),
             _ => None,
         },
-        CExpression::EnumIs { value, .. } => matches!(
-            infer_c_expression_type(value, variables),
-            Some(C0Type::Parameter(_))
+        ProgramExpression::EnumIs { value, .. } => matches!(
+            infer_program_expression_type(value, variables),
+            Some(InterfaceType::Parameter(_))
         )
-        .then_some(C0Type::Bool),
-        CExpression::FloatNegate(expression) => {
-            infer_c_expression_type(expression, variables).filter(|c_type| type_is_float(*c_type))
+        .then_some(InterfaceType::Bool),
+        ProgramExpression::FloatNegate(expression) => {
+            infer_program_expression_type(expression, variables)
+                .filter(|interface_type| type_is_float(*interface_type))
         }
-        CExpression::FloatClassification { expression, .. } => matches!(
-            infer_c_expression_type(expression, variables),
-            Some(C0Type::Float32 | C0Type::Float64)
+        ProgramExpression::FloatClassification { expression, .. } => matches!(
+            infer_program_expression_type(expression, variables),
+            Some(InterfaceType::Float32 | InterfaceType::Float64)
         )
-        .then_some(C0Type::Int32),
-        CExpression::AddressOf(_)
-        | CExpression::CheckedObjectAddress(_)
-        | CExpression::FunctionAddress(_) => None,
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => infer_c_expression_type(pointer, variables),
-        CExpression::LessThan(_, _)
-        | CExpression::LessEqual(_, _)
-        | CExpression::GreaterThan(_, _)
-        | CExpression::GreaterEqual(_, _)
-        | CExpression::Equal(_, _)
-        | CExpression::NotEqual(_, _)
-        | CExpression::Not(_)
-        | CExpression::And(_, _)
-        | CExpression::Or(_, _) => Some(C0Type::Int32),
-        CExpression::Add(left, right) => infer_c_add_type(left, right, variables),
-        CExpression::Subtract(left, right) => infer_c_subtract_type(left, right, variables),
-        CExpression::Multiply(left, right) | CExpression::Divide(left, right) => {
-            let left = infer_c_expression_type(left, variables);
-            let right = infer_c_expression_type(right, variables);
+        .then_some(InterfaceType::Int32),
+        ProgramExpression::AddressOf(_)
+        | ProgramExpression::CheckedObjectAddress(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => None,
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
+            infer_program_expression_type(pointer, variables)
+        }
+        ProgramExpression::LessThan(_, _)
+        | ProgramExpression::LessEqual(_, _)
+        | ProgramExpression::GreaterThan(_, _)
+        | ProgramExpression::GreaterEqual(_, _)
+        | ProgramExpression::Equal(_, _)
+        | ProgramExpression::NotEqual(_, _)
+        | ProgramExpression::Not(_)
+        | ProgramExpression::And(_, _)
+        | ProgramExpression::Or(_, _) => Some(InterfaceType::Int32),
+        ProgramExpression::Add(left, right) => infer_c_add_type(left, right, variables),
+        ProgramExpression::Subtract(left, right) => infer_c_subtract_type(left, right, variables),
+        ProgramExpression::Multiply(left, right) | ProgramExpression::Divide(left, right) => {
+            let left = infer_program_expression_type(left, variables);
+            let right = infer_program_expression_type(right, variables);
             arithmetic_result_type(left, right)
         }
-        CExpression::Remainder(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right) => {
-            let left = infer_c_expression_type(left, variables);
-            let right = infer_c_expression_type(right, variables);
+        ProgramExpression::Remainder(left, right)
+        | ProgramExpression::BitwiseAnd(left, right)
+        | ProgramExpression::BitwiseOr(left, right)
+        | ProgramExpression::BitwiseXor(left, right) => {
+            let left = infer_program_expression_type(left, variables);
+            let right = infer_program_expression_type(right, variables);
             match (left, right) {
                 (Some(left), Some(right)) if type_is_scalar(left) && type_is_scalar(right) => {
                     Some(scalar_arithmetic_result_type(left, right))
@@ -3736,82 +3807,87 @@ pub(in crate::surface) fn infer_c_expression_type(
                 _ => None,
             }
         }
-        CExpression::ShiftLeft(left, right) | CExpression::ShiftRight(left, right) => {
+        ProgramExpression::ShiftLeft(left, right) | ProgramExpression::ShiftRight(left, right) => {
             infer_c_shift_type(left, right, variables)
         }
-        CExpression::RustShiftLeft(left, right) | CExpression::RustShiftRight(left, right) => {
-            let left = infer_c_expression_type(left, variables)?;
-            let right = infer_c_expression_type(right, variables)?;
+        ProgramExpression::RustShiftLeft(left, right)
+        | ProgramExpression::RustShiftRight(left, right) => {
+            let left = infer_program_expression_type(left, variables)?;
+            let right = infer_program_expression_type(right, variables)?;
             (type_is_scalar(left) && type_is_scalar(right)).then_some(left)
         }
-        CExpression::BitwiseNot(expression) => infer_c_expression_type(expression, variables)
-            .filter(|c_type| type_is_scalar(*c_type))
-            .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)),
-        CExpression::Load(pointer) => {
-            infer_c_expression_type(pointer, variables).and_then(pointer_element_type)
+        ProgramExpression::BitwiseNot(expression) => {
+            infer_program_expression_type(expression, variables)
+                .filter(|interface_type| type_is_scalar(*interface_type))
+                .map(|interface_type| scalar_arithmetic_result_type(interface_type, interface_type))
         }
-        CExpression::TypedLoad { value_type, .. } => Some(match value_type {
-            CType::Parameter(name) => C0Type::Parameter(*name),
-            CType::ParameterPointer(name) => C0Type::ParameterPointer(*name),
-            CType::Void => return None,
-            CType::Bool => C0Type::Bool,
-            CType::VoidPointer => C0Type::VoidPointer,
-            CType::VoidPointerPointer => C0Type::VoidPointerPointer,
-            CType::Int8 => C0Type::Int8,
-            CType::Int16 => C0Type::Int16,
-            CType::Int32 => C0Type::Int32,
-            CType::UInt8 => C0Type::UInt8,
-            CType::UInt16 => C0Type::UInt16,
-            CType::UInt32 => C0Type::UInt32,
-            CType::Int64 => C0Type::Int64(LongRank::Long),
-            CType::UInt64 => C0Type::UInt64(LongRank::Long),
-            CType::Int128 => C0Type::Int128,
-            CType::UInt128 => C0Type::UInt128,
-            CType::Float32 => C0Type::Float32,
-            CType::Float64 => C0Type::Float64,
-            CType::Int32Pointer => C0Type::Int32Pointer,
-            CType::UInt8Pointer => C0Type::UInt8Pointer,
-            CType::Int8Pointer => C0Type::Int8Pointer,
-            CType::Int16Pointer => C0Type::Int16Pointer,
-            CType::UInt16Pointer => C0Type::UInt16Pointer,
-            CType::UInt32Pointer => C0Type::UInt32Pointer,
-            CType::Int64Pointer => C0Type::Int64Pointer(LongRank::Long),
-            CType::Int128Pointer => C0Type::Int128Pointer,
-            CType::UInt64Pointer => C0Type::UInt64Pointer(LongRank::Long),
-            CType::UInt128Pointer => C0Type::UInt128Pointer,
-            CType::Int8PointerPointer => C0Type::Int8PointerPointer,
-            CType::Int16PointerPointer => C0Type::Int16PointerPointer,
-            CType::UInt16PointerPointer => C0Type::UInt16PointerPointer,
-            CType::Int32PointerPointer => C0Type::Int32PointerPointer,
-            CType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
-            CType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
-            CType::Int64PointerPointer => C0Type::Int64PointerPointer(LongRank::Long),
-            CType::Int128PointerPointer => C0Type::Int128PointerPointer,
-            CType::UInt64PointerPointer => C0Type::UInt64PointerPointer(LongRank::Long),
-            CType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
-            CType::Float32Pointer => C0Type::Float32Pointer,
-            CType::Float64Pointer => C0Type::Float64Pointer,
-            CType::Float32PointerPointer => C0Type::Float32PointerPointer,
-            CType::Float64PointerPointer => C0Type::Float64PointerPointer,
-            CType::FunctionPointer(signature) => C0Type::FunctionPointer(*signature),
-            CType::Int32Array(length) => C0Type::Int32Array(*length),
-            CType::UInt8Array(length) => C0Type::UInt8Array(*length),
-            CType::Int8Array(length) => C0Type::Int8Array(*length),
-            CType::Int16Array(length) => C0Type::Int16Array(*length),
-            CType::UInt16Array(length) => C0Type::UInt16Array(*length),
-            CType::UInt32Array(length) => C0Type::UInt32Array(*length),
-            CType::Int64Array(length) => C0Type::Int64Array(LongRank::Long, *length),
-            CType::Int128Array(length) => C0Type::Int128Array(*length),
-            CType::UInt64Array(length) => C0Type::UInt64Array(LongRank::Long, *length),
-            CType::UInt128Array(length) => C0Type::UInt128Array(*length),
-            CType::Float32Array(length) => C0Type::Float32Array(*length),
-            CType::Float64Array(length) => C0Type::Float64Array(*length),
-            CType::PointerArray(element, length) => {
-                C0Type::PointerArray(*element, LongRank::Long, *length)
+        ProgramExpression::Load(pointer) => {
+            infer_program_expression_type(pointer, variables).and_then(pointer_element_type)
+        }
+        ProgramExpression::TypedLoad { value_type, .. } => Some(match value_type {
+            ProgramType::Parameter(name) => InterfaceType::Parameter(*name),
+            ProgramType::ParameterPointer(name) => InterfaceType::ParameterPointer(*name),
+            ProgramType::Void => return None,
+            ProgramType::Bool => InterfaceType::Bool,
+            ProgramType::VoidPointer => InterfaceType::VoidPointer,
+            ProgramType::VoidPointerPointer => InterfaceType::VoidPointerPointer,
+            ProgramType::Int8 => InterfaceType::Int8,
+            ProgramType::Int16 => InterfaceType::Int16,
+            ProgramType::Int32 => InterfaceType::Int32,
+            ProgramType::UInt8 => InterfaceType::UInt8,
+            ProgramType::UInt16 => InterfaceType::UInt16,
+            ProgramType::UInt32 => InterfaceType::UInt32,
+            ProgramType::Int64 => InterfaceType::Int64(LongRank::Long),
+            ProgramType::UInt64 => InterfaceType::UInt64(LongRank::Long),
+            ProgramType::Int128 => InterfaceType::Int128,
+            ProgramType::UInt128 => InterfaceType::UInt128,
+            ProgramType::Float32 => InterfaceType::Float32,
+            ProgramType::Float64 => InterfaceType::Float64,
+            ProgramType::Int32Pointer => InterfaceType::Int32Pointer,
+            ProgramType::UInt8Pointer => InterfaceType::UInt8Pointer,
+            ProgramType::Int8Pointer => InterfaceType::Int8Pointer,
+            ProgramType::Int16Pointer => InterfaceType::Int16Pointer,
+            ProgramType::UInt16Pointer => InterfaceType::UInt16Pointer,
+            ProgramType::UInt32Pointer => InterfaceType::UInt32Pointer,
+            ProgramType::Int64Pointer => InterfaceType::Int64Pointer(LongRank::Long),
+            ProgramType::Int128Pointer => InterfaceType::Int128Pointer,
+            ProgramType::UInt64Pointer => InterfaceType::UInt64Pointer(LongRank::Long),
+            ProgramType::UInt128Pointer => InterfaceType::UInt128Pointer,
+            ProgramType::Int8PointerPointer => InterfaceType::Int8PointerPointer,
+            ProgramType::Int16PointerPointer => InterfaceType::Int16PointerPointer,
+            ProgramType::UInt16PointerPointer => InterfaceType::UInt16PointerPointer,
+            ProgramType::Int32PointerPointer => InterfaceType::Int32PointerPointer,
+            ProgramType::UInt8PointerPointer => InterfaceType::UInt8PointerPointer,
+            ProgramType::UInt32PointerPointer => InterfaceType::UInt32PointerPointer,
+            ProgramType::Int64PointerPointer => InterfaceType::Int64PointerPointer(LongRank::Long),
+            ProgramType::Int128PointerPointer => InterfaceType::Int128PointerPointer,
+            ProgramType::UInt64PointerPointer => {
+                InterfaceType::UInt64PointerPointer(LongRank::Long)
+            }
+            ProgramType::UInt128PointerPointer => InterfaceType::UInt128PointerPointer,
+            ProgramType::Float32Pointer => InterfaceType::Float32Pointer,
+            ProgramType::Float64Pointer => InterfaceType::Float64Pointer,
+            ProgramType::Float32PointerPointer => InterfaceType::Float32PointerPointer,
+            ProgramType::Float64PointerPointer => InterfaceType::Float64PointerPointer,
+            ProgramType::FunctionPointer(signature) => InterfaceType::FunctionPointer(*signature),
+            ProgramType::Int32Array(length) => InterfaceType::Int32Array(*length),
+            ProgramType::UInt8Array(length) => InterfaceType::UInt8Array(*length),
+            ProgramType::Int8Array(length) => InterfaceType::Int8Array(*length),
+            ProgramType::Int16Array(length) => InterfaceType::Int16Array(*length),
+            ProgramType::UInt16Array(length) => InterfaceType::UInt16Array(*length),
+            ProgramType::UInt32Array(length) => InterfaceType::UInt32Array(*length),
+            ProgramType::Int64Array(length) => InterfaceType::Int64Array(LongRank::Long, *length),
+            ProgramType::Int128Array(length) => InterfaceType::Int128Array(*length),
+            ProgramType::UInt64Array(length) => InterfaceType::UInt64Array(LongRank::Long, *length),
+            ProgramType::UInt128Array(length) => InterfaceType::UInt128Array(*length),
+            ProgramType::Float32Array(length) => InterfaceType::Float32Array(*length),
+            ProgramType::Float64Array(length) => InterfaceType::Float64Array(*length),
+            ProgramType::PointerArray(element, length) => {
+                InterfaceType::PointerArray(*element, LongRank::Long, *length)
             }
         }),
-        CExpression::Index(base, _) => {
-            infer_c_expression_type(base, variables).and_then(pointer_element_type)
+        ProgramExpression::Index(base, _) => {
+            infer_program_expression_type(base, variables).and_then(pointer_element_type)
         }
     }
 }
@@ -3819,10 +3895,10 @@ pub(in crate::surface) fn infer_c_expression_type(
 fn infer_add_expression_type(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
-) -> Result<Option<C0Type>, ClickError> {
+) -> Result<Option<InterfaceType>, ClickError> {
     let (left_expression, right_expression) = (left, right);
     let left = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right = infer_contract_expression_type(right, variables, click_functions, context)?;
@@ -3836,10 +3912,10 @@ fn infer_add_expression_type(
 fn infer_subtract_expression_type(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
-) -> Result<Option<C0Type>, ClickError> {
+) -> Result<Option<InterfaceType>, ClickError> {
     let (left_expression, right_expression) = (left, right);
     let left = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right = infer_contract_expression_type(right, variables, click_functions, context)?;
@@ -3856,22 +3932,22 @@ fn infer_subtract_expression_type(
 }
 
 fn infer_c_add_type(
-    left: &CExpression,
-    right: &CExpression,
-    variables: &BTreeMap<String, C0Type>,
-) -> Option<C0Type> {
-    let left = infer_c_expression_type(left, variables);
-    let right = infer_c_expression_type(right, variables);
+    left: &ProgramExpression,
+    right: &ProgramExpression,
+    variables: &BTreeMap<String, InterfaceType>,
+) -> Option<InterfaceType> {
+    let left = infer_program_expression_type(left, variables);
+    let right = infer_program_expression_type(right, variables);
     pointer_arithmetic_type(left, right).or_else(|| arithmetic_result_type(left, right))
 }
 
 fn infer_c_subtract_type(
-    left: &CExpression,
-    right: &CExpression,
-    variables: &BTreeMap<String, C0Type>,
-) -> Option<C0Type> {
-    let left = infer_c_expression_type(left, variables);
-    let right = infer_c_expression_type(right, variables);
+    left: &ProgramExpression,
+    right: &ProgramExpression,
+    variables: &BTreeMap<String, InterfaceType>,
+) -> Option<InterfaceType> {
+    let left = infer_program_expression_type(left, variables);
+    let right = infer_program_expression_type(right, variables);
     match (left, right) {
         (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
             Some(left)
@@ -3880,7 +3956,10 @@ fn infer_c_subtract_type(
     }
 }
 
-fn pointer_arithmetic_type(left: Option<C0Type>, right: Option<C0Type>) -> Option<C0Type> {
+fn pointer_arithmetic_type(
+    left: Option<InterfaceType>,
+    right: Option<InterfaceType>,
+) -> Option<InterfaceType> {
     match (left, right) {
         (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
             Some(left)
@@ -3892,17 +3971,25 @@ fn pointer_arithmetic_type(left: Option<C0Type>, right: Option<C0Type>) -> Optio
     }
 }
 
-fn type_is_float(c_type: C0Type) -> bool {
-    matches!(c_type, C0Type::Float32 | C0Type::Float64)
+fn type_is_float(interface_type: InterfaceType) -> bool {
+    matches!(
+        interface_type,
+        InterfaceType::Float32 | InterfaceType::Float64
+    )
 }
 
-fn arithmetic_result_type(left: Option<C0Type>, right: Option<C0Type>) -> Option<C0Type> {
+fn arithmetic_result_type(
+    left: Option<InterfaceType>,
+    right: Option<InterfaceType>,
+) -> Option<InterfaceType> {
     match (left, right) {
         (Some(left), Some(right)) if type_is_arithmetic(left) && type_is_arithmetic(right) => {
-            if matches!(left, C0Type::Float64) || matches!(right, C0Type::Float64) {
-                Some(C0Type::Float64)
-            } else if matches!(left, C0Type::Float32) || matches!(right, C0Type::Float32) {
-                Some(C0Type::Float32)
+            if matches!(left, InterfaceType::Float64) || matches!(right, InterfaceType::Float64) {
+                Some(InterfaceType::Float64)
+            } else if matches!(left, InterfaceType::Float32)
+                || matches!(right, InterfaceType::Float32)
+            {
+                Some(InterfaceType::Float32)
             } else {
                 Some(scalar_arithmetic_result_type(left, right))
             }
@@ -3912,31 +3999,31 @@ fn arithmetic_result_type(left: Option<C0Type>, right: Option<C0Type>) -> Option
 }
 
 fn infer_c_shift_type(
-    left: &CExpression,
-    right: &CExpression,
-    variables: &BTreeMap<String, C0Type>,
-) -> Option<C0Type> {
-    let left_type = infer_c_expression_type(left, variables)?;
-    let right_type = infer_c_expression_type(right, variables)?;
+    left: &ProgramExpression,
+    right: &ProgramExpression,
+    variables: &BTreeMap<String, InterfaceType>,
+) -> Option<InterfaceType> {
+    let left_type = infer_program_expression_type(left, variables)?;
+    let right_type = infer_program_expression_type(right, variables)?;
     if !type_is_scalar(left_type) || !type_is_scalar(right_type) {
         return None;
     }
     Some(match left_type {
-        C0Type::UInt64(rank) => C0Type::UInt64(rank),
-        C0Type::Int64(rank) => C0Type::Int64(rank),
-        C0Type::UInt32 => C0Type::UInt32,
-        _ => C0Type::Int32,
+        InterfaceType::UInt64(rank) => InterfaceType::UInt64(rank),
+        InterfaceType::Int64(rank) => InterfaceType::Int64(rank),
+        InterfaceType::UInt32 => InterfaceType::UInt32,
+        _ => InterfaceType::Int32,
     })
 }
 
 fn infer_contract_shift_type(
     left: &ContractExpression,
     right: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
     retain_operand_width: bool,
-) -> Result<Option<C0Type>, ClickError> {
+) -> Result<Option<InterfaceType>, ClickError> {
     let left_type = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right_type = infer_contract_expression_type(right, variables, click_functions, context)?;
     Ok(match (left_type, right_type) {
@@ -3945,111 +4032,111 @@ fn infer_contract_shift_type(
                 return Ok(Some(left));
             }
             Some(match left {
-                C0Type::UInt64(rank) => C0Type::UInt64(rank),
-                C0Type::Int64(rank) => C0Type::Int64(rank),
-                C0Type::UInt32 => C0Type::UInt32,
-                _ => C0Type::Int32,
+                InterfaceType::UInt64(rank) => InterfaceType::UInt64(rank),
+                InterfaceType::Int64(rank) => InterfaceType::Int64(rank),
+                InterfaceType::UInt32 => InterfaceType::UInt32,
+                _ => InterfaceType::Int32,
             })
         }
         _ => None,
     })
 }
 
-fn type_is_scalar(c_type: C0Type) -> bool {
+fn type_is_scalar(interface_type: InterfaceType) -> bool {
     matches!(
-        c_type,
-        C0Type::Bool
-            | C0Type::Int8
-            | C0Type::Int16
-            | C0Type::Int32
-            | C0Type::Char(_)
-            | C0Type::UInt8
-            | C0Type::UInt16
-            | C0Type::UInt32
-            | C0Type::Int64(_)
-            | C0Type::UInt64(_)
+        interface_type,
+        InterfaceType::Bool
+            | InterfaceType::Int8
+            | InterfaceType::Int16
+            | InterfaceType::Int32
+            | InterfaceType::Char(_)
+            | InterfaceType::UInt8
+            | InterfaceType::UInt16
+            | InterfaceType::UInt32
+            | InterfaceType::Int64(_)
+            | InterfaceType::UInt64(_)
     )
 }
 
-pub(super) fn type_is_arithmetic(c_type: C0Type) -> bool {
-    type_is_scalar(c_type) || type_is_float(c_type)
+pub(super) fn type_is_arithmetic(interface_type: InterfaceType) -> bool {
+    type_is_scalar(interface_type) || type_is_float(interface_type)
 }
 
-fn scalar_arithmetic_result_type(left: C0Type, right: C0Type) -> C0Type {
-    if matches!(left, C0Type::UInt64(_)) || matches!(right, C0Type::UInt64(_)) {
-        C0Type::UInt64(LongRank::Long)
-    } else if matches!(left, C0Type::Int64(_)) || matches!(right, C0Type::Int64(_)) {
-        C0Type::Int64(LongRank::Long)
-    } else if matches!(left, C0Type::UInt32) || matches!(right, C0Type::UInt32) {
-        C0Type::UInt32
+fn scalar_arithmetic_result_type(left: InterfaceType, right: InterfaceType) -> InterfaceType {
+    if matches!(left, InterfaceType::UInt64(_)) || matches!(right, InterfaceType::UInt64(_)) {
+        InterfaceType::UInt64(LongRank::Long)
+    } else if matches!(left, InterfaceType::Int64(_)) || matches!(right, InterfaceType::Int64(_)) {
+        InterfaceType::Int64(LongRank::Long)
+    } else if matches!(left, InterfaceType::UInt32) || matches!(right, InterfaceType::UInt32) {
+        InterfaceType::UInt32
     } else {
-        C0Type::Int32
+        InterfaceType::Int32
     }
 }
 
-fn type_is_data_pointer(c_type: C0Type) -> bool {
+fn type_is_data_pointer(interface_type: InterfaceType) -> bool {
     matches!(
-        c_type,
-        C0Type::Int32Pointer
-            | C0Type::Int8Pointer
-            | C0Type::Int16Pointer
-            | C0Type::CharPointer(_)
-            | C0Type::UInt8Pointer
-            | C0Type::UInt16Pointer
-            | C0Type::UInt32Pointer
-            | C0Type::Int128Pointer
-            | C0Type::Int64Pointer(_)
-            | C0Type::UInt128Pointer
-            | C0Type::UInt64Pointer(_)
-            | C0Type::Int8PointerPointer
-            | C0Type::Int16PointerPointer
-            | C0Type::UInt16PointerPointer
-            | C0Type::Int32PointerPointer
-            | C0Type::CharPointerPointer(_)
-            | C0Type::UInt8PointerPointer
-            | C0Type::UInt32PointerPointer
-            | C0Type::Int128PointerPointer
-            | C0Type::Int64PointerPointer(_)
-            | C0Type::UInt128PointerPointer
-            | C0Type::UInt64PointerPointer(_)
-            | C0Type::Int32Array(_)
-            | C0Type::CharArray(_, _)
-            | C0Type::UInt8Array(_)
-            | C0Type::Int8Array(_)
-            | C0Type::Int16Array(_)
-            | C0Type::UInt16Array(_)
-            | C0Type::UInt32Array(_)
-            | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_, _)
-            | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_, _)
+        interface_type,
+        InterfaceType::Int32Pointer
+            | InterfaceType::Int8Pointer
+            | InterfaceType::Int16Pointer
+            | InterfaceType::CharPointer(_)
+            | InterfaceType::UInt8Pointer
+            | InterfaceType::UInt16Pointer
+            | InterfaceType::UInt32Pointer
+            | InterfaceType::Int128Pointer
+            | InterfaceType::Int64Pointer(_)
+            | InterfaceType::UInt128Pointer
+            | InterfaceType::UInt64Pointer(_)
+            | InterfaceType::Int8PointerPointer
+            | InterfaceType::Int16PointerPointer
+            | InterfaceType::UInt16PointerPointer
+            | InterfaceType::Int32PointerPointer
+            | InterfaceType::CharPointerPointer(_)
+            | InterfaceType::UInt8PointerPointer
+            | InterfaceType::UInt32PointerPointer
+            | InterfaceType::Int128PointerPointer
+            | InterfaceType::Int64PointerPointer(_)
+            | InterfaceType::UInt128PointerPointer
+            | InterfaceType::UInt64PointerPointer(_)
+            | InterfaceType::Int32Array(_)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
+            | InterfaceType::Int8Array(_)
+            | InterfaceType::Int16Array(_)
+            | InterfaceType::UInt16Array(_)
+            | InterfaceType::UInt32Array(_)
+            | InterfaceType::Int128Array(_)
+            | InterfaceType::Int64Array(_, _)
+            | InterfaceType::UInt128Array(_)
+            | InterfaceType::UInt64Array(_, _)
     )
 }
 
-fn pointer_element_type(c_type: C0Type) -> Option<C0Type> {
-    c_type.pointee_type()
+fn pointer_element_type(interface_type: InterfaceType) -> Option<InterfaceType> {
+    interface_type.pointee_type()
 }
 
 fn validate_contract_segment_expression_types(
     segment: &ContractSegment,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     let _ = infer_contract_expression_type(
-        &ContractExpression::CFragment(segment.base.clone()),
+        &ContractExpression::ProgramExpression(segment.base.clone()),
         variables,
         click_functions,
         context,
     )?;
     let _ = infer_contract_expression_type(
-        &ContractExpression::CFragment(segment.start.clone()),
+        &ContractExpression::ProgramExpression(segment.start.clone()),
         variables,
         click_functions,
         context,
     )?;
     let _ = infer_contract_expression_type(
-        &ContractExpression::CFragment(segment.end.clone()),
+        &ContractExpression::ProgramExpression(segment.end.clone()),
         variables,
         click_functions,
         context,
@@ -4063,7 +4150,7 @@ pub(super) fn validate_resource_clause(
     recursive_resources: &BTreeSet<String>,
     click_functions: &BTreeMap<String, usize>,
     click_function_types: &BTreeMap<String, ClickFunctionType>,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
@@ -4105,7 +4192,7 @@ pub(super) fn validate_resource_clause(
             validate_contract_expression_calls(quantity, click_functions, context)?;
             let actual =
                 infer_contract_expression_type(quantity, variables, click_function_types, context)?;
-            if actual != Some(C0Type::Int32) {
+            if actual != Some(InterfaceType::Int32) {
                 return Err(ClickError::new(format!(
                     "declared resource quantity must have type int32 in {context}"
                 )));
@@ -4116,7 +4203,7 @@ pub(super) fn validate_resource_clause(
                     access: ResourceAccessMode::Own,
                     name,
                     ..
-                } if name != CResourceFact::ALLOCATION_RESOURCE_NAME
+                } if name != ResourceFact::ALLOCATION_RESOURCE_NAME
             ) {
                 return Err(ClickError::new(format!(
                     "symbolic quantities require an owned user-declared resource in {context}"
@@ -4345,14 +4432,14 @@ fn validate_predicate_calls_in_proposition_one(
     }
 }
 
-pub(super) fn validate_c_valued_function_folds(
+pub(super) fn validate_program_valued_function_folds(
     definition: &ClickFunctionDefinition,
     click_functions: &BTreeMap<String, ClickFunctionType>,
 ) -> Result<(), ClickError> {
     let Some(body) = definition.body() else {
         return Ok(());
     };
-    if !matches!(definition.return_type(), ClickType::C(_))
+    if !matches!(definition.return_type(), ClickType::Program(_))
         || !contains_scoped_expression_shape(body, ScopedExpressionShape::RangeFold)
     {
         return Ok(());
@@ -4363,7 +4450,7 @@ pub(super) fn validate_c_valued_function_folds(
         .filter_map(|parameter| {
             parameter
                 .click_type()
-                .c_type()
+                .interface_type()
                 .map(|ty| (parameter.name().to_string(), ty))
         })
         .collect();
@@ -4408,17 +4495,17 @@ fn validate_contract_segment_calls(
     context: &str,
 ) -> Result<(), ClickError> {
     validate_contract_expression_calls(
-        &ContractExpression::CFragment(segment.base.clone()),
+        &ContractExpression::ProgramExpression(segment.base.clone()),
         click_functions,
         context,
     )?;
     validate_contract_expression_calls(
-        &ContractExpression::CFragment(segment.start.clone()),
+        &ContractExpression::ProgramExpression(segment.start.clone()),
         click_functions,
         context,
     )?;
     validate_contract_expression_calls(
-        &ContractExpression::CFragment(segment.end.clone()),
+        &ContractExpression::ProgramExpression(segment.end.clone()),
         click_functions,
         context,
     )
@@ -4470,7 +4557,7 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(right, click_functions, context)
         }
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_) => Ok(()),
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {

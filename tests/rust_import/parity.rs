@@ -182,7 +182,7 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
     for entry in inventory() {
         let sidecar = root.join(&entry.sidecar);
         let prepared = prepared_sidecar(&sidecar).unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &fs::read_to_string(sidecar).unwrap(),
             &prepared,
         )
@@ -220,7 +220,7 @@ fn charon_canonical_basic_tools_agree() {
         site.position.column,
     )
     .unwrap();
-    C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
     assert_cli(
         &p,
         &[
@@ -268,7 +268,7 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
                 let prepared = prepared_sidecar(&sidecar).unwrap();
                 let canonical = fs::read_to_string(&sidecar).unwrap();
                 let canonical_error =
-                    C0VerificationSession::new_program_prepared(&canonical, &prepared)
+                    ProgramVerificationSession::new_program_prepared(&canonical, &prepared)
                         .err()
                         .map(|error| error.message().to_owned());
                 if let Some(error) = &canonical_error {
@@ -279,7 +279,7 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
                 }
                 // Preserve original frozen outcomes independently of canonical adoption.
                 let frozen_error = if let Some(frozen) = &entry.frozen_sidecar {
-                    C0VerificationSession::new_program_prepared(
+                    ProgramVerificationSession::new_program_prepared(
                         &fs::read_to_string(root.join(frozen)).unwrap(),
                         &prepared,
                     )

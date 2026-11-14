@@ -5,14 +5,17 @@ use crate::kernel::effective_type::{CAccessClass, CStructClass};
 fn class() -> CAccessClass {
     CAccessClass::Struct(CStructClass::opaque("node"))
 }
-fn value(index: u64) -> CValue {
-    CValue::typed_pointer(Pointer::symbolic(Variable(index)), CType::Int32Pointer)
+fn value(index: u64) -> ProgramValue {
+    ProgramValue::typed_pointer(
+        Pointer::symbolic(Variable(index)),
+        ProgramType::Int32Pointer,
+    )
 }
-fn clause(value: CValue) -> SpecProposition {
+fn clause(value: ProgramValue) -> SpecProposition {
     SpecProposition::Comparison {
         left: SpecExpression::PureFunctionApplication {
             name: "typed".into(),
-            result_type: CType::Int32,
+            result_type: ProgramType::Int32,
             pointer_result: None,
             result_object_class: None,
             projection: None,
@@ -23,8 +26,8 @@ fn clause(value: CValue) -> SpecProposition {
                 object_class: class(),
             }],
         },
-        operator: CComparisonOperator::Equal,
-        right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(1))),
+        operator: ComparisonOperator::Equal,
+        right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
     }
 }
 fn lower(
@@ -33,7 +36,7 @@ fn lower(
     held: bool,
 ) -> Vec<SpecPropositionPath> {
     let mut budget = ExecutionBudget::beside_live_state();
-    let state = CState::new();
+    let state = ExecutionState::new();
     if held {
         lower_held_resource_body_clause(&state, source, context, &BTreeMap::new(), &mut budget)
     } else {
@@ -86,12 +89,12 @@ fn held_call_domains_do_not_replace_incompatible_positive_evidence() {
 #[path = "../../scaling_tests/kernel/spec/resource_call_type_tests.rs"]
 mod scaling_tests;
 
-fn constructor_clause(payload: CValue) -> SpecProposition {
+fn constructor_clause(payload: ProgramValue) -> SpecProposition {
     use std::sync::Arc;
     let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "At".into(),
         fields: vec![AlgebraicValueType::ObjectPointer(
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             class(),
         )],
     }]
@@ -113,7 +116,7 @@ fn constructor_clause(payload: CValue) -> SpecProposition {
         algebraic_type: ty,
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "At".into(),
-            fields: vec![SpecAlgebraicValue::C(SpecExpression::Value(payload))],
+            fields: vec![SpecAlgebraicValue::Program(SpecExpression::Value(payload))],
         },
     };
     SpecProposition::AlgebraicComparison {

@@ -2,17 +2,17 @@
 //! character reads in the same state; no memory-history search is involved.
 use super::prelude::*;
 
-pub(crate) fn prove_uint32_from_le_bytes(pointer: CPointerValue) -> Result<Theorem, String> {
-    if pointer.c_type().pointee_type() != Some(CType::UInt32) {
+pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theorem, String> {
+    if pointer.program_type().pointee_type() != Some(ProgramType::UInt32) {
         return Err("uint32_from_le_bytes requires a uint32 pointer".into());
     }
-    let state = CState::new();
-    let base = SpecExpression::Value(CValue::Pointer(pointer.clone()));
+    let state = ExecutionState::new();
+    let base = SpecExpression::Value(ProgramValue::Pointer(pointer.clone()));
     let view = SpecProposition::MemoryLoadable {
         memory: SpecMemory::Current,
         base: base.clone(),
-        start: SpecExpression::Value(CValue::Int32(0u32.into())),
-        end: SpecExpression::Value(CValue::Int32(1u32.into())),
+        start: SpecExpression::Value(ProgramValue::Int32(0u32.into())),
+        end: SpecExpression::Value(ProgramValue::Int32(1u32.into())),
         element_width: 4,
     };
     let endian = Proposition::Predicate {
@@ -20,8 +20,12 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: CPointerValue) -> Result<Theor
         arguments: vec![],
     };
     let assumptions = PureFactContext::new().allow_symbolic_contract_loads();
-    let (view, _, _) =
-        super::api::c_lower_spec_proposition_at_state(&state, &view, Some(&state), &assumptions)?;
+    let (view, _, _) = super::api::program_lower_spec_proposition_at_state(
+        &state,
+        &view,
+        Some(&state),
+        &assumptions,
+    )?;
     let mut premises = vec![endian, view];
     let assumptions = premises
         .iter()
@@ -29,9 +33,9 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: CPointerValue) -> Result<Theor
     let word = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(base.clone()),
-        value_type: CType::UInt32,
+        value_type: ProgramType::UInt32,
     };
-    let (defined, _, _) = super::api::c_lower_spec_proposition_at_state(
+    let (defined, _, _) = super::api::program_lower_spec_proposition_at_state(
         &state,
         &SpecProposition::Defined(word.clone()),
         Some(&state),
@@ -44,7 +48,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: CPointerValue) -> Result<Theor
         }
     }
     let assumptions = assumptions.assume_proposition(defined);
-    let bytes = SpecExpression::Cast(Box::new(base), CType::UInt8Pointer);
+    let bytes = SpecExpression::Cast(Box::new(base), ProgramType::UInt8Pointer);
     let byte = |index: u32| {
         crate::instrumentation::record_deterministic_work(1);
         SpecExpression::Cast(
@@ -52,12 +56,12 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: CPointerValue) -> Result<Theor
                 memory: SpecMemory::Current,
                 pointer: Box::new(SpecExpression::PointerOffset {
                     pointer: Box::new(bytes.clone()),
-                    elements: Box::new(SpecExpression::Value(CValue::Int32(index.into()))),
+                    elements: Box::new(SpecExpression::Value(ProgramValue::Int32(index.into()))),
                     byte_width: 1,
                 }),
-                value_type: CType::UInt8,
+                value_type: ProgramType::UInt8,
             }),
-            CType::UInt32,
+            ProgramType::UInt32,
         )
     };
     let mut packed = byte(0);
@@ -66,16 +70,18 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: CPointerValue) -> Result<Theor
             Box::new(packed),
             Box::new(SpecExpression::ShiftLeft(
                 Box::new(byte(index)),
-                Box::new(SpecExpression::Value(CValue::UInt32((index * 8).into()))),
+                Box::new(SpecExpression::Value(ProgramValue::UInt32(
+                    (index * 8).into(),
+                ))),
             )),
         );
     }
     let conclusion = SpecProposition::Comparison {
         left: word,
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: packed,
     };
-    let (conclusion, _, _) = super::api::c_lower_spec_proposition_at_state(
+    let (conclusion, _, _) = super::api::program_lower_spec_proposition_at_state(
         &state,
         &conclusion,
         Some(&state),

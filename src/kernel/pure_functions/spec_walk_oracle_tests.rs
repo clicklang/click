@@ -15,7 +15,7 @@ fn old_collect_body_reads(
     match expression {
         // A resource field reads the binder's instance, not a C name.
         SpecExpression::Value(_) | SpecExpression::ResourceField { .. } => Ok(()),
-        SpecExpression::CExpression(expression) => {
+        SpecExpression::ProgramExpression(expression) => {
             collect_c_expression_reads(expression, bound, reads);
             Ok(())
         }
@@ -155,11 +155,11 @@ fn old_collect_algebraic_body_reads(
         SpecAlgebraicExpressionNode::Variable(_)
         | SpecAlgebraicExpressionNode::Binding(_)
         | SpecAlgebraicExpressionNode::ResourceField(_) => Ok(()),
-        SpecAlgebraicExpressionNode::CValue(value) => old_collect_body_reads(value, bound, reads),
+        SpecAlgebraicExpressionNode::ProgramValue(value) => old_collect_body_reads(value, bound, reads),
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {
-                    SpecAlgebraicValue::C(value) => old_collect_body_reads(value, bound, reads)?,
+                    SpecAlgebraicValue::Program(value) => old_collect_body_reads(value, bound, reads)?,
                     SpecAlgebraicValue::Integer(value) => {
                         old_collect_integer_body_reads(value, bound, reads)?
                     }

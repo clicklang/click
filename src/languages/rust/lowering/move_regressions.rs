@@ -1,7 +1,7 @@
 #[test]
 fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
     use crate::languages::rust::schema::{MirStatement as S, MirTerminator as T};
-    use crate::surface::C0VerificationSession;
+    use crate::surface::ProgramVerificationSession;
     let original = super::super::charon::decode(
         include_bytes!("../../../../examples/rust-move-drop/.click/guard/guard.rs.ullbc"),
         "guard.rs",
@@ -107,7 +107,7 @@ fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
         match super::super::import::prepared_for_test(export) {
             Err(_) => (),
             Ok(prepared) => assert!(
-                C0VerificationSession::new_program_prepared(sidecar, &prepared).is_err(),
+                ProgramVerificationSession::new_program_prepared(sidecar, &prepared).is_err(),
                 "corruption {corruption}"
             ),
         }

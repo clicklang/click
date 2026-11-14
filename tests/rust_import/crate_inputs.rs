@@ -38,7 +38,7 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
     assert_eq!(names.len(), 5);
     assert!(functions.iter().any(|f| f.name.contains("_T25_")));
     let proof = "verifying \"src/lib.rs\";\nfn demo::left::read(x: u32) -> u32 { ensures result == x; }\nfn demo::right::read(x: u32) -> u32 { ensures result == 7; }\nfn demo::left_read() -> u32 { ensures result == 99; }\nimpl demo::Value { fn read(&self) -> u32 { views self.n; ensures result == self.n; } }\nfn demo::entry(v: &demo::Value) -> u32 { views v.n; ensures result == v.n; }";
-    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(proof, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), proof).unwrap();
     let cli = p.cli(&["verify"]);
     assert!(
@@ -47,7 +47,7 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
         String::from_utf8_lossy(&cli.stderr)
     );
     assert!(
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &proof.replace("result == 7", "result == x"),
             &prepared
         )
@@ -195,9 +195,9 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
             .iter()
             .any(|f| f.name.ends_with("_I7_compute") && f.mir.is_some())
     );
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     assert!(
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &proof.replace("65521u32", "65520u32"),
             &prepared
         )
@@ -254,15 +254,18 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
         fn demo::argument(x: u32) -> u32 { ensures result == x; }
     "#;
     let proof = format!("{constructors}\n{proof}");
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for (before, after) in [
         ("result == 1u32", "result == 0u32"),
         ("result == 0u32", "result == 1u32"),
         ("result == x", "result != x"),
     ] {
         assert!(
-            C0VerificationSession::new_program_prepared(&proof.replace(before, after), &prepared)
-                .is_err()
+            ProgramVerificationSession::new_program_prepared(
+                &proof.replace(before, after),
+                &prepared
+            )
+            .is_err()
         );
     }
     fs::write(p.root.join("borrow.click"), &proof).unwrap();
@@ -279,8 +282,8 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
     .unwrap();
     p.refresh().unwrap();
     let changed = p.prepared().unwrap();
-    assert!(C0VerificationSession::new_program_prepared(&proof, &changed).is_err());
-    C0VerificationSession::new_program_prepared(
+    assert!(ProgramVerificationSession::new_program_prepared(&proof, &changed).is_err());
+    ProgramVerificationSession::new_program_prepared(
         &proof
             .replace("result == 1u32", "result == 9u32")
             .replace("result.a == 1u32", "result.a == 9u32"),
@@ -317,9 +320,9 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
         "__rust_q_I6_adler2_I7_Adler32"
     );
     let proof = "verifying \"lib.rs\"; impl Default for adler2::Adler32 { fn default() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } } impl adler2::Adler32 { fn new() -> adler2::Adler32 { ensures result.a == 1; ensures result.b == 0; } }";
-    C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(proof, &prepared).unwrap();
     assert!(
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &proof.replace("result.a == 1", "result.a == 0"),
             &prepared
         )
@@ -405,9 +408,9 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
         fn demo::drop_argument(x: u32) -> u32 {{ ensures result == x; }}
     "#
     );
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     assert!(
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &proof.replace("result == x", "result != x"),
             &prepared
         )
@@ -468,9 +471,9 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
         ));
     }
     assert_eq!(prepared.export().functions.len(), 12);
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     assert!(
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &proof.replace("result == 22208u64", "result == 22209u64"),
             &prepared
         )

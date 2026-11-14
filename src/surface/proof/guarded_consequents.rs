@@ -115,7 +115,7 @@ impl<'a> Proof<'a> {
                 goal.surface_bindings
                     .iter()
                     .filter_map(|(name, binding)| match binding {
-                        ContractExpression::CFragment(CExpression::Value(
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(
                             crate::kernel::integer64_c_value!(MachineTerm::Variable(variable)),
                         )) => Some((*variable, name.clone())),
                         _ => None,
@@ -240,7 +240,7 @@ fn collect_goal_field_accesses(
 struct GuardedTermSpeller<'v, 'p> {
     view: &'v FixedStateOperationView<'p>,
     accesses: &'v [ResourceFieldAccess],
-    snapshots: Vec<(&'p SnapshotSelector, &'p CState)>,
+    snapshots: Vec<(&'p SnapshotSelector, &'p ExecutionState)>,
     /// Binders an enclosing `intro` named, by their kernel variables.
     bound: BTreeMap<Variable, String>,
 }
@@ -373,13 +373,16 @@ impl GuardedTermSpeller<'_, '_> {
         )
     }
 
-    fn field_value<'s>(state: &'s CState, access: &ResourceFieldAccess) -> Option<&'s MachineTerm> {
+    fn field_value<'s>(
+        state: &'s ExecutionState,
+        access: &ResourceFieldAccess,
+    ) -> Option<&'s MachineTerm> {
         match state
             .resource_instance_at_path(access.identity, &access.children)?
             .fields()
             .get(access.field_index)?
         {
-            AlgebraicValue::C(crate::kernel::integer64_c_value!(value)) => Some(value),
+            AlgebraicValue::Program(crate::kernel::integer64_c_value!(value)) => Some(value),
             _ => None,
         }
     }
@@ -417,9 +420,9 @@ impl GuardedTermSpeller<'_, '_> {
         if let MachineTerm::Variable(variable) = term
             && let Some(name) = self.bound.get(variable)
         {
-            return Some(ContractExpression::CFragment(CExpression::Variable(
-                name.clone(),
-            )));
+            return Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(name.clone()),
+            ));
         }
         if let Some(field) = self.field_spelling(term) {
             return Some(field);
@@ -481,7 +484,7 @@ impl GuardedTermSpeller<'_, '_> {
     }
 
     /// Named marks first: they are the author's own stable spelling.
-    fn preferred_snapshots(&self) -> impl Iterator<Item = &(&SnapshotSelector, &CState)> {
+    fn preferred_snapshots(&self) -> impl Iterator<Item = &(&SnapshotSelector, &ExecutionState)> {
         self.snapshots
             .iter()
             .filter(|(selector, _)| matches!(selector, SnapshotSelector::Mark(_)))

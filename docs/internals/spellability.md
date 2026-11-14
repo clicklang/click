@@ -46,9 +46,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   integer and Boolean synthesis uses a reverse term index, and algebraic
   synthesis (a Rust enum a call returned) an index from the value to the
   first call that returned it (`algebraic_call_results`). Replacing or removing
-  the recorded exit replaces or removes its result name too. Source-layout
-  result locals preserve allocation naming, and frontend result temporaries
-  map back to their calls (`SourceExecutionLayout::temporary_call_region`).
+  the recorded exit replaces or removes its result name too. A call step's result
+  is also named from the state that holds it (`ExecutionState::call_results`, by call
+  number; `SourceExecutionLayout::call_region` maps the number to its call).
+  Source-layout result locals preserve allocation naming, and the remaining
+  frontend result temporaries map back to their calls
+  (`SourceExecutionLayout::temporary_call_region`).
   A call that copies a by-value aggregate argument into its parameter object
   names that copy `<region>.parameter(name)`: the call producer hands back
   the memory just after the copies, with only those parameters bound
@@ -60,7 +63,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   Reads through it are resolved from the recorded layout when lowered.
   In the function's own proof the parameter is the input itself: the entry
   declares its object holding its own entry values
-  (`kernel::c_function_input_objects_state`), so `p.f` names the value and
+  (`kernel::program_function_input_objects_state`), so `p.f` names the value and
   the body's private copy and its result are computed from that name
   (`mdtests/a_by_value_struct_parameter_is_one_value_in_its_own_proof.md`).
   A heap allocation keeps its nullable return value as `<region>.result` and
@@ -89,9 +92,9 @@ checked. Each one costs completeness, expansion, or a readable report.
   records, inside a call or after the last point, is read at the nearest
   recorded memory that reads the same bytes.
   A local that keeps one value in memory, a borrowed Rust enum or
-  type-parameter local (`CAggregateLayout::holding_value`), is named by its
+  type-parameter local (`AggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last
-  written (`CState::held_local_value`), never to a value a store left there,
+  written (`ExecutionState::held_local_value`), never to a value a store left there,
   and that read spells `o`, or `at(point, o)` at the recorded point whose
   memory reads it.
 - **Every fact kind has syntax.** A kernel fact that a proof state can hold

@@ -10,13 +10,13 @@ fn stored_pointer_block_queries_scale_with_new_read_definitions() {
         };
         let other = PointerBlock::Heap(989_011);
         let slot = Pointer::symbolic(Variable(989_012));
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_block(target.block.clone(), 8)
             .with_block(other.clone(), 8);
         for index in 0..unrelated {
             memory = memory.store(
                 Pointer::symbolic(Variable(990_000 + index)),
-                CValue::Int32(0u32.into()),
+                ProgramValue::Int32(0u32.into()),
             );
         }
         let mut pointer = target;
@@ -24,9 +24,9 @@ fn stored_pointer_block_queries_scale_with_new_read_definitions() {
         for _ in 0..steps {
             memory = memory.clone().store(
                 slot.clone(),
-                CValue::typed_pointer(pointer, CType::Int32Pointer),
+                ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
             );
-            pointer = Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot);
+            pointer = Pointer::loaded_value(&intern_memory_ref(&memory), &slot);
             reads.push(pointer.clone());
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -56,11 +56,11 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
             block: PointerBlock::Heap(index),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..selected + unrelated {
-            memory = memory.store(address(index), CValue::Int32(37u32.into()));
+            memory = memory.store(address(index), ProgramValue::Int32(37u32.into()));
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let goals: Vec<_> = (0..selected)
             .map(|index| {
                 let read = MachineTerm::MemoryLoad(
@@ -117,11 +117,14 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::Variable(Variable(991_000 + index)),
         };
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..selected + unrelated {
-            memory = memory.store(address(index), CValue::Parameter(Box::new(stored(index))));
+            memory = memory.store(
+                address(index),
+                ProgramValue::Parameter(Box::new(stored(index))),
+            );
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let goals: Vec<_> = (0..selected)
             .map(|index| {
                 let read = AlgebraicTerm {

@@ -7,7 +7,8 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
         for unrelated in [0, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::UInt64;
-            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let variable =
+                |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
             let mut root = variable(998771);
             let source = Proposition::ConditionIs(
                 ConditionTerm::integer_equal(

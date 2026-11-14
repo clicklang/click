@@ -2,8 +2,9 @@
 //! explicit typed casts; this module does not infer C++ types from syntax.
 use super::CppType;
 use crate::kernel;
-use crate::kernel::{CExpression, CType, MachineIntegerConstant, MachineIntegerType};
-use crate::languages::c::syntax::{C0Type, LongRank};
+use crate::kernel::{MachineIntegerConstant, MachineIntegerType, ProgramExpression, ProgramType};
+use crate::languages::c::syntax::LongRank;
+use crate::languages::interface::InterfaceType;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ScalarKind {
@@ -148,56 +149,56 @@ impl ScalarKind {
         matches!(self, Self::Int128 | Self::UInt128)
     }
 
-    pub fn kernel_type(self) -> CType {
+    pub fn kernel_type(self) -> ProgramType {
         match self {
-            Self::Bool => CType::Bool,
-            Self::UInt8 => CType::UInt8,
-            Self::Int32 => CType::Int32,
-            Self::Int64 => CType::Int64,
-            Self::UInt32 => CType::UInt32,
-            Self::UInt64 => CType::UInt64,
-            Self::Int128 => CType::Int128,
-            Self::UInt128 => CType::UInt128,
-            Self::Parameter(name) => CType::Parameter(name),
+            Self::Bool => ProgramType::Bool,
+            Self::UInt8 => ProgramType::UInt8,
+            Self::Int32 => ProgramType::Int32,
+            Self::Int64 => ProgramType::Int64,
+            Self::UInt32 => ProgramType::UInt32,
+            Self::UInt64 => ProgramType::UInt64,
+            Self::Int128 => ProgramType::Int128,
+            Self::UInt128 => ProgramType::UInt128,
+            Self::Parameter(name) => ProgramType::Parameter(name),
         }
     }
 
-    pub fn proof_type(self) -> C0Type {
+    pub fn proof_type(self) -> InterfaceType {
         match self {
-            Self::Bool => C0Type::Bool,
-            Self::UInt8 => C0Type::UInt8,
-            Self::Int32 => C0Type::Int32,
-            Self::Int64 => C0Type::Int64(LongRank::Long),
-            Self::UInt32 => C0Type::UInt32,
-            Self::UInt64 => C0Type::UInt64(LongRank::Long),
-            Self::Int128 => C0Type::Int128,
-            Self::UInt128 => C0Type::UInt128,
-            Self::Parameter(name) => C0Type::Parameter(name),
+            Self::Bool => InterfaceType::Bool,
+            Self::UInt8 => InterfaceType::UInt8,
+            Self::Int32 => InterfaceType::Int32,
+            Self::Int64 => InterfaceType::Int64(LongRank::Long),
+            Self::UInt32 => InterfaceType::UInt32,
+            Self::UInt64 => InterfaceType::UInt64(LongRank::Long),
+            Self::Int128 => InterfaceType::Int128,
+            Self::UInt128 => InterfaceType::UInt128,
+            Self::Parameter(name) => InterfaceType::Parameter(name),
         }
     }
 
-    pub fn pointer_kernel_type(self) -> Option<CType> {
+    pub fn pointer_kernel_type(self) -> Option<ProgramType> {
         match self {
-            Self::Int32 => Some(CType::Int32Pointer),
-            Self::UInt32 => Some(CType::UInt32Pointer),
-            Self::UInt8 => Some(CType::UInt8Pointer),
-            Self::Parameter(name) => Some(CType::ParameterPointer(name)),
+            Self::Int32 => Some(ProgramType::Int32Pointer),
+            Self::UInt32 => Some(ProgramType::UInt32Pointer),
+            Self::UInt8 => Some(ProgramType::UInt8Pointer),
+            Self::Parameter(name) => Some(ProgramType::ParameterPointer(name)),
             _ => None,
         }
     }
 
-    pub fn pointer_proof_type(self) -> Option<C0Type> {
+    pub fn pointer_proof_type(self) -> Option<InterfaceType> {
         match self {
-            Self::Int32 => Some(C0Type::Int32Pointer),
-            Self::UInt32 => Some(C0Type::UInt32Pointer),
-            Self::UInt8 => Some(C0Type::UInt8Pointer),
-            Self::Parameter(name) => Some(C0Type::ParameterPointer(name)),
+            Self::Int32 => Some(InterfaceType::Int32Pointer),
+            Self::UInt32 => Some(InterfaceType::UInt32Pointer),
+            Self::UInt8 => Some(InterfaceType::UInt8Pointer),
+            Self::Parameter(name) => Some(InterfaceType::ParameterPointer(name)),
             _ => None,
         }
     }
 
     pub fn parse_literal(self, value: &str) -> Option<ScalarLiteral> {
-        let ty = MachineIntegerType::from_c_type(self.kernel_type())?;
+        let ty = MachineIntegerType::from_program_type(self.kernel_type())?;
         let value = MachineIntegerConstant::parse_decimal(ty.format(), value)?;
         Some(ScalarLiteral { ty, value })
     }
@@ -210,8 +211,8 @@ pub(super) struct ScalarLiteral {
 }
 
 impl ScalarLiteral {
-    pub fn kernel_expression(self) -> CExpression {
-        CExpression::Value(
+    pub fn kernel_expression(self) -> ProgramExpression {
+        ProgramExpression::Value(
             self.ty
                 .constant_value(self.value)
                 .expect("a scalar literal's checked format must match its runtime type"),
@@ -221,11 +222,15 @@ impl ScalarLiteral {
 
 /// Clang has already resolved both integer types. C++20 selects the shared
 /// modulo policy explicitly; Boolean conversions retain their separate rules.
-pub(super) fn convert(value: CExpression, source: ScalarKind, target: ScalarKind) -> CExpression {
+pub(super) fn convert(
+    value: ProgramExpression,
+    source: ScalarKind,
+    target: ScalarKind,
+) -> ProgramExpression {
     if source.is_integer() && target.is_integer() {
-        kernel::c_integer_cast_modulo(value, target.kernel_type())
+        kernel::program_expression::integer_cast_modulo(value, target.kernel_type())
     } else {
-        kernel::c_cast(value, target.kernel_type())
+        kernel::program_expression::cast(value, target.kernel_type())
     }
 }
 
@@ -477,15 +482,18 @@ mod tests {
                 source,
                 target,
             );
-            let actual =
-                kernel::prove_c_expression_evaluation(kernel::CState::new(), converted).unwrap();
-            let expected = kernel::prove_c_expression_evaluation(
-                kernel::CState::new(),
+            let actual = kernel::prove_program_expression_evaluation(
+                kernel::ExecutionState::new(),
+                converted,
+            )
+            .unwrap();
+            let expected = kernel::prove_program_expression_evaluation(
+                kernel::ExecutionState::new(),
                 target.parse_literal(expected).unwrap().kernel_expression(),
             )
             .unwrap();
             let outcome = |theorem: &kernel::Theorem| {
-                let kernel::Proposition::CExpressionEvaluates { outcome, .. } =
+                let kernel::Proposition::ProgramExpressionEvaluates { outcome, .. } =
                     theorem.proposition()
                 else {
                     panic!("expected expression evaluation");
@@ -496,10 +504,10 @@ mod tests {
         }
         // Nonconstant casts retain the checked runtime operation and its
         // language-specific policy; constant folding does not erase operands.
-        let variable = crate::kernel::c_variable("wide");
+        let variable = crate::kernel::program_expression::variable("wide");
         assert_eq!(
             convert(variable.clone(), ScalarKind::UInt64, ScalarKind::Int64),
-            kernel::c_integer_cast_modulo(variable, CType::Int64)
+            kernel::program_expression::integer_cast_modulo(variable, ProgramType::Int64)
         );
     }
 }

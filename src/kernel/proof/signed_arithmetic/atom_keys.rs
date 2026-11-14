@@ -15,7 +15,7 @@ fn variable(variable: Variable) -> KernelTerm {
     {
         return read;
     }
-    KernelTerm::variable(KernelType::C(T::Int32.c_type()), variable)
+    KernelTerm::variable(KernelType::Program(T::Int32.program_type()), variable)
 }
 fn low_word(value: KernelTerm) -> KernelTerm {
     KernelTerm::machine_cast_shared(
@@ -100,7 +100,11 @@ pub(super) fn from_tokens(tokens: Vec<Token>) -> Option<SignedArithmeticAtom> {
                 let arguments = (0..arity)
                     .map(|_| pending.pop())
                     .collect::<Option<Vec<_>>>()?;
-                KernelTerm::checked_call(KernelType::C(T::Int32.c_type()), name, arguments)
+                KernelTerm::checked_call(
+                    KernelType::Program(T::Int32.program_type()),
+                    name,
+                    arguments,
+                )
             }
         };
         pending.push(key);
@@ -367,11 +371,11 @@ pub(super) fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
                 KernelTermNode::MemoryLoad { .. } => {
                     let native = term.machine_read_leaf()?;
                     let canonical = canonical_term_budgeted(native)?;
-                    let crate::kernel::KernelType::C(ty) = term.ty() else {
+                    let crate::kernel::KernelType::Program(ty) = term.ty() else {
                         return None;
                     };
                     KernelTerm::retained_machine_operand(
-                        MachineIntegerType::from_c_type(*ty)?,
+                        MachineIntegerType::from_program_type(*ty)?,
                         crate::kernel::MachineOperandView::Legacy(&canonical),
                     )
                 }

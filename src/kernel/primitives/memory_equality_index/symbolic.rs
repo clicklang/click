@@ -126,7 +126,7 @@ impl ObjectSuppliers {
         &mut self,
         entry: ResourceEntryId,
         insert: bool,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) {
         let Some(range) = fact.memory_range() else {
             return;
@@ -184,14 +184,14 @@ pub(super) struct RangeSupports {
     object_classes: PersistentMap<Pointer, u64>,
 }
 impl RangeSupports {
-    pub(super) fn register(range: &CMemoryRange, graph: &EqualityGraph) {
+    pub(super) fn register(range: &MemoryRange, graph: &EqualityGraph) {
         graph.address_class(range.base());
         graph.address_class(&range.start_pointer());
         if Self::symbolic(range) {
             graph.footprint_class(range);
         }
     }
-    pub(super) fn register_object(&mut self, range: &CMemoryRange, graph: &EqualityGraph) {
+    pub(super) fn register_object(&mut self, range: &MemoryRange, graph: &EqualityGraph) {
         let object = range.base().object_identity();
         if !self.object_classes.contains_key(&object)
             && let Some(class) = graph.address_class(&object)
@@ -199,14 +199,14 @@ impl RangeSupports {
             self.object_classes.insert(object, class);
         }
     }
-    fn symbolic(range: &CMemoryRange) -> bool {
+    fn symbolic(range: &MemoryRange) -> bool {
         range.has_symbolic_bounds()
     }
     pub(super) fn update(
         &mut self,
         entry: ResourceEntryId,
         insert: bool,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         graph: &EqualityGraph,
     ) {
         let Some(range) = fact.memory_range() else {
@@ -258,7 +258,7 @@ impl RangeSupports {
             }
         }
     }
-    fn constant_span(range: &CMemoryRange) -> Option<(AddressCoordinate, AddressCoordinate)> {
+    fn constant_span(range: &MemoryRange) -> Option<(AddressCoordinate, AddressCoordinate)> {
         let start = i128::from(range.signed_constant_start()?) * i128::from(range.element_width());
         let end = i128::from(range.signed_constant_end()?) * i128::from(range.element_width());
         (start < end).then(|| {
@@ -270,7 +270,7 @@ impl RangeSupports {
     }
     pub(super) fn relative_entries(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         owned: bool,
         graph: &EqualityGraph,
     ) -> Option<Box<dyn Iterator<Item = ResourceEntryId>>> {
@@ -349,7 +349,7 @@ impl ResourceContext {
     /// Witnesses are context-local authority handles, not arbitrary graph IDs.
     pub(in crate::kernel) fn symbolic_range_read_supported(
         &self,
-        required: &CMemoryRange,
+        required: &MemoryRange,
         assumptions: &PureFactContext,
         supplier: Option<ResourceOccurrenceId>,
     ) -> Option<bool> {
@@ -358,7 +358,7 @@ impl ResourceContext {
 
     fn symbolic_range_support(
         &self,
-        required: &CMemoryRange,
+        required: &MemoryRange,
         assumptions: &PureFactContext,
         supplier: Option<ResourceOccurrenceId>,
         owned: bool,
@@ -416,7 +416,7 @@ impl ResourceContext {
         })
         .flatten()
         .map(|end| {
-            CMemoryRange::new_with_element_width(
+            MemoryRange::new_with_element_width(
                 required.base().clone(),
                 0u32.into(),
                 end,
@@ -443,8 +443,8 @@ impl ResourceContext {
 mod tests {
     use super::*;
 
-    fn range(base: &Pointer, start: MachineTerm, end: MachineTerm) -> CMemoryRange {
-        CMemoryRange::new_with_element_width(base.clone(), start, end, 1)
+    fn range(base: &Pointer, start: MachineTerm, end: MachineTerm) -> MemoryRange {
+        MemoryRange::new_with_element_width(base.clone(), start, end, 1)
     }
 
     #[test]
@@ -465,7 +465,7 @@ mod tests {
                 true,
             )
             .assume_condition(ConditionTerm::signed_less_than(k.clone(), n.clone()), true);
-        let held = CResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
+        let held = ResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
         let resources =
             ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held.clone());
         let exact = range(&alias, 0u32.into(), n.clone());
@@ -489,7 +489,7 @@ mod tests {
         );
         // Distinct symbolic spans cannot be ordered by a hidden candidate scan.
         let other =
-            CResourceFact::view_memory(range(&base, 0u32.into(), MachineTerm::add(n, 8u32.into())));
+            ResourceFact::view_memory(range(&base, 0u32.into(), MachineTerm::add(n, 8u32.into())));
         let split = resources.clone().unchecked_with_fact(other);
         assert_eq!(
             split.symbolic_range_read_supported(&exact, &facts, None),
@@ -537,12 +537,12 @@ mod tests {
             .assume_condition(ConditionTerm::signed_less_equal(k.clone(), n.clone()), true);
         for width in [1, 2, 4, 8] {
             let range =
-                CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), n.clone(), width);
+                MemoryRange::new_with_element_width(base.clone(), 0u32.into(), n.clone(), width);
             let bytes = crate::kernel::memory_range_byte_count(0u32.into(), n.clone(), width);
             let smaller = crate::kernel::memory_range_byte_count(0u32.into(), k.clone(), width);
             for held in [
-                CResourceFact::view_memory(range.clone()),
-                CResourceFact::own_memory(range.clone()),
+                ResourceFact::view_memory(range.clone()),
+                ResourceFact::own_memory(range.clone()),
             ] {
                 let resources =
                     ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held);
@@ -572,7 +572,7 @@ mod tests {
                 );
             }
             let zero = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
-                CResourceFact::Own(CResource::Memory(range), Box::new(0u32.into())),
+                ResourceFact::Own(Resource::Memory(range), Box::new(0u32.into())),
             );
             assert!(
                 !crate::kernel::resource_context_has_symbolic_range_read(
@@ -589,8 +589,8 @@ mod tests {
         let n = MachineTerm::Variable(Variable(930_001));
         let facts = PureFactContext::new();
         let required = range(&base, 0u32.into(), n);
-        let view = CResourceFact::view_memory(required.clone());
-        let owner = CResourceFact::own_memory(required.clone());
+        let view = ResourceFact::view_memory(required.clone());
+        let owner = ResourceFact::own_memory(required.clone());
         let resources =
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(view.clone());
         let view_id = resources.occurrences_for_fact(&view)[0];
@@ -602,7 +602,7 @@ mod tests {
             resources.symbolic_range_support(&required, &facts, Some(view_id), true),
             Some(false)
         );
-        let zero = CResourceFact::Own(owner.resource().clone(), Box::new(0u32.into()));
+        let zero = ResourceFact::Own(owner.resource().clone(), Box::new(0u32.into()));
         let zeros = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(zero.clone());
         let zero_id = zeros.occurrences_for_fact(&zero)[0];
         assert_eq!(
@@ -634,7 +634,7 @@ mod tests {
         let alias = Pointer::symbolic(Variable(940_001));
         let n = MachineTerm::Variable(Variable(940_002));
         let m = MachineTerm::Variable(Variable(940_003));
-        let snapshot = crate::kernel::intern_c_memory(CMemory::new());
+        let snapshot = crate::kernel::intern_memory(Memory::new());
         let loaded = Pointer::loaded_value(&snapshot, &slot);
         let loaded_alias = Pointer::loaded_value(&snapshot, &alias);
         let empty = PureFactContext::new();
@@ -645,8 +645,8 @@ mod tests {
         let facts = equal_base
             .clone()
             .assume_condition(ConditionTerm::equal(n.clone(), m.clone()), true);
-        let held = CResourceFact::view_memory(range(&loaded, 0u32.into(), n.clone()));
-        let other = CResourceFact::view_memory(range(
+        let held = ResourceFact::view_memory(range(&loaded, 0u32.into(), n.clone()));
+        let other = ResourceFact::view_memory(range(
             &loaded,
             0u32.into(),
             MachineTerm::Variable(Variable(940_004)),
@@ -667,7 +667,7 @@ mod tests {
             resources.symbolic_range_read_supported(&required, &empty, None),
             None
         );
-        let later = crate::kernel::intern_c_memory(CMemory::new().with_block("later", 8));
+        let later = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
         let required = range(&Pointer::loaded_value(&later, &alias), 0u32.into(), n);
         assert_eq!(
             resources.symbolic_range_read_supported(&required, &facts, None),
@@ -692,7 +692,7 @@ mod wide_range_reader_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(985_200));
         let alias = Pointer::symbolic(Variable(985_201));
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
             MachineTerm::Variable(Variable(985_202)),
@@ -700,7 +700,7 @@ mod wide_range_reader_tests {
         );
         let facts = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
-        let held = CResourceFact::view_memory(wide.clone());
+        let held = ResourceFact::view_memory(wide.clone());
         let resources = ResourceContext::new().unchecked_with_fact(held.clone());
         // Register the resource input at publication, before bounded queries.
         resources.pair_memory_equalities(&facts, true, None);

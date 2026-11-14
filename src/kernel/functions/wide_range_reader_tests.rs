@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn wide_call_ranges_are_undecided() {
     let base = Pointer::symbolic(Variable(984_000));
-    let wide = CMemoryRange::new_wide(
+    let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(3),
         MachineTerm::uint64_constant(1 << 33),
@@ -25,21 +25,23 @@ fn wide_call_ranges_are_undecided() {
 fn wide_resource_body_loadability_preserves_native_extent() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(984_010));
-    let segment = CMemorySegment::new(
-        CExpression::Value(CValue::pointer(base.clone())),
-        c_uint64_literal(0),
-        c_uint64_literal(1 << 33),
+    let segment = MemorySegment::new(
+        ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+        crate::kernel::program_expression::uint64_literal(0),
+        crate::kernel::program_expression::uint64_literal(1 << 33),
     )
     .with_element_width(1);
-    let schema =
-        ResourceFieldSchema::new(vec![("length".into(), ResourceFieldType::C(CType::UInt64))])
-            .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let schema = ResourceFieldSchema::new(vec![(
+        "length".into(),
+        ResourceFieldType::Program(ProgramType::UInt64),
+    )])
+    .unwrap();
+    let definition = CompositeResourceDefinition::new(
         "wide",
         vec![],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment)],
+        vec![ResourceSpec::owned_memory(segment)],
         vec![],
     )
     .with_instance_schema(Some(schema.clone()));
@@ -48,14 +50,14 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         "wide".into(),
         vec![].into(),
         schema,
-        vec![AlgebraicValue::C(CValue::UInt64(
+        vec![AlgebraicValue::Program(ProgramValue::UInt64(
             MachineTerm::uint64_constant(1 << 33),
         ))]
         .into(),
     )
     .unwrap();
-    let held = CResourceFact::own(CResource::Instance(instance.clone()));
-    let state = CState::new()
+    let held = ResourceFact::own(Resource::Instance(instance.clone()));
+    let state = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held.clone()));
     let facts = PureFactContext::new();
     let definitions = [definition.clone()];
@@ -73,7 +75,7 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         fact.memory_range()
             .is_some_and(|range| range.wide_bounds().is_some())
     }));
-    let composite = CResourceFact::own(CResource::Composite {
+    let composite = ResourceFact::own(Resource::Composite {
         name: "wide".into(),
         arguments: vec![].into(),
     });
@@ -87,6 +89,6 @@ fn wide_resource_body_loadability_preserves_native_extent() {
     assert!(
         loadable
             .iter()
-            .any(|fact| matches!(fact, Proposition::CMemoryLoadable { wide: true, .. }))
+            .any(|fact| matches!(fact, Proposition::MemoryLoadable { wide: true, .. }))
     );
 }

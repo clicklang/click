@@ -109,7 +109,7 @@ Current instances of the rule:
   closure-scoped failure memo.
 - Explicit return closers lower the folded claim goal once, and the unfolded
   form only when the proof unfolded a predicate. Consecutive exact return
-  closers share one lazy `CFunctionEnsureGoalContext`; any other tactic
+  closers share one lazy `FunctionEnsureGoalContext`; any other tactic
   discards it. There is no global cache or structural state comparison.
 - A whole-cell memory query first uses its address-class index; an exact
   supplier needs no resolution of the queried pointer's defining read.
@@ -400,7 +400,7 @@ The complexity contract implies several design constraints:
   logarithmic in the shared structure. Memory snapshots are persistent
   B-trees with cached content hashes ([Memory derivation DAG](memory-dag.md));
   a fact context's stated propositions are a persistent ordered set; a kernel
-  statement sequence is a persistent indexed `CStatementSequence` that stands
+  statement sequence is a persistent indexed `ProgramStatementSequence` that stands
   for exactly the `Seq(first, rest)` pair tree it replaced; a resource
   context's facts are a hash-consed canonical multiset (`CanonicalFactSet`),
   so equal contexts share one root and compare by pointer.
@@ -427,9 +427,9 @@ into a cached success.
 
 ## Lazy separation and compact composition carriers
 
-Resource contexts never materialize pairwise `CResourceSeparate`
+Resource contexts never materialize pairwise `ResourceSeparate`
 propositions, and neither do the fact contexts that hold them. A multi-owner
-context exposes one compact `CResourceComposition` carrier, and holding it
+context exposes one compact `ResourceComposition` carrier, and holding it
 states nothing further (`holding_a_parameter_composition_states_no_pairs`).
 A separation query (range and pointer disjointness, subrange inheritance, a
 store crossing a cached cell, two distinct range anchors) asks each held
@@ -674,9 +674,9 @@ identity across claims (`checked_callee_summary_reuse_scales_with_input_not_prod
 A branch proved unreachable adds no calls; a summarized statement adds every
 call in its syntax; missing evidence falls back to the source body.
 
-`c_termination_height_plan` proposes a height per node (iterative Tarjan,
+`program_termination_height_plan` proposes a height per node (iterative Tarjan,
 longest path over the condensation, cycle members sharing a height).
-`c_verified_function_termination_rules` checks the proposal level by level in
+`program_verified_function_termination_rules` checks the proposal level by level in
 ascending height, reading at each call site only whether the callee is above
 its caller, whether a strictly lower callee has evidence, and whether an
 equal-height callee is a recursive edge a declared measure ranks. A refused
@@ -699,7 +699,7 @@ running a complete prefix merely to decline and repeat it in another driver
 multiplies all statement and tactic work.
 
 Ordered finalization and opaque-contract certification share function-body
-work only through `CCheckedFunctionExecution`, a kernel-created artifact
+work only through `CheckedFunctionExecution`, a kernel-created artifact
 retaining the exact entry state, annotated function, arguments, environment,
 execution semantics, loop judgment, assumptions, and complete checked
 frontier. Its fields are private to the kernel; a planner can retain the
@@ -740,7 +740,7 @@ A `loop` tactic at the k-th of N sequential loops pays for its own loop:
 - Structural clauses are a persistent `StructuralClauses` indexed by loop and
   label, so binding a clause and finding a loop's clause cost the clause.
 - A lowered loop is put in place by following its path from the body's root
-  (`KernelLoopPaths`) through `CStatementSequence`, logarithmic in the block
+  (`KernelLoopPaths`) through `ProgramStatementSequence`, logarithmic in the block
   (`putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it`).
 
 `sequential_loops_build_the_same_context_entries_each` requires the same

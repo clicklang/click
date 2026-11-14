@@ -742,8 +742,8 @@ mod unit_tests {
         )
         .unwrap();
 
-        let load = || match crate::cli::read_c_inputs(&sidecar, &proof)? {
-            crate::cli::CInput::PreparedProgram(program) => Ok(program),
+        let load = || match crate::cli::read_verification_inputs(&sidecar, &proof)? {
+            crate::cli::VerificationInput::PreparedProgram(program) => Ok(program),
             _ => Err("expected the unit's prepared crate".to_string()),
         };
         let program = load().unwrap();

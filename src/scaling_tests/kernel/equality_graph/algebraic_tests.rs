@@ -36,7 +36,7 @@ fn algebraic_closure_nested_constructor_registration_scales_with_selected_model(
 
 #[test]
 fn algebraic_closure_lookup_does_not_scan_unrelated_models() {
-    let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type("Model", AlgebraicValueType::Program(ProgramType::Int32));
     let costs = [8, 32, 128, 512].map(|size| {
         let mut context = PureFactContext::new();
         for id in 0..size {
@@ -66,7 +66,10 @@ fn algebraic_closure_lookup_does_not_scan_unrelated_models() {
 #[test]
 fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let ty = model_type("ConflictScale", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type(
+        "ConflictScale",
+        AlgebraicValueType::Program(ProgramType::Int32),
+    );
     let (a, b) = (variable(&ty, 80), variable(&ty, 81));
     let getter = |model| MachineTerm::ClickFunctionApplication {
         name: "pending".into(),
@@ -118,7 +121,7 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
 fn constructor_lookup_skips_unrelated_model_classes() {
     let ty = model_type(
         "ConstructorLookupScale",
-        AlgebraicValueType::C(CType::Int32),
+        AlgebraicValueType::Program(ProgramType::Int32),
     );
     let costs = [4, 16, 64, 256].map(|size| {
         let mut context = PureFactContext::new();
@@ -149,7 +152,10 @@ fn constructor_lookup_skips_unrelated_model_classes() {
 
 #[test]
 fn constructor_class_joins_skip_ambient_constructor_classes() {
-    let ty = model_type("InjectiveScale", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type(
+        "InjectiveScale",
+        AlgebraicValueType::Program(ProgramType::Int32),
+    );
     let costs = [16, 64, 256, 1024].map(|size| {
         let mut graph = EqualityGraph::default();
         for id in 0..size {
@@ -177,7 +183,10 @@ fn constructor_class_joins_skip_ambient_constructor_classes() {
 
 #[test]
 fn constructor_class_chains_join_fields_in_linear_work() {
-    let ty = model_type("InjectiveChain", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type(
+        "InjectiveChain",
+        AlgebraicValueType::Program(ProgramType::Int32),
+    );
     let costs = [16, 64, 256, 1024].map(|size| {
         let mut graph = EqualityGraph::default();
         for id in 0..size {

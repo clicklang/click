@@ -61,7 +61,10 @@ impl Index {
                             root.clone()
                         }
                         MachineOperandView::Legacy(MachineTerm::Variable(variable)) => {
-                            KernelTerm::variable(KernelType::C(value.ty().c_type()), *variable)
+                            KernelTerm::variable(
+                                KernelType::Program(value.ty().program_type()),
+                                *variable,
+                            )
                         }
                         MachineOperandView::Legacy(value) if value.as_const().is_some() => continue,
                         _ => return None,
@@ -231,7 +234,7 @@ mod tests {
     use super::*;
 
     fn variable(n: u64) -> KernelTerm {
-        KernelTerm::variable(KernelType::C(CType::Int32), Variable(n))
+        KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(n))
     }
     fn product(a: KernelTerm, b: KernelTerm) -> KernelTerm {
         KernelTerm::machine_binary_shared(
@@ -321,7 +324,7 @@ mod tests {
     #[test]
     fn shared_roots_keep_native_and_load_dependent_sources_in_the_existing_index() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &Pointer::symbolic(Variable(994800)),

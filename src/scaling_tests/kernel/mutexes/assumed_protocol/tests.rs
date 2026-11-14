@@ -14,7 +14,7 @@ fn abstract_protocol_transitions_ignore_unrelated_resource_frames() {
             state.resources =
                 state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                    .unchecked_with_fact(ResourceFact::own(Resource::Token {
                         name: format!("frame{index}"),
                         arguments: vec![].into(),
                     }));
@@ -48,7 +48,7 @@ fn opaque_runtime_transitions_ignore_unrelated_resource_frames() {
             state.resources =
                 state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                    .unchecked_with_fact(ResourceFact::own(Resource::Token {
                         name: format!("frame{index}"),
                         arguments: vec![].into(),
                     }));

@@ -32,14 +32,14 @@ fn owned_address_admission_does_not_generate_pairs() {
     for size in [8u64, 32, 128, 512] {
         let mut owners = ResourceContext::new();
         for i in 0..size {
-            owners = owners.unchecked_with_fact(CResourceFact::own_memory(range(
+            owners = owners.unchecked_with_fact(ResourceFact::own_memory(range(
                 &pointer(3000 + i),
                 0,
                 1,
             )));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(owners))
+            PureFactContext::new().assume_proposition(Proposition::ResourceComposition(owners))
         });
         costs.push((size, work));
     }

@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::AlgebraicValueType;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
-use crate::kernel::c_function_contract_refinement_obligations;
+use crate::kernel::program_function_contract_refinement_obligations;
 
 const STRUCTURAL_INDUCTION_VARIABLE_BASE: u64 = 1 << 60;
 
@@ -48,7 +48,7 @@ pub(in crate::surface) fn verify_theorem_definitions(
     dependencies: TheoremEnvironment,
     theorem_definitions: &[TheoremDefinition],
     spec_definitions: SpecDefinitions<'_>,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
     resource_environment: &ResourceEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
@@ -106,7 +106,7 @@ pub(in crate::surface) fn verify_theorem_definition(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     if theorem.type_parameters().is_empty() {
         return verify_concrete_theorem_definition(
@@ -120,7 +120,7 @@ pub(in crate::surface) fn verify_theorem_definition(
         .parameters()
         .iter()
         .filter_map(|parameter| match parameter.click_type() {
-            ClickType::C(C0Type::ParameterPointer(element)) => Some(element.name()),
+            ClickType::Program(InterfaceType::ParameterPointer(element)) => Some(element.name()),
             _ => None,
         })
         .collect::<BTreeSet<_>>();
@@ -131,9 +131,9 @@ pub(in crate::surface) fn verify_theorem_definition(
             (
                 name.clone(),
                 generics::TypeArgument::from(if pointer_elements.contains(name.as_str()) {
-                    ClickType::C(C0Type::Parameter(crate::kernel::TypeParameterName::intern(
-                        name,
-                    )))
+                    ClickType::Program(InterfaceType::Parameter(
+                        crate::kernel::TypeParameterName::intern(name),
+                    ))
                 } else {
                     ClickType::Algebraic(AlgebraicTypeApplication {
                         rigid: true,
@@ -163,7 +163,7 @@ pub(in crate::surface) fn verify_theorem_definition(
         let mut instance = substitution.clone();
         instance.insert(
             index_parameter.to_string(),
-            generics::TypeArgument::from(ClickType::C(index_type)),
+            generics::TypeArgument::from(ClickType::Program(index_type)),
         );
         verified.extend(instantiate(&instance)?);
     }
@@ -173,16 +173,16 @@ pub(in crate::surface) fn verify_theorem_definition(
 /// The index parameter and concrete formats admitted by a trusted descriptor law.
 pub(in crate::surface) fn kernel_law_index_types(
     name: &str,
-) -> Option<(&'static str, Vec<C0Type>)> {
+) -> Option<(&'static str, Vec<InterfaceType>)> {
     let formats = match name {
         "click::separation::elements" | "click::separation::distinct_elements" => vec![
-            C0Type::Int32,
-            C0Type::Int64(crate::languages::c::syntax::LongRank::Long),
-            C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
+            InterfaceType::Int32,
+            InterfaceType::Int64(crate::languages::c::syntax::LongRank::Long),
+            InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
         "click::separation::subrange" | "click::separation::contains_element" => vec![
-            C0Type::Int32,
-            C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
+            InterfaceType::Int32,
+            InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
         _ => return None,
     };
@@ -193,7 +193,7 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     #[cfg(test)]
     crate::kernel::search::record_discovery("verify_concrete_theorem_definition");
@@ -235,8 +235,8 @@ pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
-    pub(super) memory: CMemory,
-    pub(super) values: BTreeMap<String, CValue>,
+    pub(super) memory: Memory,
+    pub(super) values: BTreeMap<String, ProgramValue>,
     pub(super) integer_values:
         crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
@@ -260,7 +260,7 @@ impl PureTheoremContext {
             if let Some(value) = self.values.get(&name) {
                 substitutions.insert(
                     name.clone(),
-                    ContractExpression::CFragment(CExpression::Value(value.clone())),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
                 );
             } else if let Some(value) = self.integer_values.get(&name) {
                 // This spelling cannot be written by a source-level binder.
@@ -297,7 +297,7 @@ impl PureTheoremContext {
                         // Conversion-backed and function-backed aliases also
                         // need shared terms. Inlining their source expressions
                         // would double a binary alias chain at every binding.
-                        let state = CState::new().with_memory(context.memory.clone());
+                        let state = ExecutionState::new().with_memory(context.memory.clone());
                         let integer_values = contract_expression_referenced_names(&promoted)
                             .into_iter()
                             .filter_map(|name| {
@@ -350,9 +350,9 @@ impl PureTheoremContext {
                     name: name.clone(),
                     click_type: click_type.clone(),
                     value: Box::new(value),
-                    body: Box::new(ContractExpression::CFragment(CExpression::Variable(
-                        name.clone(),
-                    ))),
+                    body: Box::new(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(name.clone()),
+                    )),
                 }
             } else {
                 value
@@ -403,7 +403,7 @@ pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&
     match argument {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
         _ => None,
     }
 }
@@ -534,8 +534,8 @@ pub(super) fn pure_induction_hypothesis(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
     let (current_variable, unsigned) = match context.values.get(&setup.parameter) {
-        Some(CValue::Int32(MachineTerm::Variable(variable))) => (variable, false),
-        Some(CValue::UInt64(MachineTerm::Variable(variable))) => (variable, true),
+        Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => (variable, false),
+        Some(ProgramValue::UInt64(MachineTerm::Variable(variable))) => (variable, true),
         _ => return Err(ClickError::new("invalid scalar induction parameter")),
     };
     // Lower the hypothesis in its own requirement scope. These premises
@@ -623,9 +623,9 @@ pub(super) fn pure_induction_hypothesis(
         name: Default::default(),
         var: variable,
         sort: if unsigned {
-            Sort::CMachineInteger(MachineIntegerType::UInt64)
+            Sort::ProgramInteger(MachineIntegerType::UInt64)
         } else {
-            Sort::CInt32
+            Sort::ProgramInt32
         },
         body: Box::new(body),
     })
@@ -654,8 +654,8 @@ fn prepare_pure_induction_tactics(
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
             && matches!(
-                candidate.click_type().c_type(),
-                Some(C0Type::Int32 | C0Type::UInt64(_))
+                candidate.click_type().interface_type(),
+                Some(InterfaceType::Int32 | InterfaceType::UInt64(_))
             )
     }) {
         return Err(ClickError::new(format!(
@@ -951,7 +951,7 @@ fn check_pure_structural_induction(
             parameter_type.name
         )));
     }
-    let state = CState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::new().with_memory(context.memory.clone());
     let parameter_value = capture_fixed_state_algebraic_expression(
         &parameter_expression,
         ContractEnvironment::new(&context.values, &context.array_refs),
@@ -1040,22 +1040,23 @@ fn check_pure_structural_induction(
             let binding_expression = ContractExpression::Binding(binding.clone());
             constructor_arguments.push(binding_expression.clone());
             match field_type {
-                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                AlgebraicValueType::Program(interface_type)
+                | AlgebraicValueType::ObjectPointer(interface_type, _) => {
                     if matches!(
-                        c_type,
-                        CType::Void
-                            | CType::Int8Array(_)
-                            | CType::Int16Array(_)
-                            | CType::UInt16Array(_)
-                            | CType::Int32Array(_)
-                            | CType::UInt8Array(_)
-                            | CType::UInt32Array(_)
-                            | CType::Int128Array(_)
-                            | CType::Int64Array(_)
-                            | CType::UInt128Array(_)
-                            | CType::UInt64Array(_)
-                            | CType::Float32Array(_)
-                            | CType::Float64Array(_)
+                        interface_type,
+                        ProgramType::Void
+                            | ProgramType::Int8Array(_)
+                            | ProgramType::Int16Array(_)
+                            | ProgramType::UInt16Array(_)
+                            | ProgramType::Int32Array(_)
+                            | ProgramType::UInt8Array(_)
+                            | ProgramType::UInt32Array(_)
+                            | ProgramType::Int128Array(_)
+                            | ProgramType::Int64Array(_)
+                            | ProgramType::UInt128Array(_)
+                            | ProgramType::UInt64Array(_)
+                            | ProgramType::Float32Array(_)
+                            | ProgramType::Float64Array(_)
                     ) {
                         return Err(ClickError::new(
                             "structural induction does not support void or array-valued constructor fields",
@@ -1069,7 +1070,7 @@ fn check_pure_structural_induction(
                     branch_context.values.insert(
                         binding.clone(),
                         field_type
-                            .symbolic_c_value(variable)
+                            .symbolic_program_value(variable)
                             .expect("C model field"),
                     );
                 }
@@ -1343,7 +1344,7 @@ pub(super) fn pure_theorem_context(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let values = pure_theorem_parameter_values_with_generic_pointers(
         theorem.parameters(),
         &theorem.generic_pointer_parameters,
@@ -1453,14 +1454,13 @@ pub(super) fn pure_theorem_context(
 pub(in crate::surface) fn assumed_theorem_certification_authorities(
     theorems: &[TheoremDefinition],
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<(String, Proposition, CVerifiedPureTheorem)>, ClickError> {
+) -> Result<Vec<(String, Proposition, KernelVerifiedPureTheorem)>, ClickError> {
     let mut assumptions = Vec::new();
     for theorem in theorems {
         if !theorem.type_parameters().is_empty()
-            || !theorem
-                .parameters()
-                .iter()
-                .all(|parameter| parameter.click_type() == &ClickType::C(C0Type::Int32))
+            || !theorem.parameters().iter().all(|parameter| {
+                parameter.click_type() == &ClickType::Program(InterfaceType::Int32)
+            })
         {
             continue;
         }
@@ -1469,7 +1469,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
             .parameters()
             .iter()
             .map(|parameter| match context.values.get(parameter.name()) {
-                Some(CValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
+                Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -1513,7 +1513,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 |body, variable| Proposition::ForAll {
                     name: Default::default(),
                     var: *variable,
-                    sort: Sort::CInt32,
+                    sort: Sort::ProgramInt32,
                     body: Box::new(body),
                 },
             );
@@ -1545,66 +1545,151 @@ fn pure_theorem_parameter_integer_values(
 
 pub(in crate::surface) fn pure_theorem_parameter_values(
     parameters: &[FunctionParameter],
-) -> BTreeMap<String, CValue> {
+) -> BTreeMap<String, ProgramValue> {
     pure_theorem_parameter_values_with_generic_pointers(parameters, &BTreeSet::new())
 }
 
 fn pure_theorem_parameter_values_with_generic_pointers(
     parameters: &[FunctionParameter],
     generic_pointers: &BTreeSet<String>,
-) -> BTreeMap<String, CValue> {
+) -> BTreeMap<String, ProgramValue> {
     parameters
         .iter()
         .enumerate()
         .filter_map(|(index, parameter)| {
-            let c_type = parameter.click_type().c_type()?;
-            let value = match c_type {
-                C0Type::Int128 => CValue::Int128(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt128 => CValue::UInt128(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Parameter(name) => crate::kernel::symbolic_call_result(
-                    CType::Parameter(name),
+            let interface_type = parameter.click_type().interface_type()?;
+            let value = match interface_type {
+                InterfaceType::Int128 => {
+                    ProgramValue::Int128(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt128 => {
+                    ProgramValue::UInt128(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Parameter(name) => crate::kernel::symbolic_call_result(
+                    ProgramType::Parameter(name),
                     Variable(index as u64),
                 ),
-                C0Type::ParameterPointer(name) => crate::kernel::symbolic_call_result(
-                    CType::ParameterPointer(name),
+                InterfaceType::ParameterPointer(name) => crate::kernel::symbolic_call_result(
+                    ProgramType::ParameterPointer(name),
                     Variable(index as u64),
                 ),
-                C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
+                InterfaceType::Void => unreachable!("pure theorem parameters cannot be void"),
                 // A `Bool` parameter is a binder of the kernel sort (Stage 5),
                 // carried as its cast to `uint8` (rule C1).
-                C0Type::Bool => CValue::Bool(MachineTerm::bool_cast(
+                InterfaceType::Bool => ProgramValue::Bool(MachineTerm::bool_cast(
                     crate::kernel::MachineIntegerType::UInt8,
                     crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
                 )),
-                C0Type::VoidPointer | C0Type::VoidPointerPointer => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            1,
-                        ),
-                    },
-                    c_type.to_kernel_type(),
-                ),
-                C0Type::Int8 => CValue::Int8(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int16 => CValue::Int16(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int32 => CValue::Int32(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt32 => CValue::UInt32(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) => {
-                    CValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                1,
+                            ),
+                        },
+                        interface_type.to_kernel_type(),
+                    )
                 }
-                C0Type::Char(crate::languages::c::syntax::PlainChar::Signed) => {
-                    CValue::Int8(MachineTerm::Variable(Variable(index as u64)))
+                InterfaceType::Int8 => {
+                    ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::UInt8 => CValue::UInt8(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt16 => CValue::UInt16(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int64(_) => CValue::Int64(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt64(_) => CValue::UInt64(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Float32 => CValue::Float32(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Float64 => CValue::Float64(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int8Pointer | C0Type::Int8Array(_) => CValue::typed_pointer(
+                InterfaceType::Int16 => {
+                    ProgramValue::Int16(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Int32 => {
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt32 => {
+                    ProgramValue::UInt32(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned) => {
+                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Char(crate::languages::c::syntax::PlainChar::Signed) => {
+                    ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt8 => {
+                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt16 => {
+                    ProgramValue::UInt16(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Int64(_) => {
+                    ProgramValue::Int64(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt64(_) => {
+                    ProgramValue::UInt64(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Float32 => {
+                    ProgramValue::Float32(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Float64 => {
+                    ProgramValue::Float64(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Int8Pointer | InterfaceType::Int8Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                1,
+                            ),
+                        },
+                        ProgramType::Int8Pointer,
+                    )
+                }
+                InterfaceType::Int16Pointer | InterfaceType::Int16Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                2,
+                            ),
+                        },
+                        ProgramType::Int16Pointer,
+                    )
+                }
+                InterfaceType::UInt16Pointer | InterfaceType::UInt16Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                2,
+                            ),
+                        },
+                        ProgramType::UInt16Pointer,
+                    )
+                }
+                InterfaceType::Int32Pointer | InterfaceType::Int32Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                4,
+                            ),
+                        },
+                        ProgramType::Int32Pointer,
+                    )
+                }
+                InterfaceType::CharPointer(_)
+                | InterfaceType::CharArray(_, _)
+                | InterfaceType::UInt8Pointer
+                | InterfaceType::UInt8Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1614,150 +1699,113 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             1,
                         ),
                     },
-                    CType::Int8Pointer,
+                    ProgramType::UInt8Pointer,
                 ),
-                C0Type::Int16Pointer | C0Type::Int16Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            2,
-                        ),
-                    },
-                    CType::Int16Pointer,
-                ),
-                C0Type::UInt16Pointer | C0Type::UInt16Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            2,
-                        ),
-                    },
-                    CType::UInt16Pointer,
-                ),
-                C0Type::Int32Pointer | C0Type::Int32Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            4,
-                        ),
-                    },
-                    CType::Int32Pointer,
-                ),
-                C0Type::CharPointer(_)
-                | C0Type::CharArray(_, _)
-                | C0Type::UInt8Pointer
-                | C0Type::UInt8Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            1,
-                        ),
-                    },
-                    CType::UInt8Pointer,
-                ),
-                C0Type::UInt32Pointer | C0Type::UInt32Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            4,
-                        ),
-                    },
-                    CType::UInt32Pointer,
-                ),
-                C0Type::Int64Pointer(_) | C0Type::Int64Array(_, _) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            8,
-                        ),
-                    },
-                    CType::Int64Pointer,
-                ),
-                C0Type::Int128Pointer | C0Type::Int128Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            16,
-                        ),
-                    },
-                    CType::Int128Pointer,
-                ),
-                C0Type::UInt64Pointer(_) | C0Type::UInt64Array(_, _) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            8,
-                        ),
-                    },
-                    CType::UInt64Pointer,
-                ),
-                C0Type::UInt128Pointer | C0Type::UInt128Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            16,
-                        ),
-                    },
-                    CType::UInt128Pointer,
-                ),
-                C0Type::Float32Pointer | C0Type::Float32Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            4,
-                        ),
-                    },
-                    CType::Float32Pointer,
-                ),
-                C0Type::Float64Pointer | C0Type::Float64Array(_) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            8,
-                        ),
-                    },
-                    CType::Float64Pointer,
-                ),
-                C0Type::Int8PointerPointer => {
-                    let element_width = c_type
+                InterfaceType::UInt32Pointer | InterfaceType::UInt32Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                4,
+                            ),
+                        },
+                        ProgramType::UInt32Pointer,
+                    )
+                }
+                InterfaceType::Int64Pointer(_) | InterfaceType::Int64Array(_, _) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                8,
+                            ),
+                        },
+                        ProgramType::Int64Pointer,
+                    )
+                }
+                InterfaceType::Int128Pointer | InterfaceType::Int128Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                16,
+                            ),
+                        },
+                        ProgramType::Int128Pointer,
+                    )
+                }
+                InterfaceType::UInt64Pointer(_) | InterfaceType::UInt64Array(_, _) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                8,
+                            ),
+                        },
+                        ProgramType::UInt64Pointer,
+                    )
+                }
+                InterfaceType::UInt128Pointer | InterfaceType::UInt128Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                16,
+                            ),
+                        },
+                        ProgramType::UInt128Pointer,
+                    )
+                }
+                InterfaceType::Float32Pointer | InterfaceType::Float32Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                4,
+                            ),
+                        },
+                        ProgramType::Float32Pointer,
+                    )
+                }
+                InterfaceType::Float64Pointer | InterfaceType::Float64Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                8,
+                            ),
+                        },
+                        ProgramType::Float64Pointer,
+                    )
+                }
+                InterfaceType::Int8PointerPointer => {
+                    let element_width = interface_type
                         .pointee_type()
                         .expect("pointer-to-pointer parameter has a pointee")
                         .to_kernel_type()
                         .byte_width();
-                    CValue::typed_pointer(
+                    ProgramValue::typed_pointer(
                         Pointer {
                             block: PointerBlock::ExternalArgument,
                             offset: scale_int32_offset(
@@ -1767,27 +1815,27 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                                 i64::from(element_width),
                             ),
                         },
-                        c_type.to_kernel_type(),
+                        interface_type.to_kernel_type(),
                     )
                 }
-                C0Type::Int32PointerPointer
-                | C0Type::CharPointerPointer(_)
-                | C0Type::UInt8PointerPointer
-                | C0Type::Int16PointerPointer
-                | C0Type::UInt16PointerPointer
-                | C0Type::UInt32PointerPointer
-                | C0Type::Int128PointerPointer
-                | C0Type::Int64PointerPointer(_)
-                | C0Type::UInt128PointerPointer
-                | C0Type::UInt64PointerPointer(_)
-                | C0Type::Float32PointerPointer
-                | C0Type::Float64PointerPointer => {
-                    let element_width = c_type
+                InterfaceType::Int32PointerPointer
+                | InterfaceType::CharPointerPointer(_)
+                | InterfaceType::UInt8PointerPointer
+                | InterfaceType::Int16PointerPointer
+                | InterfaceType::UInt16PointerPointer
+                | InterfaceType::UInt32PointerPointer
+                | InterfaceType::Int128PointerPointer
+                | InterfaceType::Int64PointerPointer(_)
+                | InterfaceType::UInt128PointerPointer
+                | InterfaceType::UInt64PointerPointer(_)
+                | InterfaceType::Float32PointerPointer
+                | InterfaceType::Float64PointerPointer => {
+                    let element_width = interface_type
                         .pointee_type()
                         .expect("pointer-to-pointer parameter has a pointee")
                         .to_kernel_type()
                         .byte_width();
-                    CValue::typed_pointer(
+                    ProgramValue::typed_pointer(
                         Pointer {
                             block: PointerBlock::ExternalArgument,
                             offset: scale_int32_offset(
@@ -1797,14 +1845,14 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                                 i64::from(element_width),
                             ),
                         },
-                        c_type.to_kernel_type(),
+                        interface_type.to_kernel_type(),
                     )
                 }
-                C0Type::FunctionPointer(_) => CValue::typed_pointer(
+                InterfaceType::FunctionPointer(_) => ProgramValue::typed_pointer(
                     Pointer::symbolic_function(Variable(index as u64)),
-                    c_type.to_kernel_type(),
+                    interface_type.to_kernel_type(),
                 ),
-                C0Type::PointerArray(_, _, _) => CValue::typed_pointer(
+                InterfaceType::PointerArray(_, _, _) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1814,12 +1862,12 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             8,
                         ),
                     },
-                    c_type.to_kernel_type(),
+                    interface_type.to_kernel_type(),
                 ),
             };
             let value = if generic_pointers.contains(parameter.name()) {
                 match value {
-                    CValue::Pointer(pointer) => CValue::Pointer(
+                    ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
                         pointer.with_declared_object_class(parameter.pointer_object_class()),
                     ),
                     value => value,
@@ -1834,15 +1882,15 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
-    values: &BTreeMap<String, CValue>,
-    memory: &CMemory,
+    values: &BTreeMap<String, ProgramValue>,
+    memory: &Memory,
 ) -> ClickArrayRefs {
     parameters
         .iter()
         .filter_map(|parameter| {
-            let c_type = parameter.click_type().c_type()?;
-            let element_type = click_array_element_type(c_type)?;
-            let Some(CValue::Pointer(pointer)) = values.get(parameter.name()) else {
+            let interface_type = parameter.click_type().interface_type()?;
+            let element_type = click_array_element_type(interface_type)?;
+            let Some(ProgramValue::Pointer(pointer)) = values.get(parameter.name()) else {
                 return None;
             };
             Some((
@@ -1865,7 +1913,7 @@ fn verify_theorem_ensure(
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let _automation_scope = super::implicit_solve_scope::ClaimScope::enter(claim_label);
     // Resolve declaration aliases against the outer parameter values once.
@@ -1897,7 +1945,7 @@ fn verify_theorem_ensure(
         return Ok(verified);
     }
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
-    let state = CState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::new().with_memory(context.memory.clone());
     let (goal, goal_introductions, _, obligations) =
         lower_fixed_state_proposition_retaining_requirements(
             surface_goal,
@@ -2074,7 +2122,7 @@ fn verify_theorem_ensure(
         .parameters()
         .iter()
         .map(|parameter| match context.values.get(parameter.name()) {
-            Some(CValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
+            Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
             _ => None,
         })
         .collect::<Option<Vec<_>>>();
@@ -2142,7 +2190,7 @@ fn verify_contract_refinement_theorem(
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Option<VerifiedPureTheorem>, ClickError> {
     let ClickProposition::PredicateCall { name, arguments } = surface_goal else {
         return Ok(None);
@@ -2180,7 +2228,9 @@ fn verify_contract_refinement_theorem(
     let concrete_target = contract_expression_function_address(argument);
     let symbolic_binding = match argument {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name.as_str()),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            Some(name.as_str())
+        }
         _ => None,
     };
     if concrete_target.is_none() && symbolic_binding.is_none() {
@@ -2200,7 +2250,11 @@ fn verify_contract_refinement_theorem(
                 "`{claim_label}`: abstract contract refinement requires exactly one function-pointer theorem parameter"
             )));
         };
-        if parameter.name() != binding || !matches!(parameter.c_type(), C0Type::FunctionPointer(_))
+        if parameter.name() != binding
+            || !matches!(
+                parameter.interface_type(),
+                InterfaceType::FunctionPointer(_)
+            )
         {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: `{binding}` must be the theorem's function-pointer parameter"
@@ -2302,7 +2356,7 @@ fn verify_contract_refinement_theorem(
     })?;
     let refinement = match (concrete_target, &source_contract) {
         (Some(target), None) => {
-            c_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target), &target_values).ok_or_else(
+            program_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target), &target_values).ok_or_else(
                 || {
                     ClickError::new(format!(
                         "`{claim_label}`: `{target}` is not a verified or external function compatible with contract `{name}`"
@@ -2317,7 +2371,7 @@ fn verify_contract_refinement_theorem(
                     "`{claim_label}`: symbolic callback `{binding}` has no theorem value"
                 ))
             })?;
-            c_contract_refinement_context(
+            contract_refinement_context(
                 function_environment,
                 name,
                 &target_values,
@@ -2333,7 +2387,7 @@ fn verify_contract_refinement_theorem(
         }
         _ => unreachable!("refinement subject classification is exhaustive"),
     };
-    let argument_values = c_function_contract_refinement_arguments(&refinement);
+    let argument_values = program_function_contract_refinement_arguments(&refinement);
     // The contract's value parameters trail its call parameters; the
     // refinement binds them to the conclusion's values.
     let all_parameters = contract_definition
@@ -2357,18 +2411,18 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
         ))
     };
-    let obligations =
-        c_function_contract_refinement_obligations(&refinement).ok_or_else(refinement_failure)?;
+    let obligations = program_function_contract_refinement_obligations(&refinement)
+        .ok_or_else(refinement_failure)?;
     let arguments = argument_values
         .iter()
         .cloned()
-        .map(CExpression::Value)
+        .map(ProgramExpression::Value)
         .collect::<Vec<_>>();
     let parameters = contract_parameters
         .iter()
         .map(|parameter| {
-            syntax::C0Parameter::new(
-                parameter.c_type(),
+            crate::languages::interface::ImportedParameter::new(
+                parameter.interface_type(),
                 parameter.name().to_string(),
                 parameter.struct_name().map(str::to_string),
             )
@@ -2436,7 +2490,7 @@ fn verify_contract_refinement_theorem(
         None => return Err(refinement_failure().with_search_failures(search.finish())),
     };
     let checked = proof.completed_proposition()?;
-    let kernel_authority = prove_c_function_contract_refinement(
+    let kernel_authority = prove_program_function_contract_refinement(
         &refinement,
         goal.clone(),
         &checked,
@@ -2473,7 +2527,7 @@ fn verify_contract_refinement_theorem(
 /// The values a lowered contract fact fixes its contract's value parameters
 /// to, after its function pointer. `None` for any other proposition, or a
 /// value that is not a C value.
-fn contract_fact_values(fact: &Proposition) -> Option<Vec<CValue>> {
+fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
     let Proposition::Predicate { arguments, .. } = fact else {
         return None;
     };
@@ -2481,7 +2535,7 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<CValue>> {
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::CValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.clone()),
             _ => None,
         })
         .collect()
@@ -2730,7 +2784,8 @@ fn verify_kernel_standard_theorem_axiom(
         )));
     }
     let axiom = if theorem.name() == "click::integer::uint32_from_le_bytes" {
-        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        let Some(ProgramValue::Pointer(pointer)) =
+            context.values.get(theorem.parameters()[0].name())
         else {
             return Err(ClickError::new(
                 "uint32_from_le_bytes requires a uint32 pointer",
@@ -2743,14 +2798,15 @@ fn verify_kernel_standard_theorem_axiom(
     {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
-            Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
-            Some(CValue::Int64(value)) => Ok((MachineIntegerType::Int64, value.clone())),
-            Some(CValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
+            Some(ProgramValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
+            Some(ProgramValue::Int64(value)) => Ok((MachineIntegerType::Int64, value.clone())),
+            Some(ProgramValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
             _ => Err(ClickError::new(
                 "elements indices must be int32, int64, or uint64",
             )),
         };
-        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        let Some(ProgramValue::Pointer(pointer)) =
+            context.values.get(theorem.parameters()[0].name())
         else {
             return Err(ClickError::new("elements base must be a typed pointer"));
         };
@@ -2776,13 +2832,14 @@ fn verify_kernel_standard_theorem_axiom(
     ) {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
-            Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
-            Some(CValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
+            Some(ProgramValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
+            Some(ProgramValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
             _ => Err(ClickError::new(
                 "interval law bounds must be int32 or uint64",
             )),
         };
-        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        let Some(ProgramValue::Pointer(pointer)) =
+            context.values.get(theorem.parameters()[0].name())
         else {
             return Err(ClickError::new("interval law base must be a typed pointer"));
         };
@@ -2834,7 +2891,7 @@ fn verify_kernel_standard_theorem_axiom(
             ));
         }
         let args = (0..theorem.parameters().len())
-            .map(|i| crate::kernel::CResource::Parameter(Variable(i as u64)))
+            .map(|i| crate::kernel::Resource::Parameter(Variable(i as u64)))
             .collect::<Vec<_>>();
         if theorem.name() == "click::separation::viewable_restrict" {
             crate::kernel::prove_viewable_restrict(
@@ -2857,10 +2914,10 @@ fn verify_kernel_standard_theorem_axiom(
             ));
         }
         crate::kernel::prove_separation_restrict(
-            crate::kernel::CResource::Parameter(Variable(0)),
-            crate::kernel::CResource::Parameter(Variable(1)),
-            crate::kernel::CResource::Parameter(Variable(2)),
-            crate::kernel::CResource::Parameter(Variable(3)),
+            crate::kernel::Resource::Parameter(Variable(0)),
+            crate::kernel::Resource::Parameter(Variable(1)),
+            crate::kernel::Resource::Parameter(Variable(2)),
+            crate::kernel::Resource::Parameter(Variable(3)),
         )
     } else if crate::kernel::integer_truncation_law_requirements(theorem.name()).is_some() {
         let parameter = |index: usize| {
@@ -2897,7 +2954,7 @@ fn verify_kernel_standard_theorem_axiom(
         let parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
-                Some(CValue::UInt64(value)) => Ok(value.clone()),
+                Some(ProgramValue::UInt64(value)) => Ok(value.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be uint64",
                     parameter.name()
@@ -2915,7 +2972,7 @@ fn verify_kernel_standard_theorem_axiom(
         let uint32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
-                Some(CValue::UInt32(term)) => Ok(term.clone()),
+                Some(ProgramValue::UInt32(term)) => Ok(term.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be uint32",
                     parameter.name()
@@ -2958,7 +3015,7 @@ fn verify_kernel_standard_theorem_axiom(
         let int32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
-                Some(CValue::Int32(term)) => Ok(term.clone()),
+                Some(ProgramValue::Int32(term)) => Ok(term.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be int32",
                     parameter.name()
@@ -3243,7 +3300,7 @@ pub(super) fn click_function_applications(
                 }
             }
             ContractExpression::QualifiedC { .. }
-            | ContractExpression::CFragment(_)
+            | ContractExpression::ProgramExpression(_)
             | ContractExpression::ArrayIndex { .. }
             | ContractExpression::CBinding(_)
             | ContractExpression::ResourceWildcard => {}
@@ -3314,8 +3371,9 @@ pub(super) fn induction_application_surface_premises(
     setup: &PureInductionSetup,
     argument: &ContractExpression,
 ) -> Result<Vec<ClickProposition>, ClickError> {
-    let zero = ContractExpression::CFragment(CExpression::Value(int32(0)));
-    let current = ContractExpression::CFragment(CExpression::Variable(setup.parameter.clone()));
+    let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
+    let current =
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(setup.parameter.clone()));
     let mut premises = vec![
         ClickProposition::Comparison {
             left: zero,
@@ -3345,7 +3403,7 @@ pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_opaque_calls(
@@ -3363,7 +3421,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3384,7 +3442,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_recording_introductions(
@@ -3411,10 +3469,10 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    let state = CState::new().with_memory(memory.clone());
+    let state = ExecutionState::new().with_memory(memory.clone());
     lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         &PureFactContext::new(),
@@ -3436,7 +3494,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3457,11 +3515,11 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {
-    let state = CState::new().with_memory(memory.clone());
+    let state = ExecutionState::new().with_memory(memory.clone());
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         &PureFactContext::new(),
@@ -3489,7 +3547,7 @@ fn lower_pure_theorem_proposition_opaque(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    let state = CState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::new().with_memory(context.memory.clone());
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
@@ -3679,11 +3737,11 @@ mod tests {
             let source = format!(
                 "theorem guarded({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ assumption(); }} }}"
             );
-            crate::surface::verify_c0_sources(&source, &[]).unwrap();
+            crate::surface::verify_c_sources(&source, &[]).unwrap();
             let expanded =
-                crate::surface::expand_c0_claim_source_by_label(&source, &[], "guarded.ensures_0")
+                crate::surface::expand_c_claim_source_by_label(&source, &[], "guarded.ensures_0")
                     .unwrap();
-            crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+            crate::surface::verify_c_sources(&expanded, &[]).unwrap();
             for invalid in [
                 source.replace(&guard, ""),
                 source.replace(&guard, &format!("requires defined({wrong_expression});")),
@@ -3693,23 +3751,23 @@ mod tests {
                 ),
             ] {
                 assert!(
-                    crate::surface::verify_c0_sources(&invalid, &[]).is_err(),
+                    crate::surface::verify_c_sources(&invalid, &[]).is_err(),
                     "{invalid}"
                 );
             }
             let caller = format!(
                 "{source} theorem caller({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ apply(guarded({arguments})); assumption(); }} }}"
             );
-            crate::surface::verify_c0_sources(&caller, &[]).unwrap();
+            crate::surface::verify_c_sources(&caller, &[]).unwrap();
         }
         let source = "theorem byte_at_next(bytes: uint8[], n: int32, value: Integer) { requires defined(n + 1); requires value == to_integer(bytes[n + 1] as int32); ensures value == to_integer(bytes[n + 1] as int32) by { assumption(); } }";
-        crate::surface::verify_c0_sources(source, &[]).unwrap();
+        crate::surface::verify_c_sources(source, &[]).unwrap();
         assert!(
-            crate::surface::verify_c0_sources(&source.replace("requires defined(n + 1);", ""), &[])
+            crate::surface::verify_c_sources(&source.replace("requires defined(n + 1);", ""), &[])
                 .is_err()
         );
         let missing_call_guard = "theorem guarded(n: int32) { requires defined(n + 1); requires to_integer(n + 1) == 1; ensures n == n by { normalize(); } } theorem caller(n: int32) { ensures n == n by { apply(guarded(n)); normalize(); } }";
-        assert!(crate::surface::verify_c0_sources(missing_call_guard, &[]).is_err());
+        assert!(crate::surface::verify_c_sources(missing_call_guard, &[]).is_err());
     }
 
     #[test]
@@ -3775,8 +3833,8 @@ mod tests {
         }
         for label in ["application.ensures_0", "extraction.ensures_0"] {
             let expanded =
-                crate::surface::expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+                crate::surface::expand_c_claim_source_by_label(source, &[], label).unwrap();
+            crate::surface::verify_c_sources(&expanded, &[]).unwrap();
         }
     }
 
@@ -3803,13 +3861,13 @@ mod tests {
             ));
             assert!(verified.kernel_authority.is_some());
             let label = format!("{}.ensures_0", verified.theorem_definition.name());
-            crate::surface::verify_c0_sources(source, &[]).unwrap();
+            crate::surface::verify_c_sources(source, &[]).unwrap();
             let expanded =
-                crate::surface::expand_c0_claim_source_by_label(source, &[], &label).unwrap();
-            crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+                crate::surface::expand_c_claim_source_by_label(source, &[], &label).unwrap();
+            crate::surface::verify_c_sources(&expanded, &[]).unwrap();
             assert_eq!(
                 expanded,
-                crate::surface::expand_c0_claim_source_by_label(&expanded, &[], &label).unwrap()
+                crate::surface::expand_c_claim_source_by_label(&expanded, &[], &label).unwrap()
             );
         }
     }
@@ -3825,21 +3883,21 @@ mod tests {
             .split_once("\n```")
             .unwrap()
             .0;
-        crate::surface::verify_c0_sources(source, &[]).unwrap();
+        crate::surface::verify_c_sources(source, &[]).unwrap();
         let expanded =
-            crate::surface::expand_c0_claim_source_by_label(source, &[], "guarded_count.ensures_0")
+            crate::surface::expand_c_claim_source_by_label(source, &[], "guarded_count.ensures_0")
                 .unwrap();
-        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        crate::surface::verify_c_sources(&expanded, &[]).unwrap();
         let missing_evidence = source.replace(
             "apply(ih(n - 1));",
             "apply(ih(n - 1)) using { 0 <= n - 1; n - 1 < n; }",
         );
-        assert!(crate::surface::verify_c0_sources(&missing_evidence, &[]).is_err());
+        assert!(crate::surface::verify_c_sources(&missing_evidence, &[]).is_err());
         let false_claim = source.replace(
             "ensures guarded_countdown(n) == 0 and",
             "ensures guarded_countdown(n) == 1 and",
         );
-        assert!(crate::surface::verify_c0_sources(&false_claim, &[]).is_err());
+        assert!(crate::surface::verify_c_sources(&false_claim, &[]).is_err());
     }
 
     #[test]
@@ -3920,13 +3978,10 @@ mod tests {
         let verified = verify_instantiation_theorem(source)
             .expect("obtained witnesses must resolve in later pure tactics");
         assert!(verified.kernel_authority.is_some());
-        let expanded = crate::surface::expand_c0_claim_source_by_label(
-            source,
-            &[],
-            "obtained_int32.ensures_0",
-        )
-        .unwrap();
-        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        let expanded =
+            crate::surface::expand_c_claim_source_by_label(source, &[], "obtained_int32.ensures_0")
+                .unwrap();
+        crate::surface::verify_c_sources(&expanded, &[]).unwrap();
     }
 
     #[test]
@@ -4125,16 +4180,16 @@ mod tests {
             .split_once("\n```")
             .unwrap()
             .0;
-        crate::surface::verify_c0_sources(source, &[]).unwrap();
-        let expanded = crate::surface::expand_c0_claim_source_by_label(
+        crate::surface::verify_c_sources(source, &[]).unwrap();
+        let expanded = crate::surface::expand_c_claim_source_by_label(
             source,
             &[],
             "instantiate_bound_caller.ensures_0",
         )
         .unwrap();
         assert_ne!(source, expanded);
-        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
-        let repeated = crate::surface::expand_c0_claim_source_by_label(
+        crate::surface::verify_c_sources(&expanded, &[]).unwrap();
+        let repeated = crate::surface::expand_c_claim_source_by_label(
             &expanded,
             &[],
             "instantiate_bound_caller.ensures_0",
@@ -4242,7 +4297,7 @@ mod tests {
             theorem.name = crate::surface::names::library_theorem_identity(&theorem.name);
         }
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
         let spec_definitions =

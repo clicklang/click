@@ -45,14 +45,14 @@ fn variable_collection_after_a_store_costs_the_store() {
         offset: PointerOffsetTerm::Constant(offset),
     };
     let samples = [16usize, 64, 256, 1024].map(|cells| {
-        let mut memory = CMemory::new().with_block("counted-history", 4 * cells as u32 + 8);
+        let mut memory = Memory::new().with_block("counted-history", 4 * cells as u32 + 8);
         for index in 0..cells {
             memory = memory.store(
                 at(4 * index as i64),
-                CValue::Int32(MachineTerm::Variable(Variable(7_000_000 + index as u64))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(7_000_000 + index as u64))),
             );
         }
-        let before = crate::kernel::intern_c_memory(memory.clone());
+        let before = crate::kernel::intern_memory(memory.clone());
         crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
         let mut variables = BTreeSet::new();
         crate::kernel::reasoning::collect_bitvector_variables(
@@ -62,10 +62,10 @@ fn variable_collection_after_a_store_costs_the_store() {
         assert_eq!(variables.len(), cells);
         let after = memory.store(
             at(0),
-            CValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(after),
+            crate::kernel::intern_memory(after),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,
         );
@@ -104,16 +104,16 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
     let samples = [16u32, 64, 256, 1024, 1_000_000].map(|elements| {
         let _session = crate::kernel::VerificationSession::enter();
         let size = 4 * elements;
-        let source = crate::kernel::intern_c_memory(
-            CMemory::new().with_block_without_derivation(block.clone(), size),
+        let source = crate::kernel::intern_memory(
+            Memory::new().with_block_without_derivation(block.clone(), size),
         );
-        let Ok(memory) = CMemory::new()
+        let Ok(memory) = Memory::new()
             .with_block("symbolic-array-history", size)
-            .with_symbolic_storage_run(at(0), CType::Int32, elements, source)
+            .with_symbolic_storage_run(at(0), ProgramType::Int32, elements, source)
         else {
             panic!("a symbolic array over a fresh block is one run");
         };
-        let before = crate::kernel::intern_c_memory(memory.clone());
+        let before = crate::kernel::intern_memory(memory.clone());
         let registered = crate::kernel::eval::load_variable_registry_len();
         let (variables, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut variables = BTreeSet::new();
@@ -134,10 +134,10 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         );
         let after = memory.clone().store(
             at(0),
-            CValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(after),
+            crate::kernel::intern_memory(after),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,
         );

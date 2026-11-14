@@ -10,20 +10,20 @@ fn explicit_embedded_layout_work_tracks_materialized_leaves() {
         let (layouts, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut layouts = BTreeMap::new();
             for index in 0..size {
-                let mut fields = vec![("stamp".into(), C0Type::Int32, None, index * 4, 4)];
+                let mut fields = vec![("stamp".into(), InterfaceType::Int32, None, index * 4, 4)];
                 if index != 0 {
                     fields.insert(
                         0,
                         (
                             "state".into(),
-                            C0Type::Int32,
+                            InterfaceType::Int32,
                             Some(format!("R{}", index - 1)),
                             0,
                             index * 4,
                         ),
                     );
                 }
-                let layout = C0StructLayout::from_explicit_fields_with_structs(
+                let layout = RecordLayout::from_explicit_fields_with_structs(
                     fields,
                     (index + 1) * 4,
                     4,
@@ -113,7 +113,7 @@ fn nested_conditionals_parse_and_lower_on_a_two_megabyte_stack() {
                 let mut branches = 0;
                 while let Some(statement) = pending.pop() {
                     match statement {
-                        crate::kernel::CStatement::If {
+                        crate::kernel::ProgramStatement::If {
                             then_branch,
                             else_branch,
                             ..
@@ -122,7 +122,7 @@ fn nested_conditionals_parse_and_lower_on_a_two_megabyte_stack() {
                             pending.push(then_branch);
                             pending.push(else_branch);
                         }
-                        crate::kernel::CStatement::Seq(sequence) => {
+                        crate::kernel::ProgramStatement::Seq(sequence) => {
                             pending.extend(sequence.iter().map(|statement| statement.as_ref()))
                         }
                         _ => {}

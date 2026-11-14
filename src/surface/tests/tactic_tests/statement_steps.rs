@@ -32,7 +32,7 @@ fn proof_step_supports_explicit_fact_transport() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("transport.c", c_source)])
+    verify_c_sources(click_source, &[("transport.c", c_source)])
         .expect("explicit fact transport should verify");
 
     let missing_source = click_source.replace(
@@ -41,7 +41,7 @@ fn proof_step_supports_explicit_fact_transport() {
                 }",
         "transport(old(p[0]) == 7, p[0] == 7) using {}",
     );
-    let error = verify_c0_sources(&missing_source, &[("transport.c", c_source)])
+    let error = verify_c_sources(&missing_source, &[("transport.c", c_source)])
         .expect_err("explicit transport must not borrow its logical source from ambient facts");
     assert!(
         error
@@ -105,7 +105,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
         "transport(0 <= old(p[1]), 0 <= p[1]);",
     );
     assert_ne!(bare, click_source);
-    let error = verify_c0_sources(&bare, &[("transport.c", c_source)])
+    let error = verify_c_sources(&bare, &[("transport.c", c_source)])
         .expect_err("a bare transport does not search for the facts deriving its source");
     assert!(
         error.message().contains("search miss"),
@@ -114,7 +114,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
     );
 
     let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("transport.c", c_source)])
+        verify_c_sources(click_source, &[("transport.c", c_source)])
     });
     let verified =
         verified.expect("transport should certify a source derived from exact snapshot facts");
@@ -139,7 +139,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
         .find("step();")
         .expect("the smart store step should be present");
     let position = expansion::position_at_offset(click_source, step_offset);
-    let rewritten = expand_c0_tactic_source_at(
+    let rewritten = expand_c_tactic_source_at(
         click_source,
         &[("transport.c", c_source)],
         position.line,
@@ -147,7 +147,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
     )
     .expect("the checked raw-memory step should expand");
     assert!(rewritten.contains("step();"), "{rewritten}");
-    verify_c0_sources(&rewritten, &[("transport.c", c_source)])
+    verify_c_sources(&rewritten, &[("transport.c", c_source)])
         .expect("the rewritten raw-memory step should verify normally");
 
     // A bare step names no premise list to corrupt; the transport's own
@@ -187,7 +187,7 @@ fn smart_step_starts_each_source_tactic_with_an_empty_step_delta() {
             }
         "#;
 
-    let verified = { verify_c0_sources(click_source, &[("delta.c", c_source)]) };
+    let verified = { verify_c_sources(click_source, &[("delta.c", c_source)]) };
     let verified = verified.expect("the flat proof should verify");
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -256,14 +256,14 @@ fn clone_field_stores_with_observed_source_resource_verify() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("clone_cursor.c", c_source)])
+    verify_c_sources(click_source, &[("clone_cursor.c", c_source)])
         .expect("clone field stores should verify");
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn simple_statement_transition_does_not_transport_facts_automatically() {
-    let base_memory = CMemory::new();
+    let base_memory = Memory::new();
     let first = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -273,7 +273,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         offset: PointerOffsetTerm::Constant(4),
     };
     let first_value = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(base_memory.clone()),
+        crate::kernel::intern_memory(base_memory.clone()),
         Box::new(first.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -283,15 +283,15 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .store(
             second.clone(),
             int32(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(base_memory.clone()),
+                crate::kernel::intern_memory(base_memory.clone()),
                 Box::new(second.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
         );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(before_memory)
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_memory(CMemoryRange::new(
+            ResourceFact::own_memory(MemoryRange::new(
                 first.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(2),
@@ -306,11 +306,11 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         },
         true,
     );
-    let statement = CStatement::TypedStore {
+    let statement = ProgramStatement::TypedStore {
         access_class: None,
-        pointer: CExpression::Value(CValue::pointer(second)),
-        value: CExpression::Value(int32(9)),
-        value_type: CType::Int32,
+        pointer: ProgramExpression::Value(ProgramValue::pointer(second)),
+        value: ProgramExpression::Value(int32(9)),
+        value_type: ProgramType::Int32,
         volatile: false,
         pointee_constant: false,
         source: Default::default(),
@@ -321,9 +321,9 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         &state,
         &crate::surface::PureFactList::from(vec![fact.clone()]),
         &statement,
-        &CExecutionEnvironment::new(),
+        &ExecutionEnvironment::new(),
         None,
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
         "simple transition test",
         &mut next_opaque_call,
         &mut next_kernel_variable,
@@ -336,7 +336,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     };
 
     assert!(transition.pure_facts.contains(&fact));
-    let CStatementOutcome::Normal(post_state) = &transition.outcome else {
+    let StatementOutcome::Normal(post_state) = &transition.outcome else {
         panic!("expected a normal transition")
     };
     let transported = Proposition::ConditionIs(
@@ -344,7 +344,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(post_state.memory().clone()),
+                crate::kernel::intern_memory(post_state.memory().clone()),
                 Box::new(first),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -381,7 +381,7 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("caller.c", c_source)])
+    let error = verify_c_sources(click_source, &[("caller.c", c_source)])
         .expect_err("the caller establishes neither arm of the call requirement");
     let requirement = error
         .unresolved_requirement()
@@ -403,8 +403,8 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
     assert_eq!(
         call_site.source_arguments.as_slice(),
         [
-            CExpression::Variable("x".to_string()),
-            CExpression::Variable("y".to_string())
+            ProgramExpression::Variable("x".to_string()),
+            ProgramExpression::Variable("y".to_string())
         ]
     );
 
@@ -459,7 +459,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
         "#;
 
     let (verified, planning_transitions) = count_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("increment.c", c_source)])
+        verify_c_sources(click_source, &[("increment.c", c_source)])
     });
     let verified = verified.expect("the smart execution step should verify");
     assert_eq!(
@@ -496,10 +496,10 @@ fn execute_step_records_a_state_checked_surface_expansion() {
             .unwrap_or(0)
         + 1;
     let rewritten =
-        expand_c0_tactic_source_at(click_source, &[("increment.c", c_source)], line, column)
+        expand_c_tactic_source_at(click_source, &[("increment.c", c_source)], line, column)
             .expect("the overflow-safe step should expand");
     assert!(rewritten.contains("x < 2147483647;"), "{rewritten}");
-    verify_c0_sources(&rewritten, &[("increment.c", c_source)])
+    verify_c_sources(&rewritten, &[("increment.c", c_source)])
         .expect("the emitted numeric prerequisite should check");
 }
 
@@ -523,7 +523,7 @@ fn no_premise_smart_step_searches_directly_on_proof() {
         "#;
 
     let (verified, planning_transitions) = count_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("zero.c", c_source)])
+        verify_c_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("a no-premise smart step should verify on its Proof successor");
     assert_eq!(
@@ -536,14 +536,14 @@ fn no_premise_smart_step_searches_directly_on_proof() {
     assert_eq!(expanded[0], ProofTactic::Step);
     assert_eq!(expanded[1], ProofTactic::Normalize);
 
-    let expanded_source = expand_c0_claim_source(
+    let expanded_source = expand_c_claim_source(
         click_source,
         &[("zero.c", c_source)],
         "zero",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the direct smart step should expand into source");
-    verify_c0_sources(&expanded_source, &[("zero.c", c_source)])
+    verify_c_sources(&expanded_source, &[("zero.c", c_source)])
         .expect("the retained no-premise step should independently reverify");
 }
 
@@ -568,7 +568,7 @@ fn scalar_root_facts_do_not_force_smart_step_planning() {
         "#;
 
     let (verified, planning_transitions) = count_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("zero.c", c_source)])
+        verify_c_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("the unrelated scalar fact should remain shared by Proof");
     assert_eq!(
@@ -581,14 +581,14 @@ fn scalar_root_facts_do_not_force_smart_step_planning() {
     assert_eq!(expanded[0], ProofTactic::Step);
     assert_eq!(expanded[1], ProofTactic::Normalize);
 
-    let expanded_source = expand_c0_claim_source(
+    let expanded_source = expand_c_claim_source(
         click_source,
         &[("zero.c", c_source)],
         "zero",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the checked smart step should expand");
-    verify_c0_sources(&expanded_source, &[("zero.c", c_source)])
+    verify_c_sources(&expanded_source, &[("zero.c", c_source)])
         .expect("the retained step should independently reverify");
 }
 
@@ -614,7 +614,7 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
         "#;
 
     let (verified, planning_transitions) = count_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("set_one.c", c_source)])
+        verify_c_sources(click_source, &[("set_one.c", c_source)])
     });
     let verified = verified.expect("fact-free linear smart steps should verify through Proof");
     assert_eq!(
@@ -626,17 +626,24 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
         .expect("the checked linear path should retain its expansion");
     assert!(matches!(
         expanded.as_slice(),
-        [ProofTactic::Step, ProofTactic::Step, ProofTactic::Normalize]
+        [
+            ProofTactic::Step,
+            ProofTactic::Step,
+            ProofTactic::Normalize,
+            ProofTactic::Assumption,
+            ProofTactic::Assumption,
+            ProofTactic::Assumption
+        ]
     ));
 
-    let expanded_source = expand_c0_claim_source(
+    let expanded_source = expand_c_claim_source(
         click_source,
         &[("set_one.c", c_source)],
         "set_one",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the direct linear smart steps should expand into source");
-    verify_c0_sources(&expanded_source, &[("set_one.c", c_source)])
+    verify_c_sources(&expanded_source, &[("set_one.c", c_source)])
         .expect("the retained linear steps should independently reverify");
 }
 
@@ -663,7 +670,7 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
         "#;
 
     let (verified, planning_transitions) = count_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("set_one.c", c_source)])
+        verify_c_sources(click_source, &[("set_one.c", c_source)])
     });
     let verified = verified.expect("the local assignment dependency should be selected by Proof");
     assert_eq!(
@@ -678,20 +685,27 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
     assert!(
         matches!(
             expanded.as_slice(),
-            [ProofTactic::Step, ProofTactic::Step, ProofTactic::Normalize]
+            [
+                ProofTactic::Step,
+                ProofTactic::Step,
+                ProofTactic::Normalize,
+                ProofTactic::Assumption,
+                ProofTactic::Assumption,
+                ProofTactic::Assumption
+            ]
         ),
         "{expanded:#?}"
     );
 
-    let expanded_source = expand_c0_claim_source(
+    let expanded_source = expand_c_claim_source(
         click_source,
         &[("set_one.c", c_source)],
         "set_one",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the selected local dependency should expand into source");
     assert!(expanded_source.contains("x >= 0;"), "{expanded_source}");
-    verify_c0_sources(&expanded_source, &[("set_one.c", c_source)])
+    verify_c_sources(&expanded_source, &[("set_one.c", c_source)])
         .expect("the retained assignment dependency should independently reverify");
 }
 
@@ -715,7 +729,7 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("return_x.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("return_x.c", c_source)])
         .expect("the return proof should verify");
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -728,7 +742,7 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
         .find("step_until(function.exit)")
         .expect("proof should contain step_until");
     let position = expansion::position_at_offset(click_source, execute_offset);
-    let rewritten = expand_c0_tactic_source_at(
+    let rewritten = expand_c_tactic_source_at(
         click_source,
         &[("return_x.c", c_source)],
         position.line,
@@ -736,7 +750,7 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
     )
     .expect("the return execution should expand");
     assert!(rewritten.contains("    step();"), "{rewritten}");
-    verify_c0_sources(&rewritten, &[("return_x.c", c_source)])
+    verify_c_sources(&rewritten, &[("return_x.c", c_source)])
         .expect("the minimal return certificate should check");
 }
 
@@ -760,7 +774,7 @@ fn linear_execute_retains_its_checked_execution_proof() {
         "#;
 
     let (verified, planning_transitions) = count_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("zero.c", c_source)])
+        verify_c_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("linear execute should verify through its checked Proof");
     assert_eq!(
@@ -796,7 +810,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
         "#;
 
     let (verified, planning_transitions) = count_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("zero.c", c_source)])
+        verify_c_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("linear execute_until should verify through its checked Proof");
     assert_eq!(
@@ -806,6 +820,15 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("linear execute_until should retain an expansion");
+    assert_eq!(
+        &expanded[expanded.len() - 3..],
+        &[
+            ProofTactic::Assumption,
+            ProofTactic::Assumption,
+            ProofTactic::Assumption
+        ]
+    );
+    let expanded = &expanded[..expanded.len() - 3];
     assert!(
         expanded[..expanded.len() - 1]
             .iter()
@@ -845,7 +868,7 @@ fn execute_step_omits_materialization_only_transport() {
         "#;
 
     let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("transport.c", c_source)])
+        verify_c_sources(click_source, &[("transport.c", c_source)])
     });
     let verified = verified.expect("automatic snapshot transport should verify");
     assert!(
@@ -885,10 +908,10 @@ fn execute_step_omits_materialization_only_transport() {
             .unwrap_or(0)
         + 1;
     let expanded_source =
-        expand_c0_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
+        expand_c_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
             .expect("the statement expansion should print as surface Click");
     assert!(!expanded_source.contains("transport("), "{expanded_source}");
-    verify_c0_sources(&expanded_source, &[("transport.c", c_source)])
+    verify_c_sources(&expanded_source, &[("transport.c", c_source)])
         .expect("the statement expansion should check without representational transport");
 }
 
@@ -919,7 +942,7 @@ fn execute_step_omits_materialized_mixed_snapshot_transport() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("transport.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("transport.c", c_source)])
         .expect("mixed snapshot transport should verify");
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
@@ -951,9 +974,9 @@ fn execute_step_omits_materialized_mixed_snapshot_transport() {
             .unwrap_or(0)
         + 1;
     let expanded_source =
-        expand_c0_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
+        expand_c_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
             .expect("the mixed-snapshot statement should expand");
-    verify_c0_sources(&expanded_source, &[("transport.c", c_source)])
+    verify_c_sources(&expanded_source, &[("transport.c", c_source)])
         .expect("the mixed-snapshot expansion should check without representational transport");
 }
 
@@ -988,7 +1011,7 @@ fn execute_step_omits_materialization_transport_across_statements() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("transport.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("transport.c", c_source)])
         .expect("multi-statement snapshot transport should verify");
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
@@ -1022,9 +1045,9 @@ fn execute_step_omits_materialization_transport_across_statements() {
             .unwrap_or(0)
         + 1;
     let expanded_source =
-        expand_c0_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
+        expand_c_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
             .expect("the first multi-statement step should expand");
-    verify_c0_sources(&expanded_source, &[("transport.c", c_source)])
+    verify_c_sources(&expanded_source, &[("transport.c", c_source)])
         .expect("the multi-statement expansion should check without representational transport");
 }
 
@@ -1088,7 +1111,7 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
             .unwrap_or(0)
         + 1;
 
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[
             ("set_seven.c", increment_c_source),
@@ -1112,39 +1135,47 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
     };
-    let read = Pointer::loaded_value(&crate::kernel::intern_c_memory(CMemory::new()), &owner);
+    let read = Pointer::loaded_value(&crate::kernel::intern_memory(Memory::new()), &owner);
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            crate::kernel::CPointerValue::new(read, CType::Int32Pointer),
-            crate::kernel::CPointerValue::new(data.clone(), CType::Int32Pointer),
+            crate::kernel::PointerValue::new(read, ProgramType::Int32Pointer),
+            crate::kernel::PointerValue::new(data.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );
     let parameters = [
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "owner".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "data".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "owner".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "data".to_string(),
+            None,
+        ),
     ];
     let arguments = [
-        CExpression::Value(CValue::pointer(owner)),
-        CExpression::Value(CValue::pointer(data)),
+        ProgramExpression::Value(ProgramValue::pointer(owner)),
+        ProgramExpression::Value(ProgramValue::pointer(data)),
     ];
 
     let surface = super::proof::synthesize_surface_proposition(
         &proposition,
         ParameterBinding::new(&parameters, &arguments),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("pointer-offset equality should have a surface form");
 
     assert!(matches!(
         surface,
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::TypedLoad {
-                value_type: CType::Int32Pointer,
+            left: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+                value_type: ProgramType::Int32Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Variable(name)),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(name)),
         } if name == "data"
     ));
 }
@@ -1162,19 +1193,21 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let current = Pointer::symbolic(Variable(44));
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            crate::kernel::CPointerValue::new(passed.clone(), CType::Int32Pointer),
-            crate::kernel::CPointerValue::new(current.clone(), CType::Int32Pointer),
+            crate::kernel::PointerValue::new(passed.clone(), ProgramType::Int32Pointer),
+            crate::kernel::PointerValue::new(current.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );
-    let parameters = [syntax::C0Parameter::new(
-        C0Type::Int32Pointer,
+    let parameters = [crate::languages::interface::ImportedParameter::new(
+        InterfaceType::Int32Pointer,
         "p".to_string(),
         None,
     )];
-    let arguments = [CExpression::Value(CValue::pointer(passed.clone()))];
-    let entry = CState::new().with_local("p", CValue::pointer(passed));
-    let post = CState::new().with_local("p", CValue::pointer(current));
+    let arguments = [ProgramExpression::Value(ProgramValue::pointer(
+        passed.clone(),
+    ))];
+    let entry = ExecutionState::new().with_local("p", ProgramValue::pointer(passed));
+    let post = ExecutionState::new().with_local("p", ProgramValue::pointer(current));
 
     let surface = super::proof::synthesize_surface_proposition_at_entry_and_post(
         &proposition,
@@ -1210,37 +1243,49 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
         true,
     );
     let parameters = [
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "owner".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "data".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32, "index".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "owner".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "data".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "index".to_string(),
+            None,
+        ),
     ];
     let arguments = [
-        CExpression::Value(CValue::pointer(Pointer {
+        ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: "arg-memory".into(),
             offset: owner_offset,
         })),
-        CExpression::Value(CValue::pointer(Pointer {
+        ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: "arg-memory".into(),
             offset: data_offset,
         })),
-        CExpression::Value(CValue::Int32(index)),
+        ProgramExpression::Value(ProgramValue::Int32(index)),
     ];
 
     let surface = super::proof::synthesize_surface_proposition(
         &proposition,
         ParameterBinding::new(&parameters, &arguments),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("dynamically indexed pointer equality should have a surface form");
 
     assert!(matches!(
         surface,
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Add(left, right)),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Add(left, right)),
             operator: ComparisonOperator::Equal,
             ..
-        } if matches!(left.as_ref(), CExpression::Variable(name) if name == "data")
-            && matches!(right.as_ref(), CExpression::Variable(name) if name == "index")
+        } if matches!(left.as_ref(), ProgramExpression::Variable(name) if name == "data")
+            && matches!(right.as_ref(), ProgramExpression::Variable(name) if name == "index")
     ));
 }
 
@@ -1264,12 +1309,12 @@ fn bare_step_proves_an_open_obligation_by_implicit_solve() {
             }
         "#;
     let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
-        verify_c0_sources(click_source, &[("compare.c", c_source)])
+        verify_c_sources(click_source, &[("compare.c", c_source)])
     });
     verified.expect("the catalog memcmp call should verify");
     assert_eq!(planning_transitions, vec![]);
     crate::surface::proof::without_implicit_solve(|| {
-        verify_c0_sources(click_source, &[("compare.c", c_source)])
+        verify_c_sources(click_source, &[("compare.c", c_source)])
     })
     .expect_err("with the implicit `solve` off, the open obligation is refused");
 }
@@ -1329,17 +1374,17 @@ void change(struct node *g, struct node *source, struct node *t) {
     step(); solve();
 }
 "#;
-    verify_c0_sources(click_source, &[("join.c", c_source)])
+    verify_c_sources(click_source, &[("join.c", c_source)])
         .expect("an evaluated pointer store remains a valid transport source");
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("join.c", c_source)],
         "change",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the tagged-pointer proof should expand");
     crate::surface::proof::without_implicit_solve(|| {
-        verify_c0_sources(&expanded, &[("join.c", c_source)])
+        verify_c_sources(&expanded, &[("join.c", c_source)])
     })
     .expect("the expanded proof should check independently");
 
@@ -1347,7 +1392,7 @@ void change(struct node *g, struct node *source, struct node *t) {
         "transport(at(before_tag, g->right == p),",
         "transport(false,",
     );
-    let error = verify_c0_sources(&false_source, &[("join.c", c_source)])
+    let error = verify_c_sources(&false_source, &[("join.c", c_source)])
         .expect_err("an available target must not bypass a false source");
     assert!(
         error.message().contains("requires a source"),
@@ -1357,7 +1402,7 @@ void change(struct node *g, struct node *source, struct node *t) {
 
     let absent_premise =
         click_source.replace("        at(before_tag, g->right == p);", "        false;");
-    let error = verify_c0_sources(&absent_premise, &[("join.c", c_source)])
+    let error = verify_c_sources(&absent_premise, &[("join.c", c_source)])
         .expect_err("an available target must not bypass an unavailable premise");
     assert!(
         error.message().contains("requires an exact premise"),
@@ -1370,7 +1415,7 @@ void change(struct node *g, struct node *source, struct node *t) {
         "    step();\n    transport(at(before_tag,",
         "    step(); step();\n    transport(at(before_tag,",
     );
-    let error = verify_c0_sources(&overwritten_proof, &[("join.c", &overwritten_c)])
+    let error = verify_c_sources(&overwritten_proof, &[("join.c", &overwritten_c)])
         .expect_err("transport must refuse a pointer overwritten after its source snapshot");
     assert!(error.message().contains("transport"), "{}", error.message());
 }
@@ -1402,7 +1447,7 @@ int32 caller(int32 a) {{
 }} by {{ {step} step(); solve(); }}
 "#
         );
-        verify_c0_sources(&source, &[("call.c", c)])
+        verify_c_sources(&source, &[("call.c", c)])
             .expect_err("a conditional successor must not supply its own prerequisite");
     }
 }
@@ -1434,7 +1479,7 @@ int32 caller(int32 a, int32 b) {
 "#;
     let c = "int32 caller(int32 a, int32 b) { return callee(a, b); }";
     for implicit in [true, false] {
-        let check = || verify_c0_sources(source, &[("call.c", c)]);
+        let check = || verify_c_sources(source, &[("call.c", c)]);
         let result = if implicit {
             check()
         } else {

@@ -1,11 +1,11 @@
 use super::*;
 
-fn free_once(state: &CState, name: &str, facts: &PureFactContext) -> CStatementOutcome {
-    let mut paths = execute_c_statement_paths(
+fn free_once(state: &ExecutionState, name: &str, facts: &PureFactContext) -> StatementOutcome {
+    let mut paths = execute_execution_statement_paths(
         state,
-        &c_heap_free(c_variable(name)),
+        &program_heap_free(crate::kernel::program_expression::variable(name)),
         facts,
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
@@ -15,8 +15,8 @@ fn free_once(state: &CState, name: &str, facts: &PureFactContext) -> CStatementO
 
 fn owned_base(base: &Pointer) -> ResourceContext {
     ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 4))
-        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4))
+        .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             base.clone(),
             0.into(),
             1.into(),
@@ -33,24 +33,24 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
     let alias = Pointer::symbolic(Variable(973_001));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            CPointerValue::new(alias.clone(), CType::Int32Pointer),
-            CPointerValue::new(base.clone(), CType::Int32Pointer),
+            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
+            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
     for registered in [false, true] {
-        let mut memory = CMemory::new().store(alias.clone(), int32(7));
+        let mut memory = Memory::new().store(alias.clone(), int32(7));
         if registered {
             memory = memory
                 .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
                 .unwrap();
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(owned_base(&base))
-            .with_local("q", CValue::pointer(alias.clone()))
-            .with_local("p", CValue::pointer(base.clone()));
-        let CStatementOutcome::Normal(after) = free_once(&state, "q", &facts) else {
+            .with_local("q", ProgramValue::pointer(alias.clone()))
+            .with_local("p", ProgramValue::pointer(base.clone()));
+        let StatementOutcome::Normal(after) = free_once(&state, "q", &facts) else {
             panic!("a proven base alias must free (registered={registered})");
         };
         assert!(after.resources().facts().is_empty());
@@ -59,14 +59,12 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
         assert!(after.memory().is_deallocated_heap_address(&alias, &facts));
         assert_eq!(
             after.memory().load(&alias),
-            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
         );
         for name in ["p", "q"] {
             assert!(matches!(
                 free_once(&after, name, &facts),
-                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
-                    CInvalidFree::DoubleFree
-                ))
+                StatementOutcome::RuntimeError(RuntimeError::InvalidFree(InvalidFree::DoubleFree))
             ));
         }
     }
@@ -80,9 +78,9 @@ fn free_does_not_treat_an_unproved_or_interior_alias_as_a_base() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let alias = Pointer::symbolic(Variable(973_011));
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(owned_base(&base))
-        .with_local("q", CValue::pointer(alias.clone()));
+        .with_local("q", ProgramValue::pointer(alias.clone()));
     let none = PureFactContext::new();
     let interior = none.clone().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_equal(alias.clone(), base.offset_by_bytes(2)),
@@ -95,7 +93,7 @@ fn free_does_not_treat_an_unproved_or_interior_alias_as_a_base() {
     for facts in [&none, &interior, &numeric_only] {
         assert!(matches!(
             free_once(&state, "q", facts),
-            CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(_))
+            StatementOutcome::RuntimeError(RuntimeError::InvalidFree(_))
         ));
     }
 }
@@ -116,12 +114,12 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
     let pending = Pointer::symbolic(Variable(973_022));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            CPointerValue::new(alias.clone(), CType::Int32Pointer),
-            CPointerValue::new(base.clone(), CType::Int32Pointer),
+            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
+            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
         .unwrap()
         .with_pending_heap_reallocation(
@@ -132,12 +130,12 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
             vec![],
             vec![],
         );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(owned_base(&base))
-        .with_local("q", CValue::pointer(alias));
+        .with_local("q", ProgramValue::pointer(alias));
     assert!(matches!(
         free_once(&state, "q", &facts),
-        CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
+        StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome)
     ));
 }

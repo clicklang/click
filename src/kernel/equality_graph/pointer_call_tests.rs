@@ -14,15 +14,18 @@ fn word(id: u64) -> MachineTerm {
     MachineTerm::Variable(Variable(id))
 }
 fn argument(id: u64) -> PureFunctionArgument {
-    PureFunctionArgument::Value(CValue::Int32(word(id)))
+    PureFunctionArgument::Value(ProgramValue::Int32(word(id)))
 }
 fn pointer_argument(p: Pointer) -> PureFunctionArgument {
-    PureFunctionArgument::Value(CValue::Pointer(CPointerValue::new(p, CType::Int32Pointer)))
+    PureFunctionArgument::Value(ProgramValue::Pointer(PointerValue::new(
+        p,
+        ProgramType::Int32Pointer,
+    )))
 }
 fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Pointer, q: &Pointer) {
     graph.add_pointer_value_equality(
-        &CPointerValue::new(p.clone(), CType::Int32Pointer),
-        &CPointerValue::new(q.clone(), CType::Int32Pointer),
+        &PointerValue::new(p.clone(), ProgramType::Int32Pointer),
+        &PointerValue::new(q.clone(), ProgramType::Int32Pointer),
     );
 }
 
@@ -36,8 +39,10 @@ fn equal(a: &Pointer, b: &Pointer) -> Proposition {
 #[test]
 fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
     let _session = VerificationSession::enter();
-    let ty =
-        super::algebraic_tests::model_type("Handle", AlgebraicValueType::C(CType::Int32Pointer));
+    let ty = super::algebraic_tests::model_type(
+        "Handle",
+        AlgebraicValueType::Program(ProgramType::Int32Pointer),
+    );
     let a = super::algebraic_tests::variable(&ty, 10);
     let b = super::algebraic_tests::variable(&ty, 11);
     let f = |x| call("handle", vec![PureFunctionArgument::Algebraic(x)]);
@@ -64,15 +69,23 @@ fn pointer_calls_keep_sorts_order_snapshots_and_noninjectivity() {
     let mut graph = EqualityGraph::default();
     let p = Pointer::symbolic(Variable(30));
     let q = Pointer::symbolic(Variable(31));
-    let memory = CMemory::new().with_block(p.block.clone(), 4);
-    let changed = memory.clone().store(p.clone(), CValue::Int32(word(32)));
-    let array = |memory: &CMemory, pointer, element_type| PureFunctionArgument::ArrayRef {
+    let memory = Memory::new().with_block(p.block.clone(), 4);
+    let changed = memory
+        .clone()
+        .store(p.clone(), ProgramValue::Int32(word(32)));
+    let array = |memory: &Memory, pointer, element_type| PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
-        pointer: CValue::Pointer(CPointerValue::new(pointer, CType::Int32Pointer)),
+        pointer: ProgramValue::Pointer(PointerValue::new(pointer, ProgramType::Int32Pointer)),
         element_type,
     };
-    let a = call("select", vec![array(&memory, p.clone(), CType::Int32)]);
-    let b = call("select", vec![array(&memory, q.clone(), CType::Int32)]);
+    let a = call(
+        "select",
+        vec![array(&memory, p.clone(), ProgramType::Int32)],
+    );
+    let b = call(
+        "select",
+        vec![array(&memory, q.clone(), ProgramType::Int32)],
+    );
     assert!(!graph.are_equal(&a, &b));
     graph.add_equality(&p, &q);
     assert!(!graph.are_equal(&a, &b));
@@ -80,9 +93,15 @@ fn pointer_calls_keep_sorts_order_snapshots_and_noninjectivity() {
     assert!(graph.are_equal(&a, &b));
     assert!(!graph.are_equal(
         &a,
-        &call("select", vec![array(&changed, q.clone(), CType::Int32)])
+        &call(
+            "select",
+            vec![array(&changed, q.clone(), ProgramType::Int32)]
+        )
     ));
-    assert!(!graph.are_equal(&a, &call("select", vec![array(&memory, q, CType::UInt32)])));
+    assert!(!graph.are_equal(
+        &a,
+        &call("select", vec![array(&memory, q, ProgramType::UInt32)])
+    ));
     let a = call("pair", vec![argument(33), argument(34)]);
     let b = call("pair", vec![argument(34), argument(33)]);
     assert!(!graph.are_equal(&a, &b));
@@ -90,7 +109,7 @@ fn pointer_calls_keep_sorts_order_snapshots_and_noninjectivity() {
         &call("typed", vec![argument(33)]),
         &call(
             "typed",
-            vec![PureFunctionArgument::Value(CValue::UInt32(word(33)))]
+            vec![PureFunctionArgument::Value(ProgramValue::UInt32(word(33)))]
         )
     ));
     assert!(!graph.are_equal(&a, &call("pair", vec![argument(33)])));
@@ -116,7 +135,7 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         name: "count".into(),
         arguments: vec![pointer_argument(p)],
     };
-    let memory = intern_c_memory(CMemory::new());
+    let memory = intern_memory(Memory::new());
     let read = |p| {
         MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -169,8 +188,8 @@ fn pointer_call_address_equality_does_not_merge_result_domains() {
     let _session = VerificationSession::enter();
     let a = call("left", vec![argument(61)]);
     let b = call("right", vec![argument(61)]);
-    let left = CPointerValue::new(a.clone(), CType::Int32Pointer);
-    let right = CPointerValue::new(b.clone(), CType::Int32Pointer);
+    let left = PointerValue::new(a.clone(), ProgramType::Int32Pointer);
+    let right = PointerValue::new(b.clone(), ProgramType::Int32Pointer);
     let context = PureFactContext::new().assume_proposition(equal(&a, &b));
     assert!(!context.pointer_designations_match(&left, &right));
     let complete = context.clone().assume_condition(

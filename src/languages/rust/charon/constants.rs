@@ -181,9 +181,9 @@ mod tests {
         let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let export = decode(&artifact).unwrap();
         let prepared = super::super::super::import::prepared_for_test(export.clone()).unwrap();
-        crate::surface::C0VerificationSession::new_program_prepared(PROOF, &prepared).unwrap();
+        crate::surface::ProgramVerificationSession::new_program_prepared(PROOF, &prepared).unwrap();
         assert!(
-            crate::surface::C0VerificationSession::new_program_prepared(
+            crate::surface::ProgramVerificationSession::new_program_prepared(
                 &PROOF.replace("22208u64", "22209u64"),
                 &prepared
             )
@@ -201,7 +201,8 @@ mod tests {
         }
         let prepared = super::super::super::import::prepared_for_test(changed).unwrap();
         assert!(
-            crate::surface::C0VerificationSession::new_program_prepared(PROOF, &prepared).is_err()
+            crate::surface::ProgramVerificationSession::new_program_prepared(PROOF, &prepared)
+                .is_err()
         );
         let mut overflowing: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let f = &mut overflowing.data.translated.fun_decls[a::FunDeclId::from(8)];
@@ -223,7 +224,8 @@ mod tests {
         let prepared =
             super::super::super::import::prepared_for_test(decode(&overflowing).unwrap()).unwrap();
         assert!(
-            crate::surface::C0VerificationSession::new_program_prepared(PROOF, &prepared).is_err()
+            crate::surface::ProgramVerificationSession::new_program_prepared(PROOF, &prepared)
+                .is_err()
         );
     }
 

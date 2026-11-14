@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn word(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
+fn word(memory: &SharedMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
     MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -67,8 +67,8 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     );
     assert!(!base.contains_known(&goal));
     assert!(!child.restricted_to_facts(&[], &[]).contains_known(&goal));
-    let left = CPointerValue::new(decoded.clone(), CType::Int32Pointer);
-    let right = CPointerValue::new(pointer.clone(), CType::Int32Pointer);
+    let left = PointerValue::new(decoded.clone(), ProgramType::Int32Pointer);
+    let right = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer);
     // A cast that already carries the exact original domain can compare its
     // numeric coordinates. A bare address name cannot manufacture that domain.
     let original_domain = right.clone().with_address(decoded.clone());
@@ -108,14 +108,14 @@ fn integer_address_definition_preserves_byte_displacements_and_load_snapshots() 
     assert!(graph.are_uint64_equal(&raw_address(&shifted), &sum));
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
     // Equal numeric addresses connect compatible reads, not snapshot identity.
-    let memory = intern_c_memory(CMemory::new().with_block("coordinates", 32));
+    let memory = intern_memory(Memory::new().with_block("coordinates", 32));
     let pointer = Pointer {
         block: "coordinates".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let after = intern_c_memory(memory.memory().clone().store(
+    let after = intern_memory(memory.memory().clone().store(
         pointer.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(19)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(19)),
     ));
     let mut graph = graph;
     assert!(!graph.are_uint64_equal(&word(&memory, &decoded, 8), &word(&memory, &pointer, 8)));
@@ -144,8 +144,8 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
             .are_uint64_equal(&raw_address(&p), &raw_address(&q))
     );
     assert!(!context.equality_graph.are_equal(&p, &q));
-    let p = CPointerValue::new(p, CType::Int32Pointer);
-    let q = CPointerValue::new(q, CType::Int32Pointer);
+    let p = PointerValue::new(p, ProgramType::Int32Pointer);
+    let q = PointerValue::new(q, ProgramType::Int32Pointer);
     assert!(!context.pointer_designations_match(&p, &q));
     assert!(!context.contains_known(&Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(p, q),
@@ -156,7 +156,7 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
 #[test]
 fn wide_read_and_packed_word_congruence_compose_early_and_late() {
     let _session = VerificationSession::enter();
-    let memory = intern_c_memory(CMemory::new().with_block("wide", 128));
+    let memory = intern_memory(Memory::new().with_block("wide", 128));
     let zid = Pointer::symbolic(Variable(910_001));
     let sid = Pointer::symbolic(Variable(910_002));
     let p = Pointer::loaded_value(&memory, &Pointer::symbolic(Variable(910_003)));
@@ -196,15 +196,13 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
 #[test]
 fn wide_reads_preserve_snapshot_width_and_value_sort() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("wide", 128));
+    let before = intern_memory(Memory::new().with_block("wide", 128));
     let p = Pointer::symbolic(Variable(920_001));
     let q = Pointer::symbolic(Variable(920_002));
-    let after = intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(p.clone(), CValue::UInt64(MachineTerm::uint64_constant(9))),
-    );
+    let after = intern_memory(before.memory().clone().store(
+        p.clone(),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+    ));
     let a = word(&before, &p, 8);
     let b = word(&before, &q, 8);
     let mut graph = EqualityGraph::default();
@@ -257,14 +255,14 @@ mod scaling_tests {
 #[test]
 fn a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling() {
     let _session = VerificationSession::enter();
-    let memory = intern_c_memory(CMemory::new().with_block("cells", 32));
+    let memory = intern_memory(Memory::new().with_block("cells", 32));
     let stored_at = Pointer {
         block: "cells".into(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let after = intern_c_memory(memory.memory().clone().store(
+    let after = intern_memory(memory.memory().clone().store(
         stored_at.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(5)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(5)),
     ));
     let alias_of = Pointer::symbolic(Variable(960_101));
     let read = word(&after, &alias_of, 8);

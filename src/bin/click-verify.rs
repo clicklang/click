@@ -12,21 +12,21 @@ use std::sync::OnceLock;
 
 use crate::git::{git_commit_id, git_repo_root, git_show};
 use click::cli::{
-    CInput, LoadedTarget, RunLimits, SelectedProject, containing_directory, load_sidecar_inputs,
-    load_target_inputs, looks_like_mdtest, looks_like_source_location, parse_duration,
-    parse_source_location, parse_work_limit, select_sidecars, sidecar_project_root, source_refs,
-    with_run_limits,
+    LoadedTarget, RunLimits, SelectedProject, VerificationInput, containing_directory,
+    load_sidecar_inputs, load_target_inputs, looks_like_mdtest, looks_like_source_location,
+    parse_duration, parse_source_location, parse_work_limit, select_sidecars, sidecar_project_root,
+    source_refs, with_run_limits,
 };
 use click::instrumentation::VerificationPhase;
 use click::languages::c::source as c_source;
 use click::languages::c::target::CTarget;
 use click::surface::source_display_name;
 #[cfg(test)]
-use click::surface::verify_c0_sources;
+use click::surface::verify_c_sources;
 use click::surface::{
-    ClickError, ClickErrorKind, ClickProject, ProofSourceIndex, VerifiedCTheorem,
-    accepted_proof_trace, c0_incremental_selection, project_selected_proof_names, project_summary,
-    selected_c_target, verify_c0_project, verify_project_at, verify_project_functions,
+    ClickError, ClickErrorKind, ClickProject, ProofSourceIndex, VerifiedProgramTheorem,
+    accepted_proof_trace, c_incremental_selection, project_selected_proof_names, project_summary,
+    selected_c_target, verify_c_project, verify_project_at, verify_project_functions,
     verify_project_theorem, verify_project_with_summary, verifying_source_paths, with_proof_trace,
 };
 
@@ -466,8 +466,8 @@ fn verify_changed_sidecar(
         );
     }
     let sources = match &inputs {
-        CInput::Bundle(sources) => sources.clone(),
-        CInput::Prepared(_) | CInput::PreparedProgram(_) => unreachable!(),
+        VerificationInput::Bundle(sources) => sources.clone(),
+        VerificationInput::Prepared(_) | VerificationInput::PreparedProgram(_) => unreachable!(),
     };
     let refs = source_refs(&sources);
     let baseline_attested = has_full_verification_marker(
@@ -499,7 +499,7 @@ fn verify_changed_sidecar(
     {
         let baseline_refs = source_refs(&baseline_sources);
         let selection =
-            c0_incremental_selection(&click_source, &refs, &baseline_click, &baseline_refs)
+            c_incremental_selection(&click_source, &refs, &baseline_click, &baseline_refs)
                 .map_err(click_message)?;
         full_rebuild = selection.full_rebuild;
         reasons = selection.reasons;
@@ -535,7 +535,7 @@ fn verify_changed_sidecar(
             .map_err(|error| located_click_message(error, sidecar, &project, 0))?
     };
     let verified_theorems = if full_rebuild {
-        verify_c0_project(&project, &refs)
+        verify_c_project(&project, &refs)
     } else {
         verify_project_functions(
             &project,
@@ -654,7 +654,7 @@ fn proof_error_report(
     sidecar: &Path,
     show_trace: bool,
     project: &ClickProject,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     line_offset: usize,
     trace_target: Option<&click::surface::SourcePosition>,
 ) -> String {
@@ -903,7 +903,7 @@ impl TraceUnit {
 fn trace_unit(
     requested: &str,
     project: &ClickProject,
-    inputs: &CInput,
+    inputs: &VerificationInput,
 ) -> Result<TraceUnit, String> {
     let names =
         project_selected_proof_names(project, &inputs.program_inputs()).map_err(click_message)?;
@@ -987,7 +987,7 @@ fn format_source_tactic_at_position(
 /// should parse and resolve the project again.
 struct ProofSourceLocations<'a> {
     project: &'a ClickProject,
-    inputs: &'a CInput,
+    inputs: &'a VerificationInput,
     outer: RefCell<HashMap<String, Option<Vec<click::surface::SourcePosition>>>>,
     index: RefCell<Option<Option<ProofSourceIndex>>>,
 }
@@ -1016,7 +1016,7 @@ impl<'a> ProofSourceLocations<'a> {
         self.index.borrow().as_ref()?.as_ref().map(query)
     }
 
-    fn new(project: &'a ClickProject, inputs: &'a CInput) -> Self {
+    fn new(project: &'a ClickProject, inputs: &'a VerificationInput) -> Self {
         Self {
             project,
             inputs,
@@ -1434,9 +1434,9 @@ fn verify_file(
 fn sidecar_summary(
     click_path: &Path,
     project: &ClickProject,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     line_offset: usize,
-) -> Result<click::surface::CProjectSummary, String> {
+) -> Result<click::surface::ProjectVerificationSummary, String> {
     let _phase = VerificationPhase::new("external dependency summary");
     project_summary(project, &inputs.program_inputs())
         .map_err(|error| located_click_message(error, click_path, project, line_offset))
@@ -1625,7 +1625,7 @@ fn verify_file_within_limits(
     println!("{selected} selected proof{} verified", plural(selected));
     let admissions = click::surface::take_sorry_admissions();
     if admissions.is_empty() {
-        if let CInput::Bundle(sources) = &inputs
+        if let VerificationInput::Bundle(sources) = &inputs
             && trace_proof.is_none()
             && mdtest.is_none()
             && project.modules().len() == 1
@@ -1715,7 +1715,7 @@ fn verify_location_within_limits(
 /// verification assumes.
 fn print_assumptions(
     assumptions: &BTreeMap<String, Vec<click::surface::ModelAssumption>>,
-    verified: &[VerifiedCTheorem],
+    verified: &[VerifiedProgramTheorem],
 ) {
     if let Some(selection) = verified
         .first()
@@ -2364,7 +2364,7 @@ int32 read_first(int32 m) {
         loaded.project = loaded
             .project
             .with_entry_source(loaded.click_source.clone());
-        let CInput::Bundle(sources) = &loaded.inputs else {
+        let VerificationInput::Bundle(sources) = &loaded.inputs else {
             panic!("expected C fixture")
         };
         let index = ProofSourceIndex::for_project(
@@ -2774,20 +2774,19 @@ int32 read_first(int32 m) {
             let LoadedTarget {
                 project, inputs, ..
             } = load_target_inputs(&click_path, Some(&root)).expect("the project loads");
-            let CInput::Bundle(sources) = &inputs else {
+            let VerificationInput::Bundle(sources) = &inputs else {
                 panic!("a plain C project is a source bundle");
             };
             let refs = source_refs(sources);
             // Warm the process-wide caches so both sizes are measured alike.
-            click::surface::c0_project_function_names(&project, &refs)
-                .expect("the sources resolve");
+            click::surface::c_project_function_names(&project, &refs).expect("the sources resolve");
             let ((summary, summary_events), summary_work) = measure_deterministic_work(|| {
                 collect(|| project_summary(&project, &ProgramInputs::Bundle(refs.to_vec())))
             });
             let (resolution, resolution_work) = measure_deterministic_work(|| {
-                click::surface::c0_project_function_names(&project, &refs)
+                click::surface::c_project_function_names(&project, &refs)
             });
-            let (verified, verify_events) = collect(|| verify_c0_project(&project, &refs));
+            let (verified, verify_events) = collect(|| verify_c_project(&project, &refs));
             fs::remove_dir_all(&root)
                 .expect("temporary verification directory should be removable");
             let summary = summary.expect("the summary resolves");
@@ -2873,13 +2872,13 @@ int32 read_first(int32 m) {
         );
 
         let error = click::instrumentation::with_run_work_limit(1, || {
-            verify_c0_sources(click_source, &[("program.c", c_source)])
+            verify_c_sources(click_source, &[("program.c", c_source)])
         })
         .expect_err("the API preserves the parser's stop kind too");
         assert_eq!(error.kind(), ClickErrorKind::Limit);
         assert!(error.report().contains("error kind: limit error"));
 
-        let syntax_error = verify_c0_sources(click_source, &[("program.c", "int identity( {")])
+        let syntax_error = verify_c_sources(click_source, &[("program.c", "int identity( {")])
             .expect_err("malformed C still reports a syntax error");
         assert_eq!(syntax_error.kind(), ClickErrorKind::Syntax);
         assert!(syntax_error.concise_report().starts_with("syntax error:"));

@@ -465,11 +465,11 @@ fn tagged_word_symbolic_tag_chains_scale_without_rewalking_tags() {
 fn checker_validates_unselected_nodes_and_scales_without_cloning_results() {
     let value = MachineTerm::Variable(crate::kernel::Variable(91));
     let finite = Proposition::ConditionIs(
-        ConditionTerm::float32_classification(value.clone(), CFloatClassification::Finite),
+        ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite),
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::float32_compare(value.clone(), value, CComparisonOperator::Equal),
+        ConditionTerm::float32_compare(value.clone(), value, ComparisonOperator::Equal),
         true,
     );
     let mut nodes = vec![SpecialArithmeticNode::FloatReflexive {
@@ -553,7 +553,8 @@ fn signed_defined_certificates_keep_shared_operands_and_source_bounds() {
         let mut samples = Vec::new();
         for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut term = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982600));
+            let mut term =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982600));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
                     term = KernelTerm::machine_binary_shared(
@@ -629,19 +630,19 @@ fn signed_defined_certificates_keep_shared_operands_and_source_bounds() {
 
 #[test]
 fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
-    use crate::kernel::{CMemory, CValue, LoadKind, Variable, intern_c_memory};
+    use crate::kernel::{LoadKind, Memory, ProgramValue, Variable, intern_memory};
     let mut samples = Vec::new();
     for size in [8, 64, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(894_000));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(895_000 + index)),
-                CValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(MachineTerm::constant(7)),
             );
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let read =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Bits64);
         let duplicate = read.clone();
@@ -651,9 +652,9 @@ fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
             assert_eq!(bounded_term_hash(&read), bounded_term_hash(&duplicate));
             assert!(bounded_term_hash(&read).is_some());
         });
-        let changed = intern_c_memory(memory.memory().clone().store(
+        let changed = intern_memory(memory.memory().clone().store(
             address.clone(),
-            CValue::UInt64(MachineTerm::uint64_constant(9)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
         ));
         let different =
             MachineTerm::MemoryLoad(changed, Box::new(address.clone()), LoadKind::Bits64);

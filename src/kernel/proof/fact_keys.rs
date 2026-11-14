@@ -10,14 +10,14 @@ use crate::kernel::LoadKind;
 use crate::kernel::MachineUnaryOp;
 use crate::kernel::unary_term;
 use crate::kernel::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CPointerValue, CType, CValue,
-    IntegerComparisonOperator, IntegerTerm, MachineIntegerType, PureFunctionArgument,
-    SharedCMemory, SharedIntegerTerm, Sort, Term,
+    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
+    MachineIntegerType, PointerValue, ProgramType, ProgramValue, PureFunctionArgument,
+    SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{
-    BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp, CComparisonOperator,
-    CFloatClassification, CFloatCondition, CMemoryRange, ConditionTerm, MachineTerm, Pointer,
-    PointerBlock, PointerOffsetTerm, Proposition, Variable,
+    BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp, ComparisonOperator, ConditionTerm,
+    FloatClassification, FloatCondition, MachineTerm, MemoryRange, Pointer, PointerBlock,
+    PointerOffsetTerm, Proposition, Variable,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -92,12 +92,12 @@ pub(crate) enum SnapshotBlindConditionKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum SnapshotBlindFloatConditionKey {
     Comparison {
-        operator: CComparisonOperator,
+        operator: ComparisonOperator,
         left: SnapshotBlindBitvectorKey,
         right: SnapshotBlindBitvectorKey,
     },
     Classification {
-        classification: CFloatClassification,
+        classification: FloatClassification,
         value: SnapshotBlindBitvectorKey,
     },
 }
@@ -114,7 +114,7 @@ pub(crate) fn clear_snapshot_operand_keys() {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct SnapshotBlindPointerValueKey {
-    c_type: CType,
+    program_type: ProgramType,
     address: SnapshotBlindPointerKey,
     designation: SnapshotBlindPointerKey,
     opaque_extent: Option<SnapshotBlindPointerKey>,
@@ -136,9 +136,9 @@ impl SnapshotBlindPointerValueKey {
     }
 }
 
-fn snapshot_blind_pointer_value_key(pointer: &CPointerValue) -> SnapshotBlindPointerValueKey {
+fn snapshot_blind_pointer_value_key(pointer: &PointerValue) -> SnapshotBlindPointerValueKey {
     SnapshotBlindPointerValueKey {
-        c_type: pointer.c_type(),
+        program_type: pointer.program_type(),
         address: snapshot_blind_pointer_key(pointer.pointer()),
         designation: snapshot_blind_pointer_key(pointer.designation()),
         opaque_extent: if pointer.extent_is_known() {
@@ -374,7 +374,7 @@ fn snapshot_blind_proposition_key_one(proposition: &Proposition) -> SnapshotBlin
         Proposition::Not(body) => {
             SnapshotBlindPropositionKey::Not(Box::new(snapshot_blind_proposition_key(body)))
         }
-        Proposition::CResourceSeparate { .. } if proposition.memory_separation().is_some() => {
+        Proposition::ResourceSeparate { .. } if proposition.memory_separation().is_some() => {
             let (left, right) = proposition
                 .memory_separation()
                 .expect("the guard matched a memory separation");
@@ -387,7 +387,7 @@ fn snapshot_blind_proposition_key_one(proposition: &Proposition) -> SnapshotBlin
     }
 }
 
-fn snapshot_blind_memory_range_key(range: &CMemoryRange) -> Box<SnapshotBlindMemoryRangeKey> {
+fn snapshot_blind_memory_range_key(range: &MemoryRange) -> Box<SnapshotBlindMemoryRangeKey> {
     Box::new(SnapshotBlindMemoryRangeKey {
         block: range.base().block.clone(),
         offset: snapshot_blind_pointer_offset_key(&range.base().offset),
@@ -509,10 +509,10 @@ fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindCondi
 }
 
 fn snapshot_blind_float_condition_key(
-    condition: &CFloatCondition,
+    condition: &FloatCondition,
 ) -> SnapshotBlindFloatConditionKey {
     match condition {
-        CFloatCondition::Comparison {
+        FloatCondition::Comparison {
             operator,
             left,
             right,
@@ -521,7 +521,7 @@ fn snapshot_blind_float_condition_key(
             left: snapshot_blind_bitvector_key(left),
             right: snapshot_blind_bitvector_key(right),
         },
-        CFloatCondition::Classification {
+        FloatCondition::Classification {
             classification,
             value,
         } => SnapshotBlindFloatConditionKey::Classification {
@@ -599,7 +599,7 @@ fn snapshot_blind_pointer_offset_key(offset: &PointerOffsetTerm) -> SnapshotBlin
 /// checked premises. Bound variables use structural ordinals and free
 /// variables retain their kernel identities. Raw bitvector loads outside a
 /// loadability atom remain snapshot-blind on this selection path, while a
-/// `CMemoryLoadable` atom retains the exact snapshot that is part of its
+/// `MemoryLoadable` atom retains the exact snapshot that is part of its
 /// checked premise.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct QuantifiedEquivalenceKey(AlphaPropositionKey);
@@ -626,10 +626,9 @@ pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -
     let arguments = arguments
         .iter()
         .map(|argument| match argument {
-            Term::CValue(CValue::Pointer(pointer)) => Term::CValue(CValue::typed_pointer(
-                crate::kernel::Pointer::null(),
-                pointer.c_type(),
-            )),
+            Term::ProgramValue(ProgramValue::Pointer(pointer)) => Term::ProgramValue(
+                ProgramValue::typed_pointer(crate::kernel::Pointer::null(), pointer.program_type()),
+            ),
             other => other.clone(),
         })
         .collect();
@@ -651,12 +650,12 @@ enum AlphaPropositionKey {
         name: String,
         arguments: Vec<AlphaPredicateArgumentKey>,
     },
-    CMemoryReadDefined {
+    MemoryReadDefined {
         memory: AlphaSnapshotKey,
         pointer: AlphaPointerKey,
-        value_type: CType,
+        value_type: ProgramType,
     },
-    CMemoryLoadable {
+    MemoryLoadable {
         memory: AlphaSnapshotKey,
         base: AlphaPointerKey,
         bytes: AlphaBitvectorKey,
@@ -670,14 +669,14 @@ enum AlphaPropositionKey {
     Exists(Sort, Box<Self>),
 }
 
-/// A predicate argument's bounded selector key. A `CState` uses its memory
+/// A predicate argument's bounded selector key. A `ExecutionState` uses its memory
 /// identity to narrow the bucket; the final quantified-fact comparison also
 /// checks its non-memory storage without copying the whole state into a key.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPredicateArgumentKey {
     StateMemory(AlphaSnapshotKey),
     Memory(AlphaSnapshotKey),
-    Value(AlphaCValueKey),
+    Value(AlphaProgramValueKey),
     Integer(AlphaIntegerKey),
     Algebraic(AlphaAlgebraicKey),
 }
@@ -754,7 +753,7 @@ pub(crate) type IntegerEqualityAlphaKey = IntegerConditionAlphaKey;
 /// comparison atoms.
 ///
 /// Integer range-fold binders are canonicalized by a typed alpha environment.
-/// Load-bearing C payloads retain their exact `SharedCMemory` identities, so
+/// Load-bearing C payloads retain their exact `SharedMemory` identities, so
 /// this index is authoritative only for comparisons whose loads name the same
 /// snapshots. The entry point is deliberately narrow: only a true Integer
 /// comparison with a range-fold operand at its root is eligible. Scalar
@@ -852,24 +851,24 @@ enum AlphaBitvectorKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPureFunctionArgumentKey {
-    Value(AlphaCValueKey),
+    Value(AlphaProgramValueKey),
     Integer(AlphaIntegerKey),
     Algebraic(AlphaAlgebraicKey),
     ArrayRef {
         memory: AlphaSnapshotKey,
-        pointer: AlphaCValueKey,
-        element_type: CType,
+        pointer: AlphaProgramValueKey,
+        element_type: ProgramType,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum AlphaCValueKey {
+enum AlphaProgramValueKey {
     Void,
     /// A value of a specification type, keyed as the algebraic term it is.
     Parameter(Box<AlphaAlgebraicKey>),
-    Scalar(CType, AlphaMachineKey),
+    Scalar(ProgramType, AlphaMachineKey),
     Pointer {
-        c_type: CType,
+        program_type: ProgramType,
         pointee_volatile: bool,
         pointee_constant: bool,
         pointer: AlphaPointerKey,
@@ -907,7 +906,7 @@ enum AlphaAlgebraicKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaAlgebraicValueKey {
-    C(AlphaCValueKey),
+    Program(AlphaProgramValueKey),
     Integer(AlphaIntegerKey),
     Algebraic(AlphaAlgebraicKey),
 }
@@ -923,11 +922,11 @@ enum AlphaAlgebraicValueKey {
 #[derive(Clone)]
 struct AlphaSnapshotKey {
     identity: (u32, u32),
-    _snapshot: SharedCMemory,
+    _snapshot: SharedMemory,
 }
 
 impl AlphaSnapshotKey {
-    fn new(snapshot: &SharedCMemory) -> Self {
+    fn new(snapshot: &SharedMemory) -> Self {
         Self {
             identity: snapshot.arena_id(),
             _snapshot: snapshot.clone(),
@@ -1191,7 +1190,7 @@ fn intern_alpha_registered_load(
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaConditionKey {
     AlgebraicEqual(Box<AlphaAlgebraicKey>, Box<AlphaAlgebraicKey>),
-    PointerValueEqual(Box<AlphaCValueKey>, Box<AlphaCValueKey>),
+    PointerValueEqual(Box<AlphaProgramValueKey>, Box<AlphaProgramValueKey>),
     Constant(bool),
     Variable(AlphaVariableKey),
     Binary(BitvectorComparisonOp, AlphaBitvectorKey, AlphaBitvectorKey),
@@ -1301,6 +1300,12 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
+                    V::Shared(root) if matches!(root.node(), N::Match(_)) => {
+                        let N::Match(matched) = root.node() else {
+                            unreachable!()
+                        };
+                        match_keys::retained_machine::<ALLOW_LOADS>(matched, bindings, next_binder)?
+                    }
                     V::Shared(root) if matches!(root.node(), N::Fold(_)) => {
                         let N::Fold(fold) = root.node() else {
                             unreachable!()
@@ -1378,7 +1383,7 @@ struct AlphaIntegerKey {
 /// Opaque, exact alpha identity for one root Integer range fold.
 ///
 /// The inner node graph retains carrier-aware binders and, in the snapshot
-/// aware mode, the `SharedCMemory` handles named by load-bearing C payloads.
+/// aware mode, the `SharedMemory` handles named by load-bearing C payloads.
 /// Consumers may hash or compare this value, but cannot inspect or rebuild its
 /// structural representation on an arithmetic hot path.
 #[derive(Clone)]
@@ -2139,19 +2144,21 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
     })
 }
 
-fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
-    value: &CValue,
+fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
+    value: &ProgramValue,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
-) -> Option<AlphaCValueKey> {
+) -> Option<AlphaProgramValueKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(match value {
-        CValue::Void => AlphaCValueKey::Void,
-        CValue::Parameter(term) => AlphaCValueKey::Parameter(Box::new(
-            alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(term, bindings, next_binder)?,
-        )),
-        CValue::Pointer(pointer) => AlphaCValueKey::Pointer {
-            c_type: pointer.c_type(),
+        ProgramValue::Void => AlphaProgramValueKey::Void,
+        ProgramValue::Parameter(term) => {
+            AlphaProgramValueKey::Parameter(Box::new(alpha_algebraic_key_with_bindings::<
+                ALLOW_LOADS,
+            >(term, bindings, next_binder)?))
+        }
+        ProgramValue::Pointer(pointer) => AlphaProgramValueKey::Pointer {
+            program_type: pointer.program_type(),
             pointee_volatile: pointer.pointee_volatile(),
             pointee_constant: pointer.pointee_constant(),
             pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
@@ -2195,24 +2202,26 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
         },
         other => {
             let (ty, term) = match other.numeric_value() {
-                CValue::PointerInteger(_) => unreachable!("numeric projection"),
-                CValue::Int128(term) => (CType::Int128, term),
-                CValue::UInt128(term) => (CType::UInt128, term),
+                ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+                ProgramValue::Int128(term) => (ProgramType::Int128, term),
+                ProgramValue::UInt128(term) => (ProgramType::UInt128, term),
 
-                CValue::Bool(term) => (CType::Bool, term),
-                CValue::Int8(term) => (CType::Int8, term),
-                CValue::Int16(term) => (CType::Int16, term),
-                CValue::Int32(term) => (CType::Int32, term),
-                CValue::UInt8(term) => (CType::UInt8, term),
-                CValue::UInt16(term) => (CType::UInt16, term),
-                CValue::UInt32(term) => (CType::UInt32, term),
-                CValue::Int64(term) => (CType::Int64, term),
-                CValue::UInt64(term) => (CType::UInt64, term),
-                CValue::Float32(term) => (CType::Float32, term),
-                CValue::Float64(term) => (CType::Float64, term),
-                CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => unreachable!(),
+                ProgramValue::Bool(term) => (ProgramType::Bool, term),
+                ProgramValue::Int8(term) => (ProgramType::Int8, term),
+                ProgramValue::Int16(term) => (ProgramType::Int16, term),
+                ProgramValue::Int32(term) => (ProgramType::Int32, term),
+                ProgramValue::UInt8(term) => (ProgramType::UInt8, term),
+                ProgramValue::UInt16(term) => (ProgramType::UInt16, term),
+                ProgramValue::UInt32(term) => (ProgramType::UInt32, term),
+                ProgramValue::Int64(term) => (ProgramType::Int64, term),
+                ProgramValue::UInt64(term) => (ProgramType::UInt64, term),
+                ProgramValue::Float32(term) => (ProgramType::Float32, term),
+                ProgramValue::Float64(term) => (ProgramType::Float64, term),
+                ProgramValue::Void | ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => {
+                    unreachable!()
+                }
             };
-            AlphaCValueKey::Scalar(
+            AlphaProgramValueKey::Scalar(
                 ty,
                 alpha_machine_key::<ALLOW_LOADS>(
                     crate::kernel::MachineOperandView::Legacy(term),
@@ -2246,8 +2255,8 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
                 .iter()
                 .map(|field| {
                     Some(match field {
-                        AlgebraicValue::C(value) => AlphaAlgebraicValueKey::C(
-                            alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+                        AlgebraicValue::Program(value) => AlphaAlgebraicValueKey::Program(
+                            alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                                 value,
                                 bindings,
                                 next_binder,
@@ -2305,13 +2314,13 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
     alpha_work_checkpoint(bindings, 1)?;
     Some(match argument {
         PureFunctionArgument::SharedMachine(value) => {
-            AlphaPureFunctionArgumentKey::Value(AlphaCValueKey::Scalar(
-                value.ty().c_type(),
+            AlphaPureFunctionArgumentKey::Value(AlphaProgramValueKey::Scalar(
+                value.ty().program_type(),
                 alpha_machine_key::<ALLOW_LOADS>(value.operand_view(), bindings, next_binder)?,
             ))
         }
         PureFunctionArgument::Value(value) => AlphaPureFunctionArgumentKey::Value(
-            alpha_c_value_key_with_bindings::<ALLOW_LOADS>(value, bindings, next_binder)?,
+            alpha_program_value_key_with_bindings::<ALLOW_LOADS>(value, bindings, next_binder)?,
         ),
         PureFunctionArgument::Integer(value) => AlphaPureFunctionArgumentKey::Integer(
             alpha_integer_key_with_bindings(value, bindings, next_binder)?,
@@ -2324,8 +2333,8 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
             pointer,
             element_type,
         } => AlphaPureFunctionArgumentKey::ArrayRef {
-            memory: AlphaSnapshotKey::new(&crate::kernel::intern_c_memory_ref(memory)),
-            pointer: alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+            memory: AlphaSnapshotKey::new(&crate::kernel::intern_memory_ref(memory)),
+            pointer: alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 pointer,
                 bindings,
                 next_binder,
@@ -2739,13 +2748,13 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
         ConditionTerm::PointerValueEqual(left, right) => AlphaConditionKey::PointerValueEqual(
-            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
-                &CValue::Pointer((**left).clone()),
+            Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
+                &ProgramValue::Pointer((**left).clone()),
                 bindings,
                 next_binder,
             )?),
-            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
-                &CValue::Pointer((**right).clone()),
+            Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
+                &ProgramValue::Pointer((**right).clone()),
                 bindings,
                 next_binder,
             )?),
@@ -3032,7 +3041,7 @@ fn renumbered_binders(proposition: &Proposition, depth: u64) -> Proposition {
 #[cfg(test)]
 mod proposition_identity_tests {
     use super::*;
-    use crate::kernel::{CMemory, CValue};
+    use crate::kernel::{Memory, ProgramValue};
 
     fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
         Proposition::ConditionIs(
@@ -3055,10 +3064,10 @@ mod proposition_identity_tests {
         }
     }
 
-    fn local_definedness_fact(memory: &CMemory, variable: u64) -> Proposition {
+    fn local_definedness_fact(memory: &Memory, variable: u64) -> Proposition {
         forall(
             variable,
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: "local:defined-array".into(),
@@ -3067,7 +3076,7 @@ mod proposition_identity_tests {
                         1,
                     ),
                 },
-                value_type: CType::UInt8,
+                value_type: ProgramType::UInt8,
             },
         )
     }
@@ -3083,12 +3092,14 @@ mod proposition_identity_tests {
             block: "local:defined-other".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_uninitialized_block(array.block.clone(), 4)
             .with_uninitialized_block(other.block.clone(), 4)
             .store(array.clone(), crate::kernel::uint8(7u32));
         let key = proposition_identity_key(&local_definedness_fact(&before, 81_001)).unwrap();
-        let disjoint = before.clone().store(other, CValue::Int32(9u32.into()));
+        let disjoint = before
+            .clone()
+            .store(other, ProgramValue::Int32(9u32.into()));
         assert_eq!(
             Some(key.clone()),
             proposition_identity_key(&local_definedness_fact(&disjoint, 81_002))
@@ -3100,7 +3111,7 @@ mod proposition_identity_tests {
         let resized = before.clone().with_block(array.block.clone(), 8);
         let unknown_write = before.clone().store(
             Pointer::symbolic(Variable(81_003)),
-            CValue::Int32(1u32.into()),
+            ProgramValue::Int32(1u32.into()),
         );
         for changed in [affected, retired, resized, unknown_write] {
             assert_ne!(
@@ -3109,7 +3120,7 @@ mod proposition_identity_tests {
             );
         }
         // An independently constructed unwritten object is not the old one.
-        let uninitialized = CMemory::new().with_uninitialized_block(array.block, 4);
+        let uninitialized = Memory::new().with_uninitialized_block(array.block, 4);
         assert_ne!(
             Some(key),
             proposition_identity_key(&local_definedness_fact(&uninitialized, 81_001))
@@ -3125,9 +3136,9 @@ mod proposition_identity_tests {
             equal(
                 MachineTerm::ClickFunctionApplication {
                     name: "count".to_string(),
-                    arguments: vec![crate::kernel::PureFunctionArgument::Value(CValue::Int32(
-                        MachineTerm::Variable(Variable(bound)),
-                    ))],
+                    arguments: vec![crate::kernel::PureFunctionArgument::Value(
+                        ProgramValue::Int32(MachineTerm::Variable(Variable(bound))),
+                    )],
                 },
                 MachineTerm::constant(1),
             )
@@ -3147,11 +3158,12 @@ mod proposition_identity_tests {
             block: "alpha-array".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new().with_block("alpha-array", 8);
-        let after = before
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1)));
-        let make = |binder: u64, argument: u64, memory: CMemory| Proposition::Exists {
+        let before = Memory::new().with_block("alpha-array", 8);
+        let after = before.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
+        let make = |binder: u64, argument: u64, memory: Memory| Proposition::Exists {
             name: "fuel".into(),
             var: Variable(binder),
             sort: Sort::Algebraic(ty.clone()),
@@ -3161,8 +3173,8 @@ mod proposition_identity_tests {
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
                             memory,
-                            pointer: CValue::pointer(pointer.clone()),
-                            element_type: CType::Int32,
+                            pointer: ProgramValue::pointer(pointer.clone()),
+                            element_type: ProgramType::Int32,
                         },
                         PureFunctionArgument::Algebraic(AlgebraicTerm {
                             algebraic_type: ty.clone(),
@@ -3193,7 +3205,7 @@ mod proposition_identity_tests {
             sort: Sort::Algebraic(ty),
             body: Box::new(equal(
                 MachineTerm::MemoryLoad(
-                    CMemory::new().with_block("alpha-array", 8).into(),
+                    Memory::new().with_block("alpha-array", 8).into(),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -3367,23 +3379,24 @@ mod proposition_identity_tests {
             block: "identity-version".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let left_memory = CMemory::new().with_block("identity-version", 8);
-        let right_memory = left_memory
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9)));
-        let left = Proposition::CMemoryLoadable {
+        let left_memory = Memory::new().with_block("identity-version", 8);
+        let right_memory = left_memory.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(9)),
+        );
+        let left = Proposition::MemoryLoadable {
             memory: left_memory.clone(),
             base: pointer.clone(),
             bytes: MachineTerm::constant(1),
             wide: false,
         };
-        let same = Proposition::CMemoryLoadable {
+        let same = Proposition::MemoryLoadable {
             memory: left_memory,
             base: pointer.clone(),
             bytes: MachineTerm::constant(1),
             wide: false,
         };
-        let changed = Proposition::CMemoryLoadable {
+        let changed = Proposition::MemoryLoadable {
             memory: right_memory,
             base: pointer,
             bytes: MachineTerm::constant(1),
@@ -3399,8 +3412,8 @@ mod proposition_identity_tests {
             block: "identity-registered-load".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new().with_block("identity-registered-load", 8);
-        let shared_memory = crate::kernel::intern_c_memory_ref(&memory);
+        let memory = Memory::new().with_block("identity-registered-load", 8);
+        let shared_memory = crate::kernel::intern_memory_ref(&memory);
         // The spelled side is a raw `MemoryLoad` term, which records no
         // width, so the named side must stand in the same width the
         // term-derived naming path assumes for it.
@@ -3432,10 +3445,11 @@ mod proposition_identity_tests {
             proposition_identity_key(&named)
         );
 
-        let changed_memory = memory
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9)));
-        let changed_shared = crate::kernel::intern_c_memory_ref(&changed_memory);
+        let changed_memory = memory.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(9)),
+        );
+        let changed_shared = crate::kernel::intern_memory_ref(&changed_memory);
         let changed_load = crate::kernel::load_variable_for_cell_with_origin(
             &changed_shared,
             &pointer,
@@ -3537,21 +3551,21 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 .map(|argument| {
                     alpha_work_checkpoint(bindings, 1)?;
                     Some(match argument {
-                        Term::CState(state) => {
+                        Term::ExecutionState(state) => {
                             AlphaPredicateArgumentKey::StateMemory(AlphaSnapshotKey::new(
-                                &crate::kernel::intern_c_memory_ref(state.memory()),
+                                &crate::kernel::intern_memory_ref(state.memory()),
                             ))
                         }
-                        Term::CMemory(memory) => AlphaPredicateArgumentKey::Memory(
-                            AlphaSnapshotKey::new(&crate::kernel::intern_c_memory_ref(memory)),
+                        Term::Memory(memory) => AlphaPredicateArgumentKey::Memory(
+                            AlphaSnapshotKey::new(&crate::kernel::intern_memory_ref(memory)),
                         ),
-                        Term::CValue(value) => {
-                            AlphaPredicateArgumentKey::Value(alpha_c_value_key_with_bindings::<
-                                ALLOW_LOADS,
-                            >(
-                                value, bindings, next_binder
-                            )?)
-                        }
+                        Term::ProgramValue(value) => AlphaPredicateArgumentKey::Value(
+                            alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
+                                value,
+                                bindings,
+                                next_binder,
+                            )?,
+                        ),
                         Term::Integer(value) => AlphaPredicateArgumentKey::Integer(
                             alpha_integer_key_with_bindings(value, bindings, next_binder)?,
                         ),
@@ -3567,7 +3581,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
@@ -3580,8 +3594,8 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             bindings.snapshot_aware = true;
             let key = (|| -> Option<AlphaPropositionKey> {
                 alpha_work_checkpoint(bindings, 1)?;
-                let snapshot = crate::kernel::intern_c_memory_ref(memory);
-                Some(AlphaPropositionKey::CMemoryReadDefined {
+                let snapshot = crate::kernel::intern_memory_ref(memory);
+                Some(AlphaPropositionKey::MemoryReadDefined {
                     memory: AlphaSnapshotKey {
                         identity: snapshot.local_read_definedness_identity(pointer),
                         _snapshot: snapshot.clone(),
@@ -3597,7 +3611,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             bindings.snapshot_aware = prior_snapshot_aware;
             key?
         }
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -3618,8 +3632,8 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             bindings.snapshot_aware = true;
             let key = (|| -> Option<AlphaPropositionKey> {
                 alpha_work_checkpoint(bindings, 1)?;
-                let snapshot = crate::kernel::intern_c_memory_ref(memory);
-                Some(AlphaPropositionKey::CMemoryLoadable {
+                let snapshot = crate::kernel::intern_memory_ref(memory);
+                Some(AlphaPropositionKey::MemoryLoadable {
                     memory: AlphaSnapshotKey::new(&snapshot),
                     base: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                         base,
@@ -3866,12 +3880,14 @@ pub(crate) fn predicate_states_share_storage(left: &Proposition, right: &Proposi
                 }
                 for (a, b) in a.iter().zip(b) {
                     match (a, b) {
-                        (Term::CState(a), Term::CState(b)) => {
+                        (Term::ExecutionState(a), Term::ExecutionState(b)) => {
                             if !a.shares_non_memory_storage_with(b) {
                                 return false;
                             }
                         }
-                        (Term::CState(_), _) | (_, Term::CState(_)) => return false,
+                        (Term::ExecutionState(_), _) | (_, Term::ExecutionState(_)) => {
+                            return false;
+                        }
                         _ => {}
                     }
                 }
@@ -3887,7 +3903,7 @@ fn checked_proposition_contains_memory_loadability(proposition: &Proposition) ->
         return Err(());
     }
     match proposition {
-        Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. } => Ok(true),
+        Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. } => Ok(true),
         Proposition::And(left, right)
         | Proposition::Or(left, right)
         | Proposition::Implies(left, right) => {
@@ -4241,7 +4257,7 @@ mod integer_alpha_scaling_tests {
 mod snapshot_alpha_tests {
     use super::*;
     use crate::kernel::{
-        CMemory, CValue, IntegerRangeFoldIndex, SharedIntegerRangeEndpoint, SharedIntegerTerm,
+        IntegerRangeFoldIndex, Memory, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm,
     };
 
@@ -4252,7 +4268,7 @@ mod snapshot_alpha_tests {
         }
     }
 
-    fn fold_body(memory: &SharedCMemory, item: Variable) -> IntegerTerm {
+    fn fold_body(memory: &SharedMemory, item: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
@@ -4266,7 +4282,7 @@ mod snapshot_alpha_tests {
         ))
     }
 
-    fn fold(memory: &SharedCMemory, accumulator: Variable, item: Variable) -> IntegerTerm {
+    fn fold(memory: &SharedMemory, accumulator: Variable, item: Variable) -> IntegerTerm {
         IntegerTerm::range_fold(
             int32_index(),
             IntegerTerm::constant_i64(0),
@@ -4326,12 +4342,12 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(
             before
                 .as_ref()
                 .clone()
-                .store(pointer, CValue::Int32(MachineTerm::constant(7))),
+                .store(pointer, ProgramValue::Int32(MachineTerm::constant(7))),
         );
 
         let source = integer_equality_alpha_key(&equality(fold(
@@ -4360,7 +4376,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_rejects_unknown_registered_loads() {
         let unknown_load = Variable((1 << 40) + 313);
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha", 8));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
         let term = IntegerTerm::range_fold(
             int32_index(),
             IntegerTerm::constant_i64(0),
@@ -4388,13 +4404,11 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(
-            before
-                .as_ref()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(11))),
-        );
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(before.as_ref().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(11)),
+        ));
         let before_load = crate::kernel::load_variable_for_cell_with_origin(
             &before,
             &pointer,
@@ -4453,7 +4467,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_renames_a_binder_under_a_loaded_pointer_block() {
         let block = "loaded-pointer-block-alpha";
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(block, 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 16));
         let field = |offset: i64| Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(offset),
@@ -4487,7 +4501,7 @@ mod snapshot_alpha_tests {
             Proposition::ForAll {
                 name: Default::default(),
                 var: binder,
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -4514,7 +4528,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_explicit_and_registered_loads_share_nested_identity() {
         let block = "snapshot-alpha-equivalent-loads";
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(block, 64));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 64));
         let first_pointer = Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4591,7 +4605,7 @@ mod snapshot_alpha_tests {
     }
 
     #[test]
-    fn snapshot_alpha_accepts_free_c_endpoints_and_body_values() {
+    fn snapshot_alpha_accepts_free_program_endpoints_and_body_values() {
         let start = Variable(319_000);
         let end = Variable(319_001);
         let payload = Variable(319_002);
@@ -4630,14 +4644,14 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(
             before
                 .as_ref()
                 .clone()
-                .store(pointer, CValue::Int32(MachineTerm::constant(13))),
+                .store(pointer, ProgramValue::Int32(MachineTerm::constant(13))),
         );
-        let make = |memory: &SharedCMemory, accumulator: Variable, item: Variable| {
+        let make = |memory: &SharedMemory, accumulator: Variable, item: Variable| {
             let term = fold_body(memory, item);
             IntegerTerm::range_fold(
                 int32_index(),
@@ -4670,14 +4684,12 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(
-            before
-                .as_ref()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(5))),
-        );
-        let nested = |memory: &SharedCMemory, accumulator: Variable, item: Variable| {
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(before.as_ref().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(5)),
+        ));
+        let nested = |memory: &SharedMemory, accumulator: Variable, item: Variable| {
             let inner = fold(memory, Variable(316_000), Variable(316_001));
             IntegerTerm::range_fold(
                 int32_index(),
@@ -4710,9 +4722,9 @@ mod snapshot_alpha_tests {
         assert_ne!(source, changed_snapshot);
     }
 
-    fn registered_load_chain(depth: usize) -> (SharedCMemory, Variable) {
+    fn registered_load_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("snapshot-alpha-registry-{depth}");
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(block.clone(), 4096));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
         let mut pointer = Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4740,9 +4752,9 @@ mod snapshot_alpha_tests {
         (memory, load)
     }
 
-    fn registered_load_branching_chain(depth: usize) -> (SharedCMemory, Variable) {
+    fn registered_load_branching_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("snapshot-alpha-registry-branch-{depth}");
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(block.clone(), 4096));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
         let mut pointer = Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4828,7 +4840,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_drops_unreachable_registered_load_snapshots() {
         let early_memory =
-            crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha-early", 8));
+            crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha-early", 8));
         let early_term: SharedIntegerTerm =
             fold(&early_memory, Variable(324_000), Variable(324_001)).into();
         let early_key = integer_fold_alpha_key(&early_term).expect("early fold key");
@@ -4836,8 +4848,7 @@ mod snapshot_alpha_tests {
 
         for index in 0..64u64 {
             let block = format!("snapshot-alpha-temporary-{index}");
-            let memory =
-                crate::kernel::intern_c_memory(CMemory::new().with_block(block.clone(), 8));
+            let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 8));
             let term: SharedIntegerTerm = IntegerTerm::range_fold(
                 int32_index(),
                 IntegerTerm::constant_i64(0),
@@ -4871,8 +4882,7 @@ mod snapshot_alpha_tests {
         let mut trigger_key = None;
         for index in 0..16u64 {
             let block = format!("snapshot-alpha-cleanup-trigger-{index}");
-            let memory =
-                crate::kernel::intern_c_memory(CMemory::new().with_block(block.clone(), 8));
+            let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 8));
             let term: SharedIntegerTerm = IntegerTerm::range_fold(
                 int32_index(),
                 IntegerTerm::constant_i64(0),
@@ -4956,7 +4966,7 @@ mod machine_quantifier_identity_tests {
                     let quantified = |condition, truth| Proposition::ForAll {
                         var: Variable(981),
                         name: crate::kernel::BinderName::written("i"),
-                        sort: Sort::CMachineInteger(format),
+                        sort: Sort::ProgramInteger(format),
                         body: Box::new(Proposition::ConditionIs(condition, truth)),
                     };
                     assert!(
@@ -4983,7 +4993,7 @@ mod machine_quantifier_identity_tests {
         let quantified = |variable, wide, bound| Proposition::Exists {
             name: "x".into(),
             var: Variable(variable),
-            sort: Sort::CInt64,
+            sort: Sort::ProgramInt64,
             body: Box::new(Proposition::ConditionIs(
                 if wide {
                     ConditionTerm::Compare {
@@ -5019,7 +5029,7 @@ mod machine_quantifier_identity_tests {
         let Proposition::Exists { sort, .. } = &mut unsigned else {
             unreachable!()
         };
-        *sort = Sort::CMachineInteger(MachineIntegerType::UInt64);
+        *sort = Sort::ProgramInteger(MachineIntegerType::UInt64);
         assert!(!propositions_are_alpha_equal(&wide, &unsigned));
     }
 }

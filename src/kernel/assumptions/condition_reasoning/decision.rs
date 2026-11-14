@@ -527,16 +527,15 @@ impl PureFactContext {
         {
             return Some(value);
         }
-        if !matches!(condition, ConditionTerm::Compare { .. })
+        let checked_shared_word_order = !matches!(condition, ConditionTerm::Compare { .. })
             && crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
                 .is_some_and(|view| {
                     matches!(
                         view.format,
                         MachineIntegerType::Int32 | MachineIntegerType::UInt32
                     )
-                })
-            && let Some(value) = self.decide_from_order_facts(condition)
-        {
+                });
+        if checked_shared_word_order && let Some(value) = self.decide_from_order_facts(condition) {
             return Some(value);
         }
         // Retained comparison rules keep their compatibility dispatch order:
@@ -749,7 +748,16 @@ impl PureFactContext {
                     .get(condition)
                     .copied()
                     .or_else(|| self.decide_from_overflow_facts(condition))
-                    .or_else(|| self.decide_from_order_facts(condition))
+                    // The retained word query above already checked these
+                    // facts. Only a changed simplification needs another
+                    // order query (handled in the branch above).
+                    .or_else(|| {
+                        if checked_shared_word_order {
+                            None
+                        } else {
+                            self.decide_from_order_facts(condition)
+                        }
+                    })
             }
         }
     }
@@ -925,12 +933,12 @@ impl PureFactContext {
 
     fn decide_reflexive_float_comparison(&self, condition: &ConditionTerm) -> Option<bool> {
         let (operator, left, right) = match condition {
-            ConditionTerm::Float32(CFloatCondition::Comparison {
+            ConditionTerm::Float32(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
             }) => (*operator, left.as_ref(), right.as_ref()),
-            ConditionTerm::Float64(CFloatCondition::Comparison {
+            ConditionTerm::Float64(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
@@ -946,19 +954,19 @@ impl PureFactContext {
         }
         let finite_left = match condition {
             ConditionTerm::Float32(_) => {
-                ConditionTerm::float32_classification(left.clone(), CFloatClassification::Finite)
+                ConditionTerm::float32_classification(left.clone(), FloatClassification::Finite)
             }
             ConditionTerm::Float64(_) => {
-                ConditionTerm::float64_classification(left.clone(), CFloatClassification::Finite)
+                ConditionTerm::float64_classification(left.clone(), FloatClassification::Finite)
             }
             _ => unreachable!(),
         };
         let finite_right = match condition {
             ConditionTerm::Float32(_) => {
-                ConditionTerm::float32_classification(right.clone(), CFloatClassification::Finite)
+                ConditionTerm::float32_classification(right.clone(), FloatClassification::Finite)
             }
             ConditionTerm::Float64(_) => {
-                ConditionTerm::float64_classification(right.clone(), CFloatClassification::Finite)
+                ConditionTerm::float64_classification(right.clone(), FloatClassification::Finite)
             }
             _ => unreachable!(),
         };
@@ -968,12 +976,12 @@ impl PureFactContext {
             return None;
         }
         Some(match operator {
-            CComparisonOperator::Equal
-            | CComparisonOperator::LessEqual
-            | CComparisonOperator::GreaterEqual => true,
-            CComparisonOperator::NotEqual
-            | CComparisonOperator::LessThan
-            | CComparisonOperator::GreaterThan => false,
+            ComparisonOperator::Equal
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::GreaterEqual => true,
+            ComparisonOperator::NotEqual
+            | ComparisonOperator::LessThan
+            | ComparisonOperator::GreaterThan => false,
         })
     }
 
@@ -2091,7 +2099,7 @@ impl PureFactContext {
                 .unwrap_or_else(|| condition.clone()),
             ConditionTerm::Constant(value) => ConditionTerm::Constant(*value),
             ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
-            ConditionTerm::Float32(CFloatCondition::Comparison {
+            ConditionTerm::Float32(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
@@ -2100,14 +2108,14 @@ impl PureFactContext {
                 self.simplify_bitvector_under_assumptions(right),
                 *operator,
             ),
-            ConditionTerm::Float32(CFloatCondition::Classification {
+            ConditionTerm::Float32(FloatCondition::Classification {
                 classification,
                 value,
             }) => ConditionTerm::float32_classification(
                 self.simplify_bitvector_under_assumptions(value),
                 *classification,
             ),
-            ConditionTerm::Float64(CFloatCondition::Comparison {
+            ConditionTerm::Float64(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
@@ -2116,7 +2124,7 @@ impl PureFactContext {
                 self.simplify_bitvector_under_assumptions(right),
                 *operator,
             ),
-            ConditionTerm::Float64(CFloatCondition::Classification {
+            ConditionTerm::Float64(FloatCondition::Classification {
                 classification,
                 value,
             }) => ConditionTerm::float64_classification(
@@ -2605,9 +2613,9 @@ mod owned_anchor_tests {
     }
 
     fn owner_of(pointers: &[Pointer]) -> Proposition {
-        Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+        Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
-                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     pointer.clone(),
                     0u32.into(),
                     1u32.into(),
@@ -2634,7 +2642,8 @@ mod shared_wide_decision_tests {
     fn wide_constant_decision_reads_shared_values_and_intervals() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
-            let variable = KernelTerm::variable(KernelType::C(format.c_type()), Variable(997561));
+            let variable =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(997561));
             let operand = SharedMachineIntegerTerm::from_shared(
                 format,
                 KernelTerm::machine_binary_shared(
@@ -2796,7 +2805,8 @@ mod exact_word_order_tests {
             (MachineIntegerType::Int32, i32::MIN as u32, i32::MAX as u32),
             (MachineIntegerType::UInt32, 0, u32::MAX),
         ] {
-            let variable = KernelTerm::variable(KernelType::C(format.c_type()), Variable(189311));
+            let variable =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(189311));
             let root = KernelTerm::machine_binary_shared(
                 format,
                 MachineBinaryOp::Add,
@@ -3033,7 +3043,7 @@ mod shared_order_pipeline_tests {
         use crate::kernel::{KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm};
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(997621));
+        let x = KernelTerm::variable(KernelType::Program(format.program_type()), Variable(997621));
         let zero = KernelTermImport::default()
             .machine_arithmetic(format, &0u32.into())
             .unwrap();
@@ -3069,8 +3079,10 @@ mod shared_equality_dispatch_tests {
             for reversed in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::UInt64;
-                let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983001));
-                let y = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983002));
+                let x =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983001));
+                let y =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983002));
                 let sum = KernelTerm::machine_binary_shared(ty, Op::Add, [x, y]);
                 let literal = |n| {
                     crate::kernel::KernelTermImport::default()
@@ -3165,7 +3177,8 @@ mod shared_equality_dispatch_tests {
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for case in 0..16 {
                 let _session = crate::kernel::VerificationSession::enter();
-                let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                let variable =
+                    |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
                 let x = variable(981001);
                 let y = variable(981002);
                 let z = variable(981003);
@@ -3338,9 +3351,12 @@ mod shared_equality_dispatch_tests {
             for width in [0, 4, 8] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::Int32;
-                let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983001));
-                let y = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983002));
-                let z = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983003));
+                let x =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983001));
+                let y =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983002));
+                let z =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983003));
                 let product = KernelTerm::machine_binary_shared(ty, Op::Multiply, [x, y]);
                 let native_product = MachineTerm::logical_machine_binary(
                     ty,
@@ -3415,9 +3431,9 @@ mod intrinsic_context_tests {
 
     #[test]
     fn intrinsic_read_definitions_follow_growth_restore_and_new_sessions() {
-        use crate::kernel::{CMemory, Pointer, VerificationSession, intern_c_memory};
+        use crate::kernel::{Memory, Pointer, VerificationSession, intern_memory};
         let check = || {
-            let memory = intern_c_memory(CMemory::new().with_block("intrinsic", 16));
+            let memory = intern_memory(Memory::new().with_block("intrinsic", 16));
             let address = Pointer::symbolic(Variable(986010));
             let value = Pointer::symbolic(Variable(986011));
             let application = Pointer::loaded_value(&memory, &address);
@@ -3451,8 +3467,8 @@ mod shared_singleton_bound_evidence_tests {
             format,
             MachineBinaryOp::Multiply,
             [
-                KernelTerm::variable(KernelType::C(CType::Int32), Variable(994001)),
-                KernelTerm::variable(KernelType::C(CType::Int32), Variable(994002)),
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(994001)),
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(994002)),
             ],
         );
         let observation = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
@@ -3684,11 +3700,11 @@ mod shared_offset_evidence_tests {
     #[test]
     fn shared_offset_evidence_keeps_read_snapshots_and_shared_premises() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = crate::kernel::CMemory::global_pointer("offset-evidence");
-        let memory = crate::kernel::CMemory::new().with_block("offset-evidence", 4);
+        let pointer = crate::kernel::Memory::global_pointer("offset-evidence");
+        let memory = crate::kernel::Memory::new().with_block("offset-evidence", 4);
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -3696,7 +3712,7 @@ mod shared_offset_evidence_tests {
         let old = read(memory.clone());
         let new = read(memory.store(
             pointer.clone(),
-            crate::kernel::CValue::Int32(MachineTerm::constant(7)),
+            crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
         ));
         let value = MachineTerm::Variable(Variable(1008130));
         let (left, right, changed) = (offset(&old, 4), offset(&value, 4), offset(&new, 4));

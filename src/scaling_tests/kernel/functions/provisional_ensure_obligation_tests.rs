@@ -6,42 +6,47 @@ use super::*;
 
 #[test]
 fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let data = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("data", CValue::pointer(data.clone()))
+    let state = ExecutionState::new()
+        .with_local("data", ProgramValue::pointer(data.clone()))
         .with_memory(memory.clone());
     let ensure = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
             pointer: Box::new(SpecExpression::PointerOffset {
-                pointer: Box::new(SpecExpression::CExpression(c_variable("data"))),
-                elements: Box::new(SpecExpression::CExpression(c_int32_literal(1))),
+                pointer: Box::new(SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("data"),
+                )),
+                elements: Box::new(SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::int32_literal(1),
+                )),
                 byte_width: 4,
             }),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         },
-        operator: CComparisonOperator::Equal,
-        right: SpecExpression::CExpression(c_int32_literal(0)),
+        operator: ComparisonOperator::Equal,
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            0,
+        )),
     };
-    let function = c_function(
-        CType::Int32,
+    let function = program_function(
+        ProgramType::Int32,
         "provisional_loadability_probe",
-        vec![c_parameter("data", CType::Int32Pointer)],
-        c_return(c_int32_literal(0)),
+        vec![program_parameter("data", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_contract(Vec::new(), vec![ensure], Vec::new(), Vec::new(), true);
-    let base_assumptions =
-        PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
-            memory: memory.clone(),
-            base: data.clone(),
-            bytes: MachineTerm::constant(8),
-            wide: false,
-        });
-    let element_loadable = Proposition::CMemoryLoadable {
+    let base_assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        memory: memory.clone(),
+        base: data.clone(),
+        bytes: MachineTerm::constant(8),
+        wide: false,
+    });
+    let element_loadable = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(MachineTerm::constant(1)),
         bytes: MachineTerm::constant(4),

@@ -5,7 +5,10 @@ use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, V
 fn sign_bit_readings_retain_growing_shared_prefixes() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut term = KernelTerm::variable(KernelType::C(Ty::UInt32.c_type()), Variable(189221));
+        let mut term = KernelTerm::variable(
+            KernelType::Program(Ty::UInt32.program_type()),
+            Variable(189221),
+        );
         let zero = MachineTerm::constant(0);
         let context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();

@@ -21,7 +21,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     available_facts: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Result<Vec<ClickProposition>, ClickError> {
     let available = available_facts.to_vec();
     let mut selected = Vec::new();
@@ -83,11 +83,11 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
                 matches!(
                     fact,
                     Proposition::ConditionIs(_, _)
-                        | Proposition::CMemoryMutatesOnly { .. }
-                        | Proposition::CMemoryEffectSummary { .. }
-                        | Proposition::CHeapAllocationFreed { .. }
-                        | Proposition::CResourceSeparate { .. }
-                        | Proposition::CResourceComposition(_)
+                        | Proposition::MemoryMutatesOnly { .. }
+                        | Proposition::MemoryEffectSummary { .. }
+                        | Proposition::HeapAllocationFreed { .. }
+                        | Proposition::ResourceSeparate { .. }
+                        | Proposition::ResourceComposition(_)
                 )
             })
             .fold(transport_assumptions.clone(), |assumptions, fact| {
@@ -389,8 +389,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     if matches!(
         (&source, &target),
         (
-            Proposition::CResourceSeparate { .. },
-            Proposition::CResourceSeparate { .. }
+            Proposition::ResourceSeparate { .. },
+            Proposition::ResourceSeparate { .. }
         )
     ) && exact_fact_is_available(&source, &explicit_premises)
         && certified_fact_transport_reaches(
@@ -504,7 +504,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             // The frontier's certified effect facts (call postconditions and
             // effect summaries) may relate a load at one snapshot to the same
             // cell at another: load names are not preserved across call-havoc
-            // and store edges by path assumptions (see `CMemoryDerivation`).
+            // and store edges by path assumptions (see `MemoryDerivation`).
             // They are certified facts, not user premises.
             chain_facts.extend(
                 effect_facts
@@ -536,11 +536,11 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 matches!(
                     fact,
                     Proposition::ConditionIs(_, _)
-                        | Proposition::CMemoryMutatesOnly { .. }
-                        | Proposition::CMemoryEffectSummary { .. }
-                        | Proposition::CHeapAllocationFreed { .. }
-                        | Proposition::CResourceSeparate { .. }
-                        | Proposition::CResourceComposition(_)
+                        | Proposition::MemoryMutatesOnly { .. }
+                        | Proposition::MemoryEffectSummary { .. }
+                        | Proposition::HeapAllocationFreed { .. }
+                        | Proposition::ResourceSeparate { .. }
+                        | Proposition::ResourceComposition(_)
                 )
             })
             .fold(transport_assumptions.clone(), |assumptions, fact| {
@@ -846,7 +846,7 @@ fn describe_unreachable_fact_transport(
             fact.proposition(),
             labels,
         ));
-        if let Proposition::CMemoryMutatesOnly { writes, .. } = fact.proposition() {
+        if let Proposition::MemoryMutatesOnly { writes, .. } = fact.proposition() {
             for (pointer, bytes) in writes.iter() {
                 if let Some((names, values)) = labels.naming_tables()
                     && let Some(cell) = crate::surface::diagnostics::diagnostic_source_cell(
@@ -959,7 +959,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
             MachineTerm::MemoryLoad(_, pointer, kind) => MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(CMemory::default()),
+                crate::kernel::intern_memory(Memory::default()),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: erase_offset(&pointer.offset),
@@ -1142,7 +1142,7 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
     source: &Proposition,
     target: &Proposition,
-    after: &CMemory,
+    after: &Memory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1167,7 +1167,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
 fn certified_fact_transport_reaches_through_unmemoized(
     source: &Proposition,
     target: &Proposition,
-    after: &CMemory,
+    after: &Memory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1180,7 +1180,7 @@ fn certified_fact_transport_reaches_through_unmemoized(
     }
 
     rewritten.clone() == target.clone()
-        || crate::kernel::c_condition_facts_equivalent_for_memory_resolution(
+        || crate::kernel::program_condition_facts_equivalent_for_memory_resolution(
             &rewritten,
             target,
             assumptions,
@@ -1200,7 +1200,7 @@ fn certified_fact_transport_reaches_through_unmemoized(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     source: &Proposition,
     target: &Proposition,
-    after: Option<&CMemory>,
+    after: Option<&Memory>,
     assumptions: &PureFactContext,
 ) -> bool {
     // A checked read at a computed address includes its address-definedness
@@ -1224,7 +1224,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     }
     let equivalent = |left: &Proposition, right: &Proposition| {
         left == right
-            || crate::kernel::c_condition_facts_equivalent_for_memory_resolution(
+            || crate::kernel::program_condition_facts_equivalent_for_memory_resolution(
                 left,
                 right,
                 assumptions,
@@ -1281,11 +1281,11 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
             return equivalent(source_body, target_body);
         }
         (
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: source_left,
                 right: source_right,
             },
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: target_left,
                 right: target_right,
             },
@@ -1299,12 +1299,12 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
                         "kernel",
                         "fact transport",
                         "resource separation transport: direct left",
-                        || c_resources_directly_match(source_left, target_left, assumptions),
+                        || resources_directly_match(source_left, target_left, assumptions),
                     ) && crate::instrumentation::measure_operation(
                         "kernel",
                         "fact transport",
                         "resource separation transport: direct right",
-                        || c_resources_directly_match(source_right, target_right, assumptions),
+                        || resources_directly_match(source_right, target_right, assumptions),
                     )
                 },
             ) || crate::instrumentation::measure_operation(
@@ -1312,29 +1312,29 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
                 "fact transport",
                 "resource separation transport: swapped orientation",
                 || {
-                    c_resources_directly_match(source_left, target_right, assumptions)
-                        && c_resources_directly_match(source_right, target_left, assumptions)
+                    resources_directly_match(source_left, target_right, assumptions)
+                        && resources_directly_match(source_right, target_left, assumptions)
                 },
             );
         }
         (
-            Proposition::CResourceContains {
+            Proposition::ResourceContains {
                 parent: source_parent,
                 child: source_child,
             },
-            Proposition::CResourceContains {
+            Proposition::ResourceContains {
                 parent: target_parent,
                 child: target_child,
             },
         ) => {
-            return c_resources_directly_match(source_parent, target_parent, assumptions)
-                && c_resources_directly_match(source_child, target_child, assumptions);
+            return resources_directly_match(source_parent, target_parent, assumptions)
+                && resources_directly_match(source_child, target_child, assumptions);
         }
         _ => {}
     }
     if matches!(
         target,
-        Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. }
+        Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. }
     ) {
         return crate::kernel::search::ProofSearch::derive_atomic_proposition(assumptions, target)
             .is_some();
@@ -1349,7 +1349,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
             Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }, true)
         ) if left == right
     ) {
-        return crate::kernel::api::c_condition_fact_target_reaches_in_context(
+        return crate::kernel::api::program_condition_fact_target_reaches_in_context(
             source,
             target,
             assumptions,
@@ -1358,22 +1358,26 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     // Two forms of the same condition fact — for example an element load
     // whose symbolic index the listed order facts pin to a constant — match
     // by the same bounded rule the atomic prover uses on context facts.
-    if crate::kernel::c_condition_facts_match_for_transport(source, target, assumptions) {
+    if crate::kernel::program_condition_facts_match_for_transport(source, target, assumptions) {
         return true;
     }
     // This operation retains its live context. The context-bound rule
     // decides it directly; exporting a standalone theorem first repeats
     // the decision and constructs premises that this operation never exports.
-    if crate::kernel::api::c_condition_fact_target_reaches_in_context(source, target, assumptions) {
+    if crate::kernel::api::program_condition_fact_target_reaches_in_context(
+        source,
+        target,
+        assumptions,
+    ) {
         return true;
     }
     let Some(after) = after else {
         return false;
     };
-    let Some(theorem) = prove_c_condition_fact_transport(source, after, assumptions) else {
+    let Some(theorem) = prove_program_condition_fact_transport(source, after, assumptions) else {
         return false;
     };
-    crate::kernel::c_condition_fact_transport_target_in_context(&theorem, source, assumptions)
+    crate::kernel::program_condition_fact_transport_target_in_context(&theorem, source, assumptions)
         == Some(target)
 }
 
@@ -1399,12 +1403,12 @@ mod path_condition_tests {
 
     #[test]
     fn compound_read_transport_requires_every_address_guard_and_range() {
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let base = Pointer {
             block: "bytes".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let source = Proposition::CMemoryLoadable {
+        let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: MachineTerm::constant(1),
@@ -1428,7 +1432,7 @@ mod path_condition_tests {
         assert!(certified_fact_transport_reaches(
             &source, &target, None, &facts
         ));
-        let wider = Proposition::CMemoryLoadable {
+        let wider = Proposition::MemoryLoadable {
             memory,
             base,
             bytes: MachineTerm::constant(2),

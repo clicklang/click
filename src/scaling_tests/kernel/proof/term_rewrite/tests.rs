@@ -10,15 +10,21 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("node"),
     );
-    let from = CPointerValue::new(Pointer::symbolic(Variable(970_001)), CType::Int32Pointer);
-    let to = CPointerValue::new(Pointer::symbolic(Variable(970_002)), CType::Int32Pointer);
+    let from = PointerValue::new(
+        Pointer::symbolic(Variable(970_001)),
+        ProgramType::Int32Pointer,
+    );
+    let to = PointerValue::new(
+        Pointer::symbolic(Variable(970_002)),
+        ProgramType::Int32Pointer,
+    );
     let typed = from.clone().with_object_class(Some(class.clone()));
     let mut work = Vec::new();
     for size in [16usize, 64, 256] {
         let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
             name: "Node".into(),
             fields: vec![
-                AlgebraicValueType::ObjectPointer(CType::Int32Pointer, class.clone());
+                AlgebraicValueType::ObjectPointer(ProgramType::Int32Pointer, class.clone());
                 size
             ],
         }]
@@ -39,7 +45,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
             },
             node: AlgebraicTermNode::Constructor {
                 variant: "Node".into(),
-                fields: vec![AlgebraicValue::C(CValue::Pointer(typed.clone())); size],
+                fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(typed.clone())); size],
             },
         });
         let (actual, units) = crate::instrumentation::measure_deterministic_work(|| {
@@ -52,7 +58,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
             .checked_constructor_fields()
             .expect("rewriting preserves the typed constructor");
         for field in fields {
-            let AlgebraicValue::C(CValue::Pointer(pointer)) = field else {
+            let AlgebraicValue::Program(ProgramValue::Pointer(pointer)) = field else {
                 panic!("pointer field expected")
             };
             assert_eq!(pointer.pointer(), to.pointer());
@@ -68,8 +74,9 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     );
 
     // A cast's declared class is not checked evidence to transport.
-    let unchecked = CValue::Pointer(from.clone().with_declared_object_class(Some(class.clone())));
-    let CValue::Pointer(actual) =
+    let unchecked =
+        ProgramValue::Pointer(from.clone().with_declared_object_class(Some(class.clone())));
+    let ProgramValue::Pointer(actual) =
         TermRewrite::for_pointer_value_exact(&from, &to).value(&unchecked)
     else {
         panic!("pointer expected")
@@ -77,8 +84,9 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     assert!(!actual.supports_object_class(&class));
 
     // Numeric equality cannot replace the original object's designation.
-    let CValue::Pointer(actual) = TermRewrite::for_pointer_exact(from.pointer(), to.pointer())
-        .value(&CValue::Pointer(typed.clone()))
+    let ProgramValue::Pointer(actual) =
+        TermRewrite::for_pointer_exact(from.pointer(), to.pointer())
+            .value(&ProgramValue::Pointer(typed.clone()))
     else {
         panic!("pointer expected")
     };
@@ -92,7 +100,7 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
     for depth in [8usize, 16, 32, 64] {
         let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
             name: "Case".into(),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         }]
         .into();
         let value_type = AlgebraicValueType::Algebraic {
@@ -123,7 +131,7 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
             };
             let observed = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observe_fold".into(),
-                vec![PureFunctionArgument::Value(CValue::Int32(fold))],
+                vec![PureFunctionArgument::Value(ProgramValue::Int32(fold))],
             ));
             let body = IntegerTerm::Add(observed.into(), expression.into());
             expression = IntegerTerm::AlgebraicMatch {
@@ -134,9 +142,9 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
                 arms: vec![AlgebraicIntegerMatchArm {
                     binding_names: Default::default(),
                     variant: "Case".into(),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                        binding,
-                    )))],
+                    bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                        MachineTerm::Variable(binding),
+                    ))],
                     body: body.into(),
                 }],
             };
@@ -167,9 +175,8 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
     let mut work = Vec::new();
     let mut last_load = None;
     for depth in [8usize, 16, 32, 64] {
-        let memory = crate::kernel::intern_c_memory(
-            CMemory::new().with_block(format!("branch-{depth}"), 64),
-        );
+        let memory =
+            crate::kernel::intern_memory(Memory::new().with_block(format!("branch-{depth}"), 64));
         let block = format!("branch-{depth}");
         let mut load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -310,7 +317,7 @@ fn typed_integer_iota_consumes_the_shared_budget_before_deep_walk() {
                 fields: vec![AlgebraicValue::Integer(IntegerTerm::constant_i64(7))],
             },
         };
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         algebraic_replacements.insert(scrutinee_variable, constructor);
@@ -321,7 +328,7 @@ fn typed_integer_iota_consumes_the_shared_budget_before_deep_walk() {
                         crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
                     );
                     let mut rewrite = TermRewrite::for_typed_variables(
-                        &c_replacements,
+                        &program_replacements,
                         &integer_replacements,
                         &algebraic_replacements,
                     );
@@ -457,7 +464,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
 
     let integer_source = Variable(2_101_000);
     let integer_accumulator = Variable(2_101_001);
-    let c_item = Variable(2_101_002);
+    let program_item = Variable(2_101_002);
     let mut integer_to_c_work = Vec::new();
     for depth in depths {
         let mut nested = IntegerTerm::var(integer_source);
@@ -465,7 +472,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
             nested = int32_index_fold(
                 IntegerTerm::add(nested, IntegerTerm::var(integer_accumulator)),
                 integer_accumulator,
-                c_item,
+                program_item,
             );
         }
         let mut integer_to_c_replacement = IntegerTerm::var(integer_accumulator);
@@ -474,7 +481,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
                 integer_to_c_replacement,
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
-                    MachineTerm::Variable(c_item),
+                    MachineTerm::Variable(program_item),
                 )),
             );
         }
@@ -506,13 +513,13 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
             unreachable!()
         };
         assert_ne!(*fresh_accumulator, integer_accumulator);
-        assert_ne!(*fresh_item, c_item);
+        assert_ne!(*fresh_item, program_item);
         let mut free_integer = std::collections::BTreeSet::new();
         crate::kernel::prelude::collect_integer_free_variables(&result, &mut free_integer);
         assert!(free_integer.contains(&integer_accumulator));
         let mut free_c = std::collections::BTreeSet::new();
         crate::kernel::prelude::collect_integer_capture_bitvector_variables(&result, &mut free_c);
-        assert!(free_c.contains(&c_item));
+        assert!(free_c.contains(&program_item));
         integer_to_c_work.push(work);
     }
 
@@ -606,19 +613,19 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         )
     }
 
-    fn memory_snapshot(depth: usize) -> crate::kernel::SharedCMemory {
+    fn memory_snapshot(depth: usize) -> crate::kernel::SharedMemory {
         let block = PointerBlock::Concrete("checked-fold-opaque".into());
-        let mut memory = CMemory::new().with_block(block.clone(), depth as u32 + 1);
+        let mut memory = Memory::new().with_block(block.clone(), depth as u32 + 1);
         for offset in 0..depth {
             memory = memory.store(
                 Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(offset as i64),
                 },
-                CValue::Int32(MachineTerm::constant(offset as u32)),
+                ProgramValue::Int32(MachineTerm::constant(offset as u32)),
             );
         }
-        crate::kernel::intern_c_memory(memory)
+        crate::kernel::intern_memory(memory)
     }
 
     // Memory snapshots are opaque to lexical collection. Keep the
@@ -855,7 +862,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
     let source = Variable(3_104_000);
     let mut work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
         let leaf_pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::scaled_int32_node(
@@ -883,7 +890,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 4,
             );
         }
-        let atom = Proposition::CMemoryLoadable {
+        let atom = Proposition::MemoryLoadable {
             memory: memory.as_ref().clone(),
             base: Pointer {
                 block: PointerBlock::Concrete("array".into()),
@@ -1013,7 +1020,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     let binder = Proposition::ForAll {
         name: Default::default(),
         var: Variable(989_100),
-        sort: Sort::CMachineInteger(MachineIntegerType::UInt64),
+        sort: Sort::ProgramInteger(MachineIntegerType::UInt64),
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::pointer_offset_equal(native.clone(), narrow.clone()),
             true,
@@ -1085,11 +1092,11 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
 fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
     let parameter = TypeParameterName::intern("GenericRewriteScalingT");
-    let stored = CValue::Parameter(Box::new(AlgebraicTerm {
+    let stored = ProgramValue::Parameter(Box::new(AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::Variable(Variable(996_030)),
     }));
-    let mut memory = CMemory::new();
+    let mut memory = Memory::new();
     for index in 0..=unrelated {
         memory = memory.store(
             Pointer {
@@ -1099,13 +1106,13 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
             stored.clone(),
         );
     }
-    let memory = crate::kernel::intern_c_memory(memory);
-    let from = CPointerValue::new(
+    let memory = crate::kernel::intern_memory(memory);
+    let from = PointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         },
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     let read = AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
     // Catch up the input's pointer-reachable index once for the warm-query
@@ -1120,9 +1127,9 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     }
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 0..count {
-            let to = CPointerValue::new(
+            let to = PointerValue::new(
                 Pointer::symbolic(Variable(997_000 + index)),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             );
             let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
             let expected =
@@ -1167,26 +1174,27 @@ fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
 
 fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let to = CPointerValue::new(
+    let to = PointerValue::new(
         Pointer::symbolic(Variable(997_500)),
-        CType::Int32PointerPointer,
+        ProgramType::Int32PointerPointer,
     );
-    let stored = CValue::pointer(Pointer::symbolic(Variable(997_501)));
-    let mut memory = CMemory::new();
+    let stored = ProgramValue::pointer(Pointer::symbolic(Variable(997_501)));
+    let mut memory = Memory::new();
     for index in 0..unrelated {
         memory = memory.store(
             Pointer::symbolic(Variable(998_500 + index)),
-            CValue::Int32(7u32.into()),
+            ProgramValue::Int32(7u32.into()),
         );
     }
     let memory = memory.store(to.pointer().clone(), stored.clone());
     let inputs = (0..count)
         .map(|index| {
-            let from = CPointerValue::new(
+            let from = PointerValue::new(
                 Pointer::symbolic(Variable(999_500 + index)),
-                CType::Int32PointerPointer,
+                ProgramType::Int32PointerPointer,
             );
-            let read = memory.symbolic_pointer_version_load(from.pointer(), CType::Int32Pointer);
+            let read =
+                memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
             (from, read)
         })
         .collect::<Vec<_>>();
@@ -1196,7 +1204,7 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
             .map(|(from, read)| TermRewrite::for_pointer_value_exact(from, &to).value(read))
             .collect::<Vec<_>>()
     });
-    let expected = memory.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+    let expected = memory.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
     assert_ne!(expected, stored);
     assert!(rewritten.iter().all(|value| *value == expected));
     work
@@ -1236,7 +1244,7 @@ fn numeric_pointer_read_rewrite_work(
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(index, 8),
     };
-    let mut memory = CMemory::new();
+    let mut memory = Memory::new();
     for index in 0..unrelated {
         memory = memory.store(
             Pointer {
@@ -1247,16 +1255,16 @@ fn numeric_pointer_read_rewrite_work(
                 },
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(7u32.into()),
+            ProgramValue::Int32(7u32.into()),
         );
     }
-    let memory = memory.store(address(to.clone()), CValue::pointer(Pointer::null()));
-    let memory = crate::kernel::intern_c_memory(memory);
+    let memory = memory.store(address(to.clone()), ProgramValue::pointer(Pointer::null()));
+    let memory = crate::kernel::intern_memory(memory);
     let mut input = address(from.clone());
     for _ in 0..depth {
         input = Pointer::version_read(&memory, &input);
     }
-    let input = CValue::pointer(input);
+    let input = ProgramValue::pointer(input);
     let (outputs, work) = crate::instrumentation::measure_deterministic_work(|| {
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         (0..repeats)
@@ -1267,7 +1275,7 @@ fn numeric_pointer_read_rewrite_work(
     for _ in 0..depth {
         expected = Pointer::version_read(&memory, &expected);
     }
-    let expected = CValue::pointer(expected);
+    let expected = ProgramValue::pointer(expected);
     assert_ne!(expected, input);
     assert!(outputs.iter().all(|output| *output == expected));
     work
@@ -1373,7 +1381,7 @@ fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let variable = Variable(982801);
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
@@ -1419,7 +1427,8 @@ fn shared_machine_fold_endpoints_rewrite_in_linear_dag_work() {
         let source = MachineTerm::Variable(Variable(989911));
         let replacement = MachineTerm::Variable(Variable(989912));
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(989911));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(989911));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -1472,7 +1481,8 @@ fn retained_rewrite_sources_do_not_expand_growing_dags() {
     for size in [16usize, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut source = KernelTerm::variable(KernelType::C(CType::Int32), Variable(992550));
+        let mut source =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(992550));
         let replacement = MachineTerm::Variable(Variable(992551));
         let expected = IntegerTerm::from_machine(format, replacement.clone()).unwrap();
         let exports = KernelTermExport::machine_export_count();
@@ -1509,11 +1519,13 @@ fn retained_rewrite_replacements_do_not_reindex_growing_prefixes() {
     for size in [16usize, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let source = KernelTerm::variable(KernelType::C(CType::Int32), Variable(992560));
+        let source =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(992560));
         let goal = IntegerTerm::Machine(
             SharedMachineIntegerTerm::from_shared(format, source.clone()).unwrap(),
         );
-        let mut replacement = KernelTerm::variable(KernelType::C(CType::Int32), Variable(992561));
+        let mut replacement =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(992561));
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
@@ -1523,7 +1535,7 @@ fn retained_rewrite_replacements_do_not_reindex_growing_prefixes() {
                     [
                         replacement.clone(),
                         KernelTerm::variable(
-                            KernelType::C(CType::Int32),
+                            KernelType::Program(ProgramType::Int32),
                             Variable(992562 + index as u64),
                         ),
                     ],
@@ -1558,22 +1570,22 @@ fn retained_rewrite_replacements_do_not_reindex_growing_prefixes() {
 fn resource_read_collection_scales_with_selected_arguments() {
     let mut work = Vec::new();
     for size in [8usize, 16, 32, 64] {
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let arguments = (0..size)
             .map(|index| {
-                AlgebraicValue::C(CValue::Int32(MachineTerm::MemoryLoad(
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::MemoryLoad(
                     memory.clone(),
                     Box::new(Pointer::symbolic(Variable(3_219_100 + index as u64))),
                     LoadKind::Int32,
                 )))
             })
             .collect();
-        let goal = Proposition::CResourceContains {
-            parent: Box::new(CResource::Composite {
+        let goal = Proposition::ResourceContains {
+            parent: Box::new(Resource::Composite {
                 name: "selected".into(),
                 arguments,
             }),
-            child: Box::new(CResource::Emp),
+            child: Box::new(Resource::Emp),
         };
         let (reads, cost) = crate::instrumentation::measure_deterministic_work(|| {
             let mut collector = IntegerSubstitutionVariableCollector::checked();
@@ -1600,7 +1612,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
     let mut work = Vec::new();
     for size in [8usize, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let reads: Vec<_> = (0..size)
             .map(|index| {
                 MachineTerm::MemoryLoad(
@@ -1624,12 +1636,12 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
             .collect();
         // All reads occur in one goal. Rewalking this goal for each replacement
         // is quadratic even though a collection of single-read goals is linear.
-        let goal = Proposition::CResourceContains {
-            parent: Box::new(CResource::Composite {
+        let goal = Proposition::ResourceContains {
+            parent: Box::new(Resource::Composite {
                 name: "many_reads".into(),
                 arguments,
             }),
-            child: Box::new(CResource::Emp),
+            child: Box::new(Resource::Emp),
         };
         let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
             TermRewrite::comparison_read_batch(
@@ -1641,14 +1653,14 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
             )
             .expect("selected comparison")
         });
-        let expected = Proposition::CResourceContains {
-            parent: Box::new(CResource::Composite {
+        let expected = Proposition::ResourceContains {
+            parent: Box::new(Resource::Composite {
                 name: "many_reads".into(),
                 arguments: (0..size)
                     .map(|index| AlgebraicValue::Integer(IntegerTerm::constant_i64(index as i64)))
                     .collect(),
             }),
-            child: Box::new(CResource::Emp),
+            child: Box::new(Resource::Emp),
         };
         assert_eq!(result, expected);
         work.push(cost);
@@ -1668,7 +1680,8 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
         let ty = MachineIntegerType::Int32;
         let source = MachineTerm::Variable(Variable(1007320));
         let target = MachineTerm::Variable(Variable(1007321));
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007320));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007320));
         for _ in 0..depth {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
@@ -1699,7 +1712,9 @@ fn compound_exact_replacement_ignores_only_call_argument_carrier() {
         name: "compound_exact_call".into(),
         arguments: vec![argument],
     };
-    let native_call = call(PureFunctionArgument::Value(CValue::Int32(argument.clone())));
+    let native_call = call(PureFunctionArgument::Value(ProgramValue::Int32(
+        argument.clone(),
+    )));
     let shared_call = call(PureFunctionArgument::SharedMachine(
         SharedMachineIntegerTerm::intern(format, argument),
     ));
@@ -1739,10 +1754,12 @@ fn narrowing_rewrite_visits_scale_with_selected_expression() {
         Term::Bitvector32(MachineTerm::ClickFunctionApplication {
             name: "many".into(),
             arguments: vec![
-                PureFunctionArgument::Value(CValue::UInt32(MachineTerm::legacy_cast(
-                    MachineCastSpelling::UInt32From64,
-                    Box::new(value.clone())
-                )));
+                PureFunctionArgument::Value(ProgramValue::UInt32(
+                    MachineTerm::legacy_cast(
+                        MachineCastSpelling::UInt32From64,
+                        Box::new(value.clone())
+                    )
+                ));
                 size
             ],
         })
@@ -1763,7 +1780,7 @@ fn conditional_reduction_work_scales_with_selected_expression() {
         let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
             name: "many".into(),
             arguments: vec![
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::If {
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::If {
                     condition: Box::new(condition.clone()),
                     then_term: Box::new(MachineTerm::constant(7)),
                     else_term: Box::new(MachineTerm::constant(0)),
@@ -1774,7 +1791,9 @@ fn conditional_reduction_work_scales_with_selected_expression() {
         let expected = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
             name: "many".into(),
             arguments: vec![
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(7),));
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(
+                    7
+                ),));
                 size
             ],
         });

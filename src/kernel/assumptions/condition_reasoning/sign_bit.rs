@@ -567,7 +567,10 @@ mod tests {
     fn fresh_shared_sign_bit_decisions_do_not_export_arithmetic() {
         use crate::kernel::{KernelTerm, KernelType};
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = KernelTerm::variable(KernelType::C(Ty::UInt32.c_type()), Variable(189211));
+        let variable = KernelTerm::variable(
+            KernelType::Program(Ty::UInt32.program_type()),
+            Variable(189211),
+        );
         let prefix =
             KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [variable.clone(), variable]);
         let mask = KernelTermImport::default()

@@ -16,8 +16,8 @@ use crate::kernel::loans::{
 pub(super) struct AssumedMutexProtocol {
     pub(super) usage: MutexUseBinding,
     pub(super) holder: LoanParticipantId,
-    pub(super) use_fact: CResourceFact,
-    pub(super) lifetime: CResourceFact,
+    pub(super) use_fact: ResourceFact,
+    pub(super) lifetime: ResourceFact,
 }
 
 /// An exact acquisition receipt. The guard atom and its loan hold must also
@@ -25,19 +25,19 @@ pub(super) struct AssumedMutexProtocol {
 #[derive(Clone, Debug)]
 pub(super) struct AssumedMutexGuard {
     pub(super) protocol: AssumedMutexProtocol,
-    pub(super) fact: CResourceFact,
+    pub(super) fact: ResourceFact,
     pub(super) hold: LoanHoldId,
     pub(super) payload: Option<crate::kernel::ResourceInstance>,
 }
 
 pub(super) struct AssumedMutexTransition {
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     pub(super) evidence: CheckedLoanCallEvidenceSequence,
 }
 
 impl AssumedMutexProtocol {
     pub(super) fn bind(
-        state: &CState,
+        state: &ExecutionState,
         usage: MutexUseBinding,
     ) -> Result<Self, MutexTransitionError> {
         if !state.preserves_mutex_protocols {
@@ -50,7 +50,7 @@ impl AssumedMutexProtocol {
         let use_fact = loans.mutex_use_resource(usage, holder).map_err(|error| {
             MutexTransitionError::OwnedRefusal(format!("missing rooted mutex use input: {error}"))
         })?;
-        let CResource::MutexUse(identity) = use_fact.resource() else {
+        let Resource::MutexUse(identity) = use_fact.resource() else {
             unreachable!()
         };
         if state
@@ -63,7 +63,7 @@ impl AssumedMutexProtocol {
         let initialization = identity
             .initialization
             .ok_or_else(|| MutexTransitionError::MissingUse(identity.mutex.clone()))?;
-        let lifetime = CResourceFact::own(CResource::MutexLive(super::super::MutexIdentity {
+        let lifetime = ResourceFact::own(Resource::MutexLive(super::super::MutexIdentity {
             epoch: Some(initialization),
             mutex: identity.mutex.clone(),
         }));
@@ -76,7 +76,7 @@ impl AssumedMutexProtocol {
     }
 
     pub(super) fn mutex(&self) -> &Pointer {
-        let CResource::MutexUse(identity) = self.use_fact.resource() else {
+        let Resource::MutexUse(identity) = self.use_fact.resource() else {
             unreachable!()
         };
         &identity.mutex
@@ -84,7 +84,7 @@ impl AssumedMutexProtocol {
 
     pub(super) fn loans<'a>(
         &self,
-        state: &'a CState,
+        state: &'a ExecutionState,
     ) -> Result<&'a LoanLedger, MutexTransitionError> {
         let missing = || MutexTransitionError::MissingUse(self.mutex().clone());
         if !state.preserves_mutex_protocols
@@ -110,7 +110,7 @@ impl AssumedMutexProtocol {
     #[cfg(test)]
     pub(super) fn acquire(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
     ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
         self.acquire_with_payload(
@@ -124,9 +124,9 @@ impl AssumedMutexProtocol {
 
     pub(super) fn acquire_with_payload(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
-        definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+        definition: Option<&crate::kernel::CompositeResourceDefinition>,
         output: Option<crate::kernel::Variable>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
@@ -146,7 +146,7 @@ impl AssumedMutexProtocol {
         let (next, hold, transition) = loans
             .hold_mutex_use_with_transition(self.usage, &self.lifetime, self.holder)
             .map_err(|_| MutexTransitionError::MissingUse(self.mutex().clone()))?;
-        let fact = CResourceFact::own(CResource::MutexGuard(super::super::MutexIdentity {
+        let fact = ResourceFact::own(Resource::MutexGuard(super::super::MutexIdentity {
             epoch: Some(fresh_acquisition_epoch()?),
             mutex: self.mutex().clone(),
         }));
@@ -165,7 +165,7 @@ impl AssumedMutexProtocol {
         state.resources = if let Some(payload) = &payload {
             resources
                 .try_compose_with_facts_delaying_normalization(
-                    [CResourceFact::own(CResource::Instance(payload.clone()))],
+                    [ResourceFact::own(Resource::Instance(payload.clone()))],
                     assumptions,
                 )
                 .map_err(|error| {
@@ -196,18 +196,18 @@ impl AssumedMutexProtocol {
 
     fn acquire_payload(
         &self,
-        state: &CState,
-        definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+        state: &ExecutionState,
+        definition: Option<&crate::kernel::CompositeResourceDefinition>,
         output: Option<crate::kernel::Variable>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<
         (
-            crate::kernel::CMemory,
+            crate::kernel::Memory,
             Option<crate::kernel::ResourceInstance>,
         ),
         MutexTransitionError,
     > {
-        let CResource::MutexUse(usage) = self.use_fact.resource() else {
+        let Resource::MutexUse(usage) = self.use_fact.resource() else {
             unreachable!()
         };
         let Some(description) = &usage.protected else {
@@ -228,7 +228,7 @@ impl AssumedMutexProtocol {
     #[cfg(test)]
     pub(super) fn release(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         guard: &AssumedMutexGuard,
         assumptions: &PureFactContext,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
@@ -244,11 +244,11 @@ impl AssumedMutexProtocol {
 
     pub(super) fn release_with_payload(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         guard: &AssumedMutexGuard,
         assumptions: &PureFactContext,
         selected: Option<crate::kernel::Variable>,
-        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        definitions: &[crate::kernel::CompositeResourceDefinition],
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
         if guard.protocol != *self {
@@ -263,10 +263,10 @@ impl AssumedMutexProtocol {
             return Err(MutexTransitionError::MissingGuard(self.mutex().clone()));
         }
         let restored = if let Some(acquired) = &guard.payload {
-            let CResource::MutexUse(usage) = self.use_fact.resource() else {
+            let Resource::MutexUse(usage) = self.use_fact.resource() else {
                 unreachable!()
             };
-            let required = CResourceFact::own(CResource::Instance(acquired.clone()));
+            let required = ResourceFact::own(Resource::Instance(acquired.clone()));
             let current = match selected {
                 Some(identity) => state.owned_resource_instance(identity),
                 None => state.resources.owned_instance(acquired.identity()),
@@ -279,13 +279,13 @@ impl AssumedMutexProtocol {
             {
                 return Err(MutexTransitionError::MismatchedInvariant {
                     required,
-                    supplied: CResourceFact::own(CResource::Instance(current.clone())),
+                    supplied: ResourceFact::own(Resource::Instance(current.clone())),
                 });
             }
             if loans.has_active_memory_loans() || state.loan_view_bindings.iter().next().is_some() {
                 return Err("protected mutex release requires returned memory loans".into());
             }
-            Some(CResourceFact::own(CResource::Instance(current.clone())))
+            Some(ResourceFact::own(Resource::Instance(current.clone())))
         } else {
             if selected.is_some() {
                 return Err("mutex_use has no protected resource type".into());
@@ -332,7 +332,7 @@ impl AssumedMutexProtocol {
     }
 
     #[cfg(test)]
-    pub(super) fn check_return(&self, state: &CState) -> Result<(), MutexTransitionError> {
+    pub(super) fn check_return(&self, state: &ExecutionState) -> Result<(), MutexTransitionError> {
         self.loans(state)?
             .check_assumed_mutex_use_return(self.usage, self.holder, &state.resources)
             .map_err(|_| MutexTransitionError::MissingUse(self.mutex().clone()))
@@ -374,7 +374,7 @@ impl OpaqueMutexAcquisitions {
     pub(in crate::kernel) fn has_local_hold(&self, participant: Option<LoanParticipantId>) -> bool {
         participant.is_none_or(|holder| self.holders.contains_key(&holder))
     }
-    pub(super) fn guard_resource(&self, mutex: &Pointer) -> Option<CResourceFact> {
+    pub(super) fn guard_resource(&self, mutex: &Pointer) -> Option<ResourceFact> {
         self.receipts.get(mutex).map(|guard| guard.fact.clone())
     }
     pub(super) fn acquisition_conflicts(
@@ -418,11 +418,11 @@ impl Hash for OpaqueMutexAcquisitions {
 
 #[cfg(test)]
 pub(in crate::kernel) fn opaque_runtime_transition(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     acquire: bool,
     assumptions: &PureFactContext,
-) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
     opaque_runtime_transition_with_payload(
         state,
         mutex,
@@ -436,15 +436,15 @@ pub(in crate::kernel) fn opaque_runtime_transition(
 }
 
 pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     acquire: bool,
     assumptions: &PureFactContext,
-    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
-    definitions: &[crate::kernel::CCompositeResourceDefinition],
+    definition: Option<&crate::kernel::CompositeResourceDefinition>,
+    definitions: &[crate::kernel::CompositeResourceDefinition],
     payload_identity: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
-) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
     opaque_runtime_transition_with_selected_use(
         state,
         mutex,
@@ -459,16 +459,16 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
 }
 
 pub(super) fn opaque_runtime_transition_with_selected_use(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     acquire: bool,
     assumptions: &PureFactContext,
-    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
-    definitions: &[crate::kernel::CCompositeResourceDefinition],
+    definition: Option<&crate::kernel::CompositeResourceDefinition>,
+    definitions: &[crate::kernel::CompositeResourceDefinition],
     payload_identity: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
-    selected_use: Option<&CResourceFact>,
-) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+    selected_use: Option<&ResourceFact>,
+) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
     if !state.preserves_mutex_protocols {
         return Err("opaque mutex transitions require preserving use authority".into());
     }
@@ -476,7 +476,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
         let fact = selected_use
             .or_else(|| state.resources.mutex_use_candidate_at(mutex))
             .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
-        let CResource::MutexUse(identity) = fact.resource() else {
+        let Resource::MutexUse(identity) = fact.resource() else {
             unreachable!()
         };
         let usage = identity
@@ -585,7 +585,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
 /// acquisition hands it out. Memory is not changed here.
 pub(super) fn mint_protected_instance(
     description: &crate::kernel::ResourceDescription,
-    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    definition: Option<&crate::kernel::CompositeResourceDefinition>,
     output: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<crate::kernel::ResourceInstance, MutexTransitionError> {
@@ -641,13 +641,13 @@ pub(super) fn mint_protected_instance(
 /// A footprint the derivation cannot name forgets every cell the thread does
 /// not keep owning in `residual`.
 fn forget_released_protected_memory(
-    state: &CState,
-    released: &CResourceFact,
+    state: &ExecutionState,
+    released: &ResourceFact,
     residual: &crate::kernel::ResourceContext,
-    definitions: &[crate::kernel::CCompositeResourceDefinition],
+    definitions: &[crate::kernel::CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
-) -> Result<crate::kernel::CMemory, MutexTransitionError> {
+) -> Result<crate::kernel::Memory, MutexTransitionError> {
     let ranges = crate::kernel::functions::checked_owned_memory_ranges(
         released,
         definitions,
@@ -660,7 +660,7 @@ fn forget_released_protected_memory(
     }
     let kept = ranges
         .iter()
-        .any(crate::kernel::CMemoryRange::is_unnamed_footprint)
+        .any(crate::kernel::MemoryRange::is_unnamed_footprint)
         .then(|| {
             crate::kernel::functions::call_kept_ownership(residual, definitions, state, assumptions)
         });
@@ -674,15 +674,15 @@ fn forget_released_protected_memory(
 }
 
 pub(super) fn fresh_protected_payload(
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
     description: &crate::kernel::ResourceDescription,
-    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    definition: Option<&crate::kernel::CompositeResourceDefinition>,
     output: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
     (
-        crate::kernel::CMemory,
+        crate::kernel::Memory,
         Option<crate::kernel::ResourceInstance>,
     ),
     MutexTransitionError,
@@ -693,7 +693,7 @@ pub(super) fn fresh_protected_payload(
     }
     let instance = mint_protected_instance(description, definition, output, budget)?;
     let definition = definition.expect("minting checked the declaration");
-    let fact = CResourceFact::own(CResource::Instance(instance.clone()));
+    let fact = ResourceFact::own(Resource::Instance(instance.clone()));
     let ranges = crate::kernel::functions::checked_owned_memory_ranges(
         &fact,
         std::slice::from_ref(definition),
@@ -727,7 +727,7 @@ pub(super) fn fresh_protected_payload(
     )
     .ok_or("protected mutex type requires an exclusive resource")?;
     let other_ranges = crate::kernel::functions::checked_owned_memory_ranges(
-        &CResourceFact::own(CResource::Instance(other)),
+        &ResourceFact::own(Resource::Instance(other)),
         std::slice::from_ref(definition),
         state,
         assumptions,
@@ -740,7 +740,7 @@ pub(super) fn fresh_protected_payload(
     }
     if ranges
         .iter()
-        .any(crate::kernel::CMemoryRange::is_unnamed_footprint)
+        .any(crate::kernel::MemoryRange::is_unnamed_footprint)
     {
         return Err("protected mutex resource requires a bounded memory footprint".into());
     }
@@ -764,9 +764,9 @@ mod tests {
     use super::*;
     use crate::kernel::{MutexUseIdentity, ResourceContext, Variable};
 
-    fn input() -> (CState, AssumedMutexProtocol) {
+    fn input() -> (ExecutionState, AssumedMutexProtocol) {
         let mutex = Pointer::symbolic(Variable(765));
-        let description = CResourceFact::own(CResource::MutexUse(MutexUseIdentity {
+        let description = ResourceFact::own(Resource::MutexUse(MutexUseIdentity {
             protected: None,
             binding: None,
             initialization: None,
@@ -782,7 +782,7 @@ mod tests {
             .borrowed_mutex_use_input(holder, support, mutex)
             .unwrap();
         let fact = ledger.mutex_use_resource(root.usage, holder).unwrap();
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         state.loan_ledger = Some(ledger);
         state.loan_participant = Some(holder);
@@ -792,21 +792,23 @@ mod tests {
     }
 
     fn typed_input() -> (
-        CState,
+        ExecutionState,
         AssumedMutexProtocol,
-        crate::kernel::CCompositeResourceDefinition,
+        crate::kernel::CompositeResourceDefinition,
     ) {
         use crate::kernel::*;
-        let schema =
-            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        let schema = ResourceFieldSchema::new(vec![(
+            "value".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap();
         let mutex = Pointer::symbolic(Variable(765));
         let description = ResourceDescription::new(
             "counter_state".into(),
-            vec![CValue::pointer(mutex.clone()).into()].into(),
+            vec![ProgramValue::pointer(mutex.clone()).into()].into(),
             schema.clone(),
         );
-        let fact = CResourceFact::own(CResource::MutexUse(MutexUseIdentity {
+        let fact = ResourceFact::own(Resource::MutexUse(MutexUseIdentity {
             protected: Some(description.clone()),
             binding: None,
             initialization: None,
@@ -820,15 +822,15 @@ mod tests {
             .borrowed_mutex_use_input_with_protected(holder, support, mutex, Some(description))
             .unwrap();
         let fact = ledger.mutex_use_resource(root.usage, holder).unwrap();
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         state.loan_participant = Some(holder);
         state.resources = ResourceContext::new().unchecked_with_fact(fact);
         state.loan_ledger = Some(ledger);
         let protocol = AssumedMutexProtocol::bind(&state, root.usage).unwrap();
-        let definition = CCompositeResourceDefinition::new(
+        let definition = CompositeResourceDefinition::new(
             "counter_state",
-            vec![CParameter::new("p", CType::Int32Pointer)],
+            vec![ProgramParameter::new("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![],
@@ -864,7 +866,7 @@ mod tests {
         missing.resources = missing
             .resources
             .without_fact_delaying_normalization(
-                &CResourceFact::own(CResource::Instance(payload.clone())),
+                &ResourceFact::own(Resource::Instance(payload.clone())),
                 &assumptions,
             )
             .unwrap();
@@ -880,7 +882,7 @@ mod tests {
         let mut replaced = missing.clone();
         replaced.resources = replaced
             .resources
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(replacement.clone())));
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(replacement.clone())));
         let restored = protocol
             .release_with_payload(
                 &replaced,
@@ -909,7 +911,7 @@ mod tests {
         let mut wrong_state = missing.clone();
         wrong_state.resources = wrong_state
             .resources
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(wrong.clone())));
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(wrong.clone())));
         assert!(
             protocol
                 .release_with_payload(
@@ -1074,7 +1076,7 @@ mod tests {
     fn release_cannot_substitute_a_different_scope_hold_in_the_same_ledger() {
         let assumptions = PureFactContext::new();
         let (mut state, first) = input();
-        let marker = CResourceFact::own(CResource::Token {
+        let marker = ResourceFact::own(Resource::Token {
             name: "second input".into(),
             arguments: vec![].into(),
         });
@@ -1218,8 +1220,8 @@ mod tests {
     fn opaque_runtime_void_fallthrough_rejects_an_outstanding_local_acquisition() {
         use crate::kernel::functions::{ResourceTransitionPurpose, contract_exit_outcome};
         use crate::kernel::{
-            CFunctionOutcome, CRuntimeError, CStatement, CStatementOutcome, CType, ExecutionBudget,
-            c_function,
+            ExecutionBudget, FunctionOutcome, ProgramStatement, ProgramType, RuntimeError,
+            StatementOutcome, program_function,
         };
 
         let assumptions = PureFactContext::new();
@@ -1228,13 +1230,18 @@ mod tests {
             opaque_runtime_transition(&state, protocol.mutex(), true, &assumptions).unwrap();
         let (released, _) =
             opaque_runtime_transition(&held, protocol.mutex(), false, &assumptions).unwrap();
-        let function = c_function(CType::Void, "fallthrough", vec![], CStatement::Skip);
+        let function = program_function(
+            ProgramType::Void,
+            "fallthrough",
+            vec![],
+            ProgramStatement::Skip,
+        );
         for (exit, outstanding) in [(held, true), (released, false)] {
             let (outcome, _, _) = contract_exit_outcome(
                 &state,
                 &function,
                 &[],
-                CStatementOutcome::Normal(Box::new(exit)),
+                StatementOutcome::Normal(Box::new(exit)),
                 vec![],
                 &assumptions,
                 &mut ExecutionBudget::default(),
@@ -1243,11 +1250,11 @@ mod tests {
             .expect("bounded exit")
             .expect("exit outcome");
             if outstanding {
-                assert!(matches!(outcome, CFunctionOutcome::RuntimeError(
-                    CRuntimeError::FunctionContract(ref message)
+                assert!(matches!(outcome, FunctionOutcome::RuntimeError(
+                    RuntimeError::FunctionContract(ref message)
                 ) if message.contains("cannot return with a held mutex")));
             } else {
-                assert!(matches!(outcome, CFunctionOutcome::Return { .. }));
+                assert!(matches!(outcome, FunctionOutcome::Return { .. }));
             }
         }
     }

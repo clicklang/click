@@ -16,7 +16,7 @@ pub(super) fn option_type() -> AlgebraicType {
         },
         AlgebraicVariantType {
             name: "Some".into(),
-            fields: vec![AlgebraicValueType::C(CType::UInt32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::UInt32)],
         },
     ]
     .into();
@@ -43,9 +43,9 @@ fn none() -> AlgebraicTerm {
 pub(super) fn some(variable: u64) -> AlgebraicTerm {
     term(AlgebraicTermNode::Constructor {
         variant: "Some".into(),
-        fields: vec![AlgebraicValue::C(CValue::UInt32(MachineTerm::Variable(
-            Variable(variable),
-        )))],
+        fields: vec![AlgebraicValue::Program(ProgramValue::UInt32(
+            MachineTerm::Variable(Variable(variable)),
+        ))],
     })
 }
 pub(super) fn tag(variable: u64) -> ConditionTerm {

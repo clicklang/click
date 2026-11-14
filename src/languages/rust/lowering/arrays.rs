@@ -2,8 +2,11 @@
 //! copies. Constructor operands are captured before any destination write.
 use super::*;
 
-pub(super) fn array_length(element: CType, length: u64) -> Result<u32, String> {
-    if !matches!(element, CType::UInt8 | CType::UInt32 | CType::Int32) {
+pub(super) fn array_length(element: ProgramType, length: u64) -> Result<u32, String> {
+    if !matches!(
+        element,
+        ProgramType::UInt8 | ProgramType::UInt32 | ProgramType::Int32
+    ) {
         return Err("fixed arrays require i32, u8 or u32 elements".into());
     }
     if length > i32::MAX as u64 / u64::from(element.byte_width()) {
@@ -12,13 +15,13 @@ pub(super) fn array_length(element: CType, length: u64) -> Result<u32, String> {
     u32::try_from(length).map_err(|_| "array length exceeds modeled storage".into())
 }
 
-fn array_layout(element: CType, length: u64) -> Result<CAggregateLayout, String> {
+fn array_layout(element: ProgramType, length: u64) -> Result<AggregateLayout, String> {
     let length = array_length(element, length)?;
     let width = element.byte_width();
     let fields = (0..length)
-        .map(|i| CAggregateField::new(i.to_string(), i * width, element))
+        .map(|i| AggregateField::new(i.to_string(), i * width, element))
         .collect();
-    Ok(CAggregateLayout::new(length * width, width, fields))
+    Ok(AggregateLayout::new(length * width, width, fields))
 }
 
 impl Context<'_> {
@@ -28,46 +31,46 @@ impl Context<'_> {
         element: &Type,
         length: u64,
         initializer: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let element = scalar_type(element)?.to_kernel_type();
         let layout = array_layout(element, length)?;
         self.local_arrays.insert(name.into());
         self.arrays.insert(name.into(), (length, element, false));
-        Ok(c_seq(
+        Ok(program_seq(
             // Fresh storage supplies transferable authority for helper calls.
-            c_begin_aggregate_construction(name, layout),
+            program_begin_aggregate_construction(name, layout),
             self.assign_array(self.array_pointer(name)?, element, length, initializer)?,
         ))
     }
 
     pub(super) fn assign_array(
         &mut self,
-        target: CExpression,
-        element: CType,
+        target: ProgramExpression,
+        element: ProgramType,
         length: u64,
         value: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         array_length(element, length)?;
         // Record field addresses retain the record pointer's pointee type.
         // Element addressing must instead use the array's scalar stride.
         let target = reference_view(
             target,
             match element {
-                CType::UInt8 => CType::UInt8Pointer,
-                CType::UInt32 => CType::UInt32Pointer,
-                CType::Int32 => CType::Int32Pointer,
+                ProgramType::UInt8 => ProgramType::UInt8Pointer,
+                ProgramType::UInt32 => ProgramType::UInt32Pointer,
+                ProgramType::Int32 => ProgramType::Int32Pointer,
                 _ => unreachable!(),
             },
             false,
             false,
         );
         let source_type = match element {
-            CType::UInt8 => Type::U8,
-            CType::UInt32 => Type::U32,
-            CType::Int32 => Type::I32,
+            ProgramType::UInt8 => Type::U8,
+            ProgramType::UInt32 => Type::U32,
+            ProgramType::Int32 => Type::I32,
             _ => return Err("unsupported fixed array element".into()),
         };
-        let mut captures = c_skip();
+        let mut captures = program_skip();
         let mut values = Vec::new();
         match value {
             E::Array { elements } => {
@@ -77,8 +80,8 @@ impl Context<'_> {
                 for e in elements {
                     let (prefix, value) = self.prepared_expr(e)?;
                     let (capture, name) = self.capture_operand(value, &source_type)?;
-                    captures = c_seq(captures, c_seq(prefix, capture));
-                    values.push(c_variable(name));
+                    captures = program_seq(captures, program_seq(prefix, capture));
+                    values.push(crate::kernel::program_expression::variable(name));
                 }
             }
             E::Repeat {
@@ -91,47 +94,55 @@ impl Context<'_> {
                 // Rust evaluates the operand once, even for a zero count.
                 let (prefix, value) = self.prepared_expr(value)?;
                 let (capture, name) = self.capture_operand(value, &source_type)?;
-                captures = c_seq(prefix, capture);
-                values.resize(length as usize, c_variable(name));
+                captures = program_seq(prefix, capture);
+                values.resize(
+                    length as usize,
+                    crate::kernel::program_expression::variable(name),
+                );
             }
             _ => {
                 let (source, source_length, source_element) = self.indexed_parts(value)?;
-                if source_length != c_uint64_literal(length) || source_element != element {
+                if source_length != crate::kernel::program_expression::uint64_literal(length)
+                    || source_element != element
+                {
                     return Err("whole-array copy disagrees with destination type".into());
                 }
                 if length == 0 {
-                    return Ok(c_skip());
+                    return Ok(program_skip());
                 }
-                return Ok(c_copy_aggregate(
+                return Ok(program_copy_aggregate(
                     target,
                     source,
                     array_layout(element, length)?,
                 ));
             }
         }
-        let mut stores = c_skip();
+        let mut stores = program_skip();
         for (index, value) in values.into_iter().enumerate() {
-            stores = c_seq(
+            stores = program_seq(
                 stores,
-                c_typed_store(
-                    c_add(target.clone(), c_uint64_literal(index as u64)),
+                program_typed_store(
+                    crate::kernel::program_expression::add(
+                        target.clone(),
+                        crate::kernel::program_expression::uint64_literal(index as u64),
+                    ),
                     value,
                     element,
                 ),
             );
         }
-        Ok(c_seq(captures, stores))
+        Ok(program_seq(captures, stores))
     }
 }
 
 impl Context<'_> {
     pub(super) fn assign_array_region(
         &mut self,
-        target: CExpression,
-        element: CType,
+        target: ProgramExpression,
+        element: ProgramType,
         length: u64,
         value: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let count = array_length(element, length)?;
         match value {
             E::Array { .. } => self.assign_array(target, element, length, value),
@@ -143,24 +154,32 @@ impl Context<'_> {
                     return Err("array repeat length disagrees with destination".into());
                 }
                 let value_type = match element {
-                    CType::UInt8 => Type::U8,
-                    CType::UInt32 => Type::U32,
-                    CType::Int32 => Type::I32,
+                    ProgramType::UInt8 => Type::U8,
+                    ProgramType::UInt32 => Type::U32,
+                    ProgramType::Int32 => Type::I32,
                     _ => unreachable!(),
                 };
                 let (prefix, value) = self.prepared_expr(value)?;
                 let (capture, name) = self.capture_operand(value, &value_type)?;
-                Ok(c_seq(
-                    c_seq(prefix, capture),
-                    c_write_scalar_array_region(target, c_variable(name), element, count, false),
+                Ok(program_seq(
+                    program_seq(prefix, capture),
+                    program_write_scalar_array_region(
+                        target,
+                        crate::kernel::program_expression::variable(name),
+                        element,
+                        count,
+                        false,
+                    ),
                 ))
             }
             _ => {
                 let (source, source_length, source_element) = self.indexed_parts(value)?;
-                if source_length != c_uint64_literal(length) || source_element != element {
+                if source_length != crate::kernel::program_expression::uint64_literal(length)
+                    || source_element != element
+                {
                     return Err("array region copy disagrees with destination type".into());
                 }
-                Ok(c_write_scalar_array_region(
+                Ok(program_write_scalar_array_region(
                     target, source, element, count, true,
                 ))
             }

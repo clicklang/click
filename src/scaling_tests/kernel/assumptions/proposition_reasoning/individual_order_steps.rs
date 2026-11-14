@@ -4,7 +4,8 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995211));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995211));
         let upper = MachineTerm::constant(100);
         let mut facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();

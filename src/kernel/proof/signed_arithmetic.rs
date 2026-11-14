@@ -4027,7 +4027,7 @@ mod tests {
     fn signed_read_atom_identity_survives_native_export() {
         use crate::kernel::{KernelTermExport, KernelTermImport, LoadKind, VerificationSession};
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(crate::kernel::CMemory::new());
+        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
         let address = Pointer::symbolic(Variable(997151));
         let read = |offset, kind| {
             MachineTerm::MemoryLoad(
@@ -4071,7 +4071,7 @@ mod tests {
     fn checked_atom_matches_its_explicit_read_but_not_another_cell() {
         let read = |offset| {
             MachineTerm::MemoryLoad(
-                crate::kernel::CMemory::new().into(),
+                crate::kernel::Memory::new().into(),
                 Box::new(crate::kernel::Pointer {
                     block: "arithmetic-read-identity".into(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(offset),

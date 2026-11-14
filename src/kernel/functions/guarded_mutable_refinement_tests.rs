@@ -1,18 +1,22 @@
 use super::*;
 
-fn guard(operator: CComparisonOperator, value: u32) -> SpecProposition {
+fn guard(operator: ComparisonOperator, value: u32) -> SpecProposition {
     SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("active")),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+            "active",
+        )),
         operator,
-        right: SpecExpression::CExpression(c_int32_literal(value)),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            value,
+        )),
     }
 }
 
-fn segment(guard: Option<SpecProposition>, start: u32, end: u32) -> CMemorySegment {
-    let segment = CMemorySegment::new(
-        c_variable("cells"),
-        c_int32_literal(start),
-        c_int32_literal(end),
+fn segment(guard: Option<SpecProposition>, start: u32, end: u32) -> MemorySegment {
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("cells"),
+        crate::kernel::program_expression::int32_literal(start),
+        crate::kernel::program_expression::int32_literal(end),
     );
     match guard {
         Some(guard) => segment.with_guard(guard),
@@ -20,22 +24,22 @@ fn segment(guard: Option<SpecProposition>, start: u32, end: u32) -> CMemorySegme
     }
 }
 
-fn function_with_segment(name: &str, segment: CMemorySegment) -> CFunction {
-    c_function(CType::Void, name, Vec::new(), c_return(c_void_value())).with_contract(
+fn function_with_segment(name: &str, segment: MemorySegment) -> ProgramFunction {
+    program_function(
+        ProgramType::Void,
+        name,
         Vec::new(),
-        Vec::new(),
-        vec![segment],
-        Vec::new(),
-        true,
+        program_return(program_void_value()),
     )
+    .with_contract(Vec::new(), Vec::new(), vec![segment], Vec::new(), true)
 }
 
-fn entry_state() -> CState {
-    CState::new()
+fn entry_state() -> ExecutionState {
+    ExecutionState::new()
         .with_local("active", int32(MachineTerm::Variable(Variable(980_001))))
         .with_local(
             "cells",
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             }),
@@ -43,8 +47,8 @@ fn entry_state() -> CState {
 }
 
 fn compatible_with_assumptions(
-    contract: &CFunction,
-    function: &CFunction,
+    contract: &ProgramFunction,
+    function: &ProgramFunction,
     assumptions: &PureFactContext,
 ) -> bool {
     let entry = entry_state();
@@ -59,7 +63,7 @@ fn compatible_with_assumptions(
     .expect("guarded mutable refinement should execute")
 }
 
-fn compatible(contract: &CFunction, function: &CFunction) -> bool {
+fn compatible(contract: &ProgramFunction, function: &ProgramFunction) -> bool {
     compatible_with_assumptions(contract, function, &PureFactContext::new())
 }
 
@@ -67,11 +71,11 @@ fn compatible(contract: &CFunction, function: &CFunction) -> bool {
 fn stronger_concrete_guard_and_subrange_refine_named_footprint() {
     let contract = function_with_segment(
         "contract",
-        segment(Some(guard(CComparisonOperator::NotEqual, 0)), 0, 2),
+        segment(Some(guard(ComparisonOperator::NotEqual, 0)), 0, 2),
     );
     let function = function_with_segment(
         "function",
-        segment(Some(guard(CComparisonOperator::Equal, 1)), 1, 2),
+        segment(Some(guard(ComparisonOperator::Equal, 1)), 1, 2),
     );
     assert!(compatible(&contract, &function));
 }
@@ -81,7 +85,7 @@ fn guarded_concrete_effect_refines_unguarded_named_footprint() {
     let contract = function_with_segment("contract", segment(None, 0, 2));
     let function = function_with_segment(
         "function",
-        segment(Some(guard(CComparisonOperator::NotEqual, 0)), 0, 1),
+        segment(Some(guard(ComparisonOperator::NotEqual, 0)), 0, 1),
     );
     assert!(compatible(&contract, &function));
 }
@@ -90,7 +94,7 @@ fn guarded_concrete_effect_refines_unguarded_named_footprint() {
 fn unguarded_concrete_effect_does_not_refine_guarded_named_footprint() {
     let contract = function_with_segment(
         "contract",
-        segment(Some(guard(CComparisonOperator::NotEqual, 0)), 0, 2),
+        segment(Some(guard(ComparisonOperator::NotEqual, 0)), 0, 2),
     );
     let function = function_with_segment("function", segment(None, 0, 1));
     assert!(!compatible(&contract, &function));
@@ -100,11 +104,11 @@ fn unguarded_concrete_effect_does_not_refine_guarded_named_footprint() {
 fn unrelated_concrete_guard_does_not_refine_named_guard() {
     let contract = function_with_segment(
         "contract",
-        segment(Some(guard(CComparisonOperator::GreaterThan, 0)), 0, 2),
+        segment(Some(guard(ComparisonOperator::GreaterThan, 0)), 0, 2),
     );
     let function = function_with_segment(
         "function",
-        segment(Some(guard(CComparisonOperator::LessThan, 0)), 0, 1),
+        segment(Some(guard(ComparisonOperator::LessThan, 0)), 0, 1),
     );
     assert!(!compatible(&contract, &function));
 }
@@ -127,14 +131,14 @@ fn active_is_zero(value: bool) -> PureFactContext {
 fn disjunctive_available_guard_is_not_discharged_by_search() {
     let exact = function_with_segment(
         "contract",
-        segment(Some(guard(CComparisonOperator::NotEqual, 0)), 0, 2),
+        segment(Some(guard(ComparisonOperator::NotEqual, 0)), 0, 2),
     );
     let disjunctive = function_with_segment(
         "contract",
         segment(
             Some(SpecProposition::Or(
-                Box::new(guard(CComparisonOperator::NotEqual, 0)),
-                Box::new(guard(CComparisonOperator::Equal, 5)),
+                Box::new(guard(ComparisonOperator::NotEqual, 0)),
+                Box::new(guard(ComparisonOperator::Equal, 5)),
             )),
             0,
             2,
@@ -157,11 +161,11 @@ fn disjunctive_available_guard_is_not_discharged_by_search() {
 fn exactly_refuted_required_guard_needs_no_cover() {
     let contract = function_with_segment(
         "contract",
-        segment(Some(guard(CComparisonOperator::Equal, 1)), 0, 1),
+        segment(Some(guard(ComparisonOperator::Equal, 1)), 0, 1),
     );
     let function = function_with_segment(
         "function",
-        segment(Some(guard(CComparisonOperator::NotEqual, 0)), 0, 2),
+        segment(Some(guard(ComparisonOperator::NotEqual, 0)), 0, 2),
     );
     assert!(compatible_with_assumptions(
         &contract,
@@ -175,11 +179,11 @@ fn exactly_refuted_required_guard_needs_no_cover() {
 fn guard_implication_does_not_relax_range_containment() {
     let contract = function_with_segment(
         "contract",
-        segment(Some(guard(CComparisonOperator::NotEqual, 0)), 0, 1),
+        segment(Some(guard(ComparisonOperator::NotEqual, 0)), 0, 1),
     );
     let function = function_with_segment(
         "function",
-        segment(Some(guard(CComparisonOperator::Equal, 1)), 0, 2),
+        segment(Some(guard(ComparisonOperator::Equal, 1)), 0, 2),
     );
     assert!(!compatible(&contract, &function));
 }

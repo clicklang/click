@@ -2,7 +2,7 @@
 //! behavioral refinement: it neither executes nor proves implications.
 use super::*;
 
-pub(super) fn same_interface(contract: &CFunctionContract, function: &CFunction) -> bool {
+pub(super) fn same_interface(contract: &FunctionContract, function: &ProgramFunction) -> bool {
     // Proof binders are introduced by the named contract's explicit
     // application syntax and are checked by the binder judgment.  The
     // ordinary one-call refinement relation compares the shared behavioral
@@ -14,7 +14,7 @@ pub(super) fn same_interface(contract: &CFunctionContract, function: &CFunction)
     normalized_contract.exactly_matches(&normalized_function)
 }
 
-fn normalize(interface: &CFunctionContractInterface) -> CFunctionContractInterface {
+fn normalize(interface: &FunctionContractInterface) -> FunctionContractInterface {
     let mut interface = interface.clone();
     let mut names = Names::default();
     for parameter in &mut interface.parameters {
@@ -43,16 +43,16 @@ fn normalize(interface: &CFunctionContractInterface) -> CFunctionContractInterfa
     // what they call a parameter stay one interface.
     for measure in &mut interface.recursion_measure {
         match measure {
-            CRankingComponent::CExpression(expression) => names.c(expression),
+            RankingComponent::ProgramExpression(expression) => names.c(expression),
             // The declared spelling is what a diagnostic prints, not part of
             // the interface, exactly as a resource binder's spelling is not.
             // Erase it so two declarations that differ only in what they call
             // a parameter stay one interface.
-            CRankingComponent::Pure { source, expression } => {
+            RankingComponent::Pure { source, expression } => {
                 source.clear();
                 names.expression(expression);
             }
-            CRankingComponent::PureInteger { source, expression } => {
+            RankingComponent::PureInteger { source, expression } => {
                 source.clear();
                 names.integer(expression);
             }
@@ -65,23 +65,29 @@ fn normalize(interface: &CFunctionContractInterface) -> CFunctionContractInterfa
 mod tests {
     use super::*;
 
-    fn interface(parameter: &str, local: &str, body: &str) -> CFunction {
-        c_function(
-            CType::Void,
+    fn interface(parameter: &str, local: &str, body: &str) -> ProgramFunction {
+        program_function(
+            ProgramType::Void,
             "interface",
-            vec![c_parameter(parameter, CType::Int32)],
-            CStatement::Skip,
+            vec![program_parameter(parameter, ProgramType::Int32)],
+            ProgramStatement::Skip,
         )
         .with_contract(
             vec![],
             vec![SpecProposition::Comparison {
                 left: SpecExpression::Let {
                     name: local.to_string(),
-                    value: Box::new(SpecExpression::CExpression(c_variable(parameter))),
-                    body: Box::new(SpecExpression::CExpression(c_variable(body))),
+                    value: Box::new(SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(parameter),
+                    )),
+                    body: Box::new(SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(body),
+                    )),
                 },
-                operator: CComparisonOperator::Equal,
-                right: SpecExpression::CExpression(c_variable(parameter)),
+                operator: ComparisonOperator::Equal,
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable(parameter),
+                ),
             }],
             vec![],
             vec![],
@@ -91,11 +97,11 @@ mod tests {
 
     #[test]
     fn lexical_identity_preserves_shadowing_and_free_names() {
-        let target = CFunctionContract::new("Target", interface("x", "x", "x")).unwrap();
+        let target = FunctionContract::new("Target", interface("x", "x", "x")).unwrap();
         assert!(same_interface(&target, &interface("p", "q", "q")));
         assert!(!same_interface(&target, &interface("p", "q", "p")));
         assert!(!same_interface(&target, &interface("p", "q", "bound:1")));
-        let free = CFunctionContract::new("Free", interface("p", "q", "global")).unwrap();
+        let free = FunctionContract::new("Free", interface("p", "q", "global")).unwrap();
         assert!(same_interface(&free, &interface("x", "y", "global")));
         assert!(!same_interface(&free, &interface("x", "y", "different")));
     }
@@ -106,15 +112,17 @@ mod tests {
             let observation =
                 SpecIntegerExpression::FromMachine(Box::new(SpecExpression::IntegerToMachine {
                     value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                        SpecExpression::CExpression(c_variable(referenced)),
+                        SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable(referenced),
+                        ),
                     ))),
                     destination: MachineIntegerType::Int32,
                 }));
-            c_function(
-                CType::Void,
+            program_function(
+                ProgramType::Void,
                 "interface",
-                vec![c_parameter(parameter, CType::Int32)],
-                CStatement::Skip,
+                vec![program_parameter(parameter, ProgramType::Int32)],
+                ProgramStatement::Skip,
             )
             .with_contract(
                 vec![],
@@ -128,7 +136,7 @@ mod tests {
                 true,
             )
         };
-        let target = CFunctionContract::new("Target", interface("x", "x")).unwrap();
+        let target = FunctionContract::new("Target", interface("x", "x")).unwrap();
         assert!(same_interface(&target, &interface("y", "y")));
         assert!(!same_interface(&target, &interface("y", "x")));
     }
@@ -144,11 +152,11 @@ mod tests {
                 let mut proposition = SpecProposition::Comparison {
                     left: SpecExpression::CountedResourceCount {
                         name: "Token".into(),
-                        arguments: vec![Some(SpecExpression::CExpression(c_variable(format!(
-                            "argument{index}"
-                        ))))],
+                        arguments: vec![Some(SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable(format!("argument{index}")),
+                        ))],
                     },
-                    operator: CComparisonOperator::Equal,
+                    operator: ComparisonOperator::Equal,
                     right: SpecExpression::Value(int32(1)),
                 };
                 names.proposition(&mut proposition);
@@ -160,7 +168,13 @@ mod tests {
     #[test]
     fn lexical_identity_preserves_resource_projection_identity_and_snapshot() {
         let interface = |identity, at_entry| {
-            c_function(CType::Void, "interface", vec![], CStatement::Skip).with_contract(
+            program_function(
+                ProgramType::Void,
+                "interface",
+                vec![],
+                ProgramStatement::Skip,
+            )
+            .with_contract(
                 vec![],
                 vec![SpecProposition::Comparison {
                     left: SpecExpression::ResourceField {
@@ -170,17 +184,17 @@ mod tests {
                             field_index: 0,
                             at_entry,
                         },
-                        c_type: CType::Int32,
+                        program_type: ProgramType::Int32,
                     },
-                    operator: CComparisonOperator::Equal,
-                    right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+                    operator: ComparisonOperator::Equal,
+                    right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
                 }],
                 vec![],
                 vec![],
                 true,
             )
         };
-        let target = CFunctionContract::new("Target", interface(1, false)).unwrap();
+        let target = FunctionContract::new("Target", interface(1, false)).unwrap();
         assert!(same_interface(&target, &interface(1, false)));
         assert!(!same_interface(&target, &interface(2, false)));
         assert!(!same_interface(&target, &interface(1, true)));
@@ -227,12 +241,12 @@ impl Names {
             self.bindings.remove(&name);
         }
     }
-    fn c(&mut self, expression: &mut CExpression) {
+    fn c(&mut self, expression: &mut ProgramExpression) {
         self.visit();
-        use CExpression::*;
+        use ProgramExpression::*;
         match expression {
             Variable(name) => self.reference(name),
-            Value(_) | FunctionAddress(_) => {}
+            Value(_) | FunctionAddress(_) | CallResult { .. } => {}
             Cast { expression, .. }
             | FloatClassification { expression, .. }
             | PointerOffsetBytes {
@@ -358,7 +372,7 @@ impl Names {
             // Instance identities are not lexical C parameter names.
             Value(_) | ResourceField { .. } => {}
             IntegerToMachine { value, .. } => self.integer(value),
-            CExpression(e) => self.c(e),
+            ProgramExpression(e) => self.c(e),
             AggregateFieldValue {
                 parameter, pointer, ..
             } => {
@@ -456,11 +470,11 @@ impl Names {
         match &mut expression.node {
             Variable(_) | ResourceField(_) => {}
             Binding(name) => self.reference(name),
-            CValue(value) => self.expression(value),
+            ProgramValue(value) => self.expression(value),
             Constructor { fields, .. } => {
                 for field in fields {
                     match field {
-                        SpecAlgebraicValue::C(e) => self.expression(e),
+                        SpecAlgebraicValue::Program(e) => self.expression(e),
                         SpecAlgebraicValue::Integer(_) => {}
                         SpecAlgebraicValue::Algebraic(e) => self.algebraic(e),
                     }
@@ -611,7 +625,7 @@ impl Names {
             }
         }
     }
-    fn segment(&mut self, segment: &mut CMemorySegment) {
+    fn segment(&mut self, segment: &mut MemorySegment) {
         self.c(&mut segment.base);
         self.c(&mut segment.start);
         self.c(&mut segment.end);
@@ -619,18 +633,18 @@ impl Names {
             self.proposition(guard);
         }
     }
-    fn resource_spec(&mut self, resource: &mut CResourceSpec) {
+    fn resource_spec(&mut self, resource: &mut ResourceSpec) {
         let mut term = resource.term().clone();
         self.resource_term(&mut term);
         let quantity = match resource.quantity() {
-            CResourceQuantity::One => CResourceQuantity::One,
-            CResourceQuantity::Count(quantity) => {
+            ResourceQuantity::One => ResourceQuantity::One,
+            ResourceQuantity::Count(quantity) => {
                 let mut quantity = quantity.clone();
                 self.c(&mut quantity);
-                CResourceQuantity::Count(quantity)
+                ResourceQuantity::Count(quantity)
             }
         };
-        *resource = CResourceSpec::new(
+        *resource = ResourceSpec::new(
             term,
             resource.access(),
             quantity,
@@ -640,25 +654,25 @@ impl Names {
         .expect("interface identity normalization preserves resource validity");
     }
 
-    fn resource_term(&mut self, resource: &mut CResourceTerm) {
+    fn resource_term(&mut self, resource: &mut ResourceTerm) {
         match resource {
             // A binder's spelling is a name, not part of the interface: the
             // identity beside it is the semantic key, exactly as a parameter's
             // type rather than its name is. Erase it so two declarations that
             // differ only in what they call an instance stay one interface.
-            CResourceTerm::Instance {
+            ResourceTerm::Instance {
                 binder, resource, ..
             } => {
                 binder.clear();
                 self.resource_term(resource);
             }
-            CResourceTerm::PopulationAuthority { protected, .. } => {
+            ResourceTerm::PopulationAuthority { protected, .. } => {
                 self.resource_spec(&mut protected.resource)
             }
-            CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+            ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
                 self.c(mutex)
             }
-            CResourceTerm::MutexUse {
+            ResourceTerm::MutexUse {
                 mutex, protected, ..
             } => {
                 self.c(mutex);
@@ -666,17 +680,17 @@ impl Names {
                     self.resource_spec(&mut p.resource);
                 }
             }
-            CResourceTerm::Publication { flag, payload, .. } => {
+            ResourceTerm::Publication { flag, payload, .. } => {
                 self.c(flag);
                 self.resource_spec(&mut payload.resource);
             }
-            CResourceTerm::Memory(s) => self.segment(s),
-            CResourceTerm::Composite { arguments, .. } | CResourceTerm::Token { arguments, .. } => {
+            ResourceTerm::Memory(s) => self.segment(s),
+            ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
                 for e in arguments {
                     self.c(e);
                 }
             }
-            CResourceTerm::Iterated(spec) => {
+            ResourceTerm::Iterated(spec) => {
                 for e in spec.expressions_mut() {
                     self.c(e);
                 }

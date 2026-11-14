@@ -13,17 +13,17 @@ fn rust_default_is_native_charon() {
             .iter()
             .all(|f| f.mir.is_some() && f.body.is_empty())
     );
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
 }
 
 #[test]
 fn rust_default_conditional_solve_expansion_reverifies() {
     let p = gate_fixtures::project("basic", SOURCE);
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
     let expanded =
         click::surface::expand_program_prepared_tactic_source_at(SIDECAR, &prepared, 5, 5).unwrap();
-    C0VerificationSession::new_program_prepared(&expanded, &prepared)
+    ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
@@ -40,7 +40,7 @@ fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
          ensures ordered: n <= n by {{ solve(); }}\n\
          }}\n"
     );
-    C0VerificationSession::new_program_prepared(&source, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&source, &prepared).unwrap();
     let project_for = |source: &str| {
         ClickProject::new(
             "borrow.click",
@@ -53,15 +53,18 @@ fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
         )
         .unwrap();
         assert_ne!(expanded, source);
-        C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
         let expanded = click::surface::expand_project_claim_source_by_label(
             &project_for(&source),
             &click::surface::ProgramInputs::program(&prepared),
             label,
         )
         .unwrap();
-        C0VerificationSession::new_program_prepared_project(&project_for(&expanded), &prepared)
-            .unwrap();
+        ProgramVerificationSession::new_program_prepared_project(
+            &project_for(&expanded),
+            &prepared,
+        )
+        .unwrap();
     }
     let invalid = source.replace("ensures n == n", "ensures n == n + 1");
     assert!(

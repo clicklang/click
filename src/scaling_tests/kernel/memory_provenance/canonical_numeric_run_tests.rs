@@ -9,24 +9,24 @@ fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(crate::kernel::Variable(7_629_000));
     for element_type in [
-        CType::Int8,
-        CType::UInt8,
-        CType::Int16,
-        CType::UInt16,
-        CType::Int32,
-        CType::UInt32,
-        CType::Int64,
-        CType::UInt64,
-        CType::Int128,
-        CType::UInt128,
-        CType::Float32,
-        CType::Float64,
+        ProgramType::Int8,
+        ProgramType::UInt8,
+        ProgramType::Int16,
+        ProgramType::UInt16,
+        ProgramType::Int32,
+        ProgramType::UInt32,
+        ProgramType::Int64,
+        ProgramType::UInt64,
+        ProgramType::Int128,
+        ProgramType::UInt128,
+        ProgramType::Float32,
+        ProgramType::Float64,
     ] {
         let width = element_type.byte_width();
         // A retained observable cell deliberately defeats the generic
         // uniform-source representative argument, even though every
         // minted numeric run value remains an atomic load variable.
-        let source = intern_c_memory(CMemory::new().store(base.clone(), crate::kernel::uint8(7)));
+        let source = intern_memory(Memory::new().store(base.clone(), crate::kernel::uint8(7)));
         for mode in [
             RunValueMode::Load,
             RunValueMode::Copy {
@@ -46,27 +46,27 @@ fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
                     mode.clone(),
                     holes,
                 );
-                let mut memory = CMemory::new();
+                let mut memory = Memory::new();
                 std::sync::Arc::make_mut(&mut memory.cells).add_run(run.clone());
                 let (canonical, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    canonical_c_memory_deep(&memory)
+                    canonical_memory_deep(&memory)
                 });
                 assert_eq!(canonical, memory);
                 for index in [0, 1, size - 1] {
                     let value = run.value(index);
                     let bits = match &value {
-                        CValue::Int8(bits)
-                        | CValue::UInt8(bits)
-                        | CValue::Int16(bits)
-                        | CValue::UInt16(bits)
-                        | CValue::Int32(bits)
-                        | CValue::UInt32(bits)
-                        | CValue::Int64(bits)
-                        | CValue::UInt64(bits)
-                        | CValue::Int128(bits)
-                        | CValue::UInt128(bits)
-                        | CValue::Float32(bits)
-                        | CValue::Float64(bits) => bits,
+                        ProgramValue::Int8(bits)
+                        | ProgramValue::UInt8(bits)
+                        | ProgramValue::Int16(bits)
+                        | ProgramValue::UInt16(bits)
+                        | ProgramValue::Int32(bits)
+                        | ProgramValue::UInt32(bits)
+                        | ProgramValue::Int64(bits)
+                        | ProgramValue::UInt64(bits)
+                        | ProgramValue::Int128(bits)
+                        | ProgramValue::UInt128(bits)
+                        | ProgramValue::Float32(bits)
+                        | ProgramValue::Float64(bits) => bits,
                         _ => unreachable!("numeric cell"),
                     };
                     // Scalar run values retain the read even when checking

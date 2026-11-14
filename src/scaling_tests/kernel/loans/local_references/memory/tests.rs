@@ -15,7 +15,7 @@ fn scalar_lease_selected_adapter_work_is_indexed_across_unrelated_owners() {
                 .local_scalar_access_resources(
                     child.local_reference().unwrap(),
                     child.pointer(),
-                    CType::Int32,
+                    ProgramType::Int32,
                     &PureFactContext::new(),
                 )
                 .unwrap();

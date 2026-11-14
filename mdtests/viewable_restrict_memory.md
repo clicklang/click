@@ -30,6 +30,8 @@ int32 first(int32* p, int32 n, int32 a, int32 b) {
     }
     step();
     assumption();
+
+    assumption(); assumption(); assumption();
 }
 ```
 

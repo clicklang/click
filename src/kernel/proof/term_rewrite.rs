@@ -67,9 +67,13 @@ fn collect_machine_operand_carriers(
     }
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
+            if let KernelTermNode::Match(matched) = leaf.node() {
+                retained_matches::collect_match_carriers(matched, variables);
+                continue;
+            }
             if let KernelTermNode::Fold(fold) = leaf.node() {
-                variables.c.insert(fold.accumulator);
-                variables.c.insert(fold.item);
+                variables.program_values.insert(fold.accumulator);
+                variables.program_values.insert(fold.item);
                 for child in &fold.arguments {
                     collect_machine_operand_carriers(MachineOperandView::Shared(child), variables);
                 }
@@ -101,38 +105,38 @@ fn collect_machine_operand_carriers(
         if !variables.visit() {
             return;
         }
-        variables.c.insert(*variable);
+        variables.program_values.insert(*variable);
         collect_registered_load_carriers(*variable, variables);
     }
 }
 
 #[derive(Clone, Default)]
 struct RewriteScope {
-    c: BTreeMap<Variable, Variable>,
+    program_values: BTreeMap<Variable, Variable>,
     integer: BTreeMap<Variable, Variable>,
     algebraic: BTreeMap<Variable, Variable>,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) enum BindingCarrier {
-    C,
+    Program,
     Integer,
     Algebraic,
 }
 
-/// A constructor field may carry either a scalar C term or a pointer.  Keep
+/// A constructor field may carry either a scalar program term or a pointer.  Keep
 /// that distinction while rewriting so a same-ID binding in another carrier
 /// cannot be substituted accidentally.
 #[derive(Clone)]
-pub(crate) enum TypedCReplacement {
+pub(crate) enum TypedProgramValueReplacement {
     Bitvector(MachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject extent.
-    Pointer(CPointerValue),
+    Pointer(PointerValue),
 }
 
 type MatchFieldReplacements = (
-    BTreeMap<Variable, TypedCReplacement>,
+    BTreeMap<Variable, TypedProgramValueReplacement>,
     BTreeMap<Variable, IntegerTerm>,
     BTreeMap<Variable, AlgebraicTerm>,
 );
@@ -142,7 +146,7 @@ fn match_field_replacements(
     fields: &[AlgebraicValue],
     types: &[AlgebraicValueType],
 ) -> Option<MatchFieldReplacements> {
-    let mut c_replacements = BTreeMap::new();
+    let mut program_replacements = BTreeMap::new();
     let mut integer_replacements = BTreeMap::new();
     let mut algebraic_replacements = BTreeMap::new();
     for ((binding, field), expected) in bindings.iter().zip(fields).zip(types) {
@@ -151,9 +155,9 @@ fn match_field_replacements(
         }
         let (carrier, variable) = typed_binding_variable(expected, binding)?;
         let duplicate = match (carrier, field) {
-            (BindingCarrier::C, AlgebraicValue::C(value)) => {
+            (BindingCarrier::Program, AlgebraicValue::Program(value)) => {
                 let replacement = typed_field_replacement(binding, value)?;
-                c_replacements.insert(variable, replacement).is_some()
+                program_replacements.insert(variable, replacement).is_some()
             }
             (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
                 .insert(variable, value.clone())
@@ -162,28 +166,33 @@ fn match_field_replacements(
                 .insert(variable, value.clone())
                 .is_some(),
             // A value of a Rust type parameter is a term of its type.
-            (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
-                algebraic_replacements
-                    .insert(variable, (**value).clone())
-                    .is_some()
-            }
+            (
+                BindingCarrier::Algebraic,
+                AlgebraicValue::Program(ProgramValue::Parameter(value)),
+            ) => algebraic_replacements
+                .insert(variable, (**value).clone())
+                .is_some(),
             _ => return None,
         };
         if duplicate {
             return None;
         }
     }
-    Some((c_replacements, integer_replacements, algebraic_replacements))
+    Some((
+        program_replacements,
+        integer_replacements,
+        algebraic_replacements,
+    ))
 }
 
 struct TypedVariableReplacements<'a> {
-    c: &'a BTreeMap<Variable, TypedCReplacement>,
+    program_values: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
     integer: &'a BTreeMap<Variable, IntegerTerm>,
     algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
 }
 
 enum ScopeChange {
-    C(Variable, Option<Variable>),
+    Program(Variable, Option<Variable>),
     Integer(Variable, Option<Variable>),
     Algebraic(Variable, Option<Variable>),
 }
@@ -192,13 +201,13 @@ enum ScopeChange {
 // records only the temporary fold changes, so restoring a fold cannot disturb
 // an enclosing algebraic match's scope changes.
 enum FoldScopeChange {
-    C(Variable, Option<Variable>),
+    Program(Variable, Option<Variable>),
     Integer(Variable, Option<Variable>),
 }
 
 #[derive(Clone, Default)]
 struct CarrierVariables {
-    c: BTreeSet<Variable>,
+    program_values: BTreeSet<Variable>,
     integer: BTreeSet<Variable>,
     algebraic: BTreeSet<Variable>,
     nodes: usize,
@@ -224,7 +233,7 @@ impl CarrierVariables {
 
     fn contains(&self, carrier: BindingCarrier, variable: Variable) -> bool {
         match carrier {
-            BindingCarrier::C => self.c.contains(&variable),
+            BindingCarrier::Program => self.program_values.contains(&variable),
             BindingCarrier::Integer => self.integer.contains(&variable),
             BindingCarrier::Algebraic => self.algebraic.contains(&variable),
         }
@@ -252,12 +261,12 @@ impl CarrierVariables {
     }
 }
 
-fn c_value_variable(value: &CValue) -> Option<Variable> {
+fn program_value_variable(value: &ProgramValue) -> Option<Variable> {
     match value {
-        CValue::PointerInteger(record) => c_value_variable(&record.numeric),
-        CValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::PointerInteger(record) => program_value_variable(&record.numeric),
+        ProgramValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
         // A `Bool` binder (Stage 5), carried as its cast.
-        CValue::Bool(MachineTerm::BoolCast { value, .. })
+        ProgramValue::Bool(MachineTerm::BoolCast { value, .. })
             if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
         {
             match value.as_ref() {
@@ -265,17 +274,17 @@ fn c_value_variable(value: &CValue) -> Option<Variable> {
                 _ => None,
             }
         }
-        CValue::Bool(MachineTerm::Variable(variable))
-        | CValue::Int16(MachineTerm::Variable(variable))
-        | CValue::UInt8(MachineTerm::Variable(variable))
-        | CValue::UInt16(MachineTerm::Variable(variable))
-        | CValue::Int32(MachineTerm::Variable(variable))
-        | CValue::UInt32(MachineTerm::Variable(variable))
-        | CValue::Int64(MachineTerm::Variable(variable))
-        | CValue::UInt64(MachineTerm::Variable(variable))
-        | CValue::Float32(MachineTerm::Variable(variable))
-        | CValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
-        CValue::Pointer(pointer) => match &pointer.block {
+        ProgramValue::Bool(MachineTerm::Variable(variable))
+        | ProgramValue::Int16(MachineTerm::Variable(variable))
+        | ProgramValue::UInt8(MachineTerm::Variable(variable))
+        | ProgramValue::UInt16(MachineTerm::Variable(variable))
+        | ProgramValue::Int32(MachineTerm::Variable(variable))
+        | ProgramValue::UInt32(MachineTerm::Variable(variable))
+        | ProgramValue::Int64(MachineTerm::Variable(variable))
+        | ProgramValue::UInt64(MachineTerm::Variable(variable))
+        | ProgramValue::Float32(MachineTerm::Variable(variable))
+        | ProgramValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::Pointer(pointer) => match &pointer.block {
             PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
                 Some(*variable)
             }
@@ -285,32 +294,36 @@ fn c_value_variable(value: &CValue) -> Option<Variable> {
     }
 }
 
-fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
+fn typed_program_replacement(value: &ProgramValue) -> Option<TypedProgramValueReplacement> {
     match value {
-        CValue::PointerInteger(record) => typed_c_replacement(&record.numeric),
-        CValue::Int8(term) => Some(TypedCReplacement::Bitvector(term.clone())),
-        CValue::Bool(term)
-        | CValue::Int16(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::Int32(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => Some(TypedCReplacement::Bitvector(term.clone())),
-        CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.clone())),
-        CValue::Parameter(_) => None,
-        CValue::Void => None,
+        ProgramValue::PointerInteger(record) => typed_program_replacement(&record.numeric),
+        ProgramValue::Int8(term) => Some(TypedProgramValueReplacement::Bitvector(term.clone())),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
+        | ProgramValue::Float32(term)
+        | ProgramValue::Float64(term) => {
+            Some(TypedProgramValueReplacement::Bitvector(term.clone()))
+        }
+        ProgramValue::Pointer(pointer) => {
+            Some(TypedProgramValueReplacement::Pointer(pointer.clone()))
+        }
+        ProgramValue::Parameter(_) => None,
+        ProgramValue::Void => None,
     }
 }
 
 pub(super) fn binding_variable(value: &AlgebraicValue) -> Option<(BindingCarrier, Variable)> {
     match value {
-        AlgebraicValue::C(value) => {
-            c_value_variable(value).map(|variable| (BindingCarrier::C, variable))
+        AlgebraicValue::Program(value) => {
+            program_value_variable(value).map(|variable| (BindingCarrier::Program, variable))
         }
         AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => {
             Some((BindingCarrier::Integer, *variable))
@@ -339,8 +352,8 @@ fn typed_binding_variable(
             Some((BindingCarrier::Integer, *variable))
         }
         // A value of a Rust type parameter is a term of its type.
-        (expected, AlgebraicValue::C(value @ CValue::Parameter(term)))
-            if expected.accepts_c_value(value) =>
+        (expected, AlgebraicValue::Program(value @ ProgramValue::Parameter(term)))
+            if expected.accepts_program_value(value) =>
         {
             match &term.node {
                 AlgebraicTermNode::Variable(variable) => {
@@ -349,10 +362,10 @@ fn typed_binding_variable(
                 _ => None,
             }
         }
-        (expected, AlgebraicValue::C(value)) if expected.accepts_c_value(value) => {
-            c_value_declaration_variable(value)
+        (expected, AlgebraicValue::Program(value)) if expected.accepts_program_value(value) => {
+            program_value_declaration_variable(value)
                 .or_else(|| bool_binder_variable(value))
-                .map(|variable| (BindingCarrier::C, variable))
+                .map(|variable| (BindingCarrier::Program, variable))
         }
         (
             AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_),
@@ -387,8 +400,8 @@ fn bool_operand(term: &MachineTerm) -> Option<&MachineTerm> {
 
 /// The variable of a `bool` match binder: a `Bool` binder carried as its
 /// cast (Stage 5), or C's conversion of a fresh variable to `bool`.
-fn bool_binder_variable(value: &CValue) -> Option<Variable> {
-    let CValue::Bool(term) = value else {
+fn bool_binder_variable(value: &ProgramValue) -> Option<Variable> {
+    let ProgramValue::Bool(term) = value else {
         return None;
     };
     if let Some(ConditionTerm::Variable(variable)) = term.bool_cast_operand() {
@@ -405,33 +418,36 @@ fn bool_binder_variable(value: &CValue) -> Option<Variable> {
 /// replaced by. A binder that converts its variable to `bool` takes the
 /// operand of a field that is itself a conversion, or a `0` or `1` field, so
 /// the arm reads exactly the field; any other `bool` field is refused.
-fn typed_field_replacement(binding: &AlgebraicValue, field: &CValue) -> Option<TypedCReplacement> {
-    if let AlgebraicValue::C(binding) = binding
+fn typed_field_replacement(
+    binding: &AlgebraicValue,
+    field: &ProgramValue,
+) -> Option<TypedProgramValueReplacement> {
+    if let AlgebraicValue::Program(binding) = binding
         && bool_binder_variable(binding).is_some()
     {
-        let CValue::Bool(term) = field else {
+        let ProgramValue::Bool(term) = field else {
             return None;
         };
-        if let CValue::Bool(binder) = binding
+        if let ProgramValue::Bool(binder) = binding
             && matches!(binder.bool_cast_operand(), Some(ConditionTerm::Variable(_)))
         {
-            return Some(TypedCReplacement::Bitvector(term.clone()));
+            return Some(TypedProgramValueReplacement::Bitvector(term.clone()));
         }
         let operand = match term {
             int32_constant!(0 | 1) => term,
             _ => bool_operand(term)?,
         };
-        return Some(TypedCReplacement::Bitvector(operand.clone()));
+        return Some(TypedProgramValueReplacement::Bitvector(operand.clone()));
     }
-    typed_c_replacement(field)
+    typed_program_replacement(field)
 }
 
-fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
+fn program_value_declaration_variable(value: &ProgramValue) -> Option<Variable> {
     match value {
-        CValue::PointerInteger(record) => c_value_declaration_variable(&record.numeric),
-        CValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::PointerInteger(record) => program_value_declaration_variable(&record.numeric),
+        ProgramValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
         // A `Bool` binder (Stage 5), carried as its cast.
-        CValue::Bool(MachineTerm::BoolCast { value, .. })
+        ProgramValue::Bool(MachineTerm::BoolCast { value, .. })
             if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
         {
             match value.as_ref() {
@@ -439,17 +455,17 @@ fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
                 _ => None,
             }
         }
-        CValue::Bool(MachineTerm::Variable(variable))
-        | CValue::Int16(MachineTerm::Variable(variable))
-        | CValue::UInt8(MachineTerm::Variable(variable))
-        | CValue::UInt16(MachineTerm::Variable(variable))
-        | CValue::Int32(MachineTerm::Variable(variable))
-        | CValue::UInt32(MachineTerm::Variable(variable))
-        | CValue::Int64(MachineTerm::Variable(variable))
-        | CValue::UInt64(MachineTerm::Variable(variable))
-        | CValue::Float32(MachineTerm::Variable(variable))
-        | CValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
-        CValue::Pointer(pointer)
+        ProgramValue::Bool(MachineTerm::Variable(variable))
+        | ProgramValue::Int16(MachineTerm::Variable(variable))
+        | ProgramValue::UInt8(MachineTerm::Variable(variable))
+        | ProgramValue::UInt16(MachineTerm::Variable(variable))
+        | ProgramValue::Int32(MachineTerm::Variable(variable))
+        | ProgramValue::UInt32(MachineTerm::Variable(variable))
+        | ProgramValue::Int64(MachineTerm::Variable(variable))
+        | ProgramValue::UInt64(MachineTerm::Variable(variable))
+        | ProgramValue::Float32(MachineTerm::Variable(variable))
+        | ProgramValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::Pointer(pointer)
             if matches!(
                 &pointer.pointer().block,
                 PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
@@ -472,27 +488,27 @@ fn replace_binding_variable(
     variable: Variable,
 ) {
     match (carrier, value) {
-        (BindingCarrier::C, AlgebraicValue::C(value)) => match value {
-            CValue::Int8(term) if matches!(term, MachineTerm::Variable(_)) => {
+        (BindingCarrier::Program, AlgebraicValue::Program(value)) => match value {
+            ProgramValue::Int8(term) if matches!(term, MachineTerm::Variable(_)) => {
                 *term = MachineTerm::Variable(variable);
             }
-            CValue::Bool(term)
-            | CValue::Int16(term)
-            | CValue::UInt8(term)
-            | CValue::UInt16(term)
-            | CValue::Int32(term)
-            | CValue::UInt32(term)
-            | CValue::Int64(term)
-            | CValue::UInt64(term)
-            | CValue::Int128(term)
-            | CValue::UInt128(term)
-            | CValue::Float32(term)
-            | CValue::Float64(term)
+            ProgramValue::Bool(term)
+            | ProgramValue::Int16(term)
+            | ProgramValue::UInt8(term)
+            | ProgramValue::UInt16(term)
+            | ProgramValue::Int32(term)
+            | ProgramValue::UInt32(term)
+            | ProgramValue::Int64(term)
+            | ProgramValue::UInt64(term)
+            | ProgramValue::Int128(term)
+            | ProgramValue::UInt128(term)
+            | ProgramValue::Float32(term)
+            | ProgramValue::Float64(term)
                 if matches!(term, MachineTerm::Variable(_)) =>
             {
                 *term = MachineTerm::Variable(variable);
             }
-            CValue::Pointer(pointer)
+            ProgramValue::Pointer(pointer)
                 if matches!(
                     &pointer.block,
                     PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
@@ -627,7 +643,7 @@ fn collect_integer_carriers(
                     variables.integer.insert(*item);
                 }
                 IntegerRangeFoldIndex::Int32 { .. } | IntegerRangeFoldIndex::UInt64 { .. } => {
-                    variables.c.insert(*item);
+                    variables.program_values.insert(*item);
                 }
             }
         }
@@ -669,7 +685,7 @@ fn collect_argument_carriers(
         return;
     }
     match argument {
-        PureFunctionArgument::Value(value) => collect_c_value_carriers(value, variables),
+        PureFunctionArgument::Value(value) => collect_program_value_carriers(value, variables),
         PureFunctionArgument::SharedMachine(value) => collect_machine_carriers(value, variables),
         PureFunctionArgument::Integer(value) => {
             collect_integer_shared_carriers(value, variables, seen)
@@ -680,7 +696,7 @@ fn collect_argument_carriers(
         PureFunctionArgument::ArrayRef {
             memory: _, pointer, ..
         } => {
-            collect_c_value_carriers(pointer, variables);
+            collect_program_value_carriers(pointer, variables);
         }
     }
 }
@@ -694,37 +710,40 @@ fn collect_algebraic_value_carriers(
         return;
     }
     match value {
-        AlgebraicValue::C(value) => collect_c_value_carriers(value, variables),
+        AlgebraicValue::Program(value) => collect_program_value_carriers(value, variables),
         AlgebraicValue::Integer(value) => collect_integer_carriers(value, variables, seen),
         AlgebraicValue::Algebraic(value) => collect_algebraic_carriers_seen(value, variables, seen),
     }
 }
 
-fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
+fn collect_program_value_carriers(value: &ProgramValue, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     match value {
-        CValue::PointerInteger(record) => {
-            collect_c_value_carriers(&record.numeric, variables);
-            collect_c_value_carriers(&CValue::Pointer(*record.pointer.clone()), variables);
+        ProgramValue::PointerInteger(record) => {
+            collect_program_value_carriers(&record.numeric, variables);
+            collect_program_value_carriers(
+                &ProgramValue::Pointer(*record.pointer.clone()),
+                variables,
+            );
         }
-        CValue::Parameter(term) => collect_algebraic_carriers(term, variables),
-        CValue::Void => {}
-        CValue::Int8(term) => collect_bitvector_carriers(term, variables),
-        CValue::Bool(term)
-        | CValue::Int16(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::Int32(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => collect_bitvector_carriers(term, variables),
-        CValue::Pointer(pointer) => {
+        ProgramValue::Parameter(term) => collect_algebraic_carriers(term, variables),
+        ProgramValue::Void => {}
+        ProgramValue::Int8(term) => collect_bitvector_carriers(term, variables),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
+        | ProgramValue::Float32(term)
+        | ProgramValue::Float64(term) => collect_bitvector_carriers(term, variables),
+        ProgramValue::Pointer(pointer) => {
             for component in pointer.pointers() {
                 collect_pointer_carriers(component, variables);
             }
@@ -818,7 +837,7 @@ fn collect_pointer_carriers(pointer: &Pointer, variables: &mut CarrierVariables)
     }
     match &pointer.block {
         PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
-            variables.c.insert(*variable);
+            variables.program_values.insert(*variable);
         }
         PointerBlock::PureFunctionApplication(application)
             if variables.pointer_applications.insert(application.id()) =>
@@ -852,8 +871,8 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
     }
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
-            collect_c_value_carriers(&CValue::Pointer((**left).clone()), variables);
-            collect_c_value_carriers(&CValue::Pointer((**right).clone()), variables);
+            collect_program_value_carriers(&ProgramValue::Pointer((**left).clone()), variables);
+            collect_program_value_carriers(&ProgramValue::Pointer((**right).clone()), variables);
         }
 
         ConditionTerm::AlgebraicEqual(left, right) => {
@@ -941,7 +960,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
     match term {
         MachineTerm::Constant { .. } => {}
         MachineTerm::Variable(variable) => {
-            variables.c.insert(*variable);
+            variables.program_values.insert(*variable);
             collect_registered_load_carriers(*variable, variables);
         }
         crate::kernel::binary_machine_term!(left, right) => {
@@ -992,8 +1011,8 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
             if variables.exhausted() {
                 return;
             }
-            variables.c.insert(*accumulator);
-            variables.c.insert(*item);
+            variables.program_values.insert(*accumulator);
+            variables.program_values.insert(*item);
         }
         MachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
@@ -1135,7 +1154,7 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 ///
 /// *Width.* The variable's load must be a four-byte integer read
 /// (`LoadKind::Int32`, which its registered term carries), and the cell must
-/// be a `CValue::Int32`, which is a four-byte value: a cell answers only a read
+/// be a `ProgramValue::Int32`, which is a four-byte value: a cell answers only a read
 /// of its own kind. Every scaled term in the pointer's own offset must also
 /// scale by four, which makes the address an element address of a four-byte
 /// array rather than a narrower field inside a wider element. A one-byte array
@@ -1144,8 +1163,8 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 ///
 /// *Union overlays.* A typed union overlay outranks the raw cell for an exact
 /// typed load, so a raw cell read while an overlay is present would be the
-/// wrong value rather than a missing one. `CMemory::store_with_context` drops
-/// every overlay at the pointer it writes and `CMemory::store_union` drops the
+/// wrong value rather than a missing one. `Memory::store_with_context` drops
+/// every overlay at the pointer it writes and `Memory::store_union` drops the
 /// raw cell at the pointer it overlays, so the two never coexist at one
 /// pointer — an invariant this helper depends on and does not enforce
 /// elsewhere. It is asserted in debug builds and refused in release ones, and
@@ -1171,7 +1190,7 @@ fn materialized_registered_load_value(variable: Variable) -> Option<MachineTerm>
     // The cell's value as this read returns it: σ of a word stored at the
     // other 32-bit signedness (rule K5).
     match kind.read_cell(&memory.known_value(&pointer)?)? {
-        CValue::Int32(bits) | CValue::UInt32(bits) => Some(bits),
+        ProgramValue::Int32(bits) | ProgramValue::UInt32(bits) => Some(bits),
         _ => None,
     }
 }
@@ -1221,7 +1240,7 @@ fn collect_pointer_offset_carriers(offset: &PointerOffsetTerm, variables: &mut C
     match offset {
         PointerOffsetTerm::Constant(_) => {}
         PointerOffsetTerm::Variable(variable) => {
-            variables.c.insert(*variable);
+            variables.program_values.insert(*variable);
             collect_registered_load_carriers(*variable, variables);
         }
         PointerOffsetTerm::Add(left, right) => {
@@ -1245,7 +1264,7 @@ fn collect_sequence_carriers(term: &SequenceTerm, variables: &mut CarrierVariabl
     match term.node.as_ref() {
         SequenceTermNode::Literal(values) => {
             for value in values.iter() {
-                collect_c_value_carriers(value, variables);
+                collect_program_value_carriers(value, variables);
                 if variables.exhausted() {
                     return;
                 }
@@ -1312,7 +1331,7 @@ impl IntegerSubstitutionVariableCollector {
     }
 
     pub(crate) fn extend_into(&self, variables: &mut BTreeSet<Variable>) {
-        variables.extend(self.carriers.c.iter().copied());
+        variables.extend(self.carriers.program_values.iter().copied());
         variables.extend(self.carriers.integer.iter().copied());
         variables.extend(self.carriers.algebraic.iter().copied());
     }
@@ -1361,28 +1380,28 @@ fn collect_integer_substitution_variables_with_carriers(
             // read carry the selected pointer and byte-count terms directly.  The
             // memory snapshot is intentionally opaque: only these expressions
             // participate in capture reservation.
-            Proposition::CMemoryReadDefined { pointer, .. } => {
+            Proposition::MemoryReadDefined { pointer, .. } => {
                 collect_pointer_carriers(pointer, carriers);
             }
-            Proposition::CMemoryLoadable { base, bytes, .. } => {
+            Proposition::MemoryLoadable { base, bytes, .. } => {
                 collect_pointer_carriers(base, carriers);
                 if carriers.exhausted() {
                     return;
                 }
                 collect_bitvector_carriers(bytes, carriers);
             }
-            Proposition::CResourceViewable { resource, .. } => {
+            Proposition::ResourceViewable { resource, .. } => {
                 collect_resource_carriers(resource, carriers)
             }
-            Proposition::CResourceContains { parent, child } => {
+            Proposition::ResourceContains { parent, child } => {
                 collect_resource_carriers(parent, carriers);
                 collect_resource_carriers(child, carriers);
             }
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 collect_resource_carriers(left, carriers);
                 collect_resource_carriers(right, carriers);
             }
-            Proposition::CResourceComposition(resources) => {
+            Proposition::ResourceComposition(resources) => {
                 for fact in resources.facts() {
                     collect_resource_carriers(fact.resource(), carriers);
                     if carriers.exhausted() {
@@ -1409,25 +1428,30 @@ fn collect_integer_substitution_variables_with_carriers(
 
 // Visit only the explicitly named footprint and arguments. Stored cells,
 // sealed resource identities and binder-bearing bodies remain opaque.
-fn collect_resource_carriers(resource: &CResource, carriers: &mut CarrierVariables) {
+fn collect_resource_carriers(resource: &Resource, carriers: &mut CarrierVariables) {
     let mut pending = vec![resource];
     while let Some(resource) = pending.pop() {
         if !carriers.visit() {
             return;
         }
         match resource {
-            CResource::Star(pair) => {
+            Resource::Star(pair) => {
                 pending.extend([&pair.0, &pair.1]);
             }
-            CResource::Memory(range) => {
-                collect_c_value_carriers(&CValue::Pointer(range.pointer_carrier()), carriers);
+            Resource::Memory(range) => {
+                collect_program_value_carriers(
+                    &ProgramValue::Pointer(range.pointer_carrier()),
+                    carriers,
+                );
                 collect_bitvector_carriers(range.bound_terms().0, carriers);
                 collect_bitvector_carriers(range.bound_terms().1, carriers);
             }
-            CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+            Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
                 for argument in arguments.iter() {
                     match argument {
-                        AlgebraicValue::C(value) => collect_c_value_carriers(value, carriers),
+                        AlgebraicValue::Program(value) => {
+                            collect_program_value_carriers(value, carriers)
+                        }
                         AlgebraicValue::Integer(value) => {
                             collect_integer_carriers(value, carriers, &mut BTreeSet::new());
                         }
@@ -1449,7 +1473,7 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
     match term {
         Term::Integer(value) => collect_integer_carriers(value, variables, &mut BTreeSet::new()),
         Term::Bitvector32(value) => collect_bitvector_carriers(value, variables),
-        Term::CValue(value) => collect_c_value_carriers(value, variables),
+        Term::ProgramValue(value) => collect_program_value_carriers(value, variables),
         Term::Condition(value) => collect_condition_carriers(value, variables),
         Term::PointerOffset(value) => collect_pointer_offset_carriers(value, variables),
         Term::Algebraic(value) => collect_algebraic_carriers(value, variables),
@@ -1490,21 +1514,23 @@ fn exhausted_offset() -> PointerOffsetTerm {
     PointerOffsetTerm::Constant(0)
 }
 
-fn exhausted_c_value(value: &CValue) -> CValue {
+fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Parameter(term) => CValue::Parameter(Box::new(exhausted_algebraic(term))),
-        CValue::Void => CValue::Void,
-        CValue::Bool(_) => CValue::bool_constant(false),
-        CValue::Int8(_) => crate::kernel::int8(0),
-        CValue::Int16(_) => crate::kernel::int16(0),
-        CValue::UInt8(_) => crate::kernel::uint8(0),
-        CValue::UInt16(_) => crate::kernel::uint16(0),
-        CValue::Int32(_) => CValue::Int32(MachineTerm::constant(0)),
-        CValue::UInt32(_) => CValue::UInt32(MachineTerm::uint32_constant(0)),
-        CValue::Int64(_) => CValue::Int64(MachineTerm::int64_constant(0)),
-        CValue::UInt64(_) => CValue::UInt64(MachineTerm::uint64_constant(0)),
-        CValue::Int128(_) => MachineIntegerType::Int128
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Parameter(term) => {
+            ProgramValue::Parameter(Box::new(exhausted_algebraic(term)))
+        }
+        ProgramValue::Void => ProgramValue::Void,
+        ProgramValue::Bool(_) => ProgramValue::bool_constant(false),
+        ProgramValue::Int8(_) => crate::kernel::int8(0),
+        ProgramValue::Int16(_) => crate::kernel::int16(0),
+        ProgramValue::UInt8(_) => crate::kernel::uint8(0),
+        ProgramValue::UInt16(_) => crate::kernel::uint16(0),
+        ProgramValue::Int32(_) => ProgramValue::Int32(MachineTerm::constant(0)),
+        ProgramValue::UInt32(_) => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+        ProgramValue::Int64(_) => ProgramValue::Int64(MachineTerm::int64_constant(0)),
+        ProgramValue::UInt64(_) => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        ProgramValue::Int128(_) => MachineIntegerType::Int128
             .constant_value(
                 crate::kernel::MachineIntegerConstant::from_signed(
                     MachineIntegerType::Int128.format(),
@@ -1513,7 +1539,7 @@ fn exhausted_c_value(value: &CValue) -> CValue {
                 .unwrap(),
             )
             .unwrap(),
-        CValue::UInt128(_) => MachineIntegerType::UInt128
+        ProgramValue::UInt128(_) => MachineIntegerType::UInt128
             .constant_value(
                 crate::kernel::MachineIntegerConstant::from_unsigned(
                     MachineIntegerType::UInt128.format(),
@@ -1522,10 +1548,10 @@ fn exhausted_c_value(value: &CValue) -> CValue {
                 .unwrap(),
             )
             .unwrap(),
-        CValue::Float32(_) => CValue::Float32(MachineTerm::constant(0)),
-        CValue::Float64(_) => CValue::Float64(MachineTerm::uint64_constant(0)),
-        CValue::Pointer(pointer) => CValue::Pointer(
-            CPointerValue::new(exhausted_pointer(), pointer.c_type())
+        ProgramValue::Float32(_) => ProgramValue::Float32(MachineTerm::constant(0)),
+        ProgramValue::Float64(_) => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+        ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
+            PointerValue::new(exhausted_pointer(), pointer.program_type())
                 .with_pointee_volatile(pointer.pointee_volatile())
                 .with_pointee_constant(pointer.pointee_constant()),
         ),
@@ -1535,13 +1561,15 @@ fn exhausted_c_value(value: &CValue) -> CValue {
 fn exhausted_sequence(term: &SequenceTerm) -> SequenceTerm {
     SequenceTerm {
         element_type: term.element_type,
-        node: std::sync::Arc::new(SequenceTermNode::Literal(Vec::<CValue>::new().into())),
+        node: std::sync::Arc::new(SequenceTermNode::Literal(Vec::<ProgramValue>::new().into())),
     }
 }
 
 fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
     match argument {
-        PureFunctionArgument::Value(value) => PureFunctionArgument::Value(exhausted_c_value(value)),
+        PureFunctionArgument::Value(value) => {
+            PureFunctionArgument::Value(exhausted_program_value(value))
+        }
         PureFunctionArgument::SharedMachine(value) => {
             PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::index(
                 value.ty(),
@@ -1561,7 +1589,7 @@ fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
             element_type,
         } => PureFunctionArgument::ArrayRef {
             memory: memory.clone(),
-            pointer: exhausted_c_value(pointer),
+            pointer: exhausted_program_value(pointer),
             element_type: *element_type,
         },
     }
@@ -1573,7 +1601,7 @@ fn exhausted_term(term: &Term) -> Term {
         Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0)),
         Term::Integer(value) => Term::Integer(exhausted_integer(value)),
         Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
-        Term::CValue(value) => Term::CValue(exhausted_c_value(value)),
+        Term::ProgramValue(value) => Term::ProgramValue(exhausted_program_value(value)),
         Term::Sequence(value) => Term::Sequence(exhausted_sequence(value)),
         Term::Algebraic(value) => Term::Algebraic(exhausted_algebraic(value)),
         _ => term.clone(),
@@ -1608,7 +1636,7 @@ pub(crate) struct IntegerSubstitutionScope {
 /// Integer proposition substitution walker.  C and Integer binders share the
 /// numeric variable namespace in the term representation, but their lexical
 /// mappings must remain separate.
-pub(crate) struct CSubstitutionScope {
+pub(crate) struct ProgramValueSubstitutionScope {
     variable: Variable,
     previous: Option<Variable>,
     scope_id: u64,
@@ -1733,14 +1761,16 @@ fn bounded_uint64_indices(
 /// Lexical dependencies of a selected read address. Variable IDs are local
 /// to their carrier: an Integer binder cannot shadow a C address variable.
 struct ReadAddressDependencies {
-    c: BTreeSet<Variable>,
+    program_values: BTreeSet<Variable>,
     integer: BTreeSet<Variable>,
     algebraic: BTreeSet<Variable>,
 }
 
 impl ReadAddressDependencies {
     fn is_bound_in(&self, scope: &RewriteScope) -> bool {
-        self.c.iter().any(|variable| scope.c.contains_key(variable))
+        self.program_values
+            .iter()
+            .any(|variable| scope.program_values.contains_key(variable))
             || self
                 .integer
                 .iter()
@@ -1762,7 +1792,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_variable: Option<(Variable, &'a Pointer)>,
     pointer_addresses_only: bool,
     pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
-    pointer_value_exact: Option<(&'a CPointerValue, &'a CPointerValue)>,
+    pointer_value_exact: Option<(&'a PointerValue, &'a PointerValue)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
@@ -1969,7 +1999,7 @@ impl<'a> TermRewrite<'a> {
         let mut carriers = CarrierVariables::for_rewrite(true);
         collect_pointer_carriers(&pointer, &mut carriers);
         !carriers.exhausted()
-            && carriers.c.is_disjoint(bound)
+            && carriers.program_values.is_disjoint(bound)
             && carriers.integer.is_disjoint(bound)
             && carriers.algebraic.is_disjoint(bound)
     }
@@ -2006,7 +2036,7 @@ impl<'a> TermRewrite<'a> {
                     return None;
                 }
                 let dependencies = ReadAddressDependencies {
-                    c: carriers.c,
+                    program_values: carriers.program_values,
                     integer: carriers.integer,
                     algebraic: carriers.algebraic,
                 };
@@ -2017,7 +2047,7 @@ impl<'a> TermRewrite<'a> {
             } else if let MachineTerm::Variable(variable) = source {
                 // Registered names use the exact read table, including its
                 // lexical address dependencies, just like structural reads.
-                named.insert(variable, TypedCReplacement::Bitvector(value));
+                named.insert(variable, TypedProgramValueReplacement::Bitvector(value));
             }
         }
         if named.is_empty() && reads.is_empty() && algebraic_reads.is_empty() {
@@ -2157,7 +2187,7 @@ impl<'a> TermRewrite<'a> {
         }
         let CarrierVariables {
             integer: integer_replacement_variables,
-            c: bitvector_replacement_variables,
+            program_values: bitvector_replacement_variables,
             work_exhausted: replacement_work_exhausted,
             ..
         } = replacement_carriers;
@@ -2322,8 +2352,8 @@ impl<'a> TermRewrite<'a> {
             // A cell holding a stored read of the same kind reads as it.
             let stored = match memory.memory().known_value(&rewritten) {
                 Some(
-                    CValue::Int32(MachineTerm::Variable(stored))
-                    | CValue::UInt32(MachineTerm::Variable(stored)),
+                    ProgramValue::Int32(MachineTerm::Variable(stored))
+                    | ProgramValue::UInt32(MachineTerm::Variable(stored)),
                 ) if crate::kernel::is_load_variable(&stored)
                     && crate::kernel::registered_load_kind_for_variable(&stored) == Some(kind) =>
                 {
@@ -2464,7 +2494,7 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_value_exact(from: &'a CPointerValue, to: &'a CPointerValue) -> Self {
+    pub(crate) fn for_pointer_value_exact(from: &'a PointerValue, to: &'a PointerValue) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_value_exact = Some((from, to));
         // Reads named by load variables can sit at addresses formed from
@@ -2698,7 +2728,7 @@ impl<'a> TermRewrite<'a> {
     }
 
     /// Install an Integer binder mapping for a pure-proposition scope.  The
-    /// map is carrier-specific, so a C binder with the same numeric ID cannot
+    /// map is carrier-specific, so a program-value binder with the same numeric ID cannot
     /// affect this scope.  Scope IDs invalidate the DAG cache whenever the
     /// visible mapping changes.
     pub(crate) fn push_integer_substitution_scope(
@@ -2741,35 +2771,39 @@ impl<'a> TermRewrite<'a> {
             .is_some_and(|replacement| replacement.integer.contains(&variable))
     }
 
-    pub(crate) fn replacement_contains_c_variable(&mut self, variable: Variable) -> bool {
+    pub(crate) fn replacement_contains_program_variable(&mut self, variable: Variable) -> bool {
         self.ensure_replacement_carriers();
         self.replacement_carriers
             .as_ref()
-            .is_some_and(|replacement| replacement.c.contains(&variable))
+            .is_some_and(|replacement| replacement.program_values.contains(&variable))
     }
 
     /// Install a C-carrier binder mapping without changing the Integer
     /// shadowing state.  The scope token restores only the previous C mapping
     /// and the cache scope ID.
-    pub(crate) fn push_c_substitution_scope(
+    pub(crate) fn push_program_substitution_scope(
         &mut self,
         variable: Variable,
         mapped: Variable,
-    ) -> CSubstitutionScope {
-        let previous = self.scope.c.insert(variable, mapped);
+    ) -> ProgramValueSubstitutionScope {
+        let previous = self.scope.program_values.insert(variable, mapped);
         let scope_id = self.scope_id;
         if previous != Some(mapped) {
             self.bump_scope_id();
         }
-        CSubstitutionScope {
+        ProgramValueSubstitutionScope {
             variable,
             previous,
             scope_id,
         }
     }
 
-    pub(crate) fn pop_c_substitution_scope(&mut self, scope: CSubstitutionScope) {
-        restore_mapping(&mut self.scope.c, scope.variable, scope.previous);
+    pub(crate) fn pop_program_substitution_scope(&mut self, scope: ProgramValueSubstitutionScope) {
+        restore_mapping(
+            &mut self.scope.program_values,
+            scope.variable,
+            scope.previous,
+        );
         self.scope_id = scope.scope_id;
     }
 
@@ -2777,7 +2811,7 @@ impl<'a> TermRewrite<'a> {
     /// once.  The replacement terms are inserted unchanged, so a field that
     /// mentions another binder is not rewritten by the later field mapping.
     pub(crate) fn for_typed_variables(
-        c: &'a BTreeMap<Variable, TypedCReplacement>,
+        program_values: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
         integer: &'a BTreeMap<Variable, IntegerTerm>,
         algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
     ) -> Self {
@@ -2817,7 +2851,7 @@ impl<'a> TermRewrite<'a> {
             enforce_integer_work_limit: false,
             integer_variables: None,
             typed_variables: Some(TypedVariableReplacements {
-                c,
+                program_values,
                 integer,
                 algebraic,
             }),
@@ -3007,12 +3041,12 @@ impl<'a> TermRewrite<'a> {
         let previous = if integer {
             self.scope.integer.remove(&variable)
         } else {
-            self.scope.c.remove(&variable)
+            self.scope.program_values.remove(&variable)
         };
         changes.push(if integer {
             FoldScopeChange::Integer(variable, previous)
         } else {
-            FoldScopeChange::C(variable, previous)
+            FoldScopeChange::Program(variable, previous)
         });
     }
 
@@ -3026,12 +3060,12 @@ impl<'a> TermRewrite<'a> {
         let previous = if integer {
             self.scope.integer.insert(from, to)
         } else {
-            self.scope.c.insert(from, to)
+            self.scope.program_values.insert(from, to)
         };
         changes.push(if integer {
             FoldScopeChange::Integer(from, previous)
         } else {
-            FoldScopeChange::C(from, previous)
+            FoldScopeChange::Program(from, previous)
         });
         self.scope_renaming_max = self.scope_renaming_max.max(to.0);
     }
@@ -3042,8 +3076,8 @@ impl<'a> TermRewrite<'a> {
                 FoldScopeChange::Integer(variable, previous) => {
                     restore_mapping(&mut self.scope.integer, *variable, *previous);
                 }
-                FoldScopeChange::C(variable, previous) => {
-                    restore_mapping(&mut self.scope.c, *variable, *previous);
+                FoldScopeChange::Program(variable, previous) => {
+                    restore_mapping(&mut self.scope.program_values, *variable, *previous);
                 }
             }
         }
@@ -3071,7 +3105,7 @@ impl<'a> TermRewrite<'a> {
 
     fn extend_reserved_variables(&mut self, variables: &CarrierVariables) {
         for variable in variables
-            .c
+            .program_values
             .iter()
             .chain(variables.integer.iter())
             .chain(variables.algebraic.iter())
@@ -3102,16 +3136,16 @@ impl<'a> TermRewrite<'a> {
                 Term::PointerOffset(offset) => {
                     collect_pointer_offset_carriers(offset, &mut variables)
                 }
-                Term::CValue(value) => collect_c_value_carriers(value, &mut variables),
+                Term::ProgramValue(value) => collect_program_value_carriers(value, &mut variables),
                 Term::Sequence(value) => collect_sequence_carriers(value, &mut variables),
                 Term::Algebraic(value) => {
                     collect_algebraic_carriers_seen(value, &mut variables, &mut seen)
                 }
-                Term::CExpressionOutcome(_)
-                | Term::CStatementOutcome(_)
-                | Term::CFunctionOutcome(_)
-                | Term::CMemory(_)
-                | Term::CState(_) => {}
+                Term::ExpressionOutcome(_)
+                | Term::StatementOutcome(_)
+                | Term::FunctionOutcome(_)
+                | Term::Memory(_)
+                | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
                 break;
@@ -3155,7 +3189,7 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn reserve_resource_variables_once(&mut self, resources: &[&CResource]) {
+    fn reserve_resource_variables_once(&mut self, resources: &[&Resource]) {
         if self.source_variables_reserved {
             return;
         }
@@ -3163,15 +3197,15 @@ impl<'a> TermRewrite<'a> {
         let mut seen = BTreeSet::new();
         for resource in resources {
             match resource {
-                CResource::Memory(range) => {
-                    collect_c_value_carriers(
-                        &CValue::Pointer(range.pointer_carrier()),
+                Resource::Memory(range) => {
+                    collect_program_value_carriers(
+                        &ProgramValue::Pointer(range.pointer_carrier()),
                         &mut variables,
                     );
                     collect_bitvector_carriers(range.bound_terms().0, &mut variables);
                     collect_bitvector_carriers(range.bound_terms().1, &mut variables);
                 }
-                CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+                Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
                     for argument in arguments.iter() {
                         collect_algebraic_value_carriers(argument, &mut variables, &mut seen);
                     }
@@ -3182,19 +3216,18 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn resource(&mut self, resource: &CResource) -> CResource {
+    fn resource(&mut self, resource: &Resource) -> Resource {
         self.visit();
         if self.checked_work_exhausted() {
             return resource.clone();
         }
         match resource {
-            CResource::Star(pair) => {
-                CResource::star(self.resource(&pair.0), self.resource(&pair.1))
-            }
+            Resource::Star(pair) => Resource::star(self.resource(&pair.0), self.resource(&pair.1)),
 
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 let carrier = range.pointer_carrier();
-                let CValue::Pointer(mut mapped) = self.value(&CValue::Pointer(carrier)) else {
+                let ProgramValue::Pointer(mut mapped) = self.value(&ProgramValue::Pointer(carrier))
+                else {
                     unreachable!()
                 };
                 if let Some((from, to)) = self.pointer_value_exact
@@ -3216,21 +3249,21 @@ impl<'a> TermRewrite<'a> {
                     )
                     .with_pointer_carrier(&mapped);
                 result.typed_carrier = range.typed_carrier;
-                CResource::Memory(result)
+                Resource::Memory(result)
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 self.charge_rewrite_work(arguments.len());
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.field(argument))
                     .collect();
-                if matches!(resource, CResource::Composite { .. }) {
-                    CResource::Composite {
+                if matches!(resource, Resource::Composite { .. }) {
+                    Resource::Composite {
                         name: name.clone(),
                         arguments,
                     }
                 } else {
-                    CResource::Token {
+                    Resource::Token {
                         name: name.clone(),
                         arguments,
                     }
@@ -3322,14 +3355,14 @@ impl<'a> TermRewrite<'a> {
             Sort::Algebraic(_) => Some(BindingCarrier::Algebraic),
             Sort::Bitvector32
             | Sort::Bitvector64
-            | Sort::CInt32
-            | Sort::CInt64
-            | Sort::CMachineInteger(_)
-            | Sort::CPointer(_)
-            | Sort::CObjectPointer(_, _)
-            | Sort::CValue
+            | Sort::ProgramInt32
+            | Sort::ProgramInt64
+            | Sort::ProgramInteger(_)
+            | Sort::ProgramPointer(_)
+            | Sort::ProgramObjectPointer(_, _)
+            | Sort::ProgramValue
             | Sort::PointerOffset
-            | Sort::Condition => Some(BindingCarrier::C),
+            | Sort::Condition => Some(BindingCarrier::Program),
             _ => None,
         };
         let Some(carrier) = carrier else {
@@ -3385,12 +3418,12 @@ impl<'a> TermRewrite<'a> {
                 }
                 Proposition::Equal(left, right)
             }
-            Proposition::ConditionIs(c, value) => {
-                self.reserve_condition_variables_once(c);
+            Proposition::ConditionIs(condition, value) => {
+                self.reserve_condition_variables_once(condition);
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                let condition = self.condition(c);
+                let condition = self.condition(condition);
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -3398,7 +3431,7 @@ impl<'a> TermRewrite<'a> {
                 // A rewrite can introduce an outer Bool negation.
                 condition.truth_claim(*value)
             }
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -3415,14 +3448,14 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
                     bytes,
                     wide: *wide,
                 }
             }
-            Proposition::CMemoryCanStore {
+            Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
@@ -3436,13 +3469,13 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                Proposition::CMemoryCanStore {
+                Proposition::MemoryCanStore {
                     memory: memory.clone(),
                     pointer,
                     byte_width: *byte_width,
                 }
             }
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory,
                 pointer,
                 value_type,
@@ -3456,26 +3489,26 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                Proposition::CMemoryReadDefined {
+                Proposition::MemoryReadDefined {
                     memory: memory.clone(),
                     pointer,
                     value_type: *value_type,
                 }
             }
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 self.reserve_resource_variables_once(&[left, right]);
-                Proposition::CResourceSeparate {
+                Proposition::ResourceSeparate {
                     left: Box::new(self.resource(left)),
                     right: Box::new(self.resource(right)),
                 }
             }
-            Proposition::CResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable { memory, resource } => {
                 self.reserve_resource_variables_once(&[resource]);
                 crate::kernel::resource_viewable(memory, self.resource(resource))
             }
-            Proposition::CResourceContains { parent, child } => {
+            Proposition::ResourceContains { parent, child } => {
                 self.reserve_resource_variables_once(&[parent, child]);
-                Proposition::CResourceContains {
+                Proposition::ResourceContains {
                     parent: Box::new(self.resource(parent)),
                     child: Box::new(self.resource(child)),
                 }
@@ -3568,7 +3601,7 @@ impl<'a> TermRewrite<'a> {
             Term::Algebraic(v) => Term::Algebraic(self.algebraic(v)),
             Term::Bitvector32(v) => Term::Bitvector32(self.bits(v)),
             Term::Integer(v) => Term::Integer(self.integer(v)),
-            Term::CValue(v) => Term::CValue(self.value(v)),
+            Term::ProgramValue(v) => Term::ProgramValue(self.value(v)),
             Term::Condition(v) => Term::Condition(self.condition(v)),
             Term::PointerOffset(v) => Term::PointerOffset(self.offset(v)),
             _ => term.clone(),
@@ -3620,7 +3653,7 @@ impl<'a> TermRewrite<'a> {
             AlgebraicTermNode::MemoryLoad { memory, pointer } => {
                 let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
                 match self.field(&carrier) {
-                    AlgebraicValue::C(value) => {
+                    AlgebraicValue::Program(value) => {
                         let rewritten = AlgebraicTermNode::memory_load_from_carrier(&value)
                             .unwrap_or_else(|| term.node.clone());
                         match rewritten {
@@ -3777,7 +3810,9 @@ impl<'a> TermRewrite<'a> {
     fn field(&mut self, v: &AlgebraicValue) -> AlgebraicValue {
         if self.checked_work_exhausted() {
             return match v {
-                AlgebraicValue::C(value) => AlgebraicValue::C(exhausted_c_value(value)),
+                AlgebraicValue::Program(value) => {
+                    AlgebraicValue::Program(exhausted_program_value(value))
+                }
                 AlgebraicValue::Integer(value) => AlgebraicValue::Integer(exhausted_integer(value)),
                 AlgebraicValue::Algebraic(value) => {
                     AlgebraicValue::Algebraic(exhausted_algebraic(value))
@@ -3785,7 +3820,7 @@ impl<'a> TermRewrite<'a> {
             };
         }
         match v {
-            AlgebraicValue::C(v) => AlgebraicValue::C(self.value(v)),
+            AlgebraicValue::Program(v) => AlgebraicValue::Program(self.value(v)),
             AlgebraicValue::Integer(v) => AlgebraicValue::Integer(self.integer(v)),
             AlgebraicValue::Algebraic(v) => AlgebraicValue::Algebraic(self.algebraic(v)),
         }
@@ -3825,39 +3860,41 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
-    fn value(&mut self, v: &CValue) -> CValue {
+    fn value(&mut self, v: &ProgramValue) -> ProgramValue {
         if self.checked_work_exhausted() {
-            return exhausted_c_value(v);
+            return exhausted_program_value(v);
         }
         let result = match v {
-            CValue::PointerInteger(record) => {
-                let CValue::Pointer(pointer) =
-                    self.value(&CValue::Pointer(*record.pointer.clone()))
+            ProgramValue::PointerInteger(record) => {
+                let ProgramValue::Pointer(pointer) =
+                    self.value(&ProgramValue::Pointer(*record.pointer.clone()))
                 else {
                     unreachable!()
                 };
-                CValue::PointerInteger(PointerIntegerValue {
+                ProgramValue::PointerInteger(PointerIntegerValue {
                     kind: record.kind.clone(),
                     numeric: Box::new(self.value(&record.numeric)),
                     pointer: Box::new(pointer),
                 })
             }
-            CValue::Parameter(term) => CValue::Parameter(Box::new(self.algebraic(term))),
-            CValue::Void => CValue::Void,
-            CValue::Bool(v) => CValue::Bool(self.bits(v)),
-            CValue::Int8(v) => CValue::Int8(self.bits(v)),
-            CValue::Int16(v) => CValue::Int16(self.bits(v)),
-            CValue::UInt16(v) => CValue::UInt16(self.bits(v)),
-            CValue::UInt8(v) => CValue::UInt8(self.bits(v)),
-            CValue::Int32(v) => CValue::Int32(self.bits(v)),
-            CValue::UInt32(v) => CValue::UInt32(self.bits(v)),
-            CValue::Int64(v) => CValue::Int64(self.bits(v)),
-            CValue::UInt64(v) => CValue::UInt64(self.bits(v)),
-            CValue::Int128(v) => CValue::Int128(self.bits(v)),
-            CValue::UInt128(v) => CValue::UInt128(self.bits(v)),
-            CValue::Float32(v) => CValue::Float32(self.bits(v)),
-            CValue::Float64(v) => CValue::Float64(self.bits(v)),
-            CValue::Pointer(v) => {
+            ProgramValue::Parameter(term) => {
+                ProgramValue::Parameter(Box::new(self.algebraic(term)))
+            }
+            ProgramValue::Void => ProgramValue::Void,
+            ProgramValue::Bool(v) => ProgramValue::Bool(self.bits(v)),
+            ProgramValue::Int8(v) => ProgramValue::Int8(self.bits(v)),
+            ProgramValue::Int16(v) => ProgramValue::Int16(self.bits(v)),
+            ProgramValue::UInt16(v) => ProgramValue::UInt16(self.bits(v)),
+            ProgramValue::UInt8(v) => ProgramValue::UInt8(self.bits(v)),
+            ProgramValue::Int32(v) => ProgramValue::Int32(self.bits(v)),
+            ProgramValue::UInt32(v) => ProgramValue::UInt32(self.bits(v)),
+            ProgramValue::Int64(v) => ProgramValue::Int64(self.bits(v)),
+            ProgramValue::UInt64(v) => ProgramValue::UInt64(self.bits(v)),
+            ProgramValue::Int128(v) => ProgramValue::Int128(self.bits(v)),
+            ProgramValue::UInt128(v) => ProgramValue::UInt128(self.bits(v)),
+            ProgramValue::Float32(v) => ProgramValue::Float32(self.bits(v)),
+            ProgramValue::Float64(v) => ProgramValue::Float64(self.bits(v)),
+            ProgramValue::Pointer(v) => {
                 if let Some((from, to)) = self.pointer_value_exact
                     && v == from
                     && !self.source_disabled
@@ -3867,7 +3904,7 @@ impl<'a> TermRewrite<'a> {
                     // object's checked type. The cited equality's spelling
                     // need not carry the evidence retained by this occurrence
                     // (for example, a typed constructor field).
-                    return CValue::Pointer(
+                    return ProgramValue::Pointer(
                         to.clone()
                             .with_object_type_evidence(v.object_type_evidence().cloned()),
                     );
@@ -3891,19 +3928,19 @@ impl<'a> TermRewrite<'a> {
                 let retain_view = shifted_source.is_some() && shifted_replacement.is_none();
                 let replacement = shifted_replacement.or_else(|| match &v.pointer().block {
                     PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
-                        (!self.scope.c.contains_key(variable))
+                        (!self.scope.program_values.contains_key(variable))
                             .then_some(())
                             .and(self.typed_variables.as_ref())
-                            .and_then(|values| values.c.get(variable))
+                            .and_then(|values| values.program_values.get(variable))
                             .and_then(|value| match value {
-                                TypedCReplacement::Pointer(pointer) => Some(pointer.clone()),
+                                TypedProgramValueReplacement::Pointer(pointer) => Some(pointer.clone()),
                                 _ => None,
                             })
                     }
                     _ => None,
                 }.or_else(|| {
                     let (from, to) = self.pointer_variable?;
-                    if self.pointer_addresses_only || self.scope.c.contains_key(&from)
+                    if self.pointer_addresses_only || self.scope.program_values.contains_key(&from)
                         || !matches!(v.pointer().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
                         || v.designation() != &v.pointer().object_identity()
                     {
@@ -3911,7 +3948,7 @@ impl<'a> TermRewrite<'a> {
                     }
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
-                    Some(CPointerValue::new(to.clone(), v.c_type()))
+                    Some(PointerValue::new(to.clone(), v.program_type()))
                 }));
                 let adopted = if !v.extent_is_known() {
                     replacement.as_ref().and_then(|p| p.extent().cloned())
@@ -3925,7 +3962,7 @@ impl<'a> TermRewrite<'a> {
                 } else if let Some(replacement) = &replacement {
                     replacement.designation().clone()
                 } else if let Some((from, to)) = self.pointer_variable
-                    && !self.scope.c.contains_key(&from)
+                    && !self.scope.program_values.contains_key(&from)
                     && matches!(v.designation().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
                 {
                     to.object_identity()
@@ -3951,7 +3988,7 @@ impl<'a> TermRewrite<'a> {
                                 .and_then(|p| p.opaque_extent().cloned())
                                 .map(std::sync::Arc::new)
                         } else if let Some((from, to)) = self.pointer_variable
-                            && !self.scope.c.contains_key(&from)
+                            && !self.scope.program_values.contains_key(&from)
                             && matches!(origin.block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
                         {
                             Some(std::sync::Arc::new(to.object_identity()))
@@ -3997,7 +4034,7 @@ impl<'a> TermRewrite<'a> {
                     }
                 }
                 self.resolve_registered_loads = previous_load_resolution;
-                CValue::Pointer(match adopted {
+                ProgramValue::Pointer(match adopted {
                     Some(extent) => mapped.with_extent(Some(extent)),
                     None if !v.extent_is_known()
                         && replacement.as_ref().is_some_and(|p| p.extent_is_known()) =>
@@ -4009,7 +4046,7 @@ impl<'a> TermRewrite<'a> {
             }
         };
         if self.checked_work_exhausted() {
-            exhausted_c_value(v)
+            exhausted_program_value(v)
         } else {
             result
         }
@@ -4194,8 +4231,20 @@ impl<'a> TermRewrite<'a> {
                     Err(_) => IntegerTerm::constant_i64(0),
                 }
             }
-            IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
-                self.rewrite_integer_match(scrutinee, arms)
+            IntegerTerm::AlgebraicMatch { .. } => {
+                let root = KernelTermImport::default().integer(shared);
+                let KernelTermNode::Match(matched) = root.node() else {
+                    unreachable!("Integer match")
+                };
+                match self.rewrite_retained_match_value_in(matched) {
+                    Some(root) => self
+                        .fold_integer_bridge
+                        .integer(&root)
+                        .expect("Integer match reading")
+                        .as_ref()
+                        .clone(),
+                    None => IntegerTerm::constant_i64(0),
+                }
             }
             IntegerTerm::If {
                 condition,
@@ -4284,9 +4333,10 @@ impl<'a> TermRewrite<'a> {
             self.ensure_replacement_carriers();
             if let Some(variables) = &self.replacement_carriers {
                 self.integer_replacement_variable_max = variables.integer.last().map(|v| v.0);
-                self.bitvector_replacement_variable_max = variables.c.last().map(|v| v.0);
+                self.bitvector_replacement_variable_max =
+                    variables.program_values.last().map(|v| v.0);
                 self.integer_replacement_variables = Some(variables.integer.clone());
-                self.bitvector_replacement_variables = Some(variables.c.clone());
+                self.bitvector_replacement_variables = Some(variables.program_values.clone());
             }
         }
 
@@ -4318,7 +4368,7 @@ impl<'a> TermRewrite<'a> {
         let typed_c_replacement_contains = self
             .replacement_carriers
             .as_ref()
-            .is_some_and(|variables| variables.c.contains(&original_item));
+            .is_some_and(|variables| variables.program_values.contains(&original_item));
 
         let integer_source_key = self
             .typed_variables
@@ -4331,7 +4381,7 @@ impl<'a> TermRewrite<'a> {
         let c_item_source_key = self
             .typed_variables
             .as_ref()
-            .is_some_and(|replacements| replacements.c.contains_key(&original_item));
+            .is_some_and(|replacements| replacements.program_values.contains_key(&original_item));
         let accumulator_blocks_source = self.integer_shadowed
             || integer_source == Some(original_accumulator)
             || integer_source_key;
@@ -4446,7 +4496,7 @@ impl<'a> TermRewrite<'a> {
         let item_scope_shadowed = if item_is_integer {
             self.scope.integer.contains_key(&original_item)
         } else {
-            self.scope.c.contains_key(&original_item)
+            self.scope.program_values.contains_key(&original_item)
         };
         let changed_scope = self.comparison_reads.is_some()
             || accumulator_capture
@@ -4575,106 +4625,6 @@ impl<'a> TermRewrite<'a> {
         replacement
     }
 
-    fn rewrite_integer_match(
-        &mut self,
-        original_scrutinee: &AlgebraicTerm,
-        arms: &[crate::kernel::AlgebraicIntegerMatchArm],
-    ) -> IntegerTerm {
-        let exhausted = || IntegerTerm::AlgebraicMatch {
-            scrutinee: Box::new(exhausted_algebraic(original_scrutinee)),
-            arms: Vec::new(),
-        };
-        self.reserve_match_variables(original_scrutinee, arms);
-        if self.integer_work_exhausted {
-            return exhausted();
-        }
-        let scrutinee = self.algebraic(original_scrutinee);
-        if self.integer_work_exhausted {
-            return exhausted();
-        }
-        let mut rewritten_arms = Vec::with_capacity(arms.len());
-        for arm in arms {
-            // Pattern declarations are already in the carrier of the arm.
-            // Rewrite only their identity after installing the arm scope; a
-            // normal term walk here would substitute a declaration itself.
-            let saved_scope_id = self.scope_id;
-            let saved_shadowed = self.integer_shadowed;
-            let mut changes = Vec::new();
-            let mut bindings = arm.bindings.clone();
-            if !self.rewrite_match_bindings(&mut bindings, &mut changes) {
-                self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                return exhausted();
-            }
-            let body = if self.conditions.is_some() {
-                arm.body.clone()
-            } else {
-                self.integer(&arm.body).into()
-            };
-            self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-            if self.integer_work_exhausted {
-                return exhausted();
-            }
-            rewritten_arms.push(crate::kernel::AlgebraicIntegerMatchArm {
-                binding_names: arm.binding_names.clone(),
-                variant: arm.variant.clone(),
-                bindings,
-                body,
-            });
-        }
-        if let Some(value) = self.rewrite_integer_match_iota(&scrutinee, &rewritten_arms) {
-            return value;
-        }
-        if self.integer_work_exhausted {
-            return exhausted();
-        }
-        IntegerTerm::AlgebraicMatch {
-            scrutinee: Box::new(scrutinee),
-            arms: rewritten_arms,
-        }
-    }
-
-    fn rewrite_integer_match_iota(
-        &mut self,
-        scrutinee: &AlgebraicTerm,
-        arms: &[crate::kernel::AlgebraicIntegerMatchArm],
-    ) -> Option<IntegerTerm> {
-        let fields = scrutinee.checked_constructor_fields()?;
-        let variant = match &scrutinee.node {
-            AlgebraicTermNode::Constructor { variant, .. } => variant,
-            _ => unreachable!(),
-        };
-        let arm = arms.iter().find(|arm| arm.variant == *variant)?;
-        let schema = scrutinee
-            .algebraic_type
-            .variants
-            .iter()
-            .find(|schema| schema.name == *variant)?;
-        if arm.bindings.len() != fields.len() {
-            return None;
-        }
-        let (c_replacements, integer_replacements, algebraic_replacements) =
-            match_field_replacements(&arm.bindings, fields, &schema.fields)?;
-        let mut field_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
-            &integer_replacements,
-            &algebraic_replacements,
-        );
-        let value = field_rewrite.integer(&arm.body);
-        self.changed |= field_rewrite.changed;
-        field_rewrite.refusal_observed.set(true);
-        self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;
-        self.integer_work_exhausted |= field_rewrite.integer_work_exhausted;
-        #[cfg(test)]
-        {
-            self.visits += field_rewrite.visits;
-        }
-        if self.unsupported_integer_scope || self.integer_work_exhausted {
-            return None;
-        }
-        self.changed = true;
-        Some(value)
-    }
-
     fn rewrite_bitvector_match_iota(
         &mut self,
         scrutinee: &AlgebraicTerm,
@@ -4693,10 +4643,10 @@ impl<'a> TermRewrite<'a> {
         if arm.bindings.len() != fields.len() {
             return None;
         }
-        let (c_replacements, integer_replacements, algebraic_replacements) =
+        let (program_replacements, integer_replacements, algebraic_replacements) =
             match_field_replacements(&arm.bindings, fields, &schema.fields)?;
         let mut field_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -4734,10 +4684,10 @@ impl<'a> TermRewrite<'a> {
         if arm.bindings.len() != fields.len() {
             return None;
         }
-        let (c_replacements, integer_replacements, algebraic_replacements) =
+        let (program_replacements, integer_replacements, algebraic_replacements) =
             match_field_replacements(&arm.bindings, fields, &schema.fields)?;
         let mut field_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -4775,7 +4725,7 @@ impl<'a> TermRewrite<'a> {
             let Some((carrier, variable)) = binding_variable(binding) else {
                 continue;
             };
-            if matches!(carrier, BindingCarrier::C) && self.has_composite_bitvector_source() {
+            if matches!(carrier, BindingCarrier::Program) && self.has_composite_bitvector_source() {
                 self.unsupported_integer_scope = true;
                 return false;
             }
@@ -4805,7 +4755,7 @@ impl<'a> TermRewrite<'a> {
         true
     }
 
-    fn rewrite_c_binder(
+    fn rewrite_program_binder(
         &mut self,
         variable: Variable,
         changes: &mut Vec<ScopeChange>,
@@ -4822,16 +4772,16 @@ impl<'a> TermRewrite<'a> {
         if self
             .replacement_carriers
             .as_ref()
-            .is_some_and(|replacement| replacement.contains(BindingCarrier::C, variable))
+            .is_some_and(|replacement| replacement.contains(BindingCarrier::Program, variable))
         {
             let fresh = self.fresh_variable()?;
-            self.push_binding_mapping(BindingCarrier::C, variable, fresh, changes);
+            self.push_binding_mapping(BindingCarrier::Program, variable, fresh, changes);
             return Some(fresh);
         }
         if self.comparison_reads.is_some()
-            || self.binding_shadows_source(BindingCarrier::C, variable)
+            || self.binding_shadows_source(BindingCarrier::Program, variable)
         {
-            self.push_binding_mapping(BindingCarrier::C, variable, variable, changes);
+            self.push_binding_mapping(BindingCarrier::Program, variable, variable, changes);
             return Some(variable);
         }
         Some(variable)
@@ -4888,16 +4838,15 @@ impl<'a> TermRewrite<'a> {
 
     fn binding_shadows_source(&self, carrier: BindingCarrier, variable: Variable) -> bool {
         match carrier {
-            BindingCarrier::C => {
+            BindingCarrier::Program => {
                 self.bitvector
                     .is_some_and(|(source, _)| source.variable() == Some(&variable))
                     || self
                         .pointer_variable
                         .is_some_and(|(source, _)| source == variable)
-                    || self
-                        .typed_variables
-                        .as_ref()
-                        .is_some_and(|replacements| replacements.c.contains_key(&variable))
+                    || self.typed_variables.as_ref().is_some_and(|replacements| {
+                        replacements.program_values.contains_key(&variable)
+                    })
             }
             BindingCarrier::Integer => {
                 self.integer_variables
@@ -4929,12 +4878,12 @@ impl<'a> TermRewrite<'a> {
         changes: &mut Vec<ScopeChange>,
     ) {
         let previous = match carrier {
-            BindingCarrier::C => self.scope.c.insert(from, to),
+            BindingCarrier::Program => self.scope.program_values.insert(from, to),
             BindingCarrier::Integer => self.scope.integer.insert(from, to),
             BindingCarrier::Algebraic => self.scope.algebraic.insert(from, to),
         };
         match carrier {
-            BindingCarrier::C => changes.push(ScopeChange::C(from, previous)),
+            BindingCarrier::Program => changes.push(ScopeChange::Program(from, previous)),
             BindingCarrier::Integer => changes.push(ScopeChange::Integer(from, previous)),
             BindingCarrier::Algebraic => changes.push(ScopeChange::Algebraic(from, previous)),
         }
@@ -4947,8 +4896,8 @@ impl<'a> TermRewrite<'a> {
         self.charge_rewrite_work(changes.len());
         for change in changes.iter().rev() {
             match change {
-                ScopeChange::C(variable, previous) => {
-                    restore_mapping(&mut self.scope.c, *variable, *previous)
+                ScopeChange::Program(variable, previous) => {
+                    restore_mapping(&mut self.scope.program_values, *variable, *previous)
                 }
                 ScopeChange::Integer(variable, previous) => {
                     restore_mapping(&mut self.scope.integer, *variable, *previous)
@@ -4960,39 +4909,6 @@ impl<'a> TermRewrite<'a> {
         }
         self.scope_id = scope_id;
         self.integer_shadowed = integer_shadowed;
-    }
-
-    fn reserve_match_variables(
-        &mut self,
-        scrutinee: &AlgebraicTerm,
-        arms: &[crate::kernel::AlgebraicIntegerMatchArm],
-    ) {
-        self.ensure_replacement_carriers();
-        if self.source_variables_reserved {
-            return;
-        }
-        let mut variables = self.new_carrier_variables();
-        let mut seen = BTreeSet::new();
-        collect_algebraic_carriers_seen(scrutinee, &mut variables, &mut seen);
-        if variables.exhausted() {
-            self.reserve_source_variables(variables);
-            return;
-        }
-        for arm in arms {
-            for binding in &arm.bindings {
-                collect_algebraic_value_carriers(binding, &mut variables, &mut seen);
-                if variables.exhausted() {
-                    self.reserve_source_variables(variables);
-                    return;
-                }
-            }
-            collect_integer_shared_carriers(&arm.body, &mut variables, &mut seen);
-            if variables.exhausted() {
-                self.reserve_source_variables(variables);
-                return;
-            }
-        }
-        self.reserve_source_variables(variables);
     }
 
     fn ensure_replacement_carriers(&mut self) {
@@ -5030,12 +4946,12 @@ impl<'a> TermRewrite<'a> {
         if !variables.exhausted()
             && let Some(replacements) = &self.typed_variables
         {
-            for replacement in replacements.c.values() {
+            for replacement in replacements.program_values.values() {
                 match replacement {
-                    TypedCReplacement::Bitvector(value) => {
+                    TypedProgramValueReplacement::Bitvector(value) => {
                         collect_bitvector_carriers(value, &mut variables)
                     }
-                    TypedCReplacement::Pointer(pointer) => {
+                    TypedProgramValueReplacement::Pointer(pointer) => {
                         for address in pointer.pointers() {
                             collect_pointer_carriers(address, &mut variables);
                         }
@@ -5185,16 +5101,16 @@ impl<'a> TermRewrite<'a> {
         // Opaque object and extent identities participate in lexical
         // binding, never in numeric pointer rewrites.
         if let PointerBlock::ExternalObject(variable) = &p.block {
-            if let Some(mapped) = self.scope.c.get(variable) {
+            if let Some(mapped) = self.scope.program_values.get(variable) {
                 return Pointer {
                     block: PointerBlock::ExternalObject(*mapped),
                     offset: self.offset(&p.offset),
                 };
             }
-            if let Some(TypedCReplacement::Pointer(replacement)) = self
+            if let Some(TypedProgramValueReplacement::Pointer(replacement)) = self
                 .typed_variables
                 .as_ref()
-                .and_then(|values| values.c.get(variable))
+                .and_then(|values| values.program_values.get(variable))
             {
                 let root = replacement.designation().clone();
                 self.changed = true;
@@ -5216,7 +5132,7 @@ impl<'a> TermRewrite<'a> {
         }
         if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
             &p.block
-            && let Some(mapped) = self.scope.c.get(variable)
+            && let Some(mapped) = self.scope.program_values.get(variable)
         {
             let mapped = *mapped;
             let offset = self.offset(&p.offset);
@@ -5234,7 +5150,8 @@ impl<'a> TermRewrite<'a> {
         if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
             &p.block
             && let Some(replacements) = &self.typed_variables
-            && let Some(TypedCReplacement::Pointer(replacement)) = replacements.c.get(variable)
+            && let Some(TypedProgramValueReplacement::Pointer(replacement)) =
+                replacements.program_values.get(variable)
         {
             self.changed = true;
             let offset = self.offset(&p.offset);
@@ -5585,12 +5502,12 @@ impl<'a> TermRewrite<'a> {
         // A `Bool` binder (Stage 5) is renamed with its scope and replaced
         // by the truth of the `Bool` word it is instantiated with.
         if let ConditionTerm::Variable(variable) = v {
-            if let Some(mapped) = self.scope.c.get(variable) {
+            if let Some(mapped) = self.scope.program_values.get(variable) {
                 return ConditionTerm::Variable(*mapped);
             }
             if let Some(replacements) = &self.typed_variables
-                && let Some(TypedCReplacement::Bitvector(replacement)) =
-                    replacements.c.get(variable)
+                && let Some(TypedProgramValueReplacement::Bitvector(replacement)) =
+                    replacements.program_values.get(variable)
             {
                 self.changed = true;
                 return ConditionTerm::truth_of_bool_word(replacement);
@@ -5602,11 +5519,11 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.algebraic(a)),
                 Box::new(self.algebraic(b)),
             ),
-            ConditionTerm::Float32(c) => {
-                ConditionTerm::Float32(c.map_bitvector_terms(|b| self.bits(b)))
+            ConditionTerm::Float32(condition) => {
+                ConditionTerm::Float32(condition.map_bitvector_terms(|b| self.bits(b)))
             }
-            ConditionTerm::Float64(c) => {
-                ConditionTerm::Float64(c.map_bitvector_terms(|b| self.bits(b)))
+            ConditionTerm::Float64(condition) => {
+                ConditionTerm::Float64(condition.map_bitvector_terms(|b| self.bits(b)))
             }
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -5640,13 +5557,15 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             ConditionTerm::PointerValueEqual(a, b) => {
-                let CValue::Pointer(a) = self.value(&CValue::Pointer((**a).clone())) else {
+                let ProgramValue::Pointer(a) = self.value(&ProgramValue::Pointer((**a).clone()))
+                else {
                     unreachable!()
                 };
-                let CValue::Pointer(b) = self.value(&CValue::Pointer((**b).clone())) else {
+                let ProgramValue::Pointer(b) = self.value(&ProgramValue::Pointer((**b).clone()))
+                else {
                     unreachable!()
                 };
-                let canonical = |value: CPointerValue| {
+                let canonical = |value: PointerValue| {
                     value.map_addresses(|p| Pointer {
                         block: p.block.clone(),
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
@@ -6097,6 +6016,29 @@ impl<'a> TermRewrite<'a> {
             }
             let view = MachineOperandView::Legacy(native);
             match shared.node() {
+                KernelTermNode::Match(matched) => {
+                    let MachineTerm::AlgebraicMatch { scrutinee, arms } = native else {
+                        return false;
+                    };
+                    let mut export = KernelTermExport::default();
+                    if export.argument(&matched.arguments[0]).ok()
+                        != Some(PureFunctionArgument::Algebraic((**scrutinee).clone()))
+                        || arms.len() != matched.arms.len()
+                    {
+                        return false;
+                    }
+                    for ((native, arm), body) in
+                        arms.iter().zip(&matched.arms).zip(&matched.arguments[1..])
+                    {
+                        if native.variant != arm.variant
+                            || arm.export_bindings(&mut export).ok().as_ref()
+                                != Some(&native.bindings)
+                        {
+                            return false;
+                        }
+                        pending.push((&native.body, body));
+                    }
+                }
                 KernelTermNode::Variable(variable) => {
                     if view.variable() != Some(variable) {
                         return false;
@@ -6114,10 +6056,10 @@ impl<'a> TermRewrite<'a> {
                         continue;
                     }
                     let variable = view.variable().copied();
-                    let KernelType::C(ty) = shared.ty() else {
+                    let KernelType::Program(ty) = shared.ty() else {
                         return false;
                     };
-                    let Some(format) = MachineIntegerType::from_c_type(*ty) else {
+                    let Some(format) = MachineIntegerType::from_program_type(*ty) else {
                         return false;
                     };
                     if variable
@@ -6235,13 +6177,14 @@ impl<'a> TermRewrite<'a> {
             return MachineTerm::constant(0);
         }
         if let MachineTerm::Variable(variable) = v
-            && let Some(mapped) = self.scope.c.get(variable)
+            && let Some(mapped) = self.scope.program_values.get(variable)
         {
             return MachineTerm::Variable(*mapped);
         }
         if let MachineTerm::Variable(variable) = v
             && let Some(replacements) = &self.typed_variables
-            && let Some(TypedCReplacement::Bitvector(replacement)) = replacements.c.get(variable)
+            && let Some(TypedProgramValueReplacement::Bitvector(replacement)) =
+                replacements.program_values.get(variable)
         {
             self.changed = true;
             return replacement.clone();
@@ -6406,11 +6349,12 @@ impl<'a> TermRewrite<'a> {
                 let saved_scope_id = self.scope_id;
                 let saved_shadowed = self.integer_shadowed;
                 let mut changes = Vec::new();
-                let Some(accumulator) = self.rewrite_c_binder(*accumulator, &mut changes) else {
+                let Some(accumulator) = self.rewrite_program_binder(*accumulator, &mut changes)
+                else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                     return MachineTerm::constant(0);
                 };
-                let Some(item) = self.rewrite_c_binder(*item, &mut changes) else {
+                let Some(item) = self.rewrite_program_binder(*item, &mut changes) else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                     return MachineTerm::constant(0);
                 };
@@ -6550,7 +6494,7 @@ impl<'a> TermRewrite<'a> {
                         .memory()
                         .known_value(&rewritten)
                         .and_then(|value| kind.read_cell(&value))
-                        .and_then(|value| crate::kernel::spec::c_value_bitvector_term(&value))
+                        .and_then(|value| crate::kernel::spec::program_value_bitvector_term(&value))
                 {
                     self.changed = true;
                     return value;
@@ -6859,10 +6803,12 @@ mod tests {
         };
         for size in [16, 64, 256] {
             let argument = |value: &AlgebraicTerm| {
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::ClickFunctionApplication {
-                    name: "observe".into(),
-                    arguments: vec![PureFunctionArgument::Algebraic(value.clone())],
-                }))
+                PureFunctionArgument::Value(ProgramValue::Int32(
+                    MachineTerm::ClickFunctionApplication {
+                        name: "observe".into(),
+                        arguments: vec![PureFunctionArgument::Algebraic(value.clone())],
+                    },
+                ))
             };
             let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                 name: "many".into(),
@@ -6938,10 +6884,11 @@ mod tests {
                 item,
                 body,
             );
-            let c = BTreeMap::new();
+            let program_values = BTreeMap::new();
             let integers = BTreeMap::from([(source, IntegerTerm::var(accumulator))]);
             let algebraic = BTreeMap::new();
-            let mut rewrite = TermRewrite::for_typed_variables(&c, &integers, &algebraic);
+            let mut rewrite =
+                TermRewrite::for_typed_variables(&program_values, &integers, &algebraic);
             let Term::Integer(IntegerTerm::RangeFold {
                 accumulator: renamed,
                 body,
@@ -7171,20 +7118,23 @@ mod tests {
             offset: PointerOffsetTerm::Constant(1),
         };
         let memory_with_unrelated_blocks = |count: u64| {
-            let mut memory = CMemory::new().with_block("array", 8);
+            let mut memory = Memory::new().with_block("array", 8);
             for index in 0..count {
                 memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
             }
             memory
         };
-        let observed_array = |memory: CMemory, pointer: Pointer| {
+        let observed_array = |memory: Memory, pointer: Pointer| {
             Term::Integer(IntegerTerm::PureFunctionApplication(
                 SharedPureApplication::intern(
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
                         memory,
-                        pointer: CValue::Pointer(CPointerValue::new(pointer, CType::VoidPointer)),
-                        element_type: CType::UInt8,
+                        pointer: ProgramValue::Pointer(PointerValue::new(
+                            pointer,
+                            ProgramType::VoidPointer,
+                        )),
+                        element_type: ProgramType::UInt8,
                     }],
                 ),
             ))
@@ -7202,14 +7152,14 @@ mod tests {
         let (large, large_work) =
             crate::instrumentation::measure_deterministic_work(|| rewrite(&large_input));
 
-        let assert_rewrite = |output: &Term, original_memory: &CMemory| {
+        let assert_rewrite = |output: &Term, original_memory: &Memory| {
             let Term::Integer(IntegerTerm::PureFunctionApplication(application)) = output else {
                 unreachable!()
             };
             let [
                 PureFunctionArgument::ArrayRef {
                     memory,
-                    pointer: CValue::Pointer(pointer),
+                    pointer: ProgramValue::Pointer(pointer),
                     element_type,
                 },
             ] = application.arguments()
@@ -7217,7 +7167,7 @@ mod tests {
                 unreachable!()
             };
             assert_eq!(pointer.pointer(), &expected_pointer);
-            assert_eq!(*element_type, CType::UInt8);
+            assert_eq!(*element_type, ProgramType::UInt8);
             assert!(std::sync::Arc::ptr_eq(
                 &memory.blocks,
                 &original_memory.blocks
@@ -7240,18 +7190,18 @@ mod tests {
         assert_rewrite(&large, &large_memory);
         assert_eq!(small_work, large_work);
 
-        let mut c_replacements = BTreeMap::new();
-        c_replacements.insert(
+        let mut program_replacements = BTreeMap::new();
+        program_replacements.insert(
             source,
-            TypedCReplacement::Pointer(CPointerValue::new(
+            TypedProgramValueReplacement::Pointer(PointerValue::new(
                 replacement.clone(),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )),
         );
         let empty_integer_replacements = BTreeMap::new();
         let empty_algebraic_replacements = BTreeMap::new();
         let mut typed_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &empty_integer_replacements,
             &empty_algebraic_replacements,
         );
@@ -7260,7 +7210,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_condition_budget_stops_deep_c_and_ignores_snapshot_size() {
+    fn typed_condition_budget_stops_deep_program_and_ignores_snapshot_size() {
         let limits = crate::instrumentation::TacticWorkLimits {
             simple: 16,
             smart: 16,
@@ -7281,52 +7231,51 @@ mod tests {
             block: PointerBlock::Symbolic(source),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let condition_for =
-            |memory: CMemory, depth: usize, fanout: usize| {
-                let mut right = MachineTerm::Variable(source);
-                for index in 0..depth as u64 {
-                    let mut arguments = Vec::with_capacity(fanout + 1);
-                    arguments.push(PureFunctionArgument::Value(CValue::Int32(right)));
-                    arguments.extend((0..fanout).map(|_| {
-                        PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(0)))
-                    }));
-                    let fanout = MachineTerm::ClickFunctionApplication {
-                        name: "wide_condition".into(),
-                        arguments,
-                    };
-                    right = MachineTerm::If {
-                        condition: Box::new(ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::Equal,
-                            left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
-                            right: Box::new(MachineTerm::constant(0)),
-                        }),
-                        then_term: Box::new(fanout),
-                        else_term: Box::new(MachineTerm::constant(0)),
-                    };
-                }
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::MemoryLoad(
-                        memory.into(),
-                        Box::new(pointer.clone()),
-                        crate::kernel::LoadKind::Int32,
-                    )),
-                    right: Box::new(right),
-                }
-            };
+        let condition_for = |memory: Memory, depth: usize, fanout: usize| {
+            let mut right = MachineTerm::Variable(source);
+            for index in 0..depth as u64 {
+                let mut arguments = Vec::with_capacity(fanout + 1);
+                arguments.push(PureFunctionArgument::Value(ProgramValue::Int32(right)));
+                arguments.extend((0..fanout).map(|_| {
+                    PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(0)))
+                }));
+                let fanout = MachineTerm::ClickFunctionApplication {
+                    name: "wide_condition".into(),
+                    arguments,
+                };
+                right = MachineTerm::If {
+                    condition: Box::new(ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
+                        right: Box::new(MachineTerm::constant(0)),
+                    }),
+                    then_term: Box::new(fanout),
+                    else_term: Box::new(MachineTerm::constant(0)),
+                };
+            }
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::MemoryLoad(
+                    memory.into(),
+                    Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Int32,
+                )),
+                right: Box::new(right),
+            }
+        };
         let memory_with_unrelated_blocks = |count: u64| {
-            let mut memory = CMemory::new().with_block("array", 8);
+            let mut memory = Memory::new().with_block("array", 8);
             for index in 0..count {
                 memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
             }
             memory
         };
         let run = |condition: ConditionTerm, tactic: crate::instrumentation::TacticEvent| {
-            let c_replacements = BTreeMap::from([(
+            let program_replacements = BTreeMap::from([(
                 source,
-                TypedCReplacement::Bitvector(MachineTerm::Variable(replacement)),
+                TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(replacement)),
             )]);
             let integer_replacements = BTreeMap::new();
             let algebraic_replacements = BTreeMap::new();
@@ -7336,7 +7285,7 @@ mod tests {
                         crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
                     );
                     let mut rewrite = TermRewrite::for_typed_variables(
-                        &c_replacements,
+                        &program_replacements,
                         &integer_replacements,
                         &algebraic_replacements,
                     );
@@ -7404,7 +7353,7 @@ mod tests {
                 name: "Wrapped".into(),
                 fields: vec![
                     AlgebraicValueType::Integer,
-                    AlgebraicValueType::C(CType::Int32),
+                    AlgebraicValueType::Program(ProgramType::Int32),
                 ],
             },
         ]
@@ -7428,7 +7377,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 fields: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(field_integer)),
-                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(field_c))),
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(field_c))),
                 ],
             },
         };
@@ -7436,7 +7385,7 @@ mod tests {
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(bound_integer).into()),
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(bound_c))),
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(bound_c))),
             ],
         ));
         let input = IntegerTerm::AlgebraicMatch {
@@ -7456,18 +7405,20 @@ mod tests {
                     variant: "Wrapped".into(),
                     bindings: vec![
                         AlgebraicValue::Integer(IntegerTerm::var(bound_integer)),
-                        AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(bound_c))),
+                        AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                            bound_c,
+                        ))),
                     ],
                     body: body.clone().into(),
                 },
             ],
         };
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         algebraic_replacements.insert(scrutinee_variable, constructor.clone());
         let mut rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -7476,7 +7427,7 @@ mod tests {
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(field_integer).into()),
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(field_c))),
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(field_c))),
             ],
         ));
         assert_eq!(output, expected);
@@ -7489,14 +7440,14 @@ mod tests {
                 variant: "Wrapped".into(),
                 fields: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(field_integer)),
-                    AlgebraicValue::C(CValue::Int64(MachineTerm::Variable(field_c))),
+                    AlgebraicValue::Program(ProgramValue::Int64(MachineTerm::Variable(field_c))),
                 ],
             },
         };
         let mut malformed_replacements = BTreeMap::new();
         malformed_replacements.insert(scrutinee_variable, malformed_constructor);
         let mut malformed_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &malformed_replacements,
         );
@@ -7510,14 +7461,14 @@ mod tests {
         let IntegerTerm::AlgebraicMatch { arms, .. } = &mut malformed_input else {
             unreachable!()
         };
-        arms[1].bindings[1] = AlgebraicValue::C(CValue::Int32(binary_node!(
+        arms[1].bindings[1] = AlgebraicValue::Program(ProgramValue::Int32(binary_node!(
             Int32,
             Add,
             Box::new(MachineTerm::Variable(bound_c)),
             Box::new(MachineTerm::constant(1)),
         )));
         let mut malformed_binding_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -7534,7 +7485,7 @@ mod tests {
         let bound = Variable(9951);
         let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
             name: "Wrapped".into(),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         }]
         .into();
         let algebraic_type = AlgebraicType {
@@ -7558,7 +7509,9 @@ mod tests {
             algebraic_type,
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
-                fields: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::constant(7)))],
+                fields: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                    MachineTerm::constant(7),
+                ))],
             },
         };
         let goal = MachineTerm::AlgebraicMatch {
@@ -7566,9 +7519,9 @@ mod tests {
             arms: vec![AlgebraicBitvectorMatchArm {
                 binding_names: Default::default(),
                 variant: "Wrapped".into(),
-                bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                    bound,
-                )))],
+                bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                    MachineTerm::Variable(bound),
+                ))],
                 body: MachineTerm::Variable(bound),
             }],
         };
@@ -7580,7 +7533,9 @@ mod tests {
             algebraic_type: constructor.algebraic_type.clone(),
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
-                fields: vec![AlgebraicValue::C(CValue::Int64(MachineTerm::constant(7)))],
+                fields: vec![AlgebraicValue::Program(ProgramValue::Int64(
+                    MachineTerm::constant(7),
+                ))],
             },
         };
         let mut malformed_rewrite = TermRewrite::new(&scrutinee, &malformed);
@@ -7597,7 +7552,7 @@ mod tests {
     fn a_loaded_pointer_carries_its_defining_address_variables() {
         let _session = crate::kernel::VerificationSession::enter();
         let index = Variable(9_904);
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let address = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(index), 8),
@@ -7605,11 +7560,11 @@ mod tests {
         let loaded = Pointer::loaded_value(&memory, &address);
         let mut carriers = CarrierVariables::default();
         collect_pointer_carriers(&loaded, &mut carriers);
-        assert!(carriers.contains(BindingCarrier::C, index));
+        assert!(carriers.contains(BindingCarrier::Program, index));
     }
 
     #[test]
-    fn typed_rewrite_is_simultaneous_across_integer_c_and_algebraic_carriers() {
+    fn typed_rewrite_is_simultaneous_across_integer_program_and_algebraic_carriers() {
         let replacement = Variable(9900);
         let integer_source = Variable(9901);
         let c_source = Variable(9902);
@@ -7640,10 +7595,10 @@ mod tests {
             algebraic_type,
             node: AlgebraicTermNode::Variable(replacement),
         };
-        let mut c_replacements = BTreeMap::new();
-        c_replacements.insert(
+        let mut program_replacements = BTreeMap::new();
+        program_replacements.insert(
             c_source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(replacement)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(replacement)),
         );
         let mut integer_replacements = BTreeMap::new();
         integer_replacements.insert(integer_source, IntegerTerm::var(replacement));
@@ -7655,12 +7610,12 @@ mod tests {
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(integer_source).into()),
                 PureFunctionArgument::Integer(IntegerTerm::var(replacement).into()),
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(c_source))),
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(c_source))),
                 PureFunctionArgument::Algebraic(algebraic_from),
             ],
         ));
         let mut rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -7674,7 +7629,9 @@ mod tests {
             &[
                 PureFunctionArgument::Integer(IntegerTerm::var(replacement).into()),
                 PureFunctionArgument::Integer(IntegerTerm::constant_i64(7).into()),
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(replacement))),
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                    replacement
+                ))),
                 PureFunctionArgument::Algebraic(algebraic_to.clone()),
             ]
         );
@@ -7692,7 +7649,7 @@ mod tests {
             }],
         };
         let mut scoped_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -8077,7 +8034,7 @@ mod tests {
     }
 
     #[test]
-    fn c_substitution_reserves_nested_machine_fold_binders_before_freshening() {
+    fn program_substitution_reserves_nested_machine_fold_binders_before_freshening() {
         let source = Variable(1_100);
         let replacement_item = Variable(1_101);
         let nested_item = Variable(1_102);
@@ -8132,7 +8089,7 @@ mod tests {
     }
 
     #[test]
-    fn c_substitution_freshens_integer_binder_in_integer_to_machine_replacement() {
+    fn program_substitution_freshens_integer_binder_in_integer_to_machine_replacement() {
         let source = Variable(1_030);
         let accumulator = Variable(1_031);
         let body = IntegerTerm::Add(
@@ -8178,7 +8135,7 @@ mod tests {
     }
 
     #[test]
-    fn c_substitution_reserves_nested_integer_fold_binders_before_freshening() {
+    fn program_substitution_reserves_nested_integer_fold_binders_before_freshening() {
         let source = Variable(1_050);
         let accumulator = Variable(1_051);
         let nested_accumulator = Variable(1_052);
@@ -8261,7 +8218,7 @@ mod tests {
             name: "Wrapped".into(),
             fields: vec![
                 AlgebraicValueType::Integer,
-                AlgebraicValueType::C(CType::Int32),
+                AlgebraicValueType::Program(ProgramType::Int32),
             ],
         }]
         .into();
@@ -8298,14 +8255,16 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
-                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(collision_c))),
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                        collision_c,
+                    ))),
                 ],
                 body: match_body().into(),
             }],
         };
-        let c_replacements = BTreeMap::from([(
+        let program_replacements = BTreeMap::from([(
             c_source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(collision_c)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(collision_c)),
         )]);
         let integer_replacements =
             BTreeMap::from([(integer_source, IntegerTerm::var(collision_integer))]);
@@ -8325,7 +8284,7 @@ mod tests {
             make_match(),
         );
         let mut rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -8352,7 +8311,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(variable)))
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
                 if *variable != collision_c
         ));
         let mut free_integer = BTreeSet::new();
@@ -8406,7 +8365,9 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
-                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(collision_c))),
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                        collision_c,
+                    ))),
                 ],
                 body: IntegerTerm::range_fold(
                     crate::kernel::IntegerRangeFoldIndex::Integer {
@@ -8422,7 +8383,7 @@ mod tests {
             }],
         };
         let mut rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -8438,7 +8399,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(variable)))
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
                 if *variable != collision_c
         ));
         let IntegerTerm::RangeFold {
@@ -8515,7 +8476,7 @@ mod tests {
             name: "Wrapped".into(),
             fields: vec![
                 AlgebraicValueType::Integer,
-                AlgebraicValueType::C(CType::Int32),
+                AlgebraicValueType::Program(ProgramType::Int32),
             ],
         }]
         .into();
@@ -8542,25 +8503,32 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(integer_x)),
-                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(c_x))),
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(c_x))),
                 ],
                 body: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_typed_capture".into(),
                     vec![
                         PureFunctionArgument::Integer(IntegerTerm::var(integer_x).into()),
                         PureFunctionArgument::Integer(IntegerTerm::var(integer_y).into()),
-                        PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(c_x))),
-                        PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(c_y))),
+                        PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                            c_x,
+                        ))),
+                        PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                            c_y,
+                        ))),
                     ],
                 ))
                 .into(),
             }],
         };
-        let c_replacements = BTreeMap::from([
-            (c_x, TypedCReplacement::Bitvector(MachineTerm::constant(0))),
+        let program_replacements = BTreeMap::from([
+            (
+                c_x,
+                TypedProgramValueReplacement::Bitvector(MachineTerm::constant(0)),
+            ),
             (
                 c_y,
-                TypedCReplacement::Bitvector(MachineTerm::Variable(c_x)),
+                TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(c_x)),
             ),
         ]);
         let integer_replacements = BTreeMap::from([
@@ -8569,7 +8537,7 @@ mod tests {
         ]);
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -8585,7 +8553,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(variable)))
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
                 if *variable != c_x
         ));
         let IntegerTerm::PureFunctionApplication(application) = arm.body.as_ref() else {
@@ -8603,12 +8571,12 @@ mod tests {
         ));
         assert!(matches!(
             &application.arguments()[2],
-            PureFunctionArgument::Value(CValue::Int32(value))
+            PureFunctionArgument::Value(ProgramValue::Int32(value))
                 if matches!(value, MachineTerm::Variable(variable) if *variable != c_x)
         ));
         assert!(matches!(
             &application.arguments()[3],
-            PureFunctionArgument::Value(CValue::Int32(value))
+            PureFunctionArgument::Value(ProgramValue::Int32(value))
                 if matches!(value, MachineTerm::Variable(variable) if *variable == c_x)
         ));
     }
@@ -8646,7 +8614,7 @@ mod tests {
     }
 
     #[test]
-    fn composite_machine_source_is_rejected_under_c_binder() {
+    fn composite_machine_source_is_rejected_under_program_binder() {
         let source_variable = Variable(3_103_000);
         let source = binary_node!(
             Int32,
@@ -8680,8 +8648,8 @@ mod tests {
     #[test]
     fn checked_substitution_collector_rejects_work_exhaustion() {
         let source = Variable(3_104_100);
-        let atom = Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
+        let atom = Proposition::MemoryLoadable {
+            memory: Memory::new(),
             base: Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(source), 4),
@@ -8716,20 +8684,23 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = CPointerValue::new(
+        let from = PointerValue::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         );
-        let to = CPointerValue::new(Pointer::symbolic(Variable(996_021)), CType::Int32Pointer);
+        let to = PointerValue::new(
+            Pointer::symbolic(Variable(996_021)),
+            ProgramType::Int32Pointer,
+        );
         let parameter = TypeParameterName::intern("RewriteReadT");
-        let stored = CValue::Parameter(Box::new(AlgebraicTerm {
+        let stored = ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: AlgebraicTermNode::Variable(Variable(996_022)),
         }));
-        let memory = crate::kernel::intern_c_memory(CMemory::new().store(
+        let memory = crate::kernel::intern_memory(Memory::new().store(
             Pointer {
                 block: PointerBlock::Heap(996_023),
                 offset: PointerOffsetTerm::Constant(0),
@@ -8740,12 +8711,12 @@ mod pointer_integer_rewrite_tests {
             AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
         // A separate four-byte observation must not replace the generic
         // read's eight-byte origin when the same version name is reused.
-        let partial = crate::kernel::intern_c_memory(memory.memory().clone().store(
+        let partial = crate::kernel::intern_memory(memory.memory().clone().store(
             Pointer {
                 block: PointerBlock::Heap(996_023),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::UInt32(7u32.into()),
+            ProgramValue::UInt32(7u32.into()),
         ));
         let _ = crate::kernel::memory_provenance::canonical_value_load_memory(
             &partial,
@@ -8761,26 +8732,28 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn full_pointer_rewrite_keeps_the_read_version_and_snapshot() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = CPointerValue::new(
+        let from = PointerValue::new(
             Pointer::symbolic(Variable(996_010)),
-            CType::Int32PointerPointer,
+            ProgramType::Int32PointerPointer,
         );
-        let to = CPointerValue::new(
+        let to = PointerValue::new(
             Pointer::symbolic(Variable(996_011)),
-            CType::Int32PointerPointer,
+            ProgramType::Int32PointerPointer,
         );
-        let stored = CValue::pointer(Pointer::symbolic(Variable(996_012)));
-        let memory = CMemory::new().store(to.pointer().clone(), stored.clone());
-        let read = memory.symbolic_pointer_version_load(from.pointer(), CType::Int32Pointer);
-        let expected = memory.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+        let stored = ProgramValue::pointer(Pointer::symbolic(Variable(996_012)));
+        let memory = Memory::new().store(to.pointer().clone(), stored.clone());
+        let read = memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
+        let expected =
+            memory.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewrite = || TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
         assert_eq!(rewrite(), expected);
         let later = memory.store(
             to.pointer().clone(),
-            CValue::pointer(Pointer::symbolic(Variable(996_013))),
+            ProgramValue::pointer(Pointer::symbolic(Variable(996_013))),
         );
-        let later_read = later.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+        let later_read =
+            later.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
         assert_ne!(later_read, expected);
         assert_eq!(
             rewrite(),
@@ -8799,9 +8772,9 @@ mod pointer_integer_rewrite_tests {
             offset: PointerOffsetTerm::scale_int32(index, 8),
         };
         let destination = address(to.clone());
-        let stored = CValue::pointer(Pointer::symbolic(Variable(996_022)));
-        let memory = CMemory::new().store(destination.clone(), stored.clone());
-        let shared = crate::kernel::intern_c_memory(memory.clone());
+        let stored = ProgramValue::pointer(Pointer::symbolic(Variable(996_022)));
+        let memory = Memory::new().store(destination.clone(), stored.clone());
+        let shared = crate::kernel::intern_memory(memory.clone());
         let mut input = address(from.clone());
         let mut expected = destination.clone();
         for depth in 1..=32 {
@@ -8815,14 +8788,15 @@ mod pointer_integer_rewrite_tests {
         }
         let later = memory.store(
             destination,
-            CValue::pointer(Pointer::symbolic(Variable(996_023))),
+            ProgramValue::pointer(Pointer::symbolic(Variable(996_023))),
         );
-        let _ = later.symbolic_pointer_version_load(&address(to.clone()), CType::Int32Pointer);
+        let _ =
+            later.symbolic_pointer_version_load(&address(to.clone()), ProgramType::Int32Pointer);
         assert_eq!(TermRewrite::for_bits(&from, &to).pointer(&input), expected);
-        let value = CValue::pointer(input);
+        let value = ProgramValue::pointer(input);
         assert_eq!(
             TermRewrite::for_bits(&from, &to).value(&value),
-            CValue::pointer(expected),
+            ProgramValue::pointer(expected),
             "all projections of the same read retain its version",
         );
     }
@@ -8830,35 +8804,38 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
-        let pointer = CPointerValue::new(Pointer::symbolic(Variable(996_001)), CType::Int32Pointer);
-        let word = crate::kernel::eval::cast_c_value_to_type(
-            CValue::Pointer(pointer.clone()),
-            CType::UInt64,
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(996_001)),
+            ProgramType::Int32Pointer,
+        );
+        let word = crate::kernel::eval::cast_program_value_to_type(
+            ProgramValue::Pointer(pointer.clone()),
+            ProgramType::UInt64,
             crate::kernel::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &context,
         )
         .unwrap();
-        let from = crate::kernel::spec::c_value_bitvector_term(&word).unwrap();
+        let from = crate::kernel::spec::program_value_bitvector_term(&word).unwrap();
         let alias = MachineTerm::Variable(Variable(996_002));
         let rewritten = TermRewrite::for_bits(&from, &alias).value(&word);
-        let CValue::PointerInteger(record) = &rewritten else {
+        let ProgramValue::PointerInteger(record) = &rewritten else {
             panic!("complete word")
         };
         assert_eq!(*record.pointer, pointer);
-        assert_eq!(*record.numeric, CValue::UInt64(alias.clone()));
-        let back = crate::kernel::eval::cast_c_value_to_type(
+        assert_eq!(*record.numeric, ProgramValue::UInt64(alias.clone()));
+        let back = crate::kernel::eval::cast_program_value_to_type(
             rewritten,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             crate::kernel::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &context,
         )
         .unwrap();
-        assert_eq!(back, CValue::Pointer(pointer));
+        assert_eq!(back, ProgramValue::Pointer(pointer));
         assert!(matches!(
-            TermRewrite::for_bits(&alias, &from).value(&CValue::UInt64(alias.clone())),
-            CValue::UInt64(_)
+            TermRewrite::for_bits(&alias, &from).value(&ProgramValue::UInt64(alias.clone())),
+            ProgramValue::UInt64(_)
         ));
     }
 }
@@ -8877,7 +8854,7 @@ mod comparison_read_batch_tests {
     #[test]
     fn batch_read_comparison_retains_literal_machine_truth_and_falsehood() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         for (format, kind) in [
             (MachineIntegerType::Int32, LoadKind::Int32),
             (MachineIntegerType::UInt32, LoadKind::UInt32),
@@ -8933,7 +8910,7 @@ mod comparison_read_batch_tests {
     #[test]
     fn batch_read_comparison_is_simultaneous_and_capture_avoiding() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let read = |index| {
             MachineTerm::MemoryLoad(
                 memory.clone(),
@@ -8968,7 +8945,7 @@ mod comparison_read_batch_tests {
         let input = Proposition::ForAll {
             name: BinderName::written("k"),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Predicate {
                 name: "pair".into(),
                 arguments: vec![
@@ -9002,7 +8979,7 @@ mod comparison_read_batch_tests {
         let scoped = Proposition::ForAll {
             name: BinderName::written("address"),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(atom(scoped_read.clone())),
         };
         assert_eq!(
@@ -9020,7 +8997,7 @@ mod comparison_read_batch_tests {
         let scoped_named = Proposition::ForAll {
             name: BinderName::written("address"),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(atom(scoped_name.clone())),
         };
         for source in [scoped_name, read(binder.0)] {
@@ -9068,7 +9045,7 @@ mod comparison_read_batch_tests {
         let shadowed = Proposition::Exists {
             name: "read".into(),
             var: source,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(atom(MachineTerm::Variable(source))),
         };
         assert_eq!(
@@ -9086,7 +9063,7 @@ mod comparison_read_batch_tests {
         let binder = Variable(403_001);
         let accumulator = Variable(403_002);
         let pointer = Pointer::symbolic(binder);
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let raw =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
         let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
@@ -9097,7 +9074,7 @@ mod comparison_read_batch_tests {
         ));
         let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
             name: "Bound".into(),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         }]
         .into();
         let algebraic_type = AlgebraicType {
@@ -9130,9 +9107,9 @@ mod comparison_read_batch_tests {
                 arms: vec![AlgebraicBitvectorMatchArm {
                     binding_names: Default::default(),
                     variant: "Bound".into(),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                        binder,
-                    )))],
+                    bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                        MachineTerm::Variable(binder),
+                    ))],
                     body: read.clone(),
                 }],
             };
@@ -9175,12 +9152,12 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Variable(402_001);
         let pointer = Pointer::symbolic(Variable(402_002));
-        let memory = crate::kernel::intern_c_memory(CMemory::new().store(
+        let memory = crate::kernel::intern_memory(Memory::new().store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(source)),
+            ProgramValue::Int32(MachineTerm::Variable(source)),
         ));
         let untouched = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
-        let sealed = CResource::MutexGuard(MutexIdentity {
+        let sealed = Resource::MutexGuard(MutexIdentity {
             epoch: Some(123),
             mutex: Pointer {
                 block: "sealed".into(),
@@ -9189,9 +9166,9 @@ mod comparison_read_batch_tests {
         });
         let input = Proposition::And(
             Box::new(atom(untouched)),
-            Box::new(Proposition::CResourceContains {
+            Box::new(Proposition::ResourceContains {
                 parent: Box::new(sealed),
-                child: Box::new(CResource::Emp),
+                child: Box::new(Resource::Emp),
             }),
         );
         assert_eq!(

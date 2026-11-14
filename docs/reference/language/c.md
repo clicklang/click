@@ -986,8 +986,9 @@ Supported C surface includes:
   loads and stores using the struct's LP64 stride
 - known function calls through the current function environment, either
   assigned, used as standalone statements when the result is discarded, or
-  embedded in an unconditional expression; expression calls lower to fresh
-  temporaries and checked `CallAssign` statements; body-less C callees may be
+  embedded in an unconditional expression; an expression call is a call
+  step of its own whose result the expression reads, named
+  `statement(i).call(f, j).result`; body-less C callees may be
   declared as `extern` contracts in the sidecar. In operators whose operands
   C leaves unsequenced, and between separate function arguments, an expression
   call may only be combined with sibling expressions that do not read mutable

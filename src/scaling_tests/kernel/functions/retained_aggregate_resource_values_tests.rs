@@ -14,15 +14,15 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         block: "pointee".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let value = CValue::typed_pointer(pointee, CType::Int32Pointer);
-    let layout = CAggregateLayout::new(
+    let value = ProgramValue::typed_pointer(pointee, ProgramType::Int32Pointer);
+    let layout = AggregateLayout::new(
         8,
         8,
-        vec![CAggregateField::new("data", 0, CType::Int32Pointer)],
+        vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
     );
-    let field = CExpression::TypedLoad {
-        pointer: Box::new(CExpression::Variable("input".into())),
-        value_type: CType::Int32Pointer,
+    let field = ProgramExpression::TypedLoad {
+        pointer: Box::new(ProgramExpression::Variable("input".into())),
+        value_type: ProgramType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
         access_class: None,
@@ -33,8 +33,8 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         // Compare cold sessions at every size; retained pointer reads
         // otherwise reuse observations recorded by the first sample.
         let _session = crate::kernel::VerificationSession::enter();
-        let mut entry = CState::new().with_memory(
-            CMemory::new()
+        let mut entry = ExecutionState::new().with_memory(
+            Memory::new()
                 .with_block(slot.block.clone(), 8)
                 .store(slot.clone(), value.clone()),
         );
@@ -47,7 +47,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         let state = entry
             .clone()
             .with_memory(entry.memory.clone().without_local_block(&slot.block));
-        let resolve = |expression: &mut CExpression| {
+        let resolve = |expression: &mut ProgramExpression| {
             resolve_retained_aggregate_fields(
                 &entry,
                 &state,
@@ -64,9 +64,9 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         work.push(measured);
         // The retained field keeps its entry-read name; the graph relates
         // its complete value to the pointer stored at that snapshot.
-        let retained = |expression: &CExpression| match expression {
-            CExpression::Value(CValue::Pointer(read)) => {
-                let CValue::Pointer(stored) = &value else {
+        let retained = |expression: &ProgramExpression| match expression {
+            ProgramExpression::Value(ProgramValue::Pointer(read)) => {
+                let ProgramValue::Pointer(stored) = &value else {
                     unreachable!()
                 };
                 read.pointer() != stored.pointer()
@@ -81,17 +81,17 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
             _ => false,
         };
         assert!(retained(&expression), "{expression:?}");
-        let address = CExpression::AddressOf(Box::new(field.clone()));
+        let address = ProgramExpression::AddressOf(Box::new(field.clone()));
         let mut expression = address.clone();
         resolve(&mut expression);
         assert_eq!(
             expression, address,
             "an address must not become a retained value"
         );
-        let mut expression = CExpression::Load(Box::new(field.clone()));
+        let mut expression = ProgramExpression::Load(Box::new(field.clone()));
         resolve(&mut expression);
         assert!(
-            matches!(&expression, CExpression::Load(inner) if retained(inner)),
+            matches!(&expression, ProgramExpression::Load(inner) if retained(inner)),
             "{expression:?}"
         );
         assert!(!state.memory.has_block(&slot.block));

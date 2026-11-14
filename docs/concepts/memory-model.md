@@ -276,7 +276,7 @@ unresolved state. Failed allocation removes that metadata and returns to the
 pre-allocation memory identity without producing allocation authority.
 Successful allocation starts from the pending memory but introduces only
 its fresh, uninitialized block. A successful `free` also emits a checked heap
-`CHeapAllocationFreed` effect connecting the memory before and after it,
+`HeapAllocationFreed` effect connecting the memory before and after it,
 exact base, and possibly symbolic byte extent. This is deliberately distinct
 from an owned byte range: deallocation changes which allocation identities
 are live, while an owned range bounds ordinary stores. Exact contract
@@ -535,7 +535,7 @@ predicate same_first(a: int32[], b: int32[]) {
 
 receives pure array refs for `a` and `b`. Each ref carries:
 
-- a `CMemory` value, the memory its reads are taken in
+- a `Memory` value, the memory its reads are taken in
 - a C pointer
 - an element type, currently `int32` or `uint8`
 

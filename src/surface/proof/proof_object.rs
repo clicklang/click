@@ -2,7 +2,7 @@ use super::pure_theorems::{
     PureInductionSetup, PureStructuralInductionBranchSetup, PureTheoremContext,
 };
 use super::*;
-use crate::kernel::CFunctionExecutionCandidate;
+use crate::kernel::FunctionExecutionCandidate;
 use crate::kernel::proof::{
     BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ClaimGoalError, ClaimGoalEvidence,
     ExecutionUpdateError, FrontierObligation, FrontierSplitError, FunctionOutcomeObligation,
@@ -119,13 +119,13 @@ pub(super) struct ExecutionSplitData<'a> {
     parent_execution: Arc<ExecutionProofState>,
     statement_index: usize,
     continuation_index: usize,
-    continuation_remaining: Option<Arc<CStatement>>,
-    execution_start_state: CState,
+    continuation_remaining: Option<Arc<ProgramStatement>>,
+    execution_start_state: ExecutionState,
     /// The exact statement/state used when this split was certified.  C
     /// branch splits can recover these from the parent frontier; a throwing
     /// call may first descend through a transparent try body, so it cannot.
-    split_state: CState,
-    split_statement: CStatement,
+    split_state: ExecutionState,
+    split_statement: ProgramStatement,
 }
 
 #[derive(Clone)]
@@ -219,7 +219,7 @@ pub(super) struct ExecutionProofCaseSplitData<'a> {
     common_facts: ProofFacts,
     parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
-    execution_start_state: CState,
+    execution_start_state: ExecutionState,
     /// The lexical scope at the split. Each arm starts in it: a `match` arm
     /// that reached function exit inside one arm keeps its binders on that
     /// finished path only.
@@ -255,7 +255,7 @@ struct CheckedExecutionJoinArm<'v> {
     /// Frontier-local loops the arm proved inside its region. They are
     /// checked function-proof state, so a join carries them like unfolds.
     introduced_loop_clauses: Vec<StructuralClause>,
-    introduced_loop_rules: Vec<CVerifiedLoopRule>,
+    introduced_loop_rules: Vec<VerifiedLoopRule>,
 }
 
 #[cfg(test)]
@@ -355,8 +355,8 @@ impl<'a> ExecutionSplitData<'a> {
 struct PreparedExecutionBranch {
     statement_index: usize,
     continuation_index: usize,
-    continuation_remaining: Option<Arc<CStatement>>,
-    execution_start_state: CState,
+    continuation_remaining: Option<Arc<ProgramStatement>>,
+    execution_start_state: ExecutionState,
     checked_condition_split: CheckedBranchSplit,
     arms: [Option<PreparedExecutionArm>; 2],
 }
@@ -377,7 +377,7 @@ struct PreparedExecutionArm {
 /// frontier rather than selecting either arm's execution state.
 #[derive(Clone)]
 struct ExecutionBranchJoinContinuation {
-    remaining: Arc<CStatement>,
+    remaining: Arc<ProgramStatement>,
     next_statement_index: usize,
     continuations: PersistentSequence<ProofExecutionContinuation>,
 }
@@ -387,7 +387,7 @@ struct ExecutionBranchJoinContinuation {
 /// data. See [`ExecutionBranchJoinContinuation`].
 fn derive_execution_join_continuation(
     root_execution: &ExecutionProofState,
-    continuation_remaining: &Option<Arc<CStatement>>,
+    continuation_remaining: &Option<Arc<ProgramStatement>>,
     continuation_index: usize,
 ) -> Option<ExecutionBranchJoinContinuation> {
     let mut continuations = root_execution.core.frontier.continuations.clone();
@@ -666,7 +666,7 @@ pub(in crate::surface::proof) struct ExistentialProjection {
     pub(in crate::surface::proof) chosen_body: Proposition,
     pub(in crate::surface::proof) chosen_name: String,
     pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
-    pub(in crate::surface::proof) source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface::proof) source_snapshot: crate::kernel::MemorySnapshotIdentity,
     pub(in crate::surface::proof) leaves: Vec<ExistentialProjectionLeaf>,
 }
 
@@ -694,7 +694,7 @@ pub(in crate::surface::proof) struct ChosenProjection {
     pub(in crate::surface::proof) checked_source: Proposition,
     pub(in crate::surface::proof) chosen_name: String,
     pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
-    pub(in crate::surface::proof) source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface::proof) source_snapshot: crate::kernel::MemorySnapshotIdentity,
     pub(in crate::surface::proof) source_selector: SnapshotSelector,
     pub(in crate::surface::proof) leaves: Vec<ChosenProjectionLeaf>,
 }
@@ -758,7 +758,7 @@ impl ExecutionProofState {
     pub(super) fn retain_terminal_statement_cases(
         &mut self,
         cases: Vec<Vec<Proposition>>,
-        state: CState,
+        state: ExecutionState,
         point: ProgramPointRef,
     ) {
         let state = Arc::new(state);
@@ -815,7 +815,7 @@ impl ExecutionProofState {
     /// The execution state at a proof's entry: the frontier's C state and
     /// effect facts with no branch provenance yet.
     pub(in crate::surface::proof) fn at_entry(
-        state: CState,
+        state: ExecutionState,
         frontier: ExecutionFrontier,
         recorded_snapshots: RecordedSnapshots,
         surface_propositions: SurfacePropositionMap,
@@ -900,9 +900,9 @@ pub(in crate::surface::proof) struct LoopAnnotationCache {
     pub(in crate::surface::proof) function_block: usize,
     pub(in crate::surface::proof) parsed_function: usize,
     pub(in crate::surface::proof) start_facts: Arc<crate::surface::PureFactList>,
-    pub(in crate::surface::proof) function_entry_state: Option<CState>,
-    pub(in crate::surface::proof) initial_state: CState,
-    pub(in crate::surface::proof) arguments: Vec<CExpression>,
+    pub(in crate::surface::proof) function_entry_state: Option<ExecutionState>,
+    pub(in crate::surface::proof) initial_state: ExecutionState,
+    pub(in crate::surface::proof) arguments: Vec<ProgramExpression>,
     /// The frontier clauses bound before the annotated loop's own clause.
     pub(in crate::surface::proof) frontier_clauses: FrontierLoopClauses,
     /// The annotated loop's own clause, bound to it.
@@ -917,9 +917,9 @@ pub(in crate::surface::proof) struct LoopAnnotationCache {
 /// A claim's execution environment extended by a path's frontier loop
 /// rules (`ExecutionProofPresentation::loop_rule_environment`).
 pub(in crate::surface::proof) struct LoopRuleEnvironment {
-    pub(in crate::surface::proof) base: CExecutionEnvironment,
-    pub(in crate::surface::proof) rules: PersistentSequence<crate::kernel::CVerifiedLoopRule>,
-    pub(in crate::surface::proof) environment: CExecutionEnvironment,
+    pub(in crate::surface::proof) base: ExecutionEnvironment,
+    pub(in crate::surface::proof) rules: PersistentSequence<crate::kernel::VerifiedLoopRule>,
+    pub(in crate::surface::proof) environment: ExecutionEnvironment,
 }
 
 impl LoopRuleEnvironment {
@@ -927,8 +927,8 @@ impl LoopRuleEnvironment {
     /// an earlier prefix of `rules` over the same base.
     pub(in crate::surface::proof) fn extending(
         cached: Option<&Self>,
-        base: &CExecutionEnvironment,
-        rules: &PersistentSequence<crate::kernel::CVerifiedLoopRule>,
+        base: &ExecutionEnvironment,
+        rules: &PersistentSequence<crate::kernel::VerifiedLoopRule>,
     ) -> Self {
         let environment = cached
             .filter(|cached| cached.base == *base)
@@ -1072,7 +1072,7 @@ impl ExecutionBranchDecisions {
 /// state; the `Proof` remains alive as the sole authority while finalization
 /// checks its typed outcome goals.
 pub(super) struct ProofExecutionView<'p> {
-    pub(super) state: &'p CState,
+    pub(super) state: &'p ExecutionState,
     pub(super) facts: &'p ProofFacts,
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
@@ -1248,7 +1248,7 @@ impl ProofExecutionView<'_> {
 /// under, and whether those facts already hold every effect its path
 /// retained, so an outcome goal need not import them again.
 pub(in crate::surface::proof) type CheckedLeafFacts =
-    (CFunctionExecutionCandidate, ProofFacts, bool);
+    (FunctionExecutionCandidate, ProofFacts, bool);
 
 /// The facts a path's last checked statement held, with every effect the
 /// path has retained. Each statement extends it by the facts it introduced
@@ -1303,7 +1303,7 @@ impl EffectLeaf {
 /// single `step()` without reconstructing guards from ambient facts.
 struct TerminalStatementCase {
     facts: Vec<Proposition>,
-    state: Arc<CState>,
+    state: Arc<ExecutionState>,
     point: ProgramPointRef,
 }
 
@@ -1343,15 +1343,15 @@ struct ProofDiagnosticProofState(
     KernelProofHandle,
     Arc<ProofNode>,
     Vec<(Variable, String)>,
-    Option<CState>,
+    Option<ExecutionState>,
     Option<crate::surface::proof_trace::ChildArgumentTrace>,
     Option<(&'static str, Box<Proposition>, Option<String>)>,
     Option<crate::surface::proof_diagnostics::MemoryHistoryDiagnostic>,
     Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
-    Vec<(Variable, CType)>,
+    Vec<(Variable, ProgramType)>,
     // The value the goal's `result` denotes, when the goal is about a
     // function outcome.
-    Option<CValue>,
+    Option<ProgramValue>,
     Vec<crate::kernel::ReadResolutionDiagnostic>,
     // The instance a refused `fold` proposed, when it keeps a hidden record,
     // so the refusal shows the record its failed body fact reads.
@@ -1372,9 +1372,12 @@ struct ProofDiagnosticProofState(
 /// for few of them, so the deferred form holds shared handles and copies no
 /// list of locals or parameters.
 pub(in crate::surface::proof) enum DiagnosticNaming {
-    Tables(Vec<syntax::C0Parameter>, Vec<CExpression>),
+    Tables(
+        Vec<crate::languages::interface::ImportedParameter>,
+        Vec<ProgramExpression>,
+    ),
     /// A state's locals, then the shared entry parameters and arguments.
-    LocalsThenParameters(CState, Arc<crate::surface::ParameterNaming>),
+    LocalsThenParameters(ExecutionState, Arc<crate::surface::ParameterNaming>),
 }
 
 impl DiagnosticNaming {
@@ -1397,14 +1400,16 @@ impl DiagnosticNaming {
 /// The C values the proof's own binders name: `let`, `choose`, `obtain`
 /// and `unfold` bindings. Diagnostics and premise spelling both name values
 /// through these, so a report and a citation agree.
-fn proof_local_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str, &CValue)> {
+fn proof_local_program_values(
+    proof: &KernelProofHandle,
+) -> impl Iterator<Item = (&str, &ProgramValue)> {
     proof
         .state()
         .locals()
         .values
         .iter()
         .filter_map(|(name, expression)| match expression {
-            ContractExpression::CFragment(CExpression::Value(value)) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                 Some((name.as_str(), value))
             }
             _ => None,
@@ -1413,7 +1418,9 @@ fn proof_local_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str
 
 /// The C values the focused goal's `intro` binders name. Where a binder
 /// shadows an outer name, an `outer.` entry spells that outer value.
-fn goal_binder_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str, &CValue)> {
+fn goal_binder_program_values(
+    proof: &KernelProofHandle,
+) -> impl Iterator<Item = (&str, &ProgramValue)> {
     proof
         .state()
         .open_branches()
@@ -1425,7 +1432,7 @@ fn goal_binder_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str
         .into_iter()
         .flatten()
         .filter_map(|(name, expression)| match expression {
-            ContractExpression::CFragment(CExpression::Value(value)) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                 Some((name.as_str(), value))
             }
             _ => None,
@@ -1442,16 +1449,16 @@ impl Proof<'_> {
     pub(in crate::surface::proof) fn binder_variable_names(
         &self,
     ) -> (BTreeMap<Variable, String>, BTreeMap<Variable, String>) {
-        fn variable(value: &CValue) -> Option<Variable> {
+        fn variable(value: &ProgramValue) -> Option<Variable> {
             match value.numeric_value() {
-                CValue::Parameter(term) => match term.node {
+                ProgramValue::Parameter(term) => match term.node {
                     crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
                     _ => None,
                 },
                 crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
                     Some(*variable)
                 }
-                CValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer) => {
                     match (&pointer.pointer().block, &pointer.pointer().offset) {
                         (
                             crate::kernel::PointerBlock::Symbolic(variable),
@@ -1465,16 +1472,16 @@ impl Proof<'_> {
         }
         // A goal's `intro` binder shadows a proof local of the same name:
         // that local is out of scope, and its name now spells the binder.
-        let shadowing = goal_binder_c_values(&self.state)
+        let shadowing = goal_binder_program_values(&self.state)
             .map(|(name, _)| name)
             .filter(|name| !name.starts_with("outer."))
             .collect::<BTreeSet<_>>();
-        let named = |values: &mut dyn Iterator<Item = (&str, &CValue)>| {
+        let named = |values: &mut dyn Iterator<Item = (&str, &ProgramValue)>| {
             values
                 .filter_map(|(name, value)| Some((variable(value)?, name.to_owned())))
                 .collect::<BTreeMap<_, _>>()
         };
-        let mut intro = named(&mut goal_binder_c_values(&self.state));
+        let mut intro = named(&mut goal_binder_program_values(&self.state));
         // An Integer proof local, such as a loop's `iterations` or an
         // `obtain`'s binder, names the variable it holds.
         for (name, value) in self.local_integer_values().iter() {
@@ -1495,7 +1502,9 @@ impl Proof<'_> {
             .filter(|(name, _)| !shadowing.contains(name.as_str()))
             .filter_map(|(name, expression)| {
                 let variable = match expression {
-                    ContractExpression::CFragment(CExpression::Value(value)) => variable(value)?,
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                        variable(value)?
+                    }
                     ContractExpression::AlgebraicVariable { binder_index, .. } => {
                         crate::surface::lowering::algebraic_binder_variable(*binder_index).ok()?
                     }
@@ -1508,10 +1517,10 @@ impl Proof<'_> {
     }
 }
 
-fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
+fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Parameter(term) => match term.node {
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Parameter(term) => match term.node {
             crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
@@ -1524,7 +1533,7 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
             },
             _ => None,
         },
-        CValue::Pointer(pointer) => match &pointer.pointer().offset {
+        ProgramValue::Pointer(pointer) => match &pointer.pointer().offset {
             PointerOffsetTerm::Variable(variable) => Some(*variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
@@ -1535,7 +1544,7 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
             }
             _ => None,
         },
-        CValue::Void => None,
+        ProgramValue::Void => None,
     }
 }
 
@@ -1565,13 +1574,40 @@ pub(in crate::surface::proof) fn register_recorded_snapshot_names(
             labels.integer_source_name(*variable, name);
         }
     }
+    // Each recorded call's result, `statement(0).call(f, 0).result`.
+    for (spelling, value) in snapshots.call_result_bindings() {
+        register_call_result_name(labels, spelling, value);
+    }
+}
+
+/// A call's result is spelled by its call, `<call>.result`.
+fn register_call_result_name(
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+    spelling: String,
+    value: &ProgramValue,
+) {
+    match value.numeric_value() {
+        crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+            labels.fallback_source_name(*variable, spelling, value.program_type());
+        }
+        crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
+            labels.fallback_read_name(read, spelling);
+        }
+        ProgramValue::Pointer(pointer) => {
+            labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
+            labels.fallback_value_name(spelling, value.clone());
+        }
+        _ => {}
+    }
 }
 
 /// The most recent recorded snapshots an `at(...)` can cite, oldest first,
 /// then the proof's older marks, with the point each one is spelled by.
 /// Each part is bounded by `NAMED_SNAPSHOT_LIMIT`; each state shares its
 /// persistent storage.
-fn citable_snapshots(snapshots: &crate::surface::RecordedSnapshots) -> Vec<(String, CState)> {
+fn citable_snapshots(
+    snapshots: &crate::surface::RecordedSnapshots,
+) -> Vec<(String, ExecutionState)> {
     use crate::surface::{CodeRegionRef, ProgramPointRef, SnapshotSelector};
     let recent = snapshots.recent(NAMED_SNAPSHOT_LIMIT);
     // The proof's own marks stay citable however many statements ran since:
@@ -1606,7 +1642,7 @@ fn citable_snapshots(snapshots: &crate::surface::RecordedSnapshots) -> Vec<(Stri
 
 fn register_snapshot_names(
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
-    citable: &[(String, CState)],
+    citable: &[(String, ExecutionState)],
 ) {
     // A read of a snapshot's memory is spelled against the locals it held,
     // as `at(point, p[1])`.
@@ -1620,19 +1656,7 @@ fn register_snapshot_names(
             // A call's result temporary is spelled by its call,
             // `<region>.result`, at any point that holds it.
             if let Some(spelling) = crate::surface::diagnostics::call_result_spelling(name) {
-                match value.numeric_value() {
-                    crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
-                        labels.fallback_source_name(*variable, spelling, value.c_type());
-                    }
-                    crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
-                        labels.fallback_read_name(read, spelling);
-                    }
-                    CValue::Pointer(pointer) => {
-                        labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
-                        labels.fallback_value_name(spelling, value.clone());
-                    }
-                    _ => {}
-                }
+                register_call_result_name(labels, spelling, value);
                 continue;
             }
             // A pointer's offset variable is not the pointer; a scalar
@@ -1662,7 +1686,7 @@ fn register_snapshot_names(
                     labels.fallback_source_name(
                         *variable,
                         format!("at({point}, {name})"),
-                        value.c_type(),
+                        value.program_type(),
                     );
                 }
                 crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(memory, _, _)) => {
@@ -1672,7 +1696,7 @@ fn register_snapshot_names(
                 }
                 // An address no structural spelling names, a heap
                 // allocation, is the pointer local that held it.
-                CValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer) => {
                     labels.fallback_pointer_name(pointer.pointer(), format!("at({point}, {name})"));
                 }
                 _ => {}
@@ -1696,13 +1720,13 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
         // A proof `let { result: r } = step(...)` holds the exact scalar result, so its
         // user-chosen name wins over the synthesized C assignment target.
-        for (name, value) in proof_local_c_values(&self.0) {
-            if let CValue::Pointer(pointer) = value {
+        for (name, value) in proof_local_program_values(&self.0) {
+            if let ProgramValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(pointer.pointer(), name);
             }
             if let Some(variable) = diagnostic_value_variable(value) {
                 labels.immutable_source_name(variable, name.to_owned());
-                labels.source_type(variable, value.c_type());
+                labels.source_type(variable, value.program_type());
             }
         }
         for (name, value) in self.0.state().locals().algebraic_values.iter() {
@@ -1722,11 +1746,11 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // the proof's locals.
         // A report names a shadowed outer value by its source name.
         for (name, value) in
-            goal_binder_c_values(&self.0).filter(|(name, _)| !name.starts_with("outer."))
+            goal_binder_program_values(&self.0).filter(|(name, _)| !name.starts_with("outer."))
         {
             if let Some(variable) = diagnostic_value_variable(value) {
                 labels.source_name(variable, name.to_owned());
-                labels.source_type(variable, value.c_type());
+                labels.source_type(variable, value.program_type());
             }
         }
         if let Some(state) = &self.3 {
@@ -1735,8 +1759,8 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(result) = &self.9 {
             labels.source_result(result);
         }
-        for (variable, c_type) in &self.8 {
-            labels.source_type(*variable, *c_type);
+        for (variable, interface_type) in &self.8 {
+            labels.source_type(*variable, *interface_type);
         }
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
@@ -1792,7 +1816,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         Some(self.12)
     }
 
-    fn resources(&self) -> &[CResourceFact] {
+    fn resources(&self) -> &[ResourceFact] {
         if let Some(state) = &self.3 {
             return state.resources().facts();
         }
@@ -2134,7 +2158,7 @@ impl Proof<'_> {
         );
     }
 
-    fn record_trace_c_branch(
+    fn record_trace_program_branch(
         &self,
         marker: &Arc<ProofNode>,
         arms: [Option<BranchId>; 2],
@@ -2197,7 +2221,7 @@ impl Proof<'_> {
     }
 
     fn diagnostic_state(&self) -> ProofDiagnosticProofState {
-        // Pure theorem names have no CState from which the renderer can
+        // Pure theorem names have no ExecutionState from which the renderer can
         // recover their signedness. Retain types alongside those names.
         let mut source_types = match self.context.as_ref() {
             ProofContext::Pure(context) => context
@@ -2205,7 +2229,8 @@ impl Proof<'_> {
                 .values
                 .values()
                 .filter_map(|value| {
-                    diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
+                    diagnostic_value_variable(value)
+                        .map(|variable| (variable, value.program_type()))
                 })
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
@@ -2217,7 +2242,7 @@ impl Proof<'_> {
                 .and_then(|view| view.fixed_state.result),
         };
         source_types.extend(result.and_then(|value| {
-            diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
+            diagnostic_value_variable(value).map(|variable| (variable, value.program_type()))
         }));
         let source_names = match self.context.as_ref() {
             ProofContext::Pure(context) => {
@@ -2307,7 +2332,7 @@ impl Proof<'_> {
             match self.context.as_ref() {
                 // Fixed-state subproofs have no execution branch, but their
                 // live locals still name the values their goals contain.
-                // CState shares its persistent storage; no environment is copied.
+                // ExecutionState shares its persistent storage; no environment is copied.
                 ProofContext::FixedState(context) => Some(context.fixed_state.state.clone()),
                 // The execution branch may still be the pre-execution root.
                 // An outcome goal carries the authoritative post-state,
@@ -3095,7 +3120,7 @@ impl<'a> Proof<'a> {
     }
 
     #[cfg(test)]
-    fn outcome_result(&self) -> Option<&CValue> {
+    fn outcome_result(&self) -> Option<&ProgramValue> {
         match self.focused_obligation()? {
             Obligation::FunctionOutcome(goal) => Some(goal.data.core.result.as_ref()),
             _ => None,
@@ -3138,7 +3163,7 @@ impl<'a> Proof<'a> {
         &self,
         goal: Proposition,
         surface_goal: Option<ClickProposition>,
-        claim_goal: Option<&crate::kernel::CClaimGoal>,
+        claim_goal: Option<&crate::kernel::ContractClaimGoal>,
     ) -> Result<Self, ClickError> {
         let fixed_state_context = matches!(self.context.as_ref(), ProofContext::FixedState(_))
             && matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));

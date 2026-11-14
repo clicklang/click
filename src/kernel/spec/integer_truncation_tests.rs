@@ -25,7 +25,7 @@ fn integer_truncation_capture_requires_domain_even_when_result_cancels() {
             IntegerTerm::truncating_quotient(left.clone(), right.clone())
         };
         assert_eq!(
-            capture_spec_integer_value(&CState::new(), &term, None, &guarded).unwrap(),
+            capture_spec_integer_value(&ExecutionState::new(), &term, None, &guarded).unwrap(),
             expected
         );
         for expression in [
@@ -36,9 +36,13 @@ fn integer_truncation_capture_requires_domain_even_when_result_cancels() {
             ),
             SpecIntegerExpression::Subtract(Box::new(term.clone()), Box::new(term)),
         ] {
-            assert!(capture_spec_integer_value(&CState::new(), &expression, None, &empty).is_err());
             assert!(
-                capture_spec_integer_value(&CState::new(), &expression, None, &guarded).is_ok()
+                capture_spec_integer_value(&ExecutionState::new(), &expression, None, &empty)
+                    .is_err()
+            );
+            assert!(
+                capture_spec_integer_value(&ExecutionState::new(), &expression, None, &guarded)
+                    .is_ok()
             );
         }
         let zero = truncation(
@@ -46,7 +50,7 @@ fn integer_truncation_capture_requires_domain_even_when_result_cancels() {
             IntegerTerm::constant_i64(7),
             IntegerTerm::constant_i64(0),
         );
-        assert!(capture_spec_integer_value(&CState::new(), &zero, None, &empty).is_err());
+        assert!(capture_spec_integer_value(&ExecutionState::new(), &zero, None, &empty).is_err());
     }
 }
 

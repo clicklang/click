@@ -21,16 +21,16 @@ fn rust_shifts_are_fact_stable_and_do_not_scan_ambient_facts() {
         let impossible = defined.clone().assume_condition(bound, false);
         let written = SpecProposition::Comparison {
             left: SpecExpression::RustShiftLeft(
-                Box::new(SpecExpression::Value(CValue::Int8(x))),
-                Box::new(SpecExpression::Value(CValue::UInt32(n))),
+                Box::new(SpecExpression::Value(ProgramValue::Int8(x))),
+                Box::new(SpecExpression::Value(ProgramValue::UInt32(n))),
             ),
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(crate::kernel::int8(0u32)),
         };
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
             [&base, &defined, &undefined, &impossible].map(|context| {
-                crate::kernel::c_lower_spec_proposition_with_checked_obligations(
-                    &CState::new(),
+                crate::kernel::program_lower_spec_proposition_with_checked_obligations(
+                    &ExecutionState::new(),
                     &written,
                     None,
                     context,

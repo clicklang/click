@@ -15,7 +15,7 @@ fn callable_signature_mismatch_displays_both_signatures() {
     let mismatched = SIDECAR
         .replacen("f: fn(i32) -> i32", "f: fn(u32) -> u32", 1)
         .replacen("    requires Doubling(f);\n", "", 1);
-    let error = C0VerificationSession::new_program_prepared(&mismatched, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&mismatched, &prepared)
         .err()
         .expect("the callable signature mismatch must be refused");
     assert!(
@@ -40,7 +40,7 @@ fn callable_signature_mismatch_displays_both_signatures() {
 fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
     let p = function_pointer_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let twice = "fn function_pointers::twice(x: i32) -> i32 {\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;";
     let doubling = "contract fn Doubling(x: i32) -> i32 {\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;";
@@ -81,7 +81,7 @@ fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
             verify_rust_proof_after(&invalid, &prepared, head)
                 .expect_err("a missing or unmet callback contract must fail")
         } else {
-            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
                 .err()
                 .expect("a missing or unmet callback contract must fail")
         };
@@ -121,7 +121,7 @@ fn charon_refinement_theorems_name_crate_functions_as_values() {
         "fn function_pointers::twice(x: i32) -> i32 {\n    requires 0 <= x and x <= 2000 and x <= 1000;",
         1,
     );
-    let error = C0VerificationSession::new_program_prepared(&equivalent, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&equivalent, &prepared)
         .err()
         .expect("an inexact contract needs an explicit refinement proof");
     let theorem = "theorem twice_is_doubling() {\n    ensures Doubling(function_pointers::twice) by {\n        unfold(Doubling);\n        solve();\n    }\n}";
@@ -142,10 +142,10 @@ fn charon_refinement_theorems_name_crate_functions_as_values() {
         }
         format!("{sidecar}\n{theorem}\n")
     };
-    C0VerificationSession::new_program_prepared(&applied(&equivalent), &prepared)
+    ProgramVerificationSession::new_program_prepared(&applied(&equivalent), &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let weaker = SIDECAR.replacen(twice, &format!("{twice}\n    requires x != 7;"), 1);
-    let error = C0VerificationSession::new_program_prepared(&applied(&weaker), &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&applied(&weaker), &prepared)
         .err()
         .expect("a function that does not meet the contract is refused");
     assert!(

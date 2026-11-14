@@ -11,7 +11,7 @@ fn external_array_unknown_snapshots_and_noop_maps_scale_with_representation() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = external(930_000);
         let target = external(930_001);
-        let before = CMemory::new();
+        let before = Memory::new();
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
             let memory = copy(before.clone(), &target, &source, count);
             let mut variables = std::collections::BTreeSet::new();
@@ -36,7 +36,7 @@ fn external_array_unknown_snapshots_and_noop_maps_scale_with_representation() {
             );
         }
         let saved = typed_load(&memory, &target);
-        let changed = memory.store(source.clone(), CValue::UInt32(99u32.into()));
+        let changed = memory.store(source.clone(), ProgramValue::UInt32(99u32.into()));
         assert_eq!(typed_load(&changed, &target), saved);
         samples.push((count, work));
     }
@@ -59,25 +59,25 @@ fn external_array_execution_requires_full_authority_and_mutability() {
                 (count, count - 1, true),
                 (count, count, false),
             ] {
-                let state = CState::new().with_resource_context(
+                let state = ExecutionState::new().with_resource_context(
                     ResourceContext::new().unchecked_with_facts([
                         view_memory_fact(source.clone(), 0, read),
                         own_memory_fact(target.clone(), 0, write),
                     ]),
                 );
-                let target_value = CPointerValue::new(target.clone(), CType::UInt32Pointer)
+                let target_value = PointerValue::new(target.clone(), ProgramType::UInt32Pointer)
                     .with_pointee_constant(!mutable);
                 let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    prove_c_statement_execution(
+                    prove_execution_statement_execution(
                         state,
-                        c_write_scalar_array_region(
-                            CExpression::Value(CValue::Pointer(target_value)),
+                        program_write_scalar_array_region(
+                            ProgramExpression::Value(ProgramValue::Pointer(target_value)),
                             if copy {
-                                c_pointer_value(source.clone())
+                                crate::kernel::program_expression::pointer_value(source.clone())
                             } else {
-                                c_uint32_literal(7)
+                                crate::kernel::program_expression::uint32_literal(7)
                             },
-                            CType::UInt32,
+                            ProgramType::UInt32,
                             count,
                             copy,
                         ),
@@ -88,8 +88,8 @@ fn external_array_execution_requires_full_authority_and_mutability() {
                 assert_eq!(
                     matches!(
                         theorem.proposition(),
-                        Proposition::CStatementExecutes {
-                            outcome: CStatementOutcome::Normal(_),
+                        Proposition::ProgramStatementExecutes {
+                            outcome: StatementOutcome::Normal(_),
                             ..
                         }
                     ),
@@ -118,16 +118,22 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
             block: "local:indexed-copy".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_block(target.block.clone(), 16)
-            .store(source.clone(), CValue::UInt32(9u32.into()));
+            .store(source.clone(), ProgramValue::UInt32(9u32.into()));
         for index in 0..siblings {
-            memory = memory.store(external(936_000 + index), CValue::UInt32(11u32.into()));
+            memory = memory.store(
+                external(936_000 + index),
+                ProgramValue::UInt32(11u32.into()),
+            );
         }
         let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
             copy(memory, &target, &source, 4)
         });
-        assert_eq!(typed_load(&copied, &target), CValue::UInt32(9u32.into()));
+        assert_eq!(
+            typed_load(&copied, &target),
+            ProgramValue::UInt32(9u32.into())
+        );
         samples.push((siblings, work));
     }
     assert!(
@@ -144,14 +150,14 @@ fn external_array_ambiguous_run_aliasing_forgets_without_extent_work() {
         let source = external(939_000);
         let target = external(939_001);
         let other = external(939_002);
-        let memory = copy(CMemory::new(), &target, &source, count);
+        let memory = copy(Memory::new(), &target, &source, count);
         let before = memory.clone();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory.write_scalar_array_region(
                 &other,
-                CType::UInt32,
+                ProgramType::UInt32,
                 count,
-                CValue::pointer(target.clone()),
+                ProgramValue::pointer(target.clone()),
                 true,
                 false,
                 &PureFactContext::new(),

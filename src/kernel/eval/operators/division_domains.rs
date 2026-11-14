@@ -10,7 +10,7 @@ pub(super) fn apply_nonzero(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let [minimum, minus_one] =
         ConditionTerm::signed_division_exception_tests(format, &left, &right);
     let safe = Proposition::signed_division_exclusion(format, &left, &right);
@@ -33,13 +33,13 @@ pub(super) fn apply_nonzero(
         }
     };
     let behavior = match format {
-        MachineIntegerType::Int32 => CUndefinedBehavior::SignedDivisionOverflow,
-        MachineIntegerType::Int64 => CUndefinedBehavior::SignedOverflow,
+        MachineIntegerType::Int32 => UndefinedBehavior::SignedDivisionOverflow,
+        MachineIntegerType::Int64 => UndefinedBehavior::SignedOverflow,
         _ => unreachable!("native signed division width"),
     };
     if known == Some(true) {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(behavior),
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(behavior),
             facts,
             obligations,
         }];
@@ -51,11 +51,11 @@ pub(super) fn apply_nonzero(
     }
     let value = match format {
         MachineIntegerType::Int32 => int32(result(left, right)),
-        MachineIntegerType::Int64 => CValue::Int64(result(left, right)),
+        MachineIntegerType::Int64 => ProgramValue::Int64(result(left, right)),
         _ => unreachable!("native signed division width"),
     };
-    let mut paths = vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(value),
+    let mut paths = vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(value),
         facts: normal_facts,
         obligations: obligations.clone(),
     }];
@@ -63,8 +63,8 @@ pub(super) fn apply_nonzero(
         let mut bad = facts;
         add_path_fact(&mut bad, assumptions, exceptional)
             .expect("unknown signed division has an exceptional path");
-        paths.push(CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(behavior),
+        paths.push(ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(behavior),
             facts: bad,
             obligations,
         });
@@ -115,11 +115,11 @@ mod tests {
             result,
         );
         assert_eq!(paths.len(), 2);
-        assert!(matches!(paths[0].outcome, CExpressionOutcome::Value(_)));
+        assert!(matches!(paths[0].outcome, ExpressionOutcome::Value(_)));
         assert!(paths[0].facts.contains_proposition(&domain));
         assert!(matches!(
             paths[1].outcome,
-            CExpressionOutcome::UndefinedBehavior(_)
+            ExpressionOutcome::UndefinedBehavior(_)
         ));
         assert!(paths[1].facts.contains_proposition(&exceptional));
         let facts = PureFactContext::new().assume_proposition(domain);
@@ -133,7 +133,7 @@ mod tests {
             result,
         );
         assert_eq!(paths.len(), 1);
-        assert!(matches!(paths[0].outcome, CExpressionOutcome::Value(_)));
+        assert!(matches!(paths[0].outcome, ExpressionOutcome::Value(_)));
     }
 
     #[test]
@@ -141,8 +141,8 @@ mod tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             let (left, right) = terms();
             let wrap = |word| match format {
-                MachineIntegerType::Int32 => CValue::Int32(word),
-                _ => CValue::Int64(word),
+                MachineIntegerType::Int32 => ProgramValue::Int32(word),
+                _ => ProgramValue::Int64(word),
             };
             for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
                 for (mode, expected) in [

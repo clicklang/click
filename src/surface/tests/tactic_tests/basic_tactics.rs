@@ -106,7 +106,7 @@ fn grouped_function_proof_checks_every_claim() {
                 ensures result != value;
             }
         "#;
-    let error = verify_c0_sources(click_source, &[("identity.c", c_source)])
+    let error = verify_c_sources(click_source, &[("identity.c", c_source)])
         .expect_err("every grouped postcondition must be checked");
 
     assert!(
@@ -139,7 +139,7 @@ fn grouped_function_certificates_share_finalized_specification() {
                 ensures p[0] == value;
             }
         "#;
-    let verified = verify_c0_sources(click_source, &[("set.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("set.c", c_source)])
         .expect("grouped function should verify");
     let specifications = verified
         .iter()
@@ -170,7 +170,7 @@ fn grouped_solve_completes_the_proof_execution_without_a_body_rerun() {
             }
         "#;
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let verified = verify_c0_sources(click_source, &[("set.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("set.c", c_source)])
         .expect("grouped solve proof should verify");
     let expected_tactics = [ProofTactic::SmartExecute, ProofTactic::ImplicitSolve];
 
@@ -214,7 +214,7 @@ fn grouped_resource_predicate_proof_completes_without_a_body_rerun() {
         "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let verified = verify_c0_sources(click_source, &[("return_zero.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("return_zero.c", c_source)])
         .expect("resource predicate proof should verify");
 
     assert_eq!(verified.len(), 2);
@@ -266,7 +266,7 @@ fn parses_composite_resource_definition() {
     assert_eq!(
         resource.parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "flag".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -286,14 +286,14 @@ fn parses_composite_resource_definition() {
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
                 arguments: vec![current_int(7)],
-                parameter_types: vec![C0Type::Int32],
+                parameter_types: vec![InterfaceType::Int32],
             },
             ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("flag".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Variable("flag".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("flag"),
                     start: current_int(0),
@@ -339,7 +339,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
                     arguments: vec![current_var("flag")],
-                    parameter_types: vec![C0Type::Int32Pointer],
+                    parameter_types: vec![InterfaceType::Int32Pointer],
                 }),
                 ProofTactic::UnfoldResource(ResourceClause::Declared {
                     type_schema: None,
@@ -349,7 +349,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
                     arguments: vec![current_var("flag")],
-                    parameter_types: vec![C0Type::Int32Pointer],
+                    parameter_types: vec![InterfaceType::Int32Pointer],
                 }),
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::FoldResource(ResourceClause::Declared {
@@ -360,7 +360,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
                     arguments: vec![current_var("flag")],
-                    parameter_types: vec![C0Type::Int32Pointer],
+                    parameter_types: vec![InterfaceType::Int32Pointer],
                 }),
             ]
             .as_slice()
@@ -440,9 +440,9 @@ fn parses_resource_verb_function_clauses() {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("flag".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Variable("flag".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("flag"),
                     start: current_int(0),
@@ -457,7 +457,7 @@ fn parses_resource_verb_function_clauses() {
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
                 arguments: vec![current_int(7)],
-                parameter_types: vec![C0Type::Int32],
+                parameter_types: vec![InterfaceType::Int32],
             }),
             Requirement::Resource(ResourceClause::Declared {
                 type_schema: None,
@@ -467,7 +467,7 @@ fn parses_resource_verb_function_clauses() {
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
                 arguments: vec![current_int(8)],
-                parameter_types: vec![C0Type::Int32],
+                parameter_types: vec![InterfaceType::Int32],
             }),
         ]
     );
@@ -480,9 +480,9 @@ fn parses_resource_verb_function_clauses() {
                 ensure: Ensure::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Variable("flag".to_string()),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Value(int32(1)),
+                    base: ProgramExpression::Variable("flag".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Value(int32(1)),
                     surface: ContractSegmentSurface::Range {
                         base: current_var("flag"),
                         start: current_int(0),
@@ -504,7 +504,7 @@ fn parses_resource_verb_function_clauses() {
                     kind: ResourceKind::Token,
                     name: "socket_open".to_string(),
                     arguments: vec![current_int(9)],
-                    parameter_types: vec![C0Type::Int32],
+                    parameter_types: vec![InterfaceType::Int32],
                 }),
                 proof: SourceProof::Default,
                 borrowed: false,

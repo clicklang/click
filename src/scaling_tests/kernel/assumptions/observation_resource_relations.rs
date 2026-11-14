@@ -5,19 +5,19 @@ fn resource_relation_comparison_keys_visit_only_selected_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut work = Vec::new();
     for size in [8usize, 16, 32, 64] {
-        let resource = CResource::Composite {
+        let resource = Resource::Composite {
             name: "selected".into(),
             arguments: (0..size)
                 .map(|i| {
-                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(Variable(
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(
                         3_219_400 + i as u64,
                     ))))
                 })
                 .collect(),
         };
-        let goal = Proposition::CResourceContains {
+        let goal = Proposition::ResourceContains {
             parent: Box::new(resource),
-            child: Box::new(CResource::Emp),
+            child: Box::new(Resource::Emp),
         };
         let (_, cost) =
             crate::instrumentation::measure_deterministic_work(|| PropositionKey::new(&goal));
@@ -35,7 +35,7 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
     let mut work = Vec::new();
     for size in [64u64, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let address = Pointer::symbolic(Variable(3_219_500));
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -43,7 +43,7 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
             LoadKind::Int32,
             4,
         );
-        let pointer = CPointerValue::new(address.clone(), CType::Int32Pointer);
+        let pointer = PointerValue::new(address.clone(), ProgramType::Int32Pointer);
         let source = relation(MachineTerm::Variable(name), pointer.clone(), false);
         let goal = relation(
             MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32),
@@ -73,9 +73,9 @@ fn deep_logical_comparison_keys_visit_each_selected_node_once() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut costs = Vec::new();
     for depth in [32, 64, 128, 256, 512] {
-        let mut proposition = Proposition::CResourceContains {
-            parent: Box::new(CResource::Emp),
-            child: Box::new(CResource::Emp),
+        let mut proposition = Proposition::ResourceContains {
+            parent: Box::new(Resource::Emp),
+            child: Box::new(Resource::Emp),
         };
         for _ in 0..depth {
             proposition = Proposition::Implies(

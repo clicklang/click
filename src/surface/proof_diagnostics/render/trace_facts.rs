@@ -34,13 +34,13 @@ impl Renderer<'_> {
                 self.push("; ");
             }
             match fact {
-                CResourceFact::Own(resource, quantity) => {
+                ResourceFact::Own(resource, quantity) => {
                     self.push("owns ");
                     self.resource(resource);
                     self.push(" x ");
                     self.bitvector(quantity);
                 }
-                CResourceFact::View(resource) => {
+                ResourceFact::View(resource) => {
                     self.push("views ");
                     self.resource(resource);
                 }
@@ -75,7 +75,7 @@ impl Renderer<'_> {
                 op,
                 left: a,
                 right: b,
-            } => Some((a, b, format.name(), op.c_symbol())),
+            } => Some((a, b, format.name(), op.program_symbol())),
             _ => None,
         };
         if let Some((a, b, kind, operator)) = binary {
@@ -135,7 +135,7 @@ impl Renderer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{AlgebraicType, CMemoryRange, CValue, LoadKind, ResourceContext};
+    use crate::kernel::{AlgebraicType, LoadKind, MemoryRange, ProgramValue, ResourceContext};
 
     fn render(fact: &Proposition) -> String {
         render_trace_fact_labeled(fact, &mut SnapshotLabels::default())
@@ -144,21 +144,21 @@ mod tests {
     #[test]
     fn inventory_fact_kinds_show_operands_instead_of_opaque_counts() {
         let p = Pointer::symbolic(Variable(986_700));
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let word = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(p.clone()),
             LoadKind::Bits64,
         );
-        let field = CResource::Memory(CMemoryRange::new_with_element_width(
+        let field = Resource::Memory(MemoryRange::new_with_element_width(
             p.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
             8,
         ));
-        let composite = CResource::Composite {
+        let composite = Resource::Composite {
             name: "rb_child_links".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::C(CValue::Int32(
+            arguments: std::sync::Arc::from([AlgebraicValue::Program(ProgramValue::Int32(
                 MachineTerm::constant(7),
             ))]),
         };
@@ -166,7 +166,7 @@ mod tests {
             algebraic_type: AlgebraicType::parameter("Tree".into()),
             node: AlgebraicTermNode::Variable(Variable(986_701)),
         };
-        let context = ResourceContext::new().unchecked_with_fact(CResourceFact::Own(
+        let context = ResourceContext::new().unchecked_with_fact(ResourceFact::Own(
             field.clone(),
             Box::new(MachineTerm::constant(1)),
         ));
@@ -225,7 +225,7 @@ mod tests {
                 "16",
             ),
             (
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory,
                     base: p,
                     bytes: MachineTerm::constant(8),
@@ -233,9 +233,9 @@ mod tests {
                 },
                 "bytes:uint32=8",
             ),
-            (Proposition::CResourceComposition(context), "owns memory("),
+            (Proposition::ResourceComposition(context), "owns memory("),
             (
-                Proposition::CResourceContains {
+                Proposition::ResourceContains {
                     parent: Box::new(composite),
                     child: Box::new(field),
                 },
@@ -244,9 +244,9 @@ mod tests {
             (
                 Proposition::Predicate {
                     name: "__click_volatile_write_123".into(),
-                    arguments: vec![Term::CValue(CValue::UInt64(MachineTerm::uint64_constant(
-                        1,
-                    )))],
+                    arguments: vec![Term::ProgramValue(ProgramValue::UInt64(
+                        MachineTerm::uint64_constant(1),
+                    ))],
                 },
                 "volatile-write-event#123(uint64(1u64))",
             ),
@@ -266,8 +266,8 @@ mod tests {
     #[test]
     fn trace_reads_preserve_snapshot_and_load_kind_without_current_pointer_names() {
         let address = Pointer::symbolic(Variable(986_702));
-        let first = crate::kernel::intern_c_memory(CMemory::new());
-        let second = crate::kernel::intern_c_memory(CMemory::new().with_block("trace_changed", 4));
+        let first = crate::kernel::intern_memory(Memory::new());
+        let second = crate::kernel::intern_memory(Memory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {
             Term::Bitvector32(MachineTerm::MemoryLoad(
                 memory,
@@ -294,12 +294,12 @@ mod tests {
     fn resource_composition_lists_bounded_entries_and_explicit_omissions() {
         for count in [8, 64, 512] {
             let context = ResourceContext::new().unchecked_with_facts((0..count).map(|id| {
-                CResourceFact::View(CResource::Token {
+                ResourceFact::View(Resource::Token {
                     name: format!("token_{id}"),
                     arguments: std::sync::Arc::from([]),
                 })
             }));
-            let text = render(&Proposition::CResourceComposition(context));
+            let text = render(&Proposition::ResourceComposition(context));
             assert_eq!(text.matches("views token_").count(), 8, "{text}");
             assert_eq!(text.contains("more entries"), count > 8, "{text}");
             assert!(text.contains("support details omitted"));
@@ -359,7 +359,7 @@ mod extended_snapshot_tests {
         let fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         render_trace_fact_labeled(&fact, &mut labels);
         let memories: Vec<_> = (0..64)
-            .map(|i| CMemory::new().with_block(format!("late_{i}"), 8))
+            .map(|i| Memory::new().with_block(format!("late_{i}"), 8))
             .collect();
         for (i, memory) in memories.iter().enumerate() {
             assert_eq!(labels.snapshot_name(memory), format!("snapshot#{}", i + 1));

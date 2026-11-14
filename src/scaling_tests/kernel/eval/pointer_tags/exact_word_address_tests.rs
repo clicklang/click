@@ -30,7 +30,12 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
         }
         let mut obligations = Vec::new();
         let (decoded, work) = crate::instrumentation::measure_deterministic_work(|| {
-            cast_tagged_address_to_pointer(&word, &context, &mut obligations, CType::Float64Pointer)
+            cast_tagged_address_to_pointer(
+                &word,
+                &context,
+                &mut obligations,
+                ProgramType::Float64Pointer,
+            )
         });
         let decoded = decoded.unwrap().unwrap();
         assert_eq!(decoded.pointer(), &pointer);
@@ -94,7 +99,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
                     &expression,
                     &assumptions,
                     &mut obligations,
-                    CType::Int32Pointer
+                    ProgramType::Int32Pointer
                 )
                 .unwrap()
                 .map(|value| value.pointer().clone()),

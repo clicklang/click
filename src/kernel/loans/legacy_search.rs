@@ -4,9 +4,9 @@ use super::*;
 
 impl crate::kernel::search::ProofSearch<LoanLedger> {
     pub(crate) fn loan_aliases(
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Vec<CMemoryRange> {
+    ) -> Vec<MemoryRange> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("loan_aliases");
         // Rebase through the indexed, directly stated equalities before scaling
@@ -33,7 +33,7 @@ impl crate::kernel::search::ProofSearch<LoanLedger> {
 impl crate::kernel::search::ProofSearch<LoanLedger> {
     pub(crate) fn loan_access(
         proof_input: &LoanLedger,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Result<(), LoanRefusal> {
         #[cfg(test)]

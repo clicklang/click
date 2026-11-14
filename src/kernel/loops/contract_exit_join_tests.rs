@@ -50,8 +50,8 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
     assert!(joined.stated.contains_proposition(&historical));
 }
 
-fn marker_exits(count: usize, ambient: usize) -> Vec<CState> {
-    let mut memory = CMemory::new()
+fn marker_exits(count: usize, ambient: usize) -> Vec<ExecutionState> {
+    let mut memory = Memory::new()
         .with_block("shared", (ambient * 4) as u32)
         .with_block("havoc:10000000", 0);
     for index in 0..ambient {
@@ -65,7 +65,7 @@ fn marker_exits(count: usize, ambient: usize) -> Vec<CState> {
     }
     (0..count)
         .map(|index| {
-            CState::new().with_memory(
+            ExecutionState::new().with_memory(
                 memory
                     .clone()
                     .with_block(format!("call-havoc:{}", index + 20000000).as_str(), 0),
@@ -74,7 +74,7 @@ fn marker_exits(count: usize, ambient: usize) -> Vec<CState> {
         .collect()
 }
 
-fn measured_join(exits: &[CState]) -> (CState, usize) {
+fn measured_join(exits: &[ExecutionState]) -> (ExecutionState, usize) {
     let mut successor = exits[0].clone();
     let mut variables =
         KernelVariableGenerator::fresh_for_execution(BTreeSet::from([Variable(30000000)]));
@@ -108,7 +108,7 @@ fn measured_join(exits: &[CState]) -> (CState, usize) {
 #[test]
 fn exit_difference_names_call_bindings_and_storage_metadata() {
     let _session = crate::kernel::VerificationSession::enter();
-    let left = CState::new();
+    let left = ExecutionState::new();
     let mut right = left.clone();
     right.resource_bindings = Some(Arc::new(BTreeMap::from([(Variable(1), Variable(2))])));
     right.next_local_frame = 3;
@@ -133,8 +133,8 @@ fn exit_difference_names_call_bindings_and_storage_metadata() {
 #[test]
 fn exit_difference_does_not_blame_equivalent_creation_ledgers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let left = CState::new().with_population_creation_tracking();
-    let mut right = CState::new().with_population_creation_tracking();
+    let left = ExecutionState::new().with_population_creation_tracking();
+    let mut right = ExecutionState::new().with_population_creation_tracking();
     right.next_local_frame = 3;
     let report = loop_exit_state_difference(&left, &right, &PureFactContext::new()).unwrap();
     assert!(report.contains("next automatic-storage frame"), "{report}");
@@ -144,7 +144,7 @@ fn exit_difference_does_not_blame_equivalent_creation_ledgers() {
 #[test]
 fn exit_difference_names_missing_locals_from_either_side_and_bounds_names() {
     let _session = crate::kernel::VerificationSession::enter();
-    let left = CState::new();
+    let left = ExecutionState::new();
     let mut right = left.clone();
     for index in 0..20 {
         right = right.with_local(format!("only_exit_{index:02}"), int32(0));
@@ -163,9 +163,12 @@ fn exit_difference_names_missing_locals_from_either_side_and_bounds_names() {
 #[test]
 fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_storage() {
     let _session = crate::kernel::VerificationSession::enter();
-    let empty = CState::new();
+    let empty = ExecutionState::new();
     let value = empty.clone().with_local("temporary", int32(1));
-    let body = c_assign("temporary", c_int32_literal(1));
+    let body = program_assign(
+        "temporary",
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let mut exits = [empty.clone(), value.clone()];
     discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);
     assert!(
@@ -184,7 +187,7 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
 
     let mut declared = value;
     if let Some(mut binding) = declared.locals.bindings.get("temporary").cloned() {
-        if let CLocalBinding::Object {
+        if let LocalBinding::Object {
             storage_declared, ..
         } = &mut binding
         {
@@ -211,17 +214,17 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
         block: PointerBlock::Concrete("shared".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("shared", 4);
-    let zero = CValue::Float32(MachineTerm::constant(0));
-    let load = symbolic_storage_cell_value(&memory, &pointer, CType::Float32, true).unwrap();
+    let memory = Memory::new().with_block("shared", 4);
+    let zero = ProgramValue::Float32(MachineTerm::constant(0));
+    let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Float32, true).unwrap();
     // This equation also permits a negative-zero representation. Filling
     // the cache with positive-zero bits would make a later bitwise read false.
     let facts = [ExecutionPureFact::new(
-        c_value_comparison_proposition(&load, CComparisonOperator::Equal, &zero).unwrap(),
+        program_value_comparison_proposition(&load, ComparisonOperator::Equal, &zero).unwrap(),
     )];
     let mut states = vec![
-        CState::new().with_memory(memory.clone().store(pointer.clone(), zero)),
-        CState::new().with_memory(memory),
+        ExecutionState::new().with_memory(memory.clone().store(pointer.clone(), zero)),
+        ExecutionState::new().with_memory(memory),
     ];
     retain_proven_loop_exit_cells(
         &mut states,
@@ -244,14 +247,15 @@ fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let old_load =
-        symbolic_storage_cell_value(exits[0].memory(), &pointer, CType::Int32, true).unwrap();
+        symbolic_storage_cell_value(exits[0].memory(), &pointer, ProgramType::Int32, true).unwrap();
     let new_load =
-        symbolic_storage_cell_value(successor.memory(), &pointer, CType::Int32, true).unwrap();
+        symbolic_storage_cell_value(successor.memory(), &pointer, ProgramType::Int32, true)
+            .unwrap();
     let zero = int32(0);
     let old_fact =
-        c_value_comparison_proposition(&old_load, CComparisonOperator::Equal, &zero).unwrap();
+        program_value_comparison_proposition(&old_load, ComparisonOperator::Equal, &zero).unwrap();
     let new_fact =
-        c_value_comparison_proposition(&new_load, CComparisonOperator::Equal, &zero).unwrap();
+        program_value_comparison_proposition(&new_load, ComparisonOperator::Equal, &zero).unwrap();
     assert!(
         !PureFactContext::new()
             .assume_proposition(old_fact)

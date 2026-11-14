@@ -5,7 +5,7 @@
 //! Checked conversions preserve the numeric value; modulo conversions are an
 //! explicit, separate policy for languages that specify them.
 
-use super::{CValue, MachineIntegerType, MachineTerm};
+use super::{MachineIntegerType, MachineTerm, ProgramValue};
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::machine_integer::format_audit::{self, WordIdentity};
 use crate::kernel::{
@@ -387,7 +387,7 @@ impl MachineIntegerType {
             MachineTerm::Constant { format, .. } => *format == self,
             MachineTerm::Variable(_) => true,
             MachineTerm::MemoryLoad(_, _, kind) => {
-                crate::kernel::LoadKind::of_type(self.c_type()) == Some(*kind)
+                crate::kernel::LoadKind::of_type(self.program_type()) == Some(*kind)
             }
             MachineTerm::IntegerToMachine { destination, .. } => *destination == self,
             MachineTerm::Cast {
@@ -410,7 +410,7 @@ impl MachineIntegerType {
                 }
                 MachineTerm::Variable(_) => return true,
                 MachineTerm::MemoryLoad(_, _, kind) if ty.format().bits() == 128 => {
-                    return crate::kernel::LoadKind::of_type(ty.c_type()) == Some(*kind);
+                    return crate::kernel::LoadKind::of_type(ty.program_type()) == Some(*kind);
                 }
                 MachineTerm::IntegerToMachine { destination, .. } => return *destination == ty,
                 MachineTerm::Cast {
@@ -439,23 +439,23 @@ impl MachineIntegerType {
         }
     }
 
-    pub(crate) fn constant_value(self, value: MachineIntegerConstant) -> Option<CValue> {
+    pub(crate) fn constant_value(self, value: MachineIntegerConstant) -> Option<ProgramValue> {
         Some(self.value_from_term(self.constant_term(value)?))
     }
 
-    pub(crate) fn value_from_term(self, term: MachineTerm) -> CValue {
+    pub(crate) fn value_from_term(self, term: MachineTerm) -> ProgramValue {
         let term = term.in_format32(self).in_narrow_format(self);
         match self {
-            Self::Int8 => CValue::Int8(term),
-            Self::UInt8 => CValue::UInt8(term),
-            Self::Int16 => CValue::Int16(term),
-            Self::UInt16 => CValue::UInt16(term),
-            Self::Int32 => CValue::Int32(term),
-            Self::UInt32 => CValue::UInt32(term),
-            Self::Int64 => CValue::Int64(term),
-            Self::UInt64 => CValue::UInt64(term),
-            Self::Int128 => CValue::Int128(term),
-            Self::UInt128 => CValue::UInt128(term),
+            Self::Int8 => ProgramValue::Int8(term),
+            Self::UInt8 => ProgramValue::UInt8(term),
+            Self::Int16 => ProgramValue::Int16(term),
+            Self::UInt16 => ProgramValue::UInt16(term),
+            Self::Int32 => ProgramValue::Int32(term),
+            Self::UInt32 => ProgramValue::UInt32(term),
+            Self::Int64 => ProgramValue::Int64(term),
+            Self::UInt64 => ProgramValue::UInt64(term),
+            Self::Int128 => ProgramValue::Int128(term),
+            Self::UInt128 => ProgramValue::UInt128(term),
         }
     }
 
@@ -491,8 +491,11 @@ impl MachineIntegerType {
         }
     }
 
-    pub(crate) fn constant_from_value(self, value: &CValue) -> Option<MachineIntegerConstant> {
-        if value.c_type() != self.c_type() {
+    pub(crate) fn constant_from_value(
+        self,
+        value: &ProgramValue,
+    ) -> Option<MachineIntegerConstant> {
+        if value.program_type() != self.program_type() {
             return None;
         }
         let term = match value {
@@ -512,7 +515,7 @@ impl MachineTerm {
     /// neither a conversion of the other, related by the 8-bit sign cast
     /// when they read the same byte (R-mem).
     pub(crate) fn memory_read(
-        memory: crate::kernel::SharedCMemory,
+        memory: crate::kernel::SharedMemory,
         pointer: crate::kernel::Pointer,
         kind: crate::kernel::LoadKind,
     ) -> Self {
@@ -933,11 +936,11 @@ mod tests {
             );
             assert_eq!(
                 M::UInt32.value_from_term(word.clone()),
-                CValue::UInt32(formatted.clone())
+                ProgramValue::UInt32(formatted.clone())
             );
             assert_eq!(
                 M::Int32.value_from_term(formatted.clone()),
-                CValue::Int32(word.clone())
+                ProgramValue::Int32(word.clone())
             );
         }
         // A narrow constant is a native constant of its own width, and a
@@ -954,7 +957,7 @@ mod tests {
     #[test]
     fn wide_cast_symbolic_and_constant_conversions_match_independent_exact_oracle() {
         use crate::kernel::Variable;
-        use crate::kernel::reasoning::substitute_bitvector_variable_in_c_value;
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_program_value;
         use MachineIntegerType::*;
         let types = [
             Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128,
@@ -995,7 +998,7 @@ mod tests {
                 for integer in &samples {
                     let input =
                         MachineIntegerConstant::from_integer(source.format(), integer).unwrap();
-                    let actual = substitute_bitvector_variable_in_c_value(
+                    let actual = substitute_bitvector_variable_in_program_value(
                         &symbolic,
                         variable,
                         &source.constant_term(input).unwrap(),
@@ -1027,7 +1030,7 @@ mod tests {
     #[test]
     fn nested_modulo_casts_match_an_independent_oracle_and_preserve_widening_sign() {
         use crate::kernel::Variable;
-        use crate::kernel::reasoning::substitute_bitvector_variable_in_c_value;
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_program_value;
         use MachineIntegerType::*;
         let types = [Int8, UInt8, Int32, UInt32, Int64, UInt64, Int128, UInt128];
         let variable = Variable(149_003);
@@ -1073,7 +1076,7 @@ mod tests {
                         let constant =
                             MachineIntegerConstant::from_integer(source.format(), &input).unwrap();
                         let value = destination.value_from_term(term.clone());
-                        let result = substitute_bitvector_variable_in_c_value(
+                        let result = substitute_bitvector_variable_in_program_value(
                             &value,
                             variable,
                             &source.constant_term(constant).unwrap(),
@@ -1151,15 +1154,15 @@ mod tests {
                     destination,
                 )
                 .unwrap();
-                assert_eq!(symbolic.c_type(), destination.c_type());
+                assert_eq!(symbolic.program_type(), destination.program_type());
                 for integer in &samples {
                     let constant = MachineIntegerConstant::from_integer(format, integer).unwrap();
                     let substituted = substitute_bitvector_variable_in_term(
-                        &Term::CValue(symbolic.clone()),
+                        &Term::ProgramValue(symbolic.clone()),
                         variable,
                         &source.constant_term(constant).unwrap(),
                     );
-                    let Term::CValue(actual) = substituted else {
+                    let Term::ProgramValue(actual) = substituted else {
                         unreachable!()
                     };
                     let modulus = BigInt::from(1u8) << destination.format().bits();
@@ -1463,7 +1466,7 @@ mod tests {
                 let term = ty.constant_term(constant).unwrap();
                 assert_eq!(ty.constant_from_term(&term), Some(constant));
                 let runtime = ty.constant_value(constant).unwrap();
-                assert_eq!(runtime.c_type(), ty.c_type());
+                assert_eq!(runtime.program_type(), ty.program_type());
                 assert_eq!(ty.constant_from_value(&runtime), Some(constant));
                 for other in types().filter(|other| *other != ty) {
                     assert!(other.constant_value(constant).is_none());

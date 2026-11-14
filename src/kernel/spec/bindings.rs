@@ -5,7 +5,7 @@ type Values = crate::persistent::PersistentMap<String, KernelTerm>;
 
 #[derive(Clone)]
 struct Path {
-    state: CState,
+    state: ExecutionState,
     values: Values,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -17,7 +17,7 @@ struct Path {
 struct ReturnBinding<'a> {
     name: &'a String,
     body: &'a SpecExpression,
-    state: CState,
+    state: ExecutionState,
     values: Values,
 }
 

@@ -1,9 +1,9 @@
 use super::*;
 use num_bigint::BigInt;
 
-fn evaluated(expression: CExpression) -> CExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
-    let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
+    let theorem = prove_program_expression_evaluation(ExecutionState::new(), expression).unwrap();
+    let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
     outcome.clone()
@@ -47,18 +47,21 @@ fn wide_multiply_constants_match_exact_oracle_at_signed_boundaries() {
     for left in samples {
         for right in samples {
             let product = BigInt::from(left) * BigInt::from(right);
-            let outcome = evaluated(c_multiply(c_int128_literal(left), c_int128_literal(right)));
+            let outcome = evaluated(crate::kernel::program_expression::multiply(
+                crate::kernel::program_expression::int128_literal(left),
+                crate::kernel::program_expression::int128_literal(right),
+            ));
             if product < min || product > max {
                 assert_eq!(
                     outcome,
-                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+                    ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
                     "{left} * {right}"
                 );
             } else {
-                let CExpressionOutcome::Value(value) = outcome else {
+                let ExpressionOutcome::Value(value) = outcome else {
                     panic!("{left} * {right}: {outcome:?}")
                 };
-                assert_eq!(value.c_type(), CType::Int128);
+                assert_eq!(value.program_type(), ProgramType::Int128);
                 assert_eq!(
                     MachineIntegerType::Int128
                         .constant_from_value(&value)
@@ -75,27 +78,32 @@ fn wide_multiply_constants_match_exact_oracle_at_signed_boundaries() {
 fn wide_multiply_promotes_narrow_operands_before_multiplying() {
     for (left, right, expected) in [
         (
-            c_int128_literal(2),
-            c_uint64_literal(u64::MAX),
+            crate::kernel::program_expression::int128_literal(2),
+            crate::kernel::program_expression::uint64_literal(u64::MAX),
             BigInt::from(u64::MAX) * 2,
         ),
         (
-            c_cast(c_int64_literal(i64::MIN), CType::Int128),
-            c_int32_literal(i32::MIN as u32),
+            crate::kernel::program_expression::cast(
+                crate::kernel::program_expression::int64_literal(i64::MIN),
+                ProgramType::Int128,
+            ),
+            crate::kernel::program_expression::int32_literal(i32::MIN as u32),
             BigInt::from(i64::MIN) * BigInt::from(i32::MIN),
         ),
         (
-            c_int32_literal((-1i32) as u32),
-            c_int128_literal(i128::MIN + 1),
+            crate::kernel::program_expression::int32_literal((-1i32) as u32),
+            crate::kernel::program_expression::int128_literal(i128::MIN + 1),
             -BigInt::from(i128::MIN + 1),
         ),
         (
-            CExpression::Value(CValue::bool_constant(true)),
-            c_int128_literal(i128::MIN),
+            ProgramExpression::Value(ProgramValue::bool_constant(true)),
+            crate::kernel::program_expression::int128_literal(i128::MIN),
             BigInt::from(i128::MIN),
         ),
     ] {
-        let CExpressionOutcome::Value(value) = evaluated(c_multiply(left, right)) else {
+        let ExpressionOutcome::Value(value) =
+            evaluated(crate::kernel::program_expression::multiply(left, right))
+        else {
             panic!("valid wide product")
         };
         assert_eq!(
@@ -108,18 +116,24 @@ fn wide_multiply_promotes_narrow_operands_before_multiplying() {
     }
     // Casting the result cannot rescue overflow that occurred at the source width.
     assert_eq!(
-        evaluated(c_cast(
-            c_multiply(c_int64_literal(i64::MAX), c_int32_literal(2)),
-            CType::Int128
+        evaluated(crate::kernel::program_expression::cast(
+            crate::kernel::program_expression::multiply(
+                crate::kernel::program_expression::int64_literal(i64::MAX),
+                crate::kernel::program_expression::int32_literal(2)
+            ),
+            ProgramType::Int128
         )),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)
     );
     assert_eq!(
-        evaluated(c_multiply(
-            c_int128_literal(0),
-            c_divide(c_int64_literal(1), c_int64_literal(0))
+        evaluated(crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::int128_literal(0),
+            crate::kernel::program_expression::divide(
+                crate::kernel::program_expression::int64_literal(1),
+                crate::kernel::program_expression::int64_literal(0)
+            )
         )),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero)
     );
 }
 
@@ -131,9 +145,9 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         for bound in &bounds[..provided] {
             assumptions = assumptions.assume_condition(bound.clone(), true);
         }
-        let paths = crate::kernel::eval::apply_c_multiply(
-            CValue::Int128(MachineTerm::Variable(Variable(150_001))),
-            CValue::Int128(MachineTerm::Variable(Variable(150_002))),
+        let paths = crate::kernel::eval::apply_program_multiply(
+            ProgramValue::Int128(MachineTerm::Variable(Variable(150_001))),
+            ProgramValue::Int128(MachineTerm::Variable(Variable(150_002))),
             Vec::new().into(),
             Vec::new(),
             &assumptions,
@@ -141,17 +155,17 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         assert_eq!(paths.len(), 3 - provided);
         let normals: Vec<_> = paths
             .iter()
-            .filter(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+            .filter(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
             .collect();
         assert_eq!(normals.len(), 1);
         let normal = normals[0];
-        let CExpressionOutcome::Value(value) = &normal.outcome else {
+        let ExpressionOutcome::Value(value) = &normal.outcome else {
             unreachable!()
         };
         let observed = IntegerTerm::from_machine(
             MachineIntegerType::Int128,
             match value {
-                CValue::Int128(term) => term.clone(),
+                ProgramValue::Int128(term) => term.clone(),
                 _ => panic!("typed wide result"),
             },
         )
@@ -169,7 +183,7 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         assert!(
             paths
                 .iter()
-                .filter(|path| matches!(path.outcome, CExpressionOutcome::UndefinedBehavior(_)))
+                .filter(|path| matches!(path.outcome, ExpressionOutcome::UndefinedBehavior(_)))
                 .all(|path| path
                     .facts
                     .iter()
@@ -187,17 +201,21 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
                 .iter()
                 .filter(|path| matches!(
                     path.outcome,
-                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+                    ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)
                 ))
                 .count()
                 == 2 - provided
         );
     }
-    let expression = c_multiply(
-        CExpression::Value(CValue::Int128(MachineTerm::Variable(Variable(150_001)))),
-        CExpression::Value(CValue::Int128(MachineTerm::Variable(Variable(150_002)))),
+    let expression = crate::kernel::program_expression::multiply(
+        ProgramExpression::Value(ProgramValue::Int128(MachineTerm::Variable(Variable(
+            150_001,
+        )))),
+        ProgramExpression::Value(ProgramValue::Int128(MachineTerm::Variable(Variable(
+            150_002,
+        )))),
     );
-    assert!(prove_c_expression_evaluation(CState::new(), expression).is_none());
+    assert!(prove_program_expression_evaluation(ExecutionState::new(), expression).is_none());
 }
 
 #[test]
@@ -243,31 +261,34 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
         };
         assumptions = assumptions.assume_condition(condition, true);
     }
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local(
             "left",
-            CValue::Int64(MachineTerm::Variable(Variable(150_001))),
+            ProgramValue::Int64(MachineTerm::Variable(Variable(150_001))),
         )
         .with_local(
             "right",
-            CValue::Int32(MachineTerm::Variable(Variable(150_002))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(150_002))),
         );
-    let expression = c_multiply(
-        c_cast(c_variable("left"), CType::Int128),
-        c_variable("right"),
+    let expression = crate::kernel::program_expression::multiply(
+        crate::kernel::program_expression::cast(
+            crate::kernel::program_expression::variable("left"),
+            ProgramType::Int128,
+        ),
+        crate::kernel::program_expression::variable("right"),
     );
-    let paths = evaluate_c_expression_paths(
+    let paths = evaluate_program_expression_paths(
         &state,
         &expression,
         &assumptions,
-        &mut ExecutionBudget::for_c_expression(&expression),
+        &mut ExecutionBudget::for_program_expression(&expression),
     )
     .unwrap();
     assert_eq!(paths.len(), 1);
     assert!(paths[0].obligations.is_empty());
     // The product keeps the operands' widenings to `int128` as written; it
     // reads (rule W) as the product of the operands' own observations.
-    let CExpressionOutcome::Value(CValue::Int128(MachineTerm::IntegerToMachine {
+    let ExpressionOutcome::Value(ProgramValue::Int128(MachineTerm::IntegerToMachine {
         value,
         destination: MachineIntegerType::Int128,
     })) = &paths[0].outcome
@@ -282,44 +303,64 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
 #[test]
 fn wide_multiply_unsupported_unsigned_and_noninteger_operands_stay_refused() {
     for expression in [
-        c_multiply(c_int128_literal(1), c_uint128_literal(1)),
-        c_multiply(c_uint128_literal(1), c_int128_literal(1)),
-        c_multiply(c_uint128_literal(1), c_uint128_literal(1)),
-        c_multiply(c_int128_literal(1), c_float64_literal(0)),
-        c_multiply(c_int128_literal(1), c_void_value()),
+        crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::int128_literal(1),
+            crate::kernel::program_expression::uint128_literal(1),
+        ),
+        crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::uint128_literal(1),
+            crate::kernel::program_expression::int128_literal(1),
+        ),
+        crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::uint128_literal(1),
+            crate::kernel::program_expression::uint128_literal(1),
+        ),
+        crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::int128_literal(1),
+            crate::kernel::program_expression::float64_literal(0),
+        ),
+        crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::int128_literal(1),
+            program_void_value(),
+        ),
     ] {
         assert_eq!(
             evaluated(expression),
-            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
         );
     }
 }
 
 #[test]
 fn wide_multiply_calls_keep_wide_result_and_caller_storage() {
-    let function = c_function(
-        CType::Int128,
+    let function = program_function(
+        ProgramType::Int128,
         "wide_product",
         vec![
-            c_parameter("left", CType::Int128),
-            c_parameter("right", CType::Int128),
+            program_parameter("left", ProgramType::Int128),
+            program_parameter("right", ProgramType::Int128),
         ],
-        c_return(c_multiply(c_variable("left"), c_variable("right"))),
+        program_return(crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::variable("left"),
+            crate::kernel::program_expression::variable("right"),
+        )),
     );
-    let state = CState::new().with_local("caller", int32(77));
-    let theorem = prove_symbolic_c_function_execution(
+    let state = ExecutionState::new().with_local("caller", int32(77));
+    let theorem = prove_symbolic_program_function_execution(
         state.clone(),
         function,
-        vec![c_int64_literal(i64::MIN), c_int32_literal(i32::MIN as u32)],
+        vec![
+            crate::kernel::program_expression::int64_literal(i64::MIN),
+            crate::kernel::program_expression::int32_literal(i32::MIN as u32),
+        ],
         PureFactContext::new(),
     )
     .unwrap();
-    let Proposition::CFunctionExecutes {
-        outcome:
-            CFunctionOutcome::Return {
-                state: returned,
-                value,
-            },
+    let Proposition::ProgramFunctionExecutes {
+        outcome: FunctionOutcome::Return {
+            state: returned,
+            value,
+        },
         ..
     } = theorem.proposition()
     else {

@@ -10,11 +10,11 @@ fn heap_pointer(block: &str) -> Pointer {
     }
 }
 
-fn copy_arguments(destination: &Pointer, source: &Pointer, bytes: u32) -> Vec<CValue> {
+fn copy_arguments(destination: &Pointer, source: &Pointer, bytes: u32) -> Vec<ProgramValue> {
     vec![
-        CValue::typed_pointer(destination.clone(), CType::UInt8Pointer),
-        CValue::typed_pointer(source.clone(), CType::UInt8Pointer),
-        CValue::Int32(MachineTerm::constant(bytes)),
+        ProgramValue::typed_pointer(destination.clone(), ProgramType::UInt8Pointer),
+        ProgramValue::typed_pointer(source.clone(), ProgramType::UInt8Pointer),
+        ProgramValue::Int32(MachineTerm::constant(bytes)),
     ]
 }
 
@@ -30,18 +30,21 @@ fn effect() -> RepresentationCopyEffect {
 fn representation_copy_transfers_a_fully_covered_cell() {
     let source = heap_pointer("copy-source");
     let destination = heap_pointer("copy-destination");
-    let entry = CMemory::new().store(source.clone(), CValue::UInt32(MachineTerm::constant(7)));
+    let entry = Memory::new().store(
+        source.clone(),
+        ProgramValue::UInt32(MachineTerm::constant(7)),
+    );
 
     let result = transfer_representation_copy_cells(
         &entry,
         &copy_arguments(&destination, &source, 4),
-        CMemory::new(),
+        Memory::new(),
         effect(),
     );
 
     assert_eq!(
         result.known_value(&destination),
-        Some(CValue::UInt32(MachineTerm::constant(7)))
+        Some(ProgramValue::UInt32(MachineTerm::constant(7)))
     );
 }
 
@@ -49,12 +52,15 @@ fn representation_copy_transfers_a_fully_covered_cell() {
 fn representation_copy_leaves_a_split_cell_unestablished() {
     let source = heap_pointer("split-source");
     let destination = heap_pointer("split-destination");
-    let entry = CMemory::new().store(source.clone(), CValue::UInt32(MachineTerm::constant(7)));
+    let entry = Memory::new().store(
+        source.clone(),
+        ProgramValue::UInt32(MachineTerm::constant(7)),
+    );
 
     let result = transfer_representation_copy_cells(
         &entry,
         &copy_arguments(&destination, &source, 2),
-        CMemory::new(),
+        Memory::new(),
         effect(),
     );
 
@@ -67,9 +73,9 @@ fn representation_copy_leaves_an_untyped_source_unestablished() {
     let destination = heap_pointer("untyped-destination");
 
     let result = transfer_representation_copy_cells(
-        &CMemory::new(),
+        &Memory::new(),
         &copy_arguments(&destination, &source, 4),
-        CMemory::new(),
+        Memory::new(),
         effect(),
     );
 
@@ -83,11 +89,11 @@ fn cell(block: &str, index: u32) -> Pointer {
     }
 }
 
-fn cell_value(index: u32) -> CValue {
-    CValue::UInt32(MachineTerm::constant(index))
+fn cell_value(index: u32) -> ProgramValue {
+    ProgramValue::UInt32(MachineTerm::constant(index))
 }
 
-fn source_with_cells(memory: CMemory, block: &str, cells: u32) -> CMemory {
+fn source_with_cells(memory: Memory, block: &str, cells: u32) -> Memory {
     (0..cells).fold(memory, |memory, index| {
         memory.store(cell(block, index), cell_value(index))
     })
@@ -97,12 +103,12 @@ fn source_with_cells(memory: CMemory, block: &str, cells: u32) -> CMemory {
 /// checks that the complete transfer plants every copied cell.
 ///
 /// The lookup is the transfer's own work. Planting each result is an ordinary
-/// `CMemory::store`, whose cost belongs to the store primitive and has its
+/// `Memory::store`, whose cost belongs to the store primitive and has its
 /// own regressions in `memory_scaling_tests`; the whole transfer's work is
 /// reported in the failure messages.
 fn copy_lookup_work(
-    entry: &CMemory,
-    memory: &CMemory,
+    entry: &Memory,
+    memory: &Memory,
     source: &str,
     destination: &str,
     cells: u32,

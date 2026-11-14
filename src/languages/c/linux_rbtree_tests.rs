@@ -92,8 +92,8 @@ fn unit_lock(root: &Path) -> serde_json::Value {
 fn load(root: &Path) -> Result<Vec<PreparedCImport>, String> {
     let sidecar = root.join(SIDECAR);
     let source = fs::read_to_string(&sidecar).unwrap();
-    match crate::cli::read_c_inputs(&sidecar, &source)? {
-        crate::cli::CInput::Prepared(imports) => Ok(imports),
+    match crate::cli::read_verification_inputs(&sidecar, &source)? {
+        crate::cli::VerificationInput::Prepared(imports) => Ok(imports),
         _ => Err("expected the project's prepared C unit".into()),
     }
 }

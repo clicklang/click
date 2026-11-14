@@ -28,7 +28,7 @@ impl Context<'_> {
         name: &str,
         element: &Type,
         inclusive: bool,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         if !element.is_integer() {
             return Err("a Rust range requires an integer element".into());
         }
@@ -39,21 +39,21 @@ impl Context<'_> {
         {
             return Err("range state identity collision".into());
         }
-        let c_type = scalar_type(element)?.to_kernel_type();
-        let mut result = c_skip();
+        let interface_type = scalar_type(element)?.to_kernel_type();
+        let mut result = program_skip();
         for bound in ["start", "end"] {
             let local = format!("{name}_{bound}");
             if !self.locals.insert(local.clone()) {
                 return Err("range bound identity collision".into());
             }
-            result = c_seq(result, c_declare(local, c_type));
+            result = program_seq(result, program_declare(local, interface_type));
         }
         if inclusive {
             let done = format!("{name}_done");
             if !self.locals.insert(done.clone()) {
                 return Err("range bound identity collision".into());
             }
-            result = c_seq(result, c_declare(done, CType::Int32));
+            result = program_seq(result, program_declare(done, ProgramType::Int32));
         }
         Ok(result)
     }
@@ -77,42 +77,18 @@ impl Context<'_> {
         target: &str,
         start: &E,
         end: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         self.range_element(target)?;
-        let bounds = c_seq(
+        let bounds = program_seq(
             self.assign(&format!("{target}_start"), start)?,
             self.assign(&format!("{target}_end"), end)?,
         );
         Ok(if self.inclusive(target)? {
-            c_seq(
+            program_seq(
                 bounds,
-                c_assign(format!("{target}_done"), c_int32_literal(0)),
-            )
-        } else {
-            bounds
-        })
-    }
-
-    pub(super) fn range_move(&self, target: &str, source: &str) -> Result<CStatement, String> {
-        if target == source
-            || self.range_element(target)? != self.range_element(source)?
-            || self.inclusive(target)? != self.inclusive(source)?
-        {
-            return Err("invalid Rust range move".into());
-        }
-        let bounds = c_seq(
-            c_assign(
-                format!("{target}_start"),
-                c_variable(format!("{source}_start")),
-            ),
-            c_assign(format!("{target}_end"), c_variable(format!("{source}_end"))),
-        );
-        Ok(if self.inclusive(target)? {
-            c_seq(
-                bounds,
-                c_assign(
+                program_assign(
                     format!("{target}_done"),
-                    c_variable(format!("{source}_done")),
+                    crate::kernel::program_expression::int32_literal(0),
                 ),
             )
         } else {
@@ -120,17 +96,54 @@ impl Context<'_> {
         })
     }
 
-    pub(super) fn range_has_next(&self, iterator: &str) -> Result<CExpression, String> {
-        self.range_element(iterator)?;
-        let start = c_variable(format!("{iterator}_start"));
-        let end = c_variable(format!("{iterator}_end"));
-        Ok(if self.inclusive(iterator)? {
-            c_and(
-                c_equal(c_variable(format!("{iterator}_done")), c_int32_literal(0)),
-                c_less_equal(start, end),
+    pub(super) fn range_move(
+        &self,
+        target: &str,
+        source: &str,
+    ) -> Result<ProgramStatement, String> {
+        if target == source
+            || self.range_element(target)? != self.range_element(source)?
+            || self.inclusive(target)? != self.inclusive(source)?
+        {
+            return Err("invalid Rust range move".into());
+        }
+        let bounds = program_seq(
+            program_assign(
+                format!("{target}_start"),
+                crate::kernel::program_expression::variable(format!("{source}_start")),
+            ),
+            program_assign(
+                format!("{target}_end"),
+                crate::kernel::program_expression::variable(format!("{source}_end")),
+            ),
+        );
+        Ok(if self.inclusive(target)? {
+            program_seq(
+                bounds,
+                program_assign(
+                    format!("{target}_done"),
+                    crate::kernel::program_expression::variable(format!("{source}_done")),
+                ),
             )
         } else {
-            c_less_than(start, end)
+            bounds
+        })
+    }
+
+    pub(super) fn range_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
+        self.range_element(iterator)?;
+        let start = crate::kernel::program_expression::variable(format!("{iterator}_start"));
+        let end = crate::kernel::program_expression::variable(format!("{iterator}_end"));
+        Ok(if self.inclusive(iterator)? {
+            crate::kernel::program_expression::and(
+                crate::kernel::program_expression::equal(
+                    crate::kernel::program_expression::variable(format!("{iterator}_done")),
+                    crate::kernel::program_expression::int32_literal(0),
+                ),
+                crate::kernel::program_expression::less_equal(start, end),
+            )
+        } else {
+            crate::kernel::program_expression::less_than(start, end)
         })
     }
 
@@ -140,7 +153,7 @@ impl Context<'_> {
         option: &str,
         option_type: &str,
         taken: Option<bool>,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let element = self.range_element(iterator)?;
         let start = format!("{iterator}_start");
         let local = |name: &str| E::Local { name: name.into() };
@@ -164,15 +177,21 @@ impl Context<'_> {
         // An inclusive range at `start == end` yields `end` and is done; its
         // `start` is not advanced past `end`.
         let advance = if self.inclusive(iterator)? {
-            c_if(
-                c_less_than(c_variable(&start), c_variable(format!("{iterator}_end"))),
+            program_if(
+                crate::kernel::program_expression::less_than(
+                    crate::kernel::program_expression::variable(&start),
+                    crate::kernel::program_expression::variable(format!("{iterator}_end")),
+                ),
                 advance,
-                c_assign(format!("{iterator}_done"), c_int32_literal(1)),
+                program_assign(
+                    format!("{iterator}_done"),
+                    crate::kernel::program_expression::int32_literal(1),
+                ),
             )
         } else {
             advance
         };
-        let some = c_seq(
+        let some = program_seq(
             self.assign(option, &construct("Some", vec![local(&start)]))?,
             advance,
         );
@@ -180,7 +199,7 @@ impl Context<'_> {
         Ok(match taken {
             Some(true) => some,
             Some(false) => none,
-            None => c_if(self.range_has_next(iterator)?, some, none),
+            None => program_if(self.range_has_next(iterator)?, some, none),
         })
     }
 }

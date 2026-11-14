@@ -101,7 +101,7 @@ impl<'a> Proof<'a> {
     /// requirement over the current state and a fact at `at(iter, …)` print
     /// alike.
     fn describe_viewable_memory_note(&self, requirement: &Proposition) -> String {
-        let Proposition::CMemoryLoadable {
+        let Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -113,7 +113,7 @@ impl<'a> Proof<'a> {
         let Some(execution) = self.execution() else {
             return String::new();
         };
-        let name_memory = |candidate: &crate::kernel::CMemory| {
+        let name_memory = |candidate: &crate::kernel::Memory| {
             if candidate == execution.core.state.memory() {
                 return "the current state".to_string();
             }
@@ -134,7 +134,7 @@ impl<'a> Proof<'a> {
             .facts()
             .propositions()
             .filter_map(|fact| match fact {
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: held,
                     base: held_base,
                     bytes: held_bytes,
@@ -245,7 +245,7 @@ impl<'a> Proof<'a> {
             let ProofContext::Pure(context) = self.context.as_ref() else {
                 return None;
             };
-            let state = CState::new().with_memory(context.theorem_context.memory.clone());
+            let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
             let recorded_snapshots = RecordedSnapshots::new();
             let algebraic_values = application
                 .arguments

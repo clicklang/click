@@ -385,7 +385,7 @@ fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
 // earlier misses.
 #[test]
 fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let p = at(symbolic(919_001), 0);
     let q = at(symbolic(919_002), 0);
     let variable = |address: &Pointer| {
@@ -463,7 +463,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
 /// classed loads read from other snapshots.
 #[test]
 fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
-    let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
+    let name = |memory: &crate::kernel::SharedMemory, address: Pointer| {
         PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address,
@@ -476,19 +476,19 @@ fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
     for unrelated in [16u64, 64, 256] {
         let mut classes = EqualityGraph::default();
         for index in 0..unrelated {
-            let memory = crate::kernel::intern_c_memory(
-                crate::kernel::CMemory::new()
+            let memory = crate::kernel::intern_memory(
+                crate::kernel::Memory::new()
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
-                        CValue::Int32(MachineTerm::constant(index as u32)),
+                        ProgramValue::Int32(MachineTerm::constant(index as u32)),
                     ),
             );
             let loaded = name(&memory, at(symbolic(70_000 + index), 0));
             classes.add_equality(&at(loaded, 0), &at(symbolic(80_000 + index), 0));
         }
-        let memory = crate::kernel::intern_c_memory(
-            crate::kernel::CMemory::new().with_block(symbolic(90_000), 16),
+        let memory = crate::kernel::intern_memory(
+            crate::kernel::Memory::new().with_block(symbolic(90_000), 16),
         );
         classes.add_equality(&at(symbolic(90_001), 0), &at(symbolic(90_002), 0));
         let left = name(&memory, at(symbolic(90_001), 0));
@@ -504,7 +504,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
 
 #[test]
 fn same_snapshot_load_queries_ignore_unrelated_applications() {
-    let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(501), 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(501), 16));
     let p = at(symbolic(502), 0);
     let q = at(symbolic(503), 0);
     let left = named_load(&memory, &p);
@@ -534,7 +534,7 @@ fn same_snapshot_load_queries_ignore_unrelated_applications() {
 
 #[test]
 fn late_merges_and_repeated_queries_have_near_linear_total_work() {
-    let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(601), 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(601), 16));
     for size in [16u64, 64, 256, 1024] {
         let left = at(symbolic(602), 0);
         let right = at(symbolic(603), 0);
@@ -562,7 +562,7 @@ fn late_merges_and_repeated_queries_have_near_linear_total_work() {
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let mut costs = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let mut graph = EqualityGraph::default();
@@ -606,7 +606,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
 
 #[test]
 fn branch_merges_do_not_reindex_the_large_shared_prefix() {
-    let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(701), 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(701), 16));
     let root = at(symbolic(702), 0);
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
@@ -704,13 +704,13 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let mut graph = EqualityGraph::default();
         for item in 0..size {
             let address = Pointer::symbolic(Variable(1_200_000 + item));
             let _ = memory
                 .memory()
-                .symbolic_pointer_load(&address, CType::Int32Pointer);
+                .symbolic_pointer_load(&address, ProgramType::Int32Pointer);
             graph.add_equality(
                 &Pointer::symbolic(Variable(1_300_000 + item)),
                 &Pointer::symbolic(Variable(1_400_000 + item)),
@@ -718,9 +718,9 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         }
         let address = Pointer::symbolic(Variable(1_500_000));
         let model = Pointer::symbolic(Variable(1_500_001));
-        let CValue::Pointer(raw) = memory
+        let ProgramValue::Pointer(raw) = memory
             .memory()
-            .symbolic_pointer_load(&address, CType::Int32Pointer)
+            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -756,13 +756,13 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
         let graph = EqualityGraph::default();
         let mut target = None;
         for id in 0..size {
-            let domain = crate::kernel::CPointerValue::new(
+            let domain = crate::kernel::PointerValue::new(
                 Pointer::symbolic(Variable(9_000_000 + id)),
-                crate::kernel::CType::Int32Pointer,
+                crate::kernel::ProgramType::Int32Pointer,
             );
             let fact = std::sync::Arc::new(crate::kernel::ExecutionPureFact::certified(
                 domain
-                    .opaque_coverage_fact(&crate::kernel::CMemoryRange::new(
+                    .opaque_coverage_fact(&crate::kernel::MemoryRange::new(
                         at(symbolic(987_100 + id), 0),
                         MachineTerm::constant(0),
                         MachineTerm::constant(1),

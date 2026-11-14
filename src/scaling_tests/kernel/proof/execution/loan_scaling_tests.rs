@@ -75,7 +75,7 @@ fn loop_head_havoc_symbolic_read_ignores_other_loans() {
     for count in [8, 16, 32, 64] {
         let ledger = symbolic_contract_input_ledger(count);
         let pointer = parameter_view(0).memory_range().unwrap().base().clone();
-        let memory = CMemory::new().store(pointer.clone(), int32(7));
+        let memory = Memory::new().store(pointer.clone(), int32(7));
         let (havoced, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory.with_loop_memory_havoc_preserving_loans(
                 Variable(7),

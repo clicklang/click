@@ -5,18 +5,19 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use click::cli::{CInput, parse_mdtest, read_c_inputs, read_click_project};
+use click::cli::{VerificationInput, parse_mdtest, read_click_project, read_verification_inputs};
 use click::kernel::{
-    CExpression, CFunctionOutcome, CMemory, CMemoryRange, CResourceFact, CState, CStatement, CType,
-    CUndefinedBehavior, MachineTerm, Pointer, PointerOffsetTerm, Proposition, PureFactContext,
-    ResourceContext, c_typed_pointer_value, int32, prove_symbolic_c_function_execution,
+    ExecutionState, FunctionOutcome, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm,
+    ProgramExpression, ProgramStatement, ProgramType, Proposition, PureFactContext,
+    ResourceContext, ResourceFact, UndefinedBehavior, int32,
+    prove_symbolic_program_function_execution,
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
     CppFunctionKind, CppInitializer, CppProjection, CppStatement, CppType, lower_import,
 };
 use click::surface::{
-    C0VerificationSession, VerifiedClaim, expand_project_claim_source_by_label,
+    ProgramVerificationSession, VerifiedClaim, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, project_smart_tactic_source_sites,
     project_tactic_source_position, verify_program_prepared_project,
 };
@@ -95,7 +96,7 @@ int32 probe() { ensures result == 11; }
         let rewritten = parsed.with_entry_source(expanded.clone());
         verify_program_prepared_project(&rewritten, &import).unwrap();
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let position = project_tactic_source_position(
             &rewritten,
             &ProgramInputs::program(&import),
@@ -205,7 +206,7 @@ int32 probe(struct View& input) {
         verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
             .unwrap();
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let rewritten = parsed.with_entry_source(expanded.clone());
         let position = project_tactic_source_position(
             &rewritten,
@@ -1819,8 +1820,8 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after locking");
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, SIDECAR).unwrap();
-    let CInput::PreparedProgram(import) =
-        read_c_inputs(&sidecar, SIDECAR).expect("locked loading must not execute Clang")
+    let VerificationInput::PreparedProgram(import) =
+        read_verification_inputs(&sidecar, SIDECAR).expect("locked loading must not execute Clang")
     else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
@@ -2030,8 +2031,9 @@ fn included_header_definition_is_selected_locked_and_validated() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
-    let inputs = read_c_inputs(&sidecar, &sidecar_source).expect("load the header import offline");
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs = read_verification_inputs(&sidecar, &sidecar_source)
+        .expect("load the header import offline");
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
@@ -2096,9 +2098,9 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
-    let inputs = read_c_inputs(&sidecar, &sidecar_source)
+    let inputs = read_verification_inputs(&sidecar, &sidecar_source)
         .expect("load the exception-enabled header import offline");
-    let CInput::PreparedProgram(import) = inputs else {
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
@@ -2204,8 +2206,9 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
     .expect("expand the caller's exceptional proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
-        .expect("retain the expanded scalar exception environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&rewritten, &prepared)
+            .expect("retain the expanded scalar exception environment");
     let site = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&prepared),
@@ -2315,8 +2318,9 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     );
     let rewritten = click_project.with_entry_source(expanded.clone());
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
-        .expect("retain the expanded handler environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&rewritten, &prepared)
+            .expect("retain the expanded handler environment");
     let site = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&prepared),
@@ -2436,7 +2440,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
         .expect("the expanded mixed outcome proof must reverify");
     // Session construction cold-verifies this complete program once.
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &prepared)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &prepared)
             .expect("retain the mixed outcome verification environment");
     let site = project_tactic_source_position(
         &rewritten,
@@ -2535,7 +2539,7 @@ int32 caller(bool fail) { ensures result == 7; }
     verify_program_prepared_project(&rewritten, &import).unwrap();
     // Session construction cold-verifies this complete program once.
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -2679,11 +2683,11 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     let lowered = lower_import(&prepared).expect("lower function-scope unwind edges");
 
     fn collect_unwind_edges<'a>(
-        statement: &'a CStatement,
-        edges: &mut Vec<(&'a CStatement, &'a CStatement)>,
+        statement: &'a ProgramStatement,
+        edges: &mut Vec<(&'a ProgramStatement, &'a ProgramStatement)>,
     ) {
         match statement {
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
@@ -2693,12 +2697,12 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
                 collect_unwind_edges(try_body, edges);
                 collect_unwind_edges(handler, edges);
             }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     collect_unwind_edges(statement, edges);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -2706,7 +2710,7 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
                 collect_unwind_edges(then_branch, edges);
                 collect_unwind_edges(else_branch, edges);
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
                 collect_unwind_edges(try_body, edges);
@@ -2725,21 +2729,21 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     );
     for (_, handler) in &edges {
         assert!(
-            matches!(handler, CStatement::Seq(sequence)
+            matches!(handler, ProgramStatement::Seq(sequence)
                 if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore")
-                    && matches!(rethrow.as_ref(), CStatement::Throw(_)) }),
+                    && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) }),
             "each escaping edge must run the live destructor before rethrowing"
         );
     }
     assert!(
         edges
             .iter()
-            .any(|(try_body, _)| matches!(try_body, CStatement::Throw(_)))
+            .any(|(try_body, _)| matches!(try_body, ProgramStatement::Throw(_)))
     );
     assert!(edges.iter().any(|(try_body, _)| {
-        matches!(try_body, CStatement::Seq(sequence)
-            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), CStatement::Declare { name, .. } if name == "ignored")
-                && matches!(call.as_ref(), CStatement::CallAssign { function_name, .. } if function_name == "helper") })
+        matches!(try_body, ProgramStatement::Seq(sequence)
+            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), ProgramStatement::Declare { name, .. } if name == "ignored")
+                && matches!(call.as_ref(), ProgramStatement::CallAssign { function_name, .. } if function_name == "helper") })
     }));
 }
 
@@ -3026,10 +3030,10 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower the predicate directly to the kernel");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
-        CType::Int64Pointer
+        lowered.kernel_function().parameters()[0].program_type(),
+        ProgramType::Int64Pointer
     );
     assert!(lowered.kernel_function().parameters()[0].pointee_is_constant());
 
@@ -3149,7 +3153,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower the constexpr predicate directly");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_COIN_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the constexpr comparison through the offline artifact");
@@ -3246,7 +3250,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower the dependent constexpr predicate");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the dependent constexpr comparison offline");
@@ -3292,7 +3296,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower signed-64 less-equal directly");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_LE_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive MAX_MONEY upper bound offline");
@@ -3359,13 +3363,13 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
             && constant.name == "MAX_MONEY")));
 
     let lowered = lower_import(&import).expect("lower built-in C++ && directly");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     assert!(matches!(lowered.kernel_function().body(),
-        CStatement::Return(CExpression::Cast {
+        ProgramStatement::Return(ProgramExpression::Cast {
             expression,
-            target_type: CType::Bool,
+            target_type: ProgramType::Bool,
             ..
-        }) if matches!(expression.as_ref(), CExpression::And(_, _))));
+        }) if matches!(expression.as_ref(), ProgramExpression::And(_, _))));
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_RANGE_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive range contract offline");
@@ -3503,8 +3507,9 @@ fn locked_cpp_function_verifies_through_the_shared_sidecar_path_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
-    let inputs = read_c_inputs(&sidecar, &click_source).expect("load the locked sidecar input");
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs =
+        read_verification_inputs(&sidecar, &click_source).expect("load the locked sidecar input");
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
@@ -3564,15 +3569,15 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
 
     let lowered = lower_import(&import).expect("lower the typed branch directly");
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
-        CType::Bool
+        lowered.kernel_function().parameters()[0].program_type(),
+        ProgramType::Bool
     );
     assert!(contains_if(lowered.kernel_function().body()));
 
     project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
-    let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs = read_verification_inputs(&sidecar, &click_source).unwrap();
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
@@ -3605,7 +3610,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         .expect("the expanded branch proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the original branch verification environment");
     assert_eq!(
         verified
@@ -3668,15 +3673,15 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 
     let lowered = lower_import(&import).expect("lower both C++ reference qualifiers directly");
     let parameters = lowered.kernel_function().parameters();
-    assert_eq!(parameters[0].c_type(), CType::Int32Pointer);
+    assert_eq!(parameters[0].program_type(), ProgramType::Int32Pointer);
     assert!(!parameters[0].pointee_is_constant());
-    assert_eq!(parameters[1].c_type(), CType::Int32Pointer);
+    assert_eq!(parameters[1].program_type(), ProgramType::Int32Pointer);
     assert!(parameters[1].pointee_is_constant());
 
     project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
-    let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs = read_verification_inputs(&sidecar, &click_source).unwrap();
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
@@ -3709,7 +3714,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         .expect("the expanded const-reference proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the const-reference verification environment");
     assert_eq!(
         verified
@@ -3748,24 +3753,27 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     );
 }
 
-fn contains_if(statement: &CStatement) -> bool {
+fn contains_if(statement: &ProgramStatement) -> bool {
     match statement {
-        CStatement::If { .. } => true,
-        CStatement::Seq(statements) => statements.iter().any(|statement| contains_if(statement)),
+        ProgramStatement::If { .. } => true,
+        ProgramStatement::Seq(statements) => {
+            statements.iter().any(|statement| contains_if(statement))
+        }
         _ => false,
     }
 }
 
-fn contains_call(statement: &CStatement, expected: &str) -> bool {
+fn contains_call(statement: &ProgramStatement, expected: &str) -> bool {
     match statement {
-        CStatement::Call { function_name, .. } | CStatement::CallAssign { function_name, .. } => {
+        ProgramStatement::Call { function_name, .. }
+        | ProgramStatement::CallAssign { function_name, .. } => {
             function_name == expected
                 || click::surface::source_display_name(function_name).as_deref() == Some(expected)
         }
-        CStatement::Seq(statements) => statements
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| contains_call(statement, expected)),
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -3775,19 +3783,19 @@ fn contains_call(statement: &CStatement, expected: &str) -> bool {
 }
 
 /// The functions `statement` calls, in order, as C++ names them.
-fn call_order(statement: &CStatement) -> Vec<String> {
-    fn visit(statement: &CStatement, calls: &mut Vec<String>) {
+fn call_order(statement: &ProgramStatement) -> Vec<String> {
+    fn visit(statement: &ProgramStatement, calls: &mut Vec<String>) {
         match statement {
-            CStatement::Call { function_name, .. } => calls.push(
+            ProgramStatement::Call { function_name, .. } => calls.push(
                 click::surface::source_display_name(function_name)
                     .unwrap_or_else(|| function_name.clone()),
             ),
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, calls);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3803,28 +3811,28 @@ fn call_order(statement: &CStatement) -> Vec<String> {
     calls
 }
 
-fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> Vec<&'a str> {
-    fn visit<'a>(statement: &'a CStatement, destructor: &str, objects: &mut Vec<&'a str>) {
+fn destructor_object_order<'a>(statement: &'a ProgramStatement, destructor: &str) -> Vec<&'a str> {
+    fn visit<'a>(statement: &'a ProgramStatement, destructor: &str, objects: &mut Vec<&'a str>) {
         match statement {
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name,
                 arguments,
             } if function_name == destructor
                 || click::surface::source_display_name(function_name).as_deref()
                     == Some(destructor) =>
             {
-                if let [CExpression::Cast { expression, .. }] = arguments.as_slice()
-                    && let CExpression::Variable(name) = expression.as_ref()
+                if let [ProgramExpression::Cast { expression, .. }] = arguments.as_slice()
+                    && let ProgramExpression::Variable(name) = expression.as_ref()
                 {
                     objects.push(name);
                 }
             }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, destructor, objects);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3840,17 +3848,17 @@ fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> V
     objects
 }
 
-fn contains_raw_aggregate_destination(statement: &CStatement, expected: &str) -> bool {
+fn contains_raw_aggregate_destination(statement: &ProgramStatement, expected: &str) -> bool {
     match statement {
-        CStatement::DeclareAggregate {
+        ProgramStatement::DeclareAggregate {
             name,
-            kind: click::kernel::CAggregateDeclarationKind::ConstructionDestination,
+            kind: click::kernel::AggregateDeclarationKind::ConstructionDestination,
             ..
         } => name == expected,
-        CStatement::Seq(statements) => statements
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| contains_raw_aggregate_destination(statement, expected)),
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -3863,42 +3871,42 @@ fn contains_raw_aggregate_destination(statement: &CStatement, expected: &str) ->
 }
 
 fn contains_scalar_local_pipeline(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     call_local: &str,
     value_local: &str,
     callee: &str,
 ) -> [bool; 4] {
     let mut found = [false; 4];
     fn visit(
-        statement: &CStatement,
+        statement: &ProgramStatement,
         call_local: &str,
         value_local: &str,
         callee: &str,
         found: &mut [bool; 4],
     ) {
         match statement {
-            CStatement::Declare {
+            ProgramStatement::Declare {
                 name,
-                c_type: CType::Int32,
+                program_type: ProgramType::Int32,
                 ..
             } if name == call_local => found[0] = true,
-            CStatement::CallAssign {
+            ProgramStatement::CallAssign {
                 target,
                 function_name,
                 ..
             } if target == call_local && function_name == callee => found[1] = true,
-            CStatement::Declare {
+            ProgramStatement::Declare {
                 name,
-                c_type: CType::Int32,
+                program_type: ProgramType::Int32,
                 ..
             } if name == value_local => found[2] = true,
-            CStatement::Assign { name, .. } if name == value_local => found[3] = true,
-            CStatement::Seq(statements) => {
+            ProgramStatement::Assign { name, .. } if name == value_local => found[3] = true,
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, call_local, value_local, callee, found);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3913,42 +3921,42 @@ fn contains_scalar_local_pipeline(
     found
 }
 
-fn contains_local_aggregate_pipeline(statement: &CStatement, local: &str) -> [bool; 3] {
+fn contains_local_aggregate_pipeline(statement: &ProgramStatement, local: &str) -> [bool; 3] {
     let mut found = [false; 3];
-    fn visit(statement: &CStatement, local: &str, found: &mut [bool; 3]) {
+    fn visit(statement: &ProgramStatement, local: &str, found: &mut [bool; 3]) {
         match statement {
-            CStatement::DeclareAggregate { name, layout, .. } if name == local => {
+            ProgramStatement::DeclareAggregate { name, layout, .. } if name == local => {
                 found[0] = layout.size_bytes() == 16
                     && layout.alignment_bytes() == 8
                     && layout.fields().len() == 2;
             }
-            CStatement::TypedStore {
+            ProgramStatement::TypedStore {
                 pointer,
                 value_type,
                 ..
             } => {
-                if matches!(pointer, CExpression::Variable(name) if name == local)
-                    && *value_type == CType::Int32Pointer
+                if matches!(pointer, ProgramExpression::Variable(name) if name == local)
+                    && *value_type == ProgramType::Int32Pointer
                 {
                     found[1] = true;
                 }
-                if let CExpression::PointerOffsetBytes { pointer, bytes } = pointer
-                    && matches!(pointer.as_ref(), CExpression::Variable(name) if name == local)
+                if let ProgramExpression::PointerOffsetBytes { pointer, bytes } = pointer
+                    && matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == local)
                 {
-                    if *bytes == 0 && *value_type == CType::Int32Pointer {
+                    if *bytes == 0 && *value_type == ProgramType::Int32Pointer {
                         found[1] = true;
                     }
-                    if *bytes == 8 && *value_type == CType::Int32 {
+                    if *bytes == 8 && *value_type == ProgramType::Int32 {
                         found[2] = true;
                     }
                 }
             }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, local, found);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -4027,7 +4035,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
         .expect("the expanded modular C++ proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the modular C++ verification environment");
     assert_eq!(verified.len(), 6);
 
@@ -4138,7 +4146,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
         .expect("the expanded scalar-local proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the scalar-local verification environment");
     assert_eq!(verified.len(), 5);
 
@@ -4254,12 +4262,12 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     let lowered =
         lower_import(&import).expect("lower pointer operations through kernel memory rules");
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
-        CType::Int32Pointer
+        lowered.kernel_function().parameters()[0].program_type(),
+        ProgramType::Int32Pointer
     );
     assert_eq!(
-        lowered.reachable_kernel_functions()[0].parameters()[0].c_type(),
-        CType::Int32Pointer
+        lowered.reachable_kernel_functions()[0].parameters()[0].program_type(),
+        ProgramType::Int32Pointer
     );
     assert!(!lowered.reachable_kernel_functions()[0].parameters()[0].pointee_is_constant());
 
@@ -4364,8 +4372,8 @@ fn record_reference_member_loads_and_stores_verify_offline() {
 
     let lowered = lower_import(&import).expect("lower member operations through checked offsets");
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
-        CType::Int32Pointer
+        lowered.kernel_function().parameters()[0].program_type(),
+        ProgramType::Int32Pointer
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4603,16 +4611,16 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
         Some(0),
     );
     assert_eq!(
-        lowered.reachable_kernel_functions()[0].parameters()[0].c_type(),
-        CType::Int32Pointer
+        lowered.reachable_kernel_functions()[0].parameters()[0].program_type(),
+        ProgramType::Int32Pointer
     );
     assert_eq!(
-        lowered.reachable_kernel_functions()[0].parameters()[1].c_type(),
-        CType::Int32Pointer
+        lowered.reachable_kernel_functions()[0].parameters()[1].program_type(),
+        ProgramType::Int32Pointer
     );
     assert_eq!(
         lowered.reachable_kernel_functions()[0].return_type(),
-        CType::Void
+        ProgramType::Void
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4744,13 +4752,13 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     assert!(matches!(
         lowered.kernel_function().body(),
-        CStatement::Seq(sequence)
+        ProgramStatement::Seq(sequence)
             if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                 returned.as_ref(),
-                CStatement::Seq(sequence)
+                ProgramStatement::Seq(sequence)
                     if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                         returned.as_ref(),
-                        CStatement::Return(CExpression::Variable(name))
+                        ProgramStatement::Return(ProgramExpression::Variable(name))
                             if name.starts_with("__click_cpp_return_value")
                     ) }
             ) }
@@ -4967,8 +4975,9 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded RAII caller proof must reverify");
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the caller's original verification environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the caller's original verification environment");
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -5563,8 +5572,9 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
     verify_program_prepared_project(&rewritten, &import)
         .expect("the fully expanded conditional-construction proof must reverify");
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the original conditional-construction verification environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the original conditional-construction verification environment");
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -6003,8 +6013,9 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import).expect("expanded proof must reverify");
 
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("start the retained audit session");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("start the retained audit session");
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -6130,42 +6141,45 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(lowered.source_function().span, function_span);
     let function = lowered.kernel_function();
     assert_eq!(function.name(), "increment");
-    assert_eq!(function.return_type(), CType::Int32);
+    assert_eq!(function.return_type(), ProgramType::Int32);
     assert_eq!(function.parameters().len(), 1);
     assert_eq!(function.parameters()[0].name(), "&value");
-    assert_eq!(function.parameters()[0].c_type(), CType::Int32Pointer);
+    assert_eq!(
+        function.parameters()[0].program_type(),
+        ProgramType::Int32Pointer
+    );
     assert!(matches!(
         function.body(),
-        CStatement::Seq(sequence)
+        ProgramStatement::Seq(sequence)
             if { let (store, returned) = (sequence.first(), &sequence.rest()); matches!(
                 store.as_ref(),
-                CStatement::TypedStore {
-                    pointer: CExpression::Variable(pointer),
-                    value: CExpression::Add(left, right),
-                    value_type: CType::Int32,
+                ProgramStatement::TypedStore {
+                    pointer: ProgramExpression::Variable(pointer),
+                    value: ProgramExpression::Add(left, right),
+                    value_type: ProgramType::Int32,
                     volatile: false,
                     pointee_constant: false,
                     ..
                 } if pointer == "&value"
                     && matches!(
                         left.as_ref(),
-                        CExpression::TypedLoad {
+                        ProgramExpression::TypedLoad {
                             pointer,
-                            value_type: CType::Int32,
+                            value_type: ProgramType::Int32,
                             volatile: false,
                             ..
-                        } if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
+                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == "&value")
                     )
-                    && matches!(right.as_ref(), CExpression::Value(value) if value == &int32(1))
+                    && matches!(right.as_ref(), ProgramExpression::Value(value) if value == &int32(1))
             )
             && matches!(
                 returned.as_ref(),
-                CStatement::Return(CExpression::TypedLoad {
+                ProgramStatement::Return(ProgramExpression::TypedLoad {
                     pointer,
-                    value_type: CType::Int32,
+                    value_type: ProgramType::Int32,
                     volatile: false,
                     ..
-                }) if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
+                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == "&value")
             ) }
     ));
 
@@ -6174,19 +6188,22 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let resources =
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         )));
-    let arguments = vec![c_typed_pointer_value(pointer.clone(), CType::Int32Pointer)];
-    let state = CState::new()
-        .with_memory(CMemory::new().store(pointer.clone(), int32(41)))
+    let arguments = vec![click::kernel::program_expression::typed_pointer_value(
+        pointer.clone(),
+        ProgramType::Int32Pointer,
+    )];
+    let state = ExecutionState::new()
+        .with_memory(Memory::new().store(pointer.clone(), int32(41)))
         .with_resource_context(resources.clone());
-    let expected_state = CState::new()
-        .with_memory(CMemory::new().store(pointer.clone(), int32(42)))
+    let expected_state = ExecutionState::new()
+        .with_memory(Memory::new().store(pointer.clone(), int32(42)))
         .with_resource_context(resources.clone());
-    let theorem = prove_symbolic_c_function_execution(
+    let theorem = prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -6195,21 +6212,21 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     .expect("the lowered reference function should execute");
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CFunctionExecutes {
+        &Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function.clone()),
             arguments: arguments.clone(),
-            outcome: CFunctionOutcome::Return {
+            outcome: FunctionOutcome::Return {
                 value: int32(42).into(),
                 state: Box::new(expected_state),
             },
         }
     );
 
-    let max_state = CState::new()
-        .with_memory(CMemory::new().store(pointer, int32(i32::MAX as u32)))
+    let max_state = ExecutionState::new()
+        .with_memory(Memory::new().store(pointer, int32(i32::MAX as u32)))
         .with_resource_context(resources);
-    let overflow = prove_symbolic_c_function_execution(
+    let overflow = prove_symbolic_program_function_execution(
         max_state.clone(),
         function.clone(),
         arguments.clone(),
@@ -6218,11 +6235,11 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     .expect("concrete signed overflow should produce a checked outcome");
     assert_eq!(
         overflow.proposition(),
-        &Proposition::CFunctionExecutes {
+        &Proposition::ProgramFunctionExecutes {
             state: Box::new(max_state),
             function: Box::new(function.clone()),
             arguments,
-            outcome: CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+            outcome: FunctionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
         }
     );
 }
@@ -7035,7 +7052,7 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
             .expect("expanded method proof reverifies");
         // Session construction cold-verifies this complete program once.
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let next_sites =
             project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
                 .unwrap();
@@ -7161,8 +7178,9 @@ fn check_claim_certificate(
         None => sites.first().expect("the sidecar has an automated claim"),
     };
     let claim = &first.claim_label;
-    let (session, verified) = C0VerificationSession::new_program_prepared_project(&parsed, import)
-        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    let (session, verified) =
+        ProgramVerificationSession::new_program_prepared_project(&parsed, import)
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
     assert!(!verified.is_empty());
     let expanded =
         click::surface::expand_verified_function_claim_source_by_label(&source, &verified, claim)
@@ -7251,7 +7269,7 @@ fn check_sidecar_tactic_with_tools(
         )
     });
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&parsed, import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&parsed, import).unwrap();
     // The expansion may leave the claim no smart tactic; its first written
     // tactic selects it.
     let position = project_tactic_source_position(
@@ -9318,16 +9336,16 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
     escaping.write_config_with_exception_behavior("escaping", "unwind.cpp", true, "scalar_int32");
     refresh_import(&escaping.config()).unwrap();
     let lowered = lower_import(&load_import(&escaping.config()).unwrap()).unwrap();
-    fn has_unwind_cleanup(statement: &CStatement) -> bool {
+    fn has_unwind_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
-                matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
-            CStatement::Seq(statements) => statements
+            ProgramStatement::Seq(statements) => statements
                 .iter()
                 .any(|statement| has_unwind_cleanup(statement)),
             _ => false,
@@ -13407,7 +13425,7 @@ ensures round_down == false implies (to_integer(result) + -1) * to_integer(d) < 
             sites.first().unwrap()
         };
         let (session, verified) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         // Spell both claims before any cold check resets the certificate tables.
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
             &proof,
@@ -14814,19 +14832,19 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
     project.write_config_with_exception_behavior("choose", "condition.cpp", true, "scalar_int32");
     refresh_import(&project.config()).unwrap();
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
-    fn guarded_condition(statement: &CStatement) -> bool {
+    fn guarded_condition(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::Seq(statements) => statements
+            ProgramStatement::Seq(statements) => statements
                 .iter()
                 .any(|statement| guarded_condition(statement)),
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
                 contains_call(try_body, "predicate")
-                    && matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15525,20 +15543,20 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
     project.write_config_with_exception_behavior("relay", "converted.cpp", true, "scalar_int32");
     refresh_import(&project.config()).unwrap();
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
-    fn has_cleanup(statement: &CStatement) -> bool {
+    fn has_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15987,20 +16005,20 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
     project.write_config_with_exception_behavior("relay", "relay.cpp", true, "scalar_int32");
     refresh_import(&project.config()).unwrap();
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
-    fn has_cleanup(statement: &CStatement) -> bool {
+    fn has_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -16088,7 +16106,7 @@ theorem read_application() executes read(const struct State& state) {
     verify_program_prepared_project(&rewritten, &import).unwrap();
     // Session construction cold-verifies this complete program once.
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -17518,7 +17536,7 @@ fn check_construction_return_descriptor_factories(expand_and_retain: bool) {
             .unwrap()
             .contract_interface()
             .aggregate_return_mode(),
-        click::kernel::CAggregateReturnMode::Construction
+        click::kernel::AggregateReturnMode::Construction
     );
     let proof = r#"verifying "construct-return.cpp";
 int32* identity(int32* p) { ensures result == p; }
@@ -17564,7 +17582,7 @@ uint64 probe(int32* p, uint64 n) {
     .unwrap();
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&whole, &import).unwrap();
     let position = project_tactic_source_position(
         &whole,
         &ProgramInputs::program(&import),
@@ -17727,7 +17745,7 @@ uint64 probe(struct View& view, uint64 n) {
     .unwrap();
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&whole, &import).unwrap();
     let position = project_tactic_source_position(
         &whole,
         &ProgramInputs::program(&import),
@@ -19050,7 +19068,7 @@ fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
     let project = Project::with_fixture("shapes.cpp", "total", VIRTUAL_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let error = C0VerificationSession::new_program_prepared(
+    let error = ProgramVerificationSession::new_program_prepared(
         r#"verifying "shapes.cpp";
 extern int Shape::area(int scale) const {
     requires 0 <= scale and scale <= 1000;
@@ -19107,7 +19125,7 @@ fn bound_class_object_call_obligations_expand_and_cold_replay() {
         fs::write(&sidecar, &source).unwrap();
         let parsed = read_click_project(&sidecar, &source).unwrap();
         let (session, verified) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
             &source,
             &verified,
@@ -19194,7 +19212,7 @@ int total(const Shape& shape, int scale) {
         ),
     ] {
         let sidecar = sidecar.replacen(from, to, 1);
-        let error = C0VerificationSession::new_program_prepared(&sidecar, &import)
+        let error = ProgramVerificationSession::new_program_prepared(&sidecar, &import)
             .err()
             .expect("the override must be refused");
         let rendered = click::surface::display_source_names(&format!("{error:?}")).into_owned();
@@ -19239,7 +19257,7 @@ fn class_bool_member_whole_certificate_preserves_every_return_case() {
         let sites = project_smart_tactic_source_sites(&parsed, &inputs).unwrap();
         let claim = sites[0].claim_label.clone();
         let (session, verified) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
             sidecar, &verified, &claim,
         )

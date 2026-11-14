@@ -152,13 +152,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ProofStep::Contradiction(ClickProposition::Comparison {
                         // Machine literals cannot be shadowed by C parameters
                         // named `false` or `true` when the certificate is read.
-                        left: ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-                            0u32.into(),
-                        ))),
+                        left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                            ProgramValue::UInt32(0u32.into()),
+                        )),
                         operator: ComparisonOperator::Equal,
-                        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-                            1u32.into(),
-                        ))),
+                        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                            ProgramValue::UInt32(1u32.into()),
+                        )),
                     }),
                 ))?
             {
@@ -412,7 +412,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let steps = std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([
             ProofStep::InstantiateUsing {
                 quantified,
-                argument: ContractExpression::CFragment(CExpression::Variable(binder)),
+                argument: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    binder,
+                )),
                 premises: None,
             },
         ]);
@@ -1695,7 +1697,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_zero_witness_closure");
         let Some(ClickProposition::Exists {
-            click_type: ClickType::C(syntax::C0Type::Int32),
+            click_type: ClickType::Program(crate::languages::interface::InterfaceType::Int32),
             name,
             written_name,
             ..
@@ -1706,9 +1708,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(witnessed) = attempt::candidate_outcome(search_input.driver().apply_step(
             ProofStep::Witness(ProofWitness::single(
                 written_name.as_ref().unwrap_or(name).clone(),
-                ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    MachineTerm::constant(0),
-                ))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int32(MachineTerm::constant(0)),
+                )),
             )),
         ))?
         else {
@@ -1831,8 +1833,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ClickType::Integer | ClickType::Algebraic(_) => {
                 ContractExpression::Binding(choice_name.clone())
             }
-            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
-                ContractExpression::CFragment(CExpression::Variable(choice_name.clone()))
+            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    choice_name.clone(),
+                ))
             }
             ClickType::Parameter(_) => return Ok(None),
         };
@@ -1884,7 +1888,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
             ProofStep::Witness(ProofWitness::single(
                 witness_name,
-                ContractExpression::CFragment(CExpression::Variable(choice_name)),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(choice_name)),
             )),
         ))?
         else {
@@ -1981,9 +1985,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ProofStep::Intro,
                     ProofStep::InstantiateUsing {
                         quantified: entry(conjunct),
-                        argument: ContractExpression::CFragment(CExpression::Variable(
-                            name.clone(),
-                        )),
+                        argument: ContractExpression::ProgramExpression(
+                            ProgramExpression::Variable(name.clone()),
+                        ),
                         premises: Some(vec![guard.as_ref().clone()]),
                     },
                     transport(consequent),
@@ -2284,11 +2288,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_element_address_disequality");
         /// The base of a written element address `&p[i]`.
-        fn element_address_base(expression: &ContractExpression) -> Option<&CExpression> {
-            let ContractExpression::CFragment(CExpression::AddressOf(target)) = expression else {
+        fn element_address_base(expression: &ContractExpression) -> Option<&ProgramExpression> {
+            let ContractExpression::ProgramExpression(ProgramExpression::AddressOf(target)) =
+                expression
+            else {
                 return None;
             };
-            let CExpression::Index(base, _) = target.as_ref() else {
+            let ProgramExpression::Index(base, _) = target.as_ref() else {
                 return None;
             };
             Some(base)
@@ -2336,7 +2342,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let arguments = vec![
-            ContractExpression::CFragment(base.clone()),
+            ContractExpression::ProgramExpression(base.clone()),
             i.clone(),
             j.clone(),
         ];
@@ -2506,12 +2512,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // The source bound is the kernel bound; the successor is spelled in
         // the operand's own type.
         let successor = match &right {
-            ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-                bits32_constant!(value),
-            ))) if unsigned && constant_u32(*value) == bound => {
-                ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-                    MachineTerm::uint32_constant(constant_u32(*value) + 1),
-                )))
+            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::UInt32(bits32_constant!(value)),
+            )) if unsigned && constant_u32(*value) == bound => {
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::UInt32(MachineTerm::uint32_constant(constant_u32(*value) + 1)),
+                ))
             }
             ContractExpression::IntegerLiteral(literal)
                 if !unsigned && literal.parse::<i32>().ok() == Some(bound as i32) =>
@@ -3286,12 +3292,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 } | ConditionTerm::PointerValueEqual(..)
                                     | ConditionTerm::PointerEqual(..)
                                     | ConditionTerm::PointerOffsetEqual(..)
-                                    | ConditionTerm::Float32(
-                                        CFloatCondition::Classification { .. }
-                                    )
-                                    | ConditionTerm::Float64(
-                                        CFloatCondition::Classification { .. }
-                                    ),
+                                    | ConditionTerm::Float32(FloatCondition::Classification { .. })
+                                    | ConditionTerm::Float64(FloatCondition::Classification { .. }),
                                 true
                             )
                         )
@@ -4274,7 +4276,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut surface_names = BTreeSet::new();
             collect_current_proposition_variables(surface_goal, &mut surface_names);
             for name in surface_names {
-                let expression = ContractExpression::CFragment(CExpression::Variable(name));
+                let expression =
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name));
                 let probe = ClickProposition::Comparison {
                     left: expression.clone(),
                     operator: ComparisonOperator::Equal,
@@ -4551,7 +4554,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else_surfaces.push(equality.clone());
             let rewritten_surface_goal =
                 surface_strict_parts(&condition).and_then(|(left, right)| {
-                    let ContractExpression::CFragment(CExpression::Variable(name)) = left else {
+                    let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
+                        left
+                    else {
                         return None;
                     };
                     substitute_click_proposition(
@@ -4751,7 +4756,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // sums, written as the comparison of their exact
                     // observations: outside `to_integer`, a written `+` is
                     // Integer addition.
-                    let one = ContractExpression::CFragment(CExpression::Value(int32(1)));
+                    let one =
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1)));
                     let observed_sum = |base: &ContractExpression| ContractExpression::Call {
                         name: "to_integer".to_string(),
                         arguments: vec![ContractExpression::Add(
@@ -5048,7 +5054,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         // The cell as the current state reads it.
-        let current = crate::kernel::intern_c_memory_ref(view.fixed_state.state.memory());
+        let current = crate::kernel::intern_memory_ref(view.fixed_state.state.memory());
         let current_side = if right_memory == current {
             right
         } else if left_memory == current {
@@ -5313,7 +5319,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut attempts = 0;
         for kernel in surfaces.requirement_kernel_atoms_for_search() {
             check_verification_deadline()?;
-            if !matches!(kernel, Proposition::CResourceSeparate { .. }) {
+            if !matches!(kernel, Proposition::ResourceSeparate { .. }) {
                 continue;
             }
             if attempts == 16 {
@@ -5365,7 +5371,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         while let Proposition::And(stated, _) = kernel_goal {
             kernel_goal = stated;
         }
-        let Proposition::CResourceSeparate {
+        let Proposition::ResourceSeparate {
             left: goal_left,
             right: goal_right,
         } = kernel_goal
@@ -5374,7 +5380,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         if !matches!(
             (goal_left.as_ref(), goal_right.as_ref()),
-            (CResource::Memory(_), CResource::Memory(_))
+            (Resource::Memory(_), Resource::Memory(_))
         ) {
             return Ok(None);
         }
@@ -5390,8 +5396,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .cloned()
             .collect::<Vec<_>>();
         for fact in view.fixed_state.state.resources().facts() {
-            if fact.is_own() && matches!(fact.resource(), CResource::Memory(_)) {
-                candidates.push(Proposition::CResourceSeparate {
+            if fact.is_own() && matches!(fact.resource(), Resource::Memory(_)) {
+                candidates.push(Proposition::ResourceSeparate {
                     left: Box::new(fact.resource().clone()),
                     right: goal_right.clone(),
                 });
@@ -5399,12 +5405,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for candidate in candidates {
             check_verification_deadline()?;
-            let Proposition::CResourceSeparate { left: a, right: b } = &candidate else {
+            let Proposition::ResourceSeparate { left: a, right: b } = &candidate else {
                 continue;
             };
             if !matches!(
                 (a.as_ref(), b.as_ref()),
-                (CResource::Memory(_), CResource::Memory(_))
+                (Resource::Memory(_), Resource::Memory(_))
             ) {
                 continue;
             }
@@ -5414,7 +5420,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // The goal already owns exact spellings for these resources,
             // including reads at its selected historical points. Keep those
             // names instead of reconstructing them from the current state.
-            let source = |resource: &CResource| {
+            let source = |resource: &Resource| {
                 if resource == goal_left.as_ref() {
                     return Ok(left.clone());
                 }
@@ -5714,16 +5720,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let is_bound = |field: &AlgebraicValue| match field {
-            AlgebraicValue::C(
-                CValue::Int32(term)
-                | CValue::UInt32(term)
-                | CValue::Int8(term)
-                | CValue::Int16(term)
-                | CValue::UInt8(term)
-                | CValue::UInt16(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term)
-                | CValue::Bool(term),
+            AlgebraicValue::Program(
+                ProgramValue::Int32(term)
+                | ProgramValue::UInt32(term)
+                | ProgramValue::Int8(term)
+                | ProgramValue::Int16(term)
+                | ProgramValue::UInt8(term)
+                | ProgramValue::UInt16(term)
+                | ProgramValue::Int64(term)
+                | ProgramValue::UInt64(term)
+                | ProgramValue::Bool(term),
             ) => *term == MachineTerm::Variable(var),
             _ => false,
         };
@@ -5755,7 +5761,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(AlgebraicValue::C(field)) =
+        let Some(AlgebraicValue::Program(field)) =
             fields.get(index).filter(|_| *known_variant == variant)
         else {
             return Ok(None);
@@ -5764,15 +5770,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // parameter or binder that holds it.
         let constant = matches!(
             field,
-            CValue::Int32(term)
-                | CValue::UInt32(term)
-                | CValue::Int8(term)
-                | CValue::Int16(term)
-                | CValue::UInt8(term)
-                | CValue::UInt16(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term)
-                | CValue::Bool(term)
+            ProgramValue::Int32(term)
+                | ProgramValue::UInt32(term)
+                | ProgramValue::Int8(term)
+                | ProgramValue::Int16(term)
+                | ProgramValue::UInt8(term)
+                | ProgramValue::UInt16(term)
+                | ProgramValue::Int64(term)
+                | ProgramValue::UInt64(term)
+                | ProgramValue::Bool(term)
                 if matches!(
                     term,
                     bits32_constant!(_)
@@ -5781,24 +5787,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
         );
         let variable = match field {
-            CValue::Int32(term)
-            | CValue::UInt32(term)
-            | CValue::Int8(term)
-            | CValue::Int16(term)
-            | CValue::UInt8(term)
-            | CValue::UInt16(term)
-            | CValue::Int64(term)
-            | CValue::UInt64(term)
-            | CValue::Bool(term) => match term {
+            ProgramValue::Int32(term)
+            | ProgramValue::UInt32(term)
+            | ProgramValue::Int8(term)
+            | ProgramValue::Int16(term)
+            | ProgramValue::UInt8(term)
+            | ProgramValue::UInt16(term)
+            | ProgramValue::Int64(term)
+            | ProgramValue::UInt64(term)
+            | ProgramValue::Bool(term) => match term {
                 MachineTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
             _ => None,
         };
         let spelled = if constant {
-            Some(ContractExpression::CFragment(CExpression::Value(
-                field.clone(),
-            )))
+            Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(field.clone()),
+            ))
         } else if let ProofContext::Pure(context) = search_input.context.as_ref() {
             // A theorem's values are its parameters and binders, by name.
             let (intro_names, local_names) = search_input.binder_variable_names();
@@ -5818,7 +5824,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .or_else(|| intro_names.get(&variable).cloned())
                     })
                 })
-                .map(|name| ContractExpression::CFragment(CExpression::Variable(name)))
+                .map(|name| {
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+                })
         } else {
             search_input.premise_fixed_state_view().and_then(|view| {
                 super::surface_synthesis::synthesize_surface_value(
@@ -5862,8 +5870,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let mut candidates = Vec::new();
         for argument in context.arguments {
-            if matches!(argument, CExpression::Value(CValue::Int32(_))) {
-                candidates.push(ContractExpression::CFragment(argument.clone()));
+            if matches!(argument, ProgramExpression::Value(ProgramValue::Int32(_))) {
+                candidates.push(ContractExpression::ProgramExpression(argument.clone()));
             }
         }
         // The range-loadability source slice has no witness in its call
@@ -5871,9 +5879,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // after call arguments to keep this operation useful for other
         // source-backed existential requirements without searching ambient
         // facts.
-        candidates.push(ContractExpression::CFragment(CExpression::Value(
-            CValue::Int32(MachineTerm::constant(0)),
-        )));
+        candidates.push(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+        ));
         for value in candidates {
             check_verification_deadline()?;
             let witness = ProofWitness::single(name.to_string(), value);
@@ -6064,9 +6072,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(value_expressions) = values
                 .iter()
                 .map(|value| {
-                    u32::try_from(*value)
-                        .ok()
-                        .map(|bits| ContractExpression::CFragment(CExpression::Value(int32(bits))))
+                    u32::try_from(*value).ok().map(|bits| {
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(int32(bits)))
+                    })
                 })
                 .collect::<Option<Vec<_>>>()
             else {
@@ -6249,7 +6257,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         };
         let Some(derivation) = derivation else {
-            if matches!(goal, Proposition::CMemoryLoadable { .. }) {
+            if matches!(goal, Proposition::MemoryLoadable { .. }) {
                 attempt::record_search_note(
                     "solve view derivation selection",
                     "no retained-premise derivation was produced for the requested view",
@@ -6277,7 +6285,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if premises.len() > MAX_SOLVE_SOURCE_PREMISES {
             if matches!(
                 search_input.goal(),
-                Some(Proposition::CMemoryLoadable { .. })
+                Some(Proposition::MemoryLoadable { .. })
             ) {
                 attempt::record_search_note(
                     "solve view premise spelling",
@@ -6468,7 +6476,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !crate::instrumentation::deadline_exceeded() && !unspelled.is_empty() {
             let strategy = if matches!(
                 search_input.goal(),
-                Some(Proposition::CMemoryLoadable { .. })
+                Some(Proposition::MemoryLoadable { .. })
             ) {
                 "solve view premise spelling"
             } else {
@@ -6583,14 +6591,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("named_returned_pointer_surface_fact");
         let view = search_input.premise_fixed_state_view()?;
-        let Some(result @ CValue::Pointer(_)) = view.fixed_state.result else {
+        let Some(result @ ProgramValue::Pointer(_)) = view.fixed_state.result else {
             return None;
         };
         // Resource witnesses may have no written name but coincide with the
         // checked return value. Name that exact value, then re-lower the
         // candidate so presentation cannot change the cited premise.
         let equality = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(result.clone())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(result.clone())),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::Binding("result".to_string()),
         };
@@ -6694,15 +6702,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
             )
         );
-        let retained_conditional_equality = match kernel {
+        let retained_branch_equality = match kernel {
             Proposition::ConditionIs(
                 ConditionTerm::IntegerEqual(left, right)
                 | ConditionTerm::IntegerNotEqual(left, right),
                 _,
             ) => [left, right].iter().any(|term| match term.as_ref() {
-                crate::kernel::IntegerTerm::Machine(value) => value
-                    .shared_operand()
-                    .is_some_and(crate::kernel::KernelTerm::has_machine_conditionals),
+                crate::kernel::IntegerTerm::Machine(value) => {
+                    value.shared_operand().is_some_and(|term| {
+                        term.has_machine_conditionals() || term.has_machine_matches()
+                    })
+                }
                 _ => false,
             }),
             _ => false,
@@ -6818,7 +6828,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // This candidate spells one already-selected premise. Admit
                 // its native/shared equality reading at the same explicit
                 // boundary used when the generated certificate cites it.
-                || (retained_conditional_equality
+                || (retained_branch_equality
                     && crate::kernel::proof::fact_reasoning::listed_equality_fact_is_available(
                         kernel, std::slice::from_ref(&lowered),
                     ))
@@ -7363,9 +7373,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let surface = ClickProposition::Comparison {
                 left: source.clone(),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    MachineTerm::constant(constant_u32(*value)),
-                ))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int32(MachineTerm::constant(constant_u32(*value))),
+                )),
             };
             let scope = search_input.driver().open_have(surface.clone()).ok()?;
             let closed = (scope).driver().try_direct_logical_closure().ok()??;
@@ -7746,8 +7756,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ComparisonOperator::LessEqual
         };
         for constant in candidates {
-            let surface_constant =
-                ContractExpression::CFragment(CExpression::Value(int32(constant as u32)));
+            let surface_constant = ContractExpression::ProgramExpression(ProgramExpression::Value(
+                int32(constant as u32),
+            ));
             let bound_surface = ClickProposition::Comparison {
                 left: surface_value.clone(),
                 operator,
@@ -7929,10 +7940,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 Box::new(upper.clone()),
                                 Box::new(lower.clone()),
                             )),
-                            lowered: CExpression::Cast {
-                                expression: Box::new(CExpression::Value(int32(0))),
-                                target_type: CType::UInt32,
-                                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                            lowered: ProgramExpression::Cast {
+                                expression: Box::new(ProgramExpression::Value(int32(0))),
+                                target_type: ProgramType::UInt32,
+                                integer_mode: crate::kernel::IntegerCastMode::CConversion,
                                 pointee_struct: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
@@ -7940,8 +7951,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             },
                         };
                         let positive = ClickProposition::Comparison {
-                            left: ContractExpression::CFragment(CExpression::Value(
-                                CValue::UInt32(MachineTerm::uint32_constant(0)),
+                            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                                ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
                             )),
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
@@ -8066,7 +8077,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .find(|(kernel, _)| kernel == &upper_kernel)?;
         let (surface_value, _) = surface_nonstrict_parts(upper_surface)?;
         let nonnegative_surface = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
             right: surface_value.clone(),
         };
@@ -8346,12 +8357,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .into_iter()
                 .flat_map(|goal| goal.surface_bindings.iter())
                 .filter_map(|(name, binding)| match binding {
-                    ContractExpression::CFragment(CExpression::Value(CValue::Int32(value))) => {
-                        Some((
-                            value.clone(),
-                            ContractExpression::CFragment(CExpression::Variable(name.clone())),
-                        ))
-                    }
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::Int32(value),
+                    )) => Some((
+                        value.clone(),
+                        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                            name.clone(),
+                        )),
+                    )),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -8460,9 +8473,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .surface_bindings
                 .iter()
                 .filter_map(|(name, binding)| match binding {
-                    ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                        MachineTerm::Variable(variable),
-                    ))) => Some((*variable, name.clone())),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::Int32(MachineTerm::Variable(variable)),
+                    )) => Some((*variable, name.clone())),
                     _ => None,
                 })
                 .collect::<BTreeMap<_, _>>(),
@@ -8687,16 +8700,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             for surface in surfaces {
                 for value in candidate_values.iter() {
                     let argument = match value {
-                        bits32_constant!(bits) => {
-                            Some(ContractExpression::CFragment(CExpression::Value(
-                                CValue::Int32(MachineTerm::constant(constant_u32(*bits))),
-                            )))
-                        }
-                        uint64_constant!(_) => Some(ContractExpression::CFragment(
-                            CExpression::Value(CValue::UInt64(value.clone())),
+                        bits32_constant!(bits) => Some(ContractExpression::ProgramExpression(
+                            ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(
+                                constant_u32(*bits),
+                            ))),
                         )),
-                        int64_constant!(_) => Some(ContractExpression::CFragment(
-                            CExpression::Value(CValue::Int64(value.clone())),
+                        uint64_constant!(_) => Some(ContractExpression::ProgramExpression(
+                            ProgramExpression::Value(ProgramValue::UInt64(value.clone())),
+                        )),
+                        int64_constant!(_) => Some(ContractExpression::ProgramExpression(
+                            ProgramExpression::Value(ProgramValue::Int64(value.clone())),
                         )),
                         MachineTerm::Variable(variable) => {
                             let Some(goal) = search_input.proposition_obligation() else {
@@ -8705,14 +8718,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             goal.surface_bindings.iter().find_map(|(name, binding)| {
                                 matches!(
                                     binding,
-                                    ContractExpression::CFragment(CExpression::Value(
-                                        CValue::Int32(MachineTerm::Variable(bound))
+                                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                                        ProgramValue::Int32(MachineTerm::Variable(bound))
                                     )) if bound == variable
                                 )
                                 .then(|| {
-                                    ContractExpression::CFragment(CExpression::Variable(
-                                        name.clone(),
-                                    ))
+                                    ContractExpression::ProgramExpression(
+                                        ProgramExpression::Variable(name.clone()),
+                                    )
                                 })
                             })
                         }
@@ -9000,10 +9013,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let left_is_atomic_variable = match &left {
-                ContractExpression::CFragment(CExpression::Variable(_)) => true,
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(_)) => true,
                 ContractExpression::At { expression, .. } => matches!(
                     expression.as_ref(),
-                    ContractExpression::CFragment(CExpression::Variable(_))
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(_))
                 ),
                 _ => false,
             };
@@ -9266,7 +9279,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_ordinary_viewability_restriction_closure");
-        let Some(Proposition::CMemoryLoadable { wide, .. }) = search_input.goal() else {
+        let Some(Proposition::MemoryLoadable { wide, .. }) = search_input.goal() else {
             return None;
         };
         let target = search_input.surface_goal()?;
@@ -9279,8 +9292,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         if !wide
             && !matches!(
-                contract_expression_as_c_fragment(end),
-                Some(CExpression::Add(..) | CExpression::Subtract(..))
+                contract_expression_as_program_expression(end),
+                Some(ProgramExpression::Add(..) | ProgramExpression::Subtract(..))
             )
         {
             return None;
@@ -9295,7 +9308,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .filter(|atom| {
                         matches!(
                             atom,
-                            Proposition::CMemoryLoadable { .. } | Proposition::ConditionIs(..)
+                            Proposition::MemoryLoadable { .. } | Proposition::ConditionIs(..)
                         )
                     })
                     .map(|atom| {
@@ -9356,7 +9369,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if matches!(
             search_input.goal(),
-            Some(Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. })
+            Some(Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. })
         ) && let Some(surface_goal) = search_input.surface_goal()
         {
             for source in surfaces
@@ -9368,7 +9381,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let mut premises = surfaces.to_vec();
                     if !matches!(
                         search_input.goal(),
-                        Some(Proposition::CMemoryLoadable { wide: true, .. })
+                        Some(Proposition::MemoryLoadable { wide: true, .. })
                     ) && let Some(requirements) =
                         viewability_restriction_requirements(source, surface_goal)
                     {
@@ -10061,7 +10074,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )])
             });
         let Some(mut tactics) = tactics else {
-            if matches!(goal, Proposition::CMemoryLoadable { .. }) {
+            if matches!(goal, Proposition::MemoryLoadable { .. }) {
                 attempt::record_search_note(
                     "solve view certificate planning",
                     "no source certificate plan was produced from the resolved derivation premises",
@@ -10083,7 +10096,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // authoritative source scripts; the plan is provenance input, not an
         // independently interpreted semantic certificate.
         let checked = search_input.driver().try_generated_linear_script(&tactics);
-        if matches!(goal, Proposition::CMemoryLoadable { .. })
+        if matches!(goal, Proposition::MemoryLoadable { .. })
             && let Err(error) = &checked
         {
             attempt::record_search_note("solve view certificate checking", error.raw_summary());
@@ -10459,7 +10472,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             context.tactic_index,
             "smart step selection",
         )?;
-        if matches!(statement, CStatement::If { .. } | CStatement::Switch { .. }) {
+        if matches!(
+            statement,
+            ProgramStatement::If { .. } | ProgramStatement::Switch { .. }
+        ) {
             // A C `if` the context decides is one step into that arm; one it
             // cannot decide is a fork for the driver's branch handling. A
             // symbolic switch likewise belongs to the bounded planner, which

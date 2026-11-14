@@ -1,7 +1,7 @@
 //! The cells of a store's own block that its constant byte gap keeps, as key
 //! ranges a store never has to visit.
 //!
-//! [`crate::kernel::CMemory::without_possible_aliasing_cells`] decides every
+//! [`crate::kernel::Memory::without_possible_aliasing_cells`] decides every
 //! earlier cell of the written block, and the cell map offers no way to keep
 //! a group of cells without asking each, so `N` stores to cells the facts
 //! keep apart used to ask `N^2/2` questions. Most of those cells are not a
@@ -17,7 +17,7 @@
 //! `Constant(c)` beside a store at `Constant(k)`, or `Add(S, Constant(c))`
 //! beside a store at `Add(S, Constant(k))` or at bare `S`, for one anchor
 //! `S`, with `c != 0` and the two byte windows disjoint for every cell width
-//! (`c + 16 <= k` or `k + bytes <= c`; no `CValue` is wider than sixteen
+//! (`c + 16 <= k` or `k + bytes <= c`; no `ProgramValue` is wider than sixteen
 //! bytes, and a `Void` cell stands in sixteen). Because [`PointerOffsetTerm`] orders
 //! `Constant` before every other variant, the keys `Add(S, Constant(c))` for
 //! `c` in one interval are exactly one contiguous key range, and so are the
@@ -63,7 +63,7 @@
 use crate::kernel::MachineTerm;
 use crate::kernel::{Pointer, PointerOffsetTerm, PureFactContext};
 
-/// The widest cell there is: no `CValue` is wider, and a cell holding
+/// The widest cell there is: no `ProgramValue` is wider, and a cell holding
 /// `Void` stands in this width too.
 const WIDEST_CELL: i64 = crate::kernel::MAX_SCALAR_ACCESS_BYTES;
 
@@ -252,7 +252,7 @@ fn anchor_shift_is_small(anchor: &PointerOffsetTerm) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CMemory, CValue, ConditionTerm, Variable};
+    use crate::kernel::{ConditionTerm, Memory, ProgramValue, Variable};
 
     fn variable(id: u64) -> MachineTerm {
         MachineTerm::Variable(Variable(id))
@@ -296,7 +296,7 @@ mod tests {
                 true,
             );
             assert!(!connected.address_connected_objects(&store).is_empty());
-            let memory = CMemory::new().store(field.clone(), value_of_width(8, 17));
+            let memory = Memory::new().store(field.clone(), value_of_width(8, 17));
             let full = with_store_gap_skip_disabled(|| {
                 memory.without_possible_aliasing_cells(&store, 8, &connected)
             });
@@ -322,7 +322,7 @@ mod tests {
                 ),
                 true,
             );
-            let overlapping = CMemory::new().store(aliased_field.clone(), value_of_width(8, 19));
+            let overlapping = Memory::new().store(aliased_field.clone(), value_of_width(8, 19));
             assert!(
                 !overlapping
                     .without_possible_aliasing_cells(&store, 8, &overlaps)
@@ -331,14 +331,16 @@ mod tests {
         }
     }
 
-    fn value_of_width(width: u32, seed: u32) -> CValue {
+    fn value_of_width(width: u32, seed: u32) -> ProgramValue {
         match width {
             1 => crate::kernel::uint8(seed & 0xff),
             2 => crate::kernel::int16(seed & 0x7fff),
-            4 => CValue::Int32(MachineTerm::constant(seed)),
-            8 => CValue::Int64(MachineTerm::int64_constant(i64::from(seed))),
-            16 => match crate::kernel::c_uint128_literal((1u128 << 127) | u128::from(seed)) {
-                crate::kernel::CExpression::Value(value) => value,
+            4 => ProgramValue::Int32(MachineTerm::constant(seed)),
+            8 => ProgramValue::Int64(MachineTerm::int64_constant(i64::from(seed))),
+            16 => match crate::kernel::program_expression::uint128_literal(
+                (1u128 << 127) | u128::from(seed),
+            ) {
+                crate::kernel::ProgramExpression::Value(value) => value,
                 _ => unreachable!("literal is a value"),
             },
             _ => unreachable!("tested scalar width"),
@@ -425,18 +427,18 @@ mod tests {
     }
 
     fn store(
-        memory: CMemory,
+        memory: Memory,
         pointer: &Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
-    ) -> CMemory {
+    ) -> Memory {
         memory
             .without_possible_aliasing_cells(pointer, value.byte_width(), context)
             .store_with_context(pointer.clone(), value, context)
     }
 
     /// Cells of `memory` inside the ranges a store would skip.
-    fn skipped_cells(memory: &CMemory, ranges: &[(Pointer, Pointer)]) -> usize {
+    fn skipped_cells(memory: &Memory, ranges: &[(Pointer, Pointer)]) -> usize {
         ranges
             .iter()
             .map(|(low, high)| {
@@ -452,9 +454,9 @@ mod tests {
     /// Runs `stores` from an empty block both ways, checks the two memories
     /// agree after every store, and returns the skipping one together with
     /// how many cells its stores skipped.
-    fn stored_both_ways(stores: &[(PointerOffsetTerm, CValue)]) -> (CMemory, usize) {
+    fn stored_both_ways(stores: &[(PointerOffsetTerm, ProgramValue)]) -> (Memory, usize) {
         let context = PureFactContext::new();
-        let mut fast = CMemory::new().with_block("store-gap", 64);
+        let mut fast = Memory::new().with_block("store-gap", 64);
         let mut full = fast.clone();
         let mut skipped = 0;
         for (offset, value) in stores {
@@ -492,8 +494,8 @@ mod tests {
         let anchor = PointerOffsetTerm::scale_int32(variable(900), 4);
         let shifted =
             |shift: i64| PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(shift));
-        let int32 = |value: u32| CValue::Int32(MachineTerm::constant(value));
-        let int64 = |value: i64| CValue::Int64(MachineTerm::int64_constant(value));
+        let int32 = |value: u32| ProgramValue::Int32(MachineTerm::constant(value));
+        let int64 = |value: i64| ProgramValue::Int64(MachineTerm::int64_constant(value));
         // Far cells on both sides, which every later store skips.
         let far = [(shifted(-64), int32(90)), (shifted(64), int32(91))];
 
@@ -613,7 +615,7 @@ mod tests {
             PointerOffsetTerm::add(
                 PointerOffsetTerm::scale_int32(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_c_memory(CMemory::new()),
+                        crate::kernel::intern_memory(Memory::new()),
                         Box::new(at(&PointerOffsetTerm::Constant(0))),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -658,7 +660,7 @@ mod tests {
         for trial in 0..480 {
             let context = &contexts[trial % contexts.len()];
             let anchor = anchors.get(trial / contexts.len() % (anchors.len() + 1));
-            let mut fast = CMemory::new().with_block("store-gap", 64);
+            let mut fast = Memory::new().with_block("store-gap", 64);
             let mut full = fast.clone();
             for step in 0..48 {
                 let pointer = Pointer {

@@ -47,15 +47,13 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
     };
     let mut samples = Vec::new();
     for count in [4usize, 64, 1024] {
-        let mut memory = CMemory::new()
-            .with_block("shared", 4)
-            .with_block("other", 4);
+        let mut memory = Memory::new().with_block("shared", 4).with_block("other", 4);
         for index in 0..count {
             memory = memory.store(other.clone(), int32(index as u32));
         }
         let mut exits = [
-            CState::new().with_memory(memory.clone().store(pointer.clone(), int32(0))),
-            CState::new().with_memory(memory),
+            ExecutionState::new().with_memory(memory.clone().store(pointer.clone(), int32(0))),
+            ExecutionState::new().with_memory(memory),
         ];
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             retain_proven_loop_exit_cells(
@@ -89,14 +87,14 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
         block: PointerBlock::Concrete("shared".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("shared", 4);
+    let memory = Memory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.
-    let load = symbolic_storage_cell_value(&memory, &pointer, CType::Int32, true).unwrap();
+    let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Int32, true).unwrap();
     let zero = int32(0);
     let exits = || {
         [
-            CState::new().with_memory(memory.clone().store(pointer.clone(), zero.clone())),
-            CState::new().with_memory(memory.clone()),
+            ExecutionState::new().with_memory(memory.clone().store(pointer.clone(), zero.clone())),
+            ExecutionState::new().with_memory(memory.clone()),
         ]
     };
     let mut rebuilt = Vec::new();
@@ -114,7 +112,7 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
             })
             .collect::<Vec<_>>();
         facts.push(ExecutionPureFact::new(
-            c_value_comparison_proposition(&load, CComparisonOperator::Equal, &zero).unwrap(),
+            program_value_comparison_proposition(&load, ComparisonOperator::Equal, &zero).unwrap(),
         ));
         let exit_facts = ExecutionFacts::from(facts);
         let empty = ExecutionFacts::new();

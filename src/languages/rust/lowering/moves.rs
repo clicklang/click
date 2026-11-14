@@ -9,7 +9,7 @@ pub(super) fn lower(
     cx: &mut Context<'_>,
     f: &Function,
     mir: &MirBody,
-) -> Result<CStatement, String> {
+) -> Result<ProgramStatement, String> {
     // Index storage starts once. Locals without a compiler storage event
     // retain their function-entry backing (including return-place arrays).
     let storage_starts: BTreeSet<&str> = mir
@@ -39,7 +39,7 @@ pub(super) fn lower(
         .collect();
     let mut records = BTreeMap::new();
     let mut live = BTreeMap::new();
-    let mut declarations = c_skip();
+    let mut declarations = program_skip();
     let owned_parameter_count = f
         .parameters
         .iter()
@@ -74,7 +74,7 @@ pub(super) fn lower(
         if let Type::SharedArrayIterator { element } = &local.value_type
             && super::library_iterators()
         {
-            declarations = c_seq(
+            declarations = program_seq(
                 declarations,
                 cx.library_slice_iterator_storage(&local.name, element)?,
             );
@@ -86,7 +86,7 @@ pub(super) fn lower(
                 matches!(statement, S::EnumerateNext { option, .. } if *option == local.name)
             })
         {
-            declarations = c_seq(
+            declarations = program_seq(
                 declarations,
                 cx.library_slice_option_storage(&local.name, element)?,
             );
@@ -95,7 +95,7 @@ pub(super) fn lower(
         if let Type::SharedArrayIterator { element } | Type::SharedArrayOption { element } =
             &local.value_type
         {
-            declarations = c_seq(
+            declarations = program_seq(
                 declarations,
                 cx.shared_array_storage(
                     &local.name,
@@ -108,7 +108,7 @@ pub(super) fn lower(
         if let Type::EnumerateIterator { element } | Type::EnumerateOption { element } =
             &local.value_type
         {
-            declarations = c_seq(
+            declarations = program_seq(
                 declarations,
                 cx.enumerate_storage(
                     &local.name,
@@ -119,14 +119,14 @@ pub(super) fn lower(
             continue;
         }
         if let Type::Range { element, inclusive } = &local.value_type {
-            declarations = c_seq(
+            declarations = program_seq(
                 declarations,
                 cx.range_storage(&local.name, element, *inclusive)?,
             );
             continue;
         }
         if matches!(local.value_type, Type::ChunkIterator | Type::ChunkOption) {
-            declarations = c_seq(
+            declarations = program_seq(
                 declarations,
                 cx.chunk_storage(&local.name, local.value_type == Type::ChunkOption)?,
             );
@@ -139,8 +139,8 @@ pub(super) fn lower(
             cx.references.insert(local.name.clone(), !mutable);
         }
         let statement = match &local.value_type {
-            Type::Unit => c_skip(),
-            Type::Reference { .. } if iterator_reference(&local.value_type) => c_skip(),
+            Type::Unit => program_skip(),
+            Type::Reference { .. } if iterator_reference(&local.value_type) => program_skip(),
             Type::Record { name } => {
                 cx.owned_locals.insert(local.name.clone());
                 let flag = format!("__rust_owned_live_{index}");
@@ -153,25 +153,28 @@ pub(super) fn lower(
                 // live flag stays false until every typed field is overwritten;
                 // source reads cannot observe the kernel's fresh placeholders.
                 if parameter {
-                    declarations = c_seq(
+                    declarations = program_seq(
                         declarations,
-                        c_seq(
-                            c_declare(flag.clone(), CType::Int32),
-                            c_assign(flag, c_int32_literal(1)),
+                        program_seq(
+                            program_declare(flag.clone(), ProgramType::Int32),
+                            program_assign(
+                                flag,
+                                crate::kernel::program_expression::int32_literal(1),
+                            ),
                         ),
                     );
                     continue;
                 }
-                c_seq(
-                    c_declare(flag.clone(), CType::Int32),
-                    c_seq(
-                        c_assign(flag, c_int32_literal(0)),
+                program_seq(
+                    program_declare(flag.clone(), ProgramType::Int32),
+                    program_seq(
+                        program_assign(flag, crate::kernel::program_expression::int32_literal(0)),
                         if storage_starts.contains(local.name.as_str())
                             && check_copyable(cx, name).is_ok()
                         {
-                            c_skip()
+                            program_skip()
                         } else {
-                            c_begin_aggregate_construction(
+                            program_begin_aggregate_construction(
                                 local.name.clone(),
                                 cx.layouts
                                     .get(name.as_str())
@@ -195,8 +198,8 @@ pub(super) fn lower(
                 }
                 cx.shared_scalar_slices
                     .insert(local.name.clone(), (length.clone(), element_type));
-                c_seq(
-                    c_declare_with_all_qualifiers(
+                program_seq(
+                    program_declare_with_all_qualifiers(
                         &local.name,
                         pointer_type,
                         false,
@@ -204,7 +207,7 @@ pub(super) fn lower(
                         false,
                         !mutable,
                     ),
-                    c_declare(length, CType::UInt64),
+                    program_declare(length, ProgramType::UInt64),
                 )
             }
             Type::ByteSlice { mutable } => {
@@ -214,16 +217,16 @@ pub(super) fn lower(
                 }
                 cx.slices
                     .insert(local.name.clone(), (length.clone(), !mutable));
-                c_seq(
-                    c_declare_with_all_qualifiers(
+                program_seq(
+                    program_declare_with_all_qualifiers(
                         &local.name,
-                        CType::UInt8Pointer,
+                        ProgramType::UInt8Pointer,
                         false,
                         false,
                         false,
                         !mutable,
                     ),
-                    c_declare(length, CType::UInt64),
+                    program_declare(length, ProgramType::UInt64),
                 )
             }
             Type::Reference { mutable, pointee }
@@ -235,7 +238,7 @@ pub(super) fn lower(
                 let element = scalar_type(element)?.to_kernel_type();
                 cx.arrays
                     .insert(local.name.clone(), (*length, element, !mutable));
-                c_declare_with_all_qualifiers(
+                program_declare_with_all_qualifiers(
                     &local.name,
                     scalar_type(&local.value_type)?.to_kernel_type(),
                     false,
@@ -246,8 +249,10 @@ pub(super) fn lower(
             }
             Type::Array { element, length } => {
                 let element = scalar_type(element)?.to_kernel_type();
-                if !matches!(element, CType::Int32 | CType::UInt8 | CType::UInt32)
-                    || *length > i32::MAX as u64 / u64::from(element.byte_width())
+                if !matches!(
+                    element,
+                    ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
+                ) || *length > i32::MAX as u64 / u64::from(element.byte_width())
                 {
                     return Err(
                         "compact arrays require i32/u8/u32 elements and signed-word storage".into(),
@@ -257,11 +262,11 @@ pub(super) fn lower(
                 cx.arrays
                     .insert(local.name.clone(), (*length, element, false));
                 if storage_starts.contains(local.name.as_str()) {
-                    c_skip()
+                    program_skip()
                 } else {
-                    c_begin_aggregate_construction(
+                    program_begin_aggregate_construction(
                         local.name.clone(),
-                        CAggregateLayout::new(
+                        AggregateLayout::new(
                             *length as u32 * element.byte_width(),
                             element.byte_width(),
                             vec![],
@@ -269,7 +274,7 @@ pub(super) fn lower(
                     )
                 }
             }
-            Type::Reference { mutable, .. } => c_declare_with_all_qualifiers(
+            Type::Reference { mutable, .. } => program_declare_with_all_qualifiers(
                 local.name.clone(),
                 scalar_type(&local.value_type)?.to_kernel_type(),
                 false,
@@ -284,9 +289,9 @@ pub(super) fn lower(
             {
                 let value_type = scalar_type(t)?.to_kernel_type();
                 cx.memory_values.insert(local.name.clone(), value_type);
-                c_begin_aggregate_construction(
+                program_begin_aggregate_construction(
                     local.name.clone(),
-                    CAggregateLayout::holding_value(value_type),
+                    AggregateLayout::holding_value(value_type),
                 )
             }
             t => {
@@ -298,10 +303,10 @@ pub(super) fn lower(
                 if t.is_scalar() {
                     cx.addressable_locals.insert(local.name.clone());
                 }
-                c_declare(local.name.clone(), scalar_type(t)?.to_kernel_type())
+                program_declare(local.name.clone(), scalar_type(t)?.to_kernel_type())
             }
         };
-        declarations = c_seq(declarations, statement);
+        declarations = program_seq(declarations, statement);
     }
     if mir.blocks.is_empty() {
         return Err("MIR body has no entry block".into());
@@ -315,7 +320,7 @@ pub(super) fn lower(
         if !cx.locals.insert(flag.clone()) {
             return Err("MIR loop escape flag collides with a source name".into());
         }
-        declarations = c_seq(declarations, c_declare(flag, CType::Int32));
+        declarations = program_seq(declarations, program_declare(flag, ProgramType::Int32));
     }
     let leases = super::scalar_leases::prepare(
         f,
@@ -332,32 +337,37 @@ pub(super) fn lower(
             .ok_or("unknown owned MIR place".into())
     };
     let assertion = |flag: &str, is_live: bool| {
-        c_assert(c_equal(
-            c_variable(flag),
-            c_int32_literal(u32::from(is_live)),
+        program_assert(crate::kernel::program_expression::equal(
+            crate::kernel::program_expression::variable(flag),
+            crate::kernel::program_expression::int32_literal(u32::from(is_live)),
         ))
     };
     for &block in &flow.order {
         cx.mir_point = None;
         cx.mir_nodes.clear();
         let terminal = match &mir.blocks[block].terminator {
-            T::Goto { .. } => c_skip(),
+            T::Goto { .. } => program_skip(),
             T::If { condition, .. } => accesses(&[condition], &live),
             T::Switch { scrutinee, .. } => accesses(&[scrutinee], &live),
             T::Return => {
                 let mut end = if f.return_type == Type::Unit {
-                    c_return(c_void_value())
+                    program_return(program_void_value())
                 } else if let Type::Record { name } = &f.return_type {
                     let flag = check("__rust_mir_0", name)?;
-                    c_seq(
+                    program_seq(
                         assertion(flag, true),
-                        c_seq(
-                            c_assign(flag, c_int32_literal(0)),
-                            c_return(c_variable("__rust_mir_0")),
+                        program_seq(
+                            program_assign(
+                                flag,
+                                crate::kernel::program_expression::int32_literal(0),
+                            ),
+                            program_return(crate::kernel::program_expression::variable(
+                                "__rust_mir_0",
+                            )),
                         ),
                     )
                 } else {
-                    c_return(c_variable("__rust_mir_0"))
+                    program_return(crate::kernel::program_expression::variable("__rust_mir_0"))
                 };
                 // Plain values without a destructor can die at Return; any
                 // destructor-bearing value must already have been consumed.
@@ -376,15 +386,16 @@ pub(super) fn lower(
                         .destructor
                         .is_some()
                     {
-                        end = c_seq(assertion(&live[*local], false), end);
+                        end = program_seq(assertion(&live[*local], false), end);
                     }
                 }
                 end
             }
-            T::Unreachable => c_assert(c_int32_literal(0)),
-            T::Panic { message } => {
-                c_labeled_assert(c_int32_literal(0), format!("Rust panic `{message}`"))
-            }
+            T::Unreachable => program_assert(crate::kernel::program_expression::int32_literal(0)),
+            T::Panic { message } => program_labeled_assert(
+                crate::kernel::program_expression::int32_literal(0),
+                format!("Rust panic `{message}`"),
+            ),
             // The allocation comes first; a failed one aborts, so the
             // record moves into a live block, and the box is its address.
             T::BoxNew {
@@ -405,23 +416,31 @@ pub(super) fn lower(
                         layout.alignment_bytes(),
                     )
                 });
-                c_seq(
+                program_seq(
                     assertion(flag, true),
-                    c_seq(
-                        CStatement::HeapAllocate {
+                    program_seq(
+                        ProgramStatement::HeapAllocate {
                             target: destination.clone(),
-                            bytes: c_int32_literal(layout.size_bytes()),
+                            bytes: crate::kernel::program_expression::int32_literal(
+                                layout.size_bytes(),
+                            ),
                             zeroed: false,
                             object_type: class,
                             ends_program_on_failure: true,
                         },
-                        c_seq(
-                            crate::kernel::c_copy_aggregate(
-                                c_variable(destination),
-                                c_cast(c_variable(source), CType::Int32Pointer),
+                        program_seq(
+                            crate::kernel::program_copy_aggregate(
+                                crate::kernel::program_expression::variable(destination),
+                                crate::kernel::program_expression::cast(
+                                    crate::kernel::program_expression::variable(source),
+                                    ProgramType::Int32Pointer,
+                                ),
                                 layout.to_kernel_aggregate_layout(),
                             ),
-                            c_assign(flag, c_int32_literal(0)),
+                            program_assign(
+                                flag,
+                                crate::kernel::program_expression::int32_literal(0),
+                            ),
                         ),
                     ),
                 )
@@ -430,13 +449,18 @@ pub(super) fn lower(
             // the free, `if (box) glue(box); free(box);`; freeing null has no
             // effect.
             T::BoxFree { local, glue, .. } => {
-                let free = crate::kernel::c_heap_free(c_variable(local));
+                let free = crate::kernel::program_heap_free(
+                    crate::kernel::program_expression::variable(local),
+                );
                 match glue {
-                    Some(glue) => c_seq(
-                        crate::kernel::c_if(
-                            c_variable(local),
-                            c_call(glue, vec![c_variable(local)]),
-                            c_skip(),
+                    Some(glue) => program_seq(
+                        crate::kernel::program_if(
+                            crate::kernel::program_expression::variable(local),
+                            program_call(
+                                glue,
+                                vec![crate::kernel::program_expression::variable(local)],
+                            ),
+                            program_skip(),
                         ),
                         free,
                     ),
@@ -447,20 +471,28 @@ pub(super) fn lower(
                 let flag = check(local, record)?;
                 let r = cx.records.get(record.as_str()).ok_or("unknown drop type")?;
                 let cleanup = match &r.destructor {
-                    Some(dtor) if cx.functions.contains_key(dtor.as_str()) => {
-                        c_call(dtor, vec![c_cast(c_variable(local), CType::Int32Pointer)])
-                    }
+                    Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
+                        dtor,
+                        vec![crate::kernel::program_expression::cast(
+                            crate::kernel::program_expression::variable(local),
+                            ProgramType::Int32Pointer,
+                        )],
+                    ),
                     Some(_) => {
                         return Err("destructor body missing from prepared Rust input".into());
                     }
-                    None if cx.shared_array_iterators.contains_key(local) => {
-                        c_assign(format!("{local}_live"), c_int32_literal(0))
-                    }
-                    None => c_skip(),
+                    None if cx.shared_array_iterators.contains_key(local) => program_assign(
+                        format!("{local}_live"),
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
+                    None => program_skip(),
                 };
-                c_seq(
+                program_seq(
                     assertion(flag, true),
-                    c_seq(cleanup, c_assign(flag, c_int32_literal(0))),
+                    program_seq(
+                        cleanup,
+                        program_assign(flag, crate::kernel::program_expression::int32_literal(0)),
+                    ),
                 )
             }
             T::Call {
@@ -486,13 +518,13 @@ pub(super) fn lower(
                 let (prefix, arguments_values) =
                     cx.typed_arguments(parameters.clone(), arguments)?;
                 let call = if **result == Type::Unit {
-                    c_call(function, arguments_values)
+                    program_call(function, arguments_values)
                 } else {
-                    c_call_assign(destination, function, arguments_values)
+                    program_call_assign(destination, function, arguments_values)
                 };
-                c_seq(
+                program_seq(
                     accesses(&arguments.iter().collect::<Vec<_>>(), &live),
-                    c_seq(prefix, call),
+                    program_seq(prefix, call),
                 )
             }
             T::Call {
@@ -507,7 +539,7 @@ pub(super) fn lower(
                     .get(function.as_str())
                     .ok_or("missing MIR call definition")?;
                 let (prefix, arguments_values) = cx.prepared_arguments(function, arguments)?;
-                let mut transfer = c_skip();
+                let mut transfer = program_skip();
                 let mut indices = BTreeSet::new();
                 let mut previous_index = None;
                 for argument in owned_arguments {
@@ -526,9 +558,15 @@ pub(super) fn lower(
                     if !argument.moved {
                         check_copyable(cx, &argument.record)?;
                     }
-                    transfer = c_seq(transfer, assertion(flag, true));
+                    transfer = program_seq(transfer, assertion(flag, true));
                     if argument.moved {
-                        transfer = c_seq(transfer, c_assign(flag, c_int32_literal(0)));
+                        transfer = program_seq(
+                            transfer,
+                            program_assign(
+                                flag,
+                                crate::kernel::program_expression::int32_literal(0),
+                            ),
+                        );
                     }
                 }
                 if callee.parameters.iter().enumerate().any(|(index, p)| {
@@ -538,15 +576,18 @@ pub(super) fn lower(
                 }
                 let call = if let Type::Record { name } = &callee.return_type {
                     let flag = check(destination, name)?;
-                    c_seq(
+                    program_seq(
                         assertion(flag, false),
-                        c_seq(
-                            c_call_assign(destination, function, arguments_values),
-                            c_assign(flag, c_int32_literal(1)),
+                        program_seq(
+                            program_call_assign(destination, function, arguments_values),
+                            program_assign(
+                                flag,
+                                crate::kernel::program_expression::int32_literal(1),
+                            ),
                         ),
                     )
                 } else if callee.return_type == Type::Unit {
-                    c_call(function, arguments_values)
+                    program_call(function, arguments_values)
                 } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
                     // A memory-backed local, a borrowed enum or `Vec`,
                     // receives the result through a temporary stored to its
@@ -555,23 +596,27 @@ pub(super) fn lower(
                     let address = cx.address(&E::Local {
                         name: destination.clone(),
                     })?;
-                    c_seq(
-                        c_seq(
-                            c_declare(&temporary, value_type),
-                            c_call_assign(&temporary, function, arguments_values),
+                    program_seq(
+                        program_seq(
+                            program_declare(&temporary, value_type),
+                            program_call_assign(&temporary, function, arguments_values),
                         ),
-                        c_typed_store(address, c_variable(&temporary), value_type),
+                        program_typed_store(
+                            address,
+                            crate::kernel::program_expression::variable(&temporary),
+                            value_type,
+                        ),
                     )
                 } else {
-                    c_call_assign(destination, function, arguments_values)
+                    program_call_assign(destination, function, arguments_values)
                 };
-                c_seq(
+                program_seq(
                     accesses(&arguments.iter().collect::<Vec<_>>(), &live),
-                    c_seq(prefix, c_seq(transfer, call)),
+                    program_seq(prefix, program_seq(transfer, call)),
                 )
             }
         };
-        let mut statements = c_skip();
+        let mut statements = program_skip();
         for (statement_index, s) in mir.blocks[block].statements.iter().enumerate() {
             cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
                 block,
@@ -585,9 +630,9 @@ pub(super) fn lower(
             let mut statement = match s {
                 S::Assert { condition, message } => {
                     let (checks, condition) = cx.prepared_expr(condition)?;
-                    c_seq(
+                    program_seq(
                         checks,
-                        c_labeled_assert(
+                        program_labeled_assert(
                             branch_condition(condition),
                             format!("Rust panic `{message}`"),
                         ),
@@ -648,9 +693,9 @@ pub(super) fn lower(
                             length: count,
                         } if *count == length => {
                             let (checks, value) = cx.prepared_expr(value)?;
-                            c_seq(
+                            program_seq(
                                 checks,
-                                c_initialize_scalar_array(
+                                program_initialize_scalar_array(
                                     pointer,
                                     value,
                                     element,
@@ -664,10 +709,12 @@ pub(super) fn lower(
                         }
                         value => {
                             let (source, count, source_element) = cx.indexed_parts(value)?;
-                            if count != c_uint64_literal(length) || source_element != element {
+                            if count != crate::kernel::program_expression::uint64_literal(length)
+                                || source_element != element
+                            {
                                 return Err("array copy type disagrees with destination".into());
                             }
-                            c_write_scalar_array_region(
+                            program_write_scalar_array_region(
                                 pointer,
                                 source,
                                 element,
@@ -707,16 +754,16 @@ pub(super) fn lower(
                             "Rust closure instance of `{function}` does not have the closure's type"
                         ));
                     }
-                    let mut checks = c_skip();
+                    let mut checks = program_skip();
                     let mut values = Vec::new();
                     for capture in captures {
                         let (capture_checks, value) = cx.prepared_expr(capture)?;
-                        checks = c_seq(checks, capture_checks);
+                        checks = program_seq(checks, capture_checks);
                         values.push(value);
                     }
-                    c_seq(
+                    program_seq(
                         checks,
-                        c_call_assign(
+                        program_call_assign(
                             name,
                             crate::languages::rust::names::closure_instance_name(function),
                             values,
@@ -750,13 +797,13 @@ pub(super) fn lower(
                             let value_type = indexed_element_type(cx.place_type(target)?)
                                 .ok_or("unsupported Rust indexed assignment type")?;
                             let (capture, name) = cx.capture_operand(value, &value_type)?;
-                            checks = c_seq(checks, capture);
-                            value = c_variable(name);
+                            checks = program_seq(checks, capture);
+                            value = crate::kernel::program_expression::variable(name);
                         }
                         let (target_checks, address) = cx.prepared_address(target)?;
                         let value_type = cx.place_type(target)?;
-                        c_seq(
-                            c_seq(checks, target_checks),
+                        program_seq(
+                            program_seq(checks, target_checks),
                             cx.source_store(target, address, value, value_type),
                         )
                     }
@@ -777,7 +824,10 @@ pub(super) fn lower(
                     let mut initialize = assertion(flag, false);
                     let record_fields = r.fields.clone();
                     for (value, field) in fields.iter().zip(&record_fields) {
-                        let address = c_pointer_offset_bytes(c_variable(target), field.offset);
+                        let address = crate::kernel::program_expression::pointer_offset_bytes(
+                            crate::kernel::program_expression::variable(target),
+                            field.offset,
+                        );
                         let write = if let Type::Array { element, length } = &field.value_type {
                             cx.assign_array_region(
                                 address,
@@ -787,18 +837,21 @@ pub(super) fn lower(
                             )?
                         } else {
                             let (prefix, value) = cx.prepared_expr(value)?;
-                            c_seq(
+                            program_seq(
                                 prefix,
-                                c_typed_store(
+                                program_typed_store(
                                     address,
                                     value,
                                     scalar_type(&field.value_type)?.to_kernel_type(),
                                 ),
                             )
                         };
-                        initialize = c_seq(initialize, write);
+                        initialize = program_seq(initialize, write);
                     }
-                    c_seq(initialize, c_assign(flag, c_int32_literal(1)))
+                    program_seq(
+                        initialize,
+                        program_assign(flag, crate::kernel::program_expression::int32_literal(1)),
+                    )
                 }
                 S::Move {
                     target,
@@ -820,7 +873,7 @@ pub(super) fn lower(
                     let source_flag = check(source, record)?;
                     let target_flag = check(target, record)?;
                     let mut copy =
-                        c_seq(assertion(source_flag, true), assertion(target_flag, false));
+                        program_seq(assertion(source_flag, true), assertion(target_flag, false));
                     let record_fields = cx
                         .records
                         .get(record.as_str())
@@ -829,11 +882,17 @@ pub(super) fn lower(
                         .clone();
                     for field in &record_fields {
                         let source_address =
-                            c_pointer_offset_bytes(c_variable(source), field.offset);
+                            crate::kernel::program_expression::pointer_offset_bytes(
+                                crate::kernel::program_expression::variable(source),
+                                field.offset,
+                            );
                         let target_address =
-                            c_pointer_offset_bytes(c_variable(target), field.offset);
+                            crate::kernel::program_expression::pointer_offset_bytes(
+                                crate::kernel::program_expression::variable(target),
+                                field.offset,
+                            );
                         let write = if let Type::Array { element, length } = &field.value_type {
-                            c_write_scalar_array_region(
+                            program_write_scalar_array_region(
                                 target_address,
                                 source_address,
                                 scalar_type(element)?.to_kernel_type(),
@@ -851,23 +910,29 @@ pub(super) fn lower(
                                 record: record.clone(),
                                 field: field.name.clone(),
                             };
-                            c_typed_store(
+                            program_typed_store(
                                 target_address,
                                 cx.expr(&read)?,
                                 scalar_type(&field.value_type)?.to_kernel_type(),
                             )
                         };
-                        copy = c_seq(copy, write);
+                        copy = program_seq(copy, write);
                     }
-                    c_seq(
+                    program_seq(
                         copy,
-                        c_seq(
+                        program_seq(
                             if moving {
-                                c_assign(source_flag, c_int32_literal(0))
+                                program_assign(
+                                    source_flag,
+                                    crate::kernel::program_expression::int32_literal(0),
+                                )
                             } else {
-                                c_skip()
+                                program_skip()
                             },
-                            c_assign(target_flag, c_int32_literal(1)),
+                            program_assign(
+                                target_flag,
+                                crate::kernel::program_expression::int32_literal(1),
+                            ),
                         ),
                     )
                 }
@@ -876,9 +941,9 @@ pub(super) fn lower(
                     // Mint checked fresh automatic storage at the compiler's
                     // lifetime start, including each symbolic loop iteration.
                     // Re-entry retires the old object and checks live loans.
-                    c_begin_aggregate_construction(
+                    program_begin_aggregate_construction(
                         local.clone(),
-                        CAggregateLayout::new(
+                        AggregateLayout::new(
                             arrays::array_length(element, length)? * element.byte_width(),
                             element.byte_width(),
                             vec![],
@@ -896,18 +961,21 @@ pub(super) fn lower(
                     // Drop/reference-bearing records retain their checked
                     // move/drop protocol; starting storage cannot erase it.
                     if check_copyable(cx, record).is_ok() {
-                        c_seq(
-                            c_begin_aggregate_construction(
+                        program_seq(
+                            program_begin_aggregate_construction(
                                 local.clone(),
                                 cx.layouts
                                     .get(*record)
                                     .ok_or("missing record storage layout")?
                                     .to_kernel_aggregate_layout(),
                             ),
-                            c_assign(flag, c_int32_literal(0)),
+                            program_assign(
+                                flag,
+                                crate::kernel::program_expression::int32_literal(0),
+                            ),
                         )
                     } else {
-                        c_skip()
+                        program_skip()
                     }
                 }
                 S::EndStorage { local } => match records.get(local.as_str()) {
@@ -922,13 +990,17 @@ pub(super) fn lower(
                         {
                             assertion(flag, false)
                         } else {
-                            c_assign(flag, c_int32_literal(0))
+                            program_assign(
+                                flag,
+                                crate::kernel::program_expression::int32_literal(0),
+                            )
                         }
                     }
-                    None if cx.shared_array_iterators.contains_key(local) => {
-                        c_assign(format!("{local}_live"), c_int32_literal(0))
-                    }
-                    None => c_skip(),
+                    None if cx.shared_array_iterators.contains_key(local) => program_assign(
+                        format!("{local}_live"),
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
+                    None => program_skip(),
                 },
             };
             let inputs: Vec<&E> = match s {
@@ -952,9 +1024,9 @@ pub(super) fn lower(
                     &mut statement,
                 )?;
             }
-            statements = c_seq(statements, c_seq(accesses(&inputs, &live), statement));
+            statements = program_seq(statements, program_seq(accesses(&inputs, &live), statement));
         }
-        let prefix = leases.as_ref().map_or_else(c_skip, |forest| {
+        let prefix = leases.as_ref().map_or_else(program_skip, |forest| {
             super::scalar_leases::endings(
                 forest,
                 super::super::borrow_frontiers::MirPoint {
@@ -963,7 +1035,7 @@ pub(super) fn lower(
                 },
             )
         });
-        nodes[block] = Some(c_seq(prefix, c_seq(statements, terminal)));
+        nodes[block] = Some(program_seq(prefix, program_seq(statements, terminal)));
     }
     let mut emitted = vec![false; mir.blocks.len()];
     let structured = region(
@@ -976,7 +1048,7 @@ pub(super) fn lower(
         leases.as_ref(),
         None,
     )?;
-    Ok(c_seq(declarations, structured))
+    Ok(program_seq(declarations, structured))
 }
 
 fn successors(t: &T, exit: usize) -> Vec<usize> {
@@ -1077,12 +1149,15 @@ struct LoopExits<'a> {
 }
 
 impl LoopExits<'_> {
-    fn leave(&self, block: usize) -> Option<CStatement> {
+    fn leave(&self, block: usize) -> Option<ProgramStatement> {
         if block == self.exit {
-            return Some(c_break());
+            return Some(program_break());
         }
         let index = self.escapes.iter().position(|end| *end == block)?;
-        Some(c_seq(c_assign(&self.flag, escape_code(index)), c_break()))
+        Some(program_seq(
+            program_assign(&self.flag, escape_code(index)),
+            program_break(),
+        ))
     }
 }
 
@@ -1098,7 +1173,7 @@ fn loop_iterator(
     mir: &MirBody,
     header: usize,
     loop_: &flow::While,
-) -> Option<crate::languages::c::syntax::RustLoopIterator> {
+) -> Option<crate::languages::interface::RustLoopIterator> {
     use crate::languages::c::syntax::{RustIteratorKind as K, RustLoopIterator};
     let body = if loop_.body <= header {
         loop_.body..header
@@ -1157,28 +1232,28 @@ fn loop_iterator(
         })
 }
 
-fn escape_code(index: usize) -> CExpression {
-    c_int32_literal(index as u32 + 1)
+fn escape_code(index: usize) -> ProgramExpression {
+    crate::kernel::program_expression::int32_literal(index as u32 + 1)
 }
 
 fn region(
     cx: &mut Context<'_>,
     mir: &MirBody,
-    nodes: &[Option<CStatement>],
+    nodes: &[Option<ProgramStatement>],
     flow: &flow::Flow,
     emitted: &mut [bool],
     bounds: std::ops::Range<usize>,
     leases: Option<&super::scalar_leases::Prepared>,
     exits: Option<&LoopExits<'_>>,
-) -> Result<CStatement, String> {
+) -> Result<ProgramStatement, String> {
     let mut block = bounds.start;
     let stop = bounds.end;
-    let mut result = c_skip();
+    let mut result = program_skip();
     while block != stop && block != mir.blocks.len() {
         // The enclosing loop's exit, reached from its body, is a `break`,
         // and so is a labeled escape, after setting the loop's flag.
         if let Some(leave) = exits.and_then(|exits| exits.leave(block)) {
-            result = c_seq(result, leave);
+            result = program_seq(result, leave);
             break;
         }
         if std::mem::replace(&mut emitted[block], true) && !flow.exit_tails[block] {
@@ -1238,7 +1313,7 @@ fn region(
                 if std::mem::replace(&mut emitted[*part], true) {
                     return Err("shared MIR while-header continuation".into());
                 }
-                header = c_seq(
+                header = program_seq(
                     header,
                     nodes[*part]
                         .as_ref()
@@ -1253,7 +1328,7 @@ fn region(
             // test exits by `break` too, right after them, as the MIR does.
             let header_first = library_test.is_some();
             if let Some(read) = library_test {
-                header = c_seq(header, read);
+                header = program_seq(header, read);
             }
             let lowered = if loop_.breaks {
                 let exit = region(
@@ -1266,20 +1341,26 @@ fn region(
                     leases,
                     Some(&inner),
                 )?;
-                c_while(
-                    c_int32_literal(1),
+                program_while(
+                    crate::kernel::program_expression::int32_literal(1),
                     Vec::new(),
-                    c_seq(header, c_seq(c_if(condition, c_skip(), exit), body)),
+                    program_seq(
+                        header,
+                        program_seq(program_if(condition, program_skip(), exit), body),
+                    ),
                 )
             } else if header_first {
-                c_while(
-                    c_int32_literal(1),
+                program_while(
+                    crate::kernel::program_expression::int32_literal(1),
                     Vec::new(),
-                    c_seq(header, c_seq(c_if(condition, c_skip(), c_break()), body)),
+                    program_seq(
+                        header,
+                        program_seq(program_if(condition, program_skip(), program_break()), body),
+                    ),
                 )
             } else {
-                c_seq(
-                    c_while(condition, Vec::new(), c_seq(header.clone(), body)),
+                program_seq(
+                    program_while(condition, Vec::new(), program_seq(header.clone(), body)),
                     header,
                 )
             };
@@ -1287,30 +1368,39 @@ fn region(
             // naming the escape; the enclosing body then resumes there.
             let mut lowered = lowered;
             if !loop_.escapes.is_empty() {
-                lowered = c_seq(c_assign(&inner.flag, c_int32_literal(0)), lowered);
+                lowered = program_seq(
+                    program_assign(
+                        &inner.flag,
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
+                    lowered,
+                );
                 for (index, end) in loop_.escapes.iter().enumerate() {
                     let resume = match exits {
-                        Some(outer) if *end == outer.header => c_continue(),
+                        Some(outer) if *end == outer.header => program_continue(),
                         Some(outer) => outer
                             .leave(*end)
                             .ok_or("Rust labeled break leaves more than one enclosing loop")?,
                         None => return Err("Rust labeled break outside an enclosing loop".into()),
                     };
-                    lowered = c_seq(
+                    lowered = program_seq(
                         lowered,
-                        c_if(
-                            c_equal(c_variable(&inner.flag), escape_code(index)),
+                        program_if(
+                            crate::kernel::program_expression::equal(
+                                crate::kernel::program_expression::variable(&inner.flag),
+                                escape_code(index),
+                            ),
                             resume,
-                            c_skip(),
+                            program_skip(),
                         ),
                     );
                 }
             }
-            result = c_seq(result, lowered);
+            result = program_seq(result, lowered);
             block = loop_.exit;
             continue;
         }
-        result = c_seq(
+        result = program_seq(
             result,
             nodes[block].as_ref().ok_or("missing MIR block")?.clone(),
         );
@@ -1347,16 +1437,16 @@ fn region(
                 )?;
                 let branch =
                     if let Some(scope) = leases.and_then(|leases| leases.scopes.get(&block)) {
-                        c_seq(
+                        program_seq(
                             scope.operation(false),
-                            c_if(
+                            program_if(
                                 cx.condition(condition)?,
-                                c_seq(yes, scope.operation(true)),
-                                c_seq(no, scope.operation(true)),
+                                program_seq(yes, scope.operation(true)),
+                                program_seq(no, scope.operation(true)),
                             ),
                         )
                     } else {
-                        c_if(cx.condition(condition)?, yes, no)
+                        program_if(cx.condition(condition)?, yes, no)
                     };
                 if let E::ChunkHasNext { iterator } = condition {
                     let read = if super::library_iterators() {
@@ -1364,14 +1454,14 @@ fn region(
                     } else {
                         cx.chunk_read_left(iterator)
                     };
-                    result = c_seq(result, read);
+                    result = program_seq(result, read);
                 }
                 if let E::SharedArrayHasNext { iterator } = condition
                     && let Some(read) = cx.library_slice_next_call(iterator)
                 {
-                    result = c_seq(result, read);
+                    result = program_seq(result, read);
                 }
-                result = c_seq(result, branch);
+                result = program_seq(result, branch);
                 block = join;
             }
             T::Switch {
@@ -1384,7 +1474,7 @@ fn region(
                 } else {
                     flow.joins[block]
                 };
-                result = c_seq(
+                result = program_seq(
                     result,
                     switch(
                         cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, leases,
@@ -1412,7 +1502,7 @@ fn region(
 fn switch(
     cx: &mut Context<'_>,
     mir: &MirBody,
-    nodes: &[Option<CStatement>],
+    nodes: &[Option<ProgramStatement>],
     flow: &flow::Flow,
     emitted: &mut [bool],
     scrutinee: &E,
@@ -1421,7 +1511,7 @@ fn switch(
     join: usize,
     leases: Option<&super::scalar_leases::Prepared>,
     exits: Option<&LoopExits<'_>>,
-) -> Result<CStatement, String> {
+) -> Result<ProgramStatement, String> {
     use crate::languages::rust::schema::SwitchLabel;
     let mut groups: Vec<(usize, Vec<&SwitchLabel>)> = Vec::new();
     for case in cases {
@@ -1461,8 +1551,8 @@ fn switch(
         && let Some(field_enum) = super::nested_enum_field_type(name, variant, *index)?
     {
         let local = cx.fresh_temporary()?;
-        bound_field = Some(c_seq(
-            c_declare_with_all_qualifiers(
+        bound_field = Some(program_seq(
+            program_declare_with_all_qualifiers(
                 &local,
                 field_enum.to_kernel_type(),
                 false,
@@ -1470,7 +1560,7 @@ fn switch(
                 false,
                 false,
             ),
-            c_assign(&local, cx.expr(scrutinee)?),
+            program_assign(&local, cx.expr(scrutinee)?),
         ));
         bound_local = E::Local { name: local };
         &bound_local
@@ -1491,18 +1581,20 @@ fn switch(
             // An enum arm tests its variant; the `if` it becomes steps and
             // splits as any other.
             let test = match label {
-                SwitchLabel::Value { value } => c_equal(cx.expr(scrutinee)?, cx.expr(value)?),
-                SwitchLabel::Variant { name } => CExpression::EnumIs {
+                SwitchLabel::Value { value } => {
+                    crate::kernel::program_expression::equal(cx.expr(scrutinee)?, cx.expr(value)?)
+                }
+                SwitchLabel::Variant { name } => ProgramExpression::EnumIs {
                     value: Box::new(cx.expr(scrutinee)?),
                     variant: name.clone(),
                 },
             };
             condition = Some(match condition {
-                Some(earlier) => c_or(earlier, test),
+                Some(earlier) => crate::kernel::program_expression::or(earlier, test),
                 None => test,
             });
         }
-        chain = Some(c_if(
+        chain = Some(program_if(
             condition.ok_or("Rust match arm without a label")?,
             body,
             rest,
@@ -1510,12 +1602,12 @@ fn switch(
     }
     let chain = chain.ok_or_else(|| "Rust match without arms".to_string())?;
     Ok(match bound_field {
-        Some(bound) => c_seq(bound, chain),
+        Some(bound) => program_seq(bound, chain),
         None => chain,
     })
 }
 
-fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
+fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> ProgramStatement {
     let mut roots = BTreeSet::new();
     let mut pending = expressions.to_vec();
     while let Some(expression) = pending.pop() {
@@ -1548,8 +1640,14 @@ fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
             _ => {}
         }
     }
-    roots.into_iter().fold(c_skip(), |s, flag| {
-        c_seq(s, c_assert(c_equal(c_variable(flag), c_int32_literal(1))))
+    roots.into_iter().fold(program_skip(), |s, flag| {
+        program_seq(
+            s,
+            program_assert(crate::kernel::program_expression::equal(
+                crate::kernel::program_expression::variable(flag),
+                crate::kernel::program_expression::int32_literal(1),
+            )),
+        )
     })
 }
 
@@ -1570,16 +1668,16 @@ mod tests {
     #[test]
     fn owned_lowering_does_not_duplicate_unrelated_context() {
         use crate::languages::rust::schema::{Field, Place, Span};
-        fn count(s: &CStatement) -> usize {
+        fn count(s: &ProgramStatement) -> usize {
             match s {
-                CStatement::Seq(statements) => {
+                ProgramStatement::Seq(statements) => {
                     statements.len() - 1
                         + statements
                             .iter()
                             .map(|statement| count(statement))
                             .sum::<usize>()
                 }
-                CStatement::If {
+                ProgramStatement::If {
                     then_branch,
                     else_branch,
                     ..
@@ -1737,13 +1835,17 @@ mod tests {
                 next_temporary: 0,
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
-                return_type: C0Type::Void,
+                return_type: InterfaceType::Void,
                 layouts: &layouts,
                 records: &records,
                 functions: &functions,
             };
             let nodes = (0..mir.blocks.len())
-                .map(|i| Some(c_assert(c_int32_literal(i as u32))))
+                .map(|i| {
+                    Some(program_assert(
+                        crate::kernel::program_expression::int32_literal(i as u32),
+                    ))
+                })
                 .collect::<Vec<_>>();
             let mut emitted = vec![false; mir.blocks.len()];
             let structured = region(
@@ -1765,18 +1867,18 @@ mod tests {
             )
             .unwrap();
             assert!(emitted.iter().all(|b| *b));
-            fn assertions(s: &CStatement) -> usize {
+            fn assertions(s: &ProgramStatement) -> usize {
                 match s {
-                    CStatement::Seq(statements) => statements
+                    ProgramStatement::Seq(statements) => statements
                         .iter()
                         .map(|statement| assertions(statement))
                         .sum(),
-                    CStatement::If {
+                    ProgramStatement::If {
                         then_branch,
                         else_branch,
                         ..
                     } => assertions(then_branch) + assertions(else_branch),
-                    CStatement::Assert { .. } => 1,
+                    ProgramStatement::Assert { .. } => 1,
                     _ => 0,
                 }
             }

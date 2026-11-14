@@ -18,15 +18,16 @@ pub(in crate::surface::proof) fn explicit_loop_preservation_tactics(
 }
 
 pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
-    pub(in crate::surface::proof) initial_state: &'a CState,
+    pub(in crate::surface::proof) initial_state: &'a ExecutionState,
     pub(in crate::surface::proof) function_block: &'a FunctionBlock,
-    pub(in crate::surface::proof) parsed_function: &'a syntax::C0Function,
-    pub(in crate::surface::proof) function_environment: &'a CExecutionEnvironment,
+    pub(in crate::surface::proof) parsed_function:
+        &'a crate::languages::interface::ImportedFunction,
+    pub(in crate::surface::proof) function_environment: &'a ExecutionEnvironment,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) resource_environment: &'a ResourceEnvironment,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
-    pub(in crate::surface::proof) function: &'a CFunction,
-    pub(in crate::surface::proof) arguments: &'a [CExpression],
+    pub(in crate::surface::proof) function: &'a ProgramFunction,
+    pub(in crate::surface::proof) arguments: &'a [ProgramExpression],
     pub(in crate::surface::proof) surface_propositions: &'a SurfacePropositionMap,
     pub(in crate::surface::proof) source_layout: &'a SourceExecutionLayout,
     pub(in crate::surface::proof) function_source_registry: Arc<FunctionSourceRegistry>,
@@ -147,7 +148,7 @@ pub(in crate::surface::proof) enum LoopPhasePlace {
 
 #[derive(Clone)]
 pub(in crate::surface::proof) struct PlanningExecutionContext {
-    pub(in crate::surface::proof) state: CState,
+    pub(in crate::surface::proof) state: ExecutionState,
     pub(in crate::surface::proof) pure_facts: PureFactList,
     pub(in crate::surface::proof) surface_propositions: SurfacePropositionMap,
     pub(in crate::surface::proof) recorded_snapshots: RecordedSnapshots,
@@ -572,12 +573,12 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
 
 /// Spell generated call-result locals by their introducing source region.
 /// Only names in this condition are inspected; no ambient state is searched.
-pub(in crate::surface::proof) fn surface_c_condition(
-    condition: &CExpression,
-    state: &CState,
+pub(in crate::surface::proof) fn surface_program_condition(
+    condition: &ProgramExpression,
+    state: &ExecutionState,
 ) -> Result<ClickProposition, ClickError> {
     let mut names = BTreeSet::new();
-    crate::surface::collect_c_expression_referenced_names(condition, &mut names);
+    crate::surface::collect_program_expression_referenced_names(condition, &mut names);
     let mut substitutions = BTreeMap::new();
     for name in names {
         if crate::surface::diagnostics::is_call_result_temporary(&name) {
@@ -590,73 +591,87 @@ pub(in crate::surface::proof) fn surface_c_condition(
             substitutions.insert(name, result);
         }
     }
-    let surface = surface_c_condition_unresolved(condition, state);
+    let surface = surface_program_condition_unresolved(condition, state);
     if substitutions.is_empty() {
         return Ok(surface);
     }
     substitute_click_proposition(&surface, &substitutions).map_err(ClickError::new)
 }
 
-fn surface_c_condition_unresolved(condition: &CExpression, state: &CState) -> ClickProposition {
-    pub(in crate::surface::proof) fn expression(expression: &CExpression) -> ContractExpression {
-        substitute_c_fragment_as_contract_with_numerals(expression, &BTreeMap::new(), true)
+fn surface_program_condition_unresolved(
+    condition: &ProgramExpression,
+    state: &ExecutionState,
+) -> ClickProposition {
+    pub(in crate::surface::proof) fn expression(
+        expression: &ProgramExpression,
+    ) -> ContractExpression {
+        substitute_program_expression_as_contract_with_numerals(expression, &BTreeMap::new(), true)
             .expect("converting a C expression without substitutions cannot fail")
     }
 
-    let comparison = |left: &CExpression, operator: ComparisonOperator, right: &CExpression| {
-        let address_comparison = matches!(
-            operator,
-            ComparisonOperator::Equal | ComparisonOperator::NotEqual
-        ) && crate::kernel::c_expression_has_pointer_type(state, left)
-            && crate::kernel::c_expression_has_pointer_type(state, right);
-        let operand = |value: &CExpression| {
-            if address_comparison {
-                expression(&crate::kernel::c_cast(value.clone(), CType::UInt64))
-            } else {
-                expression(value)
+    let comparison =
+        |left: &ProgramExpression, operator: ComparisonOperator, right: &ProgramExpression| {
+            let address_comparison =
+                matches!(
+                    operator,
+                    ComparisonOperator::Equal | ComparisonOperator::NotEqual
+                ) && crate::kernel::program_expression_has_pointer_type(state, left)
+                    && crate::kernel::program_expression_has_pointer_type(state, right);
+            let operand = |value: &ProgramExpression| {
+                if address_comparison {
+                    expression(&crate::kernel::program_expression::cast(
+                        value.clone(),
+                        ProgramType::UInt64,
+                    ))
+                } else {
+                    expression(value)
+                }
+            };
+            ClickProposition::Comparison {
+                left: operand(left),
+                operator,
+                right: operand(right),
             }
         };
-        ClickProposition::Comparison {
-            left: operand(left),
-            operator,
-            right: operand(right),
-        }
-    };
     match condition {
         // Boolean conversion preserves truthiness. Retain the predicate's
         // ordinary source spelling rather than printing a value-level cast
         // around a comparison, which has no contract-expression syntax.
-        CExpression::Cast {
+        ProgramExpression::Cast {
             expression,
-            target_type: CType::Bool,
+            target_type: ProgramType::Bool,
             ..
-        } => surface_c_condition_unresolved(expression, state),
-        CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
-        CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
-        CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
-        CExpression::LessEqual(left, right) => {
+        } => surface_program_condition_unresolved(expression, state),
+        ProgramExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
+        ProgramExpression::NotEqual(left, right) => {
+            comparison(left, ComparisonOperator::NotEqual, right)
+        }
+        ProgramExpression::LessThan(left, right) => {
+            comparison(left, ComparisonOperator::LessThan, right)
+        }
+        ProgramExpression::LessEqual(left, right) => {
             comparison(left, ComparisonOperator::LessEqual, right)
         }
-        CExpression::GreaterThan(left, right) => {
+        ProgramExpression::GreaterThan(left, right) => {
             comparison(left, ComparisonOperator::GreaterThan, right)
         }
-        CExpression::GreaterEqual(left, right) => {
+        ProgramExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
-        CExpression::Not(body) => {
-            ClickProposition::Not(Box::new(surface_c_condition_unresolved(body, state)))
+        ProgramExpression::Not(body) => {
+            ClickProposition::Not(Box::new(surface_program_condition_unresolved(body, state)))
         }
-        CExpression::And(left, right) => ClickProposition::And(
-            Box::new(surface_c_condition_unresolved(left, state)),
-            Box::new(surface_c_condition_unresolved(right, state)),
+        ProgramExpression::And(left, right) => ClickProposition::And(
+            Box::new(surface_program_condition_unresolved(left, state)),
+            Box::new(surface_program_condition_unresolved(right, state)),
         ),
-        CExpression::Or(left, right) => ClickProposition::Or(
-            Box::new(surface_c_condition_unresolved(left, state)),
-            Box::new(surface_c_condition_unresolved(right, state)),
+        ProgramExpression::Or(left, right) => ClickProposition::Or(
+            Box::new(surface_program_condition_unresolved(left, state)),
+            Box::new(surface_program_condition_unresolved(right, state)),
         ),
         // A `bool` value is the claim on itself (Stage 5): `Bool` has no
         // integer value to compare with zero.
-        condition if crate::kernel::c_expression_has_bool_type(state, condition) => {
+        condition if crate::kernel::program_expression_has_bool_type(state, condition) => {
             ClickProposition::Comparison {
                 left: expression(condition),
                 operator: ComparisonOperator::NotEqual,
@@ -666,7 +681,7 @@ fn surface_c_condition_unresolved(condition: &CExpression, state: &CState) -> Cl
         condition => ClickProposition::Comparison {
             left: expression(condition),
             operator: ComparisonOperator::NotEqual,
-            right: expression(&CExpression::Value(int32(0))),
+            right: expression(&ProgramExpression::Value(int32(0))),
         },
     }
 }
@@ -707,7 +722,7 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
     let Proposition::ForAll { sort, .. } = proposition else {
         let Proposition::Exists {
             var,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body,
             ..
         } = proposition
@@ -739,7 +754,8 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
         };
         return source_range_universal_is_supported(range).then_some(true);
     };
-    (*sort == Sort::CInt32 && source_range_universal_is_supported(proposition)).then_some(false)
+    (*sort == Sort::ProgramInt32 && source_range_universal_is_supported(proposition))
+        .then_some(false)
 }
 
 fn source_range_universal_is_supported(proposition: &Proposition) -> bool {
@@ -749,10 +765,10 @@ fn source_range_universal_is_supported(proposition: &Proposition) -> bool {
     let Proposition::Implies(_, consequent) = body.as_ref() else {
         return false;
     };
-    let Proposition::CMemoryLoadable { base, bytes, .. } = consequent.as_ref() else {
+    let Proposition::MemoryLoadable { base, bytes, .. } = consequent.as_ref() else {
         return false;
     };
-    *sort == Sort::CInt32
+    *sort == Sort::ProgramInt32
         && matches!(base.block, crate::kernel::PointerBlock::ExternalArgument)
         && is_one_byte_external_range(bytes)
 }
@@ -768,7 +784,7 @@ fn has_explicit_existential_byte_range(proposition: &Proposition) -> bool {
     };
     let Proposition::Exists {
         var,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body,
         ..
     } = proposition
@@ -789,7 +805,7 @@ fn has_explicit_existential_byte_range(proposition: &Proposition) -> bool {
                 work.push(left);
                 work.push(right);
             }
-            Proposition::CMemoryLoadable { base, bytes, .. }
+            Proposition::MemoryLoadable { base, bytes, .. }
                 if base.block == crate::kernel::PointerBlock::ExternalArgument
                     && *bytes == width =>
             {
@@ -805,7 +821,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
     proposition: &Proposition,
     source_requirement_ordinal: Option<usize>,
     source_requirement_is_state_independent: bool,
-    source_snapshot: Option<crate::kernel::CMemorySnapshotIdentity>,
+    source_snapshot: Option<crate::kernel::MemorySnapshotIdentity>,
 ) -> Result<bool, ClickError> {
     if source_requirement_ordinal.is_none() {
         return Ok(false);
@@ -905,7 +921,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 }
                 work.push(Work::Proposition(body, depth + 1));
             }
-            Work::Proposition(Proposition::CMemoryLoadable { base, bytes, .. }, _)
+            Work::Proposition(Proposition::MemoryLoadable { base, bytes, .. }, _)
                 if quantified_external_range
                     && matches!(base.block, crate::kernel::PointerBlock::ExternalArgument)
                     && (is_one_byte_external_range(bytes) || explicit_range) =>
@@ -915,9 +931,9 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 work.push(Work::PointerOffset(&base.offset));
             }
             Work::Proposition(
-                Proposition::CMemoryReadDefined {
+                Proposition::MemoryReadDefined {
                     pointer,
-                    value_type: CType::UInt8,
+                    value_type: ProgramType::UInt8,
                     ..
                 },
                 _,
@@ -1056,7 +1072,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
 /// unregistered loads remain on the compatibility path.
 fn registered_static_load_matches_snapshot(
     variable: &Variable,
-    source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    source_snapshot: crate::kernel::MemorySnapshotIdentity,
 ) -> bool {
     let Some((_memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
         return false;
@@ -1070,7 +1086,7 @@ fn registered_static_load_matches_snapshot(
     // must be the exact source carrier identity; equal contents or matching
     // static markers are not a transport relation.
     if pointer != origin_pointer
-        || crate::kernel::CMemorySnapshotIdentity::of(origin.memory()) != source_snapshot
+        || crate::kernel::MemorySnapshotIdentity::of(origin.memory()) != source_snapshot
     {
         return false;
     }
@@ -1083,7 +1099,7 @@ fn registered_static_load_matches_snapshot(
 
 fn registered_static_memory_load_matches_snapshot(
     term: &MachineTerm,
-    source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    source_snapshot: crate::kernel::MemorySnapshotIdentity,
 ) -> bool {
     let Some(read) =
         crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
@@ -1093,7 +1109,7 @@ fn registered_static_memory_load_matches_snapshot(
     let Some(origin) = read.origin else {
         return false;
     };
-    crate::kernel::CMemorySnapshotIdentity::of(origin.memory()) == source_snapshot
+    crate::kernel::MemorySnapshotIdentity::of(origin.memory()) == source_snapshot
         && matches!(read.pointer.block,
             PointerBlock::Concrete(ref block)
                 if PointerBlock::is_static_name(block) || PointerBlock::is_global_name(block))
@@ -1104,7 +1120,7 @@ fn registered_static_memory_load_matches_snapshot(
 /// this gate so neither route can silently derive the same source requirement.
 pub(in crate::surface) fn source_backed_requirement_should_intercept(
     obligation: &ProofObligation,
-    current_memory: &crate::kernel::CMemory,
+    current_memory: &crate::kernel::Memory,
 ) -> Result<bool, ClickError> {
     if obligation.is_assumable() {
         return Ok(false);
@@ -1112,7 +1128,7 @@ pub(in crate::surface) fn source_backed_requirement_should_intercept(
     let Some(site) = obligation.call_requirement_site() else {
         return Ok(false);
     };
-    if crate::kernel::CMemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
+    if crate::kernel::MemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
         return Ok(false);
     }
     source_backed_requirement_is_supported(
@@ -1242,8 +1258,8 @@ mod tests {
 
     #[test]
     fn static_load_capability_requires_registered_origin_epoch() {
-        let memory = crate::kernel::intern_c_memory(
-            crate::kernel::CMemory::new().with_block("static:test:values#static0", 16),
+        let memory = crate::kernel::intern_memory(
+            crate::kernel::Memory::new().with_block("static:test:values#static0", 16),
         );
         let pointer = crate::kernel::Pointer {
             block: crate::kernel::PointerBlock::Concrete("static:test:values#static0".into()),
@@ -1268,7 +1284,7 @@ mod tests {
             },
             true,
         );
-        let source_snapshot = crate::kernel::CMemorySnapshotIdentity::of(memory.memory());
+        let source_snapshot = crate::kernel::MemorySnapshotIdentity::of(memory.memory());
         assert!(
             source_backed_requirement_is_supported(
                 &proposition,
@@ -1336,7 +1352,7 @@ mod tests {
         // eligible for a retry at the wrong frontier. (A derivation would hand
         // back the arena's canonical storage, so build the roots directly.)
         let other = memory.memory().with_fresh_storage_roots();
-        let other_snapshot = crate::kernel::CMemorySnapshotIdentity::of(&other);
+        let other_snapshot = crate::kernel::MemorySnapshotIdentity::of(&other);
         assert_ne!(source_snapshot, other_snapshot);
         assert!(
             !source_backed_requirement_is_supported(
@@ -1352,13 +1368,13 @@ mod tests {
 
     #[test]
     fn quantified_external_range_capability_is_frontier_exact() {
-        let memory = crate::kernel::CMemory::new();
+        let memory = crate::kernel::Memory::new();
         let pointer = crate::kernel::Pointer {
             block: crate::kernel::PointerBlock::ExternalArgument,
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         };
-        let range = Proposition::CMemoryLoadable {
-            memory: crate::kernel::CMemory::new(),
+        let range = Proposition::MemoryLoadable {
+            memory: crate::kernel::Memory::new(),
             base: pointer,
             bytes: MachineTerm::constant(1),
             wide: false,
@@ -1366,7 +1382,7 @@ mod tests {
         let quantified = Proposition::ForAll {
             name: Default::default(),
             var: Variable(3_100_000),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::Constant(true),
@@ -1383,7 +1399,7 @@ mod tests {
         let guarded = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::Overflows {
@@ -1405,7 +1421,7 @@ mod tests {
         let existential_range = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(quantified.clone()),
         };
         assert!(
@@ -1417,7 +1433,7 @@ mod tests {
         let unsupported_polarity = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::Overflows {
@@ -1440,7 +1456,7 @@ mod tests {
         let load_variable_guard = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::Overflows {
@@ -1467,7 +1483,7 @@ mod tests {
         let wrong_width = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt64,
+            sort: Sort::ProgramInt64,
             body: guarded_body.clone(),
         };
         assert!(
@@ -1477,14 +1493,14 @@ mod tests {
         let mut wide_range = quantified.clone();
         if let Proposition::ForAll { body, .. } = &mut wide_range
             && let Proposition::Implies(_, consequent) = body.as_mut()
-            && let Proposition::CMemoryLoadable { bytes, .. } = consequent.as_mut()
+            && let Proposition::MemoryLoadable { bytes, .. } = consequent.as_mut()
         {
             *bytes = MachineTerm::constant(2);
         }
         let wide_guarded = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::Overflows {
@@ -1505,7 +1521,7 @@ mod tests {
         let mut unregistered_range = quantified.clone();
         if let Proposition::ForAll { body, .. } = &mut unregistered_range
             && let Proposition::Implies(_, consequent) = body.as_mut()
-            && let Proposition::CMemoryLoadable { base, .. } = consequent.as_mut()
+            && let Proposition::MemoryLoadable { base, .. } = consequent.as_mut()
         {
             base.offset =
                 PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(1 << 40)), 1);
@@ -1513,7 +1529,7 @@ mod tests {
         let unregistered_guarded = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::Overflows {
@@ -1535,7 +1551,7 @@ mod tests {
         let nested_guarded = Proposition::Exists {
             name: "len".to_string(),
             var: Variable(3_100_001),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::Overflows {
@@ -1596,21 +1612,22 @@ mod boolean_guard_tests {
     #[test]
     fn boolean_cast_guards_retain_the_underlying_source_predicate() {
         for condition in [
-            crate::kernel::c_greater_than(
-                crate::kernel::c_variable("n"),
-                crate::kernel::c_int32_literal(0),
+            crate::kernel::program_expression::greater_than(
+                crate::kernel::program_expression::variable("n"),
+                crate::kernel::program_expression::int32_literal(0),
             ),
-            crate::kernel::c_variable("n"),
+            crate::kernel::program_expression::variable("n"),
         ] {
-            let converted = crate::kernel::c_cast(condition.clone(), CType::Bool);
+            let converted =
+                crate::kernel::program_expression::cast(condition.clone(), ProgramType::Bool);
             assert_eq!(
-                surface_c_condition(&converted, &CState::new()).unwrap(),
-                surface_c_condition(&condition, &CState::new()).unwrap()
+                surface_program_condition(&converted, &ExecutionState::new()).unwrap(),
+                surface_program_condition(&condition, &ExecutionState::new()).unwrap()
             );
-            let nested = crate::kernel::c_cast(converted, CType::Bool);
+            let nested = crate::kernel::program_expression::cast(converted, ProgramType::Bool);
             assert_eq!(
-                surface_c_condition(&nested, &CState::new()).unwrap(),
-                surface_c_condition(&condition, &CState::new()).unwrap()
+                surface_program_condition(&nested, &ExecutionState::new()).unwrap(),
+                surface_program_condition(&condition, &ExecutionState::new()).unwrap()
             );
         }
     }

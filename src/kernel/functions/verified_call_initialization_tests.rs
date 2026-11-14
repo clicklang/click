@@ -7,50 +7,60 @@ fn local_pointer() -> Pointer {
     }
 }
 
-fn owned_cell_spec() -> CResourceSpec {
-    CResourceSpec::owned_memory(CMemorySegment::new(
-        c_variable("p"),
-        c_int32_literal(0),
-        c_int32_literal(1),
+fn owned_cell_spec() -> ResourceSpec {
+    ResourceSpec::owned_memory(MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ))
 }
 
-fn uninitialized_cell_spec() -> CResourceSpec {
-    CResourceSpec::owned_memory(
-        CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1))
-            .with_uninitialized(true),
+fn uninitialized_cell_spec() -> ResourceSpec {
+    ResourceSpec::owned_memory(
+        MemorySegment::new(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
+        )
+        .with_uninitialized(true),
     )
 }
 
-fn caller_state(pointer: &Pointer) -> CState {
-    let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-        CResource::Memory(CMemoryRange::new(
+fn caller_state(pointer: &Pointer) -> ExecutionState {
+    let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
+        Resource::Memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         )),
     ));
-    CState::new()
+    ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(CMemory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(resources)
 }
 
-fn apply(function: CFunction, state: &CState, pointer: &Pointer) -> Vec<CFunctionPath> {
+fn apply(
+    function: ProgramFunction,
+    state: &ExecutionState,
+    pointer: &Pointer,
+) -> Vec<FunctionPath> {
     let environment =
-        CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+        ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
-            loop_semantics: CLoopSemantics::Verify,
+            loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
         });
-    execute_c_function_call_paths(
+    execute_program_function_call_paths(
         state,
         &function,
-        &[c_pointer_value(pointer.clone())],
+        &[crate::kernel::program_expression::pointer_value(
+            pointer.clone(),
+        )],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("verified call should execute")
@@ -59,18 +69,21 @@ fn apply(function: CFunction, state: &CState, pointer: &Pointer) -> Vec<CFunctio
 #[test]
 fn an_owning_call_requires_the_caller_to_initialize_the_range() {
     let pointer = local_pointer();
-    let function = c_function(
-        CType::Int32,
+    let function = program_function(
+        ProgramType::Int32,
         "read_owned",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        c_return(c_index(c_variable("p"), c_int32_literal(0))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::index(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+        )),
     )
     .with_resource_summary(vec![owned_cell_spec()], Vec::new());
     let paths = apply(function, &caller_state(&pointer), &pointer);
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         }] if message.contains("holds its range as initialized")
     ));
@@ -79,23 +92,26 @@ fn an_owning_call_requires_the_caller_to_initialize_the_range() {
 #[test]
 fn owned_write_keeps_an_uninitialized_output_writable() {
     let pointer = local_pointer();
-    let function = c_function(
-        CType::Void,
+    let function = program_function(
+        ProgramType::Void,
         "write_owned",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        c_store(
-            c_index(c_variable("p"), c_int32_literal(0)),
-            c_int32_literal(7),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_store(
+            crate::kernel::program_expression::index(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+            ),
+            crate::kernel::program_expression::int32_literal(7),
         ),
     )
     .with_resource_summary(vec![uninitialized_cell_spec()], Vec::new())
     .with_contract(
         Vec::new(),
         Vec::new(),
-        vec![CMemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+        vec![MemorySegment::new(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         )],
         Vec::new(),
         true,
@@ -103,8 +119,8 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
     let paths = apply(function, &caller_state(&pointer), &pointer);
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { .. },
             ..
         }]
     ));

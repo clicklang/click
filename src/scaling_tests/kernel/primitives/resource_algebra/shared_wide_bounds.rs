@@ -8,13 +8,14 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
             block: "wide_bound_scaling".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018502));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018502));
         for _ in 0..size {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
         let index = MachineOperandView::Shared(&root).retain(ty);
-        let range = CMemoryRange::new_wide(
+        let range = MemoryRange::new_wide(
             Pointer {
                 block: base.block.clone(),
                 offset: PointerOffsetTerm::Int64Scaled {
@@ -55,7 +56,8 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1081501));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1081501));
         for _ in 0..size {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
@@ -73,7 +75,7 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
             ),
         };
         let fact = |start, end| {
-            CResourceFact::own_memory(CMemoryRange::new_wide(
+            ResourceFact::own_memory(MemoryRange::new_wide(
                 base.clone(),
                 MachineTerm::uint64_constant(start),
                 MachineTerm::uint64_constant(end),

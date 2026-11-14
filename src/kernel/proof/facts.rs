@@ -27,15 +27,15 @@ use std::sync::Arc;
 /// ancestry that ownership and typed access must continue to distinguish.
 /// This key is only for memory/memory separation, never containment or views.
 fn spatial_separation_key(fact: &Proposition) -> Option<Proposition> {
-    let Proposition::CResourceSeparate { left, right } = fact else {
+    let Proposition::ResourceSeparate { left, right } = fact else {
         return None;
     };
-    let (CResource::Memory(left), CResource::Memory(right)) = (&**left, &**right) else {
+    let (Resource::Memory(left), Resource::Memory(right)) = (&**left, &**right) else {
         return None;
     };
-    Some(Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(left.spatial_key())),
-        right: Box::new(CResource::Memory(right.spatial_key())),
+    Some(Proposition::ResourceSeparate {
+        left: Box::new(Resource::Memory(left.spatial_key())),
+        right: Box::new(Resource::Memory(right.spatial_key())),
     })
 }
 
@@ -153,19 +153,19 @@ mod disjunction_projection_tests {
             block: "projection-cell".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new().with_block("projection-cell", 4).store(
+        let before = Memory::new().with_block("projection-cell", 4).store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(Variable(10))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(10))),
         );
         let after = before.clone().store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(Variable(11))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
         );
         let read = |memory| {
             Proposition::ConditionIs(
                 ConditionTerm::equal(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_c_memory(memory),
+                        crate::kernel::intern_memory(memory),
                         Box::new(pointer.clone()),
                         LoadKind::Int32,
                     ),
@@ -1614,7 +1614,7 @@ impl ProofFacts {
     pub(crate) fn freshen_pointer_forall_body(
         &self,
         binder: Variable,
-        c_type: CType,
+        program_type: ProgramType,
         body: &Proposition,
     ) -> Option<(Variable, Proposition)> {
         if !self.reserved_variables.contains(&binder) {
@@ -1622,7 +1622,7 @@ impl ProofFacts {
         }
         let body_variables = crate::kernel::proposition_variables(body);
         let fresh = self.fresh_universal_witness(&body_variables)?;
-        let pointer = if matches!(c_type, CType::FunctionPointer(_)) {
+        let pointer = if matches!(program_type, ProgramType::FunctionPointer(_)) {
             Pointer::symbolic_function(fresh)
         } else {
             Pointer::symbolic(fresh)
@@ -1653,7 +1653,7 @@ impl ProofFacts {
         while let Some(part) = pending.pop() {
             match part {
                 Proposition::And(left, right) => pending.extend([right.as_ref(), left.as_ref()]),
-                Proposition::CResourceSeparate { left, right }
+                Proposition::ResourceSeparate { left, right }
                     if !facts.contains(part)
                         && resources.proves_exact_partition_separation(left, right) =>
                 {
@@ -1672,9 +1672,9 @@ impl ProofFacts {
     pub(crate) fn with_selected_held_resource_separation(
         &self,
         goal: &Proposition,
-        state: &crate::kernel::CState,
+        state: &crate::kernel::ExecutionState,
     ) -> Self {
-        let Proposition::CResourceSeparate { left, right } = goal else {
+        let Proposition::ResourceSeparate { left, right } = goal else {
             return self.clone();
         };
         if !self.contains(goal)
@@ -1698,7 +1698,7 @@ impl ProofFacts {
                 pending.push(left);
                 continue;
             }
-            if matches!(part, Proposition::CResourceSeparate { .. }) && !facts.contains(part) {
+            if matches!(part, Proposition::ResourceSeparate { .. }) && !facts.contains(part) {
                 let assumptions = &facts.assumptions;
                 if assumptions.proves_exact(part)
                     || assumptions.proves_atomic_memory_or_resource(part)
@@ -2438,10 +2438,10 @@ impl ProofFacts {
         }
         if let Proposition::ConditionIs(condition, _) = proposition {
             let finite: Vec<_> = match condition {
-                ConditionTerm::Float32(CFloatCondition::Comparison { left, right, .. }) => {
+                ConditionTerm::Float32(FloatCondition::Comparison { left, right, .. }) => {
                     vec![(32, left), (32, right)]
                 }
-                ConditionTerm::Float64(CFloatCondition::Comparison { left, right, .. }) => {
+                ConditionTerm::Float64(FloatCondition::Comparison { left, right, .. }) => {
                     vec![(64, left), (64, right)]
                 }
                 _ => Vec::new(),
@@ -2449,15 +2449,15 @@ impl ProofFacts {
             for (width, value) in finite {
                 let classification = match width {
                     32 => Proposition::ConditionIs(
-                        ConditionTerm::Float32(CFloatCondition::Classification {
-                            classification: CFloatClassification::Finite,
+                        ConditionTerm::Float32(FloatCondition::Classification {
+                            classification: FloatClassification::Finite,
                             value: value.clone(),
                         }),
                         true,
                     ),
                     64 => Proposition::ConditionIs(
-                        ConditionTerm::Float64(CFloatCondition::Classification {
-                            classification: CFloatClassification::Finite,
+                        ConditionTerm::Float64(FloatCondition::Classification {
+                            classification: FloatClassification::Finite,
                             value: value.clone(),
                         }),
                         true,
@@ -2758,14 +2758,14 @@ fn restore_range_extent_spelling(
     };
     match (original, renamed) {
         (
-            Proposition::CMemoryLoadable { bytes, .. },
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable { bytes, .. },
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes: folded,
                 wide: false,
             },
-        ) => Proposition::CMemoryLoadable {
+        ) => Proposition::MemoryLoadable {
             memory,
             base,
             bytes: substituted_range_extent(bytes, from, to).unwrap_or(folded),
@@ -3132,8 +3132,8 @@ fn index_finite_classification_fact(
     if !matches!(
         fact.as_ref(),
         Proposition::ConditionIs(
-            ConditionTerm::Float32(CFloatCondition::Classification { .. })
-                | ConditionTerm::Float64(CFloatCondition::Classification { .. }),
+            ConditionTerm::Float32(FloatCondition::Classification { .. })
+                | ConditionTerm::Float64(FloatCondition::Classification { .. }),
             true,
         )
     ) {
@@ -3200,6 +3200,16 @@ fn collect_proposition_algebraic_terms(
             for value in [left.as_ref(), right.as_ref()] {
                 if let crate::kernel::IntegerTerm::AlgebraicMatch { scrutinee, .. } = value {
                     collect_algebraic_term_roots(scrutinee, terms);
+                } else if let crate::kernel::IntegerTerm::Machine(machine) = value
+                    && matches!(
+                        machine.ty(),
+                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                    )
+                    && let Some(scrutinee) = machine.operand_view().match_scrutinee()
+                {
+                    // Shared word comparisons use Integer observations. Keep
+                    // the native equality's existing scrutinee selection.
+                    collect_algebraic_term_roots(&scrutinee, terms);
                 }
             }
         }
@@ -3299,7 +3309,7 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
                         element_type,
                     } => {
                         2u8.hash(&mut hasher);
-                        intern_c_memory_ref(memory).arena_id().hash(&mut hasher);
+                        intern_memory_ref(memory).arena_id().hash(&mut hasher);
                         pointer.hash(&mut hasher);
                         element_type.hash(&mut hasher);
                     }
@@ -3332,9 +3342,9 @@ fn collect_proposition_bitvector_atoms(
         Proposition::ConditionIs(condition, _) => {
             collect_condition_bitvector_atoms(condition, atoms)
         }
-        Proposition::CResourceSeparate { left, right } => {
+        Proposition::ResourceSeparate { left, right } => {
             for resource in [left, right] {
-                if let CResource::Memory(range) = &**resource {
+                if let Resource::Memory(range) = &**resource {
                     collect_pointer_offset_bitvector_atoms(&range.base.offset, atoms);
                     collect_bitvector_atoms(range.bound_terms().0, atoms);
                     collect_bitvector_atoms(range.bound_terms().1, atoms);
@@ -3878,8 +3888,8 @@ fn collect_owned_atomic_conjuncts(fact: &Proposition, output: &mut Vec<Propositi
 mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
-        CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm,
-        Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedIntegerTerm,
+        IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Memory, Pointer,
+        PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, Variable,
     };
 
@@ -3893,7 +3903,7 @@ mod integer_equality_fact_index_tests {
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(CMemory::new()),
+                    crate::kernel::intern_memory(Memory::new()),
                     Box::new(read.offset_by_bytes(4)),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -3967,7 +3977,7 @@ mod integer_equality_fact_index_tests {
     }
 
     fn explicit_load_fold(
-        memory: &crate::kernel::SharedCMemory,
+        memory: &crate::kernel::SharedMemory,
         accumulator: Variable,
         item: Variable,
     ) -> IntegerTerm {
@@ -3990,7 +4000,7 @@ mod integer_equality_fact_index_tests {
     }
 
     fn loadable_forall(
-        memory: &CMemory,
+        memory: &Memory,
         binder: Variable,
         block: &str,
         free_offset: Option<Variable>,
@@ -4009,8 +4019,8 @@ mod integer_equality_fact_index_tests {
         Proposition::ForAll {
             name: Default::default(),
             var: binder,
-            sort: Sort::CInt32,
-            body: Box::new(Proposition::CMemoryLoadable {
+            sort: Sort::ProgramInt32,
+            body: Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Pointer {
                     block: block.into(),
@@ -4023,7 +4033,7 @@ mod integer_equality_fact_index_tests {
     }
 
     fn loadable_exists(
-        memory: &CMemory,
+        memory: &Memory,
         name: &str,
         binder: Variable,
         block: &str,
@@ -4043,8 +4053,8 @@ mod integer_equality_fact_index_tests {
         Proposition::Exists {
             name: name.into(),
             var: binder,
-            sort: Sort::CInt32,
-            body: Box::new(Proposition::CMemoryLoadable {
+            sort: Sort::ProgramInt32,
+            body: Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Pointer {
                     block: block.into(),
@@ -4059,7 +4069,7 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn transport_index_extracts_separation_without_importing_arithmetic() {
         let range = |block: &str| {
-            crate::kernel::CResource::Memory(crate::kernel::CMemoryRange::new(
+            crate::kernel::Resource::Memory(crate::kernel::MemoryRange::new(
                 Pointer {
                     block: block.into(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -4068,7 +4078,7 @@ mod integer_equality_fact_index_tests {
                 MachineTerm::Variable(Variable(210_000)),
             ))
         };
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(range("a")),
             right: Box::new(range("b")),
         };
@@ -4241,13 +4251,13 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn integer_alpha_fact_lookup_keeps_inequality_snapshot_identity() {
         let before =
-            crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha-facts", 8));
-        let changed = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+            crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha-facts", 8));
+        let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Pointer {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         ));
         let source_fact = less_equal(
             IntegerTerm::constant_i64(9),
@@ -4276,19 +4286,19 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_alpha_index_renames_binder_but_keeps_exact_payload() {
-        let memory = CMemory::new().with_block("quantified-viewable", 32).store(
+        let memory = Memory::new().with_block("quantified-viewable", 32).store(
             Pointer {
                 block: "quantified-viewable".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::Variable(Variable(207_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(207_000))),
         );
         let changed_memory = memory.clone().store(
             Pointer {
                 block: "quantified-viewable".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         );
         let source = loadable_forall(
             &memory,
@@ -4353,7 +4363,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_root_existential_ignores_display_name() {
-        let memory = CMemory::new().with_block("root-existential-viewable", 32);
+        let memory = Memory::new().with_block("root-existential-viewable", 32);
         let source = loadable_exists(
             &memory,
             "source_witness",
@@ -4388,27 +4398,28 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_predicate_alpha_lookup_checks_state_after_memory_bucket() {
-        let predicate = |name: &str, binder: Variable, state: CState| Proposition::Exists {
+        let predicate = |name: &str, binder: Variable, state: ExecutionState| Proposition::Exists {
             name: name.to_string(),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Predicate {
                 name: "sample".to_string(),
                 arguments: vec![
-                    Term::CState(Box::new(state)),
-                    Term::CValue(CValue::Int32(MachineTerm::Variable(binder))),
+                    Term::ExecutionState(Box::new(state)),
+                    Term::ProgramValue(ProgramValue::Int32(MachineTerm::Variable(binder))),
                 ],
             }),
         };
-        let state = CState::new().with_local("x", CValue::Int32(MachineTerm::constant(7)));
+        let state =
+            ExecutionState::new().with_local("x", ProgramValue::Int32(MachineTerm::constant(7)));
         let available = predicate("first", Variable(300_001), state.clone());
         let renamed = predicate("second", Variable(300_002), state.clone());
-        let independently_empty = predicate("second", Variable(300_002), CState::new());
-        let empty = predicate("first", Variable(300_001), CState::new());
+        let independently_empty = predicate("second", Variable(300_002), ExecutionState::new());
+        let empty = predicate("first", Variable(300_001), ExecutionState::new());
         let changed_state = predicate(
             "second",
             Variable(300_002),
-            state.with_local("x", CValue::Int32(MachineTerm::constant(8))),
+            state.with_local("x", ProgramValue::Int32(MachineTerm::constant(8))),
         );
         assert_eq!(
             quantified_equivalence_index_key(&available),
@@ -4430,13 +4441,13 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn implication_extract_renames_existential_but_keeps_snapshot_and_antecedent() {
         let block = "implication-existential-viewable";
-        let memory = CMemory::new().with_block(block, 32);
+        let memory = Memory::new().with_block(block, 32);
         let changed_memory = memory.clone().store(
             Pointer {
                 block: block.into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let consequent = loadable_exists(&memory, "callee", Variable(207_700), block, None, 4);
         let renamed = loadable_exists(&memory, "caller", Variable(207_800), block, None, 4);
@@ -4482,7 +4493,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_implication_extract_does_not_scan_unrelated_consequents() {
-        let memory = CMemory::new().with_block("selected-implication", 32);
+        let memory = Memory::new().with_block("selected-implication", 32);
         let antecedent = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         let selected = loadable_exists(
             &memory,
@@ -4532,7 +4543,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_alpha_index_query_does_not_scan_unrelated_facts() {
-        let memory = CMemory::new().with_block("quantified-viewable-scale", 32);
+        let memory = Memory::new().with_block("quantified-viewable-scale", 32);
         let source = loadable_forall(
             &memory,
             Variable(208_000),
@@ -4572,7 +4583,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_loadable_alpha_budget_fails_closed_before_memory_substitution() {
-        let memory = CMemory::new().with_block("quantified-viewable-budget", 8);
+        let memory = Memory::new().with_block("quantified-viewable-budget", 8);
         let source = loadable_forall(
             &memory,
             Variable(210_000),
@@ -4731,13 +4742,13 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn integer_alpha_fact_lookup_requires_the_same_load_snapshot() {
         let before =
-            crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha-facts", 8));
-        let changed = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+            crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha-facts", 8));
+        let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Pointer {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         ));
         let source_fact = equality(
             IntegerTerm::constant_i64(9),
@@ -4855,14 +4866,14 @@ mod retained_root_context_tests {
 mod held_separation_tests {
     use super::*;
 
-    fn alternate_carrier(resource: CResource) -> CResource {
-        let CResource::Memory(range) = resource else {
+    fn alternate_carrier(resource: Resource) -> Resource {
+        let Resource::Memory(range) = resource else {
             unreachable!()
         };
-        let CResource::Memory(origin) = cell(999) else {
+        let Resource::Memory(origin) = cell(999) else {
             unreachable!()
         };
-        CResource::Memory(
+        Resource::Memory(
             range
                 .with_designation(Arc::new(origin.base().clone()))
                 .with_opaque_extent(Some(Arc::new(origin.base().clone())), false)
@@ -4875,29 +4886,27 @@ mod held_separation_tests {
         let a = cell(0);
         let a_other = alternate_carrier(a.clone());
         let b = cell(1);
-        let owner = CResourceFact::own(a.clone());
+        let owner = ResourceFact::own(a.clone());
         let root = ResourceContext::new()
-            .unchecked_with_facts([owner.clone(), CResourceFact::own(b.clone())]);
+            .unchecked_with_facts([owner.clone(), ResourceFact::own(b.clone())]);
         assert!(root.proves_exact_partition_separation(&a_other, &b));
         assert!(!root.proves_exact_partition_separation(&a_other, &a));
         let removed = root.clone().without_exact_representation(&owner).unwrap();
         assert!(!removed.proves_exact_partition_separation(&a_other, &b));
         assert!(root.proves_exact_partition_separation(&a_other, &b));
-        let views = ResourceContext::new().unchecked_with_facts([
-            CResourceFact::View(a.clone()),
-            CResourceFact::View(b.clone()),
-        ]);
+        let views = ResourceContext::new()
+            .unchecked_with_facts([ResourceFact::View(a.clone()), ResourceFact::View(b.clone())]);
         assert!(!views.proves_exact_partition_separation(&a_other, &b));
         let projected = ResourceContext::new()
-            .unchecked_with_facts([CResourceFact::own(b.clone())])
+            .unchecked_with_facts([ResourceFact::own(b.clone())])
             .unchecked_with_supported_facts(
-                &CResourceFact::own(b.clone()),
-                [CResourceFact::View(a.clone())],
+                &ResourceFact::own(b.clone()),
+                [ResourceFact::View(a.clone())],
             );
         assert!(!projected.proves_exact_partition_separation(&a_other, &b));
         let non_unit = ResourceContext::new().unchecked_with_facts([
-            CResourceFact::Own(a, Box::new(MachineTerm::constant(0))),
-            CResourceFact::own(b.clone()),
+            ResourceFact::Own(a, Box::new(MachineTerm::constant(0))),
+            ResourceFact::own(b.clone()),
         ]);
         assert!(!non_unit.proves_exact_partition_separation(&a_other, &b));
     }
@@ -4927,10 +4936,10 @@ mod held_separation_tests {
                 ] {
                     assert!(!facts.contains(&separation(changed, right.clone())));
                 }
-                let CResource::Memory(narrow) = &left else {
+                let Resource::Memory(narrow) = &left else {
                     unreachable!()
                 };
-                let wide = CResource::Memory(CMemoryRange::new_wide(
+                let wide = Resource::Memory(MemoryRange::new_wide(
                     narrow.base().clone(),
                     narrow.start().clone(),
                     narrow.end().clone(),
@@ -4940,7 +4949,7 @@ mod held_separation_tests {
             }
         }
         // The spatial equivalence does not generalize to containment authority.
-        let contains = |part| Proposition::CResourceContains {
+        let contains = |part| Proposition::ResourceContains {
             parent: Box::new(part),
             child: Box::new(right.clone()),
         };
@@ -4948,8 +4957,8 @@ mod held_separation_tests {
         assert!(!facts.contains(&contains(other_carrier)));
     }
 
-    fn cell(index: u64) -> CResource {
-        CResource::Memory(CMemoryRange::new(
+    fn cell(index: u64) -> Resource {
+        Resource::Memory(MemoryRange::new(
             Pointer {
                 block: "shared".into(),
                 offset: PointerOffsetTerm::Variable(Variable(980_000 + index)),
@@ -4959,18 +4968,18 @@ mod held_separation_tests {
         ))
     }
 
-    fn separation(left: CResource, right: CResource) -> Proposition {
-        Proposition::CResourceSeparate {
+    fn separation(left: Resource, right: Resource) -> Proposition {
+        Proposition::ResourceSeparate {
             left: Box::new(left),
             right: Box::new(right),
         }
     }
 
-    fn range(index: u64, start: u32, end: u32, width: u32) -> CResource {
-        let CResource::Memory(cell) = cell(index) else {
+    fn range(index: u64, start: u32, end: u32, width: u32) -> Resource {
+        let Resource::Memory(cell) = cell(index) else {
             unreachable!()
         };
-        CResource::Memory(CMemoryRange::new_with_element_width(
+        Resource::Memory(MemoryRange::new_with_element_width(
             cell.base().clone(),
             MachineTerm::constant(start),
             MachineTerm::constant(end),
@@ -4982,7 +4991,7 @@ mod held_separation_tests {
     fn held_separation_uses_transitive_address_classes_without_leaking_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |index| {
-            let CResource::Memory(range) = cell(index) else {
+            let Resource::Memory(range) = cell(index) else {
                 unreachable!()
             };
             range.base().clone()
@@ -5000,10 +5009,10 @@ mod held_separation_tests {
         );
         let resources = ResourceContext::new_with_equalities(facts.assumptions())
             .unchecked_with_facts([
-                CResourceFact::own(range(0, 0, 6, 4)),
-                CResourceFact::own(range(1, 0, 3, 8)),
+                ResourceFact::own(range(0, 0, 6, 4)),
+                ResourceFact::own(range(1, 0, 3, 8)),
             ]);
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let goal = separation(range(3, 1, 2, 8), range(1, 0, 1, 8));
         assert!(
             facts
@@ -5035,12 +5044,13 @@ mod held_separation_tests {
 
     #[test]
     fn held_separation_covers_wide_fields_and_explicit_aliases() {
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-                CResourceFact::own(range(0, 0, 6, 4)),
-                CResourceFact::own(range(1, 0, 3, 8)),
-            ]));
-        let (CResource::Memory(alias), CResource::Memory(owner)) = (cell(2), cell(0)) else {
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
+                ResourceFact::own(range(0, 0, 6, 4)),
+                ResourceFact::own(range(1, 0, 3, 8)),
+            ]),
+        );
+        let (Resource::Memory(alias), Resource::Memory(owner)) = (cell(2), cell(0)) else {
             unreachable!()
         };
         let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
@@ -5062,12 +5072,13 @@ mod held_separation_tests {
 
     #[test]
     fn held_field_separation_requires_complete_distinct_owners() {
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-                CResourceFact::own(range(0, 0, 6, 4)),
-                CResourceFact::own(range(1, 0, 1, 4)),
-                CResourceFact::View(range(2, 0, 6, 4)),
-            ]));
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
+                ResourceFact::own(range(0, 0, 6, 4)),
+                ResourceFact::own(range(1, 0, 1, 4)),
+                ResourceFact::View(range(2, 0, 6, 4)),
+            ]),
+        );
         for goal in [
             separation(range(0, 0, 1, 8), range(0, 1, 2, 8)),
             separation(range(0, 0, 1, 8), range(0, 0, 2, 8)),
@@ -5086,7 +5097,7 @@ mod held_separation_tests {
 
     #[test]
     fn held_field_separation_rejects_aliased_owners() {
-        let (CResource::Memory(left), CResource::Memory(right)) = (cell(0), cell(1)) else {
+        let (Resource::Memory(left), Resource::Memory(right)) = (cell(0), cell(1)) else {
             unreachable!()
         };
         let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
@@ -5096,11 +5107,12 @@ mod held_separation_tests {
             ),
             true,
         )]);
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-                CResourceFact::own(range(0, 0, 6, 4)),
-                CResourceFact::own(range(1, 0, 6, 4)),
-            ]));
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
+                ResourceFact::own(range(0, 0, 6, 4)),
+                ResourceFact::own(range(1, 0, 6, 4)),
+            ]),
+        );
         // Even disjoint selected fields must not turn aliased, overlapping
         // owners into a valid partition.
         let goal = separation(range(0, 0, 1, 8), range(1, 1, 2, 8));
@@ -5115,9 +5127,9 @@ mod held_separation_tests {
     /// cannot manufacture separation from the live ownership partition.
     #[test]
     fn held_separation_requires_two_distinct_current_owners() {
-        let state = CState::new().with_resource_context(
+        let state = ExecutionState::new().with_resource_context(
             ResourceContext::new()
-                .unchecked_with_facts([CResourceFact::own(cell(0)), CResourceFact::View(cell(1))]),
+                .unchecked_with_facts([ResourceFact::own(cell(0)), ResourceFact::View(cell(1))]),
         );
         for goal in [
             separation(cell(0), cell(0)),
@@ -5136,8 +5148,7 @@ mod held_separation_tests {
     fn held_separation_does_not_override_pointer_alias_facts() {
         let left = cell(0);
         let right = cell(1);
-        let (CResource::Memory(left_range), CResource::Memory(right_range)) = (&left, &right)
-        else {
+        let (Resource::Memory(left_range), Resource::Memory(right_range)) = (&left, &right) else {
             unreachable!()
         };
         let alias = Proposition::ConditionIs(
@@ -5149,11 +5160,12 @@ mod held_separation_tests {
         );
         // Deliberately assemble a stale partition: the explicit equality
         // must prevent using it as fresh evidence of separation.
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-                CResourceFact::own(left.clone()),
-                CResourceFact::own(right.clone()),
-            ]));
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
+                ResourceFact::own(left.clone()),
+                ResourceFact::own(right.clone()),
+            ]),
+        );
         let goal = separation(left, right);
         let facts = ProofFacts::from_ordered(&[alias]);
         assert!(
@@ -5302,7 +5314,7 @@ mod quantified_conjunct_projection_tests {
         Proposition::ForAll {
             name: Default::default(),
             var: Variable(var),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(at_most(var, bound)),
                 Box::new(conclusion(var)),
@@ -5394,5 +5406,51 @@ mod shared_memory_reservation_tests {
     use super::*;
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/facts/shared_memory_reservation_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod retained_match_root_tests {
+    use super::*;
+    #[test]
+    fn shared_match_equalities_select_the_native_algebraic_scrutinee() {
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(crate::kernel::KernelMatch::test_scrutinee(vec![])),
+            arms: vec![crate::kernel::AlgebraicBitvectorMatchArm {
+                variant: "Arm".into(),
+                bindings: vec![],
+                binding_names: Default::default(),
+                body: MachineTerm::constant(0),
+            }],
+        };
+        let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, native.clone());
+        let written = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(native),
+                right: Box::new(MachineTerm::constant(1)),
+            },
+            true,
+        );
+        let common = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                crate::kernel::IntegerTerm::Machine(machine).into(),
+                crate::kernel::IntegerTerm::constant_i64(1).into(),
+            ),
+            true,
+        );
+        let mut expected = BTreeSet::new();
+        collect_proposition_algebraic_terms(&written, &mut expected);
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        let mut actual = BTreeSet::new();
+        collect_proposition_algebraic_terms(&common, &mut actual);
+        assert!(!actual.is_empty());
+        assert_eq!(actual, expected);
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
     }
 }

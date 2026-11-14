@@ -11,13 +11,13 @@ use crate::languages::c::target::CTarget;
 use crate::languages::c::thread_runtime::CThreadRuntime;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CProofClaim {
+pub enum ContractProofClaim {
     Ensure(usize),
     ExceptionalEnsure(usize),
     Grouped,
 }
 
-impl CProofClaim {
+impl ContractProofClaim {
     /// The claim as a diagnostic names it: the zero-based source clause, or
     /// the function's one grouped proof.
     pub fn describe(&self) -> String {
@@ -267,13 +267,13 @@ pub(crate) fn click_import_sites_in_container(
 /// Expands one claim and returns the rewritten source.
 ///
 /// The caller is responsible for verifying the returned sidecar.
-pub fn expand_c0_claim_source(
+pub fn expand_c_claim_source(
     click_source: &str,
     c_sources: &[(&str, &str)],
     function_name: &str,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
 ) -> Result<String, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
+    let sources = ProgramSourceContext::bundle(c_sources);
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let function_block = proof_function_blocks(&file)
@@ -281,13 +281,13 @@ pub fn expand_c0_claim_source(
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let function = DeclarationSources::new(&tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
-    let edit = if claim == CProofClaim::Grouped {
+    let edit = if claim == ContractProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
-    let verified = verify_c0_sources_at(click_source, c_sources, target.line, target.column)?;
+    let verified = verify_c_sources_at(click_source, c_sources, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = claim_expansion_source(theorem)?;
     let span = edit.span();
@@ -320,7 +320,7 @@ pub fn expand_c0_claim_source(
 /// run this on the thread retaining the verification's kernel tables.
 pub fn expand_verified_function_claim_source_by_label(
     click_source: &str,
-    verified: &[VerifiedCTheorem],
+    verified: &[VerifiedProgramTheorem],
     claim_label: &str,
 ) -> Result<Option<String>, ClickError> {
     let Some((function_block, claim)) = verified.iter().find_map(|theorem| {
@@ -335,7 +335,7 @@ pub fn expand_verified_function_claim_source_by_label(
         return Ok(None);
     };
     let claim = covering_claim(function_block, claim);
-    let edit = if claim == CProofClaim::Grouped {
+    let edit = if claim == ContractProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
@@ -367,12 +367,12 @@ fn expand_project_claim_source(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
     function_name: &str,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let function_block = proof_function_blocks(&file)
@@ -380,7 +380,7 @@ fn expand_project_claim_source(
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let function = DeclarationSources::new(&tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
-    let edit = if claim == CProofClaim::Grouped {
+    let edit = if claim == ContractProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
@@ -404,7 +404,7 @@ fn expand_project_claim_source(
     };
     let expanded = splice_source(click_source, &tokens, span, &replacement);
     let rewritten = project.with_entry_source(expanded.clone());
-    let rewritten_sources = CSourceContext::of(inputs)?.with_click_project(&rewritten);
+    let rewritten_sources = ProgramSourceContext::of(inputs)?.with_click_project(&rewritten);
     resolve_click_project_context(&rewritten, &rewritten_sources)
         .map(|_| expanded)
         .map_err(|error| {
@@ -417,21 +417,21 @@ fn expand_project_claim_source(
         })
 }
 
-fn expand_c0_prepared_claim_source(
+fn expand_c_prepared_claim_source(
     click_source: &str,
     imports: &[crate::languages::c::compiler_import::PreparedCImport],
     function_name: &str,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
 ) -> Result<String, ClickError> {
-    let sources = CSourceContext::prepared(imports);
-    let file = parse_source_with_c_layouts_context(click_source, &sources)?;
+    let sources = ProgramSourceContext::prepared(imports);
+    let file = parse_source_with_program_layouts_context(click_source, &sources)?;
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let function = DeclarationSources::new(&tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
-    let edit = if claim == CProofClaim::Grouped {
+    let edit = if claim == ContractProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
@@ -473,7 +473,7 @@ fn expand_c0_prepared_claim_source(
 fn function_expansion_claim_by_label(
     function: &FunctionBlock,
     claim_label: &str,
-) -> Option<CProofClaim> {
+) -> Option<ContractProofClaim> {
     function.claim_by_label(claim_label).or_else(|| {
         (has_body_safety_proof(function)
             && [
@@ -483,7 +483,7 @@ fn function_expansion_claim_by_label(
             ]
             .iter()
             .any(|label| label == claim_label))
-        .then_some(CProofClaim::Grouped)
+        .then_some(ContractProofClaim::Grouped)
     })
 }
 
@@ -506,7 +506,7 @@ fn expansion_covering_proof(function: &FunctionBlock) -> Option<&SourceProof> {
 
 /// Expands one function claim selected by the same stable label used by
 /// profiling and diagnostics.
-pub fn expand_c0_claim_source_by_label(
+pub fn expand_c_claim_source_by_label(
     click_source: &str,
     c_sources: &[(&str, &str)],
     claim_label: &str,
@@ -519,7 +519,7 @@ pub fn expand_c0_claim_source_by_label(
     }
     for function in proof_function_blocks(&file) {
         if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
-            return expand_c0_claim_source(
+            return expand_c_claim_source(
                 click_source,
                 c_sources,
                 function.signature().name(),
@@ -531,7 +531,7 @@ pub fn expand_c0_claim_source_by_label(
         None,
         click_source,
         &ProgramInputs::Bundle(c_sources.to_vec()),
-        &CSourceContext::bundle(c_sources),
+        &ProgramSourceContext::bundle(c_sources),
         &file,
         claim_label,
         None,
@@ -551,7 +551,7 @@ pub fn expand_project_claim_source_by_label(
     project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     let compiler_imported = matches!(inputs, ProgramInputs::Program(_));
     let claim_label = &*resolve_source_claim_label(&file, claim_label);
@@ -595,13 +595,13 @@ pub fn expand_project_claim_source_by_label(
     )))
 }
 
-pub fn expand_c0_prepared_claim_source_by_label(
+pub fn expand_c_prepared_claim_source_by_label(
     click_source: &str,
     imports: &[crate::languages::c::compiler_import::PreparedCImport],
     claim_label: &str,
 ) -> Result<String, ClickError> {
-    let sources = CSourceContext::prepared(imports);
-    let file = parse_source_with_c_layouts_context(click_source, &sources)?;
+    let sources = ProgramSourceContext::prepared(imports);
+    let file = parse_source_with_program_layouts_context(click_source, &sources)?;
     for theorem in file.theorem_definitions() {
         if let Some(index) = theorem.ensure_index_by_label(claim_label) {
             return expand_pure_theorem_source_context(
@@ -614,7 +614,7 @@ pub fn expand_c0_prepared_claim_source_by_label(
     }
     for function in proof_function_blocks(&file) {
         if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
-            return expand_c0_prepared_claim_source(
+            return expand_c_prepared_claim_source(
                 click_source,
                 imports,
                 function.signature().name(),
@@ -652,8 +652,8 @@ fn expand_program_prepared_claim_source_by_label_context(
     claim_label: &str,
 ) -> Result<String, ClickError> {
     let import = import.into();
-    let sources = CSourceContext::program(&import)?;
-    let file = parse_source_with_c_layouts_context(click_source, &sources)?;
+    let sources = ProgramSourceContext::program(&import)?;
+    let file = parse_source_with_program_layouts_context(click_source, &sources)?;
     let claim_label = &*resolve_source_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
         if let Some(index) = theorem.ensure_index_by_label(claim_label) {
@@ -691,17 +691,17 @@ fn expand_program_prepared_claim_source_context(
     click_source: &str,
     import: &crate::languages::PreparedProgram,
     function_name: &str,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
 ) -> Result<String, ClickError> {
-    let sources = CSourceContext::program(import)?;
-    let file = parse_source_with_c_layouts_context(click_source, &sources)?;
+    let sources = ProgramSourceContext::program(import)?;
+    let file = parse_source_with_program_layouts_context(click_source, &sources)?;
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let function = DeclarationSources::new(&tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
-    let edit = if claim == CProofClaim::Grouped {
+    let edit = if claim == ContractProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
@@ -772,12 +772,12 @@ pub fn expand_claim_by_label(
         None => click_source,
     };
     let sources = match project {
-        Some(project) => CSourceContext::of(inputs)?.with_click_project(project),
-        None => CSourceContext::of(inputs)?,
+        Some(project) => ProgramSourceContext::of(inputs)?.with_click_project(project),
+        None => ProgramSourceContext::of(inputs)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
-        None => parse_source_with_c_layouts_context(click_source, &sources)?,
+        None => parse_source_with_program_layouts_context(click_source, &sources)?,
     };
     let at = at
         .map(|at| offset_at_position(click_source, at.line, at.column))
@@ -798,10 +798,10 @@ pub fn expand_claim_by_label(
             expand_project_claim_source_by_label(project, inputs, claim_label)
         }
         (None, ProgramInputs::Bundle(c_sources)) => {
-            expand_c0_claim_source_by_label(click_source, c_sources, claim_label)
+            expand_c_claim_source_by_label(click_source, c_sources, claim_label)
         }
         (None, ProgramInputs::Prepared(imports)) => {
-            expand_c0_prepared_claim_source_by_label(click_source, imports, claim_label)
+            expand_c_prepared_claim_source_by_label(click_source, imports, claim_label)
         }
         (None, ProgramInputs::Program(import)) => {
             expand_program_prepared_claim_source_by_label_context(click_source, import, claim_label)
@@ -827,7 +827,7 @@ fn expand_loop_phase_claim(
     project: Option<&ClickProject>,
     click_source: &str,
     inputs: &ProgramInputs<'_>,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     file: &ClickFile,
     claim_label: &str,
     at: Option<usize>,
@@ -930,7 +930,8 @@ fn expand_loop_phase_claim(
     let source = match project {
         Some(project) => {
             let rewritten = project.with_entry_source(expanded.clone());
-            let rewritten_sources = CSourceContext::of(inputs)?.with_click_project(&rewritten);
+            let rewritten_sources =
+                ProgramSourceContext::of(inputs)?.with_click_project(&rewritten);
             match resolve_click_project_context(&rewritten, &rewritten_sources) {
                 Ok(_) => expanded,
                 Err(error) => {
@@ -1057,7 +1058,7 @@ fn written_loop_phase(
 /// checked inside that one's capture, so the two are not captured together.
 fn bind_written_loop_tactics(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     file: &ClickFile,
     written: &[WrittenLoopTactic],
 ) -> Vec<Result<StructuralClause, ClickError>> {
@@ -1073,7 +1074,7 @@ fn bind_written_loop_tactics(
             );
             take_expansion_replaces_from();
             let verification = instrumentation::with_default_tactic_limits(|| {
-                crate::surface::verification::verify_c0_sources_with_context(
+                crate::surface::verification::verify_program_with_context(
                     click_source,
                     sources,
                     None,
@@ -1129,7 +1130,7 @@ pub struct SmartTacticSourceSite {
     pub position: SourcePosition,
 }
 
-pub fn c0_smart_tactic_source_sites(
+pub fn c_smart_tactic_source_sites(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
@@ -1140,30 +1141,30 @@ pub fn smart_tactic_source_sites(
     click_source: &str,
     inputs: &ProgramInputs<'_>,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    c0_smart_tactic_source_sites_context(click_source, &CSourceContext::of(inputs)?)
+    smart_tactic_source_sites_context(click_source, &ProgramSourceContext::of(inputs)?)
 }
 
 pub fn project_smart_tactic_source_sites(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_smart_tactic_source_sites_file(
+    smart_tactic_source_sites_file(
         project.entry_source().expect("resolved entry source"),
         &file,
     )
 }
 
-fn c0_smart_tactic_source_sites_context(
+fn smart_tactic_source_sites_context(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let file = parse_source_with_c_layouts_context(click_source, sources)?;
-    c0_smart_tactic_source_sites_file(click_source, &file)
+    let file = parse_source_with_program_layouts_context(click_source, sources)?;
+    smart_tactic_source_sites_file(click_source, &file)
 }
 
-fn c0_smart_tactic_source_sites_file(
+fn smart_tactic_source_sites_file(
     click_source: &str,
     file: &ClickFile,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
@@ -1247,17 +1248,17 @@ pub(super) fn verification_target_at(
     line: usize,
     column: usize,
 ) -> Result<VerificationTarget, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
+    let sources = ProgramSourceContext::bundle(c_sources);
     verification_target_at_context(click_source, &sources, line, column)
 }
 
 pub(super) fn verification_target_at_context(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     line: usize,
     column: usize,
 ) -> Result<VerificationTarget, ClickError> {
-    let file = parse_source_with_c_layouts_context(click_source, c_sources)?;
+    let file = parse_source_with_program_layouts_context(click_source, c_sources)?;
     verification_target_at_file(click_source, &file, line, column)
 }
 
@@ -1318,11 +1319,11 @@ const UNSPELLABLE_POINTER_FORMS: [&str; 6] = [
 /// name rather than the parse error from diagnostic-only pointer text.
 fn unparseable_expansion_error(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     replacement: &str,
     parse_error: ClickError,
 ) -> ClickError {
-    let file = parse_source_with_c_layouts_context(click_source, sources).ok();
+    let file = parse_source_with_program_layouts_context(click_source, sources).ok();
     unparseable_expansion_error_for_file(replacement, parse_error, file.as_ref())
 }
 
@@ -1371,11 +1372,11 @@ fn unparseable_expansion_error_for_file(
 /// than the parse error the unparseable text produces.
 fn checked_expanded_source(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     replacement: &str,
     expanded: String,
 ) -> Result<String, ClickError> {
-    match parse_source_with_c_layouts_context(&expanded, sources) {
+    match parse_source_with_program_layouts_context(&expanded, sources) {
         Ok(_) => Ok(expanded),
         Err(error) => Err(unparseable_expansion_error(
             click_source,
@@ -1496,13 +1497,13 @@ pub fn tidy_expansion_closers(original: &str, expanded: &str) -> Option<String> 
 ///
 /// Certificate capture verifies the selected proof prefix. The caller is
 /// responsible for verifying the returned sidecar and its proof suffix.
-pub fn expand_c0_tactic_source_at(
+pub fn expand_c_tactic_source_at(
     click_source: &str,
     c_sources: &[(&str, &str)],
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
-    expand_c0_tactic_source_at_context(None, click_source, c_sources, line, column)
+    expand_c_tactic_source_at_context(None, click_source, c_sources, line, column)
 }
 
 pub fn expand_project_tactic_source_at(
@@ -1517,15 +1518,11 @@ pub fn expand_project_tactic_source_at(
     let project = Some(project);
     match inputs {
         ProgramInputs::Bundle(c_sources) => {
-            expand_c0_tactic_source_at_context(project, click_source, c_sources, line, column)
+            expand_c_tactic_source_at_context(project, click_source, c_sources, line, column)
         }
-        ProgramInputs::Prepared(imports) => expand_c0_prepared_tactic_source_at_context(
-            project,
-            click_source,
-            imports,
-            line,
-            column,
-        ),
+        ProgramInputs::Prepared(imports) => {
+            expand_c_prepared_tactic_source_at_context(project, click_source, imports, line, column)
+        }
         ProgramInputs::Program(import) => expand_program_prepared_tactic_source_at_context(
             project,
             click_source,
@@ -1536,7 +1533,7 @@ pub fn expand_project_tactic_source_at(
     }
 }
 
-fn expand_c0_tactic_source_at_context(
+fn expand_c_tactic_source_at_context(
     project: Option<&ClickProject>,
     click_source: &str,
     c_sources: &[(&str, &str)],
@@ -1544,7 +1541,7 @@ fn expand_c0_tactic_source_at_context(
     column: usize,
 ) -> Result<String, ClickError> {
     let selected = if let Some(project) = project {
-        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let sources = ProgramSourceContext::bundle(c_sources).with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         locate_source_tactic_file(click_source, &file, line, column)?
     } else {
@@ -1582,7 +1579,7 @@ fn expand_c0_tactic_source_at_context(
                 *claim,
             )
         } else {
-            expand_c0_claim_source(click_source, c_sources, function_name, *claim)
+            expand_c_claim_source(click_source, c_sources, function_name, *claim)
         };
     }
     let _parameter_places = selected
@@ -1602,7 +1599,7 @@ fn expand_c0_tactic_source_at_context(
                     &selected.nested,
                 )?
             } else {
-                super::proof::capture_c0_tactic_expansion(
+                super::proof::capture_program_tactic_expansion(
                     click_source,
                     c_sources,
                     selected.site.clone(),
@@ -1619,7 +1616,7 @@ fn expand_c0_tactic_source_at_context(
                     selected.site.clone(),
                 )?
             } else {
-                super::proof::capture_c0_proof_site_expansion(
+                super::proof::capture_program_proof_site_expansion(
                     click_source,
                     c_sources,
                     selected.site.clone(),
@@ -1668,12 +1665,12 @@ fn expand_c0_tactic_source_at_context(
     );
     if let Some(project) = project {
         let rewritten = project.with_entry_source(expanded.clone());
-        let sources = CSourceContext::bundle(c_sources).with_click_project(&rewritten);
+        let sources = ProgramSourceContext::bundle(c_sources).with_click_project(&rewritten);
         match resolve_click_project_context(&rewritten, &sources) {
             Ok(_) => Ok(expanded),
             Err(error) => {
                 let original_sources =
-                    CSourceContext::bundle(c_sources).with_click_project(project);
+                    ProgramSourceContext::bundle(c_sources).with_click_project(project);
                 let original = resolve_click_project_context(project, &original_sources).ok();
                 Err(unparseable_expansion_error_for_file(
                     &replacement,
@@ -1685,7 +1682,7 @@ fn expand_c0_tactic_source_at_context(
     } else {
         checked_expanded_source(
             click_source,
-            &CSourceContext::bundle(c_sources),
+            &ProgramSourceContext::bundle(c_sources),
             &replacement,
             expanded,
         )
@@ -1694,13 +1691,13 @@ fn expand_c0_tactic_source_at_context(
 
 /// Expands one tactic using compiler-prepared translation units throughout
 /// location, capture, and certificate verification.
-pub fn expand_c0_prepared_tactic_source_at(
+pub fn expand_c_prepared_tactic_source_at(
     click_source: &str,
     imports: &[crate::languages::c::compiler_import::PreparedCImport],
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
-    expand_c0_prepared_tactic_source_at_context(None, click_source, imports, line, column)
+    expand_c_prepared_tactic_source_at_context(None, click_source, imports, line, column)
 }
 
 pub fn expand_program_prepared_tactic_source_at(
@@ -1726,12 +1723,12 @@ fn expand_program_prepared_tactic_source_at_context(
     column: usize,
 ) -> Result<String, ClickError> {
     let sources = match project {
-        Some(project) => CSourceContext::program(import)?.with_click_project(project),
-        None => CSourceContext::program(import)?,
+        Some(project) => ProgramSourceContext::program(import)?.with_click_project(project),
+        None => ProgramSourceContext::program(import)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
-        None => parse_source_with_c_layouts_context(click_source, &sources)?,
+        None => parse_source_with_program_layouts_context(click_source, &sources)?,
     };
     let selected = locate_source_tactic_file(click_source, &file, line, column)?;
     if let ProofSite::TheoremEnsure {
@@ -1821,16 +1818,16 @@ fn expand_program_prepared_tactic_source_at_context(
     checked_expanded_source(click_source, &sources, &replacement, expanded)
 }
 
-fn expand_c0_prepared_tactic_source_at_context(
+fn expand_c_prepared_tactic_source_at_context(
     project: Option<&ClickProject>,
     click_source: &str,
     imports: &[crate::languages::c::compiler_import::PreparedCImport],
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
-    let sources = CSourceContext::prepared(imports);
+    let sources = ProgramSourceContext::prepared(imports);
     let selected = if let Some(project) = project {
-        let project_sources = CSourceContext::prepared(imports).with_click_project(project);
+        let project_sources = ProgramSourceContext::prepared(imports).with_click_project(project);
         let file = resolve_click_project_context(project, &project_sources)?;
         locate_source_tactic_file(click_source, &file, line, column)?
     } else {
@@ -1868,7 +1865,7 @@ fn expand_c0_prepared_tactic_source_at_context(
                 *claim,
             )
         } else {
-            expand_c0_prepared_claim_source(click_source, imports, function_name, *claim)
+            expand_c_prepared_claim_source(click_source, imports, function_name, *claim)
         };
     }
     let _parameter_places = selected
@@ -1922,12 +1919,13 @@ fn expand_c0_prepared_tactic_source_at_context(
     );
     if let Some(project) = project {
         let rewritten = project.with_entry_source(expanded.clone());
-        let project_sources = CSourceContext::prepared(imports).with_click_project(&rewritten);
+        let project_sources =
+            ProgramSourceContext::prepared(imports).with_click_project(&rewritten);
         match resolve_click_project_context(&rewritten, &project_sources) {
             Ok(_) => Ok(expanded),
             Err(error) => {
                 let original_sources =
-                    CSourceContext::prepared(imports).with_click_project(project);
+                    ProgramSourceContext::prepared(imports).with_click_project(project);
                 let original = resolve_click_project_context(project, &original_sources).ok();
                 Err(unparseable_expansion_error_for_file(
                     &replacement,
@@ -1947,7 +1945,7 @@ fn expand_pure_theorem_source(
     theorem_name: &str,
     ensure_index: usize,
 ) -> Result<String, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
+    let sources = ProgramSourceContext::bundle(c_sources);
     expand_pure_theorem_source_context(click_source, &sources, theorem_name, ensure_index)
 }
 
@@ -1960,14 +1958,14 @@ fn expand_project_pure_theorem_source(
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let verified = verify_click_project_theorem_context(project, &sources, theorem_name)?;
     rewrite_verified_pure_theorem(click_source, &verified, theorem_name, ensure_index)
 }
 
 fn expand_pure_theorem_source_context(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
     ensure_index: usize,
 ) -> Result<String, ClickError> {
@@ -2020,7 +2018,7 @@ fn rewrite_verified_pure_theorem(
 /// Spells the checked certificate that replaces a whole claim proof.
 /// Written nesting is not a driver bound: terminal cases can be processed
 /// iteratively. As with tactic expansion, the caller verifies the rewrite.
-fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickError> {
+fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, ClickError> {
     let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
         theorem.function_block.signature().returns_reference(),
     );
@@ -2037,10 +2035,13 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
     }
     // A tactic's proof is checked with a fixed ending on every live path: one
     // step over the empty procedure's `return`, then an `assumption` per
-    // claim. That ending is supplied by the checker and cannot be written in
+    // claim, followed by the ordinary contract-closing proofs. The ending is
+    // supplied by the checker and cannot be written in
     // a tactic's proof, which runs no code, so the expansion leaves it out.
     let mut tactics = certificate.to_proof_tactics();
-    let ending = 1 + theorem.function_block.ensures().len();
+    let ending = 1
+        + theorem.function_block.ensures().len()
+        + crate::kernel::proof::ContractClosingGoal::COUNT;
     remove_tactic_procedure_ending(&mut tactics, ending).map_err(|()| {
         ClickError::new(format!(
             "the expanded proof of tactic `{}` does not end in the step and {} closing assumption(s) its check supplies",
@@ -2063,23 +2064,26 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
 /// with the split preserves the scope of the names it introduces. Only an
 /// `if` whose C then-arm returns from the function is moved. A continuing C
 /// arm keeps its nested continuation, as does a post-execution case split.
-fn sequential_early_returns(tactics: Vec<ProofTactic>, function: &CFunction) -> Vec<ProofTactic> {
+fn sequential_early_returns(
+    tactics: Vec<ProofTactic>,
+    function: &ProgramFunction,
+) -> Vec<ProofTactic> {
     sequential_early_return_tactics(tactics, &returning_then_arms(function.body()))
 }
 
-fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
+fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
     // Use the same executable preorder as source statement anchors: sequences
     // add no node; if/while/try visit their bodies; other operations are atomic.
     // Some(false) may fall through; Some(true) returns on every path.
     // None includes a nonlocal transfer, which may bypass a later return.
     fn visit(
-        statement: &CStatement,
+        statement: &ProgramStatement,
         index: &mut usize,
         returns: &mut BTreeSet<usize>,
         catches_exceptions: bool,
     ) -> Option<bool> {
         crate::instrumentation::record_deterministic_work(1);
-        if let CStatement::Seq(statements) = statement {
+        if let ProgramStatement::Seq(statements) = statement {
             let mut flow = Some(false);
             for statement in statements.iter() {
                 let next = visit(statement, index, returns, catches_exceptions);
@@ -2092,7 +2096,7 @@ fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
         let head = *index;
         *index += 1;
         match statement {
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -2104,30 +2108,36 @@ fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
                 }
                 then_returns.zip(else_returns).map(|(a, b)| a && b)
             }
-            CStatement::While { body, .. } => {
+            ProgramStatement::While { body, .. } => {
                 visit(body, index, returns, catches_exceptions);
                 None
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
                 let body_returns = visit(try_body, index, returns, true);
                 let handler_returns = visit(handler, index, returns, catches_exceptions);
                 body_returns.zip(handler_returns).map(|(a, b)| a && b)
             }
-            CStatement::Return(_) => Some(true),
+            ProgramStatement::Return(_) => Some(true),
             // A throwing call can resume in the enclosing handler before
             // the return this sequence would otherwise reach.
-            CStatement::Call { .. } | CStatement::CallAssign { .. } if catches_exceptions => None,
+            ProgramStatement::Call { .. }
+            | ProgramStatement::CallAssign { .. }
+            | ProgramStatement::CallResult { .. }
+                if catches_exceptions =>
+            {
+                None
+            }
             // A nonlocal transfer can bypass a later return in a sequence.
             // A throw may enter a surrounding handler instead of exiting.
-            CStatement::Break
-            | CStatement::Continue
-            | CStatement::Goto { .. }
-            | CStatement::Throw(_)
-            | CStatement::Switch { .. }
-            | CStatement::ForStep { .. }
-            | CStatement::ScalarReferenceScope(_) => None,
+            ProgramStatement::Break
+            | ProgramStatement::Continue
+            | ProgramStatement::Goto { .. }
+            | ProgramStatement::Throw(_)
+            | ProgramStatement::Switch { .. }
+            | ProgramStatement::ForStep { .. }
+            | ProgramStatement::ScalarReferenceScope(_) => None,
             _ => Some(false),
         }
     }
@@ -2230,22 +2240,23 @@ fn remove_tactic_procedure_ending(tactics: &mut Vec<ProofTactic>, ending: usize)
 }
 
 fn select_expansion_theorem<'a>(
-    verified: &'a [VerifiedCTheorem],
+    verified: &'a [VerifiedProgramTheorem],
     function_name: &str,
-    claim: CProofClaim,
-) -> Result<&'a VerifiedCTheorem, ClickError> {
-    let matches_function =
-        |theorem: &&VerifiedCTheorem| theorem.function_block.signature().name() == function_name;
+    claim: ContractProofClaim,
+) -> Result<&'a VerifiedProgramTheorem, ClickError> {
+    let matches_function = |theorem: &&VerifiedProgramTheorem| {
+        theorem.function_block.signature().name() == function_name
+    };
     let selected = match claim {
-        CProofClaim::Ensure(index) => verified.iter().find(|theorem| {
+        ContractProofClaim::Ensure(index) => verified.iter().find(|theorem| {
             matches_function(theorem)
                 && matches!(theorem.claim, VerifiedClaim::Ensure { index: found, .. } if found == index)
         }),
-        CProofClaim::ExceptionalEnsure(index) => verified.iter().find(|theorem| {
+        ContractProofClaim::ExceptionalEnsure(index) => verified.iter().find(|theorem| {
             matches_function(theorem)
                 && matches!(theorem.claim, VerifiedClaim::ExceptionalEnsure { index: found, .. } if found == index)
         }),
-        CProofClaim::Grouped => verified
+        ContractProofClaim::Grouped => verified
             .iter()
             .find(|theorem| {
                 matches_function(theorem)
@@ -2719,14 +2730,16 @@ fn claim_proof_edit(
 
 /// A claim without its own `by` is proved by the function's covering proof,
 /// so selecting it selects that grouped proof.
-fn covering_claim(function_block: &FunctionBlock, claim: CProofClaim) -> CProofClaim {
+fn covering_claim(function_block: &FunctionBlock, claim: ContractProofClaim) -> ContractProofClaim {
     let clause = match claim {
-        CProofClaim::Grouped => return claim,
-        CProofClaim::Ensure(index) => function_block.ensures().get(index),
-        CProofClaim::ExceptionalEnsure(index) => function_block.exceptional_ensures().get(index),
+        ContractProofClaim::Grouped => return claim,
+        ContractProofClaim::Ensure(index) => function_block.ensures().get(index),
+        ContractProofClaim::ExceptionalEnsure(index) => {
+            function_block.exceptional_ensures().get(index)
+        }
     };
     if clause.is_some_and(|clause| function_block.covers_claim_proof(clause.proof())) {
-        CProofClaim::Grouped
+        ContractProofClaim::Grouped
     } else {
         claim
     }
@@ -2769,7 +2782,7 @@ fn find_claim_proof_span(
     tokens: &[SourceToken],
     function: &FunctionSource,
     function_block: &FunctionBlock,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
 ) -> Result<Range<usize>, ClickError> {
     match find_claim_proof_edit(tokens, function, function_block, claim)? {
         ProofSourceEdit::Explicit(span) => Ok(span),
@@ -2820,18 +2833,18 @@ fn find_claim_proof_edit(
     tokens: &[SourceToken],
     function: &FunctionSource,
     function_block: &FunctionBlock,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
 ) -> Result<ProofSourceEdit, ClickError> {
     match claim {
         // The source is searched by written clause; a flattened aggregate
         // clause gives several ensures one written clause.
-        CProofClaim::Ensure(index) => {
+        ContractProofClaim::Ensure(index) => {
             find_ensure_proof_edit(tokens, function, function_block.ensure_source_clause(index))
         }
-        CProofClaim::ExceptionalEnsure(index) => {
+        ContractProofClaim::ExceptionalEnsure(index) => {
             find_exceptional_ensure_proof_edit(tokens, function, index)
         }
-        CProofClaim::Grouped => Err(ClickError::new(format!(
+        ContractProofClaim::Grouped => Err(ClickError::new(format!(
             "could not locate the source clause for the {}",
             claim.describe()
         ))),
@@ -3325,7 +3338,7 @@ impl NestedTacticCapture {
 pub(super) enum ProofSite {
     FunctionClaim {
         function_name: String,
-        claim: CProofClaim,
+        claim: ContractProofClaim,
     },
     TheoremEnsure {
         theorem_name: String,
@@ -3435,12 +3448,17 @@ impl SelectedTacticExpansion {
 }
 
 /// Expands just the requested sites of one claim in a shared verification.
-pub fn expand_c0_tactics_source_at(
+pub fn expand_c_tactics_source_at(
     source: &str,
     c_sources: &[(&str, &str)],
     positions: &[SourcePosition],
 ) -> Result<SelectedTacticExpansion, ClickError> {
-    expand_selected_tactics_context(None, source, &CSourceContext::bundle(c_sources), positions)
+    expand_selected_tactics_context(
+        None,
+        source,
+        &ProgramSourceContext::bundle(c_sources),
+        positions,
+    )
 }
 
 pub fn expand_project_tactics_source_at(
@@ -3454,7 +3472,7 @@ pub fn expand_project_tactics_source_at(
     expand_selected_tactics_context(
         Some(project),
         source,
-        &CSourceContext::of(inputs)?.with_click_project(project),
+        &ProgramSourceContext::of(inputs)?.with_click_project(project),
         positions,
     )
 }
@@ -3464,13 +3482,13 @@ pub fn expand_tactics_source_at(
     inputs: &ProgramInputs<'_>,
     positions: &[SourcePosition],
 ) -> Result<SelectedTacticExpansion, ClickError> {
-    expand_selected_tactics_context(None, source, &CSourceContext::of(inputs)?, positions)
+    expand_selected_tactics_context(None, source, &ProgramSourceContext::of(inputs)?, positions)
 }
 
 fn expand_selected_tactics_context(
     project: Option<&ClickProject>,
     source: &str,
-    inputs: &CSourceContext<'_>,
+    inputs: &ProgramSourceContext<'_>,
     positions: &[SourcePosition],
 ) -> Result<SelectedTacticExpansion, ClickError> {
     if positions.is_empty() {
@@ -3481,7 +3499,7 @@ fn expand_selected_tactics_context(
     }
     let file = match project {
         Some(project) => resolve_click_project_context(project, inputs)?,
-        None => parse_source_with_c_layouts_context(source, inputs)?,
+        None => parse_source_with_program_layouts_context(source, inputs)?,
     };
     let wanted = positions
         .iter()
@@ -3574,7 +3592,7 @@ fn expand_selected_tactics_context(
         _ => None,
     };
     let (verified, _) = instrumentation::with_default_tactic_limits(|| {
-        crate::surface::verification::verify_c0_sources_with_context(
+        crate::surface::verification::verify_program_with_context(
             source,
             inputs,
             whole_function.map(|(name, _)| VerificationTarget::Function(name.clone())),
@@ -3793,7 +3811,7 @@ fn expand_selected_tactics_context(
         let rewritten_project = project.with_entry_source(rewritten.clone());
         resolve_click_project_context(&rewritten_project, inputs)?;
     } else {
-        parse_source_with_c_layouts_context(&rewritten, inputs)?;
+        parse_source_with_program_layouts_context(&rewritten, inputs)?;
     }
     Ok(SelectedTacticExpansion {
         source: rewritten,
@@ -3939,7 +3957,7 @@ impl SmartTacticSelectionError {
 /// start exactly one smart tactic. The result's position is the tactic's
 /// canonical start, which every location-taking expansion entry point
 /// accepts.
-pub fn c0_select_smart_tactic(
+pub fn c_select_smart_tactic(
     click_source: &str,
     c_sources: &[(&str, &str)],
     line: usize,
@@ -3959,8 +3977,9 @@ pub fn select_smart_tactic(
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::of(inputs).map_err(SmartTacticSelectionError::from_error)?;
-    let file = parse_source_with_c_layouts_context(click_source, &sources)
+    let sources =
+        ProgramSourceContext::of(inputs).map_err(SmartTacticSelectionError::from_error)?;
+    let file = parse_source_with_program_layouts_context(click_source, &sources)
         .map_err(SmartTacticSelectionError::from_error)?;
     select_smart_tactic_file(click_source, &file, line, column)
 }
@@ -3971,7 +3990,7 @@ pub fn project_select_smart_tactic(
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::of(inputs)
+    let sources = ProgramSourceContext::of(inputs)
         .map_err(SmartTacticSelectionError::from_error)?
         .with_click_project(project);
     let click_source = project.entry_source().ok_or_else(|| {
@@ -4062,7 +4081,7 @@ pub fn claim_at(
     column: Option<usize>,
     scope: ClaimLocationScope,
 ) -> Result<SourceClaim, ClaimLocationError> {
-    let sources = CSourceContext::of(inputs).map_err(ClaimLocationError::from_error)?;
+    let sources = ProgramSourceContext::of(inputs).map_err(ClaimLocationError::from_error)?;
     let (click_source, sources, file) = match project {
         Some(project) => {
             let sources = sources.with_click_project(project);
@@ -4077,7 +4096,7 @@ pub fn claim_at(
             (click_source, sources, file)
         }
         None => {
-            let file = parse_source_with_c_layouts_context(click_source, &sources)
+            let file = parse_source_with_program_layouts_context(click_source, &sources)
                 .map_err(ClaimLocationError::from_error)?;
             (click_source, sources, file)
         }
@@ -4187,8 +4206,9 @@ fn claim_source_regions(
         }
         // A claim the grouped proof covers is proved there, so its clause
         // names that proof.
-        let label =
-            |claim: CProofClaim| function_block.claim_label(covering_claim(function_block, claim));
+        let label = |claim: ContractProofClaim| {
+            function_block.claim_label(covering_claim(function_block, claim))
+        };
         let mut written = None;
         for index in 0..function_block.ensures().len() {
             // The members of a flattened aggregate clause share their
@@ -4204,7 +4224,7 @@ fn claim_source_regions(
             regions.push(ClaimRegion {
                 anchor: span.start,
                 span,
-                label: label(CProofClaim::Ensure(index)),
+                label: label(ContractProofClaim::Ensure(index)),
                 owner: owner.clone(),
                 written_phase: None,
             });
@@ -4217,7 +4237,7 @@ fn claim_source_regions(
             regions.push(ClaimRegion {
                 anchor: span.start,
                 span,
-                label: label(CProofClaim::ExceptionalEnsure(index)),
+                label: label(ContractProofClaim::ExceptionalEnsure(index)),
                 owner: owner.clone(),
                 written_phase: None,
             });
@@ -4443,17 +4463,17 @@ fn locate_source_tactic(
     line: usize,
     column: usize,
 ) -> Result<LocatedSourceTactic, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
+    let sources = ProgramSourceContext::bundle(c_sources);
     locate_source_tactic_context(click_source, &sources, line, column)
 }
 
 fn locate_source_tactic_context(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     line: usize,
     column: usize,
 ) -> Result<LocatedSourceTactic, ClickError> {
-    let file = parse_source_with_c_layouts_context(click_source, c_sources)?;
+    let file = parse_source_with_program_layouts_context(click_source, c_sources)?;
     locate_source_tactic_file(click_source, &file, line, column)
 }
 
@@ -4537,10 +4557,9 @@ fn source_tactic_entries(
         }
         let source = declarations.theorem(theorem)?;
         let kernel_axiom_name = proof::is_kernel_standard_theorem_name(theorem.name())
-            && theorem
-                .parameters()
-                .iter()
-                .all(|parameter| parameter.click_type() == &ClickType::C(C0Type::Int32));
+            && theorem.parameters().iter().all(|parameter| {
+                parameter.click_type() == &ClickType::Program(InterfaceType::Int32)
+            });
         for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {
             if kernel_axiom_name
                 && !matches!(
@@ -4573,7 +4592,7 @@ fn source_tactic_entries(
                 proof,
                 &ProofSite::FunctionClaim {
                     function_name: function_name.to_string(),
-                    claim: CProofClaim::Grouped,
+                    claim: ContractProofClaim::Grouped,
                 },
                 &function_block.contract_claim_label(),
                 &mut entries,
@@ -4583,7 +4602,7 @@ fn source_tactic_entries(
             if function_block.covers_claim_proof(ensure.proof()) {
                 continue;
             }
-            let claim = CProofClaim::Ensure(index);
+            let claim = ContractProofClaim::Ensure(index);
             let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = function_block.ensure_claim_label(index);
             proof_tactic_entries(
@@ -4602,7 +4621,7 @@ fn source_tactic_entries(
             if function_block.covers_claim_proof(ensure.proof()) {
                 continue;
             }
-            let claim = CProofClaim::ExceptionalEnsure(index);
+            let claim = ContractProofClaim::ExceptionalEnsure(index);
             let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = function_block.exceptional_ensure_claim_label(index);
             proof_tactic_entries(
@@ -5081,7 +5100,7 @@ fn tactic_contains_smart_tactic(tactic: &ProofTactic) -> bool {
     })
 }
 
-pub fn c0_tactic_source_position(
+pub fn c_tactic_source_position(
     click_source: &str,
     c_sources: &[(&str, &str)],
     claim_label: &str,
@@ -5101,8 +5120,8 @@ pub fn tactic_source_position(
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::of(inputs)?;
-    c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
+    let sources = ProgramSourceContext::of(inputs)?;
+    tactic_source_position_context(&sources, click_source, claim_label, source_index)
 }
 
 /// Where the Click declaration named `name` is written: a function block,
@@ -5166,9 +5185,9 @@ pub fn project_tactic_source_position(
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_tactic_source_position_file(
+    tactic_source_position_file(
         &file,
         project.entry_source().expect("resolved entry source"),
         claim_label,
@@ -5181,33 +5200,33 @@ pub fn project_tactic_source_positions(
     inputs: &ProgramInputs<'_>,
     claim_label: &str,
 ) -> Result<Vec<SourcePosition>, ClickError> {
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_tactic_source_positions_file(
+    tactic_source_positions_file(
         &file,
         project.entry_source().expect("resolved entry source"),
         claim_label,
     )
 }
 
-fn c0_tactic_source_position_context(
-    c_sources: &CSourceContext<'_>,
+fn tactic_source_position_context(
+    c_sources: &ProgramSourceContext<'_>,
     click_source: &str,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let file = parse_source_with_c_layouts_context(click_source, c_sources)?;
-    c0_tactic_source_position_file(&file, click_source, claim_label, source_index)
+    let file = parse_source_with_program_layouts_context(click_source, c_sources)?;
+    tactic_source_position_file(&file, click_source, claim_label, source_index)
 }
 
-fn c0_tactic_source_position_file(
+fn tactic_source_position_file(
     file: &ClickFile,
     click_source: &str,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
-    let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
+    let offsets = tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
     offsets
         .get(source_index)
         .map(|offset| positions_at_offsets(click_source, [*offset])[0].clone())
@@ -5283,27 +5302,27 @@ fn resolve_source_claim_label<'a>(
     claim_label.into()
 }
 
-fn c0_tactic_source_positions_file(
+fn tactic_source_positions_file(
     file: &ClickFile,
     click_source: &str,
     claim_label: &str,
 ) -> Result<Vec<SourcePosition>, ClickError> {
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
-    let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
+    let offsets = tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
     Ok(positions_at_offsets(click_source, offsets))
 }
 
-fn c0_tactic_source_positions_with_tokens(
+fn tactic_source_positions_with_tokens(
     file: &ClickFile,
     click_source: &str,
     claim_label: &str,
     tokens: &[SourceToken],
 ) -> Result<Vec<SourcePosition>, ClickError> {
-    let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, tokens)?;
+    let offsets = tactic_source_offsets_with_tokens(file, claim_label, tokens)?;
     Ok(positions_at_offsets(click_source, offsets))
 }
 
-fn c0_tactic_source_offsets_with_tokens(
+fn tactic_source_offsets_with_tokens(
     file: &ClickFile,
     claim_label: &str,
     tokens: &[SourceToken],
@@ -5357,14 +5376,14 @@ fn c0_tactic_source_offsets_with_tokens(
         let selected =
             function_expansion_claim_by_label(function_block, claim_label).and_then(|claim| {
                 match claim {
-                    CProofClaim::Grouped => {
+                    ContractProofClaim::Grouped => {
                         expansion_covering_proof(function_block).map(|proof| (claim, proof))
                     }
-                    CProofClaim::Ensure(index) => function_block
+                    ContractProofClaim::Ensure(index) => function_block
                         .ensures()
                         .get(index)
                         .map(|ensure| (claim, ensure.proof())),
-                    CProofClaim::ExceptionalEnsure(index) => function_block
+                    ContractProofClaim::ExceptionalEnsure(index) => function_block
                         .exceptional_ensures()
                         .get(index)
                         .map(|ensure| (claim, ensure.proof())),
@@ -5375,20 +5394,20 @@ fn c0_tactic_source_offsets_with_tokens(
         };
         let function = declarations.function(function_block)?;
         let fallback = match claim {
-            CProofClaim::Grouped => tokens[function.body_close].span.start,
-            CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
+            ContractProofClaim::Grouped => tokens[function.body_close].span.start,
+            ContractProofClaim::Ensure(_) | ContractProofClaim::ExceptionalEnsure(_) => {
                 find_claim_clause_offset(tokens, &function, function_block, claim)?
             }
         };
         let proof_span = match claim {
-            CProofClaim::Grouped => {
+            ContractProofClaim::Grouped => {
                 match find_grouped_proof_edit(tokens, &function, function_block)? {
                     ProofSourceEdit::Explicit(span) => Some(span),
                     ProofSourceEdit::DefaultTerminator { .. }
                     | ProofSourceEdit::OmittedLoopPhase { .. } => None,
                 }
             }
-            CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
+            ContractProofClaim::Ensure(_) | ContractProofClaim::ExceptionalEnsure(_) => {
                 find_claim_proof_span(tokens, &function, function_block, claim).ok()
             }
         };
@@ -5438,7 +5457,7 @@ fn find_claim_clause_offset(
     tokens: &[SourceToken],
     function: &FunctionSource,
     function_block: &FunctionBlock,
-    claim: CProofClaim,
+    claim: ContractProofClaim,
 ) -> Result<usize, ClickError> {
     Ok(find_claim_proof_edit(tokens, function, function_block, claim)?.selector())
 }
@@ -5447,13 +5466,13 @@ pub(super) fn parse_source_with_c_layouts(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<ClickFile, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    parse_source_with_c_layouts_context(click_source, &sources)
+    let sources = ProgramSourceContext::bundle(c_sources);
+    parse_source_with_program_layouts_context(click_source, &sources)
 }
 
-fn parse_source_with_c_layouts_context(
+fn parse_source_with_program_layouts_context(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
     parser::parse_with_layouts_and_aggregate_objects(

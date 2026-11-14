@@ -1,7 +1,8 @@
 # A closer with no open goal is refused
 
 The companion of `closers_after_execution_close_a_resource_goal_first.md`
-with a second `normalize()`. Once both goals are closed there is nothing left
+with an extra `normalize()`. Once its source clauses and contract-closing
+obligations are closed there is nothing left
 for a closer to act on, and the extra closer is refused rather than silently
 ignored.
 
@@ -21,6 +22,7 @@ int32 g(int32 p[]) {
     step_until(function.exit);
     assumption();
     normalize();
+    assumption(); assumption(); assumption();
     normalize();
 }
 ```
