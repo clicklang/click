@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
+#[cfg(test)]
+use crate::kernel::program_verified_function_rule;
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
     AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,
@@ -31,16 +33,14 @@ use crate::kernel::{
     loop_invariants_hold_at_entry, loop_preservation_contexts, program_assign,
     program_condition_fact_memories, program_declare, program_do_while_preservation_contexts,
     program_do_while_with_invariant_and_effect_checks, program_function,
-    program_function_contract_claims_from_completions, program_function_contract_entry_state,
-    program_function_contract_refinement_arguments, program_function_contract_refinement_context,
-    program_function_entry_state, program_function_termination_plan, program_if,
-    program_pointer_offsets_proven_equal_for_effect, program_seq, program_termination_height_plan,
-    program_unverified_function_contract_claims_diagnostic, program_verified_function_rule,
+    program_function_contract_entry_state, program_function_contract_refinement_arguments,
+    program_function_contract_refinement_context, program_function_entry_state,
+    program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
+    program_seq, program_termination_height_plan,
+    program_unverified_function_contract_claims_diagnostic,
     program_verified_function_termination_rules, program_while_with_invariant_and_effect_checks,
     prove_int32_le_antisymmetric, prove_owned_resource_quantity_nonnegative,
-    prove_program_condition_fact_transport,
-    prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems,
-    prove_program_function_contract_refinement,
+    prove_program_condition_fact_transport, prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
     prove_symbolic_loop_exit_with_proven_phases_using_budget,
     prove_symbolic_program_condition_evaluation, prove_universally_quantified_pure_implication,

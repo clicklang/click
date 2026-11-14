@@ -22,15 +22,10 @@ void mark(int32 *v, int32 n, int32 i) {
 } by {
     have forall (k: int32) { 0 <= k and k < n implies old(v[k]) == 0 } by assumption();
     step();
-    transport(
-        forall (k: int32) { 0 <= k and k < n implies old(v[k]) == 0 },
-        forall (k: int32) { 0 <= k and k < n implies v[k] == 0 }
-    ) using {
-        forall (k: int32) { 0 <= k and k < n implies old(v[k]) == 0 };
-    };
+    have forall (k: int32) { 0 <= k and k < n implies v[k] == 0 } by { solve(); }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: `solve` failed
 ```

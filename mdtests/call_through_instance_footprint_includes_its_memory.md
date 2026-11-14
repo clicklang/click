@@ -61,13 +61,7 @@ void caller(int32* occupied, int32 capacity, int32 start) {
     step(set_one, { w: w });
     let { tag: t2 } = unfold(w);
     have occupied[start] == at(pre, occupied[start]) by {
-        transport(
-            at(pre, occupied[start]) == at(pre, occupied[start]),
-            occupied[start] == at(pre, occupied[start])
-        ) using {
-            0 <= start;
-            start < capacity;
-        };
+        solve();
     }
     have occupied[start] == 1 by solve();
     have start < 0 by {
@@ -78,5 +72,5 @@ void caller(int32* occupied, int32 capacity, int32 start) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence
+fail: `solve` failed
 ```

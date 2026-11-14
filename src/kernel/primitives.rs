@@ -14945,14 +14945,6 @@ impl CheckedFunctionExecution {
                 .all(|checked| *checked)
     }
 
-    /// The exact caller state used to enter this checked execution, when the
-    /// proof recorded a checked function-entry boundary.  Surface
-    /// certification reuses this identity instead of reconstructing a second
-    /// resource occurrence/loan root.
-    pub(crate) fn caller_state(&self) -> Option<&ExecutionState> {
-        self.entry_representation_origin.as_ref()
-    }
-
     /// Allocation return accounting reads borrowed inputs in the immutable
     /// checked entry snapshot, before C may mutate a pointer naming them.
     pub(crate) fn allocation_entry_state(&self) -> &ExecutionState {

@@ -159,10 +159,7 @@ void caller(struct node* p) {
     let { tag: at1, child: ac0 } = unfold(ac1);
     let { tag: at0 } = unfold(ac0);
     have p->value == at(before, p->value) by {
-        transport(
-            at(before, p->value) == at(before, p->value),
-            p->value == at(before, p->value)
-        ) using { };
+        solve();
     }
     let ac0 = fold(layer0(p), { tag: at0 }, {});
     let ac1 = fold(layer1(p), { tag: at1 }, { child: ac0 });
@@ -178,5 +175,5 @@ void caller(struct node* p) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence
+fail: `solve` failed
 ```

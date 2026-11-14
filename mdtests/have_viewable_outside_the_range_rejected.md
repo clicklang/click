@@ -14,14 +14,11 @@ theorem range_not_inside_a_viewable_range(v: int32[], lo: int32, hi: int32, k: i
     requires lo <= k;
     requires hi >= 0 and viewable(v[lo..hi]);
     ensures viewable(v[lo..k]) by {
-        transport(viewable(v[lo..hi]), viewable(v[lo..k])) using {
-            viewable(v[lo..hi]);
-            lo <= k;
-        };
+        have viewable(v[lo..k]) by { solve(); }
     }
 }
 ```
 
 ```expect
-fail: `transport using` target does not follow from the source fact and the listed premises
+fail: `solve` failed
 ```

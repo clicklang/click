@@ -22,10 +22,17 @@ void update(struct node *g, struct node *p) {
     have separate(memory(p->left), memory(g->word)) by { solve(); }
     step();
     have ((g->word & ~3) as (struct node*)) == p by {
-        transport(at(before, ((g->word & ~3) as (struct node*)) == p), ((g->word & ~3) as (struct node*)) == p) using {
-            at(before, ((g->word & ~3) as (struct node*)) == p);
-            separate(memory(p->left), memory(g->word));
-        };
+        have separate(statement(0).footprint, memory(g->word)) by {
+            normalize() using { separate(memory(p->left), memory(g->word)); };
+        }
+        have g->word == at(before, g->word) by {
+            preserve(separate(statement(0).footprint, memory(g->word)));
+        }
+        have *((&g->word) as (int32 **)) == at(before, *((&g->word) as (int32 **))) by {
+            preserve(separate(statement(0).footprint, memory(g->word)));
+        }
+        rewrite(g->word == at(before, g->word));
+        assumption();
     }
     step();
 }

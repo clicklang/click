@@ -88,10 +88,7 @@ int32 caller(struct node* p) {
     step(overwrite, { s: s });
     let { rest: r2 } = unfold(s);
     have p->value == at(before, p->value) by {
-        transport(
-            at(before, p->value) == at(before, p->value),
-            p->value == at(before, p->value)
-        ) using { };
+        solve();
     }
     step();
     let s = fold(slot_at(p), { model: Slot::Full(3) }, { rest: r2 });
@@ -100,5 +97,5 @@ int32 caller(struct node* p) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence
+fail: `solve` failed
 ```

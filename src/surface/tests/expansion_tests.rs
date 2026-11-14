@@ -22349,3 +22349,36 @@ fn instantiated_indexed_read_expands_without_transport() {
     );
     assert!(verify_c_sources(&missing, &sources).is_err());
 }
+
+#[test]
+#[ignore = "nightly: explicit fold preservation expands and cold replays"]
+fn explicit_fold_preservation_expands_without_legacy_transport() {
+    for (fixture, function) in [
+        ("fold_read_transport_below_a_nonzero_start", "mark_below"),
+        ("fold_read_transport_empty_fold_when_checked", "mark_any"),
+        ("fold_read_transport_historical_endpoint", "mark_at"),
+        ("fold_read_transport_reads_in_both_arms", "set_end"),
+        (
+            "fold_read_transport_through_a_separated_alias",
+            "mark_other",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        assert!(
+            !expanded.contains("transport_certificate"),
+            "{fixture}: {expanded}"
+        );
+        without_implicit_solve_for_claim(&format!("{function}.contract"), || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}

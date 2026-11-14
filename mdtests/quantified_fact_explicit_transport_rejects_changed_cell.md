@@ -29,23 +29,12 @@ void clear(int32 *a) {
     have forall (k: int32) {
         0 <= k and k < 1 implies 0 <= a[k]
     } by {
-        transport(
-            at(entry, forall (k: int32) {
-                0 <= k and k < 1 implies 0 <= a[k]
-            }),
-            forall (k: int32) {
-                0 <= k and k < 1 implies 0 <= a[k]
-            }
-        ) using {
-            at(entry, forall (k: int32) {
-                0 <= k and k < 1 implies 0 <= a[k]
-            });
-        };
+        intro(); intro(); solve();
         assumption();
     }
 }
 ```
 
 ```expect
-fail: `transport using` found no frame evidence
+fail: `solve` failed
 ```

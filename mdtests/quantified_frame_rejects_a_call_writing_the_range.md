@@ -27,15 +27,10 @@ void caller(int32 *v, int32 n) {
     ensures forall (k: int32) { 0 <= k and k < n implies v[k] == old(v[k]) };
 } by {
     step();
-    transport(
-        forall (k: int32) { 0 <= k and k < n implies old(v[k]) == old(v[k]) },
-        forall (k: int32) { 0 <= k and k < n implies v[k] == old(v[k]) }
-    ) using {
-        forall (k: int32) { 0 <= k and k < n implies old(v[k]) == old(v[k]) };
-    };
+    have forall (k: int32) { 0 <= k and k < n implies v[k] == old(v[k]) } by { solve(); }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: `solve` failed
 ```

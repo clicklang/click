@@ -1,6 +1,9 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+mod completion;
+pub(crate) use completion::{ContractCompletionGoal, WholeContractProof};
+
 mod closing;
 #[cfg(test)]
 pub(crate) use closing::check_empty_footprint as check_empty_contract_write_footprint;
@@ -2865,10 +2868,9 @@ fn native_literal_completion_key(
     }
 }
 
-/// Collects contract claims from proof completion. Proposition clauses require
-/// their exact claim/path evidence and are never lowered or proved here.
-/// Resource and effect claims still use the legacy boundary implementation;
-/// migrating those remaining obligations belongs to contract closing.
+/// Compatibility coverage helper for native completion regressions. Source
+/// contract proofs use their persistent whole-contract owner.
+#[cfg(test)]
 pub(crate) fn program_function_contract_claims_from_completions(
     function: &ProgramFunction,
     contract_execution: &FunctionContractExecution,
@@ -3108,17 +3110,22 @@ fn closing_path_is_unreachable(path: &SymbolicExecutionPath) -> bool {
 }
 
 fn closed_exit_obligations_cover_every_case(execution: &FunctionContractExecution) -> bool {
-    execution.cases.iter().all(|alternatives| {
-        alternatives.iter().any(|set| {
-            set.paths.iter().enumerate().all(|(index, path)| {
-                crate::instrumentation::record_deterministic_work(1);
-                closing_path_is_unreachable(path)
-                    || set
-                        .closed_exit_obligations
-                        .get(index)
-                        .and_then(Option::as_ref)
-                        .is_some_and(ClosedContractExit::completes_boundary)
-            })
+    execution
+        .cases
+        .iter()
+        .all(|alternatives| closed_exit_obligations_cover_case(alternatives))
+}
+
+fn closed_exit_obligations_cover_case(alternatives: &[ContractPathSet]) -> bool {
+    alternatives.iter().any(|set| {
+        set.paths.iter().enumerate().all(|(index, path)| {
+            crate::instrumentation::record_deterministic_work(1);
+            closing_path_is_unreachable(path)
+                || set
+                    .closed_exit_obligations
+                    .get(index)
+                    .and_then(Option::as_ref)
+                    .is_some_and(ClosedContractExit::completes_boundary)
         })
     })
 }
@@ -3490,36 +3497,23 @@ pub(crate) fn program_unselected_function_contract_assumption(
 /// an effect claim even when the frame is empty on a particular execution
 /// path; a resource-derived frame is covered by its resource transition.
 fn function_contract_claims_are_complete(function: &ProgramFunction) -> bool {
-    let claims = function.contract_claims();
-    (0..function.contract_ensures().len()).all(|index| {
-        claims.iter().any(|claim| {
-            matches!(
-                claim.target(),
-                FunctionContractClaimTarget::EnsureProposition(claim_index)
-                    if *claim_index == index
-            )
+    let targets = function
+        .contract_claims()
+        .iter()
+        .map(|claim| claim.target())
+        .collect::<BTreeSet<_>>();
+    (0..function.contract_ensures().len())
+        .all(|index| targets.contains(&FunctionContractClaimTarget::EnsureProposition(index)))
+        && (0..function.exceptional_ensures().len()).all(|index| {
+            targets.contains(&FunctionContractClaimTarget::ExceptionalEnsureProposition(
+                index,
+            ))
         })
-    }) && (0..function.exceptional_ensures().len()).all(|index| {
-        claims.iter().any(|claim| {
-            matches!(
-                claim.target(),
-                FunctionContractClaimTarget::ExceptionalEnsureProposition(claim_index)
-                    if *claim_index == index
-            )
-        })
-    }) && (0..function.resource_ensures().len()).all(|index| {
-        claims.iter().any(|claim| {
-            matches!(
-                claim.target(),
-                FunctionContractClaimTarget::EnsureResource(claim_index)
-                    if *claim_index == index
-            )
-        })
-    }) && (!function.contract_effect_claim_required()
-        || function.contract_mutable().is_empty()
-        || claims
-            .iter()
-            .any(|claim| matches!(claim.target(), FunctionContractClaimTarget::Effect)))
+        && (0..function.resource_ensures().len())
+            .all(|index| targets.contains(&FunctionContractClaimTarget::EnsureResource(index)))
+        && (!function.contract_effect_claim_required()
+            || function.contract_mutable().is_empty()
+            || targets.contains(&FunctionContractClaimTarget::Effect))
 }
 
 /// Returns diagnostic keys for obligations that have no corresponding claim.
@@ -4157,7 +4151,7 @@ mod retained_literal_completion_scaling_tests {
 mod contract_closing_tests {
     use super::*;
 
-    fn fixture(path_count: usize) -> (ProgramFunction, FunctionContractExecution) {
+    pub(super) fn fixture(path_count: usize) -> (ProgramFunction, FunctionContractExecution) {
         let function = program_function(
             ProgramType::Int32,
             "closed",
@@ -4222,7 +4216,7 @@ mod contract_closing_tests {
         (function, execution)
     }
 
-    fn completions(
+    pub(super) fn completions(
         function: &ProgramFunction,
         execution: &FunctionContractExecution,
     ) -> Vec<CheckedFunctionProposition> {

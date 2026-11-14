@@ -172,8 +172,11 @@ contracts, or resource shapes.
 
 ## Remaining transport expansion inventory
 
-The remaining work is written-proof migration followed by syntax and dispatcher
-retirement. Counts are syntax sites, not independent slow walks or a claim that
+The remaining work is written-proof migration, removal of residual internal
+legacy producers, and syntax/dispatcher retirement. A selected expansion of
+`integer_sum_range_fold.md` and `rewrite_pointer_into_a_shifted_byte_view.md`
+still retained legacy nodes during the corpus pass; migrate these producers
+alongside their written consumers before deleting the dispatcher. Counts are syntax sites, not independent slow walks or a claim that
 every fixture currently verifies.
 
 ### Written syntax is a separate migration
@@ -183,12 +186,12 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 134 | 192 |
-| `examples/` | 30 | 373 |
+| `mdtests/` | 81 | 138 |
+| `examples/` | 30 | 371 |
 | `library/` | 0 | 0 |
-| Total | 164 | 565 |
+| Total | 111 | 509 |
 
-The 62 mdtests with failure expectations still require migration while retaining
+The 18 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text
 to expansion/mutation tests; migrate those inputs together with their tests,
 rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
@@ -196,6 +199,19 @@ selected-tactic expansion verifies a prefix, so it does not establish that the
 rewritten proof's remaining suffix closes. Remaining groups include historical
 initializedness, computed range bounds, loop frames, and call preservation.
 The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
+
+### Migration blockers to resolve
+
+- `fold_read_transport_across_a_call_with_a_checked_write_set.md`: the
+  pointwise preservation proof needs separation of `v[0..i]` and `v[i..n]`.
+  The current element and containment axioms do not directly construct this
+  symbolic adjacent-range fact. A direct `separation::adjacent_ranges` law is
+  awaiting design approval; the call's recorded footprint containment can then
+  feed ordinary `restrict` and `preserve`.
+- The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
+  node, before its legacy transport calls. An explicit `node == identity`
+  lookup moves the failure to the packed parent-pointer equality. Repair and
+  verify this baseline before migrating its 106 written sites.
 
 ### Excluded or still unconfirmed
 

@@ -44,16 +44,18 @@ int32 run() {
             mark stored;
             step();
             have defined(h->target) by {
-                transport(at(stored, defined(h->target)), defined(h->target)) using {
-                    at(stored, defined(h->target));
-                };
+                have separate(region(12).footprint, memory(h->target)) by {
+                    normalize() using {};
+                }
+                preserve(separate(region(12).footprint, memory(h->target)));
             }
             mark declared;
             step();
             have defined(h->target) by {
-                transport(at(declared, defined(h->target)), defined(h->target)) using {
-                    at(declared, defined(h->target));
-                };
+                have separate(region(13).footprint, memory(h->target)) by {
+                    normalize() using {};
+                }
+                preserve(separate(region(13).footprint, memory(h->target)));
             }
             step_until(function.exit);
         }

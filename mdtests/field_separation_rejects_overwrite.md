@@ -40,12 +40,7 @@ void probe(struct node *p, struct node *q) {
             have p == id by assumption();
             step(); mark before; step(); step();
             have p->other == at(before, p->other) by {
-                transport(at(before, p->other) == at(before, p->other), p->other == at(before, p->other)) using {
-                    separate(memory(p->other), memory(q->next));
-                    separate(memory(p->other), memory(q->other));
-                    separate(memory(p->other), memory(q->tag));
-                    p == id;
-                };
+                solve();
             }
         },
     }
@@ -53,5 +48,5 @@ void probe(struct node *p, struct node *q) {
 ```
 
 ```expect
-fail: found no frame evidence
+fail: `solve` failed
 ```
