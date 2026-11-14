@@ -3026,10 +3026,21 @@ fn verify_program_in_context(
                     "contract certification",
                     "contract symbolic execution",
                     || {
-                        let checked_artifacts = checked_executions
-                            .iter()
-                            .map(|execution| CheckedFunctionExecution::clone(execution))
-                            .collect::<Vec<_>>();
+                        // Retain the coherent frontier proof's annotated body
+                        // as the primary subject, with the other clause proofs
+                        // still available as independent execution strategies.
+                        let mut checked_artifacts = Vec::with_capacity(checked_executions.len());
+                        if let Some(primary) = frontier_loop_artifacts {
+                            checked_artifacts
+                                .push(CheckedFunctionExecution::clone(&primary.checked_execution));
+                        }
+                        for execution in &checked_executions {
+                            if frontier_loop_artifacts.is_none_or(|primary| {
+                                !Arc::ptr_eq(&primary.checked_execution, execution)
+                            }) {
+                                checked_artifacts.push(CheckedFunctionExecution::clone(execution));
+                            }
+                        }
                         // The entry state and arguments outlive the call: a
                         // refusal below names the unauthorized entry premise
                         // through them, in the names the user wrote.

@@ -440,8 +440,11 @@ checked execution trace. Only that producer can issue `ContractEntryAuthority`,
 which binds the resulting execution to the entry's generative identity.
 Whole-contract admission consumes matching authorities without reauthorizing
 premises, comparing execution environments or rebasing resource representations.
-The contract subject is retained by the owner rather than supplied again at
-admission. Loop semantics and call dependencies come from the selected executions.
+The declaration is retained by the owner rather than supplied again at
+admission. The primary bound execution retains proof-only body annotations,
+including the normalized natural loops that termination rules name. Other
+clause proofs remain independent execution alternatives. Loop semantics and
+call dependencies come from the selected executions.
 
 Return-path reconstruction before whole-contract completion remains migration
 work, as does replacing batch receipt association with direct updates to the
