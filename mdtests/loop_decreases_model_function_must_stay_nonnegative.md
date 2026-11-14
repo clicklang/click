@@ -80,5 +80,5 @@ void countdown(int32 n) {
 ```
 
 ```expect
-fail: the bundle also has `0 <= chain_len(c.model) - 5` at the back edge
+fail: the bundle also has `0 <= (chain_len(c.model) - 5)` at the back edge
 ```

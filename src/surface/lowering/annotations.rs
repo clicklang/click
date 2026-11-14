@@ -9166,6 +9166,14 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<Option<u32>, String> {
+        // A snapshot changes the value read, not the call's declared type.
+        if let ContractExpression::Old(inner)
+        | ContractExpression::At {
+            expression: inner, ..
+        } = expression
+        {
+            return self.call_pointer_element_width(inner, environment);
+        }
         // Only a declared pure function with a pointer result: a built-in
         // conversion such as `to_int32` is not one.
         let ContractExpression::Call { name, .. } = expression else {

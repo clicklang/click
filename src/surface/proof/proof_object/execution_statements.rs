@@ -45,27 +45,81 @@ pub(super) fn describe_invariant_closure_error(error: ClickError) -> ClickError 
 /// Names the ranking members a ranked loop's bundle carries, so an explicit
 /// `preserve by` body written before the `decreases` clause existed reports
 /// what it now has to close instead of only that the bundle stayed open.
-fn ranking_member_diagnostic(ranking_measures: &[crate::kernel::CRankingComponent]) -> String {
-    if ranking_measures.is_empty() {
+fn ranking_member_diagnostic(bundle: &InvariantBodyContext) -> String {
+    if bundle.ranking_measures.is_empty() {
         return String::new();
     }
-    let members = ranking_measures
+    // A pure component's source also serves as its declaration identity and
+    // can contain structural keys. Diagnostics have the retained declaration.
+    let measures = if bundle.ranking_surfaces.len() == bundle.ranking_measures.len() {
+        bundle
+            .ranking_surfaces
+            .iter()
+            .map(crate::surface::diagnostics::describe_contract_expression)
+            .collect::<Vec<_>>()
+    } else {
+        bundle
+            .ranking_measures
+            .iter()
+            .map(crate::kernel::c_ranking_measure_source)
+            .collect()
+    };
+    let tuple = match measures.as_slice() {
+        [measure] => measure.clone(),
+        _ => format!("({})", measures.join(", ")),
+    };
+    let members = measures
         .iter()
-        .map(|measure| {
-            format!(
-                "`0 <= {}` at the back edge",
-                crate::kernel::c_ranking_measure_source(measure)
-            )
-        })
+        .map(|measure| format!("`0 <= {measure}` at the back edge"))
         .chain(std::iter::once(format!(
-            "`{}` decreases at the back edge",
-            crate::kernel::c_ranking_measures_source(ranking_measures)
+            "`{tuple}` decreases at the back edge"
         )))
         .collect::<Vec<_>>();
     format!(
         "; this loop declares `decreases`, so the bundle also has {}",
         members.join(", ")
     )
+}
+
+#[cfg(test)]
+mod ranking_diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn ranking_note_uses_written_literals_instead_of_declaration_keys() {
+        let measure = ContractExpression::Add(
+            Box::new(ContractExpression::Subtract(
+                Box::new(ContractExpression::Binding("n".into())),
+                Box::new(ContractExpression::Binding("t".into())),
+            )),
+            Box::new(ContractExpression::CFragment(
+                crate::kernel::c_uint32_literal(1),
+            )),
+        );
+        let key = crate::surface::verification::termination_measure_source(&measure);
+        let component = crate::kernel::CRankingComponent::PureInteger {
+            source: key,
+            expression: crate::kernel::SpecIntegerExpression::FromMachine(Box::new(
+                crate::kernel::SpecExpression::CExpression(crate::kernel::c_uint32_literal(1)),
+            )),
+        };
+        let mut bundle = InvariantBodyContext {
+            ranking_measures: vec![component.clone()],
+            ranking_surfaces: vec![measure.clone()],
+            ..Default::default()
+        };
+        let note = ranking_member_diagnostic(&bundle);
+        assert!(note.contains("1u32"), "{note}");
+        assert!(!note.contains("…"), "{note}");
+        assert!(!note.contains("Value("), "{note}");
+        assert!(note.contains("decreases at the back edge"), "{note}");
+
+        bundle.ranking_measures.push(component);
+        bundle.ranking_surfaces.push(measure);
+        let note = ranking_member_diagnostic(&bundle);
+        assert!(!note.contains("Value("), "{note}");
+        assert_eq!(note.matches("`0 <= ").count(), 2, "{note}");
+    }
 }
 
 /// The C `if` condition standing at this frontier, spelled at that
