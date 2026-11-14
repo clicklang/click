@@ -71,11 +71,13 @@ pub(crate) use contracts::{
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
+pub(crate) use kernel_term::{
+    KernelFold, KernelFoldIndex, KernelTermExport, KernelTermImport, clear_integer_bridge_memo,
+};
 pub use kernel_term::{
     KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm, KernelTermNode,
     KernelType,
 };
-pub(crate) use kernel_term::{KernelTermExport, KernelTermImport, clear_integer_bridge_memo};
 mod machine_integer;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
@@ -5455,6 +5457,13 @@ pub enum CStatement {
         condition: CExpression,
         then_branch: Box<CStatement>,
         else_branch: Box<CStatement>,
+    },
+    /// A loop's own test, inside a pass, after the statements the loop runs
+    /// between its entry and its test: true continues the pass, false leaves
+    /// the loop. It is a position of the loop as written, `loop(i).test`, never
+    /// a statement of the source program.
+    LoopTest {
+        condition: CExpression,
     },
     While {
         condition: CExpression,

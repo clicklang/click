@@ -1289,10 +1289,21 @@ r2 := statement(i).call(foo, 0).result   owes foo's requires on r1; facts: foo's
 x == r2                                  memory and resources: bar's effects, then foo's
 ```
 
-A loop applies the same model at its head. Each pass checks the condition and
-then runs the body, so the body starts with the condition as a fact and the
-exit with its negation; a condition that calls a function contributes that
-call's result and effects like any other expression.
+A loop is a cycle through named points: its head (`loop(i).entry` before the
+first pass), the statements of its own that run before its test, its test, its
+body, its back edge and its exit (`loop(i).exit`). A pure condition such as
+`k > 0` is tested at the head, so the body starts with it as a fact and the
+exit with its negation. A condition that calls a function makes those calls
+its loop's own regions (`loop(i).call(f, j)`), followed by a test region
+(`loop(i).test()`, the kernel's `CStatement::LoopTest`): a pass steps the calls
+and then the test, whose true side continues the pass and whose false side
+leaves the loop there, marked `LoopControlExit::TestFalse` on the frontier.
+The other loop forms place statements differently around the same points: a
+`do ... while` runs its body before the test, and a `for` its step at the back
+edge. After a loop that left on one path, the points of that path's last pass
+keep their names (its calls, `.result`s, test and body statements); after a
+loop that left on several, those names are refused, since each path recorded
+them at its own state.
 
 #### Where the implementation departs from this
 
@@ -1302,9 +1313,8 @@ call out of the expression that holds it into a local:
 
 - The C front end assigns each call nested in an expression to a temporary
   `__click_call_result<N>` (`fresh_synthesized_call_name` in
-  `src/languages/c/syntax.rs`), and a loop whose condition calls a function
-  becomes `while (1) { t = f(...); if (!t) break; ... }`: its proof steps the
-  call and then splits an `if` in the body.
+  `src/languages/c/syntax.rs`), including a loop condition's calls, whose test
+  then reads the temporary.
 - The Rust importer gives every MIR local the user did not name a local
   `__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's
   result to such a temporary, so a `for` loop's `next` result is one and a

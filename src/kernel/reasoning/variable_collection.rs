@@ -1,4 +1,7 @@
 use super::*;
+// Staged common fold readers; producers activate after the Surface boundary.
+#[allow(dead_code)]
+mod retained_folds;
 use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, walk_spec};
 
 /// Visit only the carrier-bearing leaves of shared machine arithmetic.
@@ -847,6 +850,9 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
         | CStatement::Assert {
             condition: expression,
             ..
+        }
+        | CStatement::LoopTest {
+            condition: expression,
         } => {
             collect_c_expression_bitvector_variables(expression, variables);
         }

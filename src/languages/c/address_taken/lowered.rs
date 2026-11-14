@@ -75,7 +75,9 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
             }
             CStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),
             CStatement::HeapFree { pointer } => expressions.push((pointer, false)),
-            CStatement::Assert { condition, .. } => expressions.push((condition, false)),
+            CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
+                expressions.push((condition, false))
+            }
             CStatement::Store { pointer, value }
             | CStatement::TypedStore { pointer, value, .. } => {
                 expressions.extend([(pointer, false), (value, false)]);

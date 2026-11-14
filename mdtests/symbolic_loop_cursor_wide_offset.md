@@ -36,7 +36,7 @@ uint64 f(const uint8* input, const uint8* buf, int32 narrow, uint64 native, uint
   invariant n == 1u32;
   invariant buf == input + narrow;
   initialize by solve();
-  preserve by { step(); step(); step(); step(); step(); step(); step(); step(); }
+  preserve by { step(); step(); step(); step(); step(); step(); step(); }
  }
 }
 ```

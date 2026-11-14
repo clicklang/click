@@ -82,6 +82,7 @@ fn statement_expressions<'a>(
         | CStatement::Throw(expression)
         | CStatement::Switch { expression, .. } => expressions.push((expression, false)),
         CStatement::Assert { condition, .. }
+        | CStatement::LoopTest { condition }
         | CStatement::If { condition, .. }
         | CStatement::While { condition, .. } => expressions.push((condition, true)),
         CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {

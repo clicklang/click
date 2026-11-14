@@ -4567,7 +4567,8 @@ fn c0_statement_calls_recording(
             | syntax::C0Statement::SequentialStore { .. }
             | syntax::C0Statement::AggregateCopy { .. }
             | syntax::C0Statement::Update { .. }
-            | syntax::C0Statement::Assert { .. } => {}
+            | syntax::C0Statement::Assert { .. }
+            | syntax::C0Statement::LoopTest { .. } => {}
         }
     }
 
@@ -4868,7 +4869,8 @@ fn c0_statement_calls_recording(
                 collect_function_addresses(operand, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Assert { condition, .. } => {
+            syntax::C0Statement::Assert { condition, .. }
+            | syntax::C0Statement::LoopTest { condition, .. } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);

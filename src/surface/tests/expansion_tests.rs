@@ -14104,20 +14104,22 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
         }
     "#;
     let sources = [("byte_prefix.c", c_source)];
-
-    let verified = verify_c0_sources(click_source, &sources);
-    verified.expect("the unfolded byte universal should instantiate through Proof");
-
-    let expanded = expand_c0_claim_source(
-        click_source,
-        &sources,
-        "byte_prefix",
-        CProofClaim::Ensure(0),
-    )
-    .expect("the retained universal specialization should expand");
-    assert!(expanded.contains("instantiate("), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
-        .expect("the unfolded universal specialization should check independently");
+    let ordinary_source = click_source
+        .replace(
+            "bytes::all_not_equal(p, 0, 3, 'y')",
+            "(0u64..3u64).all(|k| { p[k] != 'y' })",
+        )
+        .replace("unfold(bytes::all_not_equal);", "");
+    for source in [click_source, ordinary_source.as_str()] {
+        verify_c0_sources(source, &sources)
+            .expect("universal instantiation must work with or without a predicate unfold");
+        let expanded =
+            expand_c0_claim_source(source, &sources, "byte_prefix", CProofClaim::Ensure(0))
+                .expect("the universal specialization should expand");
+        assert!(expanded.contains("instantiate("), "{expanded}");
+        verify_c0_sources(&expanded, &sources)
+            .expect("the universal specialization should check independently");
+    }
 }
 
 #[test]

@@ -42,7 +42,7 @@ pub(in crate::surface::proof) fn check_unfold_predicate_in_facts(
         })?;
         if &unfolded != proposition {
             let newly_available = !facts.contains(&unfolded);
-            facts = facts.with_predicate_unfold_fact(unfolded.clone());
+            facts = facts.with_kernel_checked_fact(unfolded.clone());
             if newly_available {
                 added_facts.push(unfolded);
             }

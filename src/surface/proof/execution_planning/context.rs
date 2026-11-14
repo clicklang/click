@@ -45,6 +45,9 @@ pub(in crate::surface::proof) struct LoopProofCertificates {
     pub(in crate::surface::proof) returns: Vec<Arc<LoopReturnProof>>,
     pub(in crate::surface::proof) initialize: Option<ProofCertificate>,
     pub(in crate::surface::proof) preserve: Option<ProofCertificate>,
+    /// For each loop planned here, the points each path that left it
+    /// recorded during its pass.
+    pub(in crate::surface::proof) exit_points: BTreeMap<usize, Vec<RecordedRegionPoints>>,
 }
 
 #[derive(Clone)]

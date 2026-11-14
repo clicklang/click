@@ -1001,6 +1001,7 @@ pub(super) fn statement_writes_aggregate_parameter(
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_) => {}
     }

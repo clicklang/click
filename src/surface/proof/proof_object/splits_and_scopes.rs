@@ -1196,34 +1196,6 @@ impl<'a> Proof<'a> {
                 body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
             }
         }
-        for name in self.focused_branch_unfolds().iter() {
-            let recorded_bodies = match self.context.as_ref() {
-                ProofContext::Pure(context) => context
-                    .theorem_context
-                    .surface_requirements
-                    .kernels_written_by_predicate(name)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                ProofContext::FixedState(context) => context
-                    .surface_propositions
-                    .kernels_written_by_predicate(name)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                ProofContext::Execution(_) => self
-                    .outcome_fixed_state_view()
-                    .into_iter()
-                    .flat_map(|view| view.surface_propositions.kernels_written_by_predicate(name))
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            };
-            for recorded in recorded_bodies {
-                if matches!(recorded, Proposition::ForAll { .. })
-                    && body_facts.contains_top_level(&recorded)
-                {
-                    body_facts = body_facts.with_predicate_unfold_fact(recorded);
-                }
-            }
-        }
         // Chosen-body projections are scoped to the proposition proof that
         // selected them. A nested `have` starts a fresh presentation scope;
         // otherwise an outer witness could make an unrelated `extract`

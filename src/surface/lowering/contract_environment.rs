@@ -141,10 +141,12 @@ pub(in crate::surface) fn selected_snapshot_state<'a>(
                 | CodeRegionRef::Label(_),
             ..
         }) => recorded_snapshots.get(selector).ok_or_else(|| {
-            format!(
-                "no state snapshot was recorded for `{}`; run `step()` across that statement before using it in `at(...)`",
-                describe_program_point_ref(point)
-            )
+            recorded_snapshots
+                .ambiguous_exit_refusal(selector)
+                .unwrap_or_else(|| format!(
+                    "no state snapshot was recorded for `{}`; run `step()` across that statement before using it in `at(...)`",
+                    describe_program_point_ref(point)
+                ))
         }),
         SnapshotSelector::ProgramPoint(
             point @ ProgramPointRef {
@@ -154,6 +156,11 @@ pub(in crate::surface) fn selected_snapshot_state<'a>(
         ) => {
             let region = recorded_snapshots.source_point(point)?;
             recorded_snapshots.get(selector).ok_or_else(|| {
+                if let Some(refusal) = recorded_snapshots
+                    .ambiguous_exit_refusal(&SnapshotSelector::ProgramPoint(region.clone()))
+                {
+                    return refusal;
+                }
                 format!(
                     "no state snapshot was recorded for `{}`, which is `{}`; run `step()` across that statement before using it in `at(...)`",
                     describe_program_point_ref(point),
