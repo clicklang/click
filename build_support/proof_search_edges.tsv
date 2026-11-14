@@ -174,7 +174,6 @@ src/surface/proof/driver/scripts.rs	driver	ProofDriver::try_authoritative_linear
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::try_authoritative_linear_script_leaving_open	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::try_authoritative_linear_script_reporting	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::try_generated_linear_script	driver	1
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::try_planned_explicit_steps	driver	1
 src/surface/proof/driver/state.rs	driver	ProofDriver::complete_fixed_state_obligations_inner	driver	3
 src/surface/proof/driver/state.rs	driver	ProofDriver::complete_fixed_state_obligations_since	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_have_step	driver	2
@@ -487,9 +486,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disj
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	try_carry_entry_conjunct	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	try_solve_closure_with_surfaces	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	derive_solve_atomic_proposition	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_pointer_inequality_rewrite	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_pointer_inequality_rewrite	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_predecessor_upper_bound	driver	4
@@ -648,3 +646,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_view
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	requirement_kernel_atoms_for_search	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_ordinary_viewability_restriction_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	try_universal_steps_with_arithmetic	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	try_universal_steps_with_arithmetic	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	try_arithmetic_with_selected_premises	1
