@@ -151,6 +151,42 @@ impl KernelFold {
         )
     }
 
+    /// Explicit compatibility boundary for the remaining Integer consumers.
+    /// Machine endpoints retain common operands instead of exporting prefixes.
+    pub(crate) fn integer_compatibility(
+        &self,
+        export: &mut KernelTermExport,
+    ) -> Result<IntegerTerm, &'static str> {
+        if self.result_type() != &KernelType::Integer {
+            return Err("expected Integer fold result");
+        }
+        let [start, end, initial, body] = &self.arguments;
+        let index = match self.index {
+            KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => {
+                let start = SharedIntegerRangeEndpoint::from_shared(start.clone())
+                    .ok_or("unsupported shared fold endpoint")?;
+                let end = SharedIntegerRangeEndpoint::from_shared(end.clone())
+                    .ok_or("unsupported shared fold endpoint")?;
+                if self.index == KernelFoldIndex::Int32 {
+                    IntegerRangeFoldIndex::Int32 { start, end }
+                } else {
+                    IntegerRangeFoldIndex::UInt64 { start, end }
+                }
+            }
+            KernelFoldIndex::Integer => IntegerRangeFoldIndex::Integer {
+                start: export.integer(start)?,
+                end: export.integer(end)?,
+            },
+        };
+        Ok(IntegerTerm::RangeFold {
+            index,
+            initial: export.integer(initial)?,
+            accumulator: self.accumulator,
+            item: self.item,
+            body: export.integer(body)?,
+        })
+    }
+
     pub(crate) fn export_integer(
         &self,
         export: &mut KernelTermExport,

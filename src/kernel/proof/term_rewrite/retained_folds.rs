@@ -27,24 +27,17 @@ impl TermRewrite<'_> {
             self.unsupported_integer_scope = true;
             return None;
         }
-        let [start, end, initial, body] = &fold.arguments;
-        let index = match fold.index {
-            KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => {
-                let start = SharedIntegerRangeEndpoint::from_shared(start.clone())?;
-                let end = SharedIntegerRangeEndpoint::from_shared(end.clone())?;
-                if fold.index == KernelFoldIndex::Int32 {
-                    IntegerRangeFoldIndex::Int32 { start, end }
-                } else {
-                    IntegerRangeFoldIndex::UInt64 { start, end }
-                }
-            }
-            KernelFoldIndex::Integer => IntegerRangeFoldIndex::Integer {
-                start: self.fold_integer_bridge.integer(start).ok()?,
-                end: self.fold_integer_bridge.integer(end).ok()?,
-            },
+        let IntegerTerm::RangeFold {
+            index,
+            initial,
+            body,
+            ..
+        } = fold
+            .integer_compatibility(&mut self.fold_integer_bridge)
+            .ok()?
+        else {
+            unreachable!("Integer fold compatibility shape")
         };
-        let initial = self.fold_integer_bridge.integer(initial).ok()?;
-        let body = self.fold_integer_bridge.integer(body).ok()?;
         let rewritten =
             self.rewrite_integer_range_fold(&index, &initial, fold.accumulator, fold.item, &body);
         if self.refusal().is_some() {
