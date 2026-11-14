@@ -1680,6 +1680,153 @@ pub(super) fn viewability_restriction_steps(
     Some((steps, narrow_range))
 }
 
+/// Plan a narrow range with one computed upper endpoint through the explicit
+/// signed operation identity. Search applies these steps under its budget;
+/// replay retains the resulting arithmetic certificates and library steps.
+pub(super) fn computed_viewability_restriction_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<(ClickProposition, Vec<ProofStep>)>> {
+    let parent = viewability_resource(source)?;
+    let child = viewability_resource(target)?;
+    let (ResourceSubject::Memory(parent_segment), ResourceSubject::Memory(child_segment)) =
+        (&parent, &child)
+    else {
+        return None;
+    };
+    let (
+        ContractSegmentSurface::Range {
+            base,
+            start: lo,
+            end: hi,
+        },
+        ContractSegmentSurface::Range {
+            base: child_base,
+            start: inner_lo,
+            end: inner_hi,
+        },
+    ) = (&parent_segment.surface, &child_segment.surface)
+    else {
+        return None;
+    };
+    if base != child_base || parent_segment.state != child_segment.state {
+        return None;
+    }
+    let expression = contract_expression_as_c_fragment(inner_hi)?;
+    let (left, right, law) = match expression {
+        CExpression::Add(left, right) => (left, right, "click::integer::int32_add_to_integer"),
+        CExpression::Subtract(left, right) => {
+            (left, right, "click::integer::int32_subtract_to_integer")
+        }
+        _ => return None,
+    };
+    let observe = |value: ContractExpression| ContractExpression::Call {
+        name: "to_integer".into(),
+        arguments: vec![value],
+    };
+    let exact_left = Box::new(observe(ContractExpression::CFragment((*left).clone())));
+    let exact_right = Box::new(observe(ContractExpression::CFragment((*right).clone())));
+    let exact = if law == "click::integer::int32_add_to_integer" {
+        ContractExpression::Add(exact_left, exact_right)
+    } else {
+        ContractExpression::Subtract(exact_left, exact_right)
+    };
+    let compare = |left, operator, right| ClickProposition::Comparison {
+        left,
+        operator,
+        right,
+    };
+    let have = |proposition, steps| (proposition, steps);
+    let mut cited = premises.to_vec();
+    let mut steps = Vec::new();
+    for (left, right) in [
+        (observe(lo.clone()), observe(inner_lo.clone())),
+        (observe(inner_lo.clone()), exact.clone()),
+        (exact.clone(), observe(hi.clone())),
+        (
+            ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
+                "2147483648".into(),
+            ))),
+            exact.clone(),
+        ),
+        (
+            exact.clone(),
+            ContractExpression::IntegerLiteral("2147483647".into()),
+        ),
+    ] {
+        let bound = compare(left.clone(), ComparisonOperator::LessEqual, right.clone());
+        steps.push(have(
+            bound.clone(),
+            vec![ProofStep::ArithmeticUsing(cited.clone())],
+        ));
+        cited.push(bound);
+    }
+    let defined = ClickProposition::Defined {
+        expression: inner_hi.clone(),
+    };
+    steps.push(have(defined.clone(), vec![ProofStep::Assumption]));
+    cited.push(defined.clone());
+    let identity = compare(observe(inner_hi.clone()), ComparisonOperator::Equal, exact);
+    steps.push(have(
+        identity.clone(),
+        vec![ProofStep::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: law.into(),
+                arguments: vec![
+                    ContractExpression::CFragment(*left),
+                    ContractExpression::CFragment(*right),
+                ],
+            },
+            premises: vec![defined],
+        }],
+    ));
+    cited.push(identity.clone());
+    for (left, right) in [
+        (observe(inner_lo.clone()), observe(inner_hi.clone())),
+        (observe(inner_hi.clone()), observe(hi.clone())),
+    ] {
+        let bound = compare(left, ComparisonOperator::LessEqual, right);
+        steps.push(have(
+            bound.clone(),
+            vec![ProofStep::Rewrite(identity.clone()), ProofStep::Assumption],
+        ));
+        cited.push(bound);
+    }
+    let containment = ClickProposition::Contains {
+        parent: parent.clone(),
+        child: child.clone(),
+    };
+    steps.push(have(
+        containment.clone(),
+        vec![ProofStep::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: "click::separation::subrange".into(),
+                arguments: [base, lo, hi, inner_lo, inner_hi]
+                    .into_iter()
+                    .cloned()
+                    .collect(),
+            },
+            premises: cited.clone(),
+        }],
+    ));
+    cited.push(containment);
+    steps.push(have(
+        target.clone(),
+        vec![ProofStep::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: "click::separation::viewable_restrict".into(),
+                arguments: vec![
+                    ContractExpression::Resource(Box::new(parent)),
+                    ContractExpression::Resource(Box::new(child)),
+                ],
+            },
+            premises: cited,
+        }],
+    ));
+    Some(steps)
+}
+
 /// The explicit alias and endpoint facts needed by the ordinary subrange law.
 /// Planning proves these; the driver only consumes the selected facts.
 pub(super) fn viewability_restriction_requirements(

@@ -9222,7 +9222,7 @@ fn restricted_solve_inside_have_expands_to_graph_normalization() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
-fn restricted_solve_expands_loadable_subrange_to_explicit_transport() {
+fn restricted_solve_expands_computed_subrange_to_ordinary_steps() {
     let c_source = r#"
         int32 read_at(int32 data[], int32 index, int32 length) {
             return data[index];
@@ -9277,33 +9277,26 @@ fn restricted_solve_expands_loadable_subrange_to_explicit_transport() {
         .map(|relative| expanded_have_start + relative)
         .unwrap();
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
+    assert!(!expanded_have.contains("transport("), "{expanded_have}");
+    assert!(expanded_have.contains("subrange"), "{expanded_have}");
     assert!(
-        expanded_have.contains(
-            "transport(viewable(data[0..length]), viewable(data[index..(index + 1)])) using"
-        ),
+        expanded_have.contains("int32_add_to_integer"),
         "{expanded_have}"
-    );
-    assert!(expanded_have.contains("0 <= index;"), "{expanded_have}");
-    assert!(expanded_have.contains("index < length;"), "{expanded_have}");
-    let normalized_have = expanded_have
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_eq!(
-        normalized_have,
-        "have viewable(data[index..(index + 1)]) by {\n\
-         transport(viewable(data[0..length]), viewable(data[index..(index + 1)])) using {\n\
-         viewable(data[0..length]);\n\
-         0 <= index;\n\
-         index < length;\n\
-         };\n\
-         }"
     );
     assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
-    verify_c0_sources(&expanded, &sources).expect("explicit viewability transport should check");
+    verify_c0_sources(&expanded, &sources).expect("ordinary view restriction should check");
+    let fully_expanded = expand_function_proof_source(click_source, &sources, "read_at").unwrap();
+    assert!(!fully_expanded.contains("transport("), "{fully_expanded}");
+    without_implicit_solve_for_claim("read_at.contract", || {
+        verify_c0_sources(&fully_expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("computed endpoint restriction replays without implicit solve");
+    for missing in ["requires 0 <= index;", "requires index < length;"] {
+        let refused = fully_expanded.replace(missing, "");
+        assert_ne!(refused, fully_expanded);
+        assert!(verify_c0_sources(&refused, &sources).is_err(), "{missing}");
+    }
 }
 
 #[test]
@@ -21637,7 +21630,7 @@ test_batches! {
     ],
     expansion_batch_48: [
         restricted_solve_inside_have_expands_to_graph_normalization,
-        restricted_solve_expands_loadable_subrange_to_explicit_transport,
+        restricted_solve_expands_computed_subrange_to_ordinary_steps,
         restricted_solve_rewrites_pointer_aliases_inside_memory_loads,
         post_execution_restricted_solve_expands_without_derive,
     ],
@@ -22216,4 +22209,23 @@ fn rewritten_concrete_range_fold_expands_and_replays() {
     verify_click_theorems(source).unwrap();
     let expanded = expand_c0_claim_source_by_label(source, &[], "fold_rewrite.ensures_0").unwrap();
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+}
+
+#[test]
+fn computed_subtraction_view_restriction_expands_to_library_steps() {
+    let source = r#"
+        theorem restrict_view(data: int32[], index: int32, length: int32) {
+            requires viewable(data[0..length]);
+            requires 0 <= index;
+            requires index < length;
+            ensures viewable(data[index..length - 1]) by { solve(); }
+        }
+    "#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "restrict_view.ensures_0").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("int32_subtract_to_integer"), "{expanded}");
+    assert!(expanded.contains("subrange"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires index < length;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }

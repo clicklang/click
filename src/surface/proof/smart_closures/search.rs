@@ -2649,6 +2649,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_resource_descriptor_rewrite_closure(search_input)? {
             return Ok(Some(proof));
         }
+        if let Some(proof) = Self::try_computed_viewability_restriction_closure(search_input, None)
+        {
+            return Ok(Some(proof));
+        }
         // Plain solve and recursive logical closure share the same memory
         // strategies. A structural child must not lose read-over-write or
         // explicit frame transport merely because it was reached by `both`.
@@ -9206,12 +9210,99 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter(|closed| closed.is_complete() || closed.focused_discharged()))
     }
 
+    /// Both forms of solve select the same explicit endpoint proof. Ambient
+    /// source enumeration belongs only to the unrestricted smart tactic.
+    pub(in crate::surface::proof) fn try_computed_viewability_restriction_closure(
+        search_input: &Proof<'a>,
+        selected: Option<&[ClickProposition]>,
+    ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_computed_viewability_restriction_closure");
+        if !matches!(
+            search_input.goal(),
+            Some(Proposition::CMemoryLoadable { wide: false, .. })
+        ) {
+            return None;
+        }
+        let target = search_input.surface_goal()?;
+        // Reject other goal shapes before selecting any ambient premises.
+        let ClickProposition::Loadable { segment } = target else {
+            return None;
+        };
+        let ContractSegmentSurface::Range { end, .. } = &segment.surface else {
+            return None;
+        };
+        if !matches!(
+            contract_expression_as_c_fragment(end),
+            Some(CExpression::Add(..) | CExpression::Subtract(..))
+        ) {
+            return None;
+        }
+        let recorded;
+        let surfaces = match selected {
+            Some(selected) => selected,
+            None => {
+                let map = search_input.premise_surface_facts()?;
+                recorded = map
+                    .requirement_kernel_atoms_for_search()
+                    .filter(|atom| {
+                        matches!(
+                            atom,
+                            Proposition::CMemoryLoadable { .. } | Proposition::ConditionIs(..)
+                        )
+                    })
+                    .map(|atom| {
+                        map.recorded_requirement_surface(atom)
+                            .expect("requirement atoms retain their enclosing source clause")
+                            .clone()
+                    })
+                    .collect::<Vec<_>>();
+                &recorded
+            }
+        };
+        for source in surfaces
+            .iter()
+            .filter(|source| matches!(source, ClickProposition::Loadable { .. }))
+        {
+            let Some(goals) = computed_viewability_restriction_steps(source, target, surfaces)
+            else {
+                continue;
+            };
+            let candidate = goals
+                .into_iter()
+                .try_fold(search_input.clone(), |proof, (proposition, steps)| {
+                    let candidate = (|| {
+                        let mut scope = proof
+                            .driver()
+                            .open_have_with_goal_observations(proposition, true)?;
+                        for step in steps {
+                            scope = scope.driver().apply_step(step)?;
+                        }
+                        scope.join()
+                    })();
+                    candidate.ok()
+                })
+                .and_then(|proof| proof.driver().apply_step(ProofStep::Assumption).ok());
+            if let Some(proof) = candidate
+                && (proof.is_complete() || proof.focused_discharged())
+            {
+                return Some(proof);
+            }
+        }
+        None
+    }
+
     pub(in crate::surface::proof) fn try_restricted_solve_closure_before_arithmetic(
         search_input: &Proof<'a>,
         surfaces: &[ClickProposition],
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
+        if let Some(proof) =
+            Self::try_computed_viewability_restriction_closure(search_input, Some(surfaces))
+        {
+            return Some(proof);
+        }
         if matches!(
             search_input.goal(),
             Some(Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. })
