@@ -2598,7 +2598,7 @@ fn proof_fact_predicate_index_ignores_unrelated_context() {
 }
 
 #[test]
-fn outcome_fact_deltas_share_ambient_facts_and_preserve_unfold_provenance() {
+fn outcome_fact_deltas_share_ambient_universal_facts() {
     let universal = |index| Proposition::ForAll {
         name: Default::default(),
         var: Variable(index),
@@ -2619,7 +2619,7 @@ fn outcome_fact_deltas_share_ambient_facts_and_preserve_unfold_provenance() {
             .collect::<Vec<_>>();
         let unfolded = universal(9_000_000);
         let original =
-            ProofFacts::from_ordered(&ambient).with_predicate_unfold_fact(unfolded.clone());
+            ProofFacts::from_ordered(&ambient).with_kernel_checked_fact(unfolded.clone());
         for operations in [1_u64, 4, 16] {
             crate::kernel::proof::take_fact_entry_counts();
             let mut successor = original.clone();
@@ -2635,12 +2635,7 @@ fn outcome_fact_deltas_share_ambient_facts_and_preserve_unfold_provenance() {
                 materialized, 0,
                 "ambient facts must never be materialized by a delta"
             );
-            assert_eq!(
-                successor
-                    .predicate_unfolded_universal_facts()
-                    .collect::<Vec<_>>(),
-                vec![&unfolded]
-            );
+            assert!(successor.contains(&unfolded));
             assert!(!original.contains(&universal(11_000_000)));
             assert!(successor.contains(&ambient[(size - 1) as usize]));
         }
@@ -4361,28 +4356,11 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             1,
             "unrelated facts must not enter the selected universal bucket"
         );
-        let unfolded_facts = root
-            .facts()
-            .with_predicate_unfold_fact(kernel_quantified.clone());
-        assert_eq!(
-            unfolded_facts.predicate_unfolded_universal_facts().count(),
-            1,
-            "unrelated ambient facts and universals must not enter predicate-unfold search"
-        );
-
-        let mut indexed_root = root.clone();
-        let mut indexed_state = indexed_root.state.clone().into_state();
-        let indexed_branches = indexed_state
-            .open_branches()
-            .with_facts_at(indexed_root.focused_branch_id(), unfolded_facts);
-        *indexed_state.open_branches_mut() = indexed_branches;
-        indexed_root.state = indexed_root.state.with_state(indexed_state);
         let before = fact_node_allocations();
-        let selected =
-            crate::kernel::search::ProofSearch::try_indexed_forall_instantiation(&(indexed_root))
-                .expect(
-                    "the unfold-owned universal should close without scanning ambient universals",
-                );
+        let selected = crate::kernel::search::ProofSearch::try_indexed_forall_instantiation(&root)
+            .expect(
+                "the ordinary universal should be available to search without an unfold marker",
+            );
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
         let allocation_bound = 96 * logarithmic_height + 384;

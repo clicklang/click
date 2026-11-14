@@ -53,10 +53,6 @@ pub(in crate::surface) struct SurfacePropositionStorage {
     /// memory snapshot identities. Typed proof steps use this to recover a
     /// check-equivalent surface form without scanning ambient facts.
     by_snapshot_blind: PersistentMap<BlindKey, PersistentMap<NodeId, KernelRef>>,
-    /// Kernel facts whose recorded surface form is one top-level
-    /// predicate call. Checked predicate unfolds use this narrow bucket to
-    /// recover an already-materialized body without scanning ambient facts.
-    by_predicate: PersistentMap<String, PersistentMap<NodeId, KernelRef>>,
     /// Recorded universally quantified kernel facts.
     universal_kernels: PersistentMap<NodeId, KernelRef>,
     /// The conjuncts of a recorded kernel conjunction whose surface form is
@@ -773,7 +769,6 @@ impl SurfacePropositionMap {
             && left
                 .by_snapshot_blind
                 .shares_root_with(&right.by_snapshot_blind)
-            && left.by_predicate.shares_root_with(&right.by_predicate)
             && left
                 .blind_connectives
                 .shares_root_with(&right.blind_connectives)
@@ -916,16 +911,6 @@ impl SurfacePropositionMap {
                             }
                         }
                     }
-                }
-            }
-            if let ClickProposition::PredicateCall { name, .. } = surface {
-                let existing = storage.by_predicate.get(name);
-                if !existing.is_some_and(|facts| facts.contains_key(&kernel_id)) {
-                    let facts = existing
-                        .cloned()
-                        .unwrap_or_default()
-                        .with_inserted(kernel_id, recording.kernel_ref(kernel_index));
-                    storage.by_predicate = storage.by_predicate.with_inserted(name.clone(), facts);
                 }
             }
             if matches!(kernel, Proposition::And(..))
@@ -1079,19 +1064,6 @@ impl SurfacePropositionMap {
     fn surface_lowerings(&self, surface: &ClickProposition) -> Option<&OrderedNodes<KernelRef>> {
         let id = self.storage.surface_id(surface)?;
         self.storage.by_surface.get(&id)
-    }
-
-    pub(in crate::surface) fn kernels_written_by_predicate(
-        &self,
-        name: &String,
-    ) -> impl Iterator<Item = &Proposition> {
-        in_proposition_order(
-            self.storage
-                .by_predicate
-                .get(name)
-                .into_iter()
-                .flat_map(|facts| facts.iter().map(|(_, node)| node)),
-        )
     }
 
     /// Exact source lookup without formatting the kernel term on a miss.

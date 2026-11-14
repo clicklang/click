@@ -8317,8 +8317,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input.driver().try_planned_explicit_steps(&tactics)
     }
 
-    /// Tries only universal facts introduced by checked predicate unfolds when
-    /// the atomic decision cannot name an instantiated premise. Candidate
+    /// Tries available universal facts when the atomic decision cannot name
+    /// an instantiated premise. Candidate
     /// discovery is read-only; a specialization is retained only after the
     /// ordinary `InstantiateUsing` operation advances and closes this Proof.
     #[cfg(test)]
@@ -8416,7 +8416,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             recorded.or(synthesized)
         };
-        let mut quantified_candidates = introduced_surfaces
+        let introduced_candidates = introduced_surfaces
             .iter()
             .filter_map(|surface| {
                 let quantified = surface_facts.available_kernel_matching(surface, |kernel| {
@@ -8426,14 +8426,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Some((quantified.clone(), Some(surface.clone())))
             })
             .collect::<Vec<_>>();
-        for quantified in search_input.facts().predicate_unfolded_universal_facts() {
-            if !quantified_candidates
-                .iter()
-                .any(|(candidate, _)| candidate == quantified)
-            {
-                quantified_candidates.push((quantified.clone(), None));
-            }
-        }
+        let ordinary_candidates = crate::kernel::search::universal_candidates(search_input.facts())
+            .take_while(|_| !crate::instrumentation::deadline_exceeded_with_work(1))
+            .filter(|quantified| {
+                !introduced_candidates
+                    .iter()
+                    .any(|(candidate, _)| candidate == *quantified)
+            })
+            .map(|quantified| (quantified.clone(), None));
+        let quantified_candidates = introduced_candidates
+            .iter()
+            .cloned()
+            .chain(ordinary_candidates);
         for (quantified, introduced_surface) in quantified_candidates {
             // Reject shape-incompatible universals before Surface lookup or
             // synthesis. Candidate extraction is structural and bounded by
@@ -8443,7 +8447,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let candidate_values =
                 crate::kernel::forall_guided_instantiation_candidate_values(&quantified, goal);
             let Proposition::ForAll { var, body, .. } = &quantified else {
-                unreachable!("the predicate-unfolded universal index contains only universals")
+                unreachable!("the universal candidate filter admits only universals")
             };
             if candidate_values.is_empty() {
                 continue;
