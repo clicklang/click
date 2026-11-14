@@ -500,7 +500,7 @@ fn conditional_paths(
                 paths.push(ExecutionValuePath {
                     facts,
                     obligations,
-                    ..path
+                    ..path.map_value(ExecutionValue::retain_pointer_result)
                 });
             }
         }
@@ -947,6 +947,59 @@ mod tests {
             ExpressionOutcome::Value(ref value) if matches!(value, ExecutionValue::Shared(_))
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn pointer_conditional_paths_keep_scoped_facts_and_complete_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = ProgramValue::Pointer(
+            PointerValue::new(
+                Pointer::symbolic(Variable(1026200)),
+                ProgramType::Int32Pointer,
+            )
+            .with_pointee_constant(true),
+        );
+        let right = ProgramValue::Pointer(
+            PointerValue::new(
+                Pointer::symbolic(Variable(1026201)),
+                ProgramType::Int32Pointer,
+            )
+            .with_pointee_volatile(true),
+        );
+        let expression = ProgramExpression::Ternary {
+            condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::Variable(Variable(1026202)),
+            ))),
+            then_branch: Box::new(ProgramExpression::Value(left)),
+            else_branch: Box::new(ProgramExpression::Value(right)),
+        };
+        let actual = evaluate(&expression);
+        let expected = evaluate_program_expression_paths(
+            &ExecutionState::new(),
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        assert_eq!(actual.len(), 2);
+        for (path, native) in actual.into_iter().zip(expected) {
+            let ExpressionOutcome::Value(value) = &path.outcome else {
+                panic!("pointer result")
+            };
+            assert!(value.shared().is_some());
+            let ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = &native.outcome else {
+                panic!("native pointer")
+            };
+            assert_eq!(
+                value.pointer().unwrap().pointee_constant(),
+                pointer.pointee_constant()
+            );
+            assert_eq!(
+                value.pointer().unwrap().pointee_volatile(),
+                pointer.pointee_volatile()
+            );
+            assert_eq!(path.into_native(), native);
+        }
     }
 
     #[test]

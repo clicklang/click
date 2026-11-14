@@ -7035,7 +7035,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             )
                         {
                             paths.push(SpecExpressionPath {
-                                value: body_path.value,
+                                value: if budget.machine_result_production_disabled {
+                                    body_path.value
+                                } else {
+                                    body_path.value.retain_pointer_result()
+                                },
                                 facts,
                                 obligations,
                             });
@@ -8936,7 +8940,11 @@ fn evaluate_spec_if_paths_in(
                 &branch_assumptions,
             ) {
                 paths.push(SpecExpressionPath {
-                    value: branch_path.value,
+                    value: if budget.machine_result_production_disabled {
+                        branch_path.value
+                    } else {
+                        branch_path.value.retain_pointer_result()
+                    },
                     facts,
                     obligations,
                 });

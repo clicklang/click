@@ -13,7 +13,11 @@ impl SpecValue {
         retain: bool,
     ) -> ExecutionResult<Option<Self>> {
         if then_value == else_value {
-            return Ok(Some(then_value.clone()));
+            return Ok(Some(if retain {
+                then_value.clone().retain_pointer_result()
+            } else {
+                then_value.clone()
+            }));
         }
         let is_bool = |value: &Self| value.program_type() == ProgramType::Bool;
         if (is_bool(then_value) && else_value.machine().is_some())
@@ -75,7 +79,15 @@ impl SpecValue {
             then_value.clone().into_native(),
             else_value.clone().into_native(),
         )
-        .map(Self::Native))
+        .map(|value| {
+            if value.program_type().is_pointer() {
+                // The native constructor accepts pointer arms only when equal,
+                // selecting the complete left payload. Keep its original root.
+                then_value.clone().retain_pointer_result()
+            } else {
+                Self::Native(value)
+            }
+        }))
     }
 
     pub(super) fn numeric(self) -> Self {

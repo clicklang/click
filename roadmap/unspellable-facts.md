@@ -338,6 +338,11 @@ argument descriptors preserve object-origin evidence and existing null/projectio
 reductions. Surface raises the retained generic call with the existing call syntax;
 scoped readers keep the native result payload's dependency policy.
 
+7q retains pointer roots through C conditional paths, supported specification
+conditionals and selected constructor-match arms. Equal pointer arms keep the
+existing complete left payload, including when one input is still native.
+Branch facts, guarded obligations and unsupported pointer-match refusals are unchanged.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
