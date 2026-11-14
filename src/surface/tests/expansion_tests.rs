@@ -8630,18 +8630,14 @@ fn restricted_solve_certifies_unchanged_prefix_after_indexed_store() {
         &[("vector_push.c", c_source)],
         "vector_push.contract",
     )
-    .expect("unchanged-prefix solve should expand to a checkable frame transport");
-    assert!(
-        expanded.contains("transport(old(owner->data[k])"),
-        "{expanded}"
-    );
+    .expect("unchanged-prefix solve should expand to ordinary preservation");
+    assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("observe("), "{expanded}");
     assert!(
         !expanded.contains("transport(at(function.entry, viewable"),
         "{expanded}"
     );
     assert!(expanded.contains("k < old(owner->len)"), "{expanded}");
-    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_solve_for_claim("vector_push.contract", || {
         verify_c_sources(&expanded, &[("vector_push.c", c_source)]).map_err(|error| error.report())
