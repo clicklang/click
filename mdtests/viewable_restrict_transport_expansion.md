@@ -1,4 +1,4 @@
-# Viewability restriction uses ordinary separation axioms
+# Viewability transport expands to ordinary separation axioms
 
 ```c filename=first.c
 int first(int *p, int n, int a, int b) { return p[0]; }
@@ -16,16 +16,11 @@ int32 first(int32* p, int32 n, int32 a, int32 b) {
     ensures result == p[0];
 } by {
     have viewable(p[a..b]) by {
-        have contains(memory(p[0..n]), memory(p[a..b])) by {
-            apply(click::separation::subrange(p, 0, n, a, b)) using {
-                0 <= a;
-                a <= b;
-                b <= n;
-            };
-        }
-        apply(click::separation::viewable_restrict(memory(p[0..n]), memory(p[a..b]))) using {
+        transport(viewable(p[0..n]), viewable(p[a..b])) using {
             viewable(p[0..n]);
-            contains(memory(p[0..n]), memory(p[a..b]));
+            0 <= a;
+            a <= b;
+            b <= n;
         };
     }
     step();

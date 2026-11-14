@@ -188,13 +188,15 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 119 | 178 |
+| `mdtests/` | 135 | 194 |
 | `examples/` | 35 | 403 |
 | `library/` | 0 | 0 |
-| Total | 154 | 581 |
+| Total | 170 | 597 |
 
 The 62 mdtests with failure expectations still require migration while retaining
-their semantic refusals. Positive fixtures also need full-file verification:
+their semantic refusals. Sixteen positive fixtures also supply exact input text
+to expansion/mutation tests; migrate those inputs together with their tests,
+rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
 selected-tactic expansion verifies a prefix, so it does not establish that the
 rewritten proof's remaining suffix closes. Remaining groups include historical
 initializedness, computed range bounds, loop frames, and call preservation.

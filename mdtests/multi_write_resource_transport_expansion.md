@@ -21,12 +21,11 @@ void keep(uint8* p) {
         normalize() using { separate(memory(*p), m); };
     }
     have m.value == at(statement(0).entry, m.value) by {
-        have m.value == at(statement(0).entry, m.value) by {
-            normalize() using {
-                at(statement(0).entry, m.value) == at(statement(0).entry, m.value);
-            };
-        }
-        assumption();
+        transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
+            m.value == at(statement(0).entry, m.value)) using {
+            separate(statement(0).footprint, m);
+            separate(statement(1).footprint, m);
+        };
     }
     step();
 }

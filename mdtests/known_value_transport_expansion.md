@@ -18,12 +18,9 @@ void keep(int32* p, int32* q) {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by {
-        have *q == 7 by {
-            normalize() using {
-                at(statement(0).entry, *q) == 7;
-            };
-        }
-        assumption();
+        transport(at(statement(0).entry, *q) == 7, *q == 7) using {
+            separate(statement(0).footprint, memory(*q));
+        };
     }
     step();
     assumption();
