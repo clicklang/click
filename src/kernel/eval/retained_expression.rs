@@ -572,6 +572,84 @@ fn retained_binary(
 mod tests {
     use super::*;
     #[test]
+    fn retained_pointer_numeric_results_match_native_casts_and_differences() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramExpression::Value(ProgramValue::Pointer(
+            PointerValue::new(
+                Pointer::symbolic(Variable(1024100)),
+                ProgramType::Int32Pointer,
+            )
+            .with_pointee_constant(true)
+            .with_pointee_volatile(true),
+        ));
+        let cast = |expression: ProgramExpression, target_type| ProgramExpression::Cast {
+            expression: Box::new(expression),
+            target_type,
+            integer_mode: IntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        };
+        let mut expressions = Vec::new();
+        for ty in [ProgramType::Int64, ProgramType::UInt64, ProgramType::Int32] {
+            expressions.push(cast(pointer.clone(), ty));
+            expressions.push(cast(ProgramExpression::FunctionAddress("f".into()), ty));
+            expressions.push(cast(
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer,
+                )),
+                ty,
+            ));
+        }
+        expressions.push(cast(
+            cast(pointer.clone(), ProgramType::UInt64),
+            ProgramType::Int32Pointer,
+        ));
+        expressions.push(ProgramExpression::Subtract(
+            Box::new(pointer.clone()),
+            Box::new(pointer.clone()),
+        ));
+        expressions.push(ProgramExpression::Subtract(
+            Box::new(pointer),
+            Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(1024101)),
+                ProgramType::Int32Pointer,
+            ))),
+        ));
+        for expression in expressions {
+            let expected = super::super::expression::evaluate_native_expression_paths(
+                &ExecutionState::new(),
+                &expression,
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            let actual = evaluate(&expression);
+            assert_eq!(actual.len(), expected.len());
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                if matches!(
+                    expected.outcome,
+                    ExpressionOutcome::Value(ProgramValue::PointerInteger(_))
+                ) {
+                    let ExpressionOutcome::Value(value) = &actual.outcome else {
+                        panic!("value");
+                    };
+                    assert!(
+                        matches!(
+                            value,
+                            ExecutionValue::Native(ProgramValue::PointerInteger(_))
+                        ),
+                        "complete conversion records remain execution metadata"
+                    );
+                }
+                assert_eq!(actual.into_native(), expected, "{expression:?}");
+            }
+        }
+    }
+
+    #[test]
     fn retained_pointer_arithmetic_preserves_operands_metadata_and_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::Pointer(

@@ -140,6 +140,19 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
+            KernelTermNode::PointerAddress { address, .. } => {
+                if !matches!(
+                    mode,
+                    FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders
+                ) {
+                    super::retained_pointers::collect_address_variables_with_summaries(
+                        address,
+                        mode,
+                        &mut leaf_variables,
+                        summaries,
+                    );
+                }
+            }
             KernelTermNode::MemoryLoad { address, .. } => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
                     super::retained_pointers::collect_address_variables_with_summaries(

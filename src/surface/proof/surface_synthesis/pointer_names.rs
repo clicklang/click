@@ -155,6 +155,56 @@ mod tests {
     }
 
     #[test]
+    fn numeric_pointer_observation_roots_raise_and_lower_through_existing_casts() {
+        use crate::kernel::{
+            KernelTermImport, MachineIntegerType, MachineTerm, PureFunctionArgument,
+        };
+        let _session = VerificationSession::enter();
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1024950)),
+            ProgramType::Int32Pointer,
+        );
+        let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(pointer.clone()));
+        let bindings = BTreeMap::from([("p".to_string(), ProgramValue::Pointer(pointer.clone()))]);
+        for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            let value = format.value_from_term(MachineTerm::object_pointer_address(
+                pointer.pointer().clone(),
+                pointer.object_class(),
+            ));
+            let root =
+                KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone()));
+            let expression =
+                raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
+                    .unwrap();
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                &expression,
+                BTreeMap::new(),
+                &state,
+                bindings.clone(),
+                bindings.clone(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (restored, _) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(restored, value, "{format:?}: {expression:?}");
+        }
+    }
+
+    #[test]
     fn pointer_proof_names_preserve_qualifiers_instead_of_address_equality() {
         let _session = VerificationSession::enter();
         let plain = PointerValue::new(
