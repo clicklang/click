@@ -22,5 +22,5 @@ int32 caller(int32 n) {
 ```
 
 ```expect
-fail: unproved obligation: `separate(memory(a[0..n]), memory(b[0..1]))`
+fail: unproved obligation: `n <= 1073741823`
 ```

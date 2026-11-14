@@ -10048,6 +10048,7 @@ impl ProofObligation {
             context: None,
             assumable: true,
             evaluation_domain: false,
+            resource_formation: false,
             assertion_failure: false,
             call_requirement_site: None,
             introductions: None,
@@ -10063,6 +10064,7 @@ impl ProofObligation {
             context: None,
             assumable: false,
             evaluation_domain: false,
+            resource_formation: false,
             assertion_failure: false,
             call_requirement_site: None,
             introductions: None,
@@ -10072,6 +10074,12 @@ impl ProofObligation {
     pub(in crate::kernel) fn evaluation_domain(proposition: Proposition) -> Self {
         let mut obligation = Self::verification_condition(proposition);
         obligation.evaluation_domain = true;
+        obligation
+    }
+
+    pub(in crate::kernel) fn resource_formation(proposition: Proposition) -> Self {
+        let mut obligation = Self::evaluation_domain(proposition);
+        obligation.resource_formation = true;
         obligation
     }
 
@@ -10150,6 +10158,11 @@ impl ProofObligation {
         self.assumable
     }
 
+    /// Descriptor formation assumed with an interface premise, owed at use.
+    pub(crate) fn is_resource_formation(&self) -> bool {
+        self.resource_formation
+    }
+
     pub fn condition(condition: ConditionTerm, value: bool) -> Self {
         Self::new(Proposition::ConditionIs(condition, value))
     }
@@ -10185,6 +10198,7 @@ impl ProofObligation {
             context: self.context,
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
+            resource_formation: self.resource_formation,
             assertion_failure: self.assertion_failure,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was

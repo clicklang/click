@@ -24,12 +24,14 @@ theorem selected(A: Resource, p: int32*, q: int32*, i: int32, cap: int32) {
         have contains(A, A) by { normalize(); }
         have separate(A, memory(q[i..i+1])) by {
             apply(separation::separate_restrict(A, memory(q[0..cap]), A, memory(q[i..i+1]))) using {
+                0 <= cap; cap <= 1073741823; 0 <= i; i < cap;
                 defined(i + 1); separate(A, memory(q[0..cap])); contains(A, A);
                 contains(memory(q[0..cap]), memory(q[i..i+1]));
             };
         }
         have contains(memory(q[i..i+1]), memory(q[i])) by { normalize(); }
         apply(separation::separate_restrict(A, memory(q[i..i+1]), A, memory(q[i]))) using {
+            0 <= i; i < cap; cap <= 1073741823;
             defined(i + 1); separate(A, memory(q[i..i+1])); contains(A, A);
             contains(memory(q[i..i+1]), memory(q[i]));
         };

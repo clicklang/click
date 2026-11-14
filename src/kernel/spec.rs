@@ -5171,7 +5171,7 @@ fn evaluate_spec_resource_at_state_in(
 /// `t == -i32::MAX` — endpoints whose wrapping difference is a tidy `2`.
 ///
 /// Reject a range already known invalid with the focused extent diagnostic.
-/// Undecided guards remain conjuncts of the lowered separation proposition.
+/// Undecided guards remain separate evaluation obligations.
 fn separation_extent_is_impossible(
     proposition: &Proposition,
     assumptions: &PureFactContext,
@@ -5189,8 +5189,9 @@ fn separation_extent_is_impossible(
 
 /// Lowers a relation between two spec resources.
 ///
-/// A separation names valid memory extents in every context. Relations over
-/// opaque resources, and containment relations, contribute no range bounds.
+/// Preserve the written relation's kernel identity. Separation's memory-extent
+/// prerequisites travel as evaluation obligations, never as extra conjuncts.
+/// Relations over opaque resources and containment contribute no range bounds.
 fn lower_spec_resource_relation_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecResource,
@@ -5208,7 +5209,7 @@ fn lower_spec_resource_relation_at_state_in(
         for (right, right_facts, right_obligations) in
             evaluate_spec_resource_at_state_in(scope, right, &right_assumptions, budget)?
         {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_facts,
                 &left_obligations,
                 &right_facts,
@@ -5218,15 +5219,16 @@ fn lower_spec_resource_relation_at_state_in(
             ) else {
                 continue;
             };
-            let mut proposition = relation(left.clone(), right);
+            let proposition = relation(left.clone(), right);
             if separation_extent_is_impossible(&proposition, assumptions) {
                 budget.record_dropped_relation_range_extent();
                 continue;
             }
-            // An assumption provides every conjunct; a goal establishes all
-            // of them. The same lowering serves contracts and theorem proofs.
+            // An assumed contract supplies its evaluation domain; a use site
+            // owes it through the ordinary obligation driver. Keep the term
+            // structural so lower(raise(ResourceSeparate)) is ResourceSeparate.
             for guard in crate::kernel::stated_separation_extent_bounds(&proposition) {
-                proposition = Proposition::And(Box::new(proposition), Box::new(guard));
+                obligations.push(ProofObligation::resource_formation(guard));
             }
             paths.push(SpecPropositionPath {
                 introductions: Vec::new(),
@@ -10226,6 +10228,18 @@ mod arithmetic_domain_scaling_tests {
 #[cfg(test)]
 mod assumed_arithmetic_domain_tests {
     use super::*;
+
+    #[test]
+    fn resource_formation_does_not_deduplicate_an_arithmetic_prerequisite() {
+        let guard = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        let formation = ProofObligation::resource_formation(guard.clone());
+        let arithmetic = ProofObligation::evaluation_domain(guard);
+        assert_eq!(
+            std::collections::HashSet::from([formation.clone(), arithmetic.clone()]).len(),
+            2
+        );
+        assert_eq!(BTreeSet::from([formation, arithmetic]).len(), 2);
+    }
 
     #[test]
     fn held_body_arithmetic_assumes_only_its_own_domain_and_preserves_the_value() {

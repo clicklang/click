@@ -3,6 +3,106 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
 
+#[test]
+fn separate_round_trips_without_absorbing_extent_obligations() {
+    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    for wide in [false, true] {
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(997001)),
+            ProgramType::Int32Pointer,
+        );
+        let end = MachineTerm::Variable(Variable(997002));
+        let zero = if wide {
+            MachineTerm::uint64_constant(0)
+        } else {
+            MachineTerm::constant(0)
+        };
+        let range = if wide {
+            MemoryRange::from_pointer_value_wide(&pointer, zero.clone(), end.clone(), 4)
+        } else {
+            MemoryRange::from_pointer_value(&pointer, zero.clone(), end.clone(), 4)
+        };
+        let empty = if wide {
+            MemoryRange::from_pointer_value_wide(&pointer, zero.clone(), zero, 4)
+        } else {
+            MemoryRange::from_pointer_value(&pointer, zero.clone(), zero, 4)
+        };
+        let expected = Proposition::ResourceSeparate {
+            left: Box::new(Resource::Memory(range)),
+            right: Box::new(Resource::Memory(empty)),
+        };
+        let state = ExecutionState::new()
+            .with_local("p", ProgramValue::Pointer(pointer.clone()))
+            .with_local(
+                "n",
+                if wide {
+                    ProgramValue::UInt64(end.clone())
+                } else {
+                    ProgramValue::Int32(end.clone())
+                },
+            );
+        let parameters = vec![
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32Pointer,
+                "p".into(),
+                None,
+            ),
+            crate::languages::interface::ImportedParameter::new(
+                if wide {
+                    InterfaceType::UInt64(crate::languages::c::target::LongRank::LongLong)
+                } else {
+                    InterfaceType::Int32
+                },
+                "n".into(),
+                None,
+            ),
+        ];
+        let arguments = vec![
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)),
+            ProgramExpression::Value(if wide {
+                ProgramValue::UInt64(end)
+            } else {
+                ProgramValue::Int32(end)
+            }),
+        ];
+        let raised = synthesize_surface_proposition_with_names(
+            &expected,
+            ParameterBinding::new(&parameters, &arguments),
+            &state,
+            &BTreeMap::new(),
+        )
+        .expect("separation has a structural spelling");
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        let ty = if wide { "uint64" } else { "int32" };
+        let parsed = parser::parse(&format!(
+            "theorem probe(p: int32*, n: {ty}) {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!()
+        };
+        let (lowered, _, _, obligations) =
+            crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                written, &PureFactContext::new(),
+                ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::default()),
+                SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
+                FixedStateLoweringOptions::default(),
+            ).unwrap();
+        assert_eq!(lowered, expected, "{text}");
+        assert!(
+            !obligations.is_empty(),
+            "range formation must still have prerequisites"
+        );
+        assert!(
+            obligations
+                .iter()
+                .all(|obligation| !obligation.is_assumable())
+        );
+    }
+}
+
 /// Compare structural lowering separately from proving the use site's debts.
 /// Ordinary proof operations still check those debts before admitting a fact.
 fn relower_written_proposition(

@@ -3321,8 +3321,8 @@ pub(crate) fn admitted_memory_range_extent_facts(range: &MemoryRange) -> Vec<Pro
     guards
 }
 
-/// Proof-facing bounds included in a separation proposition. Assuming it and
-/// proving it use the same list; neither direction may drop a bound.
+/// Proof-facing evaluation domains for a written separation. These accompany
+/// the proposition as obligations; they are not part of its kernel identity.
 /// Bound variables under quantifiers or implications stay in their own scope.
 pub(crate) fn stated_separation_extent_bounds(proposition: &Proposition) -> Vec<Proposition> {
     let mut guards = Vec::new();
@@ -3339,7 +3339,7 @@ pub(crate) fn stated_separation_extent_bounds(proposition: &Proposition) -> Vec<
 
 /// Endpoint-form validity guards for a stated separation. Lowering uses these
 /// to diagnose ranges already known invalid; the equivalent signed form from
-/// [`stated_separation_extent_bounds`] becomes part of the separation proposition.
+/// [`stated_separation_extent_bounds`] supplies separate evaluation obligations.
 /// Composite and token atoms carry no endpoints. Quantifiers and implications
 /// are not traversed, so their local bounds cannot escape into the outer scope.
 pub(crate) fn stated_separation_extent_guards(proposition: &Proposition) -> Vec<Proposition> {

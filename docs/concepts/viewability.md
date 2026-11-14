@@ -94,12 +94,17 @@ the body and the exit assume both halves, and the entry and every back edge owe
 both. An invariant whose range is already known not to be an extent where it is
 owed is refused there, as a false invariant, rather than read as owing nothing.
 
-`separate(memory(p[a..b]), memory(q[c..d]))` includes the same validity
-conditions for both ranges. A separation premise supplies the bounds; a
-separation goal or call requirement must prove them. Observing or unfolding a
+`separate(memory(p[a..b]), memory(q[c..d]))` retains the same validity
+conditions for both ranges as separate evaluation obligations. Its kernel
+proposition is just `ResourceSeparate`, so raising and lowering it preserves
+its structure. A contract premise supplies the domains; a separation goal or
+call requirement must prove them. Observing or unfolding a
 composite resource exposes the bounds of its contained memory ranges, so a
 proof can use those bounds without repeating them in the resource definition.
-Separation alone does not grant permission to read either range.
+Separation alone does not grant permission to read either range. An explicit
+`apply ... using` list must include any needed extent bounds alongside its
+separation premise; those bounds are separate facts, not conjuncts of that
+premise.
 
 Stating a range whose extent is decidably invalid is refused where the clause is
 prepared, so the two directions cannot be played against each other. At the

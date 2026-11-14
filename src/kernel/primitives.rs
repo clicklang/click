@@ -14483,6 +14483,9 @@ pub struct ProofObligation {
     /// a contract precondition assumed at function entry. Its caller must
     /// establish this same obligation before applying the contract.
     pub(super) evaluation_domain: bool,
+    /// Descriptor formation is part of an assumed interface premise, including
+    /// a pure theorem premise. It remains mandatory when that premise is used.
+    pub(super) resource_formation: bool,
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
@@ -14513,6 +14516,7 @@ impl PartialEq for ProofObligation {
             && self.context == other.context
             && self.assumable == other.assumable
             && self.evaluation_domain == other.evaluation_domain
+            && self.resource_formation == other.resource_formation
     }
 }
 
@@ -14524,6 +14528,7 @@ impl Hash for ProofObligation {
         self.context.hash(state);
         self.assumable.hash(state);
         self.evaluation_domain.hash(state);
+        self.resource_formation.hash(state);
     }
 }
 
@@ -14534,6 +14539,7 @@ impl Ord for ProofObligation {
             .then_with(|| self.context.cmp(&other.context))
             .then_with(|| self.assumable.cmp(&other.assumable))
             .then_with(|| self.evaluation_domain.cmp(&other.evaluation_domain))
+            .then_with(|| self.resource_formation.cmp(&other.resource_formation))
     }
 }
 
