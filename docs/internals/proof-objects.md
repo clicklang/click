@@ -433,11 +433,24 @@ execution strategies. Persistent candidate owners retain independent progress.
 empty. Registration consumes its already constructed rule and performs no
 additional clause-coverage or function-packaging check.
 
-Artifact admission still uses the existing premise-authorization and entry
-representation adaptation algorithm while the owner remains open. Retaining
-those relationships directly remains migration work, as does return-path
-reconstruction before whole-contract completion. Independent conditional
-execution artifacts retain their separate validation and rule-packaging APIs.
+The opened entry is shared across a function's separate clause proofs. Checked
+execution uses the entry's retained root premises; caller-proposed assumptions
+cannot strengthen them. Derived facts and case assumptions travel through the
+checked execution trace. Only that producer can issue `ContractEntryAuthority`,
+which binds the resulting execution to the entry's generative identity.
+Whole-contract admission consumes matching authorities without reauthorizing
+premises, comparing execution environments or rebasing resource representations.
+The declaration is retained by the owner rather than supplied again at
+admission. The primary bound execution retains proof-only body annotations,
+including the normalized natural loops that termination rules name. Other
+clause proofs remain independent execution alternatives. Loop semantics and
+call dependencies come from the selected executions.
+
+Return-path reconstruction before whole-contract completion remains migration
+work, as does replacing batch receipt association with direct updates to the
+whole-contract owner. Independent conditional execution artifacts have no
+opened-entry authority and retain their separate validation and rule-packaging
+APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using

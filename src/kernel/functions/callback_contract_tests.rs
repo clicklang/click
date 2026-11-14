@@ -632,12 +632,7 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
     );
     let contract = FunctionContract::new("ConstructCallback", without_constructor.clone()).unwrap();
     assert!(!contract.exactly_matches(&function));
-    assert!(
-        !crate::kernel::api::proof_evidence_function_refines_same_source(
-            &without_constructor,
-            &function,
-        )
-    );
+    assert!(!without_constructor.has_same_entry_and_source(&function));
 }
 
 fn direct_and_callback_resource_transition(

@@ -2948,7 +2948,6 @@ fn verify_program_in_context(
                 collect_applied_theorems(tactics, &mut certification_theorems);
             }
         }
-        let mut certification_pure_theorems = Vec::new();
         for theorem_name in certification_theorems {
             // A cited standard-library theorem is a dependency: the proof
             // used its declaration without re-proving it. The kernel accepts
@@ -2976,9 +2975,6 @@ fn verify_program_in_context(
             }
             if let Some(facts) = theorem_certification_facts.get(&theorem_name) {
                 certification_facts.extend(facts.iter().cloned());
-            }
-            if let Some(authorities) = theorem_certification_authorities.get(&theorem_name) {
-                certification_pure_theorems.extend(authorities.iter().cloned());
             }
         }
         // A sized array parameter form (`int32 p[2]`) declares its span
@@ -3022,34 +3018,29 @@ fn verify_program_in_context(
         )?;
         if contract_function.opaque_contract_supported() {
             crate::surface::clear_ambient_source_tactic();
-            let contract_execution_mode = if function_verified
-                .iter()
-                .any(|verified| verified.concrete_loop_execution)
-            {
-                FunctionContractExecutionMode::ExecuteLoops
-            } else {
-                FunctionContractExecutionMode::VerifyLoops
-            };
             let certification_started = std::time::Instant::now();
             let admitted_contract = {
                 let _certification_timing = VerificationTimingPhase::new("certification");
-                let certification_function_environment = frontier_loop_artifacts.map_or_else(
-                    || verification_function_environment.clone(),
-                    |verified| {
-                        verification_function_environment
-                            .clone()
-                            .with_verified_loop_rules(verified.frontier_loop_rules.iter().cloned())
-                    },
-                );
                 instrumentation::measure_operation(
                     function_block.signature.name(),
                     "contract certification",
                     "contract symbolic execution",
                     || {
-                        let checked_artifacts = checked_executions
-                            .iter()
-                            .map(|execution| CheckedFunctionExecution::clone(execution))
-                            .collect::<Vec<_>>();
+                        // Retain the coherent frontier proof's annotated body
+                        // as the primary subject, with the other clause proofs
+                        // still available as independent execution strategies.
+                        let mut checked_artifacts = Vec::with_capacity(checked_executions.len());
+                        if let Some(primary) = frontier_loop_artifacts {
+                            checked_artifacts
+                                .push(CheckedFunctionExecution::clone(&primary.checked_execution));
+                        }
+                        for execution in &checked_executions {
+                            if frontier_loop_artifacts.is_none_or(|primary| {
+                                !Arc::ptr_eq(&primary.checked_execution, execution)
+                            }) {
+                                checked_artifacts.push(CheckedFunctionExecution::clone(execution));
+                            }
+                        }
                         // The entry state and arguments outlive the call: a
                         // refusal below names the unauthorized entry premise
                         // through them, in the names the user wrote.
@@ -3062,14 +3053,7 @@ fn verify_program_in_context(
                                         "the function proof did not open a whole-contract owner",
                                     )
                                 })?
-                                .admit_executions(
-                                    contract_function.clone(),
-                                    certification_function_environment,
-                                    ExecutionSemantics::APPLY_VERIFIED_RULES,
-                                    contract_execution_mode,
-                                    &checked_artifacts,
-                                    &certification_pure_theorems,
-                                ),
+                                .admit_executions(&checked_artifacts),
                         )
                     },
                 )?

@@ -390,22 +390,6 @@ pub(super) fn verify_execution_theorem(
                 .find_map(|verified| verified.entry_context.clone())
         })
         .ok_or_else(|| error("the one-call proof did not retain its contract entry"))?;
-    let state = entry.cases.caller_state();
-    let arguments = &entry.arguments;
-    let facts = &entry.pure_facts;
-    let function = annotated_function_with_assumptions(
-        &block,
-        &parsed,
-        state,
-        arguments,
-        spec_definitions,
-        resources,
-        Some(ResourceFrameEntry {
-            assumptions: &assumptions_from_propositions(facts),
-            checked_entry_state: None,
-        }),
-        None,
-    )?;
     let artifacts = crate::surface::verification::distinct_checked_executions(&verified)
         .into_iter()
         .map(|execution| CheckedFunctionExecution::clone(execution))
@@ -414,14 +398,7 @@ pub(super) fn verify_execution_theorem(
         .completion
         .clone()
         .ok_or_else(|| error("the one-call proof did not open a whole-contract owner"))?;
-    let admitted = owner.admit_executions(
-        function,
-        environment.clone(),
-        ExecutionSemantics::APPLY_VERIFIED_RULES,
-        FunctionContractExecutionMode::VerifyLoops,
-        &artifacts,
-        &[],
-    );
+    let admitted = owner.admit_executions(&artifacts);
     let propositions = verified
         .iter()
         .filter_map(|v| v.checked_proposition.clone())

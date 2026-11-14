@@ -526,6 +526,7 @@ fn prove_claims_by_checked_tactics(
     let caller_source_owner =
         CallerSourceOwnerId::ordinary(source_path, function_block.signature().name());
     let InitialClaimContext {
+        opened_entry: shared_entry,
         state,
         arguments,
         pure_facts,
@@ -588,22 +589,25 @@ fn prove_claims_by_checked_tactics(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
         proof_label,
     )?;
-    let opened_entry = crate::kernel::proof::OpenedContractEntry::open(
-        &state,
-        &function,
-        &arguments,
-        &pure_facts,
-        function_environment,
-    )
-    .map_err(|error| {
-        ClickError::new(format!(
-            "could not open contract entry for `{proof_label}`: {}",
-            crate::surface::diagnostics::describe_runtime_error(
-                &error,
-                ParameterBinding::new(parsed_function.parameters(), &arguments),
-            ),
-        ))
+    let opened_entry = shared_entry.get_or_open(|| {
+        crate::kernel::proof::OpenedContractEntry::open(
+            &state,
+            &function,
+            &arguments,
+            &pure_facts,
+            function_environment,
+        )
+        .map_err(|error| {
+            ClickError::new(format!(
+                "could not open contract entry for `{proof_label}`: {}",
+                crate::surface::diagnostics::describe_runtime_error(
+                    &error,
+                    ParameterBinding::new(parsed_function.parameters(), &arguments),
+                ),
+            ))
+        })
     })?;
+    let state = opened_entry.caller_state().clone();
     let function_entry_state = opened_entry.entry_state().clone();
     let entry_fact_origins = opened_entry
         .source_origins()
@@ -637,10 +641,8 @@ fn prove_claims_by_checked_tactics(
     });
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
-    // self-call raise the descent obligations. Certification derives the same
-    // anchor for itself and reuses only an artifact whose environment carries
-    // it, so this is not a step the proof may skip: without it the completed
-    // execution is refused.
+    // self-call raise the descent obligations. The execution producer refuses
+    // completion without the anchor; admission retains that judgment.
     let anchored_function_environment =
         crate::kernel::program_execution_environment_with_recursion_anchor(
             function_environment.clone(),
@@ -3282,44 +3284,6 @@ pub(super) fn finish_ordered_proof<'a>(
                 "execution proof could not prove any complete execution path for `{proof_label}`"
             )));
         }
-        let mut certification_facts = proof_context
-            .constants
-            .execution_start_facts
-            .as_ref()
-            .clone();
-        // Facts the proof derived at function entry stay where the proof
-        // object retained them: in the fact context of every later checked
-        // step, which completion reads per path. They are not entry
-        // assumptions of the whole function; inside a proof-level `if` arm
-        // they hold only under that arm's case.
-        certification_facts.extend(
-            proof_execution
-                .presentation
-                .case_assumptions
-                .iter()
-                .filter(|case| case.at_function_entry)
-                .filter_map(|case| case.fact.clone()),
-        );
-        // Frontier-local loop clauses are bound after the initial claim
-        // context is built.  Their phase proofs can unfold predicates just
-        // like legacy structural clauses, so fresh whole-function
-        // certification must expose those definitions at function entry as
-        // well. Otherwise the proof can initialize an invariant from an
-        // unfolded requirement while kernel certification sees only the
-        // opaque predicate and rejects the verified loop rule.
-        certification_facts = requirements_with_structural_unfolds(
-            spec_definitions,
-            frontier_function_block
-                .as_ref()
-                .unwrap_or(&**function_block),
-            &certification_facts,
-        )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "kernel certification setup for `{proof_label}` failed: {message}"
-            ))
-        })?;
-        let base_certification_facts = certification_facts;
         // Checked statement steps apply verified loop rules; a loop with no
         // rule can only be stepped concretely or avoided by a checked path.
         // Keep that semantics even when no loop was reached. Calling it
@@ -3346,7 +3310,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     .checked_function_execution(
                         execution,
                         function,
-                        assumptions_from_propositions(&base_certification_facts),
+                        entry_pure_facts.context(),
                         function_environment.clone(),
                         execution_semantics,
                         execution_mode,

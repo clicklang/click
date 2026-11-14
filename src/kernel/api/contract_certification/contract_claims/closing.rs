@@ -471,7 +471,8 @@ impl ContractExitObligations {
         }
         let independent_cases;
         let cases = if deferred {
-            if let Some(entry) = &execution.prepared_entry_cases {
+            if let Some(authority) = &execution.entry_authority {
+                let entry = authority.cases();
                 &entry.guard_cases
             } else {
                 // The independent conditional execution API has no opened

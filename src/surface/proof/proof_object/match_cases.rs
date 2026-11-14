@@ -687,11 +687,8 @@ impl<'a> Proof<'a> {
             unreachable!();
         };
         let tactic_index = context.tactic_index;
-        // A constructor equation is an entry assumption of the whole function
-        // only when the match ran before any C step. At a later frontier —
-        // after a step, or inside a loop body — it holds on this path from the
-        // split onwards, and the function's own certification must not assume
-        // it as a requirement.
+        // The split's constructor equation remains a fact of its arm.
+        // Expansion can spell a whole-function match directly only at entry.
         let at_function_entry = self
             .execution()
             .is_some_and(|execution| execution.core.frontier.is_at_function_entry());
@@ -780,7 +777,6 @@ impl<'a> Proof<'a> {
                 condition: surface.clone(),
                 value: true,
                 fact: Some(case),
-                at_function_entry,
                 match_arm: Some(arm_case),
             });
             if !at_function_entry && presentation.surface_record.blocker.is_none() {

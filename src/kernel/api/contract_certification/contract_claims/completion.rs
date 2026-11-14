@@ -94,29 +94,25 @@ impl WholeContractProof {
 
     pub(crate) fn admit_executions(
         self,
-        function: ProgramFunction,
-        environment: ExecutionEnvironment,
-        semantics: ExecutionSemantics,
-        mode: FunctionContractExecutionMode,
         artifacts: &[CheckedFunctionExecution],
-        theorems: &[VerifiedPureTheorem],
     ) -> AdmittedContractProof {
-        let execution =
-            if !function.is_program_entry() && !function.verified_direct_contract_supported() {
-                FunctionContractExecution::failed(
-                    "the execution subject does not support a modular contract rule".into(),
-                )
-            } else {
-                prove_prepared_function_contract_execution_paths(
-                    &self.entry,
-                    function.clone(),
-                    environment,
-                    semantics,
-                    mode,
-                    artifacts,
-                    theorems,
-                )
-            };
+        // The entry owns the declaration; its execution producer also retains
+        // proof-only body annotations (including normalized natural loops).
+        // Select that bound subject rather than stripping those annotations.
+        let function = artifacts
+            .iter()
+            .find(|artifact| {
+                crate::instrumentation::record_deterministic_work(1);
+                artifact
+                    .entry_authority
+                    .as_ref()
+                    .is_some_and(|authority| Arc::ptr_eq(authority.cases(), &self.entry))
+            })
+            .map_or_else(
+                || self.entry.function.clone(),
+                |artifact| artifact.function.clone(),
+            );
+        let execution = execution_from_owned_contract_entry(&self.entry, artifacts);
         AdmittedContractProof {
             owner: self,
             function,
@@ -381,22 +377,9 @@ mod tests {
     }
 
     #[test]
-    fn a_foreign_execution_subject_cannot_complete_the_owner() {
+    fn missing_execution_authority_cannot_complete_the_owner() {
         let (proof, _) = fixture(1, 1);
-        let other = program_function(
-            ProgramType::Int32,
-            "other",
-            vec![],
-            program_return(crate::kernel::program_expression::int32_literal(0)),
-        );
-        let admitted = proof.owner.admit_executions(
-            other,
-            ExecutionEnvironment::new(),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-            FunctionContractExecutionMode::VerifyLoops,
-            &[],
-            &[],
-        );
+        let admitted = proof.owner.admit_executions(&[]);
         assert!(admitted.consume_completions(&[]).complete().is_err());
     }
 
