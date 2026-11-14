@@ -25,9 +25,9 @@ uint64 post(const uint8* p, uint64 n) {
   initialize by { have to_integer(n) <= to_integer(15u64); solve(); }
   preserve by {
    if n == 0u64 {
-    step(); step(); step(); step();
-    have __click_call_result0 == 0u64 by assumption();
-    have n == 18446744073709551615u64 by { rewrite(__click_call_result0 == 0u64); normalize(); }
+    step(); step();
+    have at(statement(0).region(1).entry, n) == 0u64 by assumption();
+    have n == 18446744073709551615u64 by { rewrite(at(statement(0).region(1).entry, n) == 0u64); normalize(); }
    } else {
     have 0u64 <= n by normalize();
     have 0u64 < n by {
@@ -43,7 +43,6 @@ uint64 post(const uint8* p, uint64 n) {
    have to_integer(1u64) <= to_integer(n) by solve() using { to_integer(0u64) < to_integer(n); };
    have 1u64 <= n;
    have to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
-   step(); step();
    mark before_decrement;
    step(); step();
    have to_integer(n) == at(before_decrement, to_integer(n)) - 1 by assumption();

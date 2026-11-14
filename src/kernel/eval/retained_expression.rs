@@ -1118,6 +1118,7 @@ mod tests {
             name: "target".into(),
             expression: ProgramExpression::Variable("source".into()),
             source: Default::default(),
+            prior_result: None,
         };
         let outcome = super::super::statements::execute_execution_statement(
             &state,

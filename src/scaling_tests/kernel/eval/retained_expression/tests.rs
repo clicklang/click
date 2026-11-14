@@ -137,6 +137,7 @@ fn retained_local_assignment_and_readback_scale_without_prefix_exports() {
                 ))),
             ),
             source: Default::default(),
+            prior_result: None,
         };
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {

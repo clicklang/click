@@ -4133,15 +4133,17 @@ fn substitute_program_expression_as_contract_with_numerals_in(
         ProgramExpression::Value(_) => {
             Ok(ContractExpression::ProgramExpression(expression.clone()))
         }
-        // A call step's result is spelled by its call.
-        ProgramExpression::CallResult {
-            call,
-            function_name,
-        } => crate::surface::diagnostics::call_step_region(*call)
-            .map(ContractExpression::RegionResult)
-            .ok_or_else(|| {
-                format!("the result of the call to `{function_name}` has no source spelling")
-            }),
+        // A step's result is spelled by its step.
+        ProgramExpression::StepResult { step, origin } => {
+            crate::surface::diagnostics::step_result_expression(*step).ok_or_else(|| match origin {
+                crate::kernel::StepOrigin::Call(function) => {
+                    format!("the result of the call to `{function}` has no source spelling")
+                }
+                crate::kernel::StepOrigin::Prior(local) => {
+                    format!("the value `{local}` held before its update has no source spelling")
+                }
+            })
+        }
         ProgramExpression::Variable(name) => Ok(substitutions
             .value(name)
             .cloned()
@@ -4365,7 +4367,7 @@ pub(in crate::surface) fn substitute_program_expression_in(
     match expression {
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => Ok(expression.clone()),
+        | ProgramExpression::StepResult { .. } => Ok(expression.clone()),
         ProgramExpression::Variable(name) => {
             let Some(substitution) = substitutions.value(name) else {
                 return Ok(expression.clone());

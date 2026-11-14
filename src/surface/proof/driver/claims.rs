@@ -616,6 +616,7 @@ fn prove_claims_by_checked_tactics(
         .collect::<Vec<_>>();
     let pure_facts = PureFactList::from_proof_facts(opened_entry.facts());
     let entry_context = Arc::new(ProofEntryContext {
+        cases: opened_entry.prepared_cases().clone(),
         state: state.clone(),
         arguments: arguments.clone(),
         pure_facts: pure_facts.clone(),

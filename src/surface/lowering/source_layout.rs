@@ -106,8 +106,12 @@ struct SourceExecutionLayoutData {
     /// result is the state's call result of that number while its statement
     /// runs.
     call_numbers: BTreeMap<usize, u32>,
-    /// The region of each call step, by its number.
-    call_regions: BTreeMap<u32, usize>,
+    /// The region of each step whose result its statement reads, by the
+    /// step's number: a call step, or an assignment step keeping its
+    /// target's prior value.
+    step_regions: BTreeMap<u32, usize>,
+    /// The local whose prior value each such assignment step keeps.
+    prior_steps: BTreeMap<u32, String>,
     /// The local each call region assigns its result to, for
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
@@ -216,7 +220,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)
             | ProgramExpression::FunctionAddress(_)
-            | ProgramExpression::CallResult { .. } => {}
+            | ProgramExpression::StepResult { .. } => {}
         }
     }
     false
@@ -631,7 +635,16 @@ impl SourceExecutionLayout {
             }
             if let syntax::C0Statement::CallResult { call, .. } = statement {
                 layout.call_numbers.insert(index, *call);
-                layout.call_regions.insert(*call, index);
+                layout.step_regions.insert(*call, index);
+            }
+            if let syntax::C0Statement::Assign {
+                name,
+                prior_result: Some(step),
+                ..
+            } = statement
+            {
+                layout.step_regions.insert(*step, index);
+                layout.prior_steps.insert(*step, name.clone());
             }
             if let syntax::C0Statement::CallAssign { function_name, .. }
             | syntax::C0Statement::Call { function_name, .. }
@@ -1051,9 +1064,15 @@ impl SourceExecutionLayout {
         self.data.call_numbers.get(&region).copied()
     }
 
-    /// The region of the call step numbered `call`.
-    pub(in crate::surface) fn call_region(&self, call: u32) -> Option<usize> {
-        self.data.call_regions.get(&call).copied()
+    /// The region of the step numbered `step`.
+    pub(in crate::surface) fn step_region(&self, step: u32) -> Option<usize> {
+        self.data.step_regions.get(&step).copied()
+    }
+
+    /// The local whose prior value step `step` keeps, when it is an
+    /// assignment step rather than a call.
+    pub(in crate::surface) fn prior_step_local(&self, step: u32) -> Option<&str> {
+        self.data.prior_steps.get(&step).map(String::as_str)
     }
 
     /// The local receiving a fresh allocation, rather than an arbitrary
@@ -1414,7 +1433,7 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
     match expression {
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
@@ -1946,7 +1965,8 @@ mod source_execution_layout_tests {
                 call_targets: BTreeMap::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),
-                call_regions: BTreeMap::new(),
+                step_regions: BTreeMap::new(),
+                prior_steps: BTreeMap::new(),
                 call_results: BTreeMap::new(),
                 allocation_regions: BTreeSet::new(),
                 temporary_call_regions: BTreeMap::new(),
