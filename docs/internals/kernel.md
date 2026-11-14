@@ -138,7 +138,7 @@ For ordinary function contracts, the responsibilities are:
 | --- | --- | --- |
 | Entry lowering | Represent the declared parameter domain and entry resources, without specializing to a convenient call | `initial_call_state` in `src/surface/lowering/resource_lowering.rs`, called by `initial_claim_context_with_caller_owner` in `src/surface/proof.rs` |
 | Checked proof transitions | Validate execution, logical steps, branches, and completion against the supplied obligation | `src/kernel/proof/` and kernel execution APIs |
-| Contract certification | Reconstruct the contract assumptions for the supplied state and arguments; check artifact reuse, path coverage, obligations, resources, effects, and claims | `src/kernel/api.rs` and `src/kernel/api/contract_certification/` |
+| Contract registration | Check artifact reuse, entry-case/path coverage and retained proposition/resource/effect completions; independent execution-only APIs check the supplied execution instead | `src/kernel/api.rs` and `src/kernel/api/contract_certification/` |
 | Rule packaging | Require the complete set of certified claims for the exact function | `c_verified_function_rule` in `src/kernel/api/contract_certification/contract_claims.rs` |
 
 Entry lowering gives separate scalar parameters separate symbolic variables.
@@ -228,7 +228,8 @@ Opaque function rules have a narrower boundary:
   state even when a resource body has a guard, so surface lowering cannot
   turn a captured fact into resource authority.
 
-If exact certification cannot reproduce a complete claim set, Click installs
+If contract closing cannot complete every applicable obligation, or registration
+cannot associate the retained completions with every entry case, Click installs
 no opaque rule for that function. It does not fall back to a weaker identity
 check or to the proof driver's ambient assumptions.
 
