@@ -1175,8 +1175,8 @@ load at its version point, spelled `at(V, *p)`. Choosing it does not depend on
 facts ([fact-stable
 lowering](../internals/spellability.md#lowering-is-fact-stable)); facts relate
 reads at different version points as ordinary equalities. Reads of one cell
-connected without a possible write share a version point and therefore one
-[load variable](#load-variable).
+connected without a possible write share a version point and therefore lower
+to one term.
 
 Every version point is meant to be a nameable point. Currently some are not:
 a report prints a read of entry memory as `old(...)`, a read at a recorded
