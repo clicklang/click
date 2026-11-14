@@ -4820,7 +4820,7 @@ fn execute_verified_function_applications_with_suspension(
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = FunctionOutcome::Return {
-            value: result.into(),
+            value: ExecutionValue::from(result).retain_pointer_result().into(),
             state: Box::new(return_state),
         };
         if let Some(function) = evidence {

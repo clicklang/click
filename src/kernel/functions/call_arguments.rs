@@ -101,7 +101,8 @@ pub(super) fn set_contract_result(
         );
         return;
     }
-    let value = value.into_native();
+    let source = value;
+    let value = source.native().into_owned();
     if let Some(layout) = interface.return_aggregate_layout()
         && let ProgramValue::Pointer(pointer) = &value
     {
@@ -131,11 +132,12 @@ pub(super) fn set_contract_result(
         );
         return;
     }
-    state.locals.set_typed_with_all_qualifiers(
+    let value = value
+        .with_pointer_pointee_constant(interface.return_pointee_is_constant())
+        .with_pointer_declared_object_class(interface.return_pointee_class());
+    state.locals.set_retained_typed_with_all_qualifiers(
         C_CONTRACT_RESULT_NAME.to_string(),
-        value
-            .with_pointer_pointee_constant(interface.return_pointee_is_constant())
-            .with_pointer_declared_object_class(interface.return_pointee_class()),
+        source.retain_checked_pointer(value),
         interface.return_type(),
         false,
         false,
@@ -353,8 +355,18 @@ pub(in crate::kernel) fn coerce_retained_function_return_value(
     {
         return Some(value);
     }
-    coerce_function_return_value(value.into_native(), function, obligations, assumptions)
-        .map(Into::into)
+    let converted = coerce_function_return_value(
+        value.native().into_owned(),
+        function,
+        obligations,
+        assumptions,
+    )?;
+    // Aggregate ABI conversion deliberately forms its own complete payload.
+    if function.return_aggregate_layout().is_some() {
+        Some(converted.into())
+    } else {
+        Some(value.retain_checked_pointer(converted).into())
+    }
 }
 
 pub(super) fn coerce_function_return_value(
@@ -1257,6 +1269,101 @@ mod pointer_argument_tests {
                 .pointer_payload()
                 .unwrap()
                 .same_source_payload(&SharedPointerValue::import(legacy.pointer().unwrap()))
+        );
+    }
+}
+
+#[cfg(test)]
+mod pointer_return_tests {
+    use super::*;
+    #[test]
+    fn pointer_returns_keep_complete_payload_and_const_drop_refusals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1027400)),
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_volatile(true)
+        .with_pointee_constant(true);
+        let root = KernelTerm::shared_pointer_call(
+            KernelTerm::checked_call(
+                KernelType::Program(ProgramType::Int32Pointer),
+                "source".into(),
+                vec![],
+            ),
+            SharedPointerValue::import(&pointer),
+        );
+        let plain = program_function(
+            ProgramType::Int32Pointer,
+            "result",
+            Vec::new(),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
+        );
+        let retained = || StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+        assert!(
+            coerce_retained_function_return_value(
+                retained(),
+                &plain,
+                &mut Vec::new(),
+                &PureFactContext::new()
+            )
+            .is_none()
+        );
+        let constant = plain.with_return_pointee_constant(true);
+        let result = coerce_retained_function_return_value(
+            retained(),
+            &constant,
+            &mut Vec::new(),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert_eq!(result.shared(), Some(&root));
+        let expected = coerce_function_return_value(
+            ProgramValue::Pointer(pointer),
+            &constant,
+            &mut Vec::new(),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert_eq!(result.native().as_ref(), &expected);
+        let mut state = ExecutionState::new();
+        set_function_result(&mut state, &constant, result.clone());
+        let bound = state.locals.get(C_CONTRACT_RESULT_NAME).unwrap();
+        assert!(bound.shared().is_some());
+        assert!(bound.pointer().unwrap().pointee_constant());
+        assert!(!bound.pointer().unwrap().pointee_volatile());
+        state.locals.set_typed(
+            "mutable",
+            ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
+            ProgramType::Int32Pointer,
+        );
+        assert!(
+            crate::kernel::loops::assign_call_result(
+                &mut state,
+                "mutable",
+                result.clone(),
+                &mut Vec::new(),
+                &PureFactContext::new()
+            )
+            .is_err()
+        );
+        crate::kernel::loops::assign_call_result(
+            &mut state,
+            "fresh",
+            result,
+            &mut Vec::new(),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert!(state.locals.get("fresh").unwrap().shared().is_some());
+        assert!(
+            state
+                .locals
+                .get("fresh")
+                .unwrap()
+                .pointer()
+                .unwrap()
+                .pointee_constant()
         );
     }
 }

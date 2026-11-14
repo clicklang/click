@@ -89,16 +89,16 @@ pub(super) fn assign_call_result(
         ) {
         value
     } else {
-        super::functions::coerce_program_value_with_pointee_constant(
-            value.into_native(),
+        let converted = super::functions::coerce_program_value_with_pointee_constant(
+            value.native().into_owned(),
             program_type,
             pointee_constant,
             obligations,
             assumptions,
         )
         .ok_or(RuntimeError::TypeMismatch)?
-        .with_pointer_pointee_volatile(pointee_volatile)
-        .into()
+        .with_pointer_pointee_volatile(pointee_volatile);
+        value.retain_checked_pointer(converted).into()
     };
     if let Some(pointer) = state.locals.slot(target) {
         let range = MemoryRange::new_with_element_width(
