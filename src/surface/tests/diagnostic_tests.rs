@@ -818,8 +818,16 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let parameters = vec![
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "next".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "visited".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "next".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "visited".to_string(),
+            None,
+        ),
     ];
     let arguments = vec![
         ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -967,8 +975,16 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
         true,
     );
     let parameters = vec![
-        syntax::C0Parameter::new(C0Type::Int32, "x".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32, "y".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "x".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "y".to_string(),
+            None,
+        ),
     ];
     let arguments = vec![
         ProgramExpression::Value(ProgramValue::Int32(x.clone())),
@@ -2103,7 +2119,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
             children: vec![],
             field: "rank".into(),
             field_index: 0,
-            click_type: Some(ClickType::Program(C0Type::Int32)),
+            click_type: Some(ClickType::Program(InterfaceType::Int32)),
         }),
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(
             crate::kernel::int32(0),

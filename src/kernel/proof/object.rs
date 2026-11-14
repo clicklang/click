@@ -938,9 +938,10 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         crate::kernel::MachineTerm::Variable(chosen),
                     )
                 }
-                Sort::ProgramPointer(c_type) | Sort::ProgramObjectPointer(c_type, _) => {
+                Sort::ProgramPointer(program_type)
+                | Sort::ProgramObjectPointer(program_type, _) => {
                     let pointer =
-                        if matches!(c_type, crate::kernel::ProgramType::FunctionPointer(_)) {
+                        if matches!(program_type, crate::kernel::ProgramType::FunctionPointer(_)) {
                             crate::kernel::Pointer::symbolic_function(chosen)
                         } else {
                             crate::kernel::Pointer::symbolic(chosen)
@@ -1097,11 +1098,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 var, sort, body, ..
             } => {
                 let (variable, body, pointer, algebraic) = match sort {
-                    Sort::ProgramPointer(c_type) | Sort::ProgramObjectPointer(c_type, _) => {
+                    Sort::ProgramPointer(program_type)
+                    | Sort::ProgramObjectPointer(program_type, _) => {
                         let (variable, body) = facts
-                            .freshen_pointer_forall_body(*var, *c_type, body)
+                            .freshen_pointer_forall_body(*var, *program_type, body)
                             .ok_or(PropositionCloseError::UniversalWitnessFresheningExhausted)?;
-                        (variable, body, Some(*c_type), None)
+                        (variable, body, Some(*program_type), None)
                     }
                     Sort::Integer => {
                         let (variable, body) = facts

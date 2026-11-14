@@ -546,7 +546,7 @@ fn theorem_has_certification_binders(theorem: &TheoremDefinition) -> bool {
     theorem.parameters().iter().all(|parameter| {
         matches!(
             parameter.click_type(),
-            ClickType::Program(C0Type::Int32 | C0Type::FunctionPointer(_))
+            ClickType::Program(InterfaceType::Int32 | InterfaceType::FunctionPointer(_))
         )
     })
 }
@@ -578,11 +578,11 @@ fn record_theorem_certification_authority(
             .enumerate()
             .rev()
             .fold(implication, |body, (index, parameter)| {
-                let sort = match parameter.c_type() {
-                    C0Type::Int32 => crate::kernel::Sort::ProgramInt32,
-                    C0Type::FunctionPointer(_) => {
-                        crate::kernel::Sort::ProgramPointer(parameter.c_type().to_kernel_type())
-                    }
+                let sort = match parameter.interface_type() {
+                    InterfaceType::Int32 => crate::kernel::Sort::ProgramInt32,
+                    InterfaceType::FunctionPointer(_) => crate::kernel::Sort::ProgramPointer(
+                        parameter.interface_type().to_kernel_type(),
+                    ),
                     _ => unreachable!("the theorem binder filter admits only supported types"),
                 };
                 Proposition::ForAll {
@@ -670,7 +670,7 @@ fn verify_click_file_theorems_with_environment(
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(file)?,
@@ -748,7 +748,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
@@ -773,7 +773,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         .collect::<BTreeSet<_>>();
     for target in refinement_targets {
         let Some(function) = function_environment
-            .get_function(file.c_function_names.get(&target).unwrap_or(&target))
+            .get_function(file.program_function_names.get(&target).unwrap_or(&target))
             .cloned()
         else {
             continue;
@@ -831,7 +831,7 @@ fn verify_click_file_theorem_context(
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
@@ -852,7 +852,7 @@ fn verify_click_file_theorem_context(
     function_environment = with_unselected_tactic_interfaces(&file, function_environment);
     for target in contract_refinement_targets(&file, theorem_name) {
         let Some(function) = function_environment
-            .get_function(file.c_function_names.get(&target).unwrap_or(&target))
+            .get_function(file.program_function_names.get(&target).unwrap_or(&target))
             .cloned()
         else {
             continue;
@@ -966,8 +966,14 @@ fn parse_click_file_with_program_sources(
 /// instance and each `ensures` as an available fact.
 fn with_tactic_procedures(
     mut file: ClickFile,
-    mut parsed_sources: BTreeMap<String, (String, syntax::C0Function)>,
-) -> Result<(ClickFile, BTreeMap<String, (String, syntax::C0Function)>), ClickError> {
+    mut parsed_sources: BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+) -> Result<
+    (
+        ClickFile,
+        BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+    ),
+    ClickError,
+> {
     for tactic in file.tactic_definitions.clone() {
         let name = tactic.name().to_string();
         if parsed_sources.contains_key(&name)
@@ -1388,7 +1394,7 @@ pub struct IncrementalSelection {
     pub full_rebuild: bool,
 }
 
-pub fn c_function_names(
+pub fn c_source_function_names(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<String>, ClickError> {
@@ -2335,7 +2341,7 @@ fn verify_program_in_context(
         let theorem_dependencies =
             TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?;
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
             &click_function_definitions,
             &combined_algebraic_type_definitions(&file)?,
@@ -3555,7 +3561,7 @@ fn verify_program_in_context(
 
 pub(in crate::surface) fn tactic_expansion_required_functions(
     file: &ClickFile,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     (site, tactic_index): (ProofSite, Option<usize>),
 ) -> Result<BTreeSet<String>, ClickError> {
     let ProofSite::FunctionClaim {
@@ -3691,7 +3697,7 @@ pub(in crate::surface) fn tactic_expansion_dependency_context(
 
 pub(in crate::surface) fn verification_required_functions(
     file: &ClickFile,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_name: &str,
 ) -> Result<BTreeSet<String>, ClickError> {
     let function_blocks = combined_external_function_blocks(file)?;
@@ -3704,7 +3710,7 @@ pub(in crate::surface) fn verification_required_functions(
 }
 
 fn verification_required_functions_with_blocks(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_name: &str,
     function_blocks: &[FunctionBlock],
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
@@ -3731,7 +3737,7 @@ struct AssumptionWalk<'a> {
 /// calls and follows the calls of a body a typed frontend lowered itself, so
 /// that a C++ or Rust function's library models are reported.
 fn required_functions(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_name: &str,
     function_blocks: &[FunctionBlock],
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
@@ -4068,7 +4074,7 @@ impl ModelAssumption {
 /// comes from, and the allocator functions its closure calls.
 fn program_assumptions_parsed(
     file: &ClickFile,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     library_models: Option<&BTreeSet<String>>,
 ) -> Result<BTreeMap<String, Vec<ModelAssumption>>, ClickError> {
     let function_blocks = combined_external_function_blocks(file)?;
@@ -4160,7 +4166,9 @@ fn modeled_thread_runtime_names() -> impl Iterator<Item = String> {
         .map(str::to_string)
 }
 
-fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<String> {
+fn modeled_pthread_create_workers(
+    function: &crate::languages::interface::ImportedFunction,
+) -> BTreeSet<String> {
     use syntax::{C0Expression as E, C0Statement as S};
     let mut workers = BTreeSet::new();
     let mut pending = vec![function.body()];
@@ -4221,7 +4229,7 @@ fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<Str
 fn with_modeled_pthread_workers(
     file: &ClickFile,
     mut selected: BTreeSet<String>,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
 ) -> Result<BTreeSet<String>, ClickError> {
     if runtime == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread {
@@ -4244,7 +4252,7 @@ fn with_modeled_pthread_workers(
 }
 
 pub(in crate::surface) fn c_statement_calls(
-    function: &syntax::C0Function,
+    function: &crate::languages::interface::ImportedFunction,
 ) -> Vec<BTreeSet<String>> {
     c_statement_calls_recording(function, &mut BTreeSet::new())
 }
@@ -4252,7 +4260,7 @@ pub(in crate::surface) fn c_statement_calls(
 /// [`c_statement_calls`], also recording in `allocator` each allocator
 /// function the body calls, which is not a call dependency.
 fn c_statement_calls_recording(
-    function: &syntax::C0Function,
+    function: &crate::languages::interface::ImportedFunction,
     allocator: &mut BTreeSet<&'static str>,
 ) -> Vec<BTreeSet<String>> {
     fn collect_function_pointer_names(
@@ -4261,7 +4269,7 @@ fn c_statement_calls_recording(
     ) {
         match statement {
             syntax::C0Statement::Declare {
-                c_type: syntax::C0Type::FunctionPointer(_),
+                interface_type: crate::languages::interface::InterfaceType::FunctionPointer(_),
                 name,
                 ..
             } => {
@@ -4441,7 +4449,12 @@ fn c_statement_calls_recording(
     let mut function_pointer_names = function
         .parameters()
         .iter()
-        .filter(|parameter| matches!(parameter.c_type(), syntax::C0Type::FunctionPointer(_)))
+        .filter(|parameter| {
+            matches!(
+                parameter.interface_type(),
+                crate::languages::interface::InterfaceType::FunctionPointer(_)
+            )
+        })
         .map(|parameter| parameter.name().to_string())
         .collect::<BTreeSet<_>>();
     collect_function_pointer_names(function.body(), &mut function_pointer_names);
@@ -4957,7 +4970,7 @@ pub(in crate::surface) fn loop_termination_measure(
 /// Only a header-provided `static inline` helper has two names; every other
 /// function maps to itself and is left out of the map.
 pub(in crate::surface) fn executing_function_names(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     file: &ClickFile,
 ) -> Result<BTreeMap<String, String>, ClickError> {
     let mut names = BTreeMap::new();
@@ -5127,7 +5140,7 @@ pub(in crate::surface) fn program_function_termination_plans(
                     // would be. Lowering decides whether its type is one a
                     // measure may have.
                     if function.call_ranked_numeric_recursion
-                        || function.signature().parameters()[index].c_type() != C0Type::Int32
+                        || function.signature().parameters()[index].interface_type() != InterfaceType::Int32
                     {
                         return Ok(crate::kernel::FunctionTerminationMeasure::Expression(
                             termination_measure_source(measure),
@@ -5285,13 +5298,20 @@ fn reject_pure_bodies_reading_c_objects(
 
 /// Looks up a C definition using the spelling visible to Click. Header-local
 /// inline bodies have a translation-unit-qualified kernel name, so sidecar
-/// contracts must match `C0Function::source_name()` rather than the execution
-/// identity returned by `C0Function::name()`.
+/// contracts must match `ImportedFunction::source_name()` rather than the execution
+/// identity returned by `ImportedFunction::name()`.
 fn parsed_function_for_source_name<'a>(
-    parsed_sources: &'a BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &'a BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     source_name: &str,
     signature: Option<&FunctionSignature>,
-) -> Result<Option<(&'a String, &'a String, &'a syntax::C0Function)>, ClickError> {
+) -> Result<
+    Option<(
+        &'a String,
+        &'a String,
+        &'a crate::languages::interface::ImportedFunction,
+    )>,
+    ClickError,
+> {
     let mut matches = parsed_sources
         .iter()
         .filter(|(_, (path, function))| {
@@ -5358,7 +5378,9 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
 }
 
 /// A C++ method's receiver, its first parameter `this`.
-fn receiver(function: &syntax::C0Function) -> Option<&syntax::C0Parameter> {
+fn receiver(
+    function: &crate::languages::interface::ImportedFunction,
+) -> Option<&crate::languages::interface::ImportedParameter> {
     function
         .parameters()
         .first()
@@ -5366,8 +5388,9 @@ fn receiver(function: &syntax::C0Function) -> Option<&syntax::C0Parameter> {
 }
 
 /// Whether a C++ method's receiver is `const`.
-fn receiver_constant(function: &syntax::C0Function) -> bool {
-    receiver(function).is_some_and(syntax::C0Parameter::pointee_is_constant)
+fn receiver_constant(function: &crate::languages::interface::ImportedFunction) -> bool {
+    receiver(function)
+        .is_some_and(crate::languages::interface::ImportedParameter::pointee_is_constant)
 }
 
 impl parser::ProgramLayouts {
@@ -5392,7 +5415,7 @@ impl parser::ProgramLayouts {
                     captures
                         .iter()
                         .map(|capture| FunctionParameter {
-                            click_type: ClickType::Program(capture.c_type()),
+                            click_type: ClickType::Program(capture.interface_type()),
                             name: capture.name().to_string(),
                             struct_name: None,
                             function_pointer_signature: None,
@@ -5432,14 +5455,15 @@ impl parser::ProgramLayouts {
                         .collect(),
                 );
             }
-            for c_type in function
+            for interface_type in function
                 .parameters()
                 .iter()
-                .map(|parameter| parameter.c_type())
+                .map(|parameter| parameter.interface_type())
                 .chain([function.return_type()])
             {
                 // An enum or a `Vec` a parameter or result holds or refers to.
-                if let C0Type::Parameter(enum_type) | C0Type::ParameterPointer(enum_type) = c_type
+                if let InterfaceType::Parameter(enum_type)
+                | InterfaceType::ParameterPointer(enum_type) = interface_type
                     && (enum_type.is_enum()
                         || generics::primitive_instance_of(enum_type.name()).is_some())
                 {
@@ -5458,7 +5482,7 @@ impl parser::ProgramLayouts {
                     function
                         .parameters()
                         .iter()
-                        .map(|parameter| parameter.c_type())
+                        .map(|parameter| parameter.interface_type())
                         .collect(),
                     function.return_type(),
                     function
@@ -5484,7 +5508,7 @@ impl parser::ProgramLayouts {
                             .parameters()
                             .iter()
                             .skip(usize::from(receiver(function).is_some()))
-                            .map(|parameter| parameter.c_type())
+                            .map(|parameter| parameter.interface_type())
                             .collect(),
                     });
             }
@@ -5523,7 +5547,7 @@ impl parser::ProgramLayouts {
 pub(in crate::surface) fn parse_verified_sources(
     file: &ClickFile,
     c_sources: &BTreeMap<&str, &str>,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let sources = c_sources
         .iter()
         .map(|(path, source)| (*path, *source))
@@ -5551,7 +5575,7 @@ pub(in crate::surface) fn parse_verified_sources(
 /// cached was computed while the name was still in the registry. No caller
 /// joins a session today, so this is a lock rather than a code path in use.
 fn record_never_address_taken_locals(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     session_is_fresh: bool,
 ) {
     let summary = crate::languages::c::address_taken::summarize_address_taken(
@@ -5571,8 +5595,8 @@ fn record_never_address_taken_locals(
 /// head. Its types stay the declaration's, which the head is checked against.
 fn named_by_extern_head(
     file: &ClickFile,
-    function: &syntax::C0Function,
-) -> Result<syntax::C0Function, ClickError> {
+    function: &crate::languages::interface::ImportedFunction,
+) -> Result<crate::languages::interface::ImportedFunction, ClickError> {
     if !function.has_positional_parameters() {
         return Ok(function.clone());
     }
@@ -5607,7 +5631,7 @@ fn named_by_extern_head(
 pub(in crate::surface) fn parse_verified_sources_context(
     file: &ClickFile,
     c_sources: &ProgramSourceContext<'_>,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     parse_verified_sources_context_with_entry(file, c_sources, ProgramEntryStorage::Build)
 }
 
@@ -5626,7 +5650,7 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
     file: &ClickFile,
     c_sources: &ProgramSourceContext<'_>,
     entry_storage: ProgramEntryStorage,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let build_storage = entry_storage == ProgramEntryStorage::Build;
     if file.selected_thread_runtime()
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
@@ -5803,7 +5827,7 @@ fn validate_modeled_pthread_calls(
 
 pub(in crate::surface) fn external_c_function(
     function_block: &FunctionBlock,
-) -> syntax::C0Function {
+) -> crate::languages::interface::ImportedFunction {
     external_c_function_with_layouts(function_block, &BTreeMap::new())
 }
 
@@ -5812,9 +5836,9 @@ pub(in crate::surface) fn external_c_function(
 /// call copies the argument into an object of that layout.
 pub(in crate::surface) fn external_c_function_with_layouts(
     function_block: &FunctionBlock,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
-) -> syntax::C0Function {
-    syntax::C0Function::external(
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+) -> crate::languages::interface::ImportedFunction {
+    crate::languages::interface::ImportedFunction::external(
         function_block.signature().return_type(),
         function_block.signature().name().to_string(),
         function_block
@@ -5822,8 +5846,8 @@ pub(in crate::surface) fn external_c_function_with_layouts(
             .parameters()
             .iter()
             .map(|parameter| {
-                let program_parameter = syntax::C0Parameter::new(
-                    parameter.c_type(),
+                let program_parameter = crate::languages::interface::ImportedParameter::new(
+                    parameter.interface_type(),
                     parameter.name().to_string(),
                     parameter.struct_name().map(str::to_string),
                 );
@@ -5866,7 +5890,7 @@ fn generic_instance_example(name: &str) -> String {
 }
 
 pub(in crate::surface) fn build_function_environment(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
     contract_definitions: &[ContractDefinition],
     spec_definitions: SpecDefinitions<'_>,
@@ -6248,7 +6272,7 @@ pub(in crate::surface) fn build_function_environment(
 /// does not declare has no contract, so no call through it verifies.
 fn check_trait_method_implementations(
     environment: &ExecutionEnvironment,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
 ) -> Result<(), ClickError> {
     for (_, function) in parsed_sources.values() {
@@ -6368,7 +6392,7 @@ fn check_trait_method_implementations(
 /// object, or a C++ class reference into its base's, and back. Each returns
 /// at once: it only moves resources.
 fn object_coercion_names(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
 ) -> impl Iterator<Item = String> + '_ {
     parsed_sources
         .values()
@@ -6387,7 +6411,7 @@ fn is_object_coercion(name: &str) -> bool {
 /// The functions that make instances of the program's capturing closures.
 /// Each returns at once: it only forms a function value.
 fn closure_instance_names(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
 ) -> impl Iterator<Item = String> + '_ {
     parsed_sources
         .values()
@@ -6475,7 +6499,7 @@ fn is_recognized_representation_copy_block(
 
 pub(in crate::surface) fn function_resource_summary(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
 ) -> Result<(Vec<ResourceSpec>, Vec<ResourceSpec>), ClickError> {
@@ -6747,8 +6771,8 @@ pub(in crate::surface) fn composite_resource_definitions(
             .parameters()
             .iter()
             .map(|parameter| {
-                syntax::C0Parameter::new(
-                    parameter.c_type(),
+                crate::languages::interface::ImportedParameter::new(
+                    parameter.interface_type(),
                     parameter.name().to_string(),
                     parameter.struct_name().map(str::to_string),
                 )
@@ -6777,7 +6801,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .map(|parameter| {
                 crate::kernel::ProgramParameter::new(
                     parameter.name(),
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                 )
             })
             .collect();
@@ -6801,7 +6825,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .map(|witness| {
                 crate::kernel::ProgramParameter::new(
                     witness.name(),
-                    witness.c_type().to_kernel_type(),
+                    witness.interface_type().to_kernel_type(),
                 )
             })
             .collect();
@@ -6881,8 +6905,8 @@ pub(in crate::surface) fn composite_resource_definitions(
                     .parameters()
                     .iter()
                     .map(|parameter| {
-                        syntax::C0Parameter::new(
-                            parameter.c_type(),
+                        crate::languages::interface::ImportedParameter::new(
+                            parameter.interface_type(),
                             parameter.name().to_string(),
                             parameter.struct_name().map(str::to_string),
                         )
@@ -7004,7 +7028,7 @@ pub(in crate::surface) fn composite_resource_definitions(
 
 pub(in crate::surface) fn append_entry_resource_specs(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     _resource_environment: &ResourceEnvironment,
     specs: &mut Vec<ResourceSpec>,
 ) -> Result<(), ClickError> {
@@ -7021,7 +7045,7 @@ pub(in crate::surface) fn append_entry_resource_specs(
 
 pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     pointer_element_types: &BTreeMap<String, crate::kernel::ProgramType>,
     specs: &mut Vec<ResourceSpec>,
 ) -> Result<(), ClickError> {
@@ -7038,7 +7062,7 @@ pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
 
 fn resource_clause_to_resource_specs_with_metadata(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     result_type: Option<crate::kernel::ProgramType>,
     role: crate::kernel::ResourceTransferRole,
     snapshot: crate::kernel::ResourceSnapshot,
@@ -7092,7 +7116,7 @@ fn resource_clause_to_resource_specs_with_metadata(
 
 fn resource_clause_to_resource_spec_with_parameters(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     result_type: Option<crate::kernel::ProgramType>,
 ) -> Result<ResourceSpec, ClickError> {
     resource_clause_to_resource_spec_with_metadata(
@@ -7107,7 +7131,7 @@ fn resource_clause_to_resource_spec_with_parameters(
 
 fn resource_clause_to_resource_spec_for_body(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     result_type: Option<crate::kernel::ProgramType>,
 ) -> Result<ResourceSpec, ClickError> {
     // Scalar model fields are bound by the instance-body evaluator, just as
@@ -7162,7 +7186,7 @@ fn resource_clause_to_resource_spec_for_body(
 
 fn resource_clause_to_resource_spec_with_metadata(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     result_type: Option<crate::kernel::ProgramType>,
     role: crate::kernel::ResourceTransferRole,
     snapshot: crate::kernel::ResourceSnapshot,
@@ -7215,7 +7239,7 @@ fn resource_clause_to_resource_spec_with_metadata(
             let (quantity, quantity_snapshot) =
                 crate::surface::lowering::resource_argument_to_typed_program_expression_with_snapshot(
                     quantity,
-                    syntax::C0Type::Int32,
+                    crate::languages::interface::InterfaceType::Int32,
                 )?;
             ResourceSpec::quantified_with_quantity_snapshot(
                 quantity,
@@ -7315,7 +7339,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 lowered_arguments.into_iter().unzip();
             let parameter_types = parameter_types
                 .iter()
-                .map(|c_type| c_type.to_kernel_type())
+                .map(|interface_type| interface_type.to_kernel_type())
                 .collect();
             if name == "authority" {
                 let [protected] = resource_type_arguments.as_slice() else {
@@ -7755,9 +7779,9 @@ pub(in crate::surface) fn assumptions_from_propositions(
 /// reads them as it reads the C parameters; the lowered function moves them
 /// back out ([`crate::kernel::ProgramFunction::with_trailing_value_parameters`]).
 pub(in crate::surface) fn witnessed_function<'a>(
-    parsed_function: &'a syntax::C0Function,
+    parsed_function: &'a crate::languages::interface::ImportedFunction,
     function_block: &FunctionBlock,
-) -> std::borrow::Cow<'a, syntax::C0Function> {
+) -> std::borrow::Cow<'a, crate::languages::interface::ImportedFunction> {
     if function_block.witness_count() == 0
         || parsed_function.parameters().len() == function_block.signature().parameters().len()
     {
@@ -7769,7 +7793,11 @@ pub(in crate::surface) fn witnessed_function<'a>(
                 [function_block.signature().parameters().len() - function_block.witness_count()..]
                 .iter()
                 .map(|parameter| {
-                    syntax::C0Parameter::new(parameter.c_type(), parameter.name().to_string(), None)
+                    crate::languages::interface::ImportedParameter::new(
+                        parameter.interface_type(),
+                        parameter.name().to_string(),
+                        None,
+                    )
                 }),
         ),
     )
@@ -7781,7 +7809,7 @@ pub(in crate::surface) fn witnessed_function<'a>(
 pub(in crate::surface) fn check_signature(
     signature: &FunctionSignature,
     witness_count: usize,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     source_path: &str,
 ) -> Result<(), ClickError> {
     let c_parameters = &signature.parameters()[..signature.parameters().len() - witness_count];
@@ -7829,7 +7857,7 @@ pub(in crate::surface) fn check_signature(
         .zip(parsed_function.parameters())
         .enumerate()
     {
-        if expected.c_type() != actual.c_type()
+        if expected.interface_type() != actual.interface_type()
             || expected.pointee_is_constant() != actual.pointee_is_constant()
             || expected.is_reference() != actual.is_reference()
             || expected.name() != actual.name()
@@ -7841,14 +7869,14 @@ pub(in crate::surface) fn check_signature(
                 signature.name(),
                 index + 1,
                 describe_parameter_type(
-                    expected.c_type(),
+                    expected.interface_type(),
                     expected.struct_name(),
                     expected.pointee_is_constant(),
                     expected.is_reference(),
                 ),
                 written_parameter_name(expected.name(), expected.is_reference()),
                 describe_parameter_type(
-                    actual.c_type(),
+                    actual.interface_type(),
                     actual.struct_name(),
                     actual.pointee_is_constant(),
                     actual.is_reference(),
@@ -7871,19 +7899,23 @@ fn written_parameter_name(name: &str, reference: bool) -> &str {
 }
 
 pub(in crate::surface) fn describe_parameter_type(
-    c_type: C0Type,
+    interface_type: InterfaceType,
     struct_name: Option<&str>,
     pointee_constant: bool,
     reference: bool,
 ) -> String {
     let parameter_type = match struct_name {
-        Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => format!("struct {name}"),
+        Some(name) if matches!(interface_type, InterfaceType::UInt8Array(_)) => {
+            format!("struct {name}")
+        }
         Some(name) if reference => format!("struct {name}&"),
         Some(name) => format!("struct {name}*"),
-        None if matches!(c_type, C0Type::FunctionPointer(_)) => describe_c0_type(c_type),
-        None => match c_type.pointee_type().filter(|_| reference) {
+        None if matches!(interface_type, InterfaceType::FunctionPointer(_)) => {
+            describe_interface_type(interface_type)
+        }
+        None => match interface_type.pointee_type().filter(|_| reference) {
             Some(referent) => format!("{}&", referent.ranked_diagnostic_name()),
-            None => c_type.ranked_diagnostic_name(),
+            None => interface_type.ranked_diagnostic_name(),
         },
     };
     if pointee_constant {
@@ -7895,7 +7927,7 @@ pub(in crate::surface) fn describe_parameter_type(
 
 pub(in crate::surface) fn validate_region_proof_clauses(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
 ) -> Result<(), ClickError> {
     let loop_count = count_loop_regions(parsed_function);
     for region_proof_clause in function_block.structural_clauses() {
@@ -8356,7 +8388,7 @@ int32 answer() {
 
     /// The pre-pass must see what verification parses, not what a standalone
     /// parse produces: a name whose address the C takes has to be refused on
-    /// the exact `C0Function` values the registry is built from.
+    /// the exact `ImportedFunction` values the registry is built from.
     #[test]
     fn the_address_taken_pass_reads_the_bodies_verification_parses() {
         const C: &str = "int32* echo(int32* p) { return p; }\nvoid v4(void) { int32 x; int32* q; x = 5; q = echo(&x); x = 1; }\n";
@@ -9214,7 +9246,7 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
             }
             // A crate enum payload is spelled by its name.
             crate::kernel::AlgebraicValueType::Algebraic { name, .. } => name.clone(),
-            crate::kernel::AlgebraicValueType::Program(c_type) => match c_type {
+            crate::kernel::AlgebraicValueType::Program(interface_type) => match interface_type {
                 crate::kernel::ProgramType::Int8 => "i8",
                 crate::kernel::ProgramType::Int16 => "i16",
                 crate::kernel::ProgramType::Int32 => "i32",

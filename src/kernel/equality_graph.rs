@@ -967,9 +967,10 @@ impl EqualityGraph {
         // not merely its numeric address. Keep this producer definition in
         // the graph so lowering can retain the read's structural identity.
         for (read, stored) in stored_values {
-            state
-                .terms
-                .add_pointer_value_equality(&PointerValue::new(read, stored.c_type()), &stored);
+            state.terms.add_pointer_value_equality(
+                &PointerValue::new(read, stored.program_type()),
+                &stored,
+            );
         }
         state.close(definitions);
     }
@@ -3188,7 +3189,7 @@ impl EqualityGraph {
         let leaf = |state: &mut EqualityGraphState,
                     term: &crate::kernel::KernelTerm,
                     child: bool| {
-            let ty = MachineIntegerType::from_c_type(match term.ty() {
+            let ty = MachineIntegerType::from_program_type(match term.ty() {
                 crate::kernel::KernelType::Program(ty) => *ty,
                 _ => return None,
             })?;
@@ -3279,7 +3280,7 @@ impl EqualityGraph {
         if &updated == arguments {
             return term.clone();
         }
-        let result = MachineIntegerType::from_c_type(match term.ty() {
+        let result = MachineIntegerType::from_program_type(match term.ty() {
             crate::kernel::KernelType::Program(ty) => *ty,
             _ => return term.clone(),
         })

@@ -21,7 +21,7 @@
 
 use std::collections::BTreeSet;
 
-use super::syntax::{C0Expression, C0Function, C0Statement, C0SwitchCase, C0Type};
+use super::syntax::{C0Expression, C0Statement, C0SwitchCase, ImportedFunction, InterfaceType};
 
 mod lowered;
 
@@ -62,7 +62,7 @@ impl AddressTakenSummary {
 /// scalar captures. If that walk encounters an opaque pointer literal, the
 /// whole bundle remains conservative and reports no inaccessible locals.
 pub fn summarize_address_taken<'a>(
-    functions: impl IntoIterator<Item = &'a C0Function>,
+    functions: impl IntoIterator<Item = &'a ImportedFunction>,
 ) -> AddressTakenSummary {
     let mut summary = AddressTakenSummary {
         scalar_declarations: BTreeSet::new(),
@@ -75,7 +75,7 @@ pub fn summarize_address_taken<'a>(
             continue;
         }
         for parameter in function.parameters() {
-            declare(&mut summary, parameter.name(), parameter.c_type());
+            declare(&mut summary, parameter.name(), parameter.interface_type());
         }
         walk_statement(function.body(), &mut summary);
     }
@@ -89,8 +89,8 @@ pub fn summarize_address_taken<'a>(
 /// converts to its address wherever it is used, so declaring one is itself a
 /// way for the program to hold that address; such a name is refused rather
 /// than tracked.
-fn declare(summary: &mut AddressTakenSummary, name: &str, c_type: C0Type) {
-    if scalar_or_pointer(c_type) {
+fn declare(summary: &mut AddressTakenSummary, name: &str, interface_type: InterfaceType) {
+    if scalar_or_pointer(interface_type) {
         summary.scalar_declarations.insert(name.to_string());
     } else {
         summary.taken.insert(name.to_string());
@@ -100,71 +100,78 @@ fn declare(summary: &mut AddressTakenSummary, name: &str, c_type: C0Type) {
 /// Whether an object of this type is read and written as a value rather than
 /// through its address. Listed exhaustively on purpose: a type added later
 /// lands in the `false` arm, which refuses the name.
-fn scalar_or_pointer(c_type: C0Type) -> bool {
-    match c_type {
-        C0Type::Parameter(_) | C0Type::ParameterPointer(_) => false,
-        C0Type::Int128 | C0Type::UInt128 => false,
-        C0Type::Int8 | C0Type::Int8Pointer | C0Type::Int8PointerPointer => true,
-        C0Type::Char(_)
-        | C0Type::Bool
-        | C0Type::Int16
-        | C0Type::Int32
-        | C0Type::UInt8
-        | C0Type::UInt16
-        | C0Type::UInt32
-        | C0Type::Int64(_)
-        | C0Type::UInt64(_)
-        | C0Type::Float32
-        | C0Type::Float64
-        | C0Type::VoidPointer
-        | C0Type::VoidPointerPointer
-        | C0Type::CharPointer(_)
-        | C0Type::CharPointerPointer(_)
-        | C0Type::Int16Pointer
-        | C0Type::UInt16Pointer
-        | C0Type::Int32Pointer
-        | C0Type::UInt8Pointer
-        | C0Type::UInt32Pointer
-        | C0Type::Int128Pointer
-        | C0Type::Int64Pointer(_)
-        | C0Type::UInt128Pointer
-        | C0Type::UInt64Pointer(_)
-        | C0Type::Float32Pointer
-        | C0Type::Float64Pointer
-        | C0Type::Int16PointerPointer
-        | C0Type::UInt16PointerPointer
-        | C0Type::Int32PointerPointer
-        | C0Type::UInt8PointerPointer
-        | C0Type::UInt32PointerPointer
-        | C0Type::Int128PointerPointer
-        | C0Type::Int64PointerPointer(_)
-        | C0Type::UInt128PointerPointer
-        | C0Type::UInt64PointerPointer(_)
-        | C0Type::Float32PointerPointer
-        | C0Type::Float64PointerPointer
-        | C0Type::FunctionPointer(_) => true,
-        C0Type::Int8Array(_) => false,
-        C0Type::PointerArray(_, _, _) => false,
-        C0Type::Void
-        | C0Type::CharArray(_, _)
-        | C0Type::Int32Array(_)
-        | C0Type::UInt8Array(_)
-        | C0Type::Int16Array(_)
-        | C0Type::UInt16Array(_)
-        | C0Type::UInt32Array(_)
-        | C0Type::Int128Array(_)
-        | C0Type::Int64Array(_, _)
-        | C0Type::UInt128Array(_)
-        | C0Type::UInt64Array(_, _)
-        | C0Type::Float32Array(_)
-        | C0Type::Float64Array(_) => false,
+fn scalar_or_pointer(interface_type: InterfaceType) -> bool {
+    match interface_type {
+        InterfaceType::Parameter(_) | InterfaceType::ParameterPointer(_) => false,
+        InterfaceType::Int128 | InterfaceType::UInt128 => false,
+        InterfaceType::Int8 | InterfaceType::Int8Pointer | InterfaceType::Int8PointerPointer => {
+            true
+        }
+        InterfaceType::Char(_)
+        | InterfaceType::Bool
+        | InterfaceType::Int16
+        | InterfaceType::Int32
+        | InterfaceType::UInt8
+        | InterfaceType::UInt16
+        | InterfaceType::UInt32
+        | InterfaceType::Int64(_)
+        | InterfaceType::UInt64(_)
+        | InterfaceType::Float32
+        | InterfaceType::Float64
+        | InterfaceType::VoidPointer
+        | InterfaceType::VoidPointerPointer
+        | InterfaceType::CharPointer(_)
+        | InterfaceType::CharPointerPointer(_)
+        | InterfaceType::Int16Pointer
+        | InterfaceType::UInt16Pointer
+        | InterfaceType::Int32Pointer
+        | InterfaceType::UInt8Pointer
+        | InterfaceType::UInt32Pointer
+        | InterfaceType::Int128Pointer
+        | InterfaceType::Int64Pointer(_)
+        | InterfaceType::UInt128Pointer
+        | InterfaceType::UInt64Pointer(_)
+        | InterfaceType::Float32Pointer
+        | InterfaceType::Float64Pointer
+        | InterfaceType::Int16PointerPointer
+        | InterfaceType::UInt16PointerPointer
+        | InterfaceType::Int32PointerPointer
+        | InterfaceType::UInt8PointerPointer
+        | InterfaceType::UInt32PointerPointer
+        | InterfaceType::Int128PointerPointer
+        | InterfaceType::Int64PointerPointer(_)
+        | InterfaceType::UInt128PointerPointer
+        | InterfaceType::UInt64PointerPointer(_)
+        | InterfaceType::Float32PointerPointer
+        | InterfaceType::Float64PointerPointer
+        | InterfaceType::FunctionPointer(_) => true,
+        InterfaceType::Int8Array(_) => false,
+        InterfaceType::PointerArray(_, _, _) => false,
+        InterfaceType::Void
+        | InterfaceType::CharArray(_, _)
+        | InterfaceType::Int32Array(_)
+        | InterfaceType::UInt8Array(_)
+        | InterfaceType::Int16Array(_)
+        | InterfaceType::UInt16Array(_)
+        | InterfaceType::UInt32Array(_)
+        | InterfaceType::Int128Array(_)
+        | InterfaceType::Int64Array(_, _)
+        | InterfaceType::UInt128Array(_)
+        | InterfaceType::UInt64Array(_, _)
+        | InterfaceType::Float32Array(_)
+        | InterfaceType::Float64Array(_) => false,
     }
 }
 
 /// Walks one statement, recording declarations and address-forming nodes.
 fn walk_statement(statement: &C0Statement, summary: &mut AddressTakenSummary) {
-    if let C0Statement::Declare { name, c_type, .. } = statement {
-        declare(summary, name, *c_type);
+    if let C0Statement::Declare {
+        name,
+        interface_type,
+        ..
+    } = statement
+    {
+        declare(summary, name, *interface_type);
     }
     // A struct value's name is its address wherever it is used.
     if let C0Statement::DeclareStructValue { name, .. } = statement {

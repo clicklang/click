@@ -24,17 +24,22 @@ fn nominal_return_class(definition: &ClickFunctionDefinition) -> Option<&CAccess
 }
 
 impl ClickType {
-    pub(super) fn from_object_pointer_class(c_type: C0Type, class: &CAccessClass) -> Self {
+    pub(super) fn from_object_pointer_class(
+        interface_type: InterfaceType,
+        class: &CAccessClass,
+    ) -> Self {
         let tag = match class {
-            CAccessClass::Struct(class) if c_type == C0Type::Int32Pointer => class.tag(),
+            CAccessClass::Struct(class) if interface_type == InterfaceType::Int32Pointer => {
+                class.tag()
+            }
             CAccessClass::Pointer {
                 base: CPointeeBase::Struct(class),
                 depth: 1,
-            } if c_type == C0Type::Int32PointerPointer => class.tag(),
-            _ => return Self::Program(c_type),
+            } if interface_type == InterfaceType::Int32PointerPointer => class.tag(),
+            _ => return Self::Program(interface_type),
         };
         Self::CObjectPointer {
-            c_type,
+            interface_type,
             struct_name: tag.to_string(),
         }
     }
@@ -42,9 +47,9 @@ impl ClickType {
     pub(super) fn pointer_object_class(&self) -> Option<CAccessClass> {
         match self {
             Self::CObjectPointer {
-                c_type,
+                interface_type,
                 struct_name,
-            } => struct_pointer_class(*c_type, struct_name),
+            } => struct_pointer_class(*interface_type, struct_name),
             _ => None,
         }
     }
@@ -52,8 +57,13 @@ impl ClickType {
 
 impl ClickFunctionDefinition {
     pub(super) fn return_type_with_object_class(&self) -> ClickType {
-        match (self.return_type().c_type(), self.return_object_class()) {
-            (Some(c_type), Some(class)) => ClickType::from_object_pointer_class(c_type, class),
+        match (
+            self.return_type().interface_type(),
+            self.return_object_class(),
+        ) {
+            (Some(interface_type), Some(class)) => {
+                ClickType::from_object_pointer_class(interface_type, class)
+            }
             _ => self.return_type().clone(),
         }
     }
@@ -62,18 +72,18 @@ impl ClickFunctionDefinition {
 impl FunctionParameter {
     pub(super) fn click_type_with_object_class(&self) -> ClickType {
         match self.pointer_object_class() {
-            Some(class) => ClickType::from_object_pointer_class(self.c_type(), &class),
+            Some(class) => ClickType::from_object_pointer_class(self.interface_type(), &class),
             None => self.click_type().clone(),
         }
     }
 
     pub(super) fn pointer_object_class(&self) -> Option<CAccessClass> {
-        struct_pointer_class(self.click_type().c_type()?, self.struct_name()?)
+        struct_pointer_class(self.click_type().interface_type()?, self.struct_name()?)
     }
 }
 
-fn struct_pointer_class(c_type: C0Type, name: &str) -> Option<CAccessClass> {
-    let pointee = c_type.pointee_type()?;
+fn struct_pointer_class(interface_type: InterfaceType, name: &str) -> Option<CAccessClass> {
+    let pointee = interface_type.pointee_type()?;
     let class = CStructClass::opaque(name.to_string());
     Some(if pointee.is_pointer() {
         CAccessClass::Pointer {
@@ -88,14 +98,14 @@ fn struct_pointer_class(c_type: C0Type, name: &str) -> Option<CAccessClass> {
 impl AlgebraicFieldType {
     pub(super) fn pointer_object_class(&self) -> Option<CAccessClass> {
         let Self::C {
-            c_type,
+            interface_type,
             struct_name: Some(name),
             ..
         } = self
         else {
             return None;
         };
-        struct_pointer_class(*c_type, name)
+        struct_pointer_class(*interface_type, name)
     }
 }
 
@@ -163,7 +173,7 @@ impl Analysis<'_> {
         }
         // A library primitive operation has no body to derive an origin from.
         let body = definition.body()?;
-        if !(matches!(definition.return_type(), ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
+        if !(matches!(definition.return_type(), ClickType::Program(ty) | ClickType::CObjectPointer { interface_type: ty, .. } if ty.is_object_pointer())
             || matches!(definition.return_type(), ClickType::Parameter(_)))
             || !self.active.insert(name.to_string())
         {
@@ -175,7 +185,7 @@ impl Analysis<'_> {
             .enumerate()
             .map(|(index, parameter)| {
                 let origin =
-                    (matches!(parameter.click_type(), ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
+                    (matches!(parameter.click_type(), ClickType::Program(ty) | ClickType::CObjectPointer { interface_type: ty, .. } if ty.is_object_pointer())
                         || matches!(parameter.click_type(), ClickType::Parameter(_)))
                     .then(|| {
                         Arc::new(PurePointerResult {
@@ -329,7 +339,7 @@ impl Analysis<'_> {
             .enumerate()
             .map(|(index, parameter)| {
                 let origin =
-                    (matches!(parameter.click_type(), ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
+                    (matches!(parameter.click_type(), ClickType::Program(ty) | ClickType::CObjectPointer { interface_type: ty, .. } if ty.is_object_pointer())
                         || matches!(parameter.click_type(), ClickType::Parameter(_)))
                     .then(|| {
                         Arc::new(PurePointerResult {

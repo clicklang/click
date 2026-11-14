@@ -128,7 +128,10 @@ fn add_arithmetic_branch_fact(
 }
 
 fn pointer_types_compatible(left: &PointerValue, right: &PointerValue) -> bool {
-    left.c_type().pointer_types_compatible(right.c_type()) || left.is_null() || right.is_null()
+    left.program_type()
+        .pointer_types_compatible(right.program_type())
+        || left.is_null()
+        || right.is_null()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -153,7 +156,9 @@ pub(in crate::kernel) enum BitwiseOperation {
 fn scalar_width(left: &ProgramValue, right: &ProgramValue) -> Option<ScalarWidth> {
     let format = |value: &ProgramValue| match value {
         ProgramValue::Bool(_) => Some(MachineIntegerType::UInt8),
-        crate::kernel::integer64_c_value!(_) => MachineIntegerType::from_c_type(value.c_type()),
+        crate::kernel::integer64_c_value!(_) => {
+            MachineIntegerType::from_program_type(value.program_type())
+        }
         _ => None,
     };
     Some(
@@ -996,12 +1001,12 @@ fn apply_program_int128_multiply(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     fn observe(value: ProgramValue, assumptions: &PureFactContext) -> Option<IntegerTerm> {
-        let ty = match value.c_type() {
+        let ty = match value.program_type() {
             // Boolean operands are normalized 0/1. The other narrow types
             // retain their actual numeric interpretation before promotion.
             ProgramType::Bool => MachineIntegerType::UInt8,
             ProgramType::UInt128 => return None,
-            ty => MachineIntegerType::from_c_type(ty)?,
+            ty => MachineIntegerType::from_program_type(ty)?,
         };
         let term = match value {
             ProgramValue::Bool(term)
@@ -1794,7 +1799,7 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
 fn pointer_value_step_width(pointer: &PointerValue, expression_width: Option<u32>) -> Option<u32> {
     // GNU C treats void-pointer arithmetic as byte arithmetic. Other
     // pointers still require the expression's existing pointee evidence.
-    if pointer.c_type() == ProgramType::VoidPointer {
+    if pointer.program_type() == ProgramType::VoidPointer {
         Some(1)
     } else {
         expression_width
@@ -2419,7 +2424,7 @@ pub(in crate::kernel) fn apply_program_subtract(
                 .collect()
         }
         (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) => {
-            if left.c_type() != right.c_type() {
+            if left.program_type() != right.program_type() {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             }
             let Some(byte_width) = pointer_operation_step_width(left_step_width, right_step_width)

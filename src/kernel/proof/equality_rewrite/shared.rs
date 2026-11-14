@@ -258,7 +258,7 @@ fn format(term: &KernelTerm) -> T {
     let KernelType::Program(ty) = term.ty() else {
         unreachable!("shared machine carrier")
     };
-    T::from_c_type(*ty).expect("machine format")
+    T::from_program_type(*ty).expect("machine format")
 }
 fn children(term: &KernelTerm) -> Vec<&KernelTerm> {
     match term.node() {

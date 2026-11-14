@@ -40,7 +40,7 @@ fn callback_qualification_identity_is_exact_at_every_position_and_arity() {
         CallbackSignature::UNSPECIFIED
     );
     assert!(std::mem::size_of::<ProgramType>() <= 16);
-    assert!(std::mem::size_of::<crate::languages::c::syntax::C0Type>() <= 16);
+    assert!(std::mem::size_of::<crate::languages::interface::InterfaceType>() <= 16);
 }
 
 #[test]

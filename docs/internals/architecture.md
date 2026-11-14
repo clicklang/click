@@ -10,7 +10,10 @@ language's role.
 
 | Path | Responsibility |
 | --- | --- |
-| `src/languages.rs`, `src/languages/c.rs`, `src/languages/c/` | Parse, represent, and lower supported C. The C++ and Rust importers live in the sibling `src/languages/cpp/` and `src/languages/rust/` modules. |
+| `src/languages.rs` | Select target languages and package prepared program execution. |
+| `src/languages/interface.rs` | Shared imported declarations, interface types, callback metadata and record layouts. |
+| `src/languages/c.rs`, `src/languages/c/` | Parse supported C and implement C compatibility and lowering. |
+| `src/languages/cpp/`, `src/languages/rust/` | Import native compiler artifacts and lower them to shared program execution. |
 | `src/surface.rs` | Define Surface Click forms and connect its checking, lowering, proof, and presentation modules. |
 | `src/surface/parser.rs` | Tokenize and parse Surface Click; share exact token spans with source tools. |
 | `src/surface/names.rs` | Resolve library imports and theorem shadowing; share those bindings with source printing. |
@@ -30,8 +33,7 @@ language's role.
 
 ## Data flow
 
-The C target-language and Surface Click specification-language parsers
-retain source spans. Validation builds a `ProgramVerificationSession`, which owns checked declarations and function blocks.
+Surface Click parsing and target-language imports retain source locations. Validation builds a `ProgramVerificationSession`, which owns checked declarations and function blocks.
 Lowering records the relationship between surface propositions and kernel
 propositions so diagnostics and expansion can return to source language.
 Those records are presentation hints, not evidence that a fact is available.
@@ -39,12 +41,12 @@ Loop-head lowering returns one selected proposition per declared invariant,
 including duplicates, separately from the new-fact delta. A preservation
 proof records generated iteration-entry spellings against those selected
 propositions in its local scope; an unqualified source spelling continues to
-lower against the current C state. Certificate generation checks a candidate
+lower against the current execution state. Certificate generation checks a candidate
 spelling at its output location and validates the selected kernel premise,
 never whichever available fact happens to share that spelling.
 
 The kernel's persistent `ProofObject` owns typed obligations, facts, symbolic
-C execution, resources, focus, and checked successor authority. A
+program execution, resources, focus, and checked successor authority. A
 Surface-layer `Proof` pairs that opaque handle with checking context and
 Surface provenance. Explicit tactics request named simple or structural
 operations. Smart planners try the same operations transactionally on

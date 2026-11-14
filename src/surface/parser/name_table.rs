@@ -256,7 +256,7 @@ pub(super) struct NameTable {
     /// parent field that holds each `child.field`.
     pub(super) hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
     pub(super) struct_params: BTreeMap<String, String>,
-    pub(super) c_parameter_types: BTreeMap<String, C0Type>,
+    pub(super) program_parameter_types: BTreeMap<String, InterfaceType>,
     /// The struct each `void *` parameter has been cast to so far; the
     /// parameters themselves are `NameKind::VoidPointerParameter` names.
     pub(super) parameter_struct_casts: BTreeMap<String, String>,
@@ -266,7 +266,7 @@ pub(super) struct NameTable {
     /// The C names (parameters, locals and file-scope objects) visible to the
     /// C function block being parsed. `true` and `false` are specification
     /// literals unless one of these names spells them.
-    pub(super) c_object_names: Option<std::sync::Arc<BTreeSet<String>>>,
+    pub(super) program_object_names: Option<std::sync::Arc<BTreeSet<String>>>,
     /// The constructor bindings of the match arm currently being parsed, with
     /// their declared field types. A struct-pointer binding is also in
     /// `struct_params`; the others are here only so using one as a
@@ -319,9 +319,9 @@ impl NameTable {
     /// Whether `name` is a C parameter or a C object of the function block
     /// being parsed.
     pub(super) fn is_program_variable(&self, name: &str) -> bool {
-        self.c_parameter_types.contains_key(name)
+        self.program_parameter_types.contains_key(name)
             || self
-                .c_object_names
+                .program_object_names
                 .as_ref()
                 .is_some_and(|names| names.contains(name))
     }

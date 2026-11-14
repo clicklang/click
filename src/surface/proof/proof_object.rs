@@ -1372,7 +1372,10 @@ struct ProofDiagnosticProofState(
 /// for few of them, so the deferred form holds shared handles and copies no
 /// list of locals or parameters.
 pub(in crate::surface::proof) enum DiagnosticNaming {
-    Tables(Vec<syntax::C0Parameter>, Vec<ProgramExpression>),
+    Tables(
+        Vec<crate::languages::interface::ImportedParameter>,
+        Vec<ProgramExpression>,
+    ),
     /// A state's locals, then the shared entry parameters and arguments.
     LocalsThenParameters(ExecutionState, Arc<crate::surface::ParameterNaming>),
 }
@@ -1585,7 +1588,7 @@ fn register_call_result_name(
 ) {
     match value.numeric_value() {
         crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
-            labels.fallback_source_name(*variable, spelling, value.c_type());
+            labels.fallback_source_name(*variable, spelling, value.program_type());
         }
         crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
             labels.fallback_read_name(read, spelling);
@@ -1683,7 +1686,7 @@ fn register_snapshot_names(
                     labels.fallback_source_name(
                         *variable,
                         format!("at({point}, {name})"),
-                        value.c_type(),
+                        value.program_type(),
                     );
                 }
                 crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(memory, _, _)) => {
@@ -1723,7 +1726,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             }
             if let Some(variable) = diagnostic_value_variable(value) {
                 labels.immutable_source_name(variable, name.to_owned());
-                labels.source_type(variable, value.c_type());
+                labels.source_type(variable, value.program_type());
             }
         }
         for (name, value) in self.0.state().locals().algebraic_values.iter() {
@@ -1747,7 +1750,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         {
             if let Some(variable) = diagnostic_value_variable(value) {
                 labels.source_name(variable, name.to_owned());
-                labels.source_type(variable, value.c_type());
+                labels.source_type(variable, value.program_type());
             }
         }
         if let Some(state) = &self.3 {
@@ -1756,8 +1759,8 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(result) = &self.9 {
             labels.source_result(result);
         }
-        for (variable, c_type) in &self.8 {
-            labels.source_type(*variable, *c_type);
+        for (variable, interface_type) in &self.8 {
+            labels.source_type(*variable, *interface_type);
         }
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
@@ -2226,7 +2229,8 @@ impl Proof<'_> {
                 .values
                 .values()
                 .filter_map(|value| {
-                    diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
+                    diagnostic_value_variable(value)
+                        .map(|variable| (variable, value.program_type()))
                 })
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
@@ -2238,7 +2242,7 @@ impl Proof<'_> {
                 .and_then(|view| view.fixed_state.result),
         };
         source_types.extend(result.and_then(|value| {
-            diagnostic_value_variable(value).map(|variable| (variable, value.c_type()))
+            diagnostic_value_variable(value).map(|variable| (variable, value.program_type()))
         }));
         let source_names = match self.context.as_ref() {
             ProofContext::Pure(context) => {

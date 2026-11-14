@@ -143,7 +143,7 @@ pub(crate) fn retained_alpha_equivalent(
         let crate::kernel::KernelType::Program(ty) = matched.result_type else {
             return None;
         };
-        crate::kernel::MachineIntegerType::from_c_type(ty)?;
+        crate::kernel::MachineIntegerType::from_program_type(ty)?;
         let mut bindings = fold_keys::bindings();
         let key = retained_machine::<false>(matched, &mut bindings, &mut 0)?;
         Some((key, bindings.work_units))

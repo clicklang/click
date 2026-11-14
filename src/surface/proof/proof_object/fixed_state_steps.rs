@@ -2235,18 +2235,22 @@ impl<'a> Proof<'a> {
         if let Some(actual) = non_machine_type {
             let expected = match &goal {
                 Proposition::Exists { sort, .. } if sort.machine_integer_type().is_some() => {
-                    sort.machine_integer_type().unwrap().c_type()
+                    sort.machine_integer_type().unwrap().program_type()
                 }
                 Proposition::Exists {
-                    sort: Sort::ProgramPointer(c_type) | Sort::ProgramObjectPointer(c_type, _),
+                    sort:
+                        Sort::ProgramPointer(interface_type)
+                        | Sort::ProgramObjectPointer(interface_type, _),
                     ..
-                } => *c_type,
+                } => *interface_type,
                 _ => unreachable!("pure machine witness dispatch requires a C binder"),
             };
             return Err(self.step_error(format!(
                 "witness `{}` has the wrong type: expected {}, got {actual}",
                 witness.name(),
-                describe_c0_type(crate::surface::generics::c0_type_from_kernel(expected)),
+                describe_interface_type(
+                    crate::surface::generics::interface_type_from_program_type(expected)
+                ),
             )));
         }
         // Capture only the written value using the theorem's retained memory
@@ -3002,12 +3006,15 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn diagnostic_naming_tables(
         &self,
-    ) -> (Vec<syntax::C0Parameter>, Vec<ProgramExpression>) {
+    ) -> (
+        Vec<crate::languages::interface::ImportedParameter>,
+        Vec<ProgramExpression>,
+    ) {
         // The state's locals first, then the entry parameters: a local names
         // the value it holds here, and a parameter the value it was entered
         // with, and either may be what a lowered term reads.
         let with_locals = |state: &ExecutionState,
-                           parameters: &[syntax::C0Parameter],
+                           parameters: &[crate::languages::interface::ImportedParameter],
                            arguments: &[ProgramExpression]| {
             let (mut names, mut values) = crate::surface::diagnostics::local_naming_tables(state);
             names.extend(parameters.iter().cloned());
@@ -3132,7 +3139,10 @@ impl<'a> Proof<'a> {
         surface_equality: &ClickProposition,
         // Naming can scan unrelated locals. Construct these tables only
         // on refusal, preserving the selected fixed state's diagnostic names.
-        naming_tables: impl FnOnce() -> (Vec<syntax::C0Parameter>, Vec<ProgramExpression>),
+        naming_tables: impl FnOnce() -> (
+            Vec<crate::languages::interface::ImportedParameter>,
+            Vec<ProgramExpression>,
+        ),
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Name both sides: a rewrite that finds nothing to replace is
         // almost always an equality whose left side lowered to a different
@@ -4350,7 +4360,7 @@ fn binding_names_chosen_variable(binding: &ContractExpression, variable: Variabl
             pointer,
         ))) => pointer.pointer().offset == PointerOffsetTerm::Variable(variable),
         ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-            crate::kernel::MachineIntegerType::from_c_type(value.c_type())
+            crate::kernel::MachineIntegerType::from_program_type(value.program_type())
                 .is_some_and(|integer| *value == integer.symbolic_value(variable))
         }
         _ => false,

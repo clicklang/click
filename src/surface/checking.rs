@@ -392,9 +392,11 @@ pub(super) fn apply_witness_tactic(
 
     let expected = match &sort {
         sort if sort.machine_integer_type().is_some() => {
-            Some(sort.machine_integer_type().unwrap().c_type())
+            Some(sort.machine_integer_type().unwrap().program_type())
         }
-        Sort::ProgramPointer(c_type) | Sort::ProgramObjectPointer(c_type, _) => Some(*c_type),
+        Sort::ProgramPointer(interface_type) | Sort::ProgramObjectPointer(interface_type, _) => {
+            Some(*interface_type)
+        }
         _ => None,
     };
     if let Some(expected) = expected
@@ -402,7 +404,7 @@ pub(super) fn apply_witness_tactic(
     {
         let actual = match witness_value.numeric_value() {
             ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
-            ProgramValue::Parameter(_) => witness_value.c_type(),
+            ProgramValue::Parameter(_) => witness_value.program_type(),
             ProgramValue::Void => ProgramType::Void,
             ProgramValue::Bool(_) => ProgramType::Bool,
             ProgramValue::Int8(_) => ProgramType::Int8,
@@ -417,13 +419,13 @@ pub(super) fn apply_witness_tactic(
             ProgramValue::UInt128(_) => ProgramType::UInt128,
             ProgramValue::Float32(_) => ProgramType::Float32,
             ProgramValue::Float64(_) => ProgramType::Float64,
-            ProgramValue::Pointer(pointer) => pointer.c_type(),
+            ProgramValue::Pointer(pointer) => pointer.program_type(),
         };
         return Err(ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` has the wrong type: expected {}, got {}",
             witness.name(),
-            describe_c0_type(super::generics::c0_type_from_kernel(expected)),
-            describe_c0_type(super::generics::c0_type_from_kernel(actual)),
+            describe_interface_type(super::generics::interface_type_from_program_type(expected)),
+            describe_interface_type(super::generics::interface_type_from_program_type(actual)),
         )));
     }
 

@@ -9,7 +9,7 @@ fn word(format: MachineIntegerType, value: i64) -> SpecValue {
 }
 fn variable(format: MachineIntegerType, id: u64) -> SpecValue {
     SpecValue::Shared(KernelTerm::variable(
-        KernelType::Program(format.c_type()),
+        KernelType::Program(format.program_type()),
         Variable(id),
     ))
 }
@@ -98,7 +98,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     let right = variable(MachineIntegerType::UInt32, 998121);
     let guard = ConditionTerm::Variable(Variable(998122));
     let result = join(&guard, &left, &right);
-    assert_eq!(result.c_type(), ProgramType::UInt32);
+    assert_eq!(result.program_type(), ProgramType::UInt32);
     let expected = conditional_spec_value(
         &Proposition::ConditionIs(guard.clone(), true),
         left.clone().into_native(),

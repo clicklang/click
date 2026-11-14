@@ -13,8 +13,8 @@ pub(crate) enum KernelFoldIndex {
 impl KernelFoldIndex {
     pub(crate) fn ty(self) -> KernelType {
         match self {
-            Self::Int32 => KernelType::Program(MachineIntegerType::Int32.c_type()),
-            Self::UInt64 => KernelType::Program(MachineIntegerType::UInt64.c_type()),
+            Self::Int32 => KernelType::Program(MachineIntegerType::Int32.program_type()),
+            Self::UInt64 => KernelType::Program(MachineIntegerType::UInt64.program_type()),
             Self::Integer => KernelType::Integer,
         }
     }

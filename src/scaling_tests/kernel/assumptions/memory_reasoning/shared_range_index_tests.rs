@@ -8,7 +8,7 @@ fn retained_delta_and_affine_queries_scale_with_the_selected_dag() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let mut root = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(1018310),
         );
         let exports = KernelTermExport::machine_export_count();
@@ -53,7 +53,7 @@ fn wide_coordinate_reconstruction_retains_cold_index_dags() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let mut root = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::UInt64.c_type()),
+            KernelType::Program(MachineIntegerType::UInt64.program_type()),
             Variable(1018321),
         );
         for _ in 0..size {

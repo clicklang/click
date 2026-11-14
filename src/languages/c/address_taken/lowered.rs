@@ -36,7 +36,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
         if parameter.aggregate_layout().is_some() {
             summary.taken.insert(parameter.name().to_owned());
         } else {
-            declare(summary, parameter.name(), parameter.c_type());
+            declare(summary, parameter.name(), parameter.program_type());
         }
     }
     let mut statements = vec![function.body()];
@@ -46,11 +46,11 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
         match statement {
             ProgramStatement::Declare {
                 name,
-                c_type,
+                program_type,
                 initializer,
                 ..
             } => {
-                declare(summary, name, *c_type);
+                declare(summary, name, *program_type);
                 expressions.extend(initializer.iter().map(|expression| (expression, false)));
             }
             ProgramStatement::DeclareAggregate { name, .. } => {
@@ -186,11 +186,11 @@ mod tests {
     use crate::kernel::*;
     use crate::languages::c::{
         address_taken::summarize_address_taken,
-        syntax::{C0Function, C0Type},
+        syntax::{ImportedFunction, InterfaceType},
     };
 
-    fn imported(body: ProgramStatement) -> C0Function {
-        C0Function::external(C0Type::Void, "imported".into(), vec![])
+    fn imported(body: ProgramStatement) -> ImportedFunction {
+        ImportedFunction::external(InterfaceType::Void, "imported".into(), vec![])
             .with_prelowered_kernel_function(program_function(
                 ProgramType::Void,
                 "imported",

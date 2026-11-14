@@ -208,7 +208,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
         &ExecutionState::new(),
         &ProgramStatement::Declare {
             name: "x".to_string(),
-            c_type: ProgramType::Int32,
+            program_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -249,7 +249,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
         &state,
         &ProgramStatement::Declare {
             name: "x".to_string(),
-            c_type: ProgramType::Int32,
+            program_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -342,7 +342,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
         &ExecutionState::new(),
         &ProgramStatement::Declare {
             name: "a".to_string(),
-            c_type: ProgramType::Int32Array(2),
+            program_type: ProgramType::Int32Array(2),
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -3252,7 +3252,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
                 field_index: 0,
                 at_entry: false,
             },
-            c_type: ProgramType::Int32,
+            program_type: ProgramType::Int32,
         },
     };
     let checks = vec![LoopInvariantCheck::new(

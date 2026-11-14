@@ -10,7 +10,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     /// The iterator each loop of that function advances.
     static RUST_LOOP_ITERATORS: std::cell::RefCell<
-        std::sync::Arc<[Option<crate::languages::c::syntax::RustLoopIterator>]>,
+        std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]>,
     > = std::cell::RefCell::new(std::sync::Arc::from([]));
     /// The loop whose phases are being checked, whose iterator a proof
     /// there names bare `iter`.
@@ -77,7 +77,7 @@ pub(crate) fn slice_type_spelling(element: &ProgramType) -> Option<String> {
         rust_scalar_spelling(element)?
     } else {
         crate::surface::printing::machine_integer_type_name(
-            crate::kernel::MachineIntegerType::from_c_type(*element)?,
+            crate::kernel::MachineIntegerType::from_program_type(*element)?,
         )
     };
     Some(format!("Slice<{name}>"))
@@ -300,9 +300,9 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
         .then(|| format!("{slice}.len()"))
 }
 
-/// The Rust name of the scalar type `c_type`, `u32` for `uint32`.
-pub(super) fn rust_scalar_spelling(c_type: &ProgramType) -> Option<&'static str> {
-    Some(match c_type {
+/// The Rust name of the scalar type `interface_type`, `u32` for `uint32`.
+pub(super) fn rust_scalar_spelling(interface_type: &ProgramType) -> Option<&'static str> {
+    Some(match interface_type {
         ProgramType::Int8 => "i8",
         ProgramType::Int16 => "i16",
         ProgramType::Int32 => "i32",

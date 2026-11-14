@@ -24,7 +24,7 @@ impl ReadType {
         match self {
             Self::Pointer(_) | Self::PointerAddress => C_POINTER_BYTE_WIDTH,
             Self::Abstract => ABSTRACT_VALUE_WIDTH,
-            Self::Integer(format) => format.c_type().byte_width(),
+            Self::Integer(format) => format.program_type().byte_width(),
         }
     }
 }
@@ -54,7 +54,7 @@ pub(super) fn record(memory: &Memory, address: &Pointer, value: &ProgramValue) {
     }
     let value = value.numeric_value();
     let kind = match value {
-        ProgramValue::Pointer(p) => ReadType::Pointer(p.c_type()),
+        ProgramValue::Pointer(p) => ReadType::Pointer(p.program_type()),
         ProgramValue::Parameter(_) => ReadType::Abstract,
         ProgramValue::Int32(_) => ReadType::Integer(MachineIntegerType::Int32),
         ProgramValue::UInt32(_) => ReadType::Integer(MachineIntegerType::UInt32),

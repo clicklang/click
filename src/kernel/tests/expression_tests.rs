@@ -1470,8 +1470,8 @@ fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity
     let int32_pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer);
     let uint8_pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
 
-    assert_eq!(int32_pointer.c_type(), ProgramType::Int32Pointer);
-    assert_eq!(uint8_pointer.c_type(), ProgramType::UInt8Pointer);
+    assert_eq!(int32_pointer.program_type(), ProgramType::Int32Pointer);
+    assert_eq!(uint8_pointer.program_type(), ProgramType::UInt8Pointer);
     let ProgramValue::Pointer(int32_pointer) = int32_pointer else {
         unreachable!();
     };
@@ -1558,7 +1558,7 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     else {
         panic!("explicit pointer cast did not produce a value");
     };
-    assert_eq!(value.c_type(), ProgramType::UInt8Pointer);
+    assert_eq!(value.program_type(), ProgramType::UInt8Pointer);
     let ProgramValue::Pointer(value) = value else {
         unreachable!();
     };
@@ -3853,7 +3853,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
         let word = match &input {
             ProgramValue::Int32(int32_constant!(word)) => constant_u32(*word),
             narrow @ (ProgramValue::Int16(_) | ProgramValue::UInt8(_)) => {
-                MachineIntegerType::from_c_type(narrow.c_type())
+                MachineIntegerType::from_program_type(narrow.program_type())
                     .and_then(|ty| ty.constant_from_value(narrow))
                     .and_then(|value| value.to_i128())
                     .expect("a narrow constant") as i32 as u32
@@ -3877,7 +3877,11 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
             &mut obligations,
             &PureFactContext::new(),
         );
-        assert_eq!(result.unwrap().c_type(), ProgramType::Int8, "{input:?}");
+        assert_eq!(
+            result.unwrap().program_type(),
+            ProgramType::Int8,
+            "{input:?}"
+        );
         assert_eq!(obligations.is_empty(), valid, "{input:?}");
         for obligation in &obligations {
             let Proposition::ConditionIs(condition, true) = obligation.proposition() else {
@@ -4290,7 +4294,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
                 ProgramExpression::Value(ProgramValue::bool_constant(flag)),
                 target,
             ));
-            let ty = MachineIntegerType::from_c_type(target).unwrap();
+            let ty = MachineIntegerType::from_program_type(target).unwrap();
             let expected = ty
                 .constant_value(
                     MachineIntegerConstant::from_unsigned(ty.format(), u128::from(flag)).unwrap(),
@@ -4514,7 +4518,7 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
             ProgramType::Int64Pointer,
         ),
     );
-    assert_eq!(cast.c_type(), ProgramType::Int64Pointer);
+    assert_eq!(cast.program_type(), ProgramType::Int64Pointer);
     assert_eq!(cast.extent(), first.extent());
 }
 
@@ -4595,7 +4599,7 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
     let ProgramValue::Pointer(coerced) = value else {
         panic!("a pointer coercion must yield a pointer")
     };
-    assert_eq!(coerced.c_type(), ProgramType::UInt8Pointer);
+    assert_eq!(coerced.program_type(), ProgramType::UInt8Pointer);
     assert_eq!(coerced.designation(), pointer.designation());
     assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
     assert_eq!(coerced.extent(), pointer.extent());
@@ -4616,7 +4620,7 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
             let ProgramValue::Pointer(explicit) = value else {
                 panic!("a pointer cast must yield a pointer")
             };
-            assert_eq!(explicit.c_type(), target);
+            assert_eq!(explicit.program_type(), target);
             assert_eq!(explicit.designation(), pointer.designation());
             assert_eq!(explicit.opaque_extent(), pointer.opaque_extent());
             assert_eq!(explicit.extent(), pointer.extent());

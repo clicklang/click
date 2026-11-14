@@ -1167,8 +1167,10 @@ fn shared_vacuous_sign_cast_equalities_only_inspect_roots() {
         let _session = VerificationSession::enter();
         let signed = MachineIntegerType::Int32;
         let unsigned = MachineIntegerType::UInt32;
-        let mut root =
-            KernelTerm::variable(KernelType::Program(signed.c_type()), Variable(1007191));
+        let mut root = KernelTerm::variable(
+            KernelType::Program(signed.program_type()),
+            Variable(1007191),
+        );
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 signed,

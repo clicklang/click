@@ -170,18 +170,28 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
 
 #[test]
 fn callback_contract_availability_uses_scoped_pointer_equality() {
-    let c_type = ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000));
-    let contract = |name: &str, pointer, state, c_type| Proposition::Predicate {
+    let interface_type = ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000));
+    let contract = |name: &str, pointer, state, interface_type| Proposition::Predicate {
         name: FunctionContract::predicate_name_for(name),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(ProgramValue::typed_pointer(pointer, c_type)),
+            Term::ProgramValue(ProgramValue::typed_pointer(pointer, interface_type)),
         ],
     };
     let target = Pointer::function("callback-target");
     let callback = Pointer::symbolic_function(Variable(90_011));
-    let source = contract("Invoke", target.clone(), ExecutionState::new(), c_type);
-    let required = contract("Invoke", callback.clone(), ExecutionState::new(), c_type);
+    let source = contract(
+        "Invoke",
+        target.clone(),
+        ExecutionState::new(),
+        interface_type,
+    );
+    let required = contract(
+        "Invoke",
+        callback.clone(),
+        ExecutionState::new(),
+        interface_type,
+    );
     let alias =
         Proposition::ConditionIs(ConditionTerm::pointer_equal(callback.clone(), target), true);
     let mut samples = Vec::new();
@@ -194,7 +204,7 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
                 "Invoke",
                 Pointer::symbolic_function(Variable(91_000 + index)),
                 ExecutionState::new(),
-                c_type,
+                interface_type,
             ));
         }
         let ((known, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -206,13 +216,13 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
             "Other",
             callback.clone(),
             ExecutionState::new(),
-            c_type
+            interface_type
         )));
         assert!(!context.contains_known(&contract(
             "Invoke",
             callback.clone(),
             ExecutionState::new().with_local("changed", int32(1)),
-            c_type
+            interface_type
         )));
         assert!(!context.contains_known(&contract(
             "Invoke",

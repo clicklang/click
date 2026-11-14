@@ -184,7 +184,7 @@ mod tests {
                             field_index: 0,
                             at_entry,
                         },
-                        c_type: ProgramType::Int32,
+                        program_type: ProgramType::Int32,
                     },
                     operator: ComparisonOperator::Equal,
                     right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),

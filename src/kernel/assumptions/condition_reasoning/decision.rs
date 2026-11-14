@@ -2643,7 +2643,7 @@ mod shared_wide_decision_tests {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let variable =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(997561));
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(997561));
             let operand = SharedMachineIntegerTerm::from_shared(
                 format,
                 KernelTerm::machine_binary_shared(
@@ -2806,7 +2806,7 @@ mod exact_word_order_tests {
             (MachineIntegerType::UInt32, 0, u32::MAX),
         ] {
             let variable =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(189311));
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(189311));
             let root = KernelTerm::machine_binary_shared(
                 format,
                 MachineBinaryOp::Add,
@@ -3043,7 +3043,7 @@ mod shared_order_pipeline_tests {
         use crate::kernel::{KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm};
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(997621));
+        let x = KernelTerm::variable(KernelType::Program(format.program_type()), Variable(997621));
         let zero = KernelTermImport::default()
             .machine_arithmetic(format, &0u32.into())
             .unwrap();
@@ -3079,8 +3079,10 @@ mod shared_equality_dispatch_tests {
             for reversed in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::UInt64;
-                let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983001));
-                let y = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983002));
+                let x =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983001));
+                let y =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983002));
                 let sum = KernelTerm::machine_binary_shared(ty, Op::Add, [x, y]);
                 let literal = |n| {
                     crate::kernel::KernelTermImport::default()
@@ -3176,7 +3178,7 @@ mod shared_equality_dispatch_tests {
             for case in 0..16 {
                 let _session = crate::kernel::VerificationSession::enter();
                 let variable =
-                    |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+                    |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
                 let x = variable(981001);
                 let y = variable(981002);
                 let z = variable(981003);
@@ -3349,9 +3351,12 @@ mod shared_equality_dispatch_tests {
             for width in [0, 4, 8] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::Int32;
-                let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983001));
-                let y = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983002));
-                let z = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983003));
+                let x =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983001));
+                let y =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983002));
+                let z =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983003));
                 let product = KernelTerm::machine_binary_shared(ty, Op::Multiply, [x, y]);
                 let native_product = MachineTerm::logical_machine_binary(
                     ty,

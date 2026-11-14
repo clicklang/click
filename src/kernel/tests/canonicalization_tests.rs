@@ -39,7 +39,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
     let float_memory = Memory::new()
         .with_block("float-storage", 4)
         .store(float_pointer.clone(), float_value.clone());
-    assert_eq!(float_value.c_type(), ProgramType::Float32);
+    assert_eq!(float_value.program_type(), ProgramType::Float32);
     assert_eq!(float_value.byte_width(), 4);
     assert!(ProgramType::Float32.accepts(&float_value));
     assert_eq!(
@@ -47,7 +47,9 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         ExpressionOutcome::Value(float_value.clone())
     );
     assert_eq!(
-        float_memory.symbolic_float32_load(&float_pointer).c_type(),
+        float_memory
+            .symbolic_float32_load(&float_pointer)
+            .program_type(),
         ProgramType::Float32
     );
 
@@ -59,7 +61,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
     let double_memory = Memory::new()
         .with_block("double-storage", 8)
         .store(double_pointer.clone(), double_value.clone());
-    assert_eq!(double_value.c_type(), ProgramType::Float64);
+    assert_eq!(double_value.program_type(), ProgramType::Float64);
     assert_eq!(double_value.byte_width(), 8);
     assert!(ProgramType::Float64.accepts(&double_value));
     assert_eq!(
@@ -69,7 +71,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
     assert_eq!(
         double_memory
             .symbolic_float64_load(&double_pointer)
-            .c_type(),
+            .program_type(),
         ProgramType::Float64
     );
 }

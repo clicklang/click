@@ -11,7 +11,7 @@ fn valid_layout(layout: &AggregateLayout) -> bool {
     let mut end = 0;
     for field in layout.fields() {
         crate::instrumentation::record_deterministic_work(1);
-        let ty = field.c_type();
+        let ty = field.program_type();
         let scalar = ty.is_pointer()
             || matches!(
                 ty,
@@ -130,7 +130,7 @@ pub(super) fn bind(
     let parameter_destination;
     let selected_state = if let Some((index, layout)) = interface.construction_parameter() {
         let parameter = interface.parameters().get(index)?;
-        if !parameter.c_type().is_pointer() || parameter.aggregate_layout().is_some() {
+        if !parameter.program_type().is_pointer() || parameter.aggregate_layout().is_some() {
             return None;
         }
         let value = callee.locals.get(parameter.name())?.pointer()?;
@@ -171,7 +171,7 @@ pub(super) fn bind(
             crate::instrumentation::record_deterministic_work(1);
             writable(
                 &selected.pointer.offset_by_bytes(field.offset_bytes()),
-                field.c_type().byte_width(),
+                field.program_type().byte_width(),
             )
         })
     } else {
@@ -256,7 +256,7 @@ pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionSt
             state
                 .memory
                 .clone()
-                .with_initialized_object(&pointer, field.c_type().byte_width()),
+                .with_initialized_object(&pointer, field.program_type().byte_width()),
         );
     }
 }

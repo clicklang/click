@@ -505,7 +505,7 @@ fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
         panic!("pointer type")
     };
     assert_eq!(actual.pointer(), &other.pointer().offset_by_bytes(3));
-    assert_eq!(actual.c_type(), original.c_type());
+    assert_eq!(actual.program_type(), original.program_type());
     assert_eq!(actual.opaque_extent(), original.opaque_extent());
     assert_eq!(actual.extent(), original.extent());
 }

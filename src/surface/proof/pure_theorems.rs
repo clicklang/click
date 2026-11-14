@@ -120,7 +120,7 @@ pub(in crate::surface) fn verify_theorem_definition(
         .parameters()
         .iter()
         .filter_map(|parameter| match parameter.click_type() {
-            ClickType::Program(C0Type::ParameterPointer(element)) => Some(element.name()),
+            ClickType::Program(InterfaceType::ParameterPointer(element)) => Some(element.name()),
             _ => None,
         })
         .collect::<BTreeSet<_>>();
@@ -131,9 +131,9 @@ pub(in crate::surface) fn verify_theorem_definition(
             (
                 name.clone(),
                 generics::TypeArgument::from(if pointer_elements.contains(name.as_str()) {
-                    ClickType::Program(C0Type::Parameter(crate::kernel::TypeParameterName::intern(
-                        name,
-                    )))
+                    ClickType::Program(InterfaceType::Parameter(
+                        crate::kernel::TypeParameterName::intern(name),
+                    ))
                 } else {
                     ClickType::Algebraic(AlgebraicTypeApplication {
                         rigid: true,
@@ -173,16 +173,16 @@ pub(in crate::surface) fn verify_theorem_definition(
 /// The index parameter and concrete formats admitted by a trusted descriptor law.
 pub(in crate::surface) fn kernel_law_index_types(
     name: &str,
-) -> Option<(&'static str, Vec<C0Type>)> {
+) -> Option<(&'static str, Vec<InterfaceType>)> {
     let formats = match name {
         "click::separation::elements" | "click::separation::distinct_elements" => vec![
-            C0Type::Int32,
-            C0Type::Int64(crate::languages::c::syntax::LongRank::Long),
-            C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
+            InterfaceType::Int32,
+            InterfaceType::Int64(crate::languages::c::syntax::LongRank::Long),
+            InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
         "click::separation::subrange" | "click::separation::contains_element" => vec![
-            C0Type::Int32,
-            C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
+            InterfaceType::Int32,
+            InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
         _ => return None,
     };
@@ -654,8 +654,8 @@ fn prepare_pure_induction_tactics(
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
             && matches!(
-                candidate.click_type().c_type(),
-                Some(C0Type::Int32 | C0Type::UInt64(_))
+                candidate.click_type().interface_type(),
+                Some(InterfaceType::Int32 | InterfaceType::UInt64(_))
             )
     }) {
         return Err(ClickError::new(format!(
@@ -1040,10 +1040,10 @@ fn check_pure_structural_induction(
             let binding_expression = ContractExpression::Binding(binding.clone());
             constructor_arguments.push(binding_expression.clone());
             match field_type {
-                AlgebraicValueType::Program(c_type)
-                | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                AlgebraicValueType::Program(interface_type)
+                | AlgebraicValueType::ObjectPointer(interface_type, _) => {
                     if matches!(
-                        c_type,
+                        interface_type,
                         ProgramType::Void
                             | ProgramType::Int8Array(_)
                             | ProgramType::Int16Array(_)
@@ -1458,10 +1458,9 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
     let mut assumptions = Vec::new();
     for theorem in theorems {
         if !theorem.type_parameters().is_empty()
-            || !theorem
-                .parameters()
-                .iter()
-                .all(|parameter| parameter.click_type() == &ClickType::Program(C0Type::Int32))
+            || !theorem.parameters().iter().all(|parameter| {
+                parameter.click_type() == &ClickType::Program(InterfaceType::Int32)
+            })
         {
             continue;
         }
@@ -1558,121 +1557,139 @@ fn pure_theorem_parameter_values_with_generic_pointers(
         .iter()
         .enumerate()
         .filter_map(|(index, parameter)| {
-            let c_type = parameter.click_type().c_type()?;
-            let value = match c_type {
-                C0Type::Int128 => {
+            let interface_type = parameter.click_type().interface_type()?;
+            let value = match interface_type {
+                InterfaceType::Int128 => {
                     ProgramValue::Int128(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::UInt128 => {
+                InterfaceType::UInt128 => {
                     ProgramValue::UInt128(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::Parameter(name) => crate::kernel::symbolic_call_result(
+                InterfaceType::Parameter(name) => crate::kernel::symbolic_call_result(
                     ProgramType::Parameter(name),
                     Variable(index as u64),
                 ),
-                C0Type::ParameterPointer(name) => crate::kernel::symbolic_call_result(
+                InterfaceType::ParameterPointer(name) => crate::kernel::symbolic_call_result(
                     ProgramType::ParameterPointer(name),
                     Variable(index as u64),
                 ),
-                C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
+                InterfaceType::Void => unreachable!("pure theorem parameters cannot be void"),
                 // A `Bool` parameter is a binder of the kernel sort (Stage 5),
                 // carried as its cast to `uint8` (rule C1).
-                C0Type::Bool => ProgramValue::Bool(MachineTerm::bool_cast(
+                InterfaceType::Bool => ProgramValue::Bool(MachineTerm::bool_cast(
                     crate::kernel::MachineIntegerType::UInt8,
                     crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
                 )),
-                C0Type::VoidPointer | C0Type::VoidPointerPointer => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            1,
-                        ),
-                    },
-                    c_type.to_kernel_type(),
-                ),
-                C0Type::Int8 => ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int16 => ProgramValue::Int16(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int32 => ProgramValue::Int32(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt32 => {
-                    ProgramValue::UInt32(MachineTerm::Variable(Variable(index as u64)))
+                InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                1,
+                            ),
+                        },
+                        interface_type.to_kernel_type(),
+                    )
                 }
-                C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) => {
-                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
-                }
-                C0Type::Char(crate::languages::c::syntax::PlainChar::Signed) => {
+                InterfaceType::Int8 => {
                     ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::UInt8 => ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt16 => {
+                InterfaceType::Int16 => {
+                    ProgramValue::Int16(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Int32 => {
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt32 => {
+                    ProgramValue::UInt32(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned) => {
+                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::Char(crate::languages::c::syntax::PlainChar::Signed) => {
+                    ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt8 => {
+                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                }
+                InterfaceType::UInt16 => {
                     ProgramValue::UInt16(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::Int64(_) => {
+                InterfaceType::Int64(_) => {
                     ProgramValue::Int64(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::UInt64(_) => {
+                InterfaceType::UInt64(_) => {
                     ProgramValue::UInt64(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::Float32 => {
+                InterfaceType::Float32 => {
                     ProgramValue::Float32(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::Float64 => {
+                InterfaceType::Float64 => {
                     ProgramValue::Float64(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::Int8Pointer | C0Type::Int8Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            1,
-                        ),
-                    },
-                    ProgramType::Int8Pointer,
-                ),
-                C0Type::Int16Pointer | C0Type::Int16Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            2,
-                        ),
-                    },
-                    ProgramType::Int16Pointer,
-                ),
-                C0Type::UInt16Pointer | C0Type::UInt16Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            2,
-                        ),
-                    },
-                    ProgramType::UInt16Pointer,
-                ),
-                C0Type::Int32Pointer | C0Type::Int32Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            4,
-                        ),
-                    },
-                    ProgramType::Int32Pointer,
-                ),
-                C0Type::CharPointer(_)
-                | C0Type::CharArray(_, _)
-                | C0Type::UInt8Pointer
-                | C0Type::UInt8Array(_) => ProgramValue::typed_pointer(
+                InterfaceType::Int8Pointer | InterfaceType::Int8Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                1,
+                            ),
+                        },
+                        ProgramType::Int8Pointer,
+                    )
+                }
+                InterfaceType::Int16Pointer | InterfaceType::Int16Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                2,
+                            ),
+                        },
+                        ProgramType::Int16Pointer,
+                    )
+                }
+                InterfaceType::UInt16Pointer | InterfaceType::UInt16Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                2,
+                            ),
+                        },
+                        ProgramType::UInt16Pointer,
+                    )
+                }
+                InterfaceType::Int32Pointer | InterfaceType::Int32Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                4,
+                            ),
+                        },
+                        ProgramType::Int32Pointer,
+                    )
+                }
+                InterfaceType::CharPointer(_)
+                | InterfaceType::CharArray(_, _)
+                | InterfaceType::UInt8Pointer
+                | InterfaceType::UInt8Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1684,43 +1701,49 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     },
                     ProgramType::UInt8Pointer,
                 ),
-                C0Type::UInt32Pointer | C0Type::UInt32Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            4,
-                        ),
-                    },
-                    ProgramType::UInt32Pointer,
-                ),
-                C0Type::Int64Pointer(_) | C0Type::Int64Array(_, _) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            8,
-                        ),
-                    },
-                    ProgramType::Int64Pointer,
-                ),
-                C0Type::Int128Pointer | C0Type::Int128Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            16,
-                        ),
-                    },
-                    ProgramType::Int128Pointer,
-                ),
-                C0Type::UInt64Pointer(_) | C0Type::UInt64Array(_, _) => {
+                InterfaceType::UInt32Pointer | InterfaceType::UInt32Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                4,
+                            ),
+                        },
+                        ProgramType::UInt32Pointer,
+                    )
+                }
+                InterfaceType::Int64Pointer(_) | InterfaceType::Int64Array(_, _) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                8,
+                            ),
+                        },
+                        ProgramType::Int64Pointer,
+                    )
+                }
+                InterfaceType::Int128Pointer | InterfaceType::Int128Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                16,
+                            ),
+                        },
+                        ProgramType::Int128Pointer,
+                    )
+                }
+                InterfaceType::UInt64Pointer(_) | InterfaceType::UInt64Array(_, _) => {
                     ProgramValue::typed_pointer(
                         Pointer {
                             block: PointerBlock::ExternalArgument,
@@ -1734,44 +1757,50 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         ProgramType::UInt64Pointer,
                     )
                 }
-                C0Type::UInt128Pointer | C0Type::UInt128Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            16,
-                        ),
-                    },
-                    ProgramType::UInt128Pointer,
-                ),
-                C0Type::Float32Pointer | C0Type::Float32Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            4,
-                        ),
-                    },
-                    ProgramType::Float32Pointer,
-                ),
-                C0Type::Float64Pointer | C0Type::Float64Array(_) => ProgramValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            8,
-                        ),
-                    },
-                    ProgramType::Float64Pointer,
-                ),
-                C0Type::Int8PointerPointer => {
-                    let element_width = c_type
+                InterfaceType::UInt128Pointer | InterfaceType::UInt128Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                16,
+                            ),
+                        },
+                        ProgramType::UInt128Pointer,
+                    )
+                }
+                InterfaceType::Float32Pointer | InterfaceType::Float32Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                4,
+                            ),
+                        },
+                        ProgramType::Float32Pointer,
+                    )
+                }
+                InterfaceType::Float64Pointer | InterfaceType::Float64Array(_) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                8,
+                            ),
+                        },
+                        ProgramType::Float64Pointer,
+                    )
+                }
+                InterfaceType::Int8PointerPointer => {
+                    let element_width = interface_type
                         .pointee_type()
                         .expect("pointer-to-pointer parameter has a pointee")
                         .to_kernel_type()
@@ -1786,22 +1815,22 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                                 i64::from(element_width),
                             ),
                         },
-                        c_type.to_kernel_type(),
+                        interface_type.to_kernel_type(),
                     )
                 }
-                C0Type::Int32PointerPointer
-                | C0Type::CharPointerPointer(_)
-                | C0Type::UInt8PointerPointer
-                | C0Type::Int16PointerPointer
-                | C0Type::UInt16PointerPointer
-                | C0Type::UInt32PointerPointer
-                | C0Type::Int128PointerPointer
-                | C0Type::Int64PointerPointer(_)
-                | C0Type::UInt128PointerPointer
-                | C0Type::UInt64PointerPointer(_)
-                | C0Type::Float32PointerPointer
-                | C0Type::Float64PointerPointer => {
-                    let element_width = c_type
+                InterfaceType::Int32PointerPointer
+                | InterfaceType::CharPointerPointer(_)
+                | InterfaceType::UInt8PointerPointer
+                | InterfaceType::Int16PointerPointer
+                | InterfaceType::UInt16PointerPointer
+                | InterfaceType::UInt32PointerPointer
+                | InterfaceType::Int128PointerPointer
+                | InterfaceType::Int64PointerPointer(_)
+                | InterfaceType::UInt128PointerPointer
+                | InterfaceType::UInt64PointerPointer(_)
+                | InterfaceType::Float32PointerPointer
+                | InterfaceType::Float64PointerPointer => {
+                    let element_width = interface_type
                         .pointee_type()
                         .expect("pointer-to-pointer parameter has a pointee")
                         .to_kernel_type()
@@ -1816,14 +1845,14 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                                 i64::from(element_width),
                             ),
                         },
-                        c_type.to_kernel_type(),
+                        interface_type.to_kernel_type(),
                     )
                 }
-                C0Type::FunctionPointer(_) => ProgramValue::typed_pointer(
+                InterfaceType::FunctionPointer(_) => ProgramValue::typed_pointer(
                     Pointer::symbolic_function(Variable(index as u64)),
-                    c_type.to_kernel_type(),
+                    interface_type.to_kernel_type(),
                 ),
-                C0Type::PointerArray(_, _, _) => ProgramValue::typed_pointer(
+                InterfaceType::PointerArray(_, _, _) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1833,7 +1862,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             8,
                         ),
                     },
-                    c_type.to_kernel_type(),
+                    interface_type.to_kernel_type(),
                 ),
             };
             let value = if generic_pointers.contains(parameter.name()) {
@@ -1859,8 +1888,8 @@ pub(in crate::surface) fn pure_theorem_array_refs(
     parameters
         .iter()
         .filter_map(|parameter| {
-            let c_type = parameter.click_type().c_type()?;
-            let element_type = click_array_element_type(c_type)?;
+            let interface_type = parameter.click_type().interface_type()?;
+            let element_type = click_array_element_type(interface_type)?;
             let Some(ProgramValue::Pointer(pointer)) = values.get(parameter.name()) else {
                 return None;
             };
@@ -2221,7 +2250,11 @@ fn verify_contract_refinement_theorem(
                 "`{claim_label}`: abstract contract refinement requires exactly one function-pointer theorem parameter"
             )));
         };
-        if parameter.name() != binding || !matches!(parameter.c_type(), C0Type::FunctionPointer(_))
+        if parameter.name() != binding
+            || !matches!(
+                parameter.interface_type(),
+                InterfaceType::FunctionPointer(_)
+            )
         {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: `{binding}` must be the theorem's function-pointer parameter"
@@ -2388,8 +2421,8 @@ fn verify_contract_refinement_theorem(
     let parameters = contract_parameters
         .iter()
         .map(|parameter| {
-            syntax::C0Parameter::new(
-                parameter.c_type(),
+            crate::languages::interface::ImportedParameter::new(
+                parameter.interface_type(),
                 parameter.name().to_string(),
                 parameter.struct_name().map(str::to_string),
             )
@@ -4264,7 +4297,7 @@ mod tests {
             theorem.name = crate::surface::names::library_theorem_identity(&theorem.name);
         }
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
         let spec_definitions =

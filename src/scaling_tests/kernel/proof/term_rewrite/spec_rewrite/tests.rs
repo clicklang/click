@@ -17,12 +17,12 @@ fn checked_spec_rewrite_match_bindings_scale_with_arity() {
                 .collect(),
             body: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
         };
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut rewrite = TermRewrite::for_checked_typed_variables(
-                &c_replacements,
+                &program_replacements,
                 &integer_replacements,
                 &algebraic_replacements,
             );
@@ -53,12 +53,12 @@ fn checked_spec_rewrite_scales_with_nested_spec_nodes() {
         for _ in 0..depth {
             proposition = SpecProposition::Not(Box::new(proposition));
         }
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::from([(source, IntegerTerm::constant_i64(7))]);
         let algebraic_replacements = BTreeMap::new();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut rewrite = TermRewrite::for_checked_typed_variables(
-                &c_replacements,
+                &program_replacements,
                 &integer_replacements,
                 &algebraic_replacements,
             );

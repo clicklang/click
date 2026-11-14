@@ -3629,8 +3629,10 @@ fn wide_store_comparisons_keep_retained_arithmetic_and_exact_sources() {
         let mut previous_work = None;
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut root =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(999_300));
+            let mut root = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(999_300),
+            );
             let one = KernelTerm::retained_native_machine_operand(
                 format,
                 &MachineTerm::int64_constant(1),

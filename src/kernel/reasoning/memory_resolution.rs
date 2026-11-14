@@ -5648,7 +5648,8 @@ mod retained_run_access_tests {
     fn retained_run_lookup_preserves_pinned_slots_and_holes() {
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             let _session = VerificationSession::enter();
-            let atom = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018602));
+            let atom =
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018602));
             let root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [atom.clone(), atom]);
             let index = MachineOperandView::Shared(&root).retain(ty);
@@ -5729,7 +5730,7 @@ mod retained_wide_offset_tests {
     fn wide_offset_equality_retains_indices_and_requires_no_wrap() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018701));
+        let root = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018701));
         let index = MachineOperandView::Shared(&root).retain(ty);
         let advanced = wide_index_binary(
             MachineBinaryOp::Add,
@@ -5786,7 +5787,7 @@ mod retained_wide_offset_tests {
     fn wide_offset_pinning_keeps_the_high_word_without_export() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018702));
+        let root = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018702));
         let index = MachineOperandView::Shared(&root).retain(ty);
         let scaled = PointerOffsetTerm::Int64Scaled {
             value: index.clone(),

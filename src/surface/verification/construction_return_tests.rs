@@ -98,22 +98,34 @@ fn context_with_member_view(
         ),
     );
     let parameters = || {
-        vec![syntax::C0Parameter::new(
-            C0Type::Int32,
+        vec![crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
             "input".into(),
             None,
         )]
     };
     unit.functions = vec![
-        syntax::C0Function::external(C0Type::Int32Pointer, "factory".into(), parameters())
-            .with_struct_return("Node".into(), nominal.clone())
-            .with_prelowered_kernel_function(factory),
-        syntax::C0Function::external(C0Type::Int32Pointer, "forward".into(), parameters())
-            .with_struct_return("Node".into(), nominal.clone())
-            .with_prelowered_kernel_function(forward),
-        syntax::C0Function::external(C0Type::Int32, "probe".into(), parameters())
-            .with_prelowered_kernel_function(caller)
-            .with_local_struct_values(BTreeMap::from([("node".into(), "Node".into())])),
+        crate::languages::interface::ImportedFunction::external(
+            InterfaceType::Int32Pointer,
+            "factory".into(),
+            parameters(),
+        )
+        .with_struct_return("Node".into(), nominal.clone())
+        .with_prelowered_kernel_function(factory),
+        crate::languages::interface::ImportedFunction::external(
+            InterfaceType::Int32Pointer,
+            "forward".into(),
+            parameters(),
+        )
+        .with_struct_return("Node".into(), nominal.clone())
+        .with_prelowered_kernel_function(forward),
+        crate::languages::interface::ImportedFunction::external(
+            InterfaceType::Int32,
+            "probe".into(),
+            parameters(),
+        )
+        .with_prelowered_kernel_function(caller)
+        .with_local_struct_values(BTreeMap::from([("node".into(), "Node".into())])),
     ];
     sources
         .parsed_units

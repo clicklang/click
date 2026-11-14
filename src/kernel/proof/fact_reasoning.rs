@@ -1032,14 +1032,14 @@ pub(crate) fn instantiate_universal(
             crate::kernel::substitute_integer_variable_in_pure_proposition(body, *var, value)
                 .map_err(|error| ForallInstantiationError::SubstitutionRefused(error.to_string()))
         }
-        (Sort::ProgramPointer(c_type), InstanceArgument::Pointer(pointer))
-            if c_type.accepts(&ProgramValue::Pointer(pointer.clone())) =>
+        (Sort::ProgramPointer(program_type), InstanceArgument::Pointer(pointer))
+            if program_type.accepts(&ProgramValue::Pointer(pointer.clone())) =>
         {
             crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
                 .map_err(ForallInstantiationError::SubstitutionRefused)
         }
-        (Sort::ProgramObjectPointer(c_type, class), InstanceArgument::Pointer(pointer))
-            if crate::kernel::AlgebraicValueType::ObjectPointer(*c_type, class.clone())
+        (Sort::ProgramObjectPointer(program_type, class), InstanceArgument::Pointer(pointer))
+            if crate::kernel::AlgebraicValueType::ObjectPointer(*program_type, class.clone())
                 .accepts_program_value(&ProgramValue::Pointer(pointer.clone())) =>
         {
             crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
@@ -3593,7 +3593,8 @@ mod integer_reflexivity_tests {
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+        let variable =
+            |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
         let left = KernelTerm::machine_binary_shared(
             ty,
             Op::Multiply,

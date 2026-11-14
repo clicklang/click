@@ -87,8 +87,9 @@ fn transport_certificate_transitive_and_bad_indices() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
 fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
-    for (c_type, click_type) in [("long", "int64"), ("unsigned long", "uint64")] {
-        let c = format!("void write(int *dest, {c_type} *kept) {{ *dest = 1; *dest = 2; }}");
+    for (interface_type, click_type) in [("long", "int64"), ("unsigned long", "uint64")] {
+        let c =
+            format!("void write(int *dest, {interface_type} *kept) {{ *dest = 1; *dest = 2; }}");
         let source = format!(
             r#"
             verifying "wide.c";

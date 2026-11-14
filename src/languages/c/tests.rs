@@ -26,8 +26,8 @@ fn struct_pointer_arrays_keep_element_types_layout_and_incomplete_tags() {
     );
     assert_eq!(layout.field("tail").unwrap().offset_bytes(), 56);
     assert!(matches!(
-        layout.field("values").unwrap().c_type(),
-        syntax::C0Type::PointerArray(
+        layout.field("values").unwrap().interface_type(),
+        crate::languages::interface::InterfaceType::PointerArray(
             crate::kernel::PointerArrayElement::Int32,
             syntax::LongRank::Long,
             2
@@ -152,21 +152,27 @@ fn modeled_userspace_pthread_declarations_parse_the_frozen_probe() {
     )
     .expect("the unchanged pthread probe should parse");
     let create = &unit.function_declarations["pthread_create"];
-    assert_eq!(create.return_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        create.return_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(create.parameters().len(), 4);
     assert_eq!(
-        create.parameters()[0].c_type(),
-        syntax::C0Type::UInt64Pointer(syntax::LongRank::Long)
+        create.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::UInt64Pointer(syntax::LongRank::Long)
     );
     assert_eq!(
-        create.parameters()[1].c_type(),
-        syntax::C0Type::Int32Pointer
+        create.parameters()[1].interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
     );
     assert!(matches!(
-        create.parameters()[2].c_type(),
-        syntax::C0Type::FunctionPointer(_)
+        create.parameters()[2].interface_type(),
+        crate::languages::interface::InterfaceType::FunctionPointer(_)
     ));
-    assert_eq!(create.parameters()[3].c_type(), syntax::C0Type::VoidPointer);
+    assert_eq!(
+        create.parameters()[3].interface_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
+    );
     assert_eq!(
         create.parameters()[1].struct_name(),
         Some("__click_pthread_attr")
@@ -175,22 +181,28 @@ fn modeled_userspace_pthread_declarations_parse_the_frozen_probe() {
     let callback = create.parameters()[2]
         .function_pointer_signature()
         .expect("pthread start routine signature");
-    assert_eq!(callback.return_type(), syntax::C0Type::VoidPointer);
+    assert_eq!(
+        callback.return_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
+    );
     assert_eq!(callback.parameters().len(), 1);
     assert_eq!(
-        callback.parameters()[0].c_type(),
-        syntax::C0Type::VoidPointer
+        callback.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
     );
     let join = &unit.function_declarations["pthread_join"];
-    assert_eq!(join.return_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        join.return_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(
         join.parameters()
             .iter()
-            .map(|p| p.c_type())
+            .map(|p| p.interface_type())
             .collect::<Vec<_>>(),
         vec![
-            syntax::C0Type::UInt64(syntax::LongRank::Long),
-            syntax::C0Type::VoidPointerPointer
+            crate::languages::interface::InterfaceType::UInt64(syntax::LongRank::Long),
+            crate::languages::interface::InterfaceType::VoidPointerPointer
         ]
     );
     assert_eq!(unit.functions.len(), 2);
@@ -756,7 +768,7 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
 
 #[test]
 fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
-    use syntax::C0Type;
+    use crate::languages::interface::InterfaceType;
     let functions = syntax::parse_functions_for_target(
         r#"
         typedef char byte;
@@ -777,36 +789,40 @@ fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
     let function = &functions[0];
     assert_eq!(
         function.return_type(),
-        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned)
+        InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned)
     );
     assert_eq!(
-        function.parameters()[0].c_type(),
-        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned)
-    );
-    assert_eq!(function.parameters()[1].c_type(), C0Type::UInt8);
-    assert_eq!(
-        function.parameters()[2].c_type(),
-        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned)
+        function.parameters()[0].interface_type(),
+        InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned)
     );
     assert_eq!(
-        function.parameters()[3].c_type(),
-        C0Type::CharPointerPointer(crate::languages::c::syntax::PlainChar::Unsigned)
+        function.parameters()[1].interface_type(),
+        InterfaceType::UInt8
+    );
+    assert_eq!(
+        function.parameters()[2].interface_type(),
+        InterfaceType::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned)
+    );
+    assert_eq!(
+        function.parameters()[3].interface_type(),
+        InterfaceType::CharPointerPointer(crate::languages::c::syntax::PlainChar::Unsigned)
     );
     assert_eq!(
         function.global_arrays()["global"].element_type(),
-        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned)
+        InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned)
     );
     assert_eq!(
-        C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned).to_kernel_type(),
+        InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned).to_kernel_type(),
         crate::kernel::ProgramType::UInt8
     );
     assert_eq!(
-        C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, 2).to_kernel_type(),
+        InterfaceType::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, 2)
+            .to_kernel_type(),
         crate::kernel::ProgramType::UInt8Array(2)
     );
     assert_ne!(
-        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
-        C0Type::UInt8Pointer
+        InterfaceType::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+        InterfaceType::UInt8Pointer
     );
     assert_eq!(
         functions[2].to_kernel_function().string_literals()[0].bytes(),
@@ -842,7 +858,7 @@ fn c0_plain_char_rejects_unsigned_char_pointer_aliasing() {
 #[test]
 fn c0_character_pointer_conversions_lower_as_explicit_casts() {
     use crate::languages::c::target::CTarget;
-    use syntax::{C0Expression, C0Type, PlainChar};
+    use syntax::{C0Expression, InterfaceType, PlainChar};
     // GCC and Clang accept each of these with only a `-Wpointer-sign` (or,
     // for a comparison, `-Wcompare-distinct-pointer-types`) warning.
     for source in [
@@ -872,29 +888,29 @@ fn c0_character_pointer_conversions_lower_as_explicit_casts() {
     }
     // The conversion is the cast to the destination type, which keeps the
     // source's const view.
-    for (source, target, c_type, pointee_constant) in [
+    for (source, target, interface_type, pointee_constant) in [
         (
             "char *f(unsigned char *q) { return q; }",
             CTarget::X86_64LinuxUserspace,
-            C0Type::CharPointer(PlainChar::Signed),
+            InterfaceType::CharPointer(PlainChar::Signed),
             false,
         ),
         (
             "char *f(unsigned char *q) { return q; }",
             CTarget::X86_64LinuxKernel,
-            C0Type::CharPointer(PlainChar::Unsigned),
+            InterfaceType::CharPointer(PlainChar::Unsigned),
             false,
         ),
         (
             "uint8 *f() { return \"ok\"; }",
             CTarget::X86_64LinuxUserspace,
-            C0Type::UInt8Pointer,
+            InterfaceType::UInt8Pointer,
             false,
         ),
         (
             "const signed char *f(const unsigned char *q) { return q; }",
             CTarget::X86_64LinuxUserspace,
-            C0Type::Int8Pointer,
+            InterfaceType::Int8Pointer,
             true,
         ),
     ] {
@@ -906,13 +922,13 @@ fn c0_character_pointer_conversions_lower_as_explicit_casts() {
             matches!(
                 returned,
                 C0Expression::Cast {
-                    c_type: actual,
+                    interface_type: actual,
                     struct_name: None,
                     pointee_volatile: false,
                     pointee_constant: actual_constant,
                     explicit_qualification: false,
                     ..
-                } if *actual == c_type && *actual_constant == pointee_constant
+                } if *actual == interface_type && *actual_constant == pointee_constant
             ),
             "{source}: {returned:?}"
         );
@@ -969,7 +985,7 @@ fn c0_plain_char_inline_call_assignments_preserve_source_compatibility() {
 
 #[test]
 fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
-    use syntax::{C0Expression, C0Statement, C0Type};
+    use syntax::{C0Expression, C0Statement, InterfaceType};
     let functions = syntax::parse_functions_for_target(
         "const char *view(char *p) { return (const char *)p; }",
         crate::languages::c::target::CTarget::X86_64LinuxKernel,
@@ -979,7 +995,9 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
         functions[0].body(),
         C0Statement::Return(
             C0Expression::Cast {
-                c_type: C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+                interface_type: InterfaceType::CharPointer(
+                    crate::languages::c::syntax::PlainChar::Unsigned
+                ),
                 pointee_constant: true,
                 ..
             },
@@ -1067,17 +1085,17 @@ fn c0_plain_char_unsigned_promotion_verifies() {
 
 #[test]
 fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
-    use syntax::{C0Expression, C0Statement, C0Type};
+    use syntax::{C0Expression, C0Statement, InterfaceType};
     let functions = syntax::parse_functions_for_target(
         "char *to_char(unsigned char *q) { return (char *)q; } unsigned char *to_byte(char *p) { return (unsigned char *)p; }",
         crate::languages::c::target::CTarget::X86_64LinuxKernel,
     ).expect("explicit casts between one-level byte pointers are valid C");
     for (function, expected) in functions.iter().zip([
-        C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
-        C0Type::UInt8Pointer,
+        InterfaceType::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
+        InterfaceType::UInt8Pointer,
     ]) {
         assert!(
-            matches!(function.body(), C0Statement::Return(C0Expression::Cast { c_type, .. }, _) if *c_type == expected)
+            matches!(function.body(), C0Statement::Return(C0Expression::Cast { interface_type, .. }, _) if *interface_type == expected)
         );
     }
     crate::surface::verify_c_sources(
@@ -1407,7 +1425,10 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
         panic!("expected Pointer result");
     };
     assert_eq!(pointer.pointer(), &node_pointer);
-    assert_eq!(pointer.c_type(), crate::kernel::ProgramType::Int32Pointer);
+    assert_eq!(
+        pointer.program_type(),
+        crate::kernel::ProgramType::Int32Pointer
+    );
 }
 
 #[test]
@@ -1431,7 +1452,10 @@ fn c0_collects_scalar_file_scope_globals() {
     let global = &functions[0].globals()["counter"];
     assert!(global.is_defined());
     assert!(!global.is_tentative());
-    assert_eq!(global.c_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        global.interface_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(
         functions[1].to_kernel_function().global_variables()[0].initial_value(),
         &crate::kernel::int32(3)
@@ -1534,7 +1558,7 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
     };
     assert_eq!(global_pointer.pointer(), &expected_pointer);
     assert_eq!(
-        global_pointer.c_type(),
+        global_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
     assert!(global_pointer.pointee_constant());
@@ -1554,7 +1578,7 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
         &crate::kernel::Memory::global_pointer(private_target.kernel_name())
     );
     assert_eq!(
-        private_pointer.c_type(),
+        private_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
     assert!(!private_pointer.pointee_constant());
@@ -1570,7 +1594,7 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
     };
     assert_eq!(static_pointer.pointer(), &expected_pointer);
     assert_eq!(
-        static_pointer.c_type(),
+        static_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
     assert!(static_pointer.pointee_constant());
@@ -1797,7 +1821,10 @@ fn c0_collects_file_scope_scalar_arrays() {
     assert_eq!(functions[0].global_arrays().len(), 2);
     let table = &functions[0].global_arrays()["table"];
     assert!(!table.is_tentative());
-    assert_eq!(table.element_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        table.element_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(table.length(), 3);
     assert_eq!(
         table
@@ -1941,7 +1968,10 @@ fn c0_infers_file_scope_scalar_array_bounds() {
     let flags = &functions[0].global_arrays()["flags"];
     assert!(flags.is_file_static());
     assert_eq!(flags.length(), 3);
-    assert_eq!(flags.element_type(), syntax::C0Type::UInt8);
+    assert_eq!(
+        flags.element_type(),
+        crate::languages::interface::InterfaceType::UInt8
+    );
 }
 
 #[test]
@@ -2287,7 +2317,10 @@ fn c0_collects_aggregate_static_initializers() {
     let global_initializers = global.initializer().expect("global initializer");
     assert_eq!(global_initializers.len(), 2);
     assert_eq!(global_initializers[0].offset_bytes(), 0);
-    assert_eq!(global_initializers[0].c_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        global_initializers[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert!(matches!(
         global_initializers[0].value(),
         syntax::C0Expression::Int32Literal(7)
@@ -2360,7 +2393,10 @@ fn c0_collects_aggregate_arrays() {
     assert!(!global.is_tentative());
     assert!(!global.is_file_static());
     assert_eq!(global.length(), 2);
-    assert_eq!(global.c_type(), syntax::C0Type::UInt8Array(16));
+    assert_eq!(
+        global.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(16)
+    );
     let global_initializers = global.initializer().expect("global array initializer");
     assert_eq!(global_initializers.len(), 3);
     assert_eq!(global_initializers[0].offset_bytes(), 0);
@@ -2379,7 +2415,10 @@ fn c0_collects_aggregate_arrays() {
         .expect("local aggregate array metadata");
     assert_eq!(local.name(), "local_table");
     assert_eq!(local.length(), 2);
-    assert_eq!(local.c_type(), syntax::C0Type::UInt8Array(16));
+    assert_eq!(
+        local.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(16)
+    );
     assert_eq!(local.initializer().len(), 3);
 
     let kernel_function = function.to_kernel_function();
@@ -3122,7 +3161,10 @@ fn c0_collects_static_scalar_locals_with_stable_kernel_names() {
         .expect("static local metadata");
     assert_eq!(local.name(), "calls");
     assert_ne!(local.kernel_name(), local.name());
-    assert_eq!(local.c_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        local.interface_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(local.initializer(), &syntax::C0Expression::Int32Literal(5));
     assert_eq!(
         function.to_kernel_function().static_variables()[0].initial_value(),
@@ -3151,7 +3193,10 @@ fn c0_collects_static_scalar_arrays_with_stable_kernel_names() {
         .expect("static array metadata");
     assert_eq!(array.name(), "values");
     assert_ne!(array.kernel_name(), array.name());
-    assert_eq!(array.element_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        array.element_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(array.length(), 3);
     assert_eq!(
         array.initializer().dense_values(),
@@ -3566,11 +3611,11 @@ fn c0_array_parameter_syntax_lowers_to_pointer_parameter() {
     .expect("array parameter should parse");
 
     assert_eq!(
-        function.parameters()[0].c_type(),
-        syntax::C0Type::Int32Pointer
+        function.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
     );
     assert_eq!(
-        function.to_kernel_function().parameters()[0].c_type(),
+        function.to_kernel_function().parameters()[0].program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
 }
@@ -3597,16 +3642,25 @@ fn c0_accepts_standard_integer_spellings_and_struct_typedefs() {
     )
     .expect("standard C spellings and typedefs should parse");
 
-    assert_eq!(function.return_type(), syntax::C0Type::Int32);
     assert_eq!(
-        function.parameters()[0].c_type(),
-        syntax::C0Type::Int32Pointer
+        function.return_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
+    assert_eq!(
+        function.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
     );
     assert_eq!(function.parameters()[0].struct_name(), Some("record"));
-    assert_eq!(function.parameters()[1].c_type(), syntax::C0Type::Int32);
     assert_eq!(
-        function.structs()["record"].field("tag").unwrap().c_type(),
-        syntax::C0Type::UInt8
+        function.parameters()[1].interface_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
+    assert_eq!(
+        function.structs()["record"]
+            .field("tag")
+            .unwrap()
+            .interface_type(),
+        crate::languages::interface::InterfaceType::UInt8
     );
 }
 
@@ -3615,8 +3669,14 @@ fn c0_models_signed_char_as_distinct_signed_byte() {
     for spelling in ["signed char", "int8", "int8_t"] {
         let source = format!("{spelling} identity({spelling} value) {{ return value; }}");
         let function = syntax::parse_function(&source).unwrap();
-        assert_eq!(function.return_type(), syntax::C0Type::Int8);
-        assert_eq!(function.parameters()[0].c_type(), syntax::C0Type::Int8);
+        assert_eq!(
+            function.return_type(),
+            crate::languages::interface::InterfaceType::Int8
+        );
+        assert_eq!(
+            function.parameters()[0].interface_type(),
+            crate::languages::interface::InterfaceType::Int8
+        );
     }
 }
 
@@ -3664,8 +3724,14 @@ fn c0_void_functions_accept_return_and_fallthrough() {
     let fallthrough = syntax::parse_function("void stop() { int32 value = 0; }")
         .expect("a void function may fall through");
 
-    assert_eq!(explicit.return_type(), syntax::C0Type::Void);
-    assert_eq!(fallthrough.return_type(), syntax::C0Type::Void);
+    assert_eq!(
+        explicit.return_type(),
+        crate::languages::interface::InterfaceType::Void
+    );
+    assert_eq!(
+        fallthrough.return_type(),
+        crate::languages::interface::InterfaceType::Void
+    );
     assert_eq!(
         explicit.to_kernel_function().return_type(),
         crate::kernel::ProgramType::Void
@@ -3735,7 +3801,7 @@ fn c0_parses_multiple_definitions_and_forward_prototypes() {
     assert_eq!(
         functions
             .iter()
-            .map(syntax::C0Function::name)
+            .map(crate::languages::interface::ImportedFunction::name)
             .collect::<Vec<_>>(),
         vec!["caller", "helper"]
     );
@@ -3856,14 +3922,14 @@ fn c0_typeof_preserves_pointer_tags_and_const_qualification() {
     fn find_declaration(
         statement: &syntax::C0Statement,
         name: &str,
-    ) -> Option<(syntax::C0Type, bool)> {
+    ) -> Option<(crate::languages::interface::InterfaceType, bool)> {
         match statement {
             syntax::C0Statement::Declare {
-                c_type,
+                interface_type,
                 name: declared_name,
                 pointee_constant,
                 ..
-            } if declared_name == name => Some((*c_type, *pointee_constant)),
+            } if declared_name == name => Some((*interface_type, *pointee_constant)),
             syntax::C0Statement::Seq(first, second) => {
                 find_declaration(first, name).or_else(|| find_declaration(second, name))
             }
@@ -3894,11 +3960,17 @@ fn c0_typeof_preserves_pointer_tags_and_const_qualification() {
 
     assert_eq!(
         find_declaration(functions[0].body(), "copy"),
-        Some((syntax::C0Type::Int32Pointer, false))
+        Some((
+            crate::languages::interface::InterfaceType::Int32Pointer,
+            false
+        ))
     );
     assert_eq!(
         find_declaration(functions[0].body(), "view"),
-        Some((syntax::C0Type::Int32Pointer, true))
+        Some((
+            crate::languages::interface::InterfaceType::Int32Pointer,
+            true
+        ))
     );
 }
 
@@ -3996,7 +4068,7 @@ fn c0_static_inline_header_helpers_are_translation_unit_local() {
     assert_eq!(
         functions
             .iter()
-            .map(syntax::C0Function::name)
+            .map(crate::languages::interface::ImportedFunction::name)
             .collect::<Vec<_>>(),
         vec!["add_one#inline:alpha.c", "run"]
     );
@@ -4401,7 +4473,7 @@ fn c0_syntax_lowers_scalar_declaration_initializers_in_source_order() {
                     if matches!(
                         declaration.as_ref(),
                         syntax::C0Statement::Declare {
-                            c_type: syntax::C0Type::Int32,
+                            interface_type: crate::languages::interface::InterfaceType::Int32,
                             name,
                             ..
                         } if name == "value"
@@ -4954,14 +5026,14 @@ fn c0_syntax_accepts_memory_lvalue_updates() {
     assert!(matches!(
         targets[1],
         syntax::C0Expression::Field {
-            field_type: syntax::C0Type::Int32,
+            field_type: crate::languages::interface::InterfaceType::Int32,
             ..
         }
     ));
     assert!(matches!(
         targets[2],
         syntax::C0Expression::Field {
-            field_type: syntax::C0Type::Int32,
+            field_type: crate::languages::interface::InterfaceType::Int32,
             ..
         }
     ));
@@ -4988,7 +5060,7 @@ fn c0_syntax_accepts_scalar_casts_and_conditional_expressions() {
             && matches!(
                 then_branch.as_ref(),
                 syntax::C0Expression::Cast {
-                    c_type: syntax::C0Type::Int32,
+                    interface_type: crate::languages::interface::InterfaceType::Int32,
                     expression,
                     ..
                 } if matches!(expression.as_ref(), syntax::C0Expression::Variable(name) if name == "left")
@@ -5123,7 +5195,7 @@ fn c0_syntax_parses_object_pointer_casts_with_struct_tags() {
                 if matches!(
                     value,
                     syntax::C0Expression::Cast {
-                        c_type: syntax::C0Type::UInt64(_),
+                        interface_type: crate::languages::interface::InterfaceType::UInt64(_),
                         struct_name: None,
                         ..
                     }
@@ -5262,7 +5334,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
         minimum.body(),
         syntax::C0Statement::Return(syntax::C0Expression::Cast {
             expression,
-            c_type: syntax::C0Type::Int32,
+            interface_type: crate::languages::interface::InterfaceType::Int32,
             ..
         }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-2147483648))
     ));
@@ -5355,7 +5427,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
         minimum.body(),
         syntax::C0Statement::Return(syntax::C0Expression::Cast {
             expression,
-            c_type: syntax::C0Type::Int32,
+            interface_type: crate::languages::interface::InterfaceType::Int32,
             ..
         }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-0x8000_0000))
     ));
@@ -5379,7 +5451,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
                             then_branch.as_ref(),
                             syntax::C0Expression::Cast {
                                 expression,
-                                c_type: syntax::C0Type::UInt32,
+                                interface_type: crate::languages::interface::InterfaceType::UInt32,
                                 ..
                             } if matches!(expression.as_ref(), syntax::C0Expression::Int32Literal(0xffff_ffff))
                         )
@@ -5489,7 +5561,7 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
     let syntax::C0Statement::Return(
         syntax::C0Expression::Field {
             pointer,
-            field_type: syntax::C0Type::Int32,
+            field_type: crate::languages::interface::InterfaceType::Int32,
             field_struct_name: None,
             ..
         },
@@ -5505,7 +5577,7 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
     assert!(matches!(
         pointer.as_ref(),
         syntax::C0Expression::Field {
-            field_type: syntax::C0Type::Int32Pointer,
+            field_type: crate::languages::interface::InterfaceType::Int32Pointer,
             field_struct_name: Some(name),
             ..
         } if name == "leaf"
@@ -5717,7 +5789,7 @@ fn c0_tagged_union_layout_overlaps_members_and_preserves_member_types() {
     assert!(matches!(
         function.body(),
         syntax::C0Statement::Return(syntax::C0Expression::UnionField {
-            field_type: syntax::C0Type::Int32,
+            field_type: crate::languages::interface::InterfaceType::Int32,
             union_name,
             ..
         }, _) if union_name == "payload"
@@ -5855,8 +5927,8 @@ fn c0_union_pointer_parameters_keep_nominal_declaration_identity() {
         .find(|function| function.name() == "use")
         .unwrap();
     assert_eq!(
-        function.parameters()[0].c_type(),
-        syntax::C0Type::VoidPointer
+        function.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
     );
     assert!(function.parameters()[0].union_name().is_some());
     let error = syntax::parse_functions(&format!(
@@ -5957,7 +6029,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
     };
     let syntax::C0Expression::UnionField {
         pointer,
-        field_type: syntax::C0Type::Int32,
+        field_type: crate::languages::interface::InterfaceType::Int32,
         union_name,
         ..
     } = target.as_ref()
@@ -6027,7 +6099,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
         panic!("pointer union member address should return a typed pointer")
     };
     assert_eq!(
-        value.c_type(),
+        value.program_type(),
         crate::kernel::ProgramType::Int32PointerPointer
     );
 }
@@ -6158,7 +6230,10 @@ fn c0_enum_metadata_preserves_named_values_and_field_shape() {
     let layout = function.structs().get("packet").expect("packet layout");
     let state = layout.field("state").expect("enum field");
     // `PACKET_IDLE` is negative, so the enumeration's compatible type is `int`.
-    assert_eq!(state.c_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        state.interface_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(state.enum_name(), Some("packet_state"));
     assert_eq!(
         state.offset_bytes() as usize,
@@ -6453,7 +6528,7 @@ fn c0_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
         &syntax::C0Expression::Multiply(
             Box::new(syntax::C0Expression::Variable("count".to_string())),
             Box::new(syntax::C0Expression::SizeOfType {
-                c_type: syntax::C0Type::Int32,
+                interface_type: crate::languages::interface::InterfaceType::Int32,
                 struct_name: None,
                 bytes: 4,
             }),
@@ -6719,12 +6794,12 @@ fn c0_syntax_parses_chained_field_store_targets() {
                 first.as_ref(),
                 syntax::C0Statement::Store {
                     pointer: syntax::C0Expression::Subobject { pointer, width: 4 },
-                    value_type: Some(syntax::C0Type::Int32),
+                    value_type: Some(crate::languages::interface::InterfaceType::Int32),
                     ..
                 } if matches!(
                     pointer.as_ref(),
                     syntax::C0Expression::Field {
-                        field_type: syntax::C0Type::Int32Pointer,
+                        field_type: crate::languages::interface::InterfaceType::Int32Pointer,
                         field_struct_name: Some(name),
                         ..
                     } if name == "leaf"
@@ -6934,8 +7009,8 @@ fn c0_syntax_targets_kernel_store_and_load() {
     .expect("store/load function should parse");
 
     assert_eq!(
-        function.parameters()[0].c_type(),
-        syntax::C0Type::Int32Pointer
+        function.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
     );
 
     let pointer = crate::kernel::Pointer {
@@ -6987,8 +7062,8 @@ fn c0_syntax_targets_kernel_struct_field_load() {
     .expect("pilot struct getter should parse");
 
     assert_eq!(
-        function.parameters()[0].c_type(),
-        syntax::C0Type::Int32Pointer
+        function.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
     );
     assert_eq!(function.parameters()[0].struct_name(), Some("json_object"));
 
@@ -8306,10 +8381,13 @@ fn c0_syntax_struct_array_parameter_retains_abi_stride() {
     .expect("struct array parameters should parse");
 
     let parameter = &function.parameters()[0];
-    assert_eq!(parameter.c_type(), syntax::C0Type::Int32Pointer);
+    assert_eq!(
+        parameter.interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
+    );
     assert_eq!(parameter.array_element_width(), Some(8));
     assert_eq!(
-        parameter.to_kernel_parameter().c_type(),
+        parameter.to_kernel_parameter().program_type(),
         crate::kernel::ProgramType::UInt8Pointer
     );
 }
@@ -8494,7 +8572,10 @@ fn c0_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
     let layout = function.structs().get("packet").expect("packet layout");
 
     let tag = layout.field("tag").expect("tag field");
-    assert_eq!(tag.c_type(), syntax::C0Type::UInt8);
+    assert_eq!(
+        tag.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8
+    );
     assert_eq!(tag.byte_width(), 1);
     assert_eq!(
         tag.offset_bytes() as usize,
@@ -8502,7 +8583,10 @@ fn c0_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
     );
 
     let count = layout.field("count").expect("count field");
-    assert_eq!(count.c_type(), syntax::C0Type::UInt32);
+    assert_eq!(
+        count.interface_type(),
+        crate::languages::interface::InterfaceType::UInt32
+    );
     assert_eq!(count.byte_width(), 4);
     assert_eq!(
         count.offset_bytes() as usize,
@@ -8511,8 +8595,8 @@ fn c0_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
 
     let total = layout.field("total").expect("total field");
     assert_eq!(
-        total.c_type(),
-        syntax::C0Type::Int64(syntax::LongRank::Long)
+        total.interface_type(),
+        crate::languages::interface::InterfaceType::Int64(syntax::LongRank::Long)
     );
     assert_eq!(total.byte_width(), 8);
     assert_eq!(
@@ -8522,8 +8606,8 @@ fn c0_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
 
     let mask = layout.field("mask").expect("mask field");
     assert_eq!(
-        mask.c_type(),
-        syntax::C0Type::UInt64(syntax::LongRank::Long)
+        mask.interface_type(),
+        crate::languages::interface::InterfaceType::UInt64(syntax::LongRank::Long)
     );
     assert_eq!(mask.byte_width(), 8);
     assert_eq!(
@@ -8532,7 +8616,10 @@ fn c0_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
     );
 
     let tail = layout.field("tail").expect("tail field");
-    assert_eq!(tail.c_type(), syntax::C0Type::UInt8);
+    assert_eq!(
+        tail.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8
+    );
     assert_eq!(tail.byte_width(), 1);
     assert_eq!(
         tail.offset_bytes() as usize,
@@ -8662,7 +8749,10 @@ fn c0_scalar_struct_values_preserve_named_kernel_layout_metadata() {
     )
     .expect("scalar-only struct values should parse");
 
-    assert_eq!(function.return_type(), syntax::C0Type::UInt8Array(8));
+    assert_eq!(
+        function.return_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(8)
+    );
     assert_eq!(function.return_struct_name(), Some("pair"));
     let parameter = &function.parameters()[0];
     assert!(parameter.is_struct_value());
@@ -8681,13 +8771,13 @@ fn c0_scalar_struct_values_preserve_named_kernel_layout_metadata() {
     assert_eq!(return_layout.fields()[0].name(), "first");
     assert_eq!(return_layout.fields()[0].offset_bytes(), 0);
     assert_eq!(
-        return_layout.fields()[0].c_type(),
+        return_layout.fields()[0].program_type(),
         crate::kernel::ProgramType::Int32
     );
     assert_eq!(return_layout.fields()[1].name(), "tag");
     assert_eq!(return_layout.fields()[1].offset_bytes(), 4);
     assert_eq!(
-        return_layout.fields()[1].c_type(),
+        return_layout.fields()[1].program_type(),
         crate::kernel::ProgramType::UInt8
     );
 
@@ -8730,11 +8820,20 @@ fn c0_struct_values_preserve_wide_scalar_layout_metadata() {
             .unwrap_or_else(|| panic!("missing aggregate field `{name}`"))
     };
     assert_eq!(field("count").offset_bytes(), 0);
-    assert_eq!(field("count").c_type(), crate::kernel::ProgramType::UInt32);
+    assert_eq!(
+        field("count").program_type(),
+        crate::kernel::ProgramType::UInt32
+    );
     assert_eq!(field("total").offset_bytes(), 8);
-    assert_eq!(field("total").c_type(), crate::kernel::ProgramType::Int64);
+    assert_eq!(
+        field("total").program_type(),
+        crate::kernel::ProgramType::Int64
+    );
     assert_eq!(field("mask").offset_bytes(), 16);
-    assert_eq!(field("mask").c_type(), crate::kernel::ProgramType::UInt64);
+    assert_eq!(
+        field("mask").program_type(),
+        crate::kernel::ProgramType::UInt64
+    );
 
     let return_layout = kernel
         .return_aggregate_layout()
@@ -8807,13 +8906,16 @@ fn c0_struct_values_flatten_embedded_layout_for_recursive_copies() {
             .unwrap_or_else(|| panic!("missing flattened aggregate field `{name}`"))
     };
     assert_eq!(field("tag").offset_bytes(), 0);
-    assert_eq!(field("tag").c_type(), crate::kernel::ProgramType::UInt8);
+    assert_eq!(
+        field("tag").program_type(),
+        crate::kernel::ProgramType::UInt8
+    );
     assert_eq!(
         field("inner.value").offset_bytes() as usize,
         std::mem::offset_of!(HostOuter, inner) + std::mem::offset_of!(HostInner, value)
     );
     assert_eq!(
-        field("inner.value").c_type(),
+        field("inner.value").program_type(),
         crate::kernel::ProgramType::Int32
     );
     assert_eq!(
@@ -8821,14 +8923,17 @@ fn c0_struct_values_flatten_embedded_layout_for_recursive_copies() {
         std::mem::offset_of!(HostOuter, inner) + std::mem::offset_of!(HostInner, flag)
     );
     assert_eq!(
-        field("inner.flag").c_type(),
+        field("inner.flag").program_type(),
         crate::kernel::ProgramType::UInt8
     );
     assert_eq!(
         field("tail").offset_bytes() as usize,
         std::mem::offset_of!(HostOuter, tail)
     );
-    assert_eq!(field("tail").c_type(), crate::kernel::ProgramType::Int32);
+    assert_eq!(
+        field("tail").program_type(),
+        crate::kernel::ProgramType::Int32
+    );
     assert_eq!(
         layout.size_bytes() as usize,
         std::mem::size_of::<HostOuter>()
@@ -8880,7 +8985,10 @@ fn c0_struct_values_flatten_embedded_array_layout_for_recursive_copies() {
         std::mem::align_of::<HostOuter>()
     );
     let points = outer.field("points").expect("points field");
-    assert_eq!(points.c_type(), syntax::C0Type::UInt8Array(16));
+    assert_eq!(
+        points.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(16)
+    );
     assert_eq!(points.struct_name(), Some("inner"));
     assert_eq!(points.array_element_width(), Some(8));
     assert_eq!(points.array_shape(), Some(&[2][..]));
@@ -8901,29 +9009,35 @@ fn c0_struct_values_flatten_embedded_array_layout_for_recursive_copies() {
             .unwrap_or_else(|| panic!("missing flattened aggregate field `{name}`"))
     };
     assert_eq!(field("tag").offset_bytes(), 0);
-    assert_eq!(field("tag").c_type(), crate::kernel::ProgramType::UInt8);
+    assert_eq!(
+        field("tag").program_type(),
+        crate::kernel::ProgramType::UInt8
+    );
     assert_eq!(field("points[0].value").offset_bytes(), 4);
     assert_eq!(
-        field("points[0].value").c_type(),
+        field("points[0].value").program_type(),
         crate::kernel::ProgramType::Int32
     );
     assert_eq!(field("points[0].flag").offset_bytes(), 8);
     assert_eq!(
-        field("points[0].flag").c_type(),
+        field("points[0].flag").program_type(),
         crate::kernel::ProgramType::UInt8
     );
     assert_eq!(field("points[1].value").offset_bytes(), 12);
     assert_eq!(
-        field("points[1].value").c_type(),
+        field("points[1].value").program_type(),
         crate::kernel::ProgramType::Int32
     );
     assert_eq!(field("points[1].flag").offset_bytes(), 16);
     assert_eq!(
-        field("points[1].flag").c_type(),
+        field("points[1].flag").program_type(),
         crate::kernel::ProgramType::UInt8
     );
     assert_eq!(field("tail").offset_bytes(), 20);
-    assert_eq!(field("tail").c_type(), crate::kernel::ProgramType::Int32);
+    assert_eq!(
+        field("tail").program_type(),
+        crate::kernel::ProgramType::Int32
+    );
     assert_eq!(
         layout.size_bytes() as usize,
         std::mem::size_of::<HostOuter>()
@@ -8976,7 +9090,10 @@ fn c0_struct_values_flatten_multidimensional_embedded_array_layout_for_recursive
         std::mem::align_of::<HostOuter>()
     );
     let points = outer.field("points").expect("points field");
-    assert_eq!(points.c_type(), syntax::C0Type::UInt8Array(32));
+    assert_eq!(
+        points.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(32)
+    );
     assert_eq!(points.struct_name(), Some("inner"));
     assert_eq!(points.array_element_width(), Some(8));
     assert_eq!(points.array_shape(), Some(&[2, 2][..]));
@@ -9006,7 +9123,10 @@ fn c0_struct_values_flatten_multidimensional_embedded_array_layout_for_recursive
     assert_eq!(field("points[1][1].value").offset_bytes(), 28);
     assert_eq!(field("points[1][1].flag").offset_bytes(), 32);
     assert_eq!(field("tail").offset_bytes(), 36);
-    assert_eq!(field("tail").c_type(), crate::kernel::ProgramType::Int32);
+    assert_eq!(
+        field("tail").program_type(),
+        crate::kernel::ProgramType::Int32
+    );
     assert_eq!(
         layout.size_bytes() as usize,
         std::mem::size_of::<HostOuter>()
@@ -9055,13 +9175,13 @@ fn c0_struct_values_preserve_pointer_field_layout_metadata() {
     assert_eq!(layout.fields()[0].name(), "data");
     assert_eq!(layout.fields()[0].offset_bytes(), 0);
     assert_eq!(
-        layout.fields()[0].c_type(),
+        layout.fields()[0].program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
     assert_eq!(layout.fields()[1].name(), "length");
     assert_eq!(layout.fields()[1].offset_bytes(), 8);
     assert_eq!(
-        layout.fields()[1].c_type(),
+        layout.fields()[1].program_type(),
         crate::kernel::ProgramType::Int32
     );
 }
@@ -9237,13 +9357,13 @@ fn c0_struct_values_preserve_inline_array_layout_metadata() {
     assert_eq!(packet.field("tag").unwrap().offset_bytes(), 0);
     assert_eq!(packet.field("values").unwrap().offset_bytes(), 4);
     assert_eq!(
-        packet.field("values").unwrap().c_type(),
-        syntax::C0Type::Int32Array(2)
+        packet.field("values").unwrap().interface_type(),
+        crate::languages::interface::InterfaceType::Int32Array(2)
     );
     assert_eq!(packet.field("bytes").unwrap().offset_bytes(), 12);
     assert_eq!(
-        packet.field("bytes").unwrap().c_type(),
-        syntax::C0Type::UInt8Array(3)
+        packet.field("bytes").unwrap().interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(3)
     );
     assert_eq!(packet.size_bytes(), 16);
 
@@ -9257,14 +9377,20 @@ fn c0_struct_values_preserve_inline_array_layout_metadata() {
         .find(|field| field.name() == "values")
         .expect("values field in kernel layout");
     assert_eq!(values.offset_bytes(), 4);
-    assert_eq!(values.c_type(), crate::kernel::ProgramType::Int32Array(2));
+    assert_eq!(
+        values.program_type(),
+        crate::kernel::ProgramType::Int32Array(2)
+    );
     let bytes = layout
         .fields()
         .iter()
         .find(|field| field.name() == "bytes")
         .expect("bytes field in kernel layout");
     assert_eq!(bytes.offset_bytes(), 12);
-    assert_eq!(bytes.c_type(), crate::kernel::ProgramType::UInt8Array(3));
+    assert_eq!(
+        bytes.program_type(),
+        crate::kernel::ProgramType::UInt8Array(3)
+    );
 }
 
 #[test]
@@ -9298,7 +9424,10 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
         .expect("enum field metadata");
     // No value is negative, so the enumeration's compatible type is
     // `unsigned int`.
-    assert_eq!(field.c_type(), syntax::C0Type::UInt32);
+    assert_eq!(
+        field.interface_type(),
+        crate::languages::interface::InterfaceType::UInt32
+    );
     assert_eq!(field.enum_name(), Some("packet_state"));
 
     let kernel = function.to_kernel_function();
@@ -9311,7 +9440,7 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
         .find(|field| field.name() == "state")
         .expect("enum field in kernel layout");
     assert_eq!(state.offset_bytes(), 4);
-    assert_eq!(state.c_type(), crate::kernel::ProgramType::UInt32);
+    assert_eq!(state.program_type(), crate::kernel::ProgramType::UInt32);
 }
 
 #[test]
@@ -9340,16 +9469,16 @@ fn c0_struct_layout_preserves_inline_scalar_array_shape() {
     let layout = function.structs().get("packet").expect("packet layout");
 
     assert_eq!(
-        layout.field("buf").unwrap().c_type(),
-        syntax::C0Type::UInt8Array(16)
+        layout.field("buf").unwrap().interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(16)
     );
     assert_eq!(
         layout.field("buf").unwrap().offset_bytes() as usize,
         std::mem::offset_of!(HostPacket, buf)
     );
     assert_eq!(
-        layout.field("values").unwrap().c_type(),
-        syntax::C0Type::Int32Array(2)
+        layout.field("values").unwrap().interface_type(),
+        crate::languages::interface::InterfaceType::Int32Array(2)
     );
     assert_eq!(
         layout.field("values").unwrap().offset_bytes() as usize,
@@ -9397,7 +9526,10 @@ fn c0_struct_layout_preserves_multidimensional_scalar_array_shape() {
     let layout = function.structs().get("packet").expect("packet layout");
 
     let values = layout.field("values").expect("values field");
-    assert_eq!(values.c_type(), syntax::C0Type::Int32Array(6));
+    assert_eq!(
+        values.interface_type(),
+        crate::languages::interface::InterfaceType::Int32Array(6)
+    );
     assert_eq!(values.array_shape(), Some(&[2, 3][..]));
     assert_eq!(values.byte_width(), 24);
     assert_eq!(
@@ -9406,7 +9538,10 @@ fn c0_struct_layout_preserves_multidimensional_scalar_array_shape() {
     );
 
     let bytes = layout.field("bytes").expect("bytes field");
-    assert_eq!(bytes.c_type(), syntax::C0Type::UInt8Array(6));
+    assert_eq!(
+        bytes.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(6)
+    );
     assert_eq!(bytes.array_shape(), Some(&[3, 2][..]));
     assert_eq!(bytes.byte_width(), 6);
     assert_eq!(
@@ -9590,7 +9725,7 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
     assert!(matches!(
         base.as_ref(),
         syntax::C0Expression::Field {
-            field_type: syntax::C0Type::Int32Array(6),
+            field_type: crate::languages::interface::InterfaceType::Int32Array(6),
             array_shape: Some(shape),
             ..
         } if shape == &[2, 3]
@@ -9839,7 +9974,10 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
     let points = packet_layout
         .field("points")
         .expect("embedded struct array field");
-    assert_eq!(points.c_type(), syntax::C0Type::UInt8Array(16));
+    assert_eq!(
+        points.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(16)
+    );
     assert_eq!(points.struct_name(), Some("inner"));
     assert_eq!(points.array_element_width(), Some(8));
     assert_eq!(points.byte_width(), 16);
@@ -9948,7 +10086,10 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
     let points = packet_layout
         .field("points")
         .expect("embedded struct array field");
-    assert_eq!(points.c_type(), syntax::C0Type::UInt8Array(32));
+    assert_eq!(
+        points.interface_type(),
+        crate::languages::interface::InterfaceType::UInt8Array(32)
+    );
     assert_eq!(points.struct_name(), Some("inner"));
     assert_eq!(points.array_element_width(), Some(8));
     assert_eq!(points.array_shape(), Some(&[2, 2][..]));
@@ -10298,7 +10439,10 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
     else {
         panic!("nested field address should target the scalar field")
     };
-    assert_eq!(*field_type, syntax::C0Type::Int32);
+    assert_eq!(
+        *field_type,
+        crate::languages::interface::InterfaceType::Int32
+    );
     // Each member selection designates that member: the leaf `value`, and
     // within it the embedded `inner` it was reached through.
     let syntax::C0Expression::Subobject { pointer, width } = pointer.as_ref() else {
@@ -10394,7 +10538,10 @@ fn c0_address_of_int16_preserves_pointer_type() {
     else {
         panic!("an int16 address should return a typed pointer")
     };
-    assert_eq!(value.c_type(), crate::kernel::ProgramType::Int16Pointer);
+    assert_eq!(
+        value.program_type(),
+        crate::kernel::ProgramType::Int16Pointer
+    );
 }
 
 #[test]
@@ -11019,7 +11166,7 @@ fn c0_syntax_lowers_calls_in_conditional_expression_branches() {
     fn has_prefix_binding(statement: &syntax::C0Statement) -> bool {
         match statement {
             syntax::C0Statement::Declare {
-                c_type: syntax::C0Type::Int32,
+                interface_type: crate::languages::interface::InterfaceType::Int32,
                 ..
             } => true,
             syntax::C0Statement::Seq(first, second) => {
@@ -11611,7 +11758,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
     .to_kernel_function();
 
     assert!(matches!(
-        apply.parameters()[0].c_type(),
+        apply.parameters()[0].program_type(),
         crate::kernel::ProgramType::FunctionPointer(_)
     ));
 
@@ -11747,8 +11894,8 @@ fn c0_function_pointer_signatures_preserve_struct_pointer_tags() {
     assert_eq!(signature.return_struct_name(), Some("node"));
     assert_eq!(signature.parameters()[0].struct_name(), Some("node"));
     assert_eq!(
-        signature.parameters()[0].c_type(),
-        syntax::C0Type::Int32Pointer
+        signature.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
     );
     assert!(format!("{:?}", apply.body()).contains("CallAssign"));
 }
@@ -11776,18 +11923,27 @@ fn c0_struct_function_pointer_fields_preserve_signature_and_lp64_layout() {
         .expect("callback table layout");
     let callback = layout.field("compare").expect("callback field");
     assert!(matches!(
-        callback.c_type(),
-        syntax::C0Type::FunctionPointer(_)
+        callback.interface_type(),
+        crate::languages::interface::InterfaceType::FunctionPointer(_)
     ));
     assert_eq!(callback.offset_bytes(), 8);
     assert_eq!(callback.byte_width(), 8);
     let signature = callback
         .function_pointer_signature()
         .expect("callback field signature metadata");
-    assert_eq!(signature.return_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        signature.return_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(signature.parameters().len(), 2);
-    assert_eq!(signature.parameters()[0].c_type(), syntax::C0Type::Int32);
-    assert_eq!(signature.parameters()[1].c_type(), syntax::C0Type::Int32);
+    assert_eq!(
+        signature.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
+    assert_eq!(
+        signature.parameters()[1].interface_type(),
+        crate::languages::interface::InterfaceType::Int32
+    );
     assert_eq!(layout.field("count").unwrap().offset_bytes(), 16);
     assert_eq!(layout.size_bytes(), 24);
 }
@@ -12055,29 +12211,44 @@ fn c0_void_pointers_are_opaque_object_views() {
 
     let compare = &functions[0];
     assert_eq!(
-        compare.parameters()[0].c_type(),
-        syntax::C0Type::VoidPointer
+        compare.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
     );
     assert!(compare.parameters()[0].pointee_is_constant());
     assert_eq!(
-        compare.parameters()[1].c_type(),
-        syntax::C0Type::VoidPointer
+        compare.parameters()[1].interface_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
     );
     assert!(compare.parameters()[1].pointee_is_constant());
 
     let erase = &functions[1];
-    assert_eq!(erase.return_type(), syntax::C0Type::VoidPointer);
-    assert_eq!(erase.parameters()[0].c_type(), syntax::C0Type::Int32Pointer);
+    assert_eq!(
+        erase.return_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
+    );
+    assert_eq!(
+        erase.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
+    );
 
     let restore = &functions[2];
     assert_eq!(
-        restore.parameters()[0].c_type(),
-        syntax::C0Type::VoidPointer
+        restore.parameters()[0].interface_type(),
+        crate::languages::interface::InterfaceType::VoidPointer
     );
-    assert_eq!(restore.return_type(), syntax::C0Type::Int32Pointer);
+    assert_eq!(
+        restore.return_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
+    );
 
-    assert_eq!(syntax::C0Type::VoidPointer.pointee_type(), None);
-    assert_eq!(syntax::C0Type::VoidPointer.abi_size_bytes(), 8);
+    assert_eq!(
+        crate::languages::interface::InterfaceType::VoidPointer.pointee_type(),
+        None
+    );
+    assert_eq!(
+        crate::languages::interface::InterfaceType::VoidPointer.abi_size_bytes(),
+        8
+    );
     assert!(
         crate::kernel::ProgramType::VoidPointer
             .pointer_types_compatible(crate::kernel::ProgramType::Int32Pointer)
@@ -12232,11 +12403,11 @@ fn c0_floating_point_storage_types_preserve_abi_layout() {
 
     assert_eq!(function.return_type(), crate::kernel::ProgramType::Float64);
     assert_eq!(
-        function.parameters()[0].c_type(),
+        function.parameters()[0].program_type(),
         crate::kernel::ProgramType::Float32
     );
     assert_eq!(
-        function.parameters()[1].c_type(),
+        function.parameters()[1].program_type(),
         crate::kernel::ProgramType::Float64
     );
 
@@ -12258,7 +12429,7 @@ fn c0_floating_point_storage_types_preserve_abi_layout() {
 fn c0_floating_point_literals_may_start_with_a_decimal_point() {
     use syntax::C0Expression::{Float32Literal, Float64Literal};
 
-    for (c_type, literal, expected) in [
+    for (interface_type, literal, expected) in [
         ("double", ".5", Float64Literal(0.5f64.to_bits())),
         ("double", ".5e+2", Float64Literal(50.0f64.to_bits())),
         ("double", ".5E-1", Float64Literal(0.05f64.to_bits())),
@@ -12267,7 +12438,7 @@ fn c0_floating_point_literals_may_start_with_a_decimal_point() {
         ("float", ".5e+2f", Float32Literal(50.0f32.to_bits())),
         ("float", "-.0f", Float32Literal(0x8000_0000)),
     ] {
-        let source = format!("{c_type} value(void) {{ return {literal}; }}");
+        let source = format!("{interface_type} value(void) {{ return {literal}; }}");
         let function = syntax::parse_function(&source).expect(&source);
         assert_eq!(
             function.body(),
@@ -12500,7 +12671,10 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
         .iter()
         .find(|function| function.name() == "allocate_storage")
         .expect("floating-point allocator function");
-    assert_eq!(allocate.return_type(), syntax::C0Type::Float32Pointer);
+    assert_eq!(
+        allocate.return_type(),
+        crate::languages::interface::InterfaceType::Float32Pointer
+    );
     assert_eq!(
         allocate.to_kernel_function().return_type(),
         crate::kernel::ProgramType::Float32Pointer
@@ -12698,21 +12872,27 @@ fn c0_struct_pointer_globals_and_returns_retain_struct_identity() {
     .expect("file-scope struct pointers and pointer returns should parse");
 
     let current = &functions[0].globals()["current"];
-    assert_eq!(current.c_type(), syntax::C0Type::Int32Pointer);
+    assert_eq!(
+        current.interface_type(),
+        crate::languages::interface::InterfaceType::Int32Pointer
+    );
     assert_eq!(current.struct_name(), Some("node"));
     assert_eq!(
         current.initializer(),
         Some(&syntax::C0Expression::Int32Literal(0))
     );
     let current_slot = &functions[0].globals()["current_slot"];
-    assert_eq!(current_slot.c_type(), syntax::C0Type::Int32PointerPointer);
+    assert_eq!(
+        current_slot.interface_type(),
+        crate::languages::interface::InterfaceType::Int32PointerPointer
+    );
     assert_eq!(current_slot.struct_name(), Some("node"));
     assert_eq!(
-        functions[0].to_kernel_function().global_variables()[0].c_type(),
+        functions[0].to_kernel_function().global_variables()[0].program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
     assert_eq!(
-        functions[0].to_kernel_function().global_variables()[1].c_type(),
+        functions[0].to_kernel_function().global_variables()[1].program_type(),
         crate::kernel::ProgramType::Int32PointerPointer
     );
 
@@ -12774,10 +12954,13 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
     )
     .expect("C bool objects should parse");
 
-    assert_eq!(functions[0].return_type(), syntax::C0Type::Bool);
     assert_eq!(
-        functions[0].globals()["global_flag"].c_type(),
-        syntax::C0Type::Bool
+        functions[0].return_type(),
+        crate::languages::interface::InterfaceType::Bool
+    );
+    assert_eq!(
+        functions[0].globals()["global_flag"].interface_type(),
+        crate::languages::interface::InterfaceType::Bool
     );
     assert_eq!(
         functions[0].to_kernel_function().global_variables()[0].initial_value(),
@@ -12791,8 +12974,11 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
     assert_eq!(layout.alignment_bytes(), 4);
     assert_eq!(layout.field("enabled").expect("bool field").byte_width(), 1);
     assert_eq!(
-        layout.field("enabled").expect("bool field").c_type(),
-        syntax::C0Type::Bool
+        layout
+            .field("enabled")
+            .expect("bool field")
+            .interface_type(),
+        crate::languages::interface::InterfaceType::Bool
     );
 
     let normalize = functions
@@ -12855,7 +13041,10 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     let expanded = source::expand_includes("bool.c", &sources)
         .expect("stdbool.h should be a modeled system header");
     let constants = syntax::parse_function(expanded.source()).expect("bool constants should parse");
-    assert_eq!(constants.return_type(), syntax::C0Type::Bool);
+    assert_eq!(
+        constants.return_type(),
+        crate::languages::interface::InterfaceType::Bool
+    );
 
     let pointer_function = syntax::parse_function(
         "int32 present(int32* pointer) { bool result; result = pointer; return result; }",
@@ -12920,8 +13109,8 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     )
     .expect("integer callback should parse");
     assert_ne!(
-        bool_callback.parameters()[0].c_type(),
-        int_callback.parameters()[0].c_type(),
+        bool_callback.parameters()[0].interface_type(),
+        int_callback.parameters()[0].interface_type(),
         "callback signatures must distinguish bool from int32"
     );
 }
@@ -12942,9 +13131,11 @@ fn c0_conditional_call_temporary_keeps_its_common_type() {
     )
     .expect("a conditional with a call in one branch should lower");
     let lowered = lowered_functions.last().expect("pick is parsed");
-    fn declared_temporary_type(statement: &syntax::C0Statement) -> Option<syntax::C0Type> {
+    fn declared_temporary_type(
+        statement: &syntax::C0Statement,
+    ) -> Option<crate::languages::interface::InterfaceType> {
         match statement {
-            syntax::C0Statement::Declare { c_type, .. } => Some(*c_type),
+            syntax::C0Statement::Declare { interface_type, .. } => Some(*interface_type),
             syntax::C0Statement::Seq(first, second) => {
                 declared_temporary_type(first).or_else(|| declared_temporary_type(second))
             }
@@ -12953,7 +13144,10 @@ fn c0_conditional_call_temporary_keeps_its_common_type() {
         }
     }
     let temporary_type = declared_temporary_type(lowered.body());
-    assert_eq!(temporary_type, Some(syntax::C0Type::Float64));
+    assert_eq!(
+        temporary_type,
+        Some(crate::languages::interface::InterfaceType::Float64)
+    );
 
     let lowered_functions = syntax::parse_functions(
         r#"
@@ -12966,7 +13160,10 @@ fn c0_conditional_call_temporary_keeps_its_common_type() {
     .expect("a data-pointer conditional with a call should lower");
     let lowered = lowered_functions.last().expect("pick is parsed");
     let temporary_type = declared_temporary_type(lowered.body());
-    assert_eq!(temporary_type, Some(syntax::C0Type::Int32Pointer));
+    assert_eq!(
+        temporary_type,
+        Some(crate::languages::interface::InterfaceType::Int32Pointer)
+    );
 
     let lowered_functions = syntax::parse_functions(
         r#"
@@ -12983,7 +13180,9 @@ fn c0_conditional_call_temporary_keeps_its_common_type() {
     let temporary_type = declared_temporary_type(lowered.body());
     assert_eq!(
         temporary_type,
-        Some(syntax::C0Type::UInt64(syntax::LongRank::Long))
+        Some(crate::languages::interface::InterfaceType::UInt64(
+            syntax::LongRank::Long
+        ))
     );
 
     let error = syntax::parse_functions(
@@ -13042,40 +13241,62 @@ fn c0_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
 
 #[test]
 fn standard_integer_widths_accept_trailing_int_without_changing_type() {
-    use syntax::C0Type;
+    use crate::languages::interface::InterfaceType;
     for (spelling, expected) in [
-        ("long unsigned int", C0Type::UInt64(syntax::LongRank::Long)),
-        ("long int unsigned", C0Type::UInt64(syntax::LongRank::Long)),
-        ("int unsigned long", C0Type::UInt64(syntax::LongRank::Long)),
+        (
+            "long unsigned int",
+            InterfaceType::UInt64(syntax::LongRank::Long),
+        ),
+        (
+            "long int unsigned",
+            InterfaceType::UInt64(syntax::LongRank::Long),
+        ),
+        (
+            "int unsigned long",
+            InterfaceType::UInt64(syntax::LongRank::Long),
+        ),
         (
             "long unsigned long int",
-            C0Type::UInt64(syntax::LongRank::LongLong),
+            InterfaceType::UInt64(syntax::LongRank::LongLong),
         ),
-        ("signed int short", C0Type::Int16),
-        ("char signed", C0Type::Int8),
-        ("signed", C0Type::Int32),
-        ("unsigned", C0Type::UInt32),
-        ("signed int", C0Type::Int32),
-        ("short int", C0Type::Int16),
-        ("signed short int", C0Type::Int16),
-        ("unsigned short int", C0Type::UInt16),
-        ("long int", C0Type::Int64(syntax::LongRank::Long)),
-        ("signed long int", C0Type::Int64(syntax::LongRank::Long)),
-        ("unsigned long int", C0Type::UInt64(syntax::LongRank::Long)),
-        ("long long int", C0Type::Int64(syntax::LongRank::LongLong)),
+        ("signed int short", InterfaceType::Int16),
+        ("char signed", InterfaceType::Int8),
+        ("signed", InterfaceType::Int32),
+        ("unsigned", InterfaceType::UInt32),
+        ("signed int", InterfaceType::Int32),
+        ("short int", InterfaceType::Int16),
+        ("signed short int", InterfaceType::Int16),
+        ("unsigned short int", InterfaceType::UInt16),
+        ("long int", InterfaceType::Int64(syntax::LongRank::Long)),
+        (
+            "signed long int",
+            InterfaceType::Int64(syntax::LongRank::Long),
+        ),
+        (
+            "unsigned long int",
+            InterfaceType::UInt64(syntax::LongRank::Long),
+        ),
+        (
+            "long long int",
+            InterfaceType::Int64(syntax::LongRank::LongLong),
+        ),
         (
             "signed long long int",
-            C0Type::Int64(syntax::LongRank::LongLong),
+            InterfaceType::Int64(syntax::LongRank::LongLong),
         ),
         (
             "unsigned long long int",
-            C0Type::UInt64(syntax::LongRank::LongLong),
+            InterfaceType::UInt64(syntax::LongRank::LongLong),
         ),
     ] {
         let source = format!("{spelling} identity({spelling} value) {{ return value; }}");
         let function = syntax::parse_function(&source).expect(&source);
         assert_eq!(function.return_type(), expected, "{spelling}");
-        assert_eq!(function.parameters()[0].c_type(), expected, "{spelling}");
+        assert_eq!(
+            function.parameters()[0].interface_type(),
+            expected,
+            "{spelling}"
+        );
         // Preserve the exact header declaration shape that first exposed this
         // gap, including typedef resolution at a later declaration.
         let source =
@@ -13088,7 +13309,7 @@ fn standard_integer_widths_accept_trailing_int_without_changing_type() {
         .expect(&source);
         assert_eq!(unit.functions[0].return_type(), expected, "{spelling}");
         assert_eq!(
-            unit.functions[0].parameters()[0].c_type(),
+            unit.functions[0].parameters()[0].interface_type(),
             expected,
             "{spelling}"
         );
@@ -13127,7 +13348,7 @@ fn trailing_int_does_not_accept_incompatible_or_duplicate_specifiers() {
 
 #[test]
 fn signed_byte_storage_and_pointer_identity() {
-    use syntax::C0Type;
+    use crate::languages::interface::InterfaceType;
     let functions = syntax::parse_functions(
         "typedef signed char byte; struct bytes { byte a; byte b; int tail; };\n\
          byte global[2] = {-128, 127};\n\
@@ -13138,7 +13359,7 @@ fn signed_byte_storage_and_pointer_identity() {
     assert_eq!(layout.field("a").unwrap().offset_bytes(), 0);
     assert_eq!(layout.field("b").unwrap().offset_bytes(), 1);
     assert_eq!(layout.field("tail").unwrap().offset_bytes(), 4);
-    assert_eq!(C0Type::Int8.to_kernel_type().byte_width(), 1);
+    assert_eq!(InterfaceType::Int8.to_kernel_type().byte_width(), 1);
     // An uncast conversion between character pointers is accepted, as by
     // its cast; see `c0_character_pointer_conversions_lower_as_explicit_casts`.
     for source in [
@@ -13279,7 +13500,7 @@ fn anonymous_struct_local_proof_expands_and_reverifies() {
 
 #[test]
 fn struct_wide_array_layout_and_size_overflow() {
-    use syntax::C0Type;
+    use crate::languages::interface::InterfaceType;
     let functions = syntax::parse_functions(
         "struct wide { char tag; long signed_values[2]; unsigned long words[2][3]; int tail; }; int f(void) { return sizeof(struct wide); }",
     ).unwrap();
@@ -13288,13 +13509,13 @@ fn struct_wide_array_layout_and_size_overflow() {
     assert_eq!(layout.size_bytes(), 80);
     assert_eq!(layout.field("signed_values").unwrap().offset_bytes(), 8);
     assert_eq!(
-        layout.field("signed_values").unwrap().c_type(),
-        C0Type::Int64Array(syntax::LongRank::Long, 2)
+        layout.field("signed_values").unwrap().interface_type(),
+        InterfaceType::Int64Array(syntax::LongRank::Long, 2)
     );
     assert_eq!(layout.field("words").unwrap().offset_bytes(), 24);
     assert_eq!(
-        layout.field("words").unwrap().c_type(),
-        C0Type::UInt64Array(syntax::LongRank::Long, 6)
+        layout.field("words").unwrap().interface_type(),
+        InterfaceType::UInt64Array(syntax::LongRank::Long, 6)
     );
     assert_eq!(layout.field("tail").unwrap().offset_bytes(), 72);
     for declaration in [
@@ -13796,21 +14017,21 @@ fn optimizer_promise_classification_without_a_profile_switch() {
 #[test]
 fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_admission() {
     use crate::kernel::{PointerArrayElement as Element, ProgramType};
-    use syntax::C0Type;
+    use crate::languages::interface::InterfaceType;
     for (scalar, pointer, slot, array, element, kernel_scalar) in [
         (
-            C0Type::Int128,
-            C0Type::Int128Pointer,
-            C0Type::Int128PointerPointer,
-            C0Type::Int128Array(3),
+            InterfaceType::Int128,
+            InterfaceType::Int128Pointer,
+            InterfaceType::Int128PointerPointer,
+            InterfaceType::Int128Array(3),
             Element::Int128,
             ProgramType::Int128,
         ),
         (
-            C0Type::UInt128,
-            C0Type::UInt128Pointer,
-            C0Type::UInt128PointerPointer,
-            C0Type::UInt128Array(3),
+            InterfaceType::UInt128,
+            InterfaceType::UInt128Pointer,
+            InterfaceType::UInt128PointerPointer,
+            InterfaceType::UInt128Array(3),
             Element::UInt128,
             ProgramType::UInt128,
         ),
@@ -13832,7 +14053,7 @@ fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_a
             Some(pointer.to_kernel_type())
         );
         assert_eq!(array.to_kernel_type().byte_width(), 48);
-        let slots = C0Type::PointerArray(element, syntax::LongRank::Long, 3);
+        let slots = InterfaceType::PointerArray(element, syntax::LongRank::Long, 3);
         assert_eq!(slots.pointee_type(), Some(pointer));
         assert_eq!(slots.abi_size_bytes(), 24);
         assert_eq!(
@@ -13840,9 +14061,9 @@ fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_a
             Some(pointer.to_kernel_type())
         );
         assert_eq!(
-            syntax::C0Parameter::new(pointer, "p".into(), None)
+            crate::languages::interface::ImportedParameter::new(pointer, "p".into(), None)
                 .to_kernel_parameter()
-                .c_type(),
+                .program_type(),
             pointer.to_kernel_type()
         );
     }
@@ -13868,25 +14089,37 @@ fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_a
 #[test]
 fn c0_gnu_word_mode_preserves_signedness_and_lp64_layout() {
     for (base, expected) in [
-        ("signed char", syntax::C0Type::Int64(syntax::LongRank::Long)),
-        ("short", syntax::C0Type::Int64(syntax::LongRank::Long)),
-        ("int", syntax::C0Type::Int64(syntax::LongRank::Long)),
-        ("long", syntax::C0Type::Int64(syntax::LongRank::Long)),
+        (
+            "signed char",
+            crate::languages::interface::InterfaceType::Int64(syntax::LongRank::Long),
+        ),
+        (
+            "short",
+            crate::languages::interface::InterfaceType::Int64(syntax::LongRank::Long),
+        ),
+        (
+            "int",
+            crate::languages::interface::InterfaceType::Int64(syntax::LongRank::Long),
+        ),
+        (
+            "long",
+            crate::languages::interface::InterfaceType::Int64(syntax::LongRank::Long),
+        ),
         (
             "unsigned char",
-            syntax::C0Type::UInt64(syntax::LongRank::Long),
+            crate::languages::interface::InterfaceType::UInt64(syntax::LongRank::Long),
         ),
         (
             "unsigned short",
-            syntax::C0Type::UInt64(syntax::LongRank::Long),
+            crate::languages::interface::InterfaceType::UInt64(syntax::LongRank::Long),
         ),
         (
             "unsigned int",
-            syntax::C0Type::UInt64(syntax::LongRank::Long),
+            crate::languages::interface::InterfaceType::UInt64(syntax::LongRank::Long),
         ),
         (
             "unsigned long",
-            syntax::C0Type::UInt64(syntax::LongRank::Long),
+            crate::languages::interface::InterfaceType::UInt64(syntax::LongRank::Long),
         ),
     ] {
         for (attribute, mode) in [("mode", "word"), ("__mode__", "__word__")] {
@@ -13903,7 +14136,7 @@ fn c0_gnu_word_mode_preserves_signedness_and_lp64_layout() {
             .unwrap();
             let function = &unit.functions[0];
             assert_eq!(function.return_type(), expected);
-            assert_eq!(function.parameters()[0].c_type(), expected);
+            assert_eq!(function.parameters()[0].interface_type(), expected);
             let layout = &unit.structs["record"];
             assert_eq!(layout.field("value").unwrap().offset_bytes(), 8);
             assert_eq!(layout.field("value").unwrap().byte_width(), 8);

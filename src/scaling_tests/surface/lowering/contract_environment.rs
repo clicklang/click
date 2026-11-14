@@ -12,8 +12,8 @@ fn named_parameter_shadowing_ignores_unrelated_globals() {
             },
             ProgramType::Int32Pointer,
         );
-        let parameters = [syntax::C0Parameter::new(
-            C0Type::Int32Pointer,
+        let parameters = [crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
             "bytes".into(),
             None,
         )];

@@ -10,20 +10,20 @@ fn explicit_embedded_layout_work_tracks_materialized_leaves() {
         let (layouts, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut layouts = BTreeMap::new();
             for index in 0..size {
-                let mut fields = vec![("stamp".into(), C0Type::Int32, None, index * 4, 4)];
+                let mut fields = vec![("stamp".into(), InterfaceType::Int32, None, index * 4, 4)];
                 if index != 0 {
                     fields.insert(
                         0,
                         (
                             "state".into(),
-                            C0Type::Int32,
+                            InterfaceType::Int32,
                             Some(format!("R{}", index - 1)),
                             0,
                             index * 4,
                         ),
                     );
                 }
-                let layout = C0StructLayout::from_explicit_fields_with_structs(
+                let layout = RecordLayout::from_explicit_fields_with_structs(
                     fields,
                     (index + 1) * 4,
                     4,

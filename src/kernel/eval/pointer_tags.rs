@@ -1182,7 +1182,7 @@ mod exact_word_address_tests {
             .unwrap();
             assert_eq!(decoded.pointer(), &pointer);
             assert_eq!(decoded.object_class(), Some(class.clone()));
-            assert_eq!(decoded.c_type(), ProgramType::Float64Pointer);
+            assert_eq!(decoded.program_type(), ProgramType::Float64Pointer);
         }
         assert!(
             cast_tagged_address_to_pointer(

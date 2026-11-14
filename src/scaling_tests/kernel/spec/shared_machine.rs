@@ -43,7 +43,7 @@ fn shared_arithmetic_children_are_not_reimported_or_expanded_during_construction
     ] {
         for size in [16, 64, 256] {
             let mut term =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982000));
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982000));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
                     term = KernelTerm::arithmetic_binary(
@@ -182,7 +182,7 @@ fn partial_division_production_retains_prefixes_and_debts() {
             let (prepared, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut execution = ExecutionBudget::new();
                 let mut budget = SpecEvaluation::logical(&mut execution);
-                budget.c_definedness = defined;
+                budget.program_definedness = defined;
                 prepare(&expression, &mut budget).unwrap().unwrap()
             });
             assert_eq!(prepared.obligations.len(), size);
@@ -330,7 +330,7 @@ fn deferred_opaque_shift_domains_keep_shared_prefixes() {
             ))));
             let mut execution = ExecutionBudget::new();
             let mut budget = SpecEvaluation::logical(&mut execution);
-            budget.c_definedness = true;
+            budget.program_definedness = true;
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {

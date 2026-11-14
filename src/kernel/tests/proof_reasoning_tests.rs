@@ -4512,7 +4512,8 @@ fn forall_integer_instantiation_refuses_after_work_exhaustion() {
 #[test]
 fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let binder = Variable(640);
-    let pointer = |variable, c_type| PointerValue::new(Pointer::symbolic(variable), c_type);
+    let pointer =
+        |variable, program_type| PointerValue::new(Pointer::symbolic(variable), program_type);
     let pointer_term = |variable| {
         Term::ProgramValue(ProgramValue::Pointer(pointer(
             variable,

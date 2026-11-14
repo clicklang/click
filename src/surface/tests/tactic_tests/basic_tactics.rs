@@ -266,7 +266,7 @@ fn parses_composite_resource_definition() {
     assert_eq!(
         resource.parameters(),
         &[FunctionParameter {
-            click_type: ClickType::Program(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "flag".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -286,7 +286,7 @@ fn parses_composite_resource_definition() {
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
                 arguments: vec![current_int(7)],
-                parameter_types: vec![C0Type::Int32],
+                parameter_types: vec![InterfaceType::Int32],
             },
             ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
@@ -339,7 +339,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
                     arguments: vec![current_var("flag")],
-                    parameter_types: vec![C0Type::Int32Pointer],
+                    parameter_types: vec![InterfaceType::Int32Pointer],
                 }),
                 ProofTactic::UnfoldResource(ResourceClause::Declared {
                     type_schema: None,
@@ -349,7 +349,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
                     arguments: vec![current_var("flag")],
-                    parameter_types: vec![C0Type::Int32Pointer],
+                    parameter_types: vec![InterfaceType::Int32Pointer],
                 }),
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
                 ProofTactic::FoldResource(ResourceClause::Declared {
@@ -360,7 +360,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
                     arguments: vec![current_var("flag")],
-                    parameter_types: vec![C0Type::Int32Pointer],
+                    parameter_types: vec![InterfaceType::Int32Pointer],
                 }),
             ]
             .as_slice()
@@ -457,7 +457,7 @@ fn parses_resource_verb_function_clauses() {
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
                 arguments: vec![current_int(7)],
-                parameter_types: vec![C0Type::Int32],
+                parameter_types: vec![InterfaceType::Int32],
             }),
             Requirement::Resource(ResourceClause::Declared {
                 type_schema: None,
@@ -467,7 +467,7 @@ fn parses_resource_verb_function_clauses() {
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
                 arguments: vec![current_int(8)],
-                parameter_types: vec![C0Type::Int32],
+                parameter_types: vec![InterfaceType::Int32],
             }),
         ]
     );
@@ -504,7 +504,7 @@ fn parses_resource_verb_function_clauses() {
                     kind: ResourceKind::Token,
                     name: "socket_open".to_string(),
                     arguments: vec![current_int(9)],
-                    parameter_types: vec![C0Type::Int32],
+                    parameter_types: vec![InterfaceType::Int32],
                 }),
                 proof: SourceProof::Default,
                 borrowed: false,

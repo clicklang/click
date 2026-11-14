@@ -787,7 +787,7 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
         ProgramType::UInt128 => ProgramValue::UInt128(load),
         ProgramType::Float32 => ProgramValue::Float32(load),
         ProgramType::Float64 => ProgramValue::Float64(load),
-        c_type if c_type.is_pointer() => {
+        program_type if program_type.is_pointer() => {
             // A seeded pointer cell is already a typed read, even before a
             // C load observes it. Retain its exact producer definition so a
             // later logical read through an alias can use load congruence.
@@ -803,10 +803,13 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
                 crate::kernel::equality_graph::EqualityGraph::default()
                     .register_pointer_read_definition(&value, &snapshot, &address);
                 return ProgramValue::Pointer(crate::kernel::PointerValue::from_read(
-                    value, c_type, &snapshot, &address,
+                    value,
+                    program_type,
+                    &snapshot,
+                    &address,
                 ));
             }
-            ProgramValue::typed_pointer(value, c_type)
+            ProgramValue::typed_pointer(value, program_type)
         }
         _ => unreachable!("memory ranges cannot contain aggregate elements"),
     }

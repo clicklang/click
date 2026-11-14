@@ -99,7 +99,7 @@ fn wide_casts_match_all_existing_integer_directions() {
             let intermediate = if source == destination {
                 initial
             } else {
-                cast(&initial.into(), destination.c_type()).unwrap()
+                cast(&initial.into(), destination.program_type()).unwrap()
             };
             super::super::super::signedness_cast_tests::check_native_parity(intermediate, source);
         }
@@ -115,7 +115,7 @@ fn wide_reads_keep_type_and_snapshot_in_casts_and_observations() {
         Memory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
     );
     for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
-        let kind = crate::kernel::LoadKind::of_type(format.c_type()).unwrap();
+        let kind = crate::kernel::LoadKind::of_type(format.program_type()).unwrap();
         let roots = [before.clone(), after.clone()].map(|memory| {
             KernelTermImport::default().machine(
                 format,
@@ -164,7 +164,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                 for defined in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
-                    budget.c_definedness = defined;
+                    budget.program_definedness = defined;
                     for case in 0..6 {
                         let operand = |format: MachineIntegerType, id| match case {
                             0 => MachineTerm::Variable(Variable(id)),
@@ -179,7 +179,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                             5 => MachineTerm::MemoryLoad(
                                 crate::kernel::intern_memory(Memory::new()),
                                 Box::new(Pointer::symbolic(Variable(id))),
-                                crate::kernel::LoadKind::of_type(format.c_type()).unwrap(),
+                                crate::kernel::LoadKind::of_type(format.program_type()).unwrap(),
                             ),
                             _ => word(format, 2.into()),
                         };
@@ -223,7 +223,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 let actual_value = SpecValue::Shared(actual.value).into_native();
                                 let normalize = |value: &ProgramValue| {
                                     let format =
-                                        MachineIntegerType::from_c_type(value.c_type()).unwrap();
+                                        MachineIntegerType::from_program_type(value.program_type()).unwrap();
                                     let crate::kernel::integer_c_value!(term) = value else {
                                         panic!()
                                     };

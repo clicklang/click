@@ -7,10 +7,14 @@ use crate::kernel::{
 fn wide_guards_retain_growing_shared_prefixes_without_export() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut root =
-            KernelTerm::variable(KernelType::Program(T::UInt64.c_type()), Variable(998171));
-        let removed =
-            KernelTerm::variable(KernelType::Program(T::UInt64.c_type()), Variable(998172));
+        let mut root = KernelTerm::variable(
+            KernelType::Program(T::UInt64.program_type()),
+            Variable(998171),
+        );
+        let removed = KernelTerm::variable(
+            KernelType::Program(T::UInt64.program_type()),
+            Variable(998172),
+        );
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

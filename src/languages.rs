@@ -5,6 +5,7 @@ pub(crate) mod compiler_process;
 pub mod cpp;
 pub(crate) mod envelope;
 pub(crate) mod inputs;
+pub mod interface;
 pub(crate) mod portable_paths;
 pub mod rust;
 
@@ -154,8 +155,8 @@ impl ExecutionCache {
 /// interpretation is complete before the shared verifier consumes this package.
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedExecution {
-    pub functions: Vec<c::syntax::C0Function>,
-    pub layouts: std::collections::BTreeMap<String, c::syntax::C0StructLayout>,
+    pub functions: Vec<crate::languages::interface::ImportedFunction>,
+    pub layouts: std::collections::BTreeMap<String, crate::languages::interface::RecordLayout>,
     /// Click `extern` contracts the frontend supplies for library functions
     /// the program calls but does not define, parsed with the sidecar.
     pub library_contracts: String,

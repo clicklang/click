@@ -18,7 +18,7 @@ impl PureFactContext {
             (left, right)
         {
             let same_value = |a: &PointerValue, b: &PointerValue| {
-                a.c_type() == b.c_type()
+                a.program_type() == b.program_type()
                     && self.pointer_designations_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.pointer(), b.pointer(), self,
@@ -49,7 +49,7 @@ impl PureFactContext {
             (left, right)
         {
             let same_value = |a: &PointerValue, b: &PointerValue| {
-                a.c_type() == b.c_type()
+                a.program_type() == b.program_type()
                     && self.pointer_designations_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.pointer(), b.pointer(), self,

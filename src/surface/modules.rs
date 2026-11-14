@@ -91,8 +91,9 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(|file| file.click_function_definitions())
             .filter(|function| match function.return_type() {
-                ClickType::Program(c_type) => {
-                    c_type.is_pointer() || matches!(c_type, C0Type::ParameterPointer(_))
+                ClickType::Program(interface_type) => {
+                    interface_type.is_pointer()
+                        || matches!(interface_type, InterfaceType::ParameterPointer(_))
                 }
                 ClickType::CObjectPointer { .. } => true,
                 _ => false,
@@ -438,9 +439,9 @@ fn merge_modules(
             .get(entry)
             .map(|file| file.struct_sizes.clone())
             .unwrap_or_default(),
-        c_function_names: locals
+        program_function_names: locals
             .get(entry)
-            .map(|file| file.c_function_names.clone())
+            .map(|file| file.program_function_names.clone())
             .unwrap_or_default(),
         imports: Vec::new(),
         library_imports: Vec::new(),
@@ -477,9 +478,9 @@ fn merge_modules(
                 )));
             }
         }
-        std::sync::Arc::make_mut(&mut merged.c_function_names).extend(
+        std::sync::Arc::make_mut(&mut merged.program_function_names).extend(
             local
-                .c_function_names
+                .program_function_names
                 .iter()
                 .map(|(name, target)| (name.clone(), target.clone())),
         );

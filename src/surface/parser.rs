@@ -180,7 +180,8 @@ pub(in crate::surface) struct FunctionLocals {
     /// The locals of pointer type, whose arithmetic keeps its C meaning.
     pub(in crate::surface) pointers: BTreeSet<String>,
     /// For a Rust function, the iterator each loop advances, by loop index.
-    pub(in crate::surface) loop_iterators: Vec<Option<syntax::RustLoopIterator>>,
+    pub(in crate::surface) loop_iterators:
+        Vec<Option<crate::languages::interface::RustLoopIterator>>,
 }
 
 /// The program facts a sidecar is parsed against: its struct and union
@@ -190,12 +191,13 @@ pub(in crate::surface) struct FunctionLocals {
 pub(in crate::surface) struct ProgramLayouts {
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
-    pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
     /// measure ranks calls to these functions too.
     pub(in crate::surface) recursion_peers: BTreeMap<String, Vec<String>>,
-    pub(in crate::surface) struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    pub(in crate::surface) struct_layouts:
+        BTreeMap<String, crate::languages::interface::RecordLayout>,
     pub(in crate::surface) union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     /// Each function's address-backed aggregate objects, with their structs.
     pub(in crate::surface) aggregate_objects: BTreeMap<String, BTreeMap<String, String>>,
@@ -269,8 +271,14 @@ pub(in crate::surface) struct ProgramLayouts {
 /// An instance of a generic function the import declares: its name, the
 /// generic function's, its parameter and result types, its parameters'
 /// names as a head writes them, and whether a method's receiver is `const`.
-pub(in crate::surface) type GenericInstance =
-    (String, String, Vec<C0Type>, C0Type, Vec<String>, bool);
+pub(in crate::surface) type GenericInstance = (
+    String,
+    String,
+    Vec<InterfaceType>,
+    InterfaceType,
+    Vec<String>,
+    bool,
+);
 
 /// One of the C++ declarations that share a path: its importer name,
 /// whether a method's receiver is `const`, and its parameters' types after
@@ -280,7 +288,7 @@ pub(in crate::surface) type GenericInstance =
 pub(in crate::surface) struct CppOverload {
     pub(in crate::surface) name: String,
     pub(in crate::surface) constant: bool,
-    pub(in crate::surface) parameters: Vec<C0Type>,
+    pub(in crate::surface) parameters: Vec<InterfaceType>,
 }
 
 /// A braced proof block as the parser read it: the positions of its braces
@@ -837,7 +845,7 @@ struct Parser {
     /// A predicate goal may introduce its declared quantifiers when unfolded.
     loop_predicate_bodies: BTreeMap<String, ClickProposition>,
     resource_parameters: BTreeMap<String, usize>,
-    c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    program_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
@@ -896,14 +904,14 @@ struct Parser {
     rust_slice_params: BTreeSet<String>,
     /// The element type of each slice parameter read so far, by name: the
     /// latest parameter of that name, which is the current declaration's.
-    rust_slice_elements: BTreeMap<String, C0Type>,
+    rust_slice_elements: BTreeMap<String, InterfaceType>,
     /// The `Vec` parameters of the Rust signature being parsed, and
     /// `result` when it returns one: each reads `v.len()` and `v[i]`, through
     /// `*v` when the parameter is a reference (`true`).
     rust_vec_params: BTreeMap<String, bool>,
     /// The iterator each loop of the Rust function being parsed advances,
     /// by loop index: `loop(i).iter` names its state.
-    rust_loop_iterators: Vec<Option<syntax::RustLoopIterator>>,
+    rust_loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
     /// How many `loop` blocks enclose the text being parsed: inside one,
     /// `iter` is that loop's iterator.
     loop_block_depth: usize,
@@ -976,7 +984,7 @@ struct Parser {
     implicit_proof_spans: Vec<ImplicitProofSpan>,
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
-    struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
     /// See [`ProgramLayouts::rust_enum_types`].
     rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
@@ -992,7 +1000,7 @@ struct Parser {
     current_reference_result: bool,
     /// The C type of the current function's `result`, which keeps its C
     /// meaning in a comparison when it is a pointer or a float.
-    current_result_c_type: Option<C0Type>,
+    current_result_interface_type: Option<InterfaceType>,
     /// The current function's locals of pointer type that no parameter
     /// shadows.
     current_local_pointers: BTreeSet<String>,
@@ -1024,7 +1032,7 @@ struct Parser {
     let_operands: spec_arithmetic::LetOperands,
     /// The machine types of the current theorem's or pure function's
     /// parameters, which a diagnostic names.
-    spec_parameter_types: BTreeMap<String, C0Type>,
+    spec_parameter_types: BTreeMap<String, InterfaceType>,
     /// The casts written as `address(p)`, which convert a C pointer to its
     /// `uint64` address. Arithmetic on them is
     /// pointer-word arithmetic, such as a tag added to an aligned address,
@@ -1122,12 +1130,12 @@ pub(in crate::surface) enum CalleeResourceBinderKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ParsedType {
-    c_type: C0Type,
+    interface_type: InterfaceType,
     struct_name: Option<String>,
     struct_pointer: bool,
     constant: bool,
     pointee_constant: bool,
-    /// Written `T&`: `c_type` is the pointer that carries the reference.
+    /// Written `T&`: `interface_type` is the pointer that carries the reference.
     reference: bool,
 }
 
@@ -1201,24 +1209,24 @@ pub(super) fn is_c_type_keyword(name: &str) -> bool {
     )
 }
 
-pub(in crate::surface) fn algebraic_field_c_type_supported(c_type: C0Type) -> bool {
+pub(in crate::surface) fn algebraic_field_c_type_supported(interface_type: InterfaceType) -> bool {
     !matches!(
-        c_type,
-        C0Type::Void
-            | C0Type::FunctionPointer(_)
-            | C0Type::Int8Array(_)
-            | C0Type::Int16Array(_)
-            | C0Type::Int32Array(_)
-            | C0Type::CharArray(_, _)
-            | C0Type::UInt8Array(_)
-            | C0Type::UInt16Array(_)
-            | C0Type::UInt32Array(_)
-            | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_, _)
-            | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_, _)
-            | C0Type::Float32Array(_)
-            | C0Type::Float64Array(_)
+        interface_type,
+        InterfaceType::Void
+            | InterfaceType::FunctionPointer(_)
+            | InterfaceType::Int8Array(_)
+            | InterfaceType::Int16Array(_)
+            | InterfaceType::Int32Array(_)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
+            | InterfaceType::UInt16Array(_)
+            | InterfaceType::UInt32Array(_)
+            | InterfaceType::Int128Array(_)
+            | InterfaceType::Int64Array(_, _)
+            | InterfaceType::UInt128Array(_)
+            | InterfaceType::UInt64Array(_, _)
+            | InterfaceType::Float32Array(_)
+            | InterfaceType::Float64Array(_)
     )
 }
 
@@ -1257,11 +1265,13 @@ impl Parser {
 }
 
 /// The machine types of a theorem's or pure function's parameters.
-fn spec_parameter_types(parameters: &[FunctionParameter]) -> BTreeMap<String, C0Type> {
+fn spec_parameter_types(parameters: &[FunctionParameter]) -> BTreeMap<String, InterfaceType> {
     parameters
         .iter()
         .filter_map(|parameter| match parameter.click_type() {
-            ClickType::Program(c_type) => Some((parameter.name().to_string(), *c_type)),
+            ClickType::Program(interface_type) => {
+                Some((parameter.name().to_string(), *interface_type))
+            }
             _ => None,
         })
         .collect()
@@ -1288,11 +1298,11 @@ fn algebraic_parameter_types(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResolvedField {
-    c_type: C0Type,
+    interface_type: InterfaceType,
     pointee_constant: bool,
     struct_name: Option<String>,
     union_name: Option<String>,
-    function_pointer_signature: Option<syntax::C0FunctionPointerSignature>,
+    function_pointer_signature: Option<crate::languages::interface::CallbackInterface>,
     array_element_width: Option<u32>,
     array_shape: Option<Vec<u32>>,
     offset_bytes: u32,
@@ -1339,7 +1349,7 @@ impl Parser {
 
     fn new_with_layouts(
         source: &str,
-        struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+        struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
         union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     ) -> Result<Self, ClickError> {
         Self::new_with_layouts_and_aggregate_objects(
@@ -1373,7 +1383,7 @@ impl Parser {
             &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
-        parser.c_object_names_by_function = layouts.c_object_names;
+        parser.program_object_names_by_function = layouts.program_object_names;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
@@ -1535,7 +1545,7 @@ impl Parser {
 
     fn new_with_layouts_and_aggregate_objects(
         source: &str,
-        struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+        struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
         union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
         aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
         aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
@@ -1671,7 +1681,7 @@ impl Parser {
             loop_name_context: None,
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
-            c_object_names_by_function: BTreeMap::new(),
+            program_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
@@ -1682,7 +1692,7 @@ impl Parser {
             global_array_shapes_by_function,
             local_struct_pointers_by_function: BTreeMap::new(),
             current_reference_result: false,
-            current_result_c_type: None,
+            current_result_interface_type: None,
             current_local_pointers: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
@@ -2306,7 +2316,7 @@ impl Parser {
             theorem_definitions.push(self.parse_theorem_definition()?);
         }
         self.position = end;
-        let mut c_function_names = self
+        let mut program_function_names = self
             .local_struct_pointers_by_function
             .iter()
             .filter_map(|(source, info)| {
@@ -2326,7 +2336,7 @@ impl Parser {
                     .qualified_functions
                     .get(&(source.clone(), name.to_string()))
                 {
-                    c_function_names.insert(signature.name().to_string(), target.clone());
+                    program_function_names.insert(signature.name().to_string(), target.clone());
                 }
             }
         }
@@ -2346,7 +2356,7 @@ impl Parser {
                     .map(|(name, layout)| (name.clone(), layout.size_bytes()))
                     .collect(),
             ),
-            c_function_names: std::sync::Arc::new(c_function_names),
+            program_function_names: std::sync::Arc::new(program_function_names),
             imports,
             library_imports,
             verifying_sources,
@@ -2702,7 +2712,7 @@ impl Parser {
             return Ok(AlgebraicFieldType::Algebraic {
                 name: "Slice".to_string(),
                 arguments: vec![AlgebraicFieldType::C {
-                    c_type: element,
+                    interface_type: element,
                     struct_name: None,
                     object_class: None,
                 }],
@@ -2736,7 +2746,7 @@ impl Parser {
                 Some(parsed) => parsed,
                 None => self.parse_type()?,
             };
-            if !algebraic_field_c_type_supported(parsed.c_type) {
+            if !algebraic_field_c_type_supported(parsed.interface_type) {
                 return Err(self.error(
                     "algebraic datatype fields must be C scalar, data-pointer, or algebraic values",
                 ));
@@ -2746,13 +2756,14 @@ impl Parser {
             // `struct tag**` does not point at one either, so neither is a
             // memory base in a match arm.
             let object_class = self.declared_object_class(&parsed);
-            let struct_name = if parsed.struct_pointer && parsed.c_type == C0Type::Int32Pointer {
-                parsed.struct_name
-            } else {
-                None
-            };
+            let struct_name =
+                if parsed.struct_pointer && parsed.interface_type == InterfaceType::Int32Pointer {
+                    parsed.struct_name
+                } else {
+                    None
+                };
             return Ok(AlgebraicFieldType::C {
-                c_type: parsed.c_type,
+                interface_type: parsed.interface_type,
                 struct_name,
                 object_class,
             });
@@ -3078,7 +3089,7 @@ impl Parser {
             if parsed_return_type.struct_name.is_some() && !parsed_return_type.struct_pointer {
                 return Err(self.error("only pointer-to-struct types are supported"));
             }
-            if parsed_return_type.c_type == C0Type::Void {
+            if parsed_return_type.interface_type == InterfaceType::Void {
                 return Err(self.error("pure Click functions must return a value"));
             }
         }
@@ -3136,7 +3147,7 @@ impl Parser {
             &mut self.spec_parameter_types,
             spec_parameter_types(&parsed_parameters.parameters),
         );
-        let body = self.parse_branch_value(return_type == ClickType::Program(C0Type::Bool));
+        let body = self.parse_branch_value(return_type == ClickType::Program(InterfaceType::Bool));
         self.spec_parameter_types = previous_spec_parameter_types;
         let body = body?;
         // A `-> Integer` body is read where its result is used.
@@ -3458,7 +3469,7 @@ impl Parser {
             self.expect(Token::Colon)?;
             let (click_type, parsed_c_type) = self.parse_click_type()?;
             if parsed_c_type.as_ref().is_some_and(|ty| {
-                !algebraic_field_c_type_supported(ty.c_type)
+                !algebraic_field_c_type_supported(ty.interface_type)
                     || ty.struct_name.is_some()
                     || ty.constant
                     || ty.pointee_constant
@@ -3599,12 +3610,12 @@ impl Parser {
                         .click_type
                         .as_ref()
                         .expect("`let ... where` carries its type");
-                    let Some(c_type) = click_type.c_type() else {
+                    let Some(interface_type) = click_type.interface_type() else {
                         return Err(self.error(
                             "resource witnesses must have a C pointer type, not an algebraic type",
                         ));
                     };
-                    if !c_type.is_pointer() {
+                    if !interface_type.is_pointer() {
                         return Err(self.error(format!(
                             "resource witness `{}` must have a pointer type",
                             binding.name
@@ -3617,7 +3628,7 @@ impl Parser {
                     }
                     witnesses.push(ResourceWitness {
                         name: binding.name,
-                        c_type,
+                        interface_type,
                     });
                     facts.push(condition);
                 }
@@ -3708,7 +3719,7 @@ impl Parser {
         let binder = self.expect_ident("iterated ownership index name")?;
         self.expect(Token::Colon)?;
         let (click_type, _) = self.parse_click_type()?;
-        if click_type != ClickType::Program(C0Type::Int32) {
+        if click_type != ClickType::Program(InterfaceType::Int32) {
             return Err(self.error(format!(
                 "iterated ownership index `{binder}` must have type `int32`"
             )));
@@ -3866,13 +3877,13 @@ impl Parser {
                     if let Some(slices) = &mut self.pending_slice_params {
                         slices.push(name.clone());
                     }
-                    if let Some(pointee) = element.c_type.pointee_type() {
+                    if let Some(pointee) = element.interface_type.pointee_type() {
                         self.rust_slice_elements.insert(name.clone(), pointee);
                     }
                     self.implied_library_modules.insert(SLICE_MODULE);
                     parameters.push(self.parse_parameter_array_suffix(name, element)?.parameter);
                     parameters.push(FunctionParameter {
-                        click_type: ClickType::Program(C0Type::UInt64(LongRank::Long)),
+                        click_type: ClickType::Program(InterfaceType::UInt64(LongRank::Long)),
                         name: length,
                         struct_name: None,
                         function_pointer_signature: None,
@@ -3884,11 +3895,11 @@ impl Parser {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
                     let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
                         if self.peek() == Some(&Token::LParen) {
-                            let (c_type, function_pointer_signature) =
+                            let (interface_type, function_pointer_signature) =
                                 self.parse_abstract_function_pointer_type(parsed_type)?;
                             ParsedParameter {
                                 parameter: FunctionParameter {
-                                    click_type: ClickType::Program(c_type),
+                                    click_type: ClickType::Program(interface_type),
                                     name,
                                     struct_name: None,
                                     function_pointer_signature: Some(function_pointer_signature),
@@ -3921,7 +3932,7 @@ impl Parser {
                     };
                     if let Some(struct_name) = parsed_parameter.struct_name {
                         if parsed_parameter.parameter.click_type
-                            == ClickType::Program(C0Type::Int32PointerPointer)
+                            == ClickType::Program(InterfaceType::Int32PointerPointer)
                         {
                             struct_params.insert(
                                 struct_pointer_pointer_key(&parsed_parameter.parameter.name),
@@ -4071,8 +4082,8 @@ impl Parser {
                 .filter(|parameter| {
                     parameter
                         .click_type()
-                        .c_type()
-                        .is_some_and(|c_type| c_type.is_pointer())
+                        .interface_type()
+                        .is_some_and(|interface_type| interface_type.is_pointer())
                 })
                 .map(|parameter| parameter.name().to_string())
                 .collect(),
@@ -4343,7 +4354,7 @@ impl Parser {
                 .filter(|parameter| {
                     matches!(
                         parameter.click_type(),
-                        ClickType::Program(C0Type::ParameterPointer(_))
+                        ClickType::Program(InterfaceType::ParameterPointer(_))
                     )
                 })
                 .map(|parameter| parameter.name().to_owned())
@@ -4417,9 +4428,9 @@ impl Parser {
                 continue;
             };
             for field in layout.fields().values() {
-                match (field.c_type(), field.struct_name()) {
-                    (C0Type::Parameter(_), _) => return true,
-                    (C0Type::Int32, Some(embedded)) => pending.push(embedded.to_string()),
+                match (field.interface_type(), field.struct_name()) {
+                    (InterfaceType::Parameter(_), _) => return true,
+                    (InterfaceType::Int32, Some(embedded)) => pending.push(embedded.to_string()),
                     _ => {}
                 }
             }
@@ -4643,20 +4654,22 @@ impl Parser {
             signature
                 .parameters()
                 .iter()
-                .filter(|parameter| parameter.c_type() == C0Type::VoidPointer)
+                .filter(|parameter| parameter.interface_type() == InterfaceType::VoidPointer)
                 .map(|parameter| parameter.name().to_string())
                 .collect(),
         );
         let previous_c_object_names = std::mem::replace(
-            &mut self.names.c_object_names,
-            self.c_object_names_by_function.get(&table_name).cloned(),
+            &mut self.names.program_object_names,
+            self.program_object_names_by_function
+                .get(&table_name)
+                .cloned(),
         );
         let previous_c_parameter_types = std::mem::replace(
-            &mut self.names.c_parameter_types,
+            &mut self.names.program_parameter_types,
             signature
                 .parameters()
                 .iter()
-                .map(|parameter| (parameter.name().to_string(), parameter.c_type()))
+                .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
                 .collect(),
         );
         let previous_parameter_struct_casts =
@@ -4701,7 +4714,9 @@ impl Parser {
             &mut self.current_reference_result,
             signature.returns_reference(),
         );
-        let previous_result_c_type = self.current_result_c_type.replace(signature.return_type());
+        let previous_result_c_type = self
+            .current_result_interface_type
+            .replace(signature.return_type());
         let local_pointers = self
             .local_struct_pointers_by_function
             .get(&table_name)
@@ -4746,11 +4761,14 @@ impl Parser {
                                 binding.name
                             )));
                         }
-                        let c_type = binding
+                        let interface_type = binding
                             .click_type
                             .as_ref()
-                            .and_then(ClickType::c_type)
-                            .filter(|c_type| !c_type.is_pointer() && *c_type != C0Type::Void)
+                            .and_then(ClickType::interface_type)
+                            .filter(|interface_type| {
+                                !interface_type.is_pointer()
+                                    && *interface_type != InterfaceType::Void
+                            })
                             .ok_or_else(|| {
                                 self.error(format!(
                                     "contract value parameter `{}` must have a scalar type",
@@ -4758,7 +4776,7 @@ impl Parser {
                                 ))
                             })?;
                         self.contract_value_parameters.push(FunctionParameter {
-                            click_type: ClickType::Program(c_type),
+                            click_type: ClickType::Program(interface_type),
                             name: binding.name.clone(),
                             struct_name: None,
                             function_pointer_signature: None,
@@ -5167,8 +5185,8 @@ impl Parser {
                 )));
             }
         }
-        let c_object_names = self
-            .c_object_names_by_function
+        let program_object_names = self
+            .program_object_names_by_function
             .get(&table_name)
             .cloned()
             .unwrap_or_else(|| {
@@ -5184,8 +5202,8 @@ impl Parser {
         self.names.struct_params = previous_struct_params;
         self.names
             .replace(NameKind::VoidPointerParameter, previous_void_pointer_params);
-        self.names.c_parameter_types = previous_c_parameter_types;
-        self.names.c_object_names = previous_c_object_names;
+        self.names.program_parameter_types = previous_c_parameter_types;
+        self.names.program_object_names = previous_c_object_names;
         self.rust_loop_iterators = previous_loop_iterators;
         let parameter_struct_casts = std::mem::replace(
             &mut self.names.parameter_struct_casts,
@@ -5202,7 +5220,7 @@ impl Parser {
         self.names
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.current_reference_result = previous_reference_result;
-        self.current_result_c_type = previous_result_c_type;
+        self.current_result_interface_type = previous_result_c_type;
         self.current_local_pointers = previous_local_pointers;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
@@ -5326,7 +5344,7 @@ impl Parser {
                 implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
                 proof_clauses: self.proof_clause_spans[first_proof_clause..].to_vec(),
             },
-            c_object_names,
+            program_object_names,
             recursion_peers,
             signature,
             external,
@@ -5380,9 +5398,9 @@ impl Parser {
             // arithmetic on a machine value has no meaning.
             let value = match &click_type {
                 Some(ClickType::Integer) => self.at_integer_position(value),
-                Some(ClickType::Program(c_type)) => {
-                    let value = self.typed_let_literal(&name, *c_type, value)?;
-                    self.refuse_mixed_narrow_arithmetic(&name, *c_type, &value)?;
+                Some(ClickType::Program(interface_type)) => {
+                    let value = self.typed_let_literal(&name, *interface_type, value)?;
+                    self.refuse_mixed_narrow_arithmetic(&name, *interface_type, &value)?;
                     value
                 }
                 Some(_) => value,
@@ -5425,7 +5443,7 @@ impl Parser {
             if let Some(parameter) = parsed_parameters
                 .parameters
                 .iter()
-                .find(|parameter| parameter.click_type().c_type().is_none())
+                .find(|parameter| parameter.click_type().interface_type().is_none())
             {
                 return Err(self.error(format!(
                     "tactic parameter `{}` has a mathematical type; tactic parameters are C \
@@ -5442,7 +5460,7 @@ impl Parser {
             return Ok(ParsedFunctionSignature {
                 signature: FunctionSignature {
                     c_source: None,
-                    return_type: C0Type::Void,
+                    return_type: InterfaceType::Void,
                     return_struct_name: None,
                     return_pointee_constant: false,
                     return_reference: false,
@@ -5473,7 +5491,7 @@ impl Parser {
         let returnless = self.verifies_cpp() && self.cpp_returnless_declarator_follows();
         let parsed_return_type = if returnless {
             ParsedType {
-                c_type: C0Type::Void,
+                interface_type: InterfaceType::Void,
                 struct_name: None,
                 struct_pointer: false,
                 constant: false,
@@ -5495,7 +5513,7 @@ impl Parser {
         {
             self.scalar_struct_value_type(struct_name)?
         } else {
-            parsed_return_type.c_type
+            parsed_return_type.interface_type
         };
         let mut c_source = None;
         let (name, receiver) = if self.verifies_cpp() {
@@ -5563,7 +5581,7 @@ impl Parser {
             let this = self.parse_parameter_array_suffix(
                 "this".into(),
                 ParsedType {
-                    c_type: C0Type::Int32Pointer,
+                    interface_type: InterfaceType::Int32Pointer,
                     struct_name: Some(record.clone()),
                     struct_pointer: true,
                     constant: false,
@@ -5581,15 +5599,14 @@ impl Parser {
         let name = match self.cpp_overloads.get(&name) {
             Some(overloads) => {
                 let written = &parsed_parameters.parameters[usize::from(has_receiver)..];
-                let mut selected = overloads.iter().filter(|overload| {
-                    overload.constant == receiver_constant
-                        && overload.parameters.len() == written.len()
-                        && overload
-                            .parameters
-                            .iter()
-                            .zip(written)
-                            .all(|(expected, parameter)| *expected == parameter.c_type())
-                });
+                let mut selected =
+                    overloads.iter().filter(|overload| {
+                        overload.constant == receiver_constant
+                            && overload.parameters.len() == written.len()
+                            && overload.parameters.iter().zip(written).all(
+                                |(expected, parameter)| *expected == parameter.interface_type(),
+                            )
+                    });
                 match (selected.next(), selected.next()) {
                     (Some(overload), None) => overload.name.clone(),
                     (selected, _) => {
@@ -5614,11 +5631,11 @@ impl Parser {
             if parsed.constant
                 || parsed.pointee_constant
                 || parsed.struct_name.is_some()
-                || parsed.c_type != C0Type::Int32
+                || parsed.interface_type != InterfaceType::Int32
             {
                 return Err(self.error("the exceptional payload type must be `int32`"));
             }
-            Some(C0Type::Int32)
+            Some(InterfaceType::Int32)
         } else {
             None
         };
@@ -5696,10 +5713,10 @@ impl Parser {
             "false" => false,
             _ => return None,
         };
-        let shadowed = self.names.c_parameter_types.contains_key(name)
+        let shadowed = self.names.program_parameter_types.contains_key(name)
             || self
                 .names
-                .c_object_names
+                .program_object_names
                 .as_ref()
                 .is_some_and(|names| names.contains(name))
             || self.names.contains(NameKind::ProofBinder, name)
@@ -5722,7 +5739,7 @@ impl Parser {
     /// function's complete object-name table.
     fn refuse_unknown_loop_value(&self, name: &str) -> Result<(), ClickError> {
         if let Some(context) = &self.loop_name_context
-            && self.names.c_object_names.is_some()
+            && self.names.program_object_names.is_some()
             // A loop's returning arm may close the function's postcondition.
             // Execution checking decides when this built-in value exists.
             && name != "result"
@@ -5779,10 +5796,10 @@ impl Parser {
                 Some(callable) => Some(callable),
                 None => self.parse_program_function_pointer_typedef()?,
             };
-            if let Some((c_type, function_pointer_signature)) = callable {
+            if let Some((interface_type, function_pointer_signature)) = callable {
                 let name = self.expect_ident("parameter name")?;
                 parameters.push(FunctionParameter {
-                    click_type: ClickType::Program(c_type),
+                    click_type: ClickType::Program(interface_type),
                     name,
                     struct_name: None,
                     function_pointer_signature: Some(function_pointer_signature),
@@ -5811,7 +5828,7 @@ impl Parser {
             if let Some((element, length, constant)) = self.parse_c_array_typedef()? {
                 let name = self.expect_ident("parameter name")?;
                 let parsed_type = ParsedType {
-                    c_type: element,
+                    interface_type: element,
                     struct_name: None,
                     struct_pointer: false,
                     constant,
@@ -5847,11 +5864,11 @@ impl Parser {
             }
             let parsed_type = self.parse_type()?;
             let parsed_parameter = if self.peek() == Some(&Token::LParen) {
-                let (name, c_type, function_pointer_signature) =
+                let (name, interface_type, function_pointer_signature) =
                     self.parse_function_pointer_declarator(parsed_type.clone())?;
                 ParsedParameter {
                     parameter: FunctionParameter {
-                        click_type: ClickType::Program(c_type),
+                        click_type: ClickType::Program(interface_type),
                         name,
                         struct_name: None,
                         function_pointer_signature: Some(function_pointer_signature),
@@ -5869,7 +5886,7 @@ impl Parser {
             };
             if let Some(struct_name) = parsed_parameter.struct_name {
                 if parsed_parameter.parameter.click_type
-                    == ClickType::Program(C0Type::Int32PointerPointer)
+                    == ClickType::Program(InterfaceType::Int32PointerPointer)
                 {
                     struct_params.insert(
                         struct_pointer_pointer_key(&parsed_parameter.parameter.name),
@@ -5949,7 +5966,7 @@ impl Parser {
             if let Some(reference) = indirection {
                 self.position += 1;
                 return Ok(ParsedType {
-                    c_type: C0Type::ParameterPointer(parameter),
+                    interface_type: InterfaceType::ParameterPointer(parameter),
                     struct_name: None,
                     struct_pointer: false,
                     constant: false,
@@ -5958,7 +5975,7 @@ impl Parser {
                 });
             }
             return Ok(ParsedType {
-                c_type: C0Type::Parameter(parameter),
+                interface_type: InterfaceType::Parameter(parameter),
                 struct_name: None,
                 struct_pointer: false,
                 constant: is_constant,
@@ -5994,13 +6011,13 @@ impl Parser {
         let typedef_struct = match self.c_typedefs.get(&spelling) {
             Some(syntax::C0HeadTypedef::Struct {
                 name,
-                c_type,
+                interface_type,
                 constant,
                 pointee_constant,
             }) => {
                 self.check_head_typedef(&spelling)?;
                 is_constant |= constant;
-                Some((name.clone(), *c_type, *pointee_constant))
+                Some((name.clone(), *interface_type, *pointee_constant))
             }
             _ => None,
         };
@@ -6008,8 +6025,8 @@ impl Parser {
         // before it qualifies the pointer, as in C.
         let alias_pointer = typedef_struct
             .as_ref()
-            .filter(|(_, c_type, _)| *c_type != C0Type::Int32)
-            .map(|(_, c_type, pointee_constant)| (*c_type, *pointee_constant));
+            .filter(|(_, interface_type, _)| *interface_type != InterfaceType::Int32)
+            .map(|(_, interface_type, pointee_constant)| (*interface_type, *pointee_constant));
         if spelling == "struct" || cpp_record || typedef_struct.is_some() {
             let struct_name = if let Some((name, _, _)) = typedef_struct {
                 name
@@ -6026,7 +6043,7 @@ impl Parser {
             if self.peek() == Some(&Token::Amp) && alias_pointer.is_none() {
                 self.position += 1;
                 return Ok(ParsedType {
-                    c_type: C0Type::Int32Pointer,
+                    interface_type: InterfaceType::Int32Pointer,
                     struct_name: Some(struct_name),
                     struct_pointer: true,
                     constant: false,
@@ -6035,8 +6052,8 @@ impl Parser {
                 });
             }
             if self.peek() == Some(&Token::Star) || alias_pointer.is_some() {
-                let (mut c_type, mut pointee_constant) =
-                    alias_pointer.unwrap_or((C0Type::Int32, false));
+                let (mut interface_type, mut pointee_constant) =
+                    alias_pointer.unwrap_or((InterfaceType::Int32, false));
                 let mut saw_pointer = alias_pointer.is_some();
                 while self.peek() == Some(&Token::Star) {
                     if saw_pointer && pointee_constant {
@@ -6047,9 +6064,9 @@ impl Parser {
                     let base_constant = object_constant;
                     object_constant = false;
                     self.position += 1;
-                    c_type = match c_type {
-                        C0Type::Int32 => C0Type::Int32Pointer,
-                        C0Type::Int32Pointer => C0Type::Int32PointerPointer,
+                    interface_type = match interface_type {
+                        InterfaceType::Int32 => InterfaceType::Int32Pointer,
+                        InterfaceType::Int32Pointer => InterfaceType::Int32PointerPointer,
                         _ => return Err(self.error("pointer depth beyond `**` is not supported")),
                     };
                     pointee_constant = base_constant;
@@ -6060,7 +6077,7 @@ impl Parser {
                     saw_pointer = true;
                 }
                 return Ok(ParsedType {
-                    c_type,
+                    interface_type,
                     struct_name: Some(struct_name),
                     struct_pointer: true,
                     constant: object_constant,
@@ -6069,7 +6086,7 @@ impl Parser {
                 });
             }
             return Ok(ParsedType {
-                c_type: C0Type::Int32Pointer,
+                interface_type: InterfaceType::Int32Pointer,
                 struct_name: Some(struct_name),
                 struct_pointer: false,
                 constant: object_constant,
@@ -6093,11 +6110,11 @@ impl Parser {
         // A specification type names a representation: a sidecar's `long
         // long` is `int64`, which matches a C `long` or `long long` alike. A
         // function head restates a C declaration and keeps its rank.
-        let integer = integer.map(|(c_type, count)| {
+        let integer = integer.map(|(interface_type, count)| {
             if self.exact_long_rank {
-                (c_type, count)
+                (interface_type, count)
             } else {
-                (c_type.erase_long_rank(), count)
+                (interface_type.erase_long_rank(), count)
             }
         });
         let typedef_rank = if self.exact_long_rank {
@@ -6107,12 +6124,12 @@ impl Parser {
         };
         // A scalar pointer alias's pointee qualification, as for a struct one.
         let mut alias_scalar_pointer = None;
-        let scalar_type = if let Some((c_type, count)) = integer {
+        let scalar_type = if let Some((interface_type, count)) = integer {
             self.position += count - 1;
-            c_type
+            interface_type
         } else {
             match spelling.as_str() {
-                "void" => C0Type::Void,
+                "void" => InterfaceType::Void,
                 // Stage 5 (decision D4): a function head restates its
                 // language's declaration, `bool` or `_Bool`; Click's own
                 // positions write `Bool`, and a Rust sidecar writes Rust's
@@ -6123,30 +6140,30 @@ impl Parser {
                             self.error(format!("`{spelling}` is not a Click type; write `Bool`"))
                         );
                     }
-                    C0Type::Bool
+                    InterfaceType::Bool
                 }
-                "Bool" => C0Type::Bool,
-                "int8" | "int8_t" => C0Type::Int8,
-                "int16" | "int16_t" => C0Type::Int16,
-                "int32" | "int32_t" => C0Type::Int32,
-                "uint8" | "uint8_t" => C0Type::UInt8,
-                "uint16" | "uint16_t" => C0Type::UInt16,
-                "uint32" | "uint32_t" => C0Type::UInt32,
-                "int64" | "ssize_t" => C0Type::Int64(LongRank::Long),
-                "int64_t" => C0Type::Int64(typedef_rank),
-                "uint64" | "size_t" => C0Type::UInt64(LongRank::Long),
-                "uint64_t" => C0Type::UInt64(typedef_rank),
-                "int128" => C0Type::Int128,
-                "uint128" => C0Type::UInt128,
-                "float" => C0Type::Float32,
-                "double" => C0Type::Float64,
+                "Bool" => InterfaceType::Bool,
+                "int8" | "int8_t" => InterfaceType::Int8,
+                "int16" | "int16_t" => InterfaceType::Int16,
+                "int32" | "int32_t" => InterfaceType::Int32,
+                "uint8" | "uint8_t" => InterfaceType::UInt8,
+                "uint16" | "uint16_t" => InterfaceType::UInt16,
+                "uint32" | "uint32_t" => InterfaceType::UInt32,
+                "int64" | "ssize_t" => InterfaceType::Int64(LongRank::Long),
+                "int64_t" => InterfaceType::Int64(typedef_rank),
+                "uint64" | "size_t" => InterfaceType::UInt64(LongRank::Long),
+                "uint64_t" => InterfaceType::UInt64(typedef_rank),
+                "int128" => InterfaceType::Int128,
+                "uint128" => InterfaceType::UInt128,
+                "float" => InterfaceType::Float32,
+                "double" => InterfaceType::Float64,
                 "volatile" => {
                     return Err(self.error("the `volatile` qualifier is not supported by Click"));
                 }
                 _ if let Some(typedef) = self.c_typedefs.get(&spelling) => {
                     self.check_head_typedef(&spelling)?;
                     let syntax::C0HeadTypedef::Scalar {
-                        c_type,
+                        interface_type,
                         constant,
                         pointee_constant,
                     } = *typedef
@@ -6159,10 +6176,10 @@ impl Parser {
                         )));
                     };
                     is_constant |= constant;
-                    if c_type.is_pointer() {
+                    if interface_type.is_pointer() {
                         alias_scalar_pointer = Some(pointee_constant);
                     }
-                    c_type
+                    interface_type
                 }
                 _ => {
                     return Err(self.error(format!(
@@ -6171,7 +6188,7 @@ impl Parser {
                 }
             }
         };
-        let mut c_type = scalar_type;
+        let mut interface_type = scalar_type;
         let mut object_constant = is_constant;
         let mut pointee_constant = alias_scalar_pointer.unwrap_or(false);
         if self.peek_ident() == Some("const") {
@@ -6193,33 +6210,33 @@ impl Parser {
             let base_constant = object_constant;
             object_constant = false;
             self.position += 1;
-            c_type = match c_type {
-                C0Type::Void if reference => {
+            interface_type = match interface_type {
+                InterfaceType::Void if reference => {
                     return Err(self.error("a reference to `void` is not a type"));
                 }
-                C0Type::Void => C0Type::VoidPointer,
-                C0Type::Int8 => C0Type::Int8Pointer,
-                C0Type::Int16 => C0Type::Int16Pointer,
-                C0Type::UInt16 => C0Type::UInt16Pointer,
-                C0Type::Int32 => C0Type::Int32Pointer,
-                C0Type::Char(plain) => C0Type::CharPointer(plain),
-                C0Type::UInt8 => C0Type::UInt8Pointer,
-                C0Type::UInt32 => C0Type::UInt32Pointer,
-                C0Type::Int64(rank) => C0Type::Int64Pointer(rank),
-                C0Type::Int128 => C0Type::Int128Pointer,
-                C0Type::UInt64(rank) => C0Type::UInt64Pointer(rank),
-                C0Type::UInt128 => C0Type::UInt128Pointer,
-                C0Type::Int8Pointer => C0Type::Int8PointerPointer,
-                C0Type::Int16Pointer => C0Type::Int16PointerPointer,
-                C0Type::UInt16Pointer => C0Type::UInt16PointerPointer,
-                C0Type::Int32Pointer => C0Type::Int32PointerPointer,
-                C0Type::CharPointer(plain) => C0Type::CharPointerPointer(plain),
-                C0Type::UInt8Pointer => C0Type::UInt8PointerPointer,
-                C0Type::UInt32Pointer => C0Type::UInt32PointerPointer,
-                C0Type::Int64Pointer(rank) => C0Type::Int64PointerPointer(rank),
-                C0Type::Int128Pointer => C0Type::Int128PointerPointer,
-                C0Type::UInt64Pointer(rank) => C0Type::UInt64PointerPointer(rank),
-                C0Type::UInt128Pointer => C0Type::UInt128PointerPointer,
+                InterfaceType::Void => InterfaceType::VoidPointer,
+                InterfaceType::Int8 => InterfaceType::Int8Pointer,
+                InterfaceType::Int16 => InterfaceType::Int16Pointer,
+                InterfaceType::UInt16 => InterfaceType::UInt16Pointer,
+                InterfaceType::Int32 => InterfaceType::Int32Pointer,
+                InterfaceType::Char(plain) => InterfaceType::CharPointer(plain),
+                InterfaceType::UInt8 => InterfaceType::UInt8Pointer,
+                InterfaceType::UInt32 => InterfaceType::UInt32Pointer,
+                InterfaceType::Int64(rank) => InterfaceType::Int64Pointer(rank),
+                InterfaceType::Int128 => InterfaceType::Int128Pointer,
+                InterfaceType::UInt64(rank) => InterfaceType::UInt64Pointer(rank),
+                InterfaceType::UInt128 => InterfaceType::UInt128Pointer,
+                InterfaceType::Int8Pointer => InterfaceType::Int8PointerPointer,
+                InterfaceType::Int16Pointer => InterfaceType::Int16PointerPointer,
+                InterfaceType::UInt16Pointer => InterfaceType::UInt16PointerPointer,
+                InterfaceType::Int32Pointer => InterfaceType::Int32PointerPointer,
+                InterfaceType::CharPointer(plain) => InterfaceType::CharPointerPointer(plain),
+                InterfaceType::UInt8Pointer => InterfaceType::UInt8PointerPointer,
+                InterfaceType::UInt32Pointer => InterfaceType::UInt32PointerPointer,
+                InterfaceType::Int64Pointer(rank) => InterfaceType::Int64PointerPointer(rank),
+                InterfaceType::Int128Pointer => InterfaceType::Int128PointerPointer,
+                InterfaceType::UInt64Pointer(rank) => InterfaceType::UInt64PointerPointer(rank),
+                InterfaceType::UInt128Pointer => InterfaceType::UInt128PointerPointer,
                 _ => return Err(self.error("pointer depth beyond `**` is not supported")),
             };
             if base_constant {
@@ -6235,7 +6252,7 @@ impl Parser {
             saw_pointer = true;
         }
         Ok(ParsedType {
-            c_type,
+            interface_type,
             struct_name: None,
             struct_pointer: false,
             constant: object_constant,
@@ -6255,7 +6272,7 @@ impl Parser {
         match (&parsed.struct_name, parsed.struct_pointer) {
             (Some(_), false) => None,
             (struct_name, _) => syntax::declared_pointee_class(
-                parsed.c_type,
+                parsed.interface_type,
                 struct_name.as_deref(),
                 &self.struct_layouts,
             ),
@@ -6274,17 +6291,17 @@ impl Parser {
             ));
         }
         if let Some(parsed) = self.parse_rust_click_type()? {
-            return Ok((ClickType::Program(parsed.c_type), Some(parsed)));
+            return Ok((ClickType::Program(parsed.interface_type), Some(parsed)));
         }
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
         // A C++ generic method's or resource's abstract type parameter.
-        let c_type = is_c_type_keyword(name)
+        let interface_type = is_c_type_keyword(name)
             || (self.verifies_cpp() && self.rust_abstract_type_parameters.contains(name));
-        if c_type || self.at_cpp_record_type() {
+        if interface_type || self.at_cpp_record_type() {
             let parsed = self.parse_type()?;
-            return Ok((ClickType::Program(parsed.c_type), Some(parsed)));
+            return Ok((ClickType::Program(parsed.interface_type), Some(parsed)));
         }
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
@@ -6303,7 +6320,7 @@ impl Parser {
             if self.peek() == Some(&Token::Star) {
                 self.position += 1;
                 return Ok((
-                    ClickType::Program(C0Type::ParameterPointer(
+                    ClickType::Program(InterfaceType::ParameterPointer(
                         crate::kernel::TypeParameterName::intern(&name),
                     )),
                     None,
@@ -6341,7 +6358,7 @@ impl Parser {
         Ok(parameters)
     }
 
-    fn scalar_struct_value_type(&self, struct_name: &str) -> Result<C0Type, ClickError> {
+    fn scalar_struct_value_type(&self, struct_name: &str) -> Result<InterfaceType, ClickError> {
         let layout = self
             .struct_layouts
             .get(struct_name)
@@ -6357,7 +6374,7 @@ impl Parser {
                 self.scalar_struct_value_type(nested_name)?;
                 continue;
             }
-            if field.c_type() == C0Type::Int32
+            if field.interface_type() == InterfaceType::Int32
                 && field.struct_name().is_some()
                 && field.array_element_width().is_none()
             {
@@ -6369,44 +6386,44 @@ impl Parser {
                 continue;
             }
             if field.union_name().is_some()
-                || (field.struct_name().is_some() && !field.c_type().is_pointer())
+                || (field.struct_name().is_some() && !field.interface_type().is_pointer())
                 || !matches!(
-                    field.c_type(),
-                    C0Type::Int8 | C0Type::Int16
-                        | C0Type::Int32
-                        | C0Type::Char(_)
-                        | C0Type::UInt8
-                        | C0Type::UInt16
-                        | C0Type::UInt32
-                        | C0Type::Int64(_)
-                        | C0Type::UInt64(_)
-                        | C0Type::Float32
-                        | C0Type::Float64
-                        | C0Type::Int32Array(_)
-                        | C0Type::UInt32Array(_)
-                        | C0Type::Int128Array(_)
-                        | C0Type::Int64Array(_, _)
-                        | C0Type::UInt128Array(_)
-                        | C0Type::UInt64Array(_, _)
-                        | C0Type::CharArray(_, _)
-                        | C0Type::UInt8Array(_)
-                        | C0Type::Float32Array(_)
-                        | C0Type::Float64Array(_)
-                        | C0Type::Int32Pointer
-                        | C0Type::CharPointer(_)
-                        | C0Type::UInt8Pointer
-                        | C0Type::Float32Pointer
-                        | C0Type::Float64Pointer
-                        | C0Type::Int32PointerPointer
-                        | C0Type::CharPointerPointer(_)
-                        | C0Type::UInt8PointerPointer
-                        | C0Type::Float32PointerPointer
-                        | C0Type::Float64PointerPointer
+                    field.interface_type(),
+                    InterfaceType::Int8 | InterfaceType::Int16
+                        | InterfaceType::Int32
+                        | InterfaceType::Char(_)
+                        | InterfaceType::UInt8
+                        | InterfaceType::UInt16
+                        | InterfaceType::UInt32
+                        | InterfaceType::Int64(_)
+                        | InterfaceType::UInt64(_)
+                        | InterfaceType::Float32
+                        | InterfaceType::Float64
+                        | InterfaceType::Int32Array(_)
+                        | InterfaceType::UInt32Array(_)
+                        | InterfaceType::Int128Array(_)
+                        | InterfaceType::Int64Array(_, _)
+                        | InterfaceType::UInt128Array(_)
+                        | InterfaceType::UInt64Array(_, _)
+                        | InterfaceType::CharArray(_, _)
+                        | InterfaceType::UInt8Array(_)
+                        | InterfaceType::Float32Array(_)
+                        | InterfaceType::Float64Array(_)
+                        | InterfaceType::Int32Pointer
+                        | InterfaceType::CharPointer(_)
+                        | InterfaceType::UInt8Pointer
+                        | InterfaceType::Float32Pointer
+                        | InterfaceType::Float64Pointer
+                        | InterfaceType::Int32PointerPointer
+                        | InterfaceType::CharPointerPointer(_)
+                        | InterfaceType::UInt8PointerPointer
+                        | InterfaceType::Float32PointerPointer
+                        | InterfaceType::Float64PointerPointer
                         // A callback field is an eight-byte pointer value,
                         // matching the C boundary's own by-value field set.
-                        | C0Type::FunctionPointer(_)
+                        | InterfaceType::FunctionPointer(_)
                         // A generic Rust struct's field of a type parameter.
-                        | C0Type::Parameter(_)
+                        | InterfaceType::Parameter(_)
                 )
             {
                 return Err(self.error(format!(
@@ -6414,13 +6431,20 @@ impl Parser {
                 )));
             }
         }
-        Ok(C0Type::UInt8Array(layout.size_bytes()))
+        Ok(InterfaceType::UInt8Array(layout.size_bytes()))
     }
 
     fn parse_function_pointer_declarator(
         &mut self,
         return_type: ParsedType,
-    ) -> Result<(String, C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            String,
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         if return_type.struct_name.is_some() && !return_type.struct_pointer {
             return Err(self.error(
                 "function-pointer return values must use modeled scalars or struct pointers",
@@ -6430,9 +6454,9 @@ impl Parser {
         self.expect(Token::Star)?;
         let name = self.expect_ident("function-pointer parameter name")?;
         self.expect(Token::RParen)?;
-        let (c_type, function_pointer_signature) =
+        let (interface_type, function_pointer_signature) =
             self.parse_function_pointer_signature_tail(return_type)?;
-        Ok((name, c_type, function_pointer_signature))
+        Ok((name, interface_type, function_pointer_signature))
     }
 
     /// A parameter type that is a function-pointer typedef name of the
@@ -6440,12 +6464,20 @@ impl Parser {
     /// consumed, for any other type.
     fn parse_program_function_pointer_typedef(
         &mut self,
-    ) -> Result<Option<(C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+    ) -> Result<
+        Option<(
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        )>,
+        ClickError,
+    > {
         let Some(name) = self.peek_ident() else {
             return Ok(None);
         };
-        let Some(syntax::C0HeadTypedef::FunctionPointer { c_type, signature }) =
-            self.c_typedefs.get(name)
+        let Some(syntax::C0HeadTypedef::FunctionPointer {
+            interface_type,
+            signature,
+        }) = self.c_typedefs.get(name)
         else {
             return Ok(None);
         };
@@ -6454,7 +6486,7 @@ impl Parser {
         if !matches!(self.peek_next(), Some(Token::Ident(_))) {
             return Ok(None);
         }
-        let callable = (*c_type, signature.clone());
+        let callable = (*interface_type, signature.clone());
         self.check_head_typedef(name)?;
         self.position += 1;
         Ok(Some(callable))
@@ -6463,7 +6495,7 @@ impl Parser {
     /// A parameter type that is a scalar array typedef name of the verified
     /// C source, `triple values`: its element type, length and element
     /// `const`. `None`, with nothing consumed, for any other type.
-    fn parse_c_array_typedef(&mut self) -> Result<Option<(C0Type, u32, bool)>, ClickError> {
+    fn parse_c_array_typedef(&mut self) -> Result<Option<(InterfaceType, u32, bool)>, ClickError> {
         let Some(name) = self.peek_ident() else {
             return Ok(None);
         };
@@ -6489,7 +6521,13 @@ impl Parser {
     /// nothing consumed, when the type is not one.
     fn parse_cpp_std_function_type(
         &mut self,
-    ) -> Result<Option<(C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+    ) -> Result<
+        Option<(
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        )>,
+        ClickError,
+    > {
         if !self.verifies_cpp() {
             return Ok(None);
         }
@@ -6520,7 +6558,13 @@ impl Parser {
     fn parse_abstract_function_pointer_type(
         &mut self,
         return_type: ParsedType,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         if return_type.struct_name.is_some() && !return_type.struct_pointer {
             return Err(self.error(
                 "function-pointer return values must use modeled scalars or struct pointers",
@@ -6535,13 +6579,19 @@ impl Parser {
     fn parse_function_pointer_signature_tail(
         &mut self,
         return_type: ParsedType,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         if self.peek() != Some(&Token::RParen) {
             loop {
                 let parsed_type = self.parse_type()?;
-                if parsed_type.c_type == C0Type::Void {
+                if parsed_type.interface_type == InterfaceType::Void {
                     return Err(self.error("function-pointer parameters cannot have type `void`"));
                 }
                 if parsed_type.struct_name.is_some() && !parsed_type.struct_pointer {
@@ -6556,8 +6606,8 @@ impl Parser {
                 };
                 let parsed_parameter =
                     self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
-                parameters.push(syntax::C0FunctionPointerParameter::new(
-                    parsed_parameter.parameter.c_type(),
+                parameters.push(crate::languages::interface::CallbackParameter::new(
+                    parsed_parameter.parameter.interface_type(),
                     parsed_parameter.struct_name,
                     parsed_parameter.parameter.pointee_is_constant(),
                 ));
@@ -6583,27 +6633,27 @@ impl Parser {
             .iter()
             .map(|parameter| {
                 (
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                     parameter.pointee_is_constant(),
                 )
             })
             .collect::<Vec<_>>();
         let signature = crate::kernel::ProgramType::qualified_function_pointer_signature(
-            return_type.c_type.to_kernel_type(),
+            return_type.interface_type.to_kernel_type(),
             return_type.pointee_constant,
             &parameter_types,
         );
         if signature == crate::kernel::CallbackSignature::UNSPECIFIED {
             return Err(self.error("function-pointer signature uses an unsupported modeled type"));
         }
-        let function_pointer_signature = syntax::C0FunctionPointerSignature::new(
-            return_type.c_type,
+        let function_pointer_signature = crate::languages::interface::CallbackInterface::new(
+            return_type.interface_type,
             return_type.struct_name,
             parameters,
             return_type.pointee_constant,
         );
         Ok((
-            C0Type::FunctionPointer(signature),
+            InterfaceType::FunctionPointer(signature),
             function_pointer_signature,
         ))
     }
@@ -6613,21 +6663,21 @@ impl Parser {
         name: String,
         parsed_type: ParsedType,
     ) -> Result<ParsedParameter, ClickError> {
-        if parsed_type.c_type == C0Type::Void {
+        if parsed_type.interface_type == InterfaceType::Void {
             return Err(self.error("parameters cannot have type `void`"));
         }
         if self.peek() != Some(&Token::LBracket) {
             let struct_name = parsed_type.struct_name;
-            let c_type = if let Some(struct_name) = struct_name.as_deref()
+            let interface_type = if let Some(struct_name) = struct_name.as_deref()
                 && !parsed_type.struct_pointer
             {
                 self.scalar_struct_value_type(struct_name)?
             } else {
-                parsed_type.c_type
+                parsed_type.interface_type
             };
             return Ok(ParsedParameter {
                 parameter: FunctionParameter {
-                    click_type: ClickType::Program(c_type),
+                    click_type: ClickType::Program(interface_type),
                     // The parameter is the pointer that carries the
                     // reference; the written name is the referent.
                     name: if parsed_type.reference {
@@ -6658,7 +6708,7 @@ impl Parser {
             self.expect(Token::RBracket)?;
             return Ok(ParsedParameter {
                 parameter: FunctionParameter {
-                    click_type: ClickType::Program(C0Type::Int32Pointer),
+                    click_type: ClickType::Program(InterfaceType::Int32Pointer),
                     name,
                     struct_name: struct_name.clone(),
                     function_pointer_signature: None,
@@ -6693,29 +6743,29 @@ impl Parser {
         parsed_type: ParsedType,
         length: Option<u32>,
     ) -> Result<ParsedParameter, ClickError> {
-        let (pointer_type, element_width) = match parsed_type.c_type {
-            C0Type::Int8 => (C0Type::Int8Pointer, 1),
-            C0Type::Int16 => (C0Type::Int16Pointer, 2),
-            C0Type::Int32 => (C0Type::Int32Pointer, 4),
-            C0Type::Char(plain) => (C0Type::CharPointer(plain), 1),
-            C0Type::UInt8 => (C0Type::UInt8Pointer, 1),
-            C0Type::UInt16 => (C0Type::UInt16Pointer, 2),
-            C0Type::UInt32 => (C0Type::UInt32Pointer, 4),
-            C0Type::Int64(rank) => (C0Type::Int64Pointer(rank), 8),
-            C0Type::Int128 => (C0Type::Int128Pointer, 16),
-            C0Type::UInt64(rank) => (C0Type::UInt64Pointer(rank), 8),
-            C0Type::UInt128 => (C0Type::UInt128Pointer, 16),
-            C0Type::Int8Pointer => (C0Type::Int8PointerPointer, 8),
-            C0Type::Int16Pointer => (C0Type::Int16PointerPointer, 8),
-            C0Type::UInt16Pointer => (C0Type::UInt16PointerPointer, 8),
-            C0Type::Int32Pointer => (C0Type::Int32PointerPointer, 8),
-            C0Type::CharPointer(plain) => (C0Type::CharPointerPointer(plain), 8),
-            C0Type::UInt8Pointer => (C0Type::UInt8PointerPointer, 8),
-            C0Type::UInt32Pointer => (C0Type::UInt32PointerPointer, 8),
-            C0Type::Int64Pointer(rank) => (C0Type::Int64PointerPointer(rank), 8),
-            C0Type::Int128Pointer => (C0Type::Int128PointerPointer, 8),
-            C0Type::UInt64Pointer(rank) => (C0Type::UInt64PointerPointer(rank), 8),
-            C0Type::UInt128Pointer => (C0Type::UInt128PointerPointer, 8),
+        let (pointer_type, element_width) = match parsed_type.interface_type {
+            InterfaceType::Int8 => (InterfaceType::Int8Pointer, 1),
+            InterfaceType::Int16 => (InterfaceType::Int16Pointer, 2),
+            InterfaceType::Int32 => (InterfaceType::Int32Pointer, 4),
+            InterfaceType::Char(plain) => (InterfaceType::CharPointer(plain), 1),
+            InterfaceType::UInt8 => (InterfaceType::UInt8Pointer, 1),
+            InterfaceType::UInt16 => (InterfaceType::UInt16Pointer, 2),
+            InterfaceType::UInt32 => (InterfaceType::UInt32Pointer, 4),
+            InterfaceType::Int64(rank) => (InterfaceType::Int64Pointer(rank), 8),
+            InterfaceType::Int128 => (InterfaceType::Int128Pointer, 16),
+            InterfaceType::UInt64(rank) => (InterfaceType::UInt64Pointer(rank), 8),
+            InterfaceType::UInt128 => (InterfaceType::UInt128Pointer, 16),
+            InterfaceType::Int8Pointer => (InterfaceType::Int8PointerPointer, 8),
+            InterfaceType::Int16Pointer => (InterfaceType::Int16PointerPointer, 8),
+            InterfaceType::UInt16Pointer => (InterfaceType::UInt16PointerPointer, 8),
+            InterfaceType::Int32Pointer => (InterfaceType::Int32PointerPointer, 8),
+            InterfaceType::CharPointer(plain) => (InterfaceType::CharPointerPointer(plain), 8),
+            InterfaceType::UInt8Pointer => (InterfaceType::UInt8PointerPointer, 8),
+            InterfaceType::UInt32Pointer => (InterfaceType::UInt32PointerPointer, 8),
+            InterfaceType::Int64Pointer(rank) => (InterfaceType::Int64PointerPointer(rank), 8),
+            InterfaceType::Int128Pointer => (InterfaceType::Int128PointerPointer, 8),
+            InterfaceType::UInt64Pointer(rank) => (InterfaceType::UInt64PointerPointer(rank), 8),
+            InterfaceType::UInt128Pointer => (InterfaceType::UInt128PointerPointer, 8),
             _ => return Err(self.error("only scalar array parameters are supported")),
         };
         let declared_bytes = length.and_then(|length| length.checked_mul(element_width));
@@ -7583,7 +7633,7 @@ impl Parser {
                         arguments: vec![ContractExpression::ProgramExpression(
                             ProgramExpression::Variable("mutex".to_string()),
                         )],
-                        parameter_types: vec![C0Type::VoidPointer],
+                        parameter_types: vec![InterfaceType::VoidPointer],
                     }),
                 });
                 binders.insert(
@@ -8259,14 +8309,14 @@ impl Parser {
             let Some(click_type) = binding.click_type else {
                 unreachable!("`let ... where` parser requires an explicit type")
             };
-            let ClickType::Program(c_type) = click_type else {
+            let ClickType::Program(interface_type) = click_type else {
                 return Err(self.error(
                     "`let ... where` quantifies a C value; algebraic quantifiers are not supported yet",
                 ));
             };
             let body = self.parse_proposition()?;
             return Ok(ClickProposition::Exists {
-                click_type: ClickType::Program(c_type),
+                click_type: ClickType::Program(interface_type),
                 name: binding.name,
                 written_name: None,
                 body: Box::new(ClickProposition::And(Box::new(condition), Box::new(body))),
@@ -13038,7 +13088,7 @@ impl Parser {
                     // It does not authorize reading or copying a typed union value.
                     let field = if field.union_name.is_some() {
                         ResolvedField {
-                            c_type: C0Type::UInt8,
+                            interface_type: InterfaceType::UInt8,
                             byte_width: 1,
                             union_name: None,
                             ..field
@@ -13060,7 +13110,7 @@ impl Parser {
                 {
                     let field =
                         self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
-                    if field.struct_name.is_some() && !field.c_type.is_pointer() {
+                    if field.struct_name.is_some() && !field.interface_type.is_pointer() {
                         if !allow_aggregates {
                             return Err(self.error(
                                 "aggregate contract segments are only supported in resource clauses",
@@ -13077,7 +13127,7 @@ impl Parser {
                     // It does not authorize reading or copying a typed union value.
                     let field = if field.union_name.is_some() {
                         ResolvedField {
-                            c_type: C0Type::UInt8,
+                            interface_type: InterfaceType::UInt8,
                             byte_width: 1,
                             union_name: None,
                             ..field
@@ -13111,21 +13161,21 @@ impl Parser {
                 && self.union_layouts.contains_key(base_union_name)
             {
                 let field = self.resolve_union_field_metadata(base_union_name, &field_name)?;
-                dereferences_pointer = field.c_type.is_pointer();
+                dereferences_pointer = field.interface_type.is_pointer();
                 let pointer = self.offset_field_pointer(base, field.offset_bytes);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 scalar_field = field_memory_pointer
                     && matches!(
-                        field.c_type,
-                        C0Type::Int8
-                            | C0Type::Int16
-                            | C0Type::Int32
-                            | C0Type::Char(_)
-                            | C0Type::UInt8
-                            | C0Type::UInt16
-                            | C0Type::UInt32
-                            | C0Type::Int64(_)
-                            | C0Type::UInt64(_)
+                        field.interface_type,
+                        InterfaceType::Int8
+                            | InterfaceType::Int16
+                            | InterfaceType::Int32
+                            | InterfaceType::Char(_)
+                            | InterfaceType::UInt8
+                            | InterfaceType::UInt16
+                            | InterfaceType::UInt32
+                            | InterfaceType::Int64(_)
+                            | InterfaceType::UInt64(_)
                     );
                 (
                     lowered_field_expression(pointer, &field),
@@ -13140,21 +13190,21 @@ impl Parser {
                 && self.struct_layouts.contains_key(base_struct_name)
             {
                 let field = self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
-                dereferences_pointer = field.c_type.is_pointer();
+                dereferences_pointer = field.interface_type.is_pointer();
                 let pointer = self.member_field_pointer(base, &field);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 scalar_field = field_memory_pointer
                     && matches!(
-                        field.c_type,
-                        C0Type::Int8
-                            | C0Type::Int16
-                            | C0Type::Int32
-                            | C0Type::Char(_)
-                            | C0Type::UInt8
-                            | C0Type::UInt16
-                            | C0Type::UInt32
-                            | C0Type::Int64(_)
-                            | C0Type::UInt64(_)
+                        field.interface_type,
+                        InterfaceType::Int8
+                            | InterfaceType::Int16
+                            | InterfaceType::Int32
+                            | InterfaceType::Char(_)
+                            | InterfaceType::UInt8
+                            | InterfaceType::UInt16
+                            | InterfaceType::UInt32
+                            | InterfaceType::Int64(_)
+                            | InterfaceType::UInt64(_)
                     );
                 indexed_scalar_field = scalar_array_field_element(&field).map(|(_, ty)| ty);
                 (
@@ -13370,7 +13420,7 @@ impl Parser {
             && let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
                 &surface_base
         {
-            let object = if !self.names.c_parameter_types.contains_key(name)
+            let object = if !self.names.program_parameter_types.contains_key(name)
                 && !self.names.contains(NameKind::StructArrayParameter, name)
                 && let Some(struct_name) = self.names.aggregate_objects.get(name)
             {
@@ -13609,7 +13659,7 @@ impl Parser {
             if let Some(nested_name) = resolved
                 .struct_name
                 .as_deref()
-                .filter(|_| !resolved.c_type.is_pointer())
+                .filter(|_| !resolved.interface_type.is_pointer())
             {
                 if resolved.array_element_width.is_some() {
                     self.append_aggregate_array_leaf_segments(
@@ -13744,16 +13794,16 @@ impl Parser {
         field_name: &str,
         field: &ResolvedField,
     ) -> ContractSegment {
-        let array = match field.c_type {
-            C0Type::Int32Array(length) => Some((length, 4, ProgramType::Int32)),
-            C0Type::Int64Array(_, length) => Some((length, 8, ProgramType::Int64)),
-            C0Type::Int128Array(length) => Some((length, 16, ProgramType::Int128)),
-            C0Type::UInt64Array(_, length) => Some((length, 8, ProgramType::UInt64)),
-            C0Type::UInt128Array(length) => Some((length, 16, ProgramType::UInt128)),
-            C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, length)
-            | C0Type::UInt8Array(length) => Some((length, 1, ProgramType::UInt8)),
-            C0Type::CharArray(crate::languages::c::syntax::PlainChar::Signed, length)
-            | C0Type::Int8Array(length) => Some((length, 1, ProgramType::Int8)),
+        let array = match field.interface_type {
+            InterfaceType::Int32Array(length) => Some((length, 4, ProgramType::Int32)),
+            InterfaceType::Int64Array(_, length) => Some((length, 8, ProgramType::Int64)),
+            InterfaceType::Int128Array(length) => Some((length, 16, ProgramType::Int128)),
+            InterfaceType::UInt64Array(_, length) => Some((length, 8, ProgramType::UInt64)),
+            InterfaceType::UInt128Array(length) => Some((length, 16, ProgramType::UInt128)),
+            InterfaceType::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, length)
+            | InterfaceType::UInt8Array(length) => Some((length, 1, ProgramType::UInt8)),
+            InterfaceType::CharArray(crate::languages::c::syntax::PlainChar::Signed, length)
+            | InterfaceType::Int8Array(length) => Some((length, 1, ProgramType::Int8)),
             _ => None,
         };
         if let Some((length, element_width, element_type)) = array {
@@ -13764,7 +13814,7 @@ impl Parser {
                 state: ContractSegmentState::Current,
                 base: ProgramExpression::TypedLoad {
                     pointer: Box::new(field_base),
-                    value_type: field.c_type.to_kernel_type(),
+                    value_type: field.interface_type.to_kernel_type(),
                     volatile: false,
                     pointee_constant: field.pointee_constant,
                     access_class: None,
@@ -13781,14 +13831,14 @@ impl Parser {
                 },
             };
         }
-        let element_width = match field.c_type {
-            C0Type::Char(_) => 1,
-            C0Type::UInt8 => 1,
-            C0Type::Int8 => 1,
-            C0Type::Int16 | C0Type::UInt16 => 2,
-            C0Type::Int64(_) | C0Type::UInt64(_) => 8,
-            C0Type::Float32 => 4,
-            C0Type::Float64 => 8,
+        let element_width = match field.interface_type {
+            InterfaceType::Char(_) => 1,
+            InterfaceType::UInt8 => 1,
+            InterfaceType::Int8 => 1,
+            InterfaceType::Int16 | InterfaceType::UInt16 => 2,
+            InterfaceType::Int64(_) | InterfaceType::UInt64(_) => 8,
+            InterfaceType::Float32 => 4,
+            InterfaceType::Float64 => 8,
             _ => 4,
         };
         let start = field.offset_bytes / element_width;
@@ -13806,7 +13856,7 @@ impl Parser {
                 // width. Smaller integer fields retain their natural
                 // two-byte/one-byte units so a typed load is covered exactly.
                 element_width: Some(element_width),
-                element_type: Some(field.c_type.to_kernel_type()),
+                element_type: Some(field.interface_type.to_kernel_type()),
                 value_bytes: Some(element_width),
             },
         }
@@ -13823,7 +13873,7 @@ impl Parser {
         };
         Ok(ProgramExpression::TypedLoad {
             pointer: Box::new(self.member_field_pointer(base, &field)),
-            value_type: field.c_type.to_kernel_type(),
+            value_type: field.interface_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
             access_class: None,
@@ -13871,7 +13921,7 @@ impl Parser {
                     pointer: Box::new(pointer),
                     union_name,
                 }
-            } else if field.c_type == C0Type::Int32 {
+            } else if field.interface_type == InterfaceType::Int32 {
                 if let Some(struct_name) = field.struct_name {
                     C0Expression::AggregateAddress {
                         pointer: Box::new(pointer),
@@ -13880,7 +13930,7 @@ impl Parser {
                 } else {
                     C0Expression::Field {
                         pointer: Box::new(pointer),
-                        field_type: field.c_type,
+                        field_type: field.interface_type,
                         pointee_constant: field.pointee_constant,
                         field_struct_name: None,
                         function_pointer_signature: None,
@@ -13892,7 +13942,7 @@ impl Parser {
             } else {
                 C0Expression::Field {
                     pointer: Box::new(pointer),
-                    field_type: field.c_type,
+                    field_type: field.interface_type,
                     pointee_constant: field.pointee_constant,
                     field_struct_name: field.struct_name,
                     function_pointer_signature: field.function_pointer_signature.clone(),
@@ -13907,7 +13957,7 @@ impl Parser {
             let pointer = self.offset_c0_field_pointer(base.clone(), field.offset_bytes);
             return Ok(Some(C0Expression::UnionField {
                 pointer: Box::new(pointer),
-                field_type: field.c_type,
+                field_type: field.interface_type,
                 union_name: union_name.clone(),
                 pointee_constant: field.pointee_constant,
             }));
@@ -14020,12 +14070,12 @@ impl Parser {
         let slot_end_bytes = layout
             .fields()
             .values()
-            .map(syntax::C0StructField::offset_bytes)
+            .map(crate::languages::interface::RecordField::offset_bytes)
             .filter(|offset| *offset > field.offset_bytes())
             .min()
             .unwrap_or_else(|| layout.size_bytes());
         Ok(ResolvedField {
-            c_type: field.c_type(),
+            interface_type: field.interface_type(),
             pointee_constant: field.pointee_is_constant(),
             struct_name: field.struct_name().map(str::to_string),
             union_name: field.union_name().map(str::to_string),
@@ -14055,7 +14105,7 @@ impl Parser {
             );
         }
         Ok(ResolvedField {
-            c_type: field.c_type(),
+            interface_type: field.interface_type(),
             pointee_constant: field.pointee_is_constant(),
             struct_name: None,
             union_name: None,
@@ -14074,7 +14124,7 @@ impl Parser {
                 self.error("arrays of embedded structs require an index before a resource segment")
             );
         }
-        if field.c_type == C0Type::Int32
+        if field.interface_type == InterfaceType::Int32
             && (field.struct_name.is_some() || field.union_name.is_some())
         {
             return Err(self.error(
@@ -14082,19 +14132,19 @@ impl Parser {
             ));
         }
         if matches!(
-            field.c_type,
-            C0Type::Int32Array(_)
-                | C0Type::CharArray(_, _)
-                | C0Type::UInt8Array(_)
-                | C0Type::Int128Array(_)
-                | C0Type::Int64Array(_, _)
-                | C0Type::UInt128Array(_)
-                | C0Type::UInt64Array(_, _)
+            field.interface_type,
+            InterfaceType::Int32Array(_)
+                | InterfaceType::CharArray(_, _)
+                | InterfaceType::UInt8Array(_)
+                | InterfaceType::Int128Array(_)
+                | InterfaceType::Int64Array(_, _)
+                | InterfaceType::UInt128Array(_)
+                | InterfaceType::UInt64Array(_, _)
         ) {
-            let width = match field.c_type {
-                C0Type::Int64Array(_, _) | C0Type::UInt64Array(_, _) => 8,
-                C0Type::Int128Array(_) | C0Type::UInt128Array(_) => 16,
-                C0Type::Int32Array(_) => 4,
+            let width = match field.interface_type {
+                InterfaceType::Int64Array(_, _) | InterfaceType::UInt64Array(_, _) => 8,
+                InterfaceType::Int128Array(_) | InterfaceType::UInt128Array(_) => 16,
+                InterfaceType::Int32Array(_) => 4,
                 _ => 1,
             };
             if !field.offset_bytes.is_multiple_of(width)
@@ -14105,7 +14155,10 @@ impl Parser {
             }
             return Ok(());
         }
-        if matches!(field.c_type, C0Type::Int16 | C0Type::UInt16) {
+        if matches!(
+            field.interface_type,
+            InterfaceType::Int16 | InterfaceType::UInt16
+        ) {
             if !field.offset_bytes.is_multiple_of(2)
                 || field.byte_width != 2
                 || field.slot_end_bytes < field.offset_bytes
@@ -14115,7 +14168,10 @@ impl Parser {
             }
             return Ok(());
         }
-        if matches!(field.c_type, C0Type::Int64(_) | C0Type::UInt64(_)) {
+        if matches!(
+            field.interface_type,
+            InterfaceType::Int64(_) | InterfaceType::UInt64(_)
+        ) {
             if !field.offset_bytes.is_multiple_of(8)
                 || field.byte_width != 8
                 || field.slot_end_bytes < field.offset_bytes
@@ -14127,7 +14183,10 @@ impl Parser {
             }
             return Ok(());
         }
-        if matches!(field.c_type, C0Type::Int8 | C0Type::Char(_) | C0Type::UInt8) {
+        if matches!(
+            field.interface_type,
+            InterfaceType::Int8 | InterfaceType::Char(_) | InterfaceType::UInt8
+        ) {
             if field.byte_width != 1 || field.slot_end_bytes < field.offset_bytes {
                 return Err(self.error("byte field places require one-byte width"));
             }
@@ -14243,9 +14302,9 @@ impl Parser {
         if matches!(
             crate::surface::validation::infer_program_expression_type(
                 operand,
-                &self.names.c_parameter_types,
+                &self.names.program_parameter_types,
             ),
-            None | Some(C0Type::Int64(_) | C0Type::UInt64(_))
+            None | Some(InterfaceType::Int64(_) | InterfaceType::UInt64(_))
         ) {
             return Ok(());
         }
@@ -14314,7 +14373,7 @@ impl Parser {
     /// integer pointer type such as `uint8 *`, unqualified.
     fn parse_click_cast_type(&mut self) -> Result<ProgramType, ClickError> {
         let parsed_type = self.parse_type()?;
-        let target_type = parsed_type.c_type.to_kernel_type();
+        let target_type = parsed_type.interface_type.to_kernel_type();
         if parsed_type.reference
             || (target_type.is_pointer() && (parsed_type.constant || parsed_type.pointee_constant))
         {
@@ -14337,9 +14396,9 @@ impl Parser {
         };
         let integer_source = crate::surface::validation::infer_program_expression_type(
             &operand,
-            &self.names.c_parameter_types,
+            &self.names.program_parameter_types,
         )
-        .is_some_and(|ty| matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_)));
+        .is_some_and(|ty| matches!(ty, InterfaceType::Int64(_) | InterfaceType::UInt64(_)));
         if !integer_source {
             self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
         }
@@ -14389,7 +14448,7 @@ impl Parser {
         if target_type == ProgramType::VoidPointer {
             crate::surface::validation::validate_void_pointer_cast_source(
                 &expression,
-                &self.names.c_parameter_types,
+                &self.names.program_parameter_types,
                 "contract expression",
             )?;
         }
@@ -15058,7 +15117,7 @@ impl Parser {
                             pointee_struct: field
                                 .struct_name
                                 .clone()
-                                .filter(|_| field.c_type.is_pointer()),
+                                .filter(|_| field.interface_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -15079,7 +15138,7 @@ impl Parser {
                             pointee_struct: field
                                 .struct_name
                                 .clone()
-                                .filter(|_| field.c_type.is_pointer()),
+                                .filter(|_| field.interface_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -15407,10 +15466,10 @@ impl Parser {
                     self.parse_type()?
                 };
                 self.expect(Token::RParen)?;
-                if parsed_type.c_type == C0Type::Void {
+                if parsed_type.interface_type == InterfaceType::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
-                if let C0Type::Parameter(_) = parsed_type.c_type {
+                if let InterfaceType::Parameter(_) = parsed_type.interface_type {
                     return Err(self.error(
                         "the size of an abstract type is not the same at every type argument",
                     ));
@@ -15434,7 +15493,7 @@ impl Parser {
                             })?
                             .size_bytes()
                     }
-                    _ => parsed_type.c_type.abi_size_bytes(),
+                    _ => parsed_type.interface_type.abi_size_bytes(),
                 }
             };
             return Ok(ContractExpression::ProgramExpression(
@@ -16048,12 +16107,12 @@ impl Parser {
             return None;
         };
         let pointer = match rust_syntax::rust_scalar_type(pointee)? {
-            C0Type::Int8 => C0Type::Int8Pointer,
-            C0Type::UInt8 => C0Type::UInt8Pointer,
-            C0Type::Int16 => C0Type::Int16Pointer,
-            C0Type::UInt16 => C0Type::UInt16Pointer,
-            C0Type::Int32 => C0Type::Int32Pointer,
-            C0Type::UInt32 => C0Type::UInt32Pointer,
+            InterfaceType::Int8 => InterfaceType::Int8Pointer,
+            InterfaceType::UInt8 => InterfaceType::UInt8Pointer,
+            InterfaceType::Int16 => InterfaceType::Int16Pointer,
+            InterfaceType::UInt16 => InterfaceType::UInt16Pointer,
+            InterfaceType::Int32 => InterfaceType::Int32Pointer,
+            InterfaceType::UInt32 => InterfaceType::UInt32Pointer,
             _ => return None,
         };
         self.position += 2;
@@ -16090,14 +16149,14 @@ impl Parser {
             }
             let (mut argument, parsed_c_type) = self.parse_click_type()?;
             if let Some(parsed) = parsed_c_type {
-                if !algebraic_field_c_type_supported(parsed.c_type) {
+                if !algebraic_field_c_type_supported(parsed.interface_type) {
                     return Err(self.error("algebraic datatype arguments must be value types"));
                 }
-                if parsed.c_type.is_pointer()
+                if parsed.interface_type.is_pointer()
                     && let Some(struct_name) = parsed.struct_name
                 {
                     argument = ClickType::CObjectPointer {
-                        c_type: parsed.c_type,
+                        interface_type: parsed.interface_type,
                         struct_name,
                     };
                 }
@@ -16484,11 +16543,11 @@ impl Parser {
                     self.position += 4;
                     let operand = self.parse_ensure_unary()?;
                     crate::surface::validation::validate_void_pointer_cast_source(
-                        &operand.to_kernel_expression(), &self.names.c_parameter_types, "contract expression"
+                        &operand.to_kernel_expression(), &self.names.program_parameter_types, "contract expression"
                     )?;
                     return Ok(C0Expression::Cast {
                         expression: Box::new(operand),
-                        c_type: C0Type::VoidPointer,
+                        interface_type: InterfaceType::VoidPointer,
                         struct_name: None,
                         pointee_volatile: false,
                         pointee_constant: false,
@@ -16503,7 +16562,7 @@ impl Parser {
                     )?;
                     return Ok(C0Expression::Cast {
                         expression: Box::new(operand),
-                        c_type: C0Type::Int32Pointer,
+                        interface_type: InterfaceType::Int32Pointer,
                         struct_name: Some(cast.struct_name),
                         pointee_volatile: false,
                         pointee_constant: cast.pointee_constant,
@@ -17097,13 +17156,14 @@ fn lowered_field_expression(
     pointer: ProgramExpression,
     field: &ResolvedField,
 ) -> ProgramExpression {
-    if field.c_type == C0Type::Int32 && (field.struct_name.is_some() || field.union_name.is_some())
+    if field.interface_type == InterfaceType::Int32
+        && (field.struct_name.is_some() || field.union_name.is_some())
     {
         pointer
     } else {
         ProgramExpression::TypedLoad {
             pointer: Box::new(pointer),
-            value_type: field.c_type.to_kernel_type(),
+            value_type: field.interface_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
             access_class: None,
@@ -17123,23 +17183,23 @@ fn field_has_direct_memory_place(field: &ResolvedField) -> bool {
         return false;
     }
     matches!(
-        field.c_type,
-        C0Type::Int8
-            | C0Type::Int16
-            | C0Type::Int32
-            | C0Type::Char(_)
-            | C0Type::UInt8
-            | C0Type::UInt16
-            | C0Type::UInt32
-            | C0Type::Int64(_)
-            | C0Type::UInt64(_)
-            | C0Type::Int32Array(_)
-            | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_, _)
-            | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_, _)
-            | C0Type::CharArray(_, _)
-            | C0Type::UInt8Array(_)
+        field.interface_type,
+        InterfaceType::Int8
+            | InterfaceType::Int16
+            | InterfaceType::Int32
+            | InterfaceType::Char(_)
+            | InterfaceType::UInt8
+            | InterfaceType::UInt16
+            | InterfaceType::UInt32
+            | InterfaceType::Int64(_)
+            | InterfaceType::UInt64(_)
+            | InterfaceType::Int32Array(_)
+            | InterfaceType::Int128Array(_)
+            | InterfaceType::Int64Array(_, _)
+            | InterfaceType::UInt128Array(_)
+            | InterfaceType::UInt64Array(_, _)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
     )
 }
 
@@ -17147,14 +17207,14 @@ fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, ProgramType
     if field.struct_name.is_some() || field.union_name.is_some() || field.array_shape.is_none() {
         return None;
     }
-    match field.c_type {
-        C0Type::Int32Array(_) => Some((4, ProgramType::Int32)),
-        C0Type::Int64Array(_, _) => Some((8, ProgramType::Int64)),
-        C0Type::Int128Array(_) => Some((16, ProgramType::Int128)),
-        C0Type::UInt64Array(_, _) => Some((8, ProgramType::UInt64)),
-        C0Type::UInt128Array(_) => Some((16, ProgramType::UInt128)),
-        C0Type::CharArray(plain, _) => Some((1, plain.byte_type().to_kernel_type())),
-        C0Type::UInt8Array(_) => Some((1, ProgramType::UInt8)),
+    match field.interface_type {
+        InterfaceType::Int32Array(_) => Some((4, ProgramType::Int32)),
+        InterfaceType::Int64Array(_, _) => Some((8, ProgramType::Int64)),
+        InterfaceType::Int128Array(_) => Some((16, ProgramType::Int128)),
+        InterfaceType::UInt64Array(_, _) => Some((8, ProgramType::UInt64)),
+        InterfaceType::UInt128Array(_) => Some((16, ProgramType::UInt128)),
+        InterfaceType::CharArray(plain, _) => Some((1, plain.byte_type().to_kernel_type())),
+        InterfaceType::UInt8Array(_) => Some((1, ProgramType::UInt8)),
         _ => None,
     }
 }
@@ -17349,7 +17409,7 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
 /// fact would make a counted population require a positive witness.
 fn object_alignment_fact(
     clause: &ResourceClause,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> Option<ClickProposition> {
     let (ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment)) = clause else {
         return None;
@@ -17367,7 +17427,7 @@ fn object_alignment_fact(
 
 fn requirement_object_alignment_facts(
     requirement: &Requirement,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
     out: &mut Vec<ClickProposition>,
 ) {
     match requirement {
@@ -17863,7 +17923,7 @@ mod loop_name_tests {
             "predicate reflexive() {{ forall (introduced: int32) {{ introduced == introduced }} }} predicate alias() {{ reflexive() }} int32 lp(int32 n, int32* p) {{ ensures result == n; }} by {{ loop {{ {body} }} }}"
         );
         let mut layouts = ProgramLayouts::default();
-        layouts.c_object_names.insert(
+        layouts.program_object_names.insert(
             "lp".to_string(),
             std::sync::Arc::new(["n", "p", "i"].map(str::to_string).into()),
         );

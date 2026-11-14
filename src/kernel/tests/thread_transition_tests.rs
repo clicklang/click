@@ -101,18 +101,18 @@ fn certify_worker(
     function: ProgramFunction,
 ) -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
     let argument = if matches!(
-        function.parameters()[0].c_type(),
+        function.parameters()[0].program_type(),
         ProgramType::UInt8Pointer | ProgramType::VoidPointer
     ) {
         ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer(0),
-            function.parameters()[0].c_type(),
+            function.parameters()[0].program_type(),
         ))
     } else {
         crate::kernel::program_expression::pointer_value(pointer(0))
     };
     let certification_parent = if matches!(
-        function.parameters()[0].c_type(),
+        function.parameters()[0].program_type(),
         ProgramType::UInt8Pointer | ProgramType::VoidPointer
     ) {
         byte_parent()

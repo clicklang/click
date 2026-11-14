@@ -38,7 +38,7 @@ impl TermRewrite<'_> {
         let cacheable = self.conditions.is_none()
             && self.comparison_arithmetic
             && self.resolve_registered_loads
-            && self.scope.c.iter().all(|(a, b)| a == b)
+            && self.scope.program_values.iter().all(|(a, b)| a == b)
             && self.scope.integer.iter().all(|(a, b)| a == b)
             && self.scope.algebraic.iter().all(|(a, b)| a == b);
         let local = std::cell::RefCell::new(HashMap::<u64, KernelTerm>::new());
@@ -96,7 +96,7 @@ impl TermRewrite<'_> {
                 && self.integer_variables.is_none()
                 && self.typed_variables.is_none()
                 && !self.resolve_registered_loads
-                && self.scope.c.is_empty()
+                && self.scope.program_values.is_empty()
                 && self.scope.integer.is_empty()
                 && self.scope.algebraic.is_empty()
                 && !term.has_conditional_machine_rewrites()
@@ -107,7 +107,7 @@ impl TermRewrite<'_> {
             let KernelType::Program(ty) = term.ty() else {
                 return None;
             };
-            let format = MachineIntegerType::from_c_type(*ty)?;
+            let format = MachineIntegerType::from_program_type(*ty)?;
             // Exact machine replacement precedes descent, as in `bits`.
             // Import each selected source/replacement once per interpretation,
             // rather than rebuilding it at every shared occurrence.
@@ -118,7 +118,7 @@ impl TermRewrite<'_> {
                     || matches!(to, MachineOperandView::Shared(_)))
                 && !from
                     .variable()
-                    .is_some_and(|variable| self.scope.c.contains_key(variable))
+                    .is_some_and(|variable| self.scope.program_values.contains_key(variable))
             {
                 let source = sources.entry(format).or_insert_with(|| match from {
                     MachineOperandView::Legacy(from) => {
@@ -1479,7 +1479,7 @@ mod tests {
         let observed = |root| SharedMachineIntegerTerm::from_shared(format, root).unwrap();
         let mut carriers = CarrierVariables::default();
         collect_machine_carriers(&observed(left.clone()), &mut carriers);
-        assert_eq!(carriers.c, BTreeSet::from([a, c]));
+        assert_eq!(carriers.program_values, BTreeSet::from([a, c]));
         assert_eq!(carriers.integer, BTreeSet::from([a]));
         assert!(carriers.algebraic.is_empty());
         let condition = ConditionTerm::integer_equal(

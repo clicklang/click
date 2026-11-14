@@ -59,8 +59,8 @@ impl TermRewrite<'_> {
         self.ensure_replacement_carriers();
         if !self.source_variables_reserved {
             let mut variables = self.new_carrier_variables();
-            variables.c.insert(fold.accumulator);
-            variables.c.insert(fold.item);
+            variables.program_values.insert(fold.accumulator);
+            variables.program_values.insert(fold.item);
             for child in &fold.arguments {
                 collect_machine_operand_carriers(MachineOperandView::Shared(child), &mut variables);
                 if variables.exhausted() {
@@ -131,7 +131,7 @@ mod tests {
             let mut new = TermRewrite::for_bits(&source, &replacement);
             let actual = new.retained_fold(&fold).unwrap();
             assert_eq!(actual.export_machine().unwrap(), expected);
-            assert!(new.scope.c.is_empty());
+            assert!(new.scope.program_values.is_empty());
         }
     }
 

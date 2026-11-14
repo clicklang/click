@@ -164,7 +164,7 @@ impl ExecutionState {
                 .memory_own_range()
                 .ok_or(LoanRefusal::MissingBacking)?;
             if range.start_pointer() != *parent.pointer()
-                || parent.c_type().pointee_type() != Some(value_type)
+                || parent.program_type().pointee_type() != Some(value_type)
                 || (!crate::kernel::eval::is_external_memory_pointer(parent.pointer())
                     && !self
                         .memory

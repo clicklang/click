@@ -28,8 +28,10 @@ impl MutexInvariantInterface {
                 .iter()
                 .zip(instance.arguments())
                 .any(|(parameter, argument)| {
-                    argument.as_program_value().map(|value| value.c_type())
-                        != Some(parameter.c_type())
+                    argument
+                        .as_program_value()
+                        .map(|value| value.program_type())
+                        != Some(parameter.program_type())
                 })
         {
             return Err("selected mutex resource does not match its declaration");

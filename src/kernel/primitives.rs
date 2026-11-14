@@ -2345,7 +2345,7 @@ pub struct PointerValue {
     /// The opaque containing extent retained through narrowing. A byte/void
     /// view clears it, so that wider view cannot authorize the original input.
     opaque_extent: Option<Arc<Pointer>>,
-    c_type: ProgramType,
+    program_type: ProgramType,
     qualifiers: Option<Arc<PointerQualifiers>>,
 }
 
@@ -2488,13 +2488,13 @@ impl SubobjectExtent {
 }
 
 impl PointerValue {
-    pub(crate) fn new(pointer: Pointer, c_type: ProgramType) -> Self {
+    pub(crate) fn new(pointer: Pointer, program_type: ProgramType) -> Self {
         assert!(
-            c_type.is_pointer(),
+            program_type.is_pointer(),
             "C pointer values require a pointer type"
         );
         let is_function =
-            matches!(c_type, ProgramType::FunctionPointer(_)) || pointer.block.is_function();
+            matches!(program_type, ProgramType::FunctionPointer(_)) || pointer.block.is_function();
         let known_root = is_function
             || matches!(
                 pointer.block,
@@ -2509,7 +2509,7 @@ impl PointerValue {
             opaque_extent: (!known_root).then(|| Arc::new(root.clone())),
             designation: Arc::new(root),
             pointer,
-            c_type,
+            program_type,
             qualifiers: known_root.then(|| {
                 Arc::new(PointerQualifiers {
                     extent_known: true,
@@ -2523,12 +2523,14 @@ impl PointerValue {
     /// numeric address. Both bounds and origin cover all eight bytes.
     pub(in crate::kernel) fn from_read(
         pointer: Pointer,
-        c_type: ProgramType,
+        program_type: ProgramType,
         memory: &SharedMemory,
         cell: &Pointer,
     ) -> Self {
-        let mut value = Self::new(pointer, c_type);
-        if matches!(c_type, ProgramType::FunctionPointer(_)) || value.pointer.block.is_function() {
+        let mut value = Self::new(pointer, program_type);
+        if matches!(program_type, ProgramType::FunctionPointer(_))
+            || value.pointer.block.is_function()
+        {
             return value;
         }
         value.qualifiers = None;
@@ -2598,8 +2600,8 @@ impl PointerValue {
         self.pointer
     }
 
-    pub(crate) fn c_type(&self) -> ProgramType {
-        self.c_type
+    pub(crate) fn program_type(&self) -> ProgramType {
+        self.program_type
     }
 
     /// Exact retained qualifiers for syntax certification. Address-bearing
@@ -2612,7 +2614,7 @@ impl PointerValue {
                 .and_then(|q| q.object_class.as_ref())
                 .cloned()
         };
-        self.c_type == other.c_type
+        self.program_type == other.program_type
             && self.pointee_volatile() == other.pointee_volatile()
             && self.pointee_constant() == other.pointee_constant()
             && self.extent_is_known() == other.extent_is_known()
@@ -2629,12 +2631,12 @@ impl PointerValue {
         self.qualifiers.as_ref().is_some_and(|q| q.constant)
     }
 
-    pub(crate) fn with_type(self, c_type: ProgramType) -> Self {
+    pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
         Self {
             pointer: self.pointer,
             designation: self.designation,
             opaque_extent: self.opaque_extent,
-            c_type,
+            program_type,
             qualifiers: self.qualifiers,
         }
     }
@@ -2856,7 +2858,7 @@ impl PointerValue {
         (
             &self.pointer,
             &self.designation,
-            &self.c_type,
+            &self.program_type,
             self.pointee_volatile(),
             self.extent_is_known(),
             if self.extent_is_known() {
@@ -3427,8 +3429,8 @@ pub enum PointerArrayElement {
 }
 
 impl PointerArrayElement {
-    pub fn from_pointer_type(c_type: ProgramType) -> Option<Self> {
-        Some(match c_type {
+    pub fn from_pointer_type(program_type: ProgramType) -> Option<Self> {
+        Some(match program_type {
             ProgramType::VoidPointer => Self::Void,
             ProgramType::Int8Pointer => Self::Int8,
             ProgramType::Int16Pointer => Self::Int16,
@@ -3954,7 +3956,7 @@ pub enum SpecExpression {
     },
     ResourceField {
         projection: ResourceFieldProjection,
-        c_type: ProgramType,
+        program_type: ProgramType,
     },
     AlgebraicMatch {
         scrutinee: Box<SpecAlgebraicExpression>,
@@ -4059,7 +4061,7 @@ impl SpecExpression {
     /// every expression at another type, is unchanged. One visit per spine
     /// node.
     pub fn at_machine_type(self, target: ProgramType) -> Self {
-        let Some(format) = MachineIntegerType::from_c_type(target).filter(|format| {
+        let Some(format) = MachineIntegerType::from_program_type(target).filter(|format| {
             matches!(
                 format,
                 MachineIntegerType::Int8
@@ -4333,9 +4335,9 @@ impl AlgebraicValueType {
 
     pub(crate) fn accepts_program_value(&self, value: &ProgramValue) -> bool {
         match self {
-            Self::Program(ty) => *ty == value.c_type(),
+            Self::Program(ty) => *ty == value.program_type(),
             Self::ObjectPointer(ty, class) => {
-                matches!(value, ProgramValue::Pointer(pointer) if pointer.c_type() == *ty
+                matches!(value, ProgramValue::Pointer(pointer) if pointer.program_type() == *ty
                     && pointer.supports_object_class(class))
             }
             _ => false,
@@ -4946,17 +4948,17 @@ impl AlgebraicType {
     }
 
     /// A fresh symbolic value for field `index` of constructor `variant`,
-    /// of kernel type `c_type`, carrying the class its declaration gives a
+    /// of kernel type `program_type`, carrying the class its declaration gives a
     /// pointer field's object.
     pub(crate) fn symbolic_program_field_value(
         &self,
         variant: &str,
         index: usize,
-        c_type: ProgramType,
+        program_type: ProgramType,
         variable: Variable,
     ) -> ProgramValue {
-        let value = crate::kernel::symbolic_call_result(c_type, variable);
-        match c_type
+        let value = crate::kernel::symbolic_call_result(program_type, variable);
+        match program_type
             .is_pointer()
             .then(|| self.field_object_class(variant, index))
             .flatten()
@@ -5032,7 +5034,7 @@ impl AlgebraicValue {
 
     pub(in crate::kernel) fn value_type(&self) -> AlgebraicValueType {
         match self {
-            Self::Program(value) => AlgebraicValueType::Program(value.c_type()),
+            Self::Program(value) => AlgebraicValueType::Program(value.program_type()),
             Self::Integer(_) => AlgebraicValueType::Integer,
             Self::Algebraic(value) => value.algebraic_type.value_type(),
         }
@@ -5085,7 +5087,7 @@ impl PureFunctionArgument {
                     return None;
                 };
                 Some(SharedMachineIntegerTerm::intern(
-                    MachineIntegerType::from_c_type(value.c_type()).unwrap(),
+                    MachineIntegerType::from_program_type(value.program_type()).unwrap(),
                     bits.clone(),
                 ))
             }
@@ -5102,7 +5104,7 @@ impl PureFunctionArgument {
                 pointer,
                 element_type,
                 ..
-            } => pointer.c_type().is_pointer() && *element_type != ProgramType::Void,
+            } => pointer.program_type().is_pointer() && *element_type != ProgramType::Void,
         }
     }
 }
@@ -5186,7 +5188,7 @@ pub enum SpecProposition {
     ForAllPointer {
         name: String,
         variable: Variable,
-        c_type: ProgramType,
+        program_type: ProgramType,
         body: Box<SpecProposition>,
     },
     ExistsInt32 {
@@ -5214,7 +5216,7 @@ pub enum SpecProposition {
     ExistsPointer {
         name: String,
         variable: Variable,
-        c_type: ProgramType,
+        program_type: ProgramType,
         body: Box<SpecProposition>,
     },
     Predicate {
@@ -5336,7 +5338,7 @@ pub enum ProgramStatement {
         /// This is the only declaration transition permitted to initialize const storage.
         initializer: Option<ProgramExpression>,
         name: String,
-        c_type: ProgramType,
+        program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -5720,7 +5722,7 @@ pub enum RangeIndexKind {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ProgramParameter {
     pub(super) name: String,
-    pub(super) c_type: ProgramType,
+    pub(super) program_type: ProgramType,
     pub(super) aggregate_layout: Option<AggregateLayout>,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
@@ -5745,7 +5747,7 @@ pub struct ProgramParameter {
 pub struct Global {
     pub(super) source_name: String,
     pub(super) kernel_name: String,
-    pub(super) c_type: ProgramType,
+    pub(super) program_type: ProgramType,
     pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
@@ -5804,7 +5806,7 @@ pub struct GlobalAggregateArray {
 pub struct StaticLocal {
     pub(super) source_name: String,
     pub(super) kernel_name: String,
-    pub(super) c_type: ProgramType,
+    pub(super) program_type: ProgramType,
     pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
@@ -6055,9 +6057,9 @@ pub struct StringLiteral {
 pub struct AggregateField {
     pub(super) name: String,
     pub(super) offset_bytes: u32,
-    pub(super) c_type: ProgramType,
+    pub(super) program_type: ProgramType,
     /// The source dimensions of an array field with more than one, outermost
-    /// first. `c_type` holds such a field as one flat array; nothing reasons
+    /// first. `program_type` holds such a field as one flat array; nothing reasons
     /// from the shape, which only lets a proof term about an element be
     /// spelled with the subscripts the source declares.
     pub(super) array_shape: Option<Vec<u32>>,
@@ -6067,15 +6069,15 @@ pub struct AggregateField {
 pub struct AggregateUnionField {
     pub(super) name: String,
     pub(super) offset_bytes: u32,
-    pub(super) c_type: ProgramType,
+    pub(super) program_type: ProgramType,
 }
 
 impl AggregateUnionField {
-    pub fn new(name: impl Into<String>, offset_bytes: u32, c_type: ProgramType) -> Self {
+    pub fn new(name: impl Into<String>, offset_bytes: u32, program_type: ProgramType) -> Self {
         Self {
             name: name.into(),
             offset_bytes,
-            c_type,
+            program_type,
         }
     }
 
@@ -6087,8 +6089,8 @@ impl AggregateUnionField {
         self.offset_bytes
     }
 
-    pub fn c_type(&self) -> ProgramType {
-        self.c_type
+    pub fn program_type(&self) -> ProgramType {
+        self.program_type
     }
 }
 
@@ -6133,11 +6135,11 @@ impl AggregateUnion {
 }
 
 impl AggregateField {
-    pub fn new(name: impl Into<String>, offset_bytes: u32, c_type: ProgramType) -> Self {
+    pub fn new(name: impl Into<String>, offset_bytes: u32, program_type: ProgramType) -> Self {
         Self {
             name: name.into(),
             offset_bytes,
-            c_type,
+            program_type,
             array_shape: None,
         }
     }
@@ -6160,8 +6162,8 @@ impl AggregateField {
         self.offset_bytes
     }
 
-    pub fn c_type(&self) -> ProgramType {
-        self.c_type
+    pub fn program_type(&self) -> ProgramType {
+        self.program_type
     }
 }
 
@@ -8155,7 +8157,7 @@ pub(super) enum LocalBinding {
         /// whose compatibility pseudo-slot happens to have the same name.
         storage_declared: bool,
         value: StoredExecutionValue,
-        c_type: ProgramType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -8163,7 +8165,7 @@ pub(super) enum LocalBinding {
         pointee_constant: bool,
     },
     UninitializedObject {
-        c_type: ProgramType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -8171,7 +8173,7 @@ pub(super) enum LocalBinding {
         pointee_constant: bool,
     },
     GlobalObject {
-        c_type: ProgramType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -11274,7 +11276,7 @@ impl ResourceInstance {
             let valid = match (ty, value) {
                 (ResourceFieldType::Integer, AlgebraicValue::Integer(_)) => true,
                 (ResourceFieldType::Program(ty), AlgebraicValue::Program(value)) => {
-                    *ty == value.c_type()
+                    *ty == value.program_type()
                 }
                 (ResourceFieldType::Algebraic(ty), AlgebraicValue::Algebraic(value)) => {
                     *ty == value.algebraic_type && value.is_well_formed()
@@ -15214,7 +15216,7 @@ impl StatementExecutionPath {
         if matches!(self.outcome, StatementOutcome::Normal(_)) {
             self.call_result = result
                 .map(Into::into)
-                .filter(|value| value.c_type() != ProgramType::Void);
+                .filter(|value| value.program_type() != ProgramType::Void);
         }
         self
     }

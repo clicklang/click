@@ -23,56 +23,61 @@ pub(super) fn assign_call_result(
     assumptions: &PureFactContext,
 ) -> Result<(), RuntimeError> {
     let value = value.into();
-    if value.c_type() == ProgramType::Void {
+    if value.program_type() == ProgramType::Void {
         return Err(RuntimeError::TypeMismatch);
     }
-    let (c_type, volatile, pointee_volatile, pointee_constant) = match state.locals.binding(target)
-    {
-        Some(
-            LocalBinding::Object {
-                c_type,
-                volatile,
-                pointee_volatile,
-                constant,
-                pointee_constant,
-                ..
+    let (program_type, volatile, pointee_volatile, pointee_constant) =
+        match state.locals.binding(target) {
+            Some(
+                LocalBinding::Object {
+                    program_type,
+                    volatile,
+                    pointee_volatile,
+                    constant,
+                    pointee_constant,
+                    ..
+                }
+                | LocalBinding::UninitializedObject {
+                    program_type,
+                    volatile,
+                    pointee_volatile,
+                    constant,
+                    pointee_constant,
+                    ..
+                }
+                | LocalBinding::GlobalObject {
+                    program_type,
+                    volatile,
+                    pointee_volatile,
+                    constant,
+                    pointee_constant,
+                    ..
+                },
+            ) => {
+                if *constant {
+                    return Err(RuntimeError::TypeMismatch);
+                }
+                (
+                    *program_type,
+                    *volatile,
+                    *pointee_volatile,
+                    *pointee_constant,
+                )
             }
-            | LocalBinding::UninitializedObject {
-                c_type,
-                volatile,
-                pointee_volatile,
-                constant,
-                pointee_constant,
-                ..
-            }
-            | LocalBinding::GlobalObject {
-                c_type,
-                volatile,
-                pointee_volatile,
-                constant,
-                pointee_constant,
-                ..
-            },
-        ) => {
-            if *constant {
-                return Err(RuntimeError::TypeMismatch);
-            }
-            (*c_type, *volatile, *pointee_volatile, *pointee_constant)
-        }
-        Some(_) => return Err(RuntimeError::TypeMismatch),
-        None => (
-            value.c_type(),
-            false,
-            false,
-            value
-                .pointer()
-                .is_some_and(|pointer| pointer.pointee_constant()),
-        ),
-    };
+            Some(_) => return Err(RuntimeError::TypeMismatch),
+            None => (
+                value.program_type(),
+                false,
+                false,
+                value
+                    .pointer()
+                    .is_some_and(|pointer| pointer.pointee_constant()),
+            ),
+        };
     let value = if value.shared().is_some()
-        && value.c_type() == c_type
+        && value.program_type() == program_type
         && matches!(
-            c_type,
+            program_type,
             ProgramType::Int8
                 | ProgramType::UInt8
                 | ProgramType::Int16
@@ -86,7 +91,7 @@ pub(super) fn assign_call_result(
     } else {
         super::functions::coerce_program_value_with_pointee_constant(
             value.into_native(),
-            c_type,
+            program_type,
             pointee_constant,
             obligations,
             assumptions,
@@ -110,7 +115,7 @@ pub(super) fn assign_call_result(
     state.locals.set_retained_typed_with_all_qualifiers(
         target.to_string(),
         value,
-        c_type,
+        program_type,
         volatile,
         pointee_volatile,
         false,
@@ -340,7 +345,7 @@ pub(super) fn execute_program_call_assign_paths(
     .into_iter()
     .map(|mut path| {
         let call_result = match &path.outcome {
-            FunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => Some(value.clone()),
+            FunctionOutcome::Return { value, .. } if value.program_type() != ProgramType::Void => Some(value.clone()),
             _ => None,
         };
         let outcome = match path.outcome {
@@ -363,7 +368,7 @@ pub(super) fn execute_program_call_assign_paths(
                     };
                 }
 
-                if value.c_type() == ProgramType::Void {
+                if value.program_type() == ProgramType::Void {
                     return StatementExecutionPath {
                         call_parameters: path.call_parameters.clone(),
                         loop_invariant_correspondence: Default::default(),
@@ -676,7 +681,9 @@ pub(super) fn execute_program_call_paths(
             call_parameters: path.call_parameters.clone(),
             loop_invariant_correspondence: Default::default(),
             call_result: match &path.outcome {
-                FunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => {
+                FunctionOutcome::Return { value, .. }
+                    if value.program_type() != ProgramType::Void =>
+                {
                     Some(value.clone())
                 }
                 _ => None,
@@ -722,7 +729,7 @@ pub(super) fn execute_program_call_paths(
         call_parameters: path.call_parameters.clone(),
         loop_invariant_correspondence: Default::default(),
         call_result: match &path.outcome {
-            FunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => {
+            FunctionOutcome::Return { value, .. } if value.program_type() != ProgramType::Void => {
                 Some(value.clone())
             }
             _ => None,
@@ -1284,7 +1291,7 @@ fn modeled_pthread_indeterminate_handle(
         let binding = state.locals.binding(&name).cloned();
         if let Some(
             LocalBinding::Object {
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1293,7 +1300,7 @@ fn modeled_pthread_indeterminate_handle(
                 ..
             }
             | LocalBinding::UninitializedObject {
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1304,7 +1311,7 @@ fn modeled_pthread_indeterminate_handle(
         {
             state.locals.set_uninitialized_with_all_qualifiers(
                 name,
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1368,7 +1375,7 @@ fn execute_modeled_pthread_create_paths(
                 FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
                 _ => refusal("modeled-pthread create argument did not evaluate"),
             }
-        } else if !matches!(&path.values[0], ProgramValue::Pointer(slot) if slot.c_type() == ProgramType::UInt64Pointer)
+        } else if !matches!(&path.values[0], ProgramValue::Pointer(slot) if slot.program_type() == ProgramType::UInt64Pointer)
             || !matches!(&path.values[1], ProgramValue::Pointer(attr) if attr.is_null())
             || !matches!(&path.values[3], ProgramValue::Pointer(_))
         {
@@ -1394,7 +1401,7 @@ fn execute_modeled_pthread_create_paths(
                         &[(ProgramType::VoidPointer, false)],
                     ),
                 );
-                if callback.c_type() != callback_type
+                if callback.program_type() != callback_type
                     || worker.function.function_pointer_type() != callback_type
                 {
                     paths.push(StatementExecutionPath::new(
@@ -1666,14 +1673,18 @@ fn execute_program_indirect_call_assign_paths(
         .into_iter()
         .map(|mut path| {
             let call_result = match &path.outcome {
-                FunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => {
+                FunctionOutcome::Return { value, .. }
+                    if value.program_type() != ProgramType::Void =>
+                {
                     Some(value.clone())
                 }
                 _ => None,
             };
             let outcome = match path.outcome {
                 FunctionOutcome::Return { value, mut state } => {
-                    if value.c_type() == ProgramType::Void || state.locals.is_array_object(target) {
+                    if value.program_type() == ProgramType::Void
+                        || state.locals.is_array_object(target)
+                    {
                         StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
                     } else {
                         let current =
@@ -1756,7 +1767,7 @@ fn execute_program_indirect_call_paths(
                     PointerBlock::FunctionSymbolic(_)
                     | PointerBlock::Function(_)
                     | PointerBlock::LoadedPointer(_)
-                        if matches!(pointer.c_type(), ProgramType::FunctionPointer(_)) =>
+                        if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) =>
                     {
                         let target_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -3146,7 +3157,7 @@ fn retain_proven_loop_exit_cells(
                 continue;
             }
             let Some(load) =
-                cached_symbolic_storage_cell_value(state.memory(), &pointer, value.c_type())
+                cached_symbolic_storage_cell_value(state.memory(), &pointer, value.program_type())
             else {
                 agrees = false;
                 continue;
@@ -3687,7 +3698,7 @@ fn fresh_resource_value_like(
     Ok(match value {
         AlgebraicValue::Integer(_) => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
         AlgebraicValue::Program(value) => {
-            AlgebraicValue::Program(symbolic_call_result(value.c_type(), variable))
+            AlgebraicValue::Program(symbolic_call_result(value.program_type(), variable))
         }
         AlgebraicValue::Algebraic(term) => AlgebraicValue::Algebraic(AlgebraicTerm {
             algebraic_type: term.algebraic_type.clone(),
@@ -3914,11 +3925,11 @@ fn abstract_loop_exit_locals(
         if held[1..].iter().all(|value| *value == held[0]) {
             continue;
         }
-        let Some(c_type) = successor.local_object_type(&name) else {
+        let Some(program_type) = successor.local_object_type(&name) else {
             return Err(format!("local `{name}` has no scalar type here"));
         };
-        let Some(fresh) =
-            fresh_loop_local_value(c_type, variables, budget).map_err(exhausted_identities)?
+        let Some(fresh) = fresh_loop_local_value(program_type, variables, budget)
+            .map_err(exhausted_identities)?
         else {
             return Err(format!("local `{name}` has no abstract value of its type"));
         };
@@ -3966,8 +3977,10 @@ fn abstract_loop_exit_locals(
             restatement.pin(&fresh, &held.native());
         }
         sync_stack_local(successor, &name, &fresh);
-        successor.locals.set_typed(name.clone(), fresh, c_type);
-        abstracted.push((name, c_type));
+        successor
+            .locals
+            .set_typed(name.clone(), fresh, program_type);
+        abstracted.push((name, program_type));
     }
     Ok(abstracted)
 }
@@ -4033,7 +4046,7 @@ fn abstract_loop_exit_memory(
                 pointer.block
             ));
         }
-        let Some(fresh) = fresh_loop_local_value(held[0].c_type(), variables, budget)
+        let Some(fresh) = fresh_loop_local_value(held[0].program_type(), variables, budget)
             .map_err(exhausted_identities)?
         else {
             return Err(format!(
@@ -4131,14 +4144,14 @@ fn loop_declared_memory_ranges(body_state: &ExecutionState) -> Vec<MemoryRange> 
 
 /// The abstract value a loop havoc gives a local of this type, if it has one.
 fn fresh_loop_local_value(
-    c_type: ProgramType,
+    program_type: ProgramType,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<ProgramValue>> {
     // An array object is never assigned by name (C forbids it) and binds as
     // an array object rather than a scalar one, and `void` has no value, so
     // neither type takes an identity from the counter at all.
-    match c_type {
+    match program_type {
         ProgramType::Int8Array(_) => return Ok(None),
         ProgramType::Void
         | ProgramType::Int32Array(_)
@@ -4155,7 +4168,7 @@ fn fresh_loop_local_value(
         _ => {}
     }
     let variable = variables.next_in(budget)?;
-    Ok(Some(match c_type {
+    Ok(Some(match program_type {
         ProgramType::Bool => ProgramValue::Bool(MachineTerm::Variable(variable)),
         ProgramType::Int8 => int8(MachineTerm::Variable(variable)),
         ProgramType::Int16 => int16(MachineTerm::Variable(variable)),
@@ -4170,7 +4183,7 @@ fn fresh_loop_local_value(
         ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
         ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
+            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), program_type)
         }
         // A local holding a spec value, a Rust enum, a `Vec` or a library
         // iterator, takes a fresh value of its own type.
@@ -4181,7 +4194,7 @@ fn fresh_loop_local_value(
         // A pointer local reassigned in the body (`p = p + 1`) must not keep
         // its entry value across the abstract iteration, exactly as the join
         // abstraction treats it; an invariant must relate it.
-        _ => ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type),
+        _ => ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type),
     }))
 }
 
@@ -4272,13 +4285,13 @@ fn loop_exit_residual_difference(
             Vec::new(),
         );
     }
-    for (name, c_type) in locals {
+    for (name, program_type) in locals {
         let value = seated.locals().get(name)?.clone();
         sync_retained_stack_local(&mut witness, name, &value);
         witness.locals.set_retained_typed_with_all_qualifiers(
             name.clone(),
             value,
-            *c_type,
+            *program_type,
             false,
             false,
             false,
@@ -6462,7 +6475,7 @@ pub(super) fn prepare_loop_top_state(
                 .insert(pointer.clone(), value.clone());
         }
     }
-    for ((pointer, c_type), value) in entry_state.memory().union_cells.iter() {
+    for ((pointer, program_type), value) in entry_state.memory().union_cells.iter() {
         if pointer.block.is_local_block() {
             continue;
         }
@@ -6474,7 +6487,7 @@ pub(super) fn prepare_loop_top_state(
         });
         if is_stable {
             std::sync::Arc::make_mut(&mut framed_memory.union_cells)
-                .insert((pointer.clone(), *c_type), value.clone());
+                .insert((pointer.clone(), *program_type), value.clone());
         }
     }
 
@@ -8040,7 +8053,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(value) => {
             return Ok(Err(ValueRefusal::from(format!(
                 "segment base evaluated to a {} value, not a pointer",
-                super::functions::program_type_spelling(value.c_type())
+                super::functions::program_type_spelling(value.program_type())
             ))));
         }
         Err(message) => return Ok(Err(message)),
@@ -8079,7 +8092,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(value) => {
             return Ok(Err(ValueRefusal::from(format!(
                 "segment start evaluated to a {} value, not an int32",
-                super::functions::program_type_spelling(value.c_type())
+                super::functions::program_type_spelling(value.program_type())
             ))));
         }
         Err(message) => return Ok(Err(message)),
@@ -8092,7 +8105,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(value) => {
             return Ok(Err(ValueRefusal::from(format!(
                 "segment end evaluated to a {} value, not an int32",
-                super::functions::program_type_spelling(value.c_type())
+                super::functions::program_type_spelling(value.program_type())
             ))));
         }
         Err(message) => return Ok(Err(message)),
@@ -8941,8 +8954,8 @@ pub(super) fn havoc_loop_modified_locals(
         let Some(binding) = state.locals.binding(&name) else {
             continue;
         };
-        let c_type = match binding {
-            LocalBinding::Object { c_type, .. } => *c_type,
+        let program_type = match binding {
+            LocalBinding::Object { program_type, .. } => *program_type,
             LocalBinding::GlobalObject { .. } => {
                 // File-scope globals and function-local statics are
                 // represented only by memory. The memory havoc below
@@ -8954,7 +8967,7 @@ pub(super) fn havoc_loop_modified_locals(
             | LocalBinding::ArrayObject { .. }
             | LocalBinding::AggregateObject { .. } => continue,
         };
-        let Some(value) = fresh_loop_local_value(c_type, variables, budget)? else {
+        let Some(value) = fresh_loop_local_value(program_type, variables, budget)? else {
             continue;
         };
         // A pointer local keeps the subobject it designates across the
@@ -8963,7 +8976,7 @@ pub(super) fn havoc_loop_modified_locals(
         let value = with_retained_extent(value, state.locals.get(&name));
         let value = with_retained_object_class(value, state.locals.get(&name));
         sync_stack_local(&mut state, &name, &value);
-        state.locals.set_typed(name, value, c_type);
+        state.locals.set_typed(name, value, program_type);
     }
     if may_write_memory {
         // Keep only scalar stack local cells (havoced above and re-synced via

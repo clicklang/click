@@ -23,7 +23,7 @@ fn retained_execution_handoffs_do_not_walk_the_value_dag() {
             let ExpressionOutcome::Value(value) = outcome else {
                 unreachable!()
             };
-            assert_eq!(value.c_type(), ProgramType::UInt32);
+            assert_eq!(value.program_type(), ProgramType::UInt32);
             let (_, MachineOperandView::Shared(selected)) = value.machine().unwrap() else {
                 panic!("shared operand")
             };

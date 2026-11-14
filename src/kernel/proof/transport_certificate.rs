@@ -150,9 +150,9 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
             Some(ReadType::PointerAddress)
         }
         Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true)
-            if a.c_type() == b.c_type() =>
+            if a.program_type() == b.program_type() =>
         {
-            Some(ReadType::Pointer(a.c_type()))
+            Some(ReadType::Pointer(a.program_type()))
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -308,7 +308,9 @@ fn preserve_field(
         (
             AlgebraicValue::Program(ProgramValue::Pointer(a)),
             AlgebraicValue::Program(ProgramValue::Pointer(b)),
-        ) if a.c_type() == b.c_type() => ConditionTerm::pointer_value_equal(a.clone(), b.clone()),
+        ) if a.program_type() == b.program_type() => {
+            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+        }
         (
             AlgebraicValue::Program(ProgramValue::Int32(a)),
             AlgebraicValue::Program(ProgramValue::Int32(b)),

@@ -8,7 +8,8 @@ fn certificate_identity_bounds_shared_prefix_work_without_export() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(997131));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(997131));
         let right =
             IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(997132))).unwrap();
         let exports = KernelTermExport::machine_export_count();

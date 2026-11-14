@@ -3,8 +3,10 @@ fn offset_reconstruction_retains_cold_and_growing_shared_indices() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut root =
-            KernelTerm::variable(KernelType::Program(T::Int32.c_type()), Variable(1018210));
+        let mut root = KernelTerm::variable(
+            KernelType::Program(T::Int32.program_type()),
+            Variable(1018210),
+        );
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

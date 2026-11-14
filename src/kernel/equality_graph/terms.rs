@@ -2168,7 +2168,7 @@ impl TermClasses {
                 ) => Some(Ok(value)),
                 (Some(V::Pointer(value)), CellRead::FunctionPointer)
                     if matches!(
-                        value.c_type(),
+                        value.program_type(),
                         crate::kernel::ProgramType::FunctionPointer(_)
                     ) =>
                 {

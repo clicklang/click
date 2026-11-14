@@ -886,7 +886,7 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
     ) {
         let parameter = &concrete.parameters()[0];
         let element = parameter
-            .c_type()
+            .interface_type()
             .pointee_type()
             .ok_or_else(|| "expected a sized pointer element".to_string())?;
         let width = match parameter.struct_name().filter(|_| !element.is_pointer()) {
@@ -951,8 +951,10 @@ fn theorem_application_argument_type(
             generics::instantiate_click_type(function.return_type(), &substitution)?
         };
         return Ok(Some(
-            match (return_type.c_type(), function.return_object_class()) {
-                (Some(c_type), Some(class)) => ClickType::from_object_pointer_class(c_type, class),
+            match (return_type.interface_type(), function.return_object_class()) {
+                (Some(interface_type), Some(class)) => {
+                    ClickType::from_object_pointer_class(interface_type, class)
+                }
                 _ => return_type,
             },
         ));
@@ -1104,7 +1106,7 @@ pub(super) fn theorem_application_bindings(
             integer_values = integer_values.with_inserted(parameter.name().to_string(), value);
             continue;
         }
-        let Some(parameter_type) = parameter.click_type().c_type() else {
+        let Some(parameter_type) = parameter.click_type().interface_type() else {
             let ClickType::Algebraic(expected_type) = parameter.click_type() else {
                 return Err(format!(
                     "theorem `{}` parameter `{}` has unresolved type {}",
@@ -1148,10 +1150,10 @@ pub(super) fn theorem_application_bindings(
                             || generics::is_primitive_instance(name, expected)
                     }
                     (
-                        expected @ ClickType::CObjectPointer { c_type, .. },
+                        expected @ ClickType::CObjectPointer { interface_type, .. },
                         crate::kernel::AlgebraicValueType::ObjectPointer(actual, class),
                     ) => {
-                        c_type.to_kernel_type() == *actual
+                        interface_type.to_kernel_type() == *actual
                             && expected.pointer_object_class().as_ref() == Some(class)
                     }
                     (
@@ -1323,12 +1325,12 @@ pub(super) fn theorem_application_bindings(
                     "theorem `{}` parameter `{}` expects {}, got `{}` of type `{}`",
                     theorem.name(),
                     parameter.name(),
-                    describe_c0_type(parameter_type),
+                    describe_interface_type(parameter_type),
                     crate::surface::diagnostics::describe_program_value(
                         &value,
                         ParameterBinding::new(&naming_parameters, &naming_arguments)
                     ),
-                    crate::kernel::program_type_spelling(value.c_type())
+                    crate::kernel::program_type_spelling(value.program_type())
                 ));
             }
             values.insert(parameter.name().to_string(), value);
@@ -1350,12 +1352,12 @@ pub(super) fn theorem_application_pointer_element_widths(
         .filter_map(|(parameter, argument)| {
             let declared_width = parameter.struct_name().and_then(|name| {
                 if parameter
-                    .c_type()
+                    .interface_type()
                     .pointee_type()
                     .is_some_and(|ty| ty.is_pointer())
                 {
                     parameter
-                        .c_type()
+                        .interface_type()
                         .pointee_type()
                         .map(|ty| ty.to_kernel_type().byte_width())
                 } else {
@@ -1375,7 +1377,7 @@ pub(super) fn theorem_application_pointer_element_widths(
                         .contains(parameter.name())
                         .then(|| {
                             parameter
-                                .c_type()
+                                .interface_type()
                                 .pointee_type()
                                 .map(|ty| ty.to_kernel_type().byte_width())
                         })
@@ -1902,8 +1904,8 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     let machine = parameters
         .iter()
         .filter(|parameter| {
-            matches!(parameter.click_type(), ClickType::Program(c_type)
-                if crate::surface::integer_conversions::machine_integer_source_type(*c_type))
+            matches!(parameter.click_type(), ClickType::Program(interface_type)
+                if crate::surface::integer_conversions::machine_integer_source_type(*interface_type))
         })
         .map(|parameter| parameter.name())
         .collect::<BTreeSet<_>>();

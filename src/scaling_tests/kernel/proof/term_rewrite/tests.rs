@@ -317,7 +317,7 @@ fn typed_integer_iota_consumes_the_shared_budget_before_deep_walk() {
                 fields: vec![AlgebraicValue::Integer(IntegerTerm::constant_i64(7))],
             },
         };
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         algebraic_replacements.insert(scrutinee_variable, constructor);
@@ -328,7 +328,7 @@ fn typed_integer_iota_consumes_the_shared_budget_before_deep_walk() {
                         crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
                     );
                     let mut rewrite = TermRewrite::for_typed_variables(
-                        &c_replacements,
+                        &program_replacements,
                         &integer_replacements,
                         &algebraic_replacements,
                     );
@@ -1680,7 +1680,8 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
         let ty = MachineIntegerType::Int32;
         let source = MachineTerm::Variable(Variable(1007320));
         let target = MachineTerm::Variable(Variable(1007321));
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007320));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007320));
         for _ in 0..depth {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);

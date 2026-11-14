@@ -254,11 +254,11 @@ pub(crate) fn convert_value(
     // nothing under either policy.
     if let ProgramValue::Bool(word) = &value {
         return ProgramValue::from_bitvector_term(
-            destination.c_type(),
+            destination.program_type(),
             crate::kernel::MachineTerm::bool_word_as(destination, word),
         );
     }
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
     let wide = source.format().bits() == 128 || destination.format().bits() == 128;
     if !wide {
         if let Some(constant) = source.constant_from_value(&value) {
@@ -616,7 +616,7 @@ fn matches_converted_value(
     if let Some(literal) = machine.operand_view().literal() {
         return *value == machine.ty().value_from_term(literal);
     }
-    matches!(value, crate::kernel::integer_c_value!(word) if value.c_type() == machine.ty().c_type() && matches_word(machine, word))
+    matches!(value, crate::kernel::integer_c_value!(word) if value.program_type() == machine.ty().program_type() && matches_word(machine, word))
 }
 
 fn masked_narrowing(

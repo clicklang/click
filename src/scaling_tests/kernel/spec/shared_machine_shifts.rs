@@ -113,7 +113,7 @@ fn rust_shift_chains_keep_original_formats_without_exports() {
                         root = shifts::rust(op, &root, &count).unwrap().value.into();
                     }
                 });
-                assert_eq!(root.c_type(), format.c_type());
+                assert_eq!(root.program_type(), format.program_type());
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
                 if let Some(before) = previous {
                     assert!(

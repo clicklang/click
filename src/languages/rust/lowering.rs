@@ -15,9 +15,10 @@ mod record_pointer_fields_tests;
 mod scalar_leases;
 mod shared_arrays;
 use crate::kernel::*;
-use crate::languages::c::syntax::{
-    C0Function, C0FunctionPointerParameter, C0FunctionPointerSignature, C0Parameter,
-    C0StructLayout, C0Type, LongRank,
+use crate::languages::c::syntax::LongRank;
+use crate::languages::interface::{
+    CallbackInterface, CallbackParameter, ImportedFunction, ImportedParameter, InterfaceType,
+    RecordLayout,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,7 +41,7 @@ fn reference_view(
     }
 }
 
-pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>);
+pub(crate) type LoweredRust = (Vec<ImportedFunction>, BTreeMap<String, RecordLayout>);
 
 thread_local! {
     /// Whether the export being lowered reads a slice iterator through its
@@ -99,7 +100,7 @@ impl EnumTypes {
                                 if let Some(nested) = payload_type(field)? {
                                     return Ok(nested);
                                 }
-                                let c_type = scalar_type(field)?;
+                                let interface_type = scalar_type(field)?;
                                 // The library's `Option` of a shared
                                 // reference, which a slice iterator's
                                 // `next()` returns, holds that reference.
@@ -108,14 +109,14 @@ impl EnumTypes {
                                 let reference_payload =
                                     matches!(declared.generic.as_deref(), Some("Option" | "Slice"))
                                         && matches!(field, Type::Reference { mutable: false, .. });
-                                if c_type == C0Type::Void
-                                    || (c_type.is_pointer() && !reference_payload)
+                                if interface_type == InterfaceType::Void
+                                    || (interface_type.is_pointer() && !reference_payload)
                                 {
                                     return Err(
                                         "Rust enum fields must be integers or booleans".to_string()
                                     );
                                 }
-                                Ok(AlgebraicValueType::Program(c_type.to_kernel_type()))
+                                Ok(AlgebraicValueType::Program(interface_type.to_kernel_type()))
                             })
                             .collect::<Result<_, String>>()?,
                     })
@@ -184,7 +185,7 @@ fn nested_enum_field_type(
     name: &str,
     variant: &str,
     index: usize,
-) -> Result<Option<C0Type>, String> {
+) -> Result<Option<InterfaceType>, String> {
     let enum_type = EnumTypes::get(name)?.algebraic_type();
     let Some(AlgebraicValueType::Algebraic { name: field, .. }) = enum_type
         .variants
@@ -194,59 +195,61 @@ fn nested_enum_field_type(
     else {
         return Ok(None);
     };
-    Ok(Some(C0Type::Parameter(EnumTypes::get(field)?)))
+    Ok(Some(InterfaceType::Parameter(EnumTypes::get(field)?)))
 }
 
-fn scalar_type(t: &Type) -> Result<C0Type, String> {
+fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
     match t {
-        Type::Enum { name } => Ok(C0Type::Parameter(EnumTypes::get(name)?)),
-        Type::I8 => Ok(C0Type::Int8),
-        Type::I16 => Ok(C0Type::Int16),
-        Type::I32 => Ok(C0Type::Int32),
-        Type::I64 | Type::Isize => Ok(C0Type::Int64(LongRank::Long)),
-        Type::U8 => Ok(C0Type::UInt8),
-        Type::U16 => Ok(C0Type::UInt16),
-        Type::U32 => Ok(C0Type::UInt32),
-        Type::U64 | Type::Usize => Ok(C0Type::UInt64(LongRank::Long)),
-        Type::Bool => Ok(C0Type::Bool),
-        Type::Unit => Ok(C0Type::Void),
-        Type::Parameter { name } => Ok(C0Type::Parameter(
+        Type::Enum { name } => Ok(InterfaceType::Parameter(EnumTypes::get(name)?)),
+        Type::I8 => Ok(InterfaceType::Int8),
+        Type::I16 => Ok(InterfaceType::Int16),
+        Type::I32 => Ok(InterfaceType::Int32),
+        Type::I64 | Type::Isize => Ok(InterfaceType::Int64(LongRank::Long)),
+        Type::U8 => Ok(InterfaceType::UInt8),
+        Type::U16 => Ok(InterfaceType::UInt16),
+        Type::U32 => Ok(InterfaceType::UInt32),
+        Type::U64 | Type::Usize => Ok(InterfaceType::UInt64(LongRank::Long)),
+        Type::Bool => Ok(InterfaceType::Bool),
+        Type::Unit => Ok(InterfaceType::Void),
+        Type::Parameter { name } => Ok(InterfaceType::Parameter(
             crate::kernel::TypeParameterName::intern(name),
         )),
-        Type::Vec { element } => Ok(C0Type::Parameter(vec_type(element)?)),
+        Type::Vec { element } => Ok(InterfaceType::Parameter(vec_type(element)?)),
         // In the library-iterator model, the iterator is a value of the
         // library's `ChunksExact<uint8>`.
-        Type::ChunkIterator => Ok(C0Type::Parameter(chunks_exact_type())),
+        Type::ChunkIterator => Ok(InterfaceType::Parameter(chunks_exact_type())),
         // A slice iterator passed to its library operations is a value of
         // the library's `SliceIter`.
-        Type::SharedArrayIterator { element } => Ok(C0Type::Parameter(slice_iter_type(element)?)),
+        Type::SharedArrayIterator { element } => {
+            Ok(InterfaceType::Parameter(slice_iter_type(element)?))
+        }
         // A box of a crate struct is its address, as a struct reference is.
-        Type::Box { .. } | Type::OptionBox { .. } => Ok(C0Type::Int32Pointer),
+        Type::Box { .. } | Type::OptionBox { .. } => Ok(InterfaceType::Int32Pointer),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
             // A reference to a value of unknown type is opaque as a struct
             // reference is: nothing is read through it without its fields.
-            Type::I32 | Type::Record { .. } | Type::TraitObject => Ok(C0Type::Int32Pointer),
-            Type::U8 => Ok(C0Type::UInt8Pointer),
-            Type::U16 => Ok(C0Type::UInt16Pointer),
-            Type::U32 => Ok(C0Type::UInt32Pointer),
-            Type::I8 => Ok(C0Type::Int8Pointer),
-            Type::I16 => Ok(C0Type::Int16Pointer),
-            Type::I64 | Type::Isize => Ok(C0Type::Int64Pointer(LongRank::Long)),
-            Type::U64 | Type::Usize => Ok(C0Type::UInt64Pointer(LongRank::Long)),
-            Type::Parameter { name } => Ok(C0Type::ParameterPointer(
+            Type::I32 | Type::Record { .. } | Type::TraitObject => Ok(InterfaceType::Int32Pointer),
+            Type::U8 => Ok(InterfaceType::UInt8Pointer),
+            Type::U16 => Ok(InterfaceType::UInt16Pointer),
+            Type::U32 => Ok(InterfaceType::UInt32Pointer),
+            Type::I8 => Ok(InterfaceType::Int8Pointer),
+            Type::I16 => Ok(InterfaceType::Int16Pointer),
+            Type::I64 | Type::Isize => Ok(InterfaceType::Int64Pointer(LongRank::Long)),
+            Type::U64 | Type::Usize => Ok(InterfaceType::UInt64Pointer(LongRank::Long)),
+            Type::Parameter { name } => Ok(InterfaceType::ParameterPointer(
                 crate::kernel::TypeParameterName::intern(name),
             )),
             // An enum value is a spec value, as a type parameter's is.
-            Type::Enum { name } => Ok(C0Type::ParameterPointer(EnumTypes::get(name)?)),
-            Type::Vec { element } => Ok(C0Type::ParameterPointer(vec_type(element)?)),
+            Type::Enum { name } => Ok(InterfaceType::ParameterPointer(EnumTypes::get(name)?)),
+            Type::Vec { element } => Ok(InterfaceType::ParameterPointer(vec_type(element)?)),
             Type::SharedArrayIterator { element } => {
-                Ok(C0Type::ParameterPointer(slice_iter_type(element)?))
+                Ok(InterfaceType::ParameterPointer(slice_iter_type(element)?))
             }
-            Type::ChunkIterator => Ok(C0Type::ParameterPointer(chunks_exact_type())),
+            Type::ChunkIterator => Ok(InterfaceType::ParameterPointer(chunks_exact_type())),
             Type::Array { element, .. } => match element.as_ref() {
-                Type::I32 => Ok(C0Type::Int32Pointer),
-                Type::U8 => Ok(C0Type::UInt8Pointer),
-                Type::U32 => Ok(C0Type::UInt32Pointer),
+                Type::I32 => Ok(InterfaceType::Int32Pointer),
+                Type::U8 => Ok(InterfaceType::UInt8Pointer),
+                Type::U32 => Ok(InterfaceType::UInt32Pointer),
                 _ => Err("fixed arrays require i32, u8 or u32 elements".into()),
             },
             _ => Err("Rust reference pointee outside scalar/reference lowering".into()),
@@ -289,40 +292,38 @@ fn chunks_exact_type() -> crate::kernel::TypeParameterName {
 }
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
 /// parameter type spells it.
-fn fn_pointer_signature(t: &Type) -> Result<C0FunctionPointerSignature, String> {
+fn fn_pointer_signature(t: &Type) -> Result<CallbackInterface, String> {
     let Type::FnPointer { parameters, result } = t else {
         return Err("Rust function-pointer signature requires a function-pointer type".into());
     };
     let parameters = parameters
         .iter()
         .map(|parameter| {
-            let c_type = scalar_type(parameter)?;
-            if c_type == C0Type::Void || c_type.is_pointer() {
+            let interface_type = scalar_type(parameter)?;
+            if interface_type == InterfaceType::Void || interface_type.is_pointer() {
                 return Err("Rust function-pointer parameters must be scalars".to_string());
             }
-            Ok(C0FunctionPointerParameter::new(c_type, None, false))
+            Ok(CallbackParameter::new(interface_type, None, false))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let result = scalar_type(result)?;
     if result.is_pointer() {
         return Err("Rust function-pointer results must be scalars or unit".into());
     }
-    Ok(C0FunctionPointerSignature::new(
-        result, None, parameters, false,
-    ))
+    Ok(CallbackInterface::new(result, None, parameters, false))
 }
 // Embedded arrays retain one ABI field and their concrete extent. Never
 // flatten a field into one layout entry per element.
-fn record_field_type(t: &Type) -> Result<C0Type, String> {
+fn record_field_type(t: &Type) -> Result<InterfaceType, String> {
     let Type::Array { element, length } = t else {
         return scalar_type(t);
     };
     let element = scalar_type(element)?.to_kernel_type();
     let length = arrays::array_length(element, *length)?;
     Ok(match element {
-        ProgramType::Int32 => C0Type::Int32Array(length),
-        ProgramType::UInt8 => C0Type::UInt8Array(length),
-        ProgramType::UInt32 => C0Type::UInt32Array(length),
+        ProgramType::Int32 => InterfaceType::Int32Array(length),
+        ProgramType::UInt8 => InterfaceType::UInt8Array(length),
+        ProgramType::UInt32 => InterfaceType::UInt32Array(length),
         _ => unreachable!(),
     })
 }
@@ -363,7 +364,7 @@ fn branch_condition(condition: ProgramExpression) -> ProgramExpression {
 }
 
 fn rust_scalar_cast(value: ProgramExpression, target: ProgramType) -> ProgramExpression {
-    if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
+    if crate::kernel::MachineIntegerType::from_program_type(target).is_some() {
         crate::kernel::program_expression::integer_cast_modulo(value, target)
     } else if target.is_pointer() {
         reference_view(value, target, false, false)
@@ -444,7 +445,7 @@ pub(crate) fn lower_with_identity(
         layout_fields.sort_by_key(|f| f.3);
         // Pointer fields keep their nominal pointee for chained field reads.
         // They do not embed its layout, so recursive records need no traversal.
-        let layout = C0StructLayout::from_explicit_fields_with_structs(
+        let layout = RecordLayout::from_explicit_fields_with_structs(
             layout_fields,
             record.size,
             record.alignment,
@@ -511,10 +512,10 @@ fn lower_function(
     identity: Option<&str>,
     f: &Function,
     fields: &BTreeMap<(&str, &str), (u32, ProgramType)>,
-    layouts: &BTreeMap<String, C0StructLayout>,
+    layouts: &BTreeMap<String, RecordLayout>,
     records: &BTreeMap<&str, &Record>,
     functions: &BTreeMap<&str, &Function>,
-) -> Result<C0Function, String> {
+) -> Result<ImportedFunction, String> {
     if !(f.return_type.is_scalar()
         || matches!(
             f.return_type,
@@ -544,7 +545,7 @@ fn lower_function(
         _ => None,
     };
     let return_type = if return_layout.is_some() {
-        C0Type::UInt8Pointer
+        InterfaceType::UInt8Pointer
     } else {
         scalar_type(&f.return_type)?
     };
@@ -578,8 +579,9 @@ fn lower_function(
                 return Err("owned record parameters require compiler MIR".into());
             }
             let layout = layouts.get(name).ok_or("missing parameter record layout")?;
-            let parameter = C0Parameter::new(C0Type::UInt8Pointer, p.name.clone(), None)
-                .with_struct_value(name.clone(), layout.clone());
+            let parameter =
+                ImportedParameter::new(InterfaceType::UInt8Pointer, p.name.clone(), None)
+                    .with_struct_value(name.clone(), layout.clone());
             kernel_parameters.push(parameter.to_kernel_parameter());
             parameters.push(parameter);
             continue;
@@ -593,12 +595,12 @@ fn lower_function(
             }
             slices.insert(p.name.clone(), (length.clone(), !mutable));
             parameters.push(
-                C0Parameter::new(C0Type::UInt8Pointer, p.name.clone(), None)
+                ImportedParameter::new(InterfaceType::UInt8Pointer, p.name.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            parameters.push(C0Parameter::new(
-                C0Type::UInt64(LongRank::Long),
+            parameters.push(ImportedParameter::new(
+                InterfaceType::UInt64(LongRank::Long),
                 length.clone(),
                 None,
             ));
@@ -629,12 +631,12 @@ fn lower_function(
                 (length.clone(), scalar_type(element)?.to_kernel_type()),
             );
             parameters.push(
-                C0Parameter::new(pointer, p.name.clone(), None)
+                ImportedParameter::new(pointer, p.name.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            parameters.push(C0Parameter::new(
-                C0Type::UInt64(LongRank::Long),
+            parameters.push(ImportedParameter::new(
+                InterfaceType::UInt64(LongRank::Long),
                 length.clone(),
                 None,
             ));
@@ -655,10 +657,13 @@ fn lower_function(
                 &p.name,
                 signature.pointer_type().to_kernel_type(),
             ));
-            parameters.push(C0Parameter::function_pointer(p.name.clone(), signature));
+            parameters.push(ImportedParameter::function_pointer(
+                p.name.clone(),
+                signature,
+            ));
             continue;
         }
-        let c_type = scalar_type(&p.value_type)?;
+        let interface_type = scalar_type(&p.value_type)?;
         if let Type::Reference { mutable, pointee } = &p.value_type
             && let Type::Array { element, length } = pointee.as_ref()
         {
@@ -668,7 +673,7 @@ fn lower_function(
             }
             arrays.insert(p.name.clone(), (*length, element, !mutable));
         }
-        if c_type == C0Type::Void {
+        if interface_type == InterfaceType::Void {
             return Err("unit parameters outside Rust slice".into());
         }
         let (tag, constant) = match &p.value_type {
@@ -689,15 +694,15 @@ fn lower_function(
             ),
             _ => (None, false),
         };
-        let mut parameter =
-            C0Parameter::new(c_type, p.name.clone(), tag.clone()).with_pointee_constant(constant);
+        let mut parameter = ImportedParameter::new(interface_type, p.name.clone(), tag.clone())
+            .with_pointee_constant(constant);
         // The record's layout is what seeds a whole-record `owns *x` at its
         // fields' widths, so a 64-bit field reads as one cell.
         if let Some(layout) = tag.as_ref().and_then(|name| layouts.get(name)) {
             parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
         }
-        let mut kernel_parameter =
-            program_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant);
+        let mut kernel_parameter = program_parameter(&p.name, interface_type.to_kernel_type())
+            .with_pointee_constant(constant);
         if let Some((length, element, _)) = arrays.get(&p.name) {
             let bytes = u32::try_from(*length * u64::from(element.byte_width()))
                 .expect("validated fixed array extent");
@@ -720,7 +725,7 @@ fn lower_function(
             .clone()
             .or_else(|| super::standard_library::library_generic(f));
         let generic = instance_of.is_some();
-        let mut declaration = C0Function::external(return_type, f.name.clone(), parameters)
+        let mut declaration = ImportedFunction::external(return_type, f.name.clone(), parameters)
             .with_generic_instance(instance_of);
         if let Some((name, layout)) = return_layout {
             declaration = declaration.with_struct_return(name.clone(), layout.clone());
@@ -795,7 +800,7 @@ fn lower_function(
                 .collect()
         })
         .unwrap_or_default();
-    let mut lowered = C0Function::external(return_type, f.name.clone(), parameters)
+    let mut lowered = ImportedFunction::external(return_type, f.name.clone(), parameters)
         .with_local_struct_values(local_records)
         .with_prelowered_kernel_function(kernel)
         .with_closure_captures(f.captures)
@@ -848,10 +853,10 @@ struct Context<'a> {
     mir_nodes: BTreeMap<usize, usize>,
     next_temporary: u32,
     /// The iterator each loop advances, by loop index in preorder.
-    loop_iterators: Vec<Option<crate::languages::c::syntax::RustLoopIterator>>,
+    loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
     locals: BTreeSet<String>,
-    return_type: C0Type,
-    layouts: &'a BTreeMap<String, C0StructLayout>,
+    return_type: InterfaceType,
+    layouts: &'a BTreeMap<String, RecordLayout>,
     records: &'a BTreeMap<&'a str, &'a Record>,
     functions: &'a BTreeMap<&'a str, &'a Function>,
 }
@@ -987,7 +992,7 @@ impl Context<'_> {
                     ));
                 }
                 let t = scalar_type(&place.value_type)?;
-                if t == C0Type::Void {
+                if t == InterfaceType::Void {
                     return Err("unit locals outside Rust slice".into());
                 }
                 let constant = matches!(place.value_type, Type::Reference { mutable: false, .. });
@@ -1119,7 +1124,7 @@ impl Context<'_> {
                 let (checks, value) = self.prepared_expr(value)?;
                 Ok(program_seq(checks, program_return(value)))
             }
-            S::Return { value: None } if self.return_type == C0Type::Void => {
+            S::Return { value: None } if self.return_type == InterfaceType::Void => {
                 Ok(program_return(program_void_value()))
             }
             S::Return { value: None } => Err("missing Rust return value".into()),
@@ -1596,16 +1601,23 @@ impl Context<'_> {
         value_type: &Type,
     ) -> Result<(ProgramStatement, String), String> {
         let name = self.fresh_temporary()?;
-        let c_type = scalar_type(value_type)?.to_kernel_type();
+        let interface_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
         let value = if matches!(value_type, Type::Reference { .. }) {
-            reference_view(value, c_type, false, constant)
+            reference_view(value, interface_type, false, constant)
         } else {
-            crate::kernel::program_expression::cast(value, c_type)
+            crate::kernel::program_expression::cast(value, interface_type)
         };
         Ok((
             program_seq(
-                program_declare_with_all_qualifiers(&name, c_type, false, false, false, constant),
+                program_declare_with_all_qualifiers(
+                    &name,
+                    interface_type,
+                    false,
+                    false,
+                    false,
+                    constant,
+                ),
                 program_assign(&name, value),
             ),
             name,
@@ -2313,8 +2325,8 @@ impl Context<'_> {
                     .map(|(field, declared)| {
                         let value = self.expr(field)?;
                         Ok(match declared {
-                            AlgebraicValueType::Program(c_type) => {
-                                crate::kernel::program_expression::cast(value, *c_type)
+                            AlgebraicValueType::Program(interface_type) => {
+                                crate::kernel::program_expression::cast(value, *interface_type)
                             }
                             _ => value,
                         })

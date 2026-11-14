@@ -12,7 +12,7 @@ use super::*;
 pub(super) fn rewrite_model_accessors(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> (Vec<Token>, Vec<SourcePosition>) {
     let accessors = crate::languages::cpp::standard_library::model_accessors(layouts);
     if accessors.is_empty() {

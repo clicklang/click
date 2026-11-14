@@ -71,7 +71,7 @@ impl StatementSiteScope {
     pub(in crate::surface) fn enter(
         layout: &crate::surface::lowering::SourceExecutionLayout,
         statement_index: usize,
-        function: &syntax::C0Function,
+        function: &crate::languages::interface::ImportedFunction,
     ) -> Self {
         let site = layout.site(statement_index).cloned();
         C_STATEMENT_SITES.with(|sites| sites.borrow_mut().push(site));
@@ -145,7 +145,7 @@ pub(in crate::surface) struct StatementPlaces {
 }
 
 impl StatementPlaces {
-    fn of(function: &syntax::C0Function) -> Self {
+    fn of(function: &crate::languages::interface::ImportedFunction) -> Self {
         let layouts = function.structs();
         let fields_of = |struct_name: &str| {
             layouts
@@ -155,7 +155,7 @@ impl StatementPlaces {
         let mut carriers = reference_carriers(function);
         for parameter in function.parameters() {
             if let Some(struct_name) = parameter.struct_name()
-                && parameter.c_type().is_pointer()
+                && parameter.interface_type().is_pointer()
                 && !carriers.contains_key(parameter.name())
                 && let Some(fields) = parameter
                     .pointee_struct_layout()
@@ -186,7 +186,9 @@ impl StatementPlaces {
     }
 }
 
-fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, PointeeShape> {
+fn reference_carriers(
+    function: &crate::languages::interface::ImportedFunction,
+) -> BTreeMap<String, PointeeShape> {
     function
         .parameters()
         .iter()
@@ -249,7 +251,7 @@ impl ParameterPlaceScope {
                 struct_pointer_parameters: parameters.iter().map(|parameter| {
                     (parameter.struct_name().is_some()
                         && !parameter.is_reference()
-                        && matches!(parameter.click_type(), ClickType::Program(c_type) if c_type.is_pointer()))
+                        && matches!(parameter.click_type(), ClickType::Program(interface_type) if interface_type.is_pointer()))
                         .then(|| parameter.name().to_string())
                 }).collect(),
                 carriers: std::sync::Arc::new(shapes),
@@ -661,7 +663,7 @@ fn declared_contract_parameter_spellings(
             // other tagged parameter is a pointer to the struct.
             let base = if matches!(
                 parameter.click_type(),
-                ClickType::Program(C0Type::UInt8Array(_))
+                ClickType::Program(InterfaceType::UInt8Array(_))
             ) {
                 format!("struct {name}")
             } else {
@@ -706,12 +708,15 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
 /// C proof name the same term the same way.
 pub(in crate::surface) fn value_naming_tables(
     values: &std::collections::BTreeMap<String, ProgramValue>,
-) -> (Vec<syntax::C0Parameter>, Vec<ProgramExpression>) {
+) -> (
+    Vec<crate::languages::interface::ImportedParameter>,
+    Vec<ProgramExpression>,
+) {
     let mut parameters = Vec::with_capacity(values.len());
     let mut arguments = Vec::with_capacity(values.len());
     for (name, value) in values {
-        parameters.push(syntax::C0Parameter::new(
-            crate::surface::generics::c0_type_from_kernel(value.c_type()),
+        parameters.push(crate::languages::interface::ImportedParameter::new(
+            crate::surface::generics::interface_type_from_program_type(value.program_type()),
             name.clone(),
             None,
         ));
@@ -1392,7 +1397,10 @@ pub(super) fn describe_stated_fact_over_locals(
 /// loop head minted for them read as the locals' names.
 pub(super) fn local_naming_tables(
     state: &ExecutionState,
-) -> (Vec<syntax::C0Parameter>, Vec<ProgramExpression>) {
+) -> (
+    Vec<crate::languages::interface::ImportedParameter>,
+    Vec<ProgramExpression>,
+) {
     let mut values = state
         .locals()
         .object_values()
@@ -1455,8 +1463,11 @@ pub(in crate::surface) fn call_result_spelling(local: &str) -> Option<String> {
 /// compatible kernel pointer types cannot establish a nominal struct type.
 pub(super) fn local_naming_tables_with_source(
     state: &ExecutionState,
-    function: Option<&syntax::C0Function>,
-) -> (Vec<syntax::C0Parameter>, Vec<ProgramExpression>) {
+    function: Option<&crate::languages::interface::ImportedFunction>,
+) -> (
+    Vec<crate::languages::interface::ImportedParameter>,
+    Vec<ProgramExpression>,
+) {
     let (mut parameters, arguments) = local_naming_tables(state);
     let source_parameters = function
         .into_iter()
@@ -1473,11 +1484,11 @@ pub(super) fn local_naming_tables_with_source(
             *parameter = parameter
                 .clone()
                 .with_pointee_struct_layout(name.clone(), layout.clone());
-        } else if parameter.c_type().is_pointer() {
+        } else if parameter.interface_type().is_pointer() {
             // Only the rendered cast matters here; the byte signedness is
             // never read.
-            *parameter = syntax::C0Parameter::new(
-                C0Type::CharPointer(syntax::PlainChar::Unsigned),
+            *parameter = crate::languages::interface::ImportedParameter::new(
+                InterfaceType::CharPointer(syntax::PlainChar::Unsigned),
                 format!("((char *){})", parameter.name()),
                 None,
             );
@@ -2194,7 +2205,7 @@ pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
 
 /// Recover whole structs or contiguous field slots from byte coordinates.
 fn describe_layout_place_range(
-    layout: &syntax::C0StructLayout,
+    layout: &crate::languages::interface::RecordLayout,
     name: &str,
     low: u64,
     high: u64,
@@ -2234,16 +2245,17 @@ fn describe_layout_place_range(
         if low == field_low
             && (high == slot_high
                 || high == field_low + u64::from(field.byte_width())
-                || (field.c_type().is_pointer() && low < high && high <= slot_high))
+                || (field.interface_type().is_pointer() && low < high && high <= slot_high))
         {
             return Some(member(field_name));
         }
         // A single scalar array element keeps its field/index spelling even
         // when the range base has folded the index into a byte offset.
-        if !field.c_type().is_pointer()
+        if !field.interface_type().is_pointer()
             && field.struct_name().is_none()
             && field.array_shape().is_none_or(|shape| shape.len() == 1)
-            && let Some(width) = scalar_element_width(field.c_type()).map(|width| width as u64)
+            && let Some(width) =
+                scalar_element_width(field.interface_type()).map(|width| width as u64)
             && low >= field_low
             && high <= field_low + u64::from(field.byte_width())
             && high - low == width
@@ -2303,7 +2315,7 @@ fn describe_struct_place_range(
         };
         if parameter.is_struct_value()
             || parameter
-                .c_type()
+                .interface_type()
                 .pointee_type()
                 .is_some_and(|ty| ty.is_pointer())
         {
@@ -2374,7 +2386,12 @@ fn describe_struct_array_field_range(
 fn struct_byte_bounds(
     range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
-) -> Option<(String, syntax::C0StructLayout, MachineTerm, MachineTerm)> {
+) -> Option<(
+    String,
+    crate::languages::interface::RecordLayout,
+    MachineTerm,
+    MachineTerm,
+)> {
     range.int32_bounds()?;
     let bounds = |offset: MachineTerm| {
         let bytes = |index: &MachineTerm| {
@@ -2395,7 +2412,7 @@ fn struct_byte_bounds(
             };
             if parameter.is_struct_value()
                 || parameter
-                    .c_type()
+                    .interface_type()
                     .pointee_type()
                     .is_some_and(|ty| ty.is_pointer())
             {
@@ -2449,21 +2466,21 @@ fn pointer_offset_bytes(offset: &PointerOffsetTerm) -> Option<MachineTerm> {
 /// the constant part of `start` falls in; constant bounds must also lie
 /// inside it. `None` when the bounds are not whole elements of the field.
 fn scalar_array_field_indices<'a>(
-    layout: &'a syntax::C0StructLayout,
+    layout: &'a crate::languages::interface::RecordLayout,
     start: &MachineTerm,
     end: &MachineTerm,
 ) -> Option<(&'a str, MachineTerm, MachineTerm)> {
     let anchor = constant_addend(start)?;
     let (name, field) = layout.fields().iter().find(|(_, field)| {
         let low = i64::from(field.offset_bytes());
-        !field.c_type().is_pointer()
+        !field.interface_type().is_pointer()
             && field.struct_name().is_none()
             && field.array_shape().is_none_or(|shape| shape.len() == 1)
-            && scalar_element_width(field.c_type()).is_some()
+            && scalar_element_width(field.interface_type()).is_some()
             && low <= anchor
             && anchor < low + i64::from(field.byte_width())
     })?;
-    let width = u32::try_from(scalar_element_width(field.c_type())?).ok()?;
+    let width = u32::try_from(scalar_element_width(field.interface_type())?).ok()?;
     let offset = field.offset_bytes();
     let index = |bytes: &MachineTerm| {
         if offset.is_multiple_of(width) {
@@ -2618,7 +2635,7 @@ pub(super) fn describe_memory_range(
             let width = slot
                 .filter(|slot| slot.struct_name().is_none())
                 .and_then(|slot| {
-                    slot.c_type()
+                    slot.interface_type()
                         .pointee_type()
                         .map(|pointee| diagnostic_c0_type_byte_width(pointee, slot.byte_width()))
                 })
@@ -2832,7 +2849,10 @@ fn range_end_is_next_element(start: &MachineTerm, end: &MachineTerm) -> bool {
 fn parameter_relative_base<'a>(
     range: &MemoryRange,
     parameter_binding: ParameterBinding<'a>,
-) -> Option<(&'a syntax::C0Parameter, MachineTerm)> {
+) -> Option<(
+    &'a crate::languages::interface::ImportedParameter,
+    MachineTerm,
+)> {
     let mut symbolic = None;
     for (parameter, argument) in parameter_binding
         .parameters
@@ -3959,7 +3979,9 @@ struct AccessWidths {
 /// other step, and for a point that records no edge at all.
 fn recorded_store_byte_width(at: Option<&resource_tracker::ProgramPoint>) -> Option<u32> {
     match at?.snapshot().derivation()?.as_ref() {
-        crate::kernel::MemoryDerivation::Store { value, .. } => Some(value.c_type().byte_width()),
+        crate::kernel::MemoryDerivation::Store { value, .. } => {
+            Some(value.program_type().byte_width())
+        }
         _ => None,
     }
 }
@@ -4357,7 +4379,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
                 )
         });
         if let (Some((name, field)), None) = (fields.next(), fields.next())
-            && field.c_type().is_pointer()
+            && field.interface_type().is_pointer()
         {
             let base = base_point.map_or_else(
                 || parameter.name().to_string(),
@@ -4976,34 +4998,34 @@ pub(in crate::surface) fn describe_mutex_pointer(
 /// The element width of a parameter that points to (or is) an array of one
 /// scalar type, the only shape a byte count can be read back as an element
 /// count for.
-fn scalar_element_width(c_type: C0Type) -> Option<i64> {
-    match c_type {
-        C0Type::CharPointer(_)
-        | C0Type::CharArray(_, _)
-        | C0Type::Int8Pointer
-        | C0Type::Int8Array(_)
-        | C0Type::UInt8Pointer
-        | C0Type::UInt8Array(_) => Some(1),
-        C0Type::Int16Pointer
-        | C0Type::Int16Array(_)
-        | C0Type::UInt16Pointer
-        | C0Type::UInt16Array(_) => Some(2),
-        C0Type::Int32Pointer
-        | C0Type::Int32Array(_)
-        | C0Type::UInt32Pointer
-        | C0Type::UInt32Array(_)
-        | C0Type::Float32Pointer
-        | C0Type::Float32Array(_) => Some(4),
-        C0Type::Int64Pointer(_)
-        | C0Type::Int64Array(_, _)
-        | C0Type::UInt64Pointer(_)
-        | C0Type::UInt64Array(_, _)
-        | C0Type::Float64Pointer
-        | C0Type::Float64Array(_) => Some(8),
-        C0Type::Int128Pointer
-        | C0Type::UInt128Pointer
-        | C0Type::Int128Array(_)
-        | C0Type::UInt128Array(_) => Some(16),
+fn scalar_element_width(interface_type: InterfaceType) -> Option<i64> {
+    match interface_type {
+        InterfaceType::CharPointer(_)
+        | InterfaceType::CharArray(_, _)
+        | InterfaceType::Int8Pointer
+        | InterfaceType::Int8Array(_)
+        | InterfaceType::UInt8Pointer
+        | InterfaceType::UInt8Array(_) => Some(1),
+        InterfaceType::Int16Pointer
+        | InterfaceType::Int16Array(_)
+        | InterfaceType::UInt16Pointer
+        | InterfaceType::UInt16Array(_) => Some(2),
+        InterfaceType::Int32Pointer
+        | InterfaceType::Int32Array(_)
+        | InterfaceType::UInt32Pointer
+        | InterfaceType::UInt32Array(_)
+        | InterfaceType::Float32Pointer
+        | InterfaceType::Float32Array(_) => Some(4),
+        InterfaceType::Int64Pointer(_)
+        | InterfaceType::Int64Array(_, _)
+        | InterfaceType::UInt64Pointer(_)
+        | InterfaceType::UInt64Array(_, _)
+        | InterfaceType::Float64Pointer
+        | InterfaceType::Float64Array(_) => Some(8),
+        InterfaceType::Int128Pointer
+        | InterfaceType::UInt128Pointer
+        | InterfaceType::Int128Array(_)
+        | InterfaceType::UInt128Array(_) => Some(16),
         _ => None,
     }
 }
@@ -5172,7 +5194,7 @@ pub(in crate::surface) fn describe_pointer(
 /// lowered block, load, or version terms.
 fn describe_parameter_struct_field_pointer(
     pointer: &Pointer,
-    parameter: &syntax::C0Parameter,
+    parameter: &crate::languages::interface::ImportedParameter,
     base: &Pointer,
 ) -> Option<String> {
     let layout = parameter
@@ -5202,7 +5224,7 @@ fn describe_parameter_struct_field_pointer(
         }
     };
     layout.fields().iter().find_map(|(name, field)| {
-        let field_type = field.c_type();
+        let field_type = field.interface_type();
         let pointee_type = field_type.pointee_type()?;
         let pointee_width = diagnostic_c0_type_byte_width(pointee_type, field.byte_width());
         if byte_width.is_some_and(|byte_width| pointee_width != byte_width) {
@@ -5225,7 +5247,7 @@ fn describe_parameter_struct_field_pointer(
 /// The index is spelled by [`describe_address_index`].
 fn describe_parameter_struct_member(
     pointer: &Pointer,
-    parameter: &syntax::C0Parameter,
+    parameter: &crate::languages::interface::ImportedParameter,
     base: &Pointer,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -5244,7 +5266,7 @@ fn describe_parameter_struct_member(
 /// a value).
 fn describe_struct_member_from(
     pointer: &Pointer,
-    parameter: &syntax::C0Parameter,
+    parameter: &crate::languages::interface::ImportedParameter,
     base: &Pointer,
     name: &str,
     select: &str,
@@ -5301,29 +5323,31 @@ fn describe_struct_member_from(
     if within == 0 {
         return Some(member);
     }
-    let width = scalar_element_width(field.c_type())
+    let width = scalar_element_width(field.interface_type())
         .or_else(|| field.array_element_width().map(i64::from))?;
     (within % width == 0).then(|| format!("{member}[{}]", within / width))
 }
 
-fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
-    match c_type {
-        C0Type::Bool | C0Type::Char(_) | C0Type::UInt8 => 1,
-        C0Type::Int8 => 1,
-        C0Type::Int16 | C0Type::UInt16 => 2,
-        C0Type::Int32 | C0Type::UInt32 => 4,
-        C0Type::Int64(_) | C0Type::UInt64(_) => 8,
-        _ if c_type.is_pointer() => i64::from(pointer_width),
+fn diagnostic_c0_type_byte_width(interface_type: InterfaceType, pointer_width: u32) -> i64 {
+    match interface_type {
+        InterfaceType::Bool | InterfaceType::Char(_) | InterfaceType::UInt8 => 1,
+        InterfaceType::Int8 => 1,
+        InterfaceType::Int16 | InterfaceType::UInt16 => 2,
+        InterfaceType::Int32 | InterfaceType::UInt32 => 4,
+        InterfaceType::Int64(_) | InterfaceType::UInt64(_) => 8,
+        _ if interface_type.is_pointer() => i64::from(pointer_width),
         _ => i64::from(pointer_width),
     }
 }
 
-pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter) -> i64 {
+pub(super) fn diagnostic_parameter_element_width(
+    parameter: &crate::languages::interface::ImportedParameter,
+) -> i64 {
     if let Some(width) = parameter.array_element_width() {
         return i64::from(width);
     }
     if let Some(pointee) = parameter
-        .c_type()
+        .interface_type()
         .pointee_type()
         .filter(|ty| ty.is_pointer())
     {
@@ -5334,7 +5358,7 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
     }
     if !parameter.is_struct_value()
         && parameter
-            .c_type()
+            .interface_type()
             .pointee_type()
             .is_some_and(|pointee| !pointee.is_pointer())
         && let Some(layout) = parameter.struct_layout()
@@ -5343,58 +5367,66 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
     }
     // A pointer to (or array of) one scalar type is indexed by that scalar's
     // width, whatever the pointer itself occupies.
-    if let Some(width) = scalar_element_width(parameter.c_type()) {
+    if let Some(width) = scalar_element_width(parameter.interface_type()) {
         return width;
     }
-    match parameter.c_type() {
-        C0Type::Int128 | C0Type::UInt128 | C0Type::Int128Array(_) | C0Type::UInt128Array(_) => 16,
-        C0Type::Parameter(_) => 0,
-        C0Type::Void => 0,
-        C0Type::Bool => 1,
-        C0Type::VoidPointer | C0Type::VoidPointerPointer | C0Type::ParameterPointer(_) => 8,
-        C0Type::CharPointer(_)
-        | C0Type::CharArray(_, _)
-        | C0Type::UInt8Pointer
-        | C0Type::UInt8Array(_) => 1,
-        C0Type::Int8 | C0Type::Int8Array(_) => 1,
-        C0Type::Int16 | C0Type::UInt16 | C0Type::Int16Array(_) | C0Type::UInt16Array(_) => 2,
-        C0Type::Int32
-        | C0Type::Char(_)
-        | C0Type::UInt8
-        | C0Type::UInt32
-        | C0Type::Int32Pointer
-        | C0Type::UInt32Pointer
-        | C0Type::Int32Array(_)
-        | C0Type::UInt32Array(_) => 4,
-        C0Type::Int64(_)
-        | C0Type::UInt64(_)
-        | C0Type::Int64Array(_, _)
-        | C0Type::UInt64Array(_, _) => 8,
-        C0Type::Float32 | C0Type::Float32Array(_) => 4,
-        C0Type::Float64 | C0Type::Float64Array(_) => 8,
-        C0Type::Int8Pointer | C0Type::Int8PointerPointer => 8,
-        C0Type::Int16Pointer
-        | C0Type::UInt16Pointer
-        | C0Type::Int128Pointer
-        | C0Type::Int64Pointer(_)
-        | C0Type::UInt128Pointer
-        | C0Type::UInt64Pointer(_)
-        | C0Type::Int16PointerPointer
-        | C0Type::UInt16PointerPointer
-        | C0Type::Int32PointerPointer
-        | C0Type::CharPointerPointer(_)
-        | C0Type::UInt8PointerPointer
-        | C0Type::UInt32PointerPointer
-        | C0Type::Int128PointerPointer
-        | C0Type::Int64PointerPointer(_)
-        | C0Type::UInt128PointerPointer
-        | C0Type::UInt64PointerPointer(_)
-        | C0Type::Float32Pointer
-        | C0Type::Float64Pointer
-        | C0Type::Float32PointerPointer
-        | C0Type::Float64PointerPointer => 8,
-        C0Type::FunctionPointer(_) => 8,
-        C0Type::PointerArray(_, _, _) => 8,
+    match parameter.interface_type() {
+        InterfaceType::Int128
+        | InterfaceType::UInt128
+        | InterfaceType::Int128Array(_)
+        | InterfaceType::UInt128Array(_) => 16,
+        InterfaceType::Parameter(_) => 0,
+        InterfaceType::Void => 0,
+        InterfaceType::Bool => 1,
+        InterfaceType::VoidPointer
+        | InterfaceType::VoidPointerPointer
+        | InterfaceType::ParameterPointer(_) => 8,
+        InterfaceType::CharPointer(_)
+        | InterfaceType::CharArray(_, _)
+        | InterfaceType::UInt8Pointer
+        | InterfaceType::UInt8Array(_) => 1,
+        InterfaceType::Int8 | InterfaceType::Int8Array(_) => 1,
+        InterfaceType::Int16
+        | InterfaceType::UInt16
+        | InterfaceType::Int16Array(_)
+        | InterfaceType::UInt16Array(_) => 2,
+        InterfaceType::Int32
+        | InterfaceType::Char(_)
+        | InterfaceType::UInt8
+        | InterfaceType::UInt32
+        | InterfaceType::Int32Pointer
+        | InterfaceType::UInt32Pointer
+        | InterfaceType::Int32Array(_)
+        | InterfaceType::UInt32Array(_) => 4,
+        InterfaceType::Int64(_)
+        | InterfaceType::UInt64(_)
+        | InterfaceType::Int64Array(_, _)
+        | InterfaceType::UInt64Array(_, _) => 8,
+        InterfaceType::Float32 | InterfaceType::Float32Array(_) => 4,
+        InterfaceType::Float64 | InterfaceType::Float64Array(_) => 8,
+        InterfaceType::Int8Pointer | InterfaceType::Int8PointerPointer => 8,
+        InterfaceType::Int16Pointer
+        | InterfaceType::UInt16Pointer
+        | InterfaceType::Int128Pointer
+        | InterfaceType::Int64Pointer(_)
+        | InterfaceType::UInt128Pointer
+        | InterfaceType::UInt64Pointer(_)
+        | InterfaceType::Int16PointerPointer
+        | InterfaceType::UInt16PointerPointer
+        | InterfaceType::Int32PointerPointer
+        | InterfaceType::CharPointerPointer(_)
+        | InterfaceType::UInt8PointerPointer
+        | InterfaceType::UInt32PointerPointer
+        | InterfaceType::Int128PointerPointer
+        | InterfaceType::Int64PointerPointer(_)
+        | InterfaceType::UInt128PointerPointer
+        | InterfaceType::UInt64PointerPointer(_)
+        | InterfaceType::Float32Pointer
+        | InterfaceType::Float64Pointer
+        | InterfaceType::Float32PointerPointer
+        | InterfaceType::Float64PointerPointer => 8,
+        InterfaceType::FunctionPointer(_) => 8,
+        InterfaceType::PointerArray(_, _, _) => 8,
     }
 }
 
@@ -6169,7 +6201,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
         object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
     let mut fields = layout.fields().iter().filter(|(_, field)| {
         u64::from(field.offset_bytes()) == offset
-            && crate::kernel::LoadKind::of_type(field.c_type().to_kernel_type())
+            && crate::kernel::LoadKind::of_type(field.interface_type().to_kernel_type())
                 .is_some_and(|read| read.reads_word_of(kind))
     });
     let (Some((name, _)), None) = (fields.next(), fields.next()) else {
@@ -6367,9 +6399,9 @@ fn pointee_struct_at_depth(
     if depth > MAX_POINTER_CHAIN {
         return None;
     }
-    let field_at = |layout: &syntax::C0StructLayout, offset: u64| {
+    let field_at = |layout: &crate::languages::interface::RecordLayout, offset: u64| {
         let mut pointers = layout.fields().iter().filter(|(_, field)| {
-            u64::from(field.offset_bytes()) == offset && field.c_type().is_pointer()
+            u64::from(field.offset_bytes()) == offset && field.interface_type().is_pointer()
         });
         match (pointers.next(), pointers.next()) {
             (Some((_, field)), None) => field.struct_name().map(str::to_string),
@@ -7848,50 +7880,54 @@ pub(super) fn describe_parameter_bitvector(
                 if let ProgramValue::Int64(bits) | ProgramValue::UInt64(bits) =
                     value.numeric_value()
                     && bits == term
-                    && value.c_type() == parameter.c_type().to_kernel_type()
+                    && value.program_type() == parameter.interface_type().to_kernel_type()
                 {
                     return Some(parameter.name().to_string());
                 }
             }
             ProgramExpression::Value(ProgramValue::Int32(value))
-                if value == term && parameter.c_type() == C0Type::Int32 =>
+                if value == term && parameter.interface_type() == InterfaceType::Int32 =>
             {
                 return Some(parameter.name().to_string());
             }
             ProgramExpression::Value(ProgramValue::UInt8(value))
                 if value == term
-                    && parameter.c_type().to_kernel_type() == crate::kernel::ProgramType::UInt8 =>
+                    && parameter.interface_type().to_kernel_type()
+                        == crate::kernel::ProgramType::UInt8 =>
             {
                 return Some(parameter.name().to_string());
             }
             ProgramExpression::Value(ProgramValue::Int8(value))
                 if value == term
-                    && parameter.c_type().to_kernel_type() == crate::kernel::ProgramType::Int8 =>
+                    && parameter.interface_type().to_kernel_type()
+                        == crate::kernel::ProgramType::Int8 =>
             {
                 return Some(parameter.name().to_string());
             }
             ProgramExpression::Value(ProgramValue::Int16(value))
-                if value == term && parameter.c_type() == C0Type::Int16 =>
+                if value == term && parameter.interface_type() == InterfaceType::Int16 =>
             {
                 return Some(parameter.name().to_string());
             }
             ProgramExpression::Value(ProgramValue::UInt16(value))
-                if value == term && parameter.c_type() == C0Type::UInt16 =>
+                if value == term && parameter.interface_type() == InterfaceType::UInt16 =>
             {
                 return Some(parameter.name().to_string());
             }
             ProgramExpression::Value(ProgramValue::UInt32(value))
-                if value == term && parameter.c_type() == C0Type::UInt32 =>
+                if value == term && parameter.interface_type() == InterfaceType::UInt32 =>
             {
                 return Some(parameter.name().to_string());
             }
             ProgramExpression::Value(ProgramValue::Int64(value))
-                if value == term && matches!(parameter.c_type(), C0Type::Int64(_)) =>
+                if value == term
+                    && matches!(parameter.interface_type(), InterfaceType::Int64(_)) =>
             {
                 return Some(parameter.name().to_string());
             }
             ProgramExpression::Value(ProgramValue::UInt64(value))
-                if value == term && matches!(parameter.c_type(), C0Type::UInt64(_)) =>
+                if value == term
+                    && matches!(parameter.interface_type(), InterfaceType::UInt64(_)) =>
             {
                 return Some(parameter.name().to_string());
             }

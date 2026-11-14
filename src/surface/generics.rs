@@ -138,9 +138,11 @@ pub(super) fn unify_click_type(
             validation::describe_click_type(pattern),
             validation::describe_click_type(actual)
         )),
-        ClickType::Program(C0Type::ParameterPointer(name)) if allowed.contains(name.name()) => {
+        ClickType::Program(InterfaceType::ParameterPointer(name))
+            if allowed.contains(name.name()) =>
+        {
             let pointee = actual
-                .c_type()
+                .interface_type()
                 .and_then(|ty| ty.pointee_type())
                 .ok_or_else(|| {
                     format!(
@@ -151,7 +153,7 @@ pub(super) fn unify_click_type(
             let element = match actual {
                 ClickType::CObjectPointer { struct_name, .. } if pointee.is_pointer() => {
                     ClickType::CObjectPointer {
-                        c_type: pointee,
+                        interface_type: pointee,
                         struct_name: struct_name.clone(),
                     }
                 }
@@ -246,7 +248,7 @@ pub(super) fn instantiate_click_type(
                     )
                 })
             }),
-        ClickType::Program(C0Type::ParameterPointer(name))
+        ClickType::Program(InterfaceType::ParameterPointer(name))
             if substitution.contains_key(name.name()) =>
         {
             let element = substitution
@@ -255,7 +257,7 @@ pub(super) fn instantiate_click_type(
             let element = match element {
                 TypeArgument::Struct(struct_name) => {
                     return Ok(ClickType::CObjectPointer {
-                        c_type: C0Type::Int32Pointer,
+                        interface_type: InterfaceType::Int32Pointer,
                         struct_name: struct_name.clone(),
                     });
                 }
@@ -263,14 +265,14 @@ pub(super) fn instantiate_click_type(
                 // stays a pointer to it, as a generic declaration that
                 // calls another at its own `T` writes.
                 TypeArgument::Value(ClickType::Parameter(parameter)) => {
-                    return Ok(ClickType::Program(C0Type::ParameterPointer(
+                    return Ok(ClickType::Program(InterfaceType::ParameterPointer(
                         crate::kernel::TypeParameterName::intern(parameter),
                     )));
                 }
                 TypeArgument::Value(element) => element,
             };
             let pointer = element
-                .c_type()
+                .interface_type()
                 .and_then(|ty| ty.pointer_type())
                 .ok_or_else(|| {
                     format!(
@@ -280,7 +282,7 @@ pub(super) fn instantiate_click_type(
                 })?;
             Ok(match element {
                 ClickType::CObjectPointer { struct_name, .. } => ClickType::CObjectPointer {
-                    c_type: pointer,
+                    interface_type: pointer,
                     struct_name: struct_name.clone(),
                 },
                 _ => ClickType::Program(pointer),
@@ -353,10 +355,12 @@ fn primitive_kernel_type_name(name: &str, arguments: &[AlgebraicValueType]) -> S
             AlgebraicValueType::Algebraic { name, .. } => name.clone(),
             AlgebraicValueType::Parameter(name) => format!("[rigid {name}]"),
             AlgebraicValueType::Integer => "Integer".to_string(),
-            AlgebraicValueType::Program(c_type) => {
-                validation::describe_click_type(&ClickType::Program(c0_type_from_kernel(*c_type)))
+            AlgebraicValueType::Program(interface_type) => validation::describe_click_type(
+                &ClickType::Program(interface_type_from_program_type(*interface_type)),
+            ),
+            AlgebraicValueType::ObjectPointer(interface_type, class) => {
+                format!("{interface_type:?} [{class:?}]")
             }
-            AlgebraicValueType::ObjectPointer(c_type, class) => format!("{c_type:?} [{class:?}]"),
         }
     }
     format!(
@@ -386,7 +390,7 @@ pub(crate) fn primitive_instance_of(
 /// rigid type itself, is `Vec<uint32>`.
 pub(super) fn primitive_instance_value_type(click_type: &ClickType) -> Option<ClickType> {
     let kernel_name = match click_type {
-        ClickType::Program(C0Type::Parameter(name)) => name.name(),
+        ClickType::Program(InterfaceType::Parameter(name)) => name.name(),
         ClickType::Algebraic(application) if application.rigid => application.name.as_str(),
         _ => return None,
     };
@@ -433,9 +437,14 @@ pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueTy
             name: name.clone(),
             arguments: Vec::new(),
         }),
-        AlgebraicValueType::Program(c_type) => ClickType::Program(c0_type_from_kernel(*c_type)),
-        AlgebraicValueType::ObjectPointer(c_type, class) => {
-            ClickType::from_object_pointer_class(c0_type_from_kernel(*c_type), class)
+        AlgebraicValueType::Program(interface_type) => {
+            ClickType::Program(interface_type_from_program_type(*interface_type))
+        }
+        AlgebraicValueType::ObjectPointer(interface_type, class) => {
+            ClickType::from_object_pointer_class(
+                interface_type_from_program_type(*interface_type),
+                class,
+            )
         }
         AlgebraicValueType::Integer => ClickType::Integer,
         AlgebraicValueType::Algebraic { name, arguments } => {
@@ -451,65 +460,65 @@ pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueTy
     }
 }
 
-pub(crate) fn c0_type_from_kernel(c_type: ProgramType) -> C0Type {
-    match c_type {
-        ProgramType::Parameter(name) => C0Type::Parameter(name),
-        ProgramType::ParameterPointer(name) => C0Type::ParameterPointer(name),
-        ProgramType::Void => C0Type::Void,
-        ProgramType::Bool => C0Type::Bool,
-        ProgramType::VoidPointer => C0Type::VoidPointer,
-        ProgramType::VoidPointerPointer => C0Type::VoidPointerPointer,
-        ProgramType::Int8 => C0Type::Int8,
-        ProgramType::Int16 => C0Type::Int16,
-        ProgramType::Int32 => C0Type::Int32,
-        ProgramType::UInt8 => C0Type::UInt8,
-        ProgramType::UInt16 => C0Type::UInt16,
-        ProgramType::UInt32 => C0Type::UInt32,
-        ProgramType::Int64 => C0Type::Int64(LongRank::Long),
-        ProgramType::UInt64 => C0Type::UInt64(LongRank::Long),
-        ProgramType::Int128 => C0Type::Int128,
-        ProgramType::UInt128 => C0Type::UInt128,
-        ProgramType::Float32 => C0Type::Float32,
-        ProgramType::Float64 => C0Type::Float64,
-        ProgramType::Int8Pointer => C0Type::Int8Pointer,
-        ProgramType::Int16Pointer => C0Type::Int16Pointer,
-        ProgramType::UInt16Pointer => C0Type::UInt16Pointer,
-        ProgramType::Int32Pointer => C0Type::Int32Pointer,
-        ProgramType::UInt8Pointer => C0Type::UInt8Pointer,
-        ProgramType::UInt32Pointer => C0Type::UInt32Pointer,
-        ProgramType::Int64Pointer => C0Type::Int64Pointer(LongRank::Long),
-        ProgramType::Int128Pointer => C0Type::Int128Pointer,
-        ProgramType::UInt64Pointer => C0Type::UInt64Pointer(LongRank::Long),
-        ProgramType::UInt128Pointer => C0Type::UInt128Pointer,
-        ProgramType::Float32Pointer => C0Type::Float32Pointer,
-        ProgramType::Float64Pointer => C0Type::Float64Pointer,
-        ProgramType::Int8PointerPointer => C0Type::Int8PointerPointer,
-        ProgramType::Int16PointerPointer => C0Type::Int16PointerPointer,
-        ProgramType::UInt16PointerPointer => C0Type::UInt16PointerPointer,
-        ProgramType::Int32PointerPointer => C0Type::Int32PointerPointer,
-        ProgramType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
-        ProgramType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
-        ProgramType::Int64PointerPointer => C0Type::Int64PointerPointer(LongRank::Long),
-        ProgramType::Int128PointerPointer => C0Type::Int128PointerPointer,
-        ProgramType::UInt64PointerPointer => C0Type::UInt64PointerPointer(LongRank::Long),
-        ProgramType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
-        ProgramType::Float32PointerPointer => C0Type::Float32PointerPointer,
-        ProgramType::Float64PointerPointer => C0Type::Float64PointerPointer,
-        ProgramType::FunctionPointer(signature) => C0Type::FunctionPointer(signature),
-        ProgramType::Int8Array(length) => C0Type::Int8Array(length),
-        ProgramType::Int16Array(length) => C0Type::Int16Array(length),
-        ProgramType::UInt16Array(length) => C0Type::UInt16Array(length),
-        ProgramType::Int32Array(length) => C0Type::Int32Array(length),
-        ProgramType::UInt8Array(length) => C0Type::UInt8Array(length),
-        ProgramType::UInt32Array(length) => C0Type::UInt32Array(length),
-        ProgramType::Int64Array(length) => C0Type::Int64Array(LongRank::Long, length),
-        ProgramType::Int128Array(length) => C0Type::Int128Array(length),
-        ProgramType::UInt64Array(length) => C0Type::UInt64Array(LongRank::Long, length),
-        ProgramType::UInt128Array(length) => C0Type::UInt128Array(length),
-        ProgramType::Float32Array(length) => C0Type::Float32Array(length),
-        ProgramType::Float64Array(length) => C0Type::Float64Array(length),
+pub(crate) fn interface_type_from_program_type(interface_type: ProgramType) -> InterfaceType {
+    match interface_type {
+        ProgramType::Parameter(name) => InterfaceType::Parameter(name),
+        ProgramType::ParameterPointer(name) => InterfaceType::ParameterPointer(name),
+        ProgramType::Void => InterfaceType::Void,
+        ProgramType::Bool => InterfaceType::Bool,
+        ProgramType::VoidPointer => InterfaceType::VoidPointer,
+        ProgramType::VoidPointerPointer => InterfaceType::VoidPointerPointer,
+        ProgramType::Int8 => InterfaceType::Int8,
+        ProgramType::Int16 => InterfaceType::Int16,
+        ProgramType::Int32 => InterfaceType::Int32,
+        ProgramType::UInt8 => InterfaceType::UInt8,
+        ProgramType::UInt16 => InterfaceType::UInt16,
+        ProgramType::UInt32 => InterfaceType::UInt32,
+        ProgramType::Int64 => InterfaceType::Int64(LongRank::Long),
+        ProgramType::UInt64 => InterfaceType::UInt64(LongRank::Long),
+        ProgramType::Int128 => InterfaceType::Int128,
+        ProgramType::UInt128 => InterfaceType::UInt128,
+        ProgramType::Float32 => InterfaceType::Float32,
+        ProgramType::Float64 => InterfaceType::Float64,
+        ProgramType::Int8Pointer => InterfaceType::Int8Pointer,
+        ProgramType::Int16Pointer => InterfaceType::Int16Pointer,
+        ProgramType::UInt16Pointer => InterfaceType::UInt16Pointer,
+        ProgramType::Int32Pointer => InterfaceType::Int32Pointer,
+        ProgramType::UInt8Pointer => InterfaceType::UInt8Pointer,
+        ProgramType::UInt32Pointer => InterfaceType::UInt32Pointer,
+        ProgramType::Int64Pointer => InterfaceType::Int64Pointer(LongRank::Long),
+        ProgramType::Int128Pointer => InterfaceType::Int128Pointer,
+        ProgramType::UInt64Pointer => InterfaceType::UInt64Pointer(LongRank::Long),
+        ProgramType::UInt128Pointer => InterfaceType::UInt128Pointer,
+        ProgramType::Float32Pointer => InterfaceType::Float32Pointer,
+        ProgramType::Float64Pointer => InterfaceType::Float64Pointer,
+        ProgramType::Int8PointerPointer => InterfaceType::Int8PointerPointer,
+        ProgramType::Int16PointerPointer => InterfaceType::Int16PointerPointer,
+        ProgramType::UInt16PointerPointer => InterfaceType::UInt16PointerPointer,
+        ProgramType::Int32PointerPointer => InterfaceType::Int32PointerPointer,
+        ProgramType::UInt8PointerPointer => InterfaceType::UInt8PointerPointer,
+        ProgramType::UInt32PointerPointer => InterfaceType::UInt32PointerPointer,
+        ProgramType::Int64PointerPointer => InterfaceType::Int64PointerPointer(LongRank::Long),
+        ProgramType::Int128PointerPointer => InterfaceType::Int128PointerPointer,
+        ProgramType::UInt64PointerPointer => InterfaceType::UInt64PointerPointer(LongRank::Long),
+        ProgramType::UInt128PointerPointer => InterfaceType::UInt128PointerPointer,
+        ProgramType::Float32PointerPointer => InterfaceType::Float32PointerPointer,
+        ProgramType::Float64PointerPointer => InterfaceType::Float64PointerPointer,
+        ProgramType::FunctionPointer(signature) => InterfaceType::FunctionPointer(signature),
+        ProgramType::Int8Array(length) => InterfaceType::Int8Array(length),
+        ProgramType::Int16Array(length) => InterfaceType::Int16Array(length),
+        ProgramType::UInt16Array(length) => InterfaceType::UInt16Array(length),
+        ProgramType::Int32Array(length) => InterfaceType::Int32Array(length),
+        ProgramType::UInt8Array(length) => InterfaceType::UInt8Array(length),
+        ProgramType::UInt32Array(length) => InterfaceType::UInt32Array(length),
+        ProgramType::Int64Array(length) => InterfaceType::Int64Array(LongRank::Long, length),
+        ProgramType::Int128Array(length) => InterfaceType::Int128Array(length),
+        ProgramType::UInt64Array(length) => InterfaceType::UInt64Array(LongRank::Long, length),
+        ProgramType::UInt128Array(length) => InterfaceType::UInt128Array(length),
+        ProgramType::Float32Array(length) => InterfaceType::Float32Array(length),
+        ProgramType::Float64Array(length) => InterfaceType::Float64Array(length),
         ProgramType::PointerArray(element, length) => {
-            C0Type::PointerArray(element, LongRank::Long, length)
+            InterfaceType::PointerArray(element, LongRank::Long, length)
         }
     }
 }
@@ -601,7 +610,7 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource | ClickType::Program(C0Type::ParameterPointer(_)) => {
+            ClickType::Resource | ClickType::Program(InterfaceType::ParameterPointer(_)) => {
                 syntactic_expression_type(argument, variables)
             }
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
@@ -642,24 +651,24 @@ pub(super) fn explicit_cast_click_type(expression: &ContractExpression) -> Optio
     else {
         return None;
     };
-    let c_type = c0_type_from_kernel(*target_type);
+    let interface_type = interface_type_from_program_type(*target_type);
     Some(match pointee_struct {
-        Some(struct_name) if c_type.is_pointer() => ClickType::CObjectPointer {
-            c_type,
+        Some(struct_name) if interface_type.is_pointer() => ClickType::CObjectPointer {
+            interface_type,
             struct_name: struct_name.clone(),
         },
-        _ => ClickType::Program(c_type),
+        _ => ClickType::Program(interface_type),
     })
 }
 
 pub(super) fn click_type_from_program_value(value: &ProgramValue) -> ClickType {
-    let c_type = c0_type_from_kernel(value.c_type());
+    let interface_type = interface_type_from_program_type(value.program_type());
     if let ProgramValue::Pointer(pointer) = value
         && let Some(class) = pointer.object_class()
     {
-        return ClickType::from_object_pointer_class(c_type, &class);
+        return ClickType::from_object_pointer_class(interface_type, &class);
     }
-    ClickType::Program(c_type)
+    ClickType::Program(interface_type)
 }
 
 pub(super) fn default_numeral_click_type(expression: &ContractExpression) -> Option<ClickType> {
@@ -751,7 +760,7 @@ pub(super) fn instantiate_predicate_for_surface_call(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource | ClickType::Program(C0Type::ParameterPointer(_)) => {
+            ClickType::Resource | ClickType::Program(InterfaceType::ParameterPointer(_)) => {
                 syntactic_expression_type(argument, variables)
             }
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
@@ -1474,23 +1483,23 @@ fn instantiate_proposition(
             ClickProposition::Implies(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => ClickProposition::ForAll {
-            click_type: instantiate_click_type(c_type, substitution)?,
+            click_type: instantiate_click_type(interface_type, substitution)?,
             name: name.clone(),
             written_name: written_name.clone(),
             body: Box::new(recurse(body)?),
         },
         ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => ClickProposition::Exists {
-            click_type: instantiate_click_type(c_type, substitution)?,
+            click_type: instantiate_click_type(interface_type, substitution)?,
             name: name.clone(),
             written_name: written_name.clone(),
             body: Box::new(recurse(body)?),
@@ -1540,7 +1549,8 @@ mod theorem_statement_tests {
     fn application_instantiates_clauses_but_omits_proof_and_proof_locations() {
         let file = crate::surface::parse("theorem identity<T>(x: T) { requires x == x; ensures x == x by { have x == x by solve(); assumption(); } }").unwrap();
         let definition = &file.theorem_definitions()[0];
-        let substitution = BTreeMap::from([("T".into(), ClickType::Program(C0Type::Int32).into())]);
+        let substitution =
+            BTreeMap::from([("T".into(), ClickType::Program(InterfaceType::Int32).into())]);
         let declaration = instantiate_theorem(definition, &substitution).unwrap();
         let statement = instantiate_theorem_statement(definition, &substitution).unwrap();
         assert_eq!(declaration.parameters(), statement.parameters());

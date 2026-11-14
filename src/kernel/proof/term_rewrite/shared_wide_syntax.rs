@@ -71,7 +71,7 @@ impl TermRewrite<'_> {
                 _ => term.clone(),
             };
             let result = result.with_machine_observation_type(
-                MachineIntegerType::from_c_type(match term.ty() {
+                MachineIntegerType::from_program_type(match term.ty() {
                     KernelType::Program(ty) => *ty,
                     _ => unreachable!("machine operand"),
                 })

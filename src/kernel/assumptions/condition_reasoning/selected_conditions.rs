@@ -1059,7 +1059,7 @@ mod retained_order_tests {
 
     fn root(id: u64) -> KernelTerm {
         let x = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(id),
         );
         KernelTerm::machine_binary_shared(
@@ -1149,7 +1149,7 @@ mod retained_order_tests {
         let ty = MachineIntegerType::Int32;
         let [a, b] = [root(993541), root(993542)];
         let k = Variable(993543);
-        let binder = KernelTerm::variable(KernelType::Program(ty.c_type()), k);
+        let binder = KernelTerm::variable(KernelType::Program(ty.program_type()), k);
         let body = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [a.clone(), binder]);
         let guard = Proposition::And(
             Box::new(Proposition::ConditionIs(

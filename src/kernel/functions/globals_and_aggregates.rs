@@ -54,12 +54,12 @@ pub(super) fn initialize_program_function_globals_owned(
     }
     for global in function.global_variables() {
         let slot = Memory::global_pointer(global.kernel_name());
-        register_block_alignment(&slot.block, global.c_type().abi_alignment());
+        register_block_alignment(&slot.block, global.program_type().abi_alignment());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
                 global.declared_class(),
-                global.c_type().byte_width(),
+                global.program_type().byte_width(),
                 global.is_constant(),
             ));
             if initialize_missing_storage || global.is_constant() {
@@ -73,12 +73,12 @@ pub(super) fn initialize_program_function_globals_owned(
                 state.set_memory(materialize_symbolic_cell(
                     state.memory.clone(),
                     &slot,
-                    global.c_type(),
+                    global.program_type(),
                 ));
             }
         } else if !initialize_missing_storage
             && !global.is_constant()
-            && global.c_type().is_object_pointer()
+            && global.program_type().is_object_pointer()
             && state
                 .memory
                 .known_value(&slot)
@@ -90,12 +90,12 @@ pub(super) fn initialize_program_function_globals_owned(
             state.set_memory(materialize_symbolic_cell(
                 state.memory.clone(),
                 &slot,
-                global.c_type(),
+                global.program_type(),
             ));
         }
         state.locals.set_global_with_all_qualifiers(
             global.kernel_name().to_string(),
-            global.c_type(),
+            global.program_type(),
             slot.clone(),
             global.is_volatile(),
             global.pointee_is_volatile(),
@@ -105,7 +105,7 @@ pub(super) fn initialize_program_function_globals_owned(
         if global.kernel_name() != global.name() && !state.locals.contains_name(global.name()) {
             state.locals.set_global_with_all_qualifiers(
                 global.name().to_string(),
-                global.c_type(),
+                global.program_type(),
                 slot,
                 global.is_volatile(),
                 global.pointee_is_volatile(),
@@ -270,11 +270,11 @@ pub(super) fn initialize_program_function_globals_owned(
     }
     for static_local in function.static_variables() {
         let slot = Memory::static_pointer(function.name(), static_local.kernel_name());
-        register_block_alignment(&slot.block, static_local.c_type().abi_alignment());
+        register_block_alignment(&slot.block, static_local.program_type().abi_alignment());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_block_or_read_only(
                 slot.block.clone(),
-                static_local.c_type().byte_width(),
+                static_local.program_type().byte_width(),
                 static_local.is_constant(),
             ));
             // A qualified resource can materialize the cell before this
@@ -296,12 +296,12 @@ pub(super) fn initialize_program_function_globals_owned(
                 state.set_memory(materialize_symbolic_cell(
                     state.memory.clone(),
                     &slot,
-                    static_local.c_type(),
+                    static_local.program_type(),
                 ));
             }
         } else if !initialize_missing_storage
             && !static_local.is_constant()
-            && static_local.c_type().is_object_pointer()
+            && static_local.program_type().is_object_pointer()
             && state
                 .memory
                 .known_value(&slot)
@@ -310,12 +310,12 @@ pub(super) fn initialize_program_function_globals_owned(
             state.set_memory(materialize_symbolic_cell(
                 state.memory.clone(),
                 &slot,
-                static_local.c_type(),
+                static_local.program_type(),
             ));
         }
         state.locals.set_global_with_all_qualifiers(
             static_local.kernel_name().to_string(),
-            static_local.c_type(),
+            static_local.program_type(),
             slot.clone(),
             static_local.is_volatile(),
             static_local.pointee_is_volatile(),
@@ -331,7 +331,7 @@ pub(super) fn initialize_program_function_globals_owned(
         {
             state.locals.set_global_with_all_qualifiers(
                 static_local.source_name().to_string(),
-                static_local.c_type(),
+                static_local.program_type(),
                 slot,
                 static_local.is_volatile(),
                 static_local.pointee_is_volatile(),
@@ -497,12 +497,15 @@ pub(super) fn initialize_program_function_globals_owned(
 pub(super) fn materialize_symbolic_cell(
     memory: Memory,
     pointer: &Pointer,
-    c_type: ProgramType,
+    program_type: ProgramType,
 ) -> Memory {
     let symbolic_base = symbolic_memory_base(&memory, pointer);
-    if let Some(value) =
-        crate::kernel::eval::symbolic_storage_cell_value(&symbolic_base, pointer, c_type, true)
-    {
+    if let Some(value) = crate::kernel::eval::symbolic_storage_cell_value(
+        &symbolic_base,
+        pointer,
+        program_type,
+        true,
+    ) {
         memory.materialize_named_cell(pointer.clone(), value)
     } else {
         memory
@@ -653,7 +656,7 @@ pub(super) fn materialize_symbolic_aggregate_fields(
 ) -> Memory {
     for field in layout.fields() {
         let field_base = base.offset_by_bytes(field.offset_bytes());
-        match field.c_type() {
+        match field.program_type() {
             ProgramType::Int32Array(length) => {
                 memory =
                     materialize_symbolic_array(memory, &field_base, ProgramType::Int32, length);
@@ -687,7 +690,7 @@ pub(super) fn materialize_symbolic_aggregate_fields(
                     materialize_symbolic_array(memory, &field_base, ProgramType::Float64, length);
             }
             _ => {
-                memory = materialize_symbolic_cell(memory, &field_base, field.c_type());
+                memory = materialize_symbolic_cell(memory, &field_base, field.program_type());
             }
         }
     }
@@ -699,8 +702,8 @@ pub(super) fn materialize_symbolic_aggregate_fields(
             .filter_map(|field| {
                 let pointer = union_base.offset_by_bytes(field.offset_bytes());
                 let symbolic_base = symbolic_memory_base(&memory, &pointer);
-                symbolic_load_value(&symbolic_base, &pointer, field.c_type())
-                    .map(|value| (pointer, field.c_type(), value))
+                symbolic_load_value(&symbolic_base, &pointer, field.program_type())
+                    .map(|value| (pointer, field.program_type(), value))
             })
             .collect();
         memory = memory.store_union_views(union_base, union.size_bytes(), views);
@@ -708,12 +711,12 @@ pub(super) fn materialize_symbolic_aggregate_fields(
     memory
 }
 
-/// Whether a symbolic static-storage cell of `c_type` holds an entry value:
+/// Whether a symbolic static-storage cell of `program_type` holds an entry value:
 /// the element types [`materialize_symbolic_array`] makes a run of.
-pub(super) fn symbolic_storage_has_value(c_type: ProgramType) -> bool {
-    c_type.is_pointer()
+pub(super) fn symbolic_storage_has_value(program_type: ProgramType) -> bool {
+    program_type.is_pointer()
         || matches!(
-            c_type,
+            program_type,
             ProgramType::Bool
                 | ProgramType::Int8
                 | ProgramType::Int16
@@ -742,7 +745,7 @@ pub(super) fn symbolic_aggregate_cells(
     }
     let mut cells = Vec::new();
     for field in layout.fields() {
-        let (element_type, length) = match field.c_type() {
+        let (element_type, length) = match field.program_type() {
             ProgramType::Int32Array(length) => (ProgramType::Int32, length),
             ProgramType::Int64Array(length) => (ProgramType::Int64, length),
             ProgramType::Int128Array(length) => (ProgramType::Int128, length),
@@ -751,7 +754,7 @@ pub(super) fn symbolic_aggregate_cells(
             ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
             ProgramType::Float32Array(length) => (ProgramType::Float32, length),
             ProgramType::Float64Array(length) => (ProgramType::Float64, length),
-            c_type if symbolic_storage_has_value(c_type) => (c_type, 1),
+            program_type if symbolic_storage_has_value(program_type) => (program_type, 1),
             _ => return None,
         };
         for index in 0..length {
@@ -796,8 +799,8 @@ pub(super) fn materialize_symbolic_aggregate_array(
         // An object pointer's load records no width, so it declares none.
         let widths = cells
             .iter()
-            .filter(|(_, c_type)| !c_type.is_object_pointer())
-            .map(|(offset, c_type)| (*offset, c_type.byte_width()))
+            .filter(|(_, program_type)| !program_type.is_object_pointer())
+            .map(|(offset, program_type)| (*offset, program_type.byte_width()))
             .collect::<Vec<_>>();
         let widths_declared = widths.is_empty()
             || crate::kernel::eval::declare_symbolic_element_access_widths(
@@ -844,8 +847,8 @@ pub(super) fn aggregate_zero_fields(
 ) -> Vec<(u32, u32, u32, ProgramValue)> {
     let mut zero_fields = Vec::with_capacity(layout.fields().len());
     for field in layout.fields() {
-        let (element_type, element_count) = match field.c_type() {
-            ProgramType::Int8 => (field.c_type(), 1),
+        let (element_type, element_count) = match field.program_type() {
+            ProgramType::Int8 => (field.program_type(), 1),
             ProgramType::Int16
             | ProgramType::Int32
             | ProgramType::UInt8
@@ -875,7 +878,7 @@ pub(super) fn aggregate_zero_fields(
             | ProgramType::Float64PointerPointer
             // Static storage zero-initializes a callback field to a null
             // function pointer, just like a data-pointer field.
-            | ProgramType::FunctionPointer(_) => (field.c_type(), 1),
+            | ProgramType::FunctionPointer(_) => (field.program_type(), 1),
             ProgramType::Int32Array(length) => (ProgramType::Int32, length),
             // A signed plain `char` array field holds `int8` cells.
             ProgramType::Int8Array(length) => (ProgramType::Int8, length),
@@ -889,7 +892,7 @@ pub(super) fn aggregate_zero_fields(
             ProgramType::PointerArray(element, length) => (element.pointer_type(), length),
             _ => continue,
         };
-        let zero = if matches!(field.c_type(), ProgramType::PointerArray(_, _)) {
+        let zero = if matches!(field.program_type(), ProgramType::PointerArray(_, _)) {
             ProgramValue::typed_pointer(Pointer::null(), element_type)
         } else {
             match element_type {
@@ -1007,10 +1010,10 @@ pub(super) fn zero_aggregate_fields(
             .fields()
             .iter()
             .filter_map(|field| {
-                zero_union_member_value(field.c_type()).map(|value| {
+                zero_union_member_value(field.program_type()).map(|value| {
                     (
                         union_base.offset_by_bytes(field.offset_bytes()),
-                        field.c_type(),
+                        field.program_type(),
                         value,
                     )
                 })
@@ -1021,15 +1024,17 @@ pub(super) fn zero_aggregate_fields(
     memory
 }
 
-pub(super) fn zero_union_member_value(c_type: ProgramType) -> Option<ProgramValue> {
-    Some(match c_type {
+pub(super) fn zero_union_member_value(program_type: ProgramType) -> Option<ProgramValue> {
+    Some(match program_type {
         ProgramType::Int32 => int32(0),
         ProgramType::UInt8 => uint8(0),
         ProgramType::Int32Pointer
         | ProgramType::UInt8Pointer
         | ProgramType::Int32PointerPointer
         | ProgramType::UInt8PointerPointer
-        | ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(Pointer::null(), c_type),
+        | ProgramType::FunctionPointer(_) => {
+            ProgramValue::typed_pointer(Pointer::null(), program_type)
+        }
         _ => return None,
     })
 }
@@ -1226,7 +1231,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
     // field type this copy cannot carry drops the destination cells instead
     // of leaving them readable, so it cannot go stale here.
     for field in layout.fields() {
-        if let ProgramType::UInt32Array(count) = field.c_type() {
+        if let ProgramType::UInt32Array(count) = field.program_type() {
             let source_field = source.offset_by_bytes(field.offset_bytes());
             let Some(bytes) = count.checked_mul(4) else {
                 return true;
@@ -1250,8 +1255,8 @@ pub(super) fn aggregate_copy_reads_uninitialized(
             }
         }
 
-        let (element_type, element_count) = match field.c_type() {
-            ProgramType::Int8 => (field.c_type(), 1),
+        let (element_type, element_count) = match field.program_type() {
+            ProgramType::Int8 => (field.program_type(), 1),
             ProgramType::Int16
             | ProgramType::Int32
             | ProgramType::UInt8
@@ -1262,7 +1267,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
             | ProgramType::UInt64
             | ProgramType::UInt128
             | ProgramType::Float32
-            | ProgramType::Float64 => (field.c_type(), 1),
+            | ProgramType::Float64 => (field.program_type(), 1),
             ProgramType::Int32Array(length) => (ProgramType::Int32, length),
             ProgramType::UInt32Array(length) => (ProgramType::UInt32, length),
             ProgramType::Int64Array(length) => (ProgramType::Int64, length),
@@ -1274,7 +1279,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
             | ProgramType::UInt8Pointer
             | ProgramType::Int32PointerPointer
             | ProgramType::UInt8PointerPointer
-            | ProgramType::FunctionPointer(_) => (field.c_type(), 1),
+            | ProgramType::FunctionPointer(_) => (field.program_type(), 1),
             _ => continue,
         };
         for index in 0..element_count {
@@ -1306,21 +1311,22 @@ pub(super) fn aggregate_copy_reads_uninitialized(
             // Mirror `copy_aggregate_union_member`: a value stored through
             // any member is carried.
             memory
-                .known_union_value(&source_field, field.c_type())
+                .known_union_value(&source_field, field.program_type())
                 .is_some()
                 || memory
                     .known_value(&source_field)
-                    .is_some_and(|value| field.c_type().accepts(&value))
+                    .is_some_and(|value| field.program_type().accepts(&value))
                 // A member whose cached view was forgotten but whose bytes
                 // the initialization record holds was written all the same.
-                || memory.has_initialized_bytes_at(&source_field, field.c_type().byte_width())
+                || memory.has_initialized_bytes_at(&source_field, field.program_type().byte_width())
         });
         if union_initialized {
             continue;
         }
         for field in union.fields() {
             let source_field = union_source.offset_by_bytes(field.offset_bytes());
-            if uninitialized_aggregate_copy_source_cell(memory, &source_field, field.c_type()) {
+            if uninitialized_aggregate_copy_source_cell(memory, &source_field, field.program_type())
+            {
                 return true;
             }
         }
@@ -1413,7 +1419,7 @@ pub(super) fn copy_aggregate_fields(
     layout: &AggregateLayout,
 ) -> Memory {
     for field in layout.fields() {
-        if let ProgramType::UInt32Array(count) = field.c_type() {
+        if let ProgramType::UInt32Array(count) = field.program_type() {
             let source_field = source.offset_by_bytes(field.offset_bytes());
             let target_field = destination.offset_by_bytes(field.offset_bytes());
             if let Ok(copied) = memory.clone().write_scalar_array_region(
@@ -1447,8 +1453,8 @@ pub(super) fn copy_aggregate_fields(
             }
         }
 
-        let (element_type, element_count) = match field.c_type() {
-            ProgramType::Int8 => (field.c_type(), 1),
+        let (element_type, element_count) = match field.program_type() {
+            ProgramType::Int8 => (field.program_type(), 1),
             ProgramType::Int16
             | ProgramType::Int32
             | ProgramType::UInt8
@@ -1461,7 +1467,7 @@ pub(super) fn copy_aggregate_fields(
             | ProgramType::Float32
             | ProgramType::Float64
             // A generic struct's field of an abstract type parameter.
-            | ProgramType::Parameter(_) => (field.c_type(), 1),
+            | ProgramType::Parameter(_) => (field.program_type(), 1),
             ProgramType::Int32Array(length) => (ProgramType::Int32, length),
             ProgramType::UInt32Array(length) => (ProgramType::UInt32, length),
             ProgramType::Int64Array(length) => (ProgramType::Int64, length),
@@ -1475,7 +1481,7 @@ pub(super) fn copy_aggregate_fields(
             | ProgramType::UInt8PointerPointer
             // A callback field is an eight-byte pointer value; carry it so a
             // copied table still dispatches to the same concrete target.
-            | ProgramType::FunctionPointer(_) => (field.c_type(), 1),
+            | ProgramType::FunctionPointer(_) => (field.program_type(), 1),
             // A field this copy cannot carry must not leave the destination's
             // previous value in place: C copies every member, so a stale cell
             // would be readable as the destination's old contents. Drop those
@@ -1642,13 +1648,15 @@ pub(super) fn copy_aggregate_fields(
             .iter()
             .filter_map(|field| {
                 let source_field = source_union.offset_by_bytes(field.offset_bytes());
-                copy_aggregate_union_member(&memory, &source_field, field.c_type()).map(|value| {
-                    (
-                        destination_union.offset_by_bytes(field.offset_bytes()),
-                        field.c_type(),
-                        value,
-                    )
-                })
+                copy_aggregate_union_member(&memory, &source_field, field.program_type()).map(
+                    |value| {
+                        (
+                            destination_union.offset_by_bytes(field.offset_bytes()),
+                            field.program_type(),
+                            value,
+                        )
+                    },
+                )
             })
             .collect();
         memory = memory.store_union_views(destination_union, union.size_bytes(), views);

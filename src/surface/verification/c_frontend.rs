@@ -15,7 +15,7 @@ pub(super) fn link_c_units(
     external_functions: &[&str],
     c_sources: &ProgramSourceContext<'_>,
     build_storage: bool,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let mut parsed = BTreeMap::new();
     let mut units = BTreeMap::new();
     for source_path in verifying_sources {
@@ -76,7 +76,7 @@ pub(super) fn link_c_units(
         let source_globals = globals_by_source.entry(source_path.clone()).or_default();
         for (name, global) in &unit.globals {
             match source_globals.get(name) {
-                Some(previous) if previous.c_type() != global.c_type() => {
+                Some(previous) if previous.interface_type() != global.interface_type() => {
                     return Err(ClickError::new(format!(
                         "conflicting declarations for global `{name}`"
                     )));
@@ -118,7 +118,7 @@ pub(super) fn link_c_units(
                 continue;
             }
             match globals.get(name) {
-                Some(previous) if previous.c_type() != global.c_type() => {
+                Some(previous) if previous.interface_type() != global.interface_type() => {
                     return Err(ClickError::new(format!(
                         "conflicting declarations for global `{name}`"
                     )));
@@ -515,7 +515,7 @@ pub(super) fn link_c_units(
             .filter(|(_, global)| {
                 !global.is_file_static()
                     && global.is_initialized_definition()
-                    && global.c_type().is_pointer()
+                    && global.interface_type().is_pointer()
             })
             .map(|(name, _)| name.clone())
             .collect::<Vec<_>>();
@@ -712,7 +712,7 @@ fn unit_storage_context(
         BTreeMap<String, syntax::C0GlobalAggregateArray>,
     >,
     global_aggregate_arrays: &syntax::DeclarationMap<syntax::C0GlobalAggregateArray>,
-) -> syntax::C0Function {
+) -> crate::languages::interface::ImportedFunction {
     fn visible<T: Clone>(
         own: &BTreeMap<String, T>,
         linked: &syntax::DeclarationMap<T>,
@@ -729,27 +729,31 @@ fn unit_storage_context(
             })
             .collect()
     }
-    syntax::C0Function::external(syntax::C0Type::Void, String::new(), vec![])
-        .with_globals(visible(
-            &globals_by_source[source_path],
-            globals,
-            |object| object.is_file_static(),
-        ))
-        .with_global_arrays(visible(
-            &global_arrays_by_source[source_path],
-            global_arrays,
-            |object| object.is_file_static(),
-        ))
-        .with_global_aggregates(visible(
-            &global_aggregates_by_source[source_path],
-            global_aggregates,
-            |object| object.is_file_static(),
-        ))
-        .with_global_aggregate_arrays(visible(
-            &global_aggregate_arrays_by_source[source_path],
-            global_aggregate_arrays,
-            |object| object.is_file_static(),
-        ))
+    crate::languages::interface::ImportedFunction::external(
+        crate::languages::interface::InterfaceType::Void,
+        String::new(),
+        vec![],
+    )
+    .with_globals(visible(
+        &globals_by_source[source_path],
+        globals,
+        |object| object.is_file_static(),
+    ))
+    .with_global_arrays(visible(
+        &global_arrays_by_source[source_path],
+        global_arrays,
+        |object| object.is_file_static(),
+    ))
+    .with_global_aggregates(visible(
+        &global_aggregates_by_source[source_path],
+        global_aggregates,
+        |object| object.is_file_static(),
+    ))
+    .with_global_aggregate_arrays(visible(
+        &global_aggregate_arrays_by_source[source_path],
+        global_aggregate_arrays,
+        |object| object.is_file_static(),
+    ))
 }
 
 /// The layouts, nameable objects and per-function tables of the verifying C
@@ -995,14 +999,14 @@ pub(super) fn unit_qualified_objects(
 ) -> BTreeMap<String, parser::QualifiedCObject> {
     let mut objects = BTreeMap::new();
     for (name, global) in &unit.globals {
-        if let Some(pointer_type) = global.c_type().pointer_type() {
+        if let Some(pointer_type) = global.interface_type().pointer_type() {
             let pointer = Memory::global_pointer(global.kernel_name());
             let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                 .with_pointer_pointee_constant(global.is_constant())
                 .with_pointer_pointee_volatile(global.is_volatile());
             let expression = qualified_scalar_read(
                 address,
-                global.c_type().to_kernel_type(),
+                global.interface_type().to_kernel_type(),
                 global.pointee_is_constant(),
                 global.pointee_is_volatile(),
             );
@@ -1107,14 +1111,14 @@ pub(super) fn unit_qualified_objects(
             *names.entry(name).or_default() += 1;
         }
         for local in function.static_locals().values() {
-            if let Some(pointer_type) = local.c_type().pointer_type() {
+            if let Some(pointer_type) = local.interface_type().pointer_type() {
                 let pointer = Memory::static_pointer(function.name(), local.kernel_name());
                 let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                     .with_pointer_pointee_constant(local.is_constant())
                     .with_pointer_pointee_volatile(local.is_volatile());
                 let expression = qualified_scalar_read(
                     address,
-                    local.c_type().to_kernel_type(),
+                    local.interface_type().to_kernel_type(),
                     local.pointee_is_constant(),
                     local.pointee_is_volatile(),
                 );
@@ -1197,7 +1201,7 @@ pub(super) fn unit_qualified_objects(
 /// contract may name.
 pub(super) fn record_function_tables(
     tables: &mut parser::ProgramLayouts,
-    function: syntax::C0Function,
+    function: crate::languages::interface::ImportedFunction,
 ) {
     let mut names: BTreeSet<String> = function
         .globals()
@@ -1276,10 +1280,10 @@ pub(super) fn record_function_tables(
     }
     let names = std::sync::Arc::new(names);
     tables
-        .c_object_names
+        .program_object_names
         .insert(function.source_name().to_string(), names.clone());
     tables
-        .c_object_names
+        .program_object_names
         .insert(function.name().to_string(), names);
     let mut function_aggregate_objects = BTreeMap::new();
     for aggregate in function.global_aggregates().values() {

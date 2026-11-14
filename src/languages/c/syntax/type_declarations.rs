@@ -6,12 +6,12 @@ impl Parser {
     pub(super) fn parse_typedef_declaration(&mut self) -> Result<(), C0SyntaxError> {
         self.expect_ident_spelling("typedef")?;
         let mut parsed_type = self.parse_type_with_anonymous_struct(true, true, true)?;
-        let alias = if let Some((alias, c_type, signature)) =
+        let alias = if let Some((alias, interface_type, signature)) =
             self.parse_function_pointer_declarator(parsed_type.clone())?
         {
             // The callback's return qualifiers and nominal tags belong to its
             // signature, not to the function-pointer object named by this alias.
-            parsed_type.c_type = c_type;
+            parsed_type.interface_type = interface_type;
             parsed_type.function_pointer_signature = Some(signature);
             parsed_type.struct_name = None;
             parsed_type.enum_name = None;
@@ -38,7 +38,7 @@ impl Parser {
                 return Err(self.error_here("aggregate typedef arrays are not supported yet"));
             }
             parsed_type.compatibility_identity = CompatibilityIdentity::Unavailable;
-            parsed_type.c_type = array_type_for_element(parsed_type.c_type, length)
+            parsed_type.interface_type = array_type_for_element(parsed_type.interface_type, length)
                 .ok_or_else(|| self.error_here("typedef array element type is unsupported"))?;
         }
         if self.peek_ident() == Some("__attribute__") {
@@ -71,17 +71,17 @@ impl Parser {
                     parsed_type.compatibility_identity = CompatibilityIdentity::Unavailable;
                     // Both supported x86-64 targets have a 64-bit machine word.
                     // This changes width, not signedness or object qualifiers.
-                    parsed_type.c_type = match parsed_type.c_type {
-                        C0Type::Int8
-                        | C0Type::Int16
-                        | C0Type::Int32
-                        | C0Type::Int64(_)
-                        | C0Type::Int128 => C0Type::Int64(LongRank::Long),
-                        C0Type::UInt8
-                        | C0Type::UInt16
-                        | C0Type::UInt32
-                        | C0Type::UInt64(_)
-                        | C0Type::UInt128 => C0Type::UInt64(LongRank::Long),
+                    parsed_type.interface_type = match parsed_type.interface_type {
+                        InterfaceType::Int8
+                        | InterfaceType::Int16
+                        | InterfaceType::Int32
+                        | InterfaceType::Int64(_)
+                        | InterfaceType::Int128 => InterfaceType::Int64(LongRank::Long),
+                        InterfaceType::UInt8
+                        | InterfaceType::UInt16
+                        | InterfaceType::UInt32
+                        | InterfaceType::UInt64(_)
+                        | InterfaceType::UInt128 => InterfaceType::UInt64(LongRank::Long),
                         _ => {
                             return Err(self.error_at_previous(
                                 "GNU word mode requires an ordinary integer typedef",
@@ -147,8 +147,8 @@ impl Parser {
             };
             // Until the enumeration is complete, a constant that fits `int`
             // has type `int` (C23 6.7.2.2p11).
-            let provisional = enum_constant_literal(value, C0Type::Int32)
-                .or_else(|| enum_constant_literal(value, C0Type::UInt32))
+            let provisional = enum_constant_literal(value, InterfaceType::Int32)
+                .or_else(|| enum_constant_literal(value, InterfaceType::UInt32))
                 .ok_or_else(|| {
                     self.error_here(format!(
                         "enum `{name}` value {value} needs a type wider than 32 bits"
@@ -189,9 +189,9 @@ impl Parser {
         // not model.
         let negative = values.values().any(|value| *value < 0);
         let compatible_type = if negative {
-            C0Type::Int32
+            InterfaceType::Int32
         } else {
-            C0Type::UInt32
+            InterfaceType::UInt32
         };
         if values
             .values()
@@ -205,7 +205,7 @@ impl Parser {
         // `int`, and otherwise have the enumerated type (C23 6.7.2.2p15),
         // as GCC 13 types them; Clang 18 keeps the fitting ones `int`.
         let constant_type = if values.values().all(|value| i32::try_from(*value).is_ok()) {
-            C0Type::Int32
+            InterfaceType::Int32
         } else {
             compatible_type
         };
@@ -282,7 +282,7 @@ impl Parser {
             loop {
                 let field_name = self.expect_ident("union field name")?;
                 let (
-                    c_type,
+                    interface_type,
                     field_size,
                     mut field_alignment,
                     field_struct_name,
@@ -296,14 +296,14 @@ impl Parser {
                     .insert(
                         field_name.clone(),
                         C0UnionField {
-                            c_type,
+                            interface_type,
                             long_double: field_type.long_double,
                             pointee_constant: field_type.pointee_constant,
-                            enum_name: (c_type == field_type.c_type)
+                            enum_name: (interface_type == field_type.interface_type)
                                 .then(|| field_type.enum_name.clone())
                                 .flatten(),
                             struct_name: field_struct_name,
-                            union_name: (c_type == field_type.c_type)
+                            union_name: (interface_type == field_type.interface_type)
                                 .then(|| field_type.union_name.clone())
                                 .flatten(),
                             array_element_width,
@@ -368,10 +368,10 @@ impl Parser {
                 continue;
             }
             let field_type = self.parse_type_with_anonymous_struct(false, true, false)?;
-            if let Some((field_name, c_type, function_pointer_signature)) =
+            if let Some((field_name, interface_type, function_pointer_signature)) =
                 self.parse_function_pointer_declarator(field_type.clone())?
             {
-                let (field_size, mut field_alignment) = self.abi.size_and_alignment(c_type);
+                let (field_size, mut field_alignment) = self.abi.size_and_alignment(interface_type);
                 if let Some(attribute_alignment) = self.consume_field_alignment_attribute()? {
                     field_alignment = field_alignment.max(attribute_alignment);
                 }
@@ -381,8 +381,8 @@ impl Parser {
                 if fields
                     .insert(
                         field_name.clone(),
-                        C0StructField {
-                            c_type,
+                        RecordField {
+                            interface_type,
                             long_double: false,
                             pointee_constant: false,
                             struct_name: None,
@@ -410,7 +410,7 @@ impl Parser {
             loop {
                 let field_name = self.expect_ident("struct field name")?;
                 let (
-                    c_type,
+                    interface_type,
                     field_size,
                     mut field_alignment,
                     field_struct_name,
@@ -426,15 +426,15 @@ impl Parser {
                 if fields
                     .insert(
                         field_name.clone(),
-                        C0StructField {
-                            c_type,
+                        RecordField {
+                            interface_type,
                             long_double: field_type.long_double,
                             pointee_constant: field_type.pointee_constant,
                             struct_name: field_struct_name,
-                            enum_name: (c_type == field_type.c_type)
+                            enum_name: (interface_type == field_type.interface_type)
                                 .then(|| field_type.enum_name.clone())
                                 .flatten(),
-                            union_name: (c_type == field_type.c_type)
+                            union_name: (interface_type == field_type.interface_type)
                                 .then(|| field_type.union_name.clone())
                                 .flatten(),
                             function_pointer_signature: field_type
@@ -480,7 +480,7 @@ impl Parser {
             .structs
             .insert(
                 name.clone(),
-                C0StructLayout {
+                RecordLayout {
                     fields,
                     aggregate_fields,
                     aggregate_unions,
@@ -503,7 +503,7 @@ impl Parser {
         struct_name: &str,
     ) -> Result<
         (
-            C0Type,
+            InterfaceType,
             u32,
             u32,
             Option<String>,
@@ -523,7 +523,7 @@ impl Parser {
                     self.error_here("arrays of long double values need a typed value model")
                 );
             }
-            return Ok((C0Type::UInt8Array(16), 16, 16, None, None, None));
+            return Ok((InterfaceType::UInt8Array(16), 16, 16, None, None, None));
         }
         if base_type.is_volatile {
             return Err(self.error_here(
@@ -539,13 +539,13 @@ impl Parser {
             if !self.enums.contains_key(enum_name) {
                 return Err(self.error_here(format!("unknown enum declaration `{enum_name}`")));
             }
-            if base_type.c_type.is_pointer() {
+            if base_type.interface_type.is_pointer() {
                 return Err(self.error_here("pointers to enum values are not supported"));
             }
             if self.peek() == Some(&Token::LBracket) {
                 return Err(self.error_here("arrays of enum fields are not supported"));
             }
-            return Ok((base_type.c_type, 4, 4, None, None, None));
+            return Ok((base_type.interface_type, 4, 4, None, None, None));
         }
         if let Some(union_name) = base_type.union_name.as_deref() {
             let union_layout = self.unions.get(union_name).ok_or_else(|| {
@@ -557,7 +557,7 @@ impl Parser {
                 );
             }
             return Ok((
-                base_type.c_type,
+                base_type.interface_type,
                 union_layout.size_bytes(),
                 union_layout.alignment_bytes(),
                 None,
@@ -595,7 +595,7 @@ impl Parser {
                         self.error_here(format!("struct `{struct_name}` layout is too large"))
                     })?;
                 return Ok((
-                    C0Type::UInt8Array(field_size),
+                    InterfaceType::UInt8Array(field_size),
                     field_size,
                     nested_layout.alignment_bytes(),
                     Some(nested_name.to_string()),
@@ -604,7 +604,7 @@ impl Parser {
                 ));
             }
             return Ok((
-                base_type.c_type,
+                base_type.interface_type,
                 nested_layout.size_bytes(),
                 nested_layout.alignment_bytes(),
                 Some(nested_name.to_string()),
@@ -612,19 +612,19 @@ impl Parser {
                 None,
             ));
         }
-        let (c_type, array_shape) = if self.peek() == Some(&Token::LBracket) {
-            if (base_type.struct_name.is_some() && !base_type.c_type.is_pointer())
+        let (interface_type, array_shape) = if self.peek() == Some(&Token::LBracket) {
+            if (base_type.struct_name.is_some() && !base_type.interface_type.is_pointer())
                 || !matches!(
-                    base_type.c_type,
-                    C0Type::Int32
-                        | C0Type::UInt32
-                        | C0Type::Int64(_)
-                        | C0Type::UInt64(_)
-                        | C0Type::Char(_)
-                        | C0Type::UInt8
-                        | C0Type::Float32
-                        | C0Type::Float64
-                ) && pointer_array_element(base_type.c_type).is_none()
+                    base_type.interface_type,
+                    InterfaceType::Int32
+                        | InterfaceType::UInt32
+                        | InterfaceType::Int64(_)
+                        | InterfaceType::UInt64(_)
+                        | InterfaceType::Char(_)
+                        | InterfaceType::UInt8
+                        | InterfaceType::Float32
+                        | InterfaceType::Float64
+                ) && pointer_array_element(base_type.interface_type).is_none()
             {
                 return Err(self.error_here(
                     "inline scalar arrays in structs currently support int32, uint32, int64, uint64, uint8, float, and double elements",
@@ -645,102 +645,102 @@ impl Parser {
             }
 
             let array_shape = (dimensions.len() > 1).then_some(dimensions);
-            let c_type = match base_type.c_type {
-                C0Type::Int32 => C0Type::Int32Array(element_count),
-                C0Type::UInt32 => C0Type::UInt32Array(element_count),
-                C0Type::Int64(rank) => C0Type::Int64Array(rank, element_count),
-                C0Type::Int128 => C0Type::Int128Array(element_count),
-                C0Type::UInt64(rank) => C0Type::UInt64Array(rank, element_count),
-                C0Type::UInt128 => C0Type::UInt128Array(element_count),
-                C0Type::Char(plain) => C0Type::CharArray(plain, element_count),
-                C0Type::UInt8 => C0Type::UInt8Array(element_count),
-                C0Type::Float32 => C0Type::Float32Array(element_count),
-                C0Type::Float64 => C0Type::Float64Array(element_count),
-                pointer => C0Type::PointerArray(
+            let interface_type = match base_type.interface_type {
+                InterfaceType::Int32 => InterfaceType::Int32Array(element_count),
+                InterfaceType::UInt32 => InterfaceType::UInt32Array(element_count),
+                InterfaceType::Int64(rank) => InterfaceType::Int64Array(rank, element_count),
+                InterfaceType::Int128 => InterfaceType::Int128Array(element_count),
+                InterfaceType::UInt64(rank) => InterfaceType::UInt64Array(rank, element_count),
+                InterfaceType::UInt128 => InterfaceType::UInt128Array(element_count),
+                InterfaceType::Char(plain) => InterfaceType::CharArray(plain, element_count),
+                InterfaceType::UInt8 => InterfaceType::UInt8Array(element_count),
+                InterfaceType::Float32 => InterfaceType::Float32Array(element_count),
+                InterfaceType::Float64 => InterfaceType::Float64Array(element_count),
+                pointer => InterfaceType::PointerArray(
                     pointer_array_element(pointer)
                         .expect("validated pointer struct array element type"),
                     pointer.long_rank().unwrap_or(LongRank::Long),
                     element_count,
                 ),
             };
-            (c_type, array_shape)
+            (interface_type, array_shape)
         } else {
-            (base_type.c_type, None)
+            (base_type.interface_type, None)
         };
 
-        if !c_type.is_pointer()
+        if !interface_type.is_pointer()
             && !matches!(
-                c_type,
-                C0Type::Bool
-                    | C0Type::Int8
-                    | C0Type::Int16
-                    | C0Type::Int32
-                    | C0Type::Char(_)
-                    | C0Type::UInt8
-                    | C0Type::UInt16
-                    | C0Type::UInt32
-                    | C0Type::Int64(_)
-                    | C0Type::UInt64(_)
-                    | C0Type::Float32
-                    | C0Type::Float64
-                    | C0Type::Int32Pointer
-                    | C0Type::CharPointer(_)
-                    | C0Type::UInt8Pointer
-                    | C0Type::Float32Pointer
-                    | C0Type::Float64Pointer
-                    | C0Type::Int32PointerPointer
-                    | C0Type::CharPointerPointer(_)
-                    | C0Type::UInt8PointerPointer
-                    | C0Type::Float32PointerPointer
-                    | C0Type::Float64PointerPointer
-                    | C0Type::Int32Array(_)
-                    | C0Type::UInt32Array(_)
-                    | C0Type::Int128Array(_)
-                    | C0Type::Int64Array(_, _)
-                    | C0Type::UInt128Array(_)
-                    | C0Type::UInt64Array(_, _)
-                    | C0Type::CharArray(_, _)
-                    | C0Type::UInt8Array(_)
-                    | C0Type::Float32Array(_)
-                    | C0Type::Float64Array(_)
-                    | C0Type::PointerArray(_, _, _)
+                interface_type,
+                InterfaceType::Bool
+                    | InterfaceType::Int8
+                    | InterfaceType::Int16
+                    | InterfaceType::Int32
+                    | InterfaceType::Char(_)
+                    | InterfaceType::UInt8
+                    | InterfaceType::UInt16
+                    | InterfaceType::UInt32
+                    | InterfaceType::Int64(_)
+                    | InterfaceType::UInt64(_)
+                    | InterfaceType::Float32
+                    | InterfaceType::Float64
+                    | InterfaceType::Int32Pointer
+                    | InterfaceType::CharPointer(_)
+                    | InterfaceType::UInt8Pointer
+                    | InterfaceType::Float32Pointer
+                    | InterfaceType::Float64Pointer
+                    | InterfaceType::Int32PointerPointer
+                    | InterfaceType::CharPointerPointer(_)
+                    | InterfaceType::UInt8PointerPointer
+                    | InterfaceType::Float32PointerPointer
+                    | InterfaceType::Float64PointerPointer
+                    | InterfaceType::Int32Array(_)
+                    | InterfaceType::UInt32Array(_)
+                    | InterfaceType::Int128Array(_)
+                    | InterfaceType::Int64Array(_, _)
+                    | InterfaceType::UInt128Array(_)
+                    | InterfaceType::UInt64Array(_, _)
+                    | InterfaceType::CharArray(_, _)
+                    | InterfaceType::UInt8Array(_)
+                    | InterfaceType::Float32Array(_)
+                    | InterfaceType::Float64Array(_)
+                    | InterfaceType::PointerArray(_, _, _)
             )
         {
             return Err(self.error_here(format!(
                 "struct `{struct_name}` fields currently support modeled scalars, fixed arrays, and pointer fields",
             )));
         }
-        let (field_size, field_alignment) = match c_type {
-            C0Type::Int32Array(length) | C0Type::UInt32Array(length) => (
+        let (field_size, field_alignment) = match interface_type {
+            InterfaceType::Int32Array(length) | InterfaceType::UInt32Array(length) => (
                 length.checked_mul(4).ok_or_else(|| {
                     self.error_here(format!("struct `{struct_name}` layout is too large"))
                 })?,
                 4,
             ),
-            C0Type::Int64Array(_, length) | C0Type::UInt64Array(_, length) => (
+            InterfaceType::Int64Array(_, length) | InterfaceType::UInt64Array(_, length) => (
                 length.checked_mul(8).ok_or_else(|| {
                     self.error_here(format!("struct `{struct_name}` layout is too large"))
                 })?,
                 8,
             ),
-            C0Type::Int128Array(length) | C0Type::UInt128Array(length) => (
+            InterfaceType::Int128Array(length) | InterfaceType::UInt128Array(length) => (
                 length.checked_mul(16).ok_or_else(|| {
                     self.error_here(format!("struct `{struct_name}` layout is too large"))
                 })?,
                 16,
             ),
-            C0Type::CharArray(_, length) => (length, 1),
-            C0Type::UInt8Array(length) => (length, 1),
-            C0Type::PointerArray(_, _, length) => (
+            InterfaceType::CharArray(_, length) => (length, 1),
+            InterfaceType::UInt8Array(length) => (length, 1),
+            InterfaceType::PointerArray(_, _, length) => (
                 length.checked_mul(8).ok_or_else(|| {
                     self.error_here(format!("struct `{struct_name}` layout is too large"))
                 })?,
                 8,
             ),
-            _ => self.abi.size_and_alignment(c_type),
+            _ => self.abi.size_and_alignment(interface_type),
         };
         Ok((
-            c_type,
+            interface_type,
             field_size,
             field_alignment,
             base_type.struct_name.clone(),

@@ -569,7 +569,8 @@ fn shared_masked_order_queries_do_not_export_growing_operands() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(985302));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(985302));
         let mask = KernelTermImport::default()
             .machine_arithmetic(ty, &MachineTerm::constant(127))
             .unwrap();
@@ -619,7 +620,7 @@ fn shared_widened_queries_and_evidence_do_not_export_operands() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::UInt32.c_type()),
+            KernelType::Program(MachineIntegerType::UInt32.program_type()),
             Variable(986201),
         );
         for _ in 0..size {
@@ -735,7 +736,7 @@ fn indexed_lower_bound_decision_retains_shared_operands() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(986302),
         );
         for _ in 0..size {
@@ -802,7 +803,8 @@ fn signed_ranges_keep_shared_prefixes_and_memoize_refusals() {
                     true,
                 );
             }
-            let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(994601));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994601));
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for level in 1..=size {
                     root = KernelTerm::machine_binary_shared(
@@ -845,7 +847,8 @@ fn shared_overflow_queries_keep_prefixes_across_context_changes() {
     for size in [4, 12, 36] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(996701));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(996701));
         let mut context = PureFactContext::new();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {

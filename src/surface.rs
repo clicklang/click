@@ -47,7 +47,8 @@ use crate::kernel::{
     prove_universally_quantified_pure_implication_by_int32_rewrites, resources_directly_match,
     substitute_int32_variable_in_proposition,
 };
-use crate::languages::c::syntax::{self, C0Expression, C0Type, LongRank};
+use crate::languages::c::syntax::{self, C0Expression, LongRank};
+use crate::languages::interface::InterfaceType;
 use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {
@@ -141,7 +142,7 @@ use validation::proof_theorem_definitions;
 use validation::{
     combined_click_function_definitions, combined_external_function_blocks,
     combined_predicate_definitions, combined_resource_definitions, contains_at_expression,
-    contains_old_expression, describe_c0_type, describe_resource_clause,
+    contains_old_expression, describe_interface_type, describe_resource_clause,
     proposition_contains_at_expression, proposition_contains_liveness_claim,
     proposition_contains_old_expression, proposition_contains_resource_count,
     standard_library_theorem_definitions, standard_library_theorem_index,
@@ -151,8 +152,8 @@ pub(in crate::surface) use verification::*;
 pub use verification::{
     IncrementalSelection, ModelAssumption, ModelFamily, ProgramInputs, ProjectVerificationSummary,
     ProofArtifactIdentity, SorryAdmission, SummarizedVerification, c_external_dependencies,
-    c_function_names, c_incremental_selection, c_prepared_external_dependencies,
-    c_project_function_names, parse, project_selected_proof_names, project_summary,
+    c_incremental_selection, c_prepared_external_dependencies, c_project_function_names,
+    c_source_function_names, parse, project_selected_proof_names, project_summary,
     take_sorry_admissions, verify_c_prepared_project, verify_c_prepared_sources,
     verify_c_prepared_sources_functions, verify_c_project, verify_c_sources, verify_c_sources_at,
     verify_c_sources_functions, verify_click_theorems, verify_program_prepared_project,
@@ -462,50 +463,58 @@ pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 6] =
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
 /// and `end` fields, and a `RangeInclusive`'s `start()` and `end()`.
-pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'static [&'static str] {
+pub(crate) fn rust_iterator_accessors(
+    kind: crate::languages::interface::RustIteratorKind,
+) -> &'static [&'static str] {
     match kind {
-        syntax::RustIteratorKind::Slice => &["len()", "as_slice()"],
-        syntax::RustIteratorKind::Enumerate => &["len()"],
-        syntax::RustIteratorKind::Range => &["start", "end", "len()"],
-        syntax::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::SliceLibrary(_) => &[],
+        crate::languages::interface::RustIteratorKind::Slice => &["len()", "as_slice()"],
+        crate::languages::interface::RustIteratorKind::Enumerate => &["len()"],
+        crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
+        crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        crate::languages::interface::RustIteratorKind::Chunks
+        | crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
     }
 }
 
 /// The local that holds loop iterator `iterator`'s value, when it is a value
 /// of a Click library type: a proof names it `iter` and reads it with that
 /// type's methods.
-pub(crate) fn rust_library_iterator(iterator: &syntax::RustLoopIterator) -> Option<&str> {
+pub(crate) fn rust_library_iterator(
+    iterator: &crate::languages::interface::RustLoopIterator,
+) -> Option<&str> {
     matches!(
         iterator.kind,
-        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::SliceLibrary(_)
+        crate::languages::interface::RustIteratorKind::Chunks
+            | crate::languages::interface::RustIteratorKind::SliceLibrary(_)
     )
     .then_some(iterator.local.as_str())
 }
 
 /// The Click type of a library-valued loop iterator: `ChunksExact<uint8>`,
 /// or `SliceIter` at the slice's element type.
-pub(crate) fn rust_library_iterator_type(iterator: &syntax::RustLoopIterator) -> Option<ClickType> {
+pub(crate) fn rust_library_iterator_type(
+    iterator: &crate::languages::interface::RustLoopIterator,
+) -> Option<ClickType> {
     rust_library_iterator(iterator)?;
-    if let syntax::RustIteratorKind::SliceLibrary(name) = iterator.kind {
-        return generics::primitive_instance_value_type(&ClickType::Program(C0Type::Parameter(
-            name,
-        )));
+    if let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind {
+        return generics::primitive_instance_value_type(&ClickType::Program(
+            InterfaceType::Parameter(name),
+        ));
     }
     Some(ClickType::Algebraic(AlgebraicTypeApplication {
         rigid: false,
         name: "ChunksExact".to_string(),
-        arguments: vec![ClickType::Program(C0Type::UInt8)],
+        arguments: vec![ClickType::Program(InterfaceType::UInt8)],
     }))
 }
 
 /// `iter.<accessor>` of `iterator`, read from the state the importer keeps
 /// for it. `iter.as_slice()` reads as a slice parameter does, its data.
 pub(crate) fn rust_iterator_method(
-    iterator: &syntax::RustLoopIterator,
+    iterator: &crate::languages::interface::RustLoopIterator,
     accessor: &str,
 ) -> Result<ContractExpression, String> {
-    use syntax::RustIteratorKind as K;
+    use crate::languages::interface::RustIteratorKind as K;
     let variable =
         |suffix: &str| ProgramExpression::Variable(format!("{}_{suffix}", iterator.local));
     let expression = match (iterator.kind, accessor) {
@@ -560,7 +569,7 @@ pub(crate) fn rust_iterator_method(
 /// bare `iter.len()` for the iterator of `current`, the loop whose phases
 /// are being checked.
 pub(crate) fn rust_iterator_spelling(
-    iterators: &[Option<syntax::RustLoopIterator>],
+    iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     current: Option<usize>,
     name: &str,
 ) -> Option<String> {
@@ -773,7 +782,7 @@ pub struct ClickFile {
     /// Physical struct strides retained for generic theorem instantiation.
     struct_sizes: std::sync::Arc<BTreeMap<String, u32>>,
     /// Unique source spelling to C execution identity, shared by specification lowering.
-    c_function_names: std::sync::Arc<BTreeMap<String, String>>,
+    program_function_names: std::sync::Arc<BTreeMap<String, String>>,
     imports: Vec<ImportDeclaration>,
     /// Click library modules this file imports with `import click::...;`, as
     /// their `library/` identities, once each in source order.
@@ -1022,7 +1031,7 @@ pub enum AlgebraicFieldType {
     /// field carries it, so a pointer read from a model keeps its
     /// strict-aliasing and loop object-class checks.
     C {
-        c_type: C0Type,
+        interface_type: InterfaceType,
         struct_name: Option<String>,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
@@ -1038,10 +1047,10 @@ impl AlgebraicFieldType {
     pub fn struct_pointer_name(&self) -> Option<&str> {
         match self {
             Self::C {
-                c_type,
+                interface_type,
                 struct_name,
                 ..
-            } if c_type.is_pointer() => struct_name.as_deref(),
+            } if interface_type.is_pointer() => struct_name.as_deref(),
             _ => None,
         }
     }
@@ -1056,7 +1065,7 @@ impl AlgebraicFieldType {
                 struct_name: Some(name),
                 ..
             } => format!("struct {name}*"),
-            Self::C { c_type, .. } => describe_c0_type(*c_type),
+            Self::C { interface_type, .. } => describe_interface_type(*interface_type),
             Self::Algebraic { name, .. } => name.clone(),
         }
     }
@@ -1072,10 +1081,10 @@ pub enum ClickType {
     /// instantiated to concrete types at applications, or rigid arbitrary
     /// types when checking theorem declarations, before crossing into Kernel Click.
     Parameter(String),
-    Program(C0Type),
+    Program(InterfaceType),
     /// A C pointer type whose generic payload retains its declared struct.
     CObjectPointer {
-        c_type: C0Type,
+        interface_type: InterfaceType,
         struct_name: String,
     },
     /// An exact, specification-only signed integer with no C representation.
@@ -1084,11 +1093,13 @@ pub enum ClickType {
 }
 
 impl ClickType {
-    pub fn c_type(&self) -> Option<C0Type> {
+    pub fn interface_type(&self) -> Option<InterfaceType> {
         match self {
             Self::Resource => None,
             Self::Parameter(_) => None,
-            Self::Program(c_type) | Self::CObjectPointer { c_type, .. } => Some(*c_type),
+            Self::Program(interface_type) | Self::CObjectPointer { interface_type, .. } => {
+                Some(*interface_type)
+            }
             Self::Integer => None,
             Self::Algebraic(_) => None,
         }
@@ -1129,17 +1140,19 @@ pub struct AlgebraicTypeApplication {
 }
 
 impl AlgebraicTypeApplication {
-    /// The `spec enum` a C value of `c_type` holds, when it holds a Rust
+    /// The `spec enum` a C value of `interface_type` holds, when it holds a Rust
     /// enum's: an enum parameter or result is that enum's value.
-    pub(in crate::surface) fn of_enum_c_type(c_type: C0Type) -> Option<Self> {
+    pub(in crate::surface) fn of_enum_interface_type(
+        interface_type: InterfaceType,
+    ) -> Option<Self> {
         // A Rust `Vec<u32>` is the library's primitive `Vec<uint32>`.
         if let Some(ClickType::Algebraic(application)) =
-            generics::primitive_instance_value_type(&ClickType::Program(c_type))
+            generics::primitive_instance_value_type(&ClickType::Program(interface_type))
         {
             return Some(application);
         }
-        match c_type {
-            C0Type::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
+        match interface_type {
+            InterfaceType::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
                 rigid: false,
                 name: enum_type.name().to_string(),
                 arguments: enum_type
@@ -1147,9 +1160,11 @@ impl AlgebraicTypeApplication {
                     .arguments
                     .iter()
                     .map(|argument| match argument {
-                        crate::kernel::AlgebraicValueType::Program(c_type) => {
+                        crate::kernel::AlgebraicValueType::Program(interface_type) => {
                             Some(ClickType::Program(
-                                crate::surface::generics::c0_type_from_kernel(*c_type),
+                                crate::surface::generics::interface_type_from_program_type(
+                                    *interface_type,
+                                ),
                             ))
                         }
                         // A crate enum payload, `Result<u32, ParseError>`'s
@@ -1282,7 +1297,7 @@ impl ResourceFieldDefinition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResourceWitness {
     name: String,
-    c_type: C0Type,
+    interface_type: InterfaceType,
 }
 
 impl ResourceWitness {
@@ -1290,8 +1305,8 @@ impl ResourceWitness {
         &self.name
     }
 
-    pub fn c_type(&self) -> C0Type {
-        self.c_type
+    pub fn interface_type(&self) -> InterfaceType {
+        self.interface_type
     }
 }
 
@@ -1670,7 +1685,7 @@ pub struct FunctionBlock {
     /// Where the parser read this block's clauses.
     body: parser::DeclarationBody,
     /// C objects visible in this declaration, supplied by the source frontend.
-    c_object_names: std::sync::Arc<BTreeSet<String>>,
+    program_object_names: std::sync::Arc<BTreeSet<String>>,
     signature: FunctionSignature,
     external: bool,
     /// Internal source grouping for an `executes` theorem's call and return.
@@ -1778,7 +1793,7 @@ pub enum FunctionDecrease {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSignature {
-    return_type: C0Type,
+    return_type: InterfaceType,
     /// Declared nominal type of a pointer result, independent of its C carrier.
     return_struct_name: Option<String>,
     return_pointee_constant: bool,
@@ -1789,7 +1804,7 @@ pub struct FunctionSignature {
     parameters: Vec<FunctionParameter>,
     /// The payload type of the function's declared exceptional outcome.
     /// This surface slice currently accepts only `throws int32`.
-    exceptional_type: Option<C0Type>,
+    exceptional_type: Option<InterfaceType>,
     /// Whether the signature declares `diverges`: the function may not
     /// return. Termination is opt-in today, so the marker changes no
     /// judgment; it withholds the whole-function termination evidence a
@@ -1813,7 +1828,7 @@ pub struct FunctionSignature {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RustSignatureSpelling(
     Option<Vec<String>>,
-    std::sync::Arc<[Option<syntax::RustLoopIterator>]>,
+    std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]>,
 );
 
 impl RustSignatureSpelling {
@@ -1825,7 +1840,9 @@ impl RustSignatureSpelling {
         self.0.as_deref()
     }
 
-    pub(crate) fn loop_iterators(&self) -> &std::sync::Arc<[Option<syntax::RustLoopIterator>]> {
+    pub(crate) fn loop_iterators(
+        &self,
+    ) -> &std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]> {
         &self.1
     }
 }
@@ -1843,7 +1860,7 @@ pub struct FunctionParameter {
     click_type: ClickType,
     name: String,
     struct_name: Option<String>,
-    function_pointer_signature: Option<syntax::C0FunctionPointerSignature>,
+    function_pointer_signature: Option<crate::languages::interface::CallbackInterface>,
     constant: bool,
     pointee_constant: bool,
     /// Whether the source declares the parameter as a reference. Its name
@@ -1872,7 +1889,7 @@ pub(in crate::surface) struct FieldPlace {
 /// start of `layout`, and its arrays of scalars, each one place whose
 /// elements a read names by index. A union is not one place and is left out.
 pub(in crate::surface) fn scalar_field_places(
-    layout: &syntax::C0StructLayout,
+    layout: &crate::languages::interface::RecordLayout,
     layouts: &impl syntax::StructLayouts,
 ) -> Vec<FieldPlace> {
     // Each nested struct is entered once per field that holds it, so the
@@ -1880,7 +1897,7 @@ pub(in crate::surface) fn scalar_field_places(
     // cannot contain itself by value; the depth bound is for a malformed
     // layout map and never for a real one.
     fn collect(
-        layout: &syntax::C0StructLayout,
+        layout: &crate::languages::interface::RecordLayout,
         layouts: &impl syntax::StructLayouts,
         prefix: &str,
         base: u32,
@@ -1894,10 +1911,10 @@ pub(in crate::surface) fn scalar_field_places(
             let name = format!("{prefix}{name}");
             let offset_bytes = base + field.offset_bytes();
             if field.array_element_width().is_some() {
-                let element = match field.c_type() {
-                    C0Type::Int32Array(length) => Some((ProgramType::Int32, 4, length)),
-                    C0Type::UInt32Array(length) => Some((ProgramType::UInt32, 4, length)),
-                    C0Type::UInt8Array(length) => Some((ProgramType::UInt8, 1, length)),
+                let element = match field.interface_type() {
+                    InterfaceType::Int32Array(length) => Some((ProgramType::Int32, 4, length)),
+                    InterfaceType::UInt32Array(length) => Some((ProgramType::UInt32, 4, length)),
+                    InterfaceType::UInt8Array(length) => Some((ProgramType::UInt8, 1, length)),
                     _ => None,
                 };
                 if let Some((value_type, width, length)) = element
@@ -1917,7 +1934,7 @@ pub(in crate::surface) fn scalar_field_places(
             // A struct held by value is entered; a pointer to one is a
             // scalar place like any other pointer field.
             match field.struct_name() {
-                Some(nested) if !field.c_type().is_pointer() => {
+                Some(nested) if !field.interface_type().is_pointer() => {
                     if let Some(nested) = layouts.struct_layout(nested)
                         && depth < 8
                     {
@@ -1934,11 +1951,11 @@ pub(in crate::surface) fn scalar_field_places(
                 _ => places.push(FieldPlace {
                     name,
                     offset_bytes,
-                    value_type: field.c_type().to_kernel_type(),
+                    value_type: field.interface_type().to_kernel_type(),
                     pointee_constant: field.pointee_is_constant(),
                     pointee_struct: field
                         .struct_name()
-                        .filter(|_| field.c_type().is_pointer())
+                        .filter(|_| field.interface_type().is_pointer())
                         .map(str::to_string),
                     array: None,
                 }),
@@ -2163,7 +2180,7 @@ pub enum ResourceClause {
         /// Resource types passed as arguments, independently of named instances.
         resource_type_arguments: Vec<ResourceClause>,
         resource_arguments: Vec<ResourceInstanceBinding>,
-        parameter_types: Vec<C0Type>,
+        parameter_types: Vec<InterfaceType>,
     },
     /// `forall (k: int32) where lo <= k and k < hi { if g[k] == v { owns
     /// base[..]; } }` in a resource body: iterated guarded ownership. Only a
@@ -2287,7 +2304,7 @@ pub enum ResourceSubject {
         kind: ResourceKind,
         name: String,
         arguments: Vec<ContractExpression>,
-        parameter_types: Vec<C0Type>,
+        parameter_types: Vec<InterfaceType>,
     },
 }
 
@@ -5455,7 +5472,7 @@ enum ContractSegmentSurface {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct StructRangeLayout {
     name: String,
-    layout: syntax::C0StructLayout,
+    layout: crate::languages::interface::RecordLayout,
 }
 
 impl std::hash::Hash for StructRangeLayout {
@@ -7464,7 +7481,7 @@ impl<'a> FixedStateFrame<'a> {
 /// position by position.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ParameterBinding<'a> {
-    pub(crate) parameters: &'a [syntax::C0Parameter],
+    pub(crate) parameters: &'a [crate::languages::interface::ImportedParameter],
     pub(crate) arguments: &'a [ProgramExpression],
     /// Each parameter's position by name, when the caller built one: a
     /// lowering that reads a few parameters then looks up only those
@@ -7478,7 +7495,7 @@ pub(crate) struct ParameterBinding<'a> {
 
 impl<'a> ParameterBinding<'a> {
     pub(crate) fn new(
-        parameters: &'a [syntax::C0Parameter],
+        parameters: &'a [crate::languages::interface::ImportedParameter],
         arguments: &'a [ProgramExpression],
     ) -> Self {
         Self {
@@ -7513,13 +7530,16 @@ impl<'a> ParameterBinding<'a> {
 /// One copy of a proof's parameter declarations and argument expressions,
 /// shared by every diagnostic the proof captures.
 pub(crate) struct ParameterNaming {
-    pub(crate) parameters: std::sync::Arc<[syntax::C0Parameter]>,
+    pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
     pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
     pointer_sources: BTreeMap<Pointer, usize>,
 }
 
 impl ParameterNaming {
-    pub(crate) fn new(parameters: &[syntax::C0Parameter], arguments: &[ProgramExpression]) -> Self {
+    pub(crate) fn new(
+        parameters: &[crate::languages::interface::ImportedParameter],
+        arguments: &[ProgramExpression],
+    ) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
         Self {
             parameters: parameters.into(),
@@ -7539,7 +7559,10 @@ impl ParameterNaming {
     pub(crate) fn pointer_source(
         &self,
         pointer: &Pointer,
-    ) -> Option<(&syntax::C0Parameter, &ProgramExpression)> {
+    ) -> Option<(
+        &crate::languages::interface::ImportedParameter,
+        &ProgramExpression,
+    )> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_sources.get(pointer)?;
         Some((self.parameters.get(index)?, self.arguments.get(index)?))
@@ -7553,7 +7576,7 @@ pub(crate) struct ParameterIndex {
 }
 
 impl ParameterIndex {
-    pub(crate) fn new(parameters: &[syntax::C0Parameter]) -> Self {
+    pub(crate) fn new(parameters: &[crate::languages::interface::ImportedParameter]) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len());
         Self {
             positions: parameters
@@ -7609,7 +7632,7 @@ impl<'a> SpecDefinitions<'a> {
                 .ok_or_else(|| format!("struct `{}` has no known layout", class.tag()));
         }
         pointer
-            .c_type()
+            .program_type()
             .pointee_type()
             .map(ProgramType::byte_width)
             .ok_or_else(|| "expected a sized pointer element".to_string())
@@ -7618,10 +7641,10 @@ impl<'a> SpecDefinitions<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PredicateEnvironment {
-    c_function_names: std::sync::Arc<BTreeMap<String, String>>,
+    program_function_names: std::sync::Arc<BTreeMap<String, String>>,
     definitions: BTreeMap<String, PredicateDefinition>,
     resource_state_dependent: BTreeSet<String>,
-    contract_signatures: BTreeMap<String, C0Type>,
+    contract_signatures: BTreeMap<String, InterfaceType>,
     contract_definitions: BTreeMap<String, ContractDefinition>,
 }
 
@@ -7660,7 +7683,7 @@ impl PredicateEnvironment {
                 .iter()
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
-            c_function_names: Default::default(),
+            program_function_names: Default::default(),
             contract_signatures: BTreeMap::new(),
             contract_definitions: BTreeMap::new(),
         }
@@ -7671,7 +7694,7 @@ impl PredicateEnvironment {
         definitions: &[ContractDefinition],
         names: &std::sync::Arc<BTreeMap<String, String>>,
     ) -> Self {
-        self.c_function_names = names.clone();
+        self.program_function_names = names.clone();
         self.contract_signatures = definitions
             .iter()
             .map(|definition| {
@@ -7693,12 +7716,12 @@ impl PredicateEnvironment {
     }
 
     fn function_execution_name<'a>(&'a self, source: &'a str) -> &'a str {
-        self.c_function_names
+        self.program_function_names
             .get(source)
             .map_or(source, String::as_str)
     }
 
-    fn contract_signature(&self, name: &str) -> Option<C0Type> {
+    fn contract_signature(&self, name: &str) -> Option<InterfaceType> {
         self.contract_signatures.get(name).copied()
     }
 
@@ -8050,7 +8073,7 @@ pub(super) struct ResourceEnvironment {
     /// C layouts are file-local, but resource bodies are shared by every
     /// function in that file. Retain them so struct-pointer arithmetic in a
     /// composite body keeps its physical element width.
-    struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
 }
 
 #[derive(Debug)]
@@ -8073,7 +8096,7 @@ impl ResourceEnvironment {
 
     fn with_struct_layouts(
         definitions: &[ResourceDefinition],
-        struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+        struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
     ) -> Self {
         Self {
             fold_sources: Default::default(),
@@ -8096,7 +8119,7 @@ impl ResourceEnvironment {
             .ok_or_else(|| ClickError::new("resource fold source metadata was not prepared"))
     }
 
-    fn struct_layouts(&self) -> &BTreeMap<String, syntax::C0StructLayout> {
+    fn struct_layouts(&self) -> &BTreeMap<String, crate::languages::interface::RecordLayout> {
         &self.struct_layouts
     }
 }
@@ -9022,18 +9045,18 @@ impl ContractDefinition {
         &parameters[..parameters.len() - self.value_parameters.len()]
     }
 
-    pub fn function_pointer_type(&self) -> C0Type {
+    pub fn function_pointer_type(&self) -> InterfaceType {
         let parameter_types = self
             .call_parameters()
             .iter()
             .map(|parameter| {
                 (
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                     parameter.pointee_is_constant(),
                 )
             })
             .collect::<Vec<_>>();
-        C0Type::FunctionPointer(
+        InterfaceType::FunctionPointer(
             crate::kernel::ProgramType::qualified_function_pointer_signature(
                 self.function_block
                     .signature()
@@ -9165,8 +9188,8 @@ impl FunctionBlock {
     pub(in crate::surface) fn generic_instance_alias(
         &self,
         name: &str,
-        parameter_types: &[C0Type],
-        return_type: C0Type,
+        parameter_types: &[InterfaceType],
+        return_type: InterfaceType,
     ) -> Result<FunctionBlock, String> {
         if parameter_types.len() != self.signature.parameters.len() {
             return Err(format!(
@@ -9176,15 +9199,17 @@ impl FunctionBlock {
             ));
         }
         let mut alias = self.dispatch_alias(name);
-        for (parameter, c_type) in alias.signature.parameters.iter_mut().zip(parameter_types) {
+        for (parameter, interface_type) in
+            alias.signature.parameters.iter_mut().zip(parameter_types)
+        {
             if matches!(
                 parameter.click_type,
-                ClickType::Program(C0Type::Parameter(_))
+                ClickType::Program(InterfaceType::Parameter(_))
             ) {
-                parameter.click_type = ClickType::Program(*c_type);
+                parameter.click_type = ClickType::Program(*interface_type);
             }
         }
-        if matches!(alias.signature.return_type, C0Type::Parameter(_)) {
+        if matches!(alias.signature.return_type, InterfaceType::Parameter(_)) {
             alias.signature.return_type = return_type;
         }
         Ok(alias)
@@ -9478,7 +9503,11 @@ impl FunctionBlock {
 }
 
 impl FunctionSignature {
-    fn matches_c_definition(&self, source_path: &str, function: &syntax::C0Function) -> bool {
+    fn matches_c_definition(
+        &self,
+        source_path: &str,
+        function: &crate::languages::interface::ImportedFunction,
+    ) -> bool {
         let name = if let Some(source) = &self.c_source {
             if source != source_path {
                 return false;
@@ -9493,7 +9522,7 @@ impl FunctionSignature {
     }
 
     pub fn new(
-        return_type: C0Type,
+        return_type: InterfaceType,
         name: impl Into<String>,
         parameters: Vec<FunctionParameter>,
     ) -> Self {
@@ -9521,13 +9550,13 @@ impl FunctionSignature {
     /// The iterator each loop of this Rust function advances, by loop index.
     pub(crate) fn rust_loop_iterators(
         &self,
-    ) -> &std::sync::Arc<[Option<syntax::RustLoopIterator>]> {
+    ) -> &std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]> {
         self.rust_spelling.loop_iterators()
     }
 
     pub(crate) fn with_rust_loop_iterators(
         mut self,
-        iterators: &[Option<syntax::RustLoopIterator>],
+        iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     ) -> Self {
         self.rust_spelling.1 = std::sync::Arc::from(iterators);
         self
@@ -9555,14 +9584,14 @@ impl FunctionSignature {
         &self.declared_loadable_bytes
     }
 
-    pub fn return_type(&self) -> C0Type {
+    pub fn return_type(&self) -> InterfaceType {
         self.return_type
     }
 
     pub(crate) fn return_click_type(&self) -> ClickType {
         match &self.return_struct_name {
             Some(struct_name) if self.return_type.is_pointer() => ClickType::CObjectPointer {
-                c_type: self.return_type,
+                interface_type: self.return_type,
                 struct_name: struct_name.clone(),
             },
             _ => ClickType::Program(self.return_type),
@@ -9577,7 +9606,7 @@ impl FunctionSignature {
         &self.parameters
     }
 
-    pub fn exceptional_type(&self) -> Option<C0Type> {
+    pub fn exceptional_type(&self) -> Option<InterfaceType> {
         self.exceptional_type
     }
 
@@ -9603,23 +9632,25 @@ impl FunctionSignature {
                 _ => false,
             }
         }
-        let is_abstract = |ty: C0Type| matches!(ty, C0Type::Parameter(name) if abstract_type(name));
+        let is_abstract =
+            |ty: InterfaceType| matches!(ty, InterfaceType::Parameter(name) if abstract_type(name));
         is_abstract(self.return_type)
             || self
                 .parameters
                 .iter()
-                .any(|parameter| is_abstract(parameter.c_type()))
+                .any(|parameter| is_abstract(parameter.interface_type()))
     }
 }
 
 impl FunctionParameter {
-    pub fn c_type(&self) -> C0Type {
+    pub fn interface_type(&self) -> InterfaceType {
         match &self.click_type {
             ClickType::Resource => panic!("a Resource parameter has no C type"),
             ClickType::Parameter(_) => {
                 panic!("a generic Click parameter has no concrete C type")
             }
-            ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => *c_type,
+            ClickType::Program(interface_type)
+            | ClickType::CObjectPointer { interface_type, .. } => *interface_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
@@ -9642,7 +9673,9 @@ impl FunctionParameter {
         })
     }
 
-    pub fn function_pointer_signature(&self) -> Option<&syntax::C0FunctionPointerSignature> {
+    pub fn function_pointer_signature(
+        &self,
+    ) -> Option<&crate::languages::interface::CallbackInterface> {
         self.function_pointer_signature.as_ref()
     }
 
@@ -9723,12 +9756,14 @@ fn requirement_contains_resource(requirement: &Requirement) -> bool {
 fn parameter_is_click_array_ref(parameter: &FunctionParameter) -> bool {
     parameter
         .click_type()
-        .c_type()
-        .is_some_and(|c_type| click_array_element_type(c_type).is_some())
+        .interface_type()
+        .is_some_and(|interface_type| click_array_element_type(interface_type).is_some())
 }
 
-fn click_array_element_type(c_type: C0Type) -> Option<ProgramType> {
-    c_type.pointee_type().map(C0Type::to_kernel_type)
+fn click_array_element_type(interface_type: InterfaceType) -> Option<ProgramType> {
+    interface_type
+        .pointee_type()
+        .map(InterfaceType::to_kernel_type)
 }
 
 impl EnsureClause {

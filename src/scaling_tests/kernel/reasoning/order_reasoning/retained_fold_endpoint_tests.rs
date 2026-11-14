@@ -152,7 +152,7 @@ fn selected_endpoint_equality_looks_up_one_pair_in_growing_source_stars() {
                     true,
                 );
             }
-            let root = |v| KernelTerm::variable(KernelType::Program(format.c_type()), v);
+            let root = |v| KernelTerm::variable(KernelType::Program(format.program_type()), v);
             let left = root(anchor);
             let right = root(Variable(1001100));
             let missing = root(Variable(1001500));

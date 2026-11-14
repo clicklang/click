@@ -232,9 +232,9 @@ impl CAccessClass {
     /// a struct pointer, which it spells as an `int32` pointer, and plain
     /// versus explicitly signed `char` pointees, so those give `None`: an
     /// access whose class is unknown is not checked.
-    pub fn of_kernel_type(c_type: crate::kernel::ProgramType) -> Option<Self> {
+    pub fn of_kernel_type(program_type: crate::kernel::ProgramType) -> Option<Self> {
         use crate::kernel::ProgramType;
-        Some(match c_type {
+        Some(match program_type {
             ProgramType::Bool => Self::Scalar(CScalarClass::Bool),
             ProgramType::Int8 | ProgramType::UInt8 => Self::Scalar(CScalarClass::Char),
             ProgramType::Int16 | ProgramType::UInt16 => Self::Scalar(CScalarClass::Short),

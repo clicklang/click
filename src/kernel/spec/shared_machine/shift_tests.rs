@@ -144,7 +144,7 @@ fn check_shift_parity(rust: bool) {
                                 panic!()
                             };
                             let result_format =
-                                MachineIntegerType::from_c_type(expected_value.c_type()).unwrap();
+                                MachineIntegerType::from_program_type(expected_value.program_type()).unwrap();
                             if let Some(imported) = KernelTermImport::default()
                                 .machine_arithmetic(result_format, expected_word)
                             {
@@ -250,7 +250,7 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert_eq!(paths.len(), 1);
             assert!(matches!(paths[0].value, SpecValue::Shared(_)));
-            assert_eq!(paths[0].value.c_type(), format.c_type());
+            assert_eq!(paths[0].value.program_type(), format.program_type());
             assert_eq!(native_results(paths), evaluate(&expression, true));
             let value = format
                 .value_from_term(MachineTerm::Variable(Variable(995491)))

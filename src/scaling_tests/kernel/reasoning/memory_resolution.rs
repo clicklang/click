@@ -260,9 +260,14 @@ fn retained_endpoint_queries_reuse_shared_dag_pairs() {
     };
     let samples = [8usize, 32, 128].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut root =
-            KernelTerm::variable(KernelType::Program(T::Int32.c_type()), Variable(993891));
-        let other = KernelTerm::variable(KernelType::Program(T::Int32.c_type()), Variable(993892));
+        let mut root = KernelTerm::variable(
+            KernelType::Program(T::Int32.program_type()),
+            Variable(993891),
+        );
+        let other = KernelTerm::variable(
+            KernelType::Program(T::Int32.program_type()),
+            Variable(993892),
+        );
         let context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -300,7 +305,7 @@ fn run_access_retains_cold_shared_index_dags() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut term =
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018601));
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018601));
             for _ in 0..size {
                 term = KernelTerm::machine_binary_shared(
                     ty,
@@ -377,7 +382,7 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
         for unrelated in [0, size] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut root =
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018703));
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018703));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,

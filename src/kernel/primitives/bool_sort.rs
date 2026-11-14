@@ -345,7 +345,7 @@ impl ConditionTerm {
             | ProgramValue::Int16(word)
             | ProgramValue::UInt8(word)
             | ProgramValue::UInt16(word)) => {
-                let format = MachineIntegerType::from_c_type(narrow.c_type())?;
+                let format = MachineIntegerType::from_program_type(narrow.program_type())?;
                 Self::narrow_compare(
                     format,
                     crate::kernel::CompareRelation::Equal,
@@ -366,7 +366,7 @@ impl ConditionTerm {
                 Self::uint64_equal(word.clone(), MachineTerm::uint64_constant(0))
             }
             value @ (ProgramValue::Int128(word) | ProgramValue::UInt128(word)) => {
-                let source = MachineIntegerType::from_c_type(value.c_type())?;
+                let source = MachineIntegerType::from_program_type(value.program_type())?;
                 Self::integer_equal(
                     IntegerTerm::from_machine(source, word.clone())?,
                     IntegerTerm::constant_i64(0),
@@ -396,14 +396,14 @@ impl crate::kernel::ProgramValue {
         Self::of_bool(ConditionTerm::Constant(value))
     }
 
-    /// The scalar value of type `c_type` whose word is `term`; `None` for a
+    /// The scalar value of type `program_type` whose word is `term`; `None` for a
     /// type that is not a scalar.
     pub(crate) fn from_bitvector_term(
-        c_type: crate::kernel::ProgramType,
+        program_type: crate::kernel::ProgramType,
         term: crate::kernel::MachineTerm,
     ) -> Option<Self> {
         use crate::kernel::ProgramType;
-        Some(match c_type {
+        Some(match program_type {
             ProgramType::Bool => Self::Bool(term),
             ProgramType::Int8 => crate::kernel::int8(term),
             ProgramType::Int16 => crate::kernel::int16(term),

@@ -3068,7 +3068,7 @@ mod tests {
     fn modular_rewrite_retains_shared_residue_operands() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007190));
+        let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007190));
         let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let observed = |format| {
             IntegerTerm::Machine(

@@ -175,7 +175,8 @@ fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+        let variable =
+            |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
         let add = |a, b| KernelTerm::machine_binary_shared(ty, Op::Add, [a, b]);
         let a = add(variable(972_000), variable(972_001));
         let b = variable(972_002);

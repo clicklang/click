@@ -68,7 +68,7 @@ fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
                 )
             });
             assert_eq!(
-                converted.unwrap().c_type(),
+                converted.unwrap().program_type(),
                 super::super::super::ProgramType::Int16
             );
             // One unit for the conversion and one for the cast node it

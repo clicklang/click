@@ -16,7 +16,10 @@ compatibility retain their C names.
 
 - `src/kernel/`: proof terms, shared program semantics, assumptions, symbolic execution,
   and theorem-producing functions.
-- `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms. The
+- `src/languages/interface.rs`: shared `ImportedFunction`, `ImportedParameter`,
+  `InterfaceType`, callback metadata and record layouts. `InterfaceType` retains
+  declaration compatibility information that the kernel `ProgramType` erases.
+- `src/languages/c/syntax.rs`: C parser and lowering to shared program terms. The
   parser's global declarations, type declarations and initializers are in
   `syntax/global_declarations.rs`, `syntax/type_declarations.rs` and
   `syntax/initializers.rs`.

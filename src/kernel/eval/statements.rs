@@ -590,7 +590,7 @@ fn write_program_lvalue_paths_without_local_reference(
     // cannot use separation evidence from other owned resources. Its backing
     // cell, if any, is private. Copying a pointer does not access its pointee;
     // all qualifier, ownership, and loan checks below still run.
-    let direct_local_copy = value.c_type() == lvalue.value_type
+    let direct_local_copy = value.program_type() == lvalue.value_type
         && matches!(&lvalue.storage, LValueStorage::Local { name }
             if state.locals.slot(name).is_none_or(|pointer|
                 crate::kernel::block_is_never_address_taken_local(&pointer.block)));
@@ -631,9 +631,9 @@ fn write_program_lvalue_paths_without_local_reference(
         )]);
     }
     let value = if value.shared().is_some()
-        && value.c_type() == lvalue.value_type
+        && value.program_type() == lvalue.value_type
         && matches!(
-            value.c_type(),
+            value.program_type(),
             ProgramType::Int8
                 | ProgramType::UInt8
                 | ProgramType::Int16
@@ -730,7 +730,7 @@ fn write_program_lvalue_paths_without_local_reference(
                     .designated_memory_write_range(
                         pointer,
                         lvalue_access_designation,
-                        value.c_type().byte_width(),
+                        value.program_type().byte_width(),
                         &effective_assumptions,
                     )
                     .is_none()
@@ -742,7 +742,7 @@ fn write_program_lvalue_paths_without_local_reference(
                                 pointer.clone(),
                                 0u32.into(),
                                 1u32.into(),
-                                value.c_type().byte_width(),
+                                value.program_type().byte_width(),
                             ),
                         )),
                     }),
@@ -754,7 +754,7 @@ fn write_program_lvalue_paths_without_local_reference(
                 && let Some(outcome) = memory_write_permission_outcome_for_local(
                     state,
                     &pointer,
-                    value.c_type().byte_width(),
+                    value.program_type().byte_width(),
                     &effective_assumptions,
                     crate::kernel::block_is_never_address_taken_local(&pointer.block),
                 )
@@ -1279,7 +1279,7 @@ fn missing_aggregate_copy_write_resource(
     let ranges = layout
         .fields()
         .iter()
-        .map(|field| (field.offset_bytes(), field.c_type().byte_width()))
+        .map(|field| (field.offset_bytes(), field.program_type().byte_width()))
         .chain(
             layout
                 .unions()
@@ -1333,7 +1333,7 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
         if !state.resources().permits_designated_memory_read(
             &source.offset_by_bytes(field.offset_bytes()),
             Some(source.access_designation()),
-            field.c_type().byte_width(),
+            field.program_type().byte_width(),
             assumptions,
         ) {
             return Some(ResourceFact::view_memory(
@@ -1342,7 +1342,7 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
                     crate::kernel::assumptions::read_candidate_byte_width(
-                        field.c_type().byte_width(),
+                        field.program_type().byte_width(),
                     ),
                 ),
             ));
@@ -1595,12 +1595,17 @@ fn heap_allocation_element_width(state: &ExecutionState, base: &Pointer) -> u32 
         .bindings
         .values()
         .find_map(|binding| {
-            let LocalBinding::Object { value, c_type, .. } = binding else {
+            let LocalBinding::Object {
+                value,
+                program_type,
+                ..
+            } = binding
+            else {
                 return None;
             };
             let pointer = value.pointer()?;
             (pointer.pointer() == base)
-                .then(|| c_type.pointee_type().map(ProgramType::byte_width))
+                .then(|| program_type.pointee_type().map(ProgramType::byte_width))
                 .flatten()
         })
         .unwrap_or(ProgramType::Int32.byte_width())
@@ -2660,7 +2665,7 @@ fn execute_program_heap_free_paths(
                 )
             });
         let (pointer, declared_allocation) = match declared_allocation {
-            Some((base, bytes)) => (base.clone().with_type(pointer.c_type()), Some(bytes)),
+            Some((base, bytes)) => (base.clone().with_type(pointer.program_type()), Some(bytes)),
             None => (pointer, None),
         };
         if state
@@ -2679,7 +2684,7 @@ fn execute_program_heap_free_paths(
         }
 
         let element_width = pointer
-            .c_type()
+            .program_type()
             .pointee_type()
             .map(ProgramType::byte_width)
             .unwrap_or(ProgramType::Int32.byte_width());
@@ -3128,11 +3133,14 @@ fn execute_program_return_expression_paths(
                         StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome)
                     } else {
                         StatementOutcome::Return {
-                            value: ProgramValue::typed_pointer(resolved_pointer, pointer.c_type())
-                                .with_pointer_object_type_evidence(
-                                    pointer.object_type_evidence().cloned(),
-                                )
-                                .into(),
+                            value: ProgramValue::typed_pointer(
+                                resolved_pointer,
+                                pointer.program_type(),
+                            )
+                            .with_pointer_object_type_evidence(
+                                pointer.object_type_evidence().cloned(),
+                            )
+                            .into(),
                             state: Box::new(resolved_state),
                         }
                     };
@@ -3684,7 +3692,7 @@ fn execute_execution_statement_leaf_paths(
             ProgramStatement::Declare {
                 name,
                 initializer: None,
-                c_type:
+                program_type:
                     ProgramType::Int8
                     | ProgramType::Int16
                     | ProgramType::Int32
@@ -3947,7 +3955,7 @@ fn execute_execution_statement_leaf_paths(
         }
         ProgramStatement::Declare {
             name,
-            c_type,
+            program_type,
             volatile,
             pointee_volatile,
             constant,
@@ -3956,13 +3964,13 @@ fn execute_execution_statement_leaf_paths(
             zero_fill,
             declared_class,
         } => {
-            let outcome = if *c_type == ProgramType::Void {
+            let outcome = if *program_type == ProgramType::Void {
                 StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
             } else {
                 match declare_local(
                     state,
                     name,
-                    *c_type,
+                    *program_type,
                     *volatile,
                     *pointee_volatile,
                     *constant,
@@ -3983,7 +3991,7 @@ fn execute_execution_statement_leaf_paths(
             {
                 if zero_fill.is_some()
                     || matches!(
-                        c_type,
+                        program_type,
                         ProgramType::Int8Array(_)
                             | ProgramType::Int16Array(_)
                             | ProgramType::UInt16Array(_)
@@ -4013,7 +4021,7 @@ fn execute_execution_statement_leaf_paths(
                         ExpressionOutcome::Value(value) => {
                             let lvalue = LValue::local_with_qualifiers(
                                 name.clone(),
-                                *c_type,
+                                *program_type,
                                 *volatile,
                                 *pointee_volatile,
                             )
@@ -4236,10 +4244,10 @@ fn execute_execution_statement_leaf_paths(
                 // The result has the callee's declared type, as it would
                 // assigned to a local of that type.
                 let value = match result_type {
-                    Some(c_type) => {
+                    Some(program_type) => {
                         match crate::kernel::functions::coerce_program_value_with_pointee_constant(
                             value,
-                            *c_type,
+                            *program_type,
                             *result_pointee_constant,
                             &mut path.obligations,
                             assumptions,
@@ -4307,7 +4315,9 @@ fn execute_execution_statement_leaf_paths(
             let mut paths = Vec::new();
             for path in evaluate_expression_value_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
-                    ExpressionOutcome::Value(value) if value.c_type() == ProgramType::Int32 => {
+                    ExpressionOutcome::Value(value)
+                        if value.program_type() == ProgramType::Int32 =>
+                    {
                         if let Some(refusal) = return_authority_refusal(state) {
                             refusal
                         } else {
@@ -4352,7 +4362,7 @@ fn execute_execution_statement_leaf_paths(
                     value,
                     state: thrown_state,
                 } = &try_path.outcome
-                    && value.c_type() == ProgramType::Int32
+                    && value.program_type() == ProgramType::Int32
                 {
                     if thrown_state.locals.bindings.contains_key(binding) {
                         paths.push(StatementExecutionPath {
@@ -5409,7 +5419,7 @@ fn own_local_array(state: &mut ExecutionState, pointer: &Pointer, bytes: u32) {
 pub(in crate::kernel) fn declare_local(
     state: &ExecutionState,
     name: &str,
-    c_type: ProgramType,
+    program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
     constant: bool,
@@ -5421,8 +5431,8 @@ pub(in crate::kernel) fn declare_local(
     // A declared local's block is placed at its type's alignment; record it
     // with the block so the alignment decision is intrinsic, as for heap
     // and file-scope blocks, rather than a path fact at each address-of.
-    register_block_alignment(&pointer.block, c_type.abi_alignment());
-    let byte_width = match c_type {
+    register_block_alignment(&pointer.block, program_type.abi_alignment());
+    let byte_width = match program_type {
         ProgramType::Int128 | ProgramType::UInt128 => 16,
         // An abstract value's object holds its value in its binding; its
         // bytes are the model width it takes in memory.
@@ -5677,7 +5687,7 @@ pub(in crate::kernel) fn declare_local(
     state.set_memory(state.memory.clone().with_classed_scalar_block(
         pointer.block.clone(),
         byte_width,
-        c_type,
+        program_type,
         declared_class,
     ));
     state.resources = state
@@ -5694,7 +5704,7 @@ pub(in crate::kernel) fn declare_local(
     if volatile {
         state.locals.set_uninitialized_with_all_qualifiers(
             name.to_string(),
-            c_type,
+            program_type,
             pointer,
             true,
             pointee_volatile,
@@ -5704,7 +5714,7 @@ pub(in crate::kernel) fn declare_local(
     } else {
         state.locals.set_uninitialized_with_all_qualifiers(
             name.to_string(),
-            c_type,
+            program_type,
             pointer,
             false,
             pointee_volatile,
@@ -5781,13 +5791,13 @@ fn begin_aggregate_construction(
         // Aggregate array fields have no scalar placeholder. Their actual
         // constructor writes establish initialization before the value is live.
         if matches!(
-            field.c_type(),
+            field.program_type(),
             ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) | ProgramType::UInt32Array(_)
         ) {
             continue;
         }
         let variable = budget.allocate_kernel_variable()?;
-        let value = crate::kernel::functions::symbolic_call_result(field.c_type(), variable);
+        let value = crate::kernel::functions::symbolic_call_result(field.program_type(), variable);
         state.set_memory(
             state
                 .memory
@@ -5832,20 +5842,20 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     let Some(name) = state.locals.name_for_slot(&slot).map(str::to_string) else {
         return;
     };
-    let Some(c_type) = state.locals.scalar_object_type(&name) else {
+    let Some(program_type) = state.locals.scalar_object_type(&name) else {
         return;
     };
     let overlap = crate::kernel::reasoning::memory_resolution::access_byte_overlap(
         pointer,
         value.byte_width(),
         &slot,
-        c_type.byte_width(),
+        program_type.byte_width(),
         assumptions,
     );
     if overlap == crate::kernel::reasoning::memory_resolution::AccessByteOverlap::Separate {
         return;
     }
-    refresh_scalar_local_binding(state, name, slot, c_type, assumptions);
+    refresh_scalar_local_binding(state, name, slot, program_type, assumptions);
 }
 
 /// Reconcile one address-backed scalar after a checked call effect. Memory
@@ -5858,17 +5868,17 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     let Some(name) = state.locals.name_for_slot(slot).map(str::to_string) else {
         return;
     };
-    let Some(c_type) = state.locals.scalar_object_type(&name) else {
+    let Some(program_type) = state.locals.scalar_object_type(&name) else {
         return;
     };
-    refresh_scalar_local_binding(state, name, slot.clone(), c_type, assumptions);
+    refresh_scalar_local_binding(state, name, slot.clone(), program_type, assumptions);
 }
 
 fn refresh_scalar_local_binding(
     state: &mut ExecutionState,
     name: String,
     slot: Pointer,
-    c_type: ProgramType,
+    program_type: ProgramType,
     assumptions: &PureFactContext,
 ) {
     // A store through a pointer to the other signedness of the object's
@@ -5876,19 +5886,19 @@ fn refresh_scalar_local_binding(
     let current = state
         .memory
         .known_value(&slot)
-        .and_then(|value| c_type.read_cell(&value));
+        .and_then(|value| program_type.read_cell(&value));
     let refreshed = if current.is_some() {
         current
     } else if state.locals.is_uninitialized_object(&name)
         && !state
             .memory
-            .has_initialized_bytes_under(&slot, c_type.byte_width(), assumptions)
+            .has_initialized_bytes_under(&slot, program_type.byte_width(), assumptions)
     {
         // A byte write cannot turn a partially initialized scalar binding
         // into an unconstrained typed value. Allocation is not initialization.
         None
     } else {
-        crate::kernel::eval::symbolic_load_value(&state.memory, &slot, c_type)
+        crate::kernel::eval::symbolic_load_value(&state.memory, &slot, program_type)
     };
     let (object_volatile, object_pointee_volatile, object_pointee_constant) =
         match state.locals.binding(&name) {
@@ -5910,7 +5920,7 @@ fn refresh_scalar_local_binding(
         Some(refreshed) => state.locals.set_typed_with_all_qualifiers(
             name,
             refreshed,
-            c_type,
+            program_type,
             object_volatile,
             object_pointee_volatile,
             false,
@@ -5920,7 +5930,7 @@ fn refresh_scalar_local_binding(
         // saying what it said before the store.
         None => state.locals.set_uninitialized_with_all_qualifiers(
             name,
-            c_type,
+            program_type,
             slot,
             object_volatile,
             object_pointee_volatile,

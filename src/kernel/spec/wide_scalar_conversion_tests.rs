@@ -114,7 +114,7 @@ fn wide_scalar_integer_conversion_checks_bounds_and_keeps_symbolic_obligations()
         assert!(convert(IntegerTerm::constant(max + 1)).is_err());
         let paths = convert(IntegerTerm::Variable(Variable(148_005))).unwrap();
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].value.c_type(), destination.c_type());
+        assert_eq!(paths[0].value.program_type(), destination.program_type());
         assert_eq!(paths[0].obligations.len(), 2);
         assert!(paths[0].obligations.iter().any(|obligation| matches!(
             obligation.proposition(),

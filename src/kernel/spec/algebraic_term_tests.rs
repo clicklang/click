@@ -754,7 +754,7 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
         } else {
             let paths = result.expect("a pointer-valued pure call has one opaque result");
             assert_eq!(paths.len(), 1);
-            assert_eq!(paths[0].value.c_type(), result_type);
+            assert_eq!(paths[0].value.program_type(), result_type);
             // The declared return type's class reaches the pointer result.
             let crate::kernel::ProgramValue::Pointer(pointer) =
                 &paths[0].value.clone().into_native()

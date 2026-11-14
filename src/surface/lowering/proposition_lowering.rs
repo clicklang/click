@@ -11,7 +11,7 @@ fn incomparable_values(left: &ProgramValue, right: &ProgramValue) -> ClickError 
         format!(
             "`{}` of type `{}`",
             crate::surface::diagnostics::describe_program_value(value, ParameterBinding::default()),
-            crate::kernel::program_type_spelling(value.c_type())
+            crate::kernel::program_type_spelling(value.program_type())
         )
     };
     ClickError::new(format!(
@@ -53,7 +53,9 @@ pub(in crate::surface) fn comparison_proposition(
         ));
     }
     if let (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) = (&left, &right)
-        && (left.c_type().pointer_types_compatible(right.c_type())
+        && (left
+            .program_type()
+            .pointer_types_compatible(right.program_type())
             || left.is_null()
             || right.is_null())
     {

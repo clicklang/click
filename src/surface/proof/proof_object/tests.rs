@@ -264,7 +264,12 @@ fn named_int32(terms: &[MachineTerm], term: &MachineTerm) -> ContractExpression 
 
 /// A C function whose int32 parameters are [`named_int32`]'s names, and the
 /// arguments that bind them to `terms`.
-fn named_int32_function(terms: &[MachineTerm]) -> (syntax::C0Function, Vec<ProgramExpression>) {
+fn named_int32_function(
+    terms: &[MachineTerm],
+) -> (
+    crate::languages::interface::ImportedFunction,
+    Vec<ProgramExpression>,
+) {
     let parameters = (0..terms.len())
         .map(|index| format!("int32 x{index}"))
         .collect::<Vec<_>>()
@@ -1830,7 +1835,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
 fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
     let binder = "written".to_string();
     let surface = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: binder.clone(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -1925,7 +1930,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
 #[test]
 fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
     let surface = ClickProposition::Not(Box::new(ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -2011,7 +2016,7 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
 fn have_scope_rejects_inconsistent_universal_binder_flags() {
     let binder = "written".to_string();
     let surface = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: binder.clone(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -2047,7 +2052,7 @@ fn have_scope_rejects_inconsistent_universal_binder_flags() {
 #[test]
 fn have_scope_matches_renamed_existential_display_name_and_binder() {
     let surface = ClickProposition::Exists {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "chosen".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -2082,7 +2087,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
 #[test]
 fn have_scope_rejects_unreachable_universal_introduction() {
     let quantified = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "branch_local".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -3385,7 +3390,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     };
     let surface_goal = ClickProposition::Exists {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "chosen".to_string(),
         written_name: None,
         body: Box::new(expected_surface),
@@ -3478,7 +3483,7 @@ fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
     let constant =
         |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
     let surface_goal = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: binder.clone(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -4306,7 +4311,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         right: variable("x"),
     };
     let quantified_surface = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
@@ -4843,7 +4848,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         .expect("caller contract should exist");
     let predicate_environment = PredicateEnvironment::new(&[]).with_contracts(
         click_file.contract_definitions(),
-        &click_file.c_function_names,
+        &click_file.program_function_names,
     );
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
@@ -4870,7 +4875,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
     )
     .expect("production-shaped caller context should initialize");
     let synthesized_surface = ClickProposition::Exists {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -13096,12 +13101,20 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         ],
         body,
     );
-    let parsed_function = syntax::C0Function::external(
-        C0Type::Int32,
+    let parsed_function = crate::languages::interface::ImportedFunction::external(
+        InterfaceType::Int32,
         "caller".into(),
         vec![
-            syntax::C0Parameter::new(C0Type::Bool, "construct".into(), None),
-            syntax::C0Parameter::new(C0Type::Bool, "should_throw".into(), None),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "construct".into(),
+                None,
+            ),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "should_throw".into(),
+                None,
+            ),
         ],
     )
     .with_prelowered_kernel_function(function.clone());
@@ -14271,7 +14284,8 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             _ => None,
         }
     }
-    let (c_type, read_local) = load_type(function.body()).expect("callback field is a typed load");
+    let (interface_type, read_local) =
+        load_type(function.body()).expect("callback field is a typed load");
     let argument = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
@@ -14283,10 +14297,10 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     let target = Pointer::function("callback");
     let memory = Memory::new().store(
         table.clone(),
-        ProgramValue::typed_pointer(target.clone(), c_type),
+        ProgramValue::typed_pointer(target.clone(), interface_type),
     );
     let source = crate::kernel::intern_memory_ref(&memory);
-    let memory = memory.with_seeded_cells(argument.clone(), 4, c_type, 0, 2, source);
+    let memory = memory.with_seeded_cells(argument.clone(), 4, interface_type, 0, 2, source);
     let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -14528,7 +14542,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         right: ContractExpression::Binding(right.into()),
     };
     let quantified = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "item".into(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(

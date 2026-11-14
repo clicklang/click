@@ -5312,7 +5312,7 @@ fn prepare_verified_function_call<'a>(
         entry_state.locals.set_typed_qualified_with_all_qualifiers(
             parameter.name().to_string(),
             value.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
             Memory::value_parameter_pointer(parameter.name()),
             false,
             false,
@@ -6679,7 +6679,7 @@ fn call_value_arguments(
     let mut probe_state = entry_state.clone();
     let placeholders = parameters
         .iter()
-        .map(|parameter| symbolic_call_result(parameter.c_type(), Variable(0)))
+        .map(|parameter| symbolic_call_result(parameter.program_type(), Variable(0)))
         .collect::<Vec<_>>();
     super::api::bind_contract_value_parameters(&mut probe_state, parameters, &placeholders);
     let mut values = Vec::with_capacity(parameters.len());
@@ -6691,12 +6691,12 @@ fn call_value_arguments(
             .iter()
             .find(|(written, _)| written == parameter.name())
         {
-            if value.c_type() != parameter.c_type() {
+            if value.program_type() != parameter.program_type() {
                 return Ok(Err(format!(
                     "call to `{function}`: the call map gives `{}` a `{}` value; it takes a `{}`",
                     parameter.name(),
-                    named_contract_refinement::program_type_spelling(value.c_type()),
-                    named_contract_refinement::program_type_spelling(parameter.c_type())
+                    named_contract_refinement::program_type_spelling(value.program_type()),
+                    named_contract_refinement::program_type_spelling(parameter.program_type())
                 )));
             }
             values.push(value.clone());
@@ -6813,7 +6813,7 @@ fn call_value_arguments(
                 definition,
                 probe_arguments,
                 position,
-                parameter.c_type(),
+                parameter.program_type(),
                 caller_state,
                 assumptions,
                 budget,
@@ -6933,7 +6933,7 @@ fn function_contract_requirement_is_proven(
                 Pointer {
                     block: PointerBlock::FunctionSymbolic(_) | PointerBlock::LoadedPointer(_),
                     offset: PointerOffsetTerm::Constant(0),
-                } if matches!(pointer.c_type(), ProgramType::FunctionPointer(_)) => None,
+                } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
                 _ => return Ok(false),
             };
             // The fact's values fix the contract's value parameters for the
@@ -6955,7 +6955,7 @@ fn function_contract_requirement_is_proven(
                 return Ok(false);
             };
             let contract = &contract;
-            if pointer.c_type() != contract.function_pointer_type() {
+            if pointer.program_type() != contract.function_pointer_type() {
                 return Ok(false);
             }
             // A function value known only by the contracts its facts attach
@@ -6965,7 +6965,7 @@ fn function_contract_requirement_is_proven(
                 for source in contracts_from_facts(
                     assumptions.function_contract_facts_for(pointer.pointer()),
                     environment,
-                    &pointer.c_type(),
+                    &pointer.program_type(),
                 ) {
                     if contract_refines_contract(contract, &source, assumptions, budget)? {
                         return Ok(true);
@@ -8067,13 +8067,13 @@ impl<'a> OwnedFootprintDerivation<'a> {
             let Some(value) = argument.as_program_value() else {
                 return false;
             };
-            if value.c_type() != parameter.c_type() {
+            if value.program_type() != parameter.program_type() {
                 return false;
             }
             evaluation.locals.set_typed(
                 parameter.name().to_owned(),
                 value.clone(),
-                parameter.c_type(),
+                parameter.program_type(),
             );
         }
         true
@@ -8156,7 +8156,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             if let Some(AlgebraicValue::Program(value)) = value {
                 evaluation
                     .locals
-                    .set_typed(name.clone(), value.clone(), value.c_type());
+                    .set_typed(name.clone(), value.clone(), value.program_type());
             }
         }
         if !Self::bind_parameters(definition, arguments, &mut evaluation) {
@@ -8187,7 +8187,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                         arm_evaluation.locals.set_typed(
                             name.clone(),
                             value.clone(),
-                            value.c_type(),
+                            value.program_type(),
                         );
                     }
                 }
@@ -9820,13 +9820,13 @@ fn evaluate_resource_population_body_resources(
             let Some(argument) = argument.as_program_value() else {
                 return Ok(Err(RuntimeError::TypeMismatch));
             };
-            if parameter.c_type() != argument.c_type() {
+            if parameter.program_type() != argument.program_type() {
                 return Ok(Err(RuntimeError::TypeMismatch));
             }
             population_state.locals.set_typed(
                 parameter.name().to_string(),
                 argument.clone(),
-                parameter.c_type(),
+                parameter.program_type(),
             );
         }
         let Some(body_active) = evaluate_composite_resource_body_condition(
@@ -10250,13 +10250,13 @@ fn composite_definition_facts_hold(
         let Some(argument) = argument.as_program_value() else {
             return Ok(false);
         };
-        if parameter.c_type() != argument.c_type() {
+        if parameter.program_type() != argument.program_type() {
             return Ok(false);
         }
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     if bind_composite_witnesses(definition, arguments, &mut state, assumptions).is_none() {
@@ -10380,9 +10380,12 @@ fn string_literal_instance_values(
     Ok(values)
 }
 
-fn string_literal_instance_constant(c_type: ProgramType, value: usize) -> Option<ProgramValue> {
+fn string_literal_instance_constant(
+    program_type: ProgramType,
+    value: usize,
+) -> Option<ProgramValue> {
     let value = u32::try_from(value).ok()?;
-    Some(match c_type {
+    Some(match program_type {
         ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(value))),
         ProgramType::Int64 => ProgramValue::Int64(MachineTerm::uint64_constant(u64::from(value))),
         ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(value)),
@@ -10608,7 +10611,7 @@ fn string_literal_fact_value(
                 };
                 return match memory.load(&cell) {
                     ExpressionOutcome::Value(value)
-                        if value.c_type().byte_width() == value_type.byte_width() =>
+                        if value.program_type().byte_width() == value_type.byte_width() =>
                     {
                         Some(true)
                     }
@@ -13425,10 +13428,12 @@ pub(super) fn bind_composite_witnesses_with_held(
                 .hash(&mut hasher);
             Pointer::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
-        let value = ProgramValue::typed_pointer(pointer, witness.c_type());
-        state
-            .locals
-            .set_typed(witness.name().to_string(), value.clone(), witness.c_type());
+        let value = ProgramValue::typed_pointer(pointer, witness.program_type());
+        state.locals.set_typed(
+            witness.name().to_string(),
+            value.clone(),
+            witness.program_type(),
+        );
         values.push(value);
     }
     Some(values)
@@ -13747,10 +13752,10 @@ fn lower_selected_resource_body_clauses(
     established_assumptions: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
 ) -> Result<(Vec<ResourceBodyClauseRecord>, Vec<Proposition>), ResourceRewriteRefusal> {
-    let c_replacements = BTreeMap::new();
+    let program_replacements = BTreeMap::new();
     let algebraic_replacements = BTreeMap::new();
     let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_checked_typed_variables(
-        &c_replacements,
+        &program_replacements,
         integer_bindings,
         &algebraic_replacements,
     );
@@ -14303,7 +14308,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .any(|(argument, parameter)| {
                 argument
                     .as_program_value()
-                    .is_none_or(|value| value.c_type() != parameter.c_type())
+                    .is_none_or(|value| value.program_type() != parameter.program_type())
             })
         || !instance_body_clauses_are_exchangeable(&definition.contains)
     {
@@ -14390,7 +14395,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     None,
                     AlgebraicValue::Program(value),
                 ) => {
-                    let ty = value.c_type();
+                    let ty = value.program_type();
                     evaluation.locals.set_typed(name.clone(), value.clone(), ty);
                 }
                 (AlgebraicValueType::Integer, Some(variable), AlgebraicValue::Integer(value)) => {
@@ -14821,7 +14826,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .any(|(argument, parameter)| {
                     argument
                         .as_program_value()
-                        .is_none_or(|value| value.c_type() != parameter.c_type())
+                        .is_none_or(|value| value.program_type() != parameter.program_type())
                 })
         {
             return Err("recursive child arguments have invalid types".into());
@@ -15365,13 +15370,13 @@ pub(super) fn expand_composite_resource_fact_with_children(
         .with_resource_context(expansion_base.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
-        if parameter.c_type() != argument.c_type() {
+        if parameter.program_type() != argument.program_type() {
             return None;
         }
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
@@ -16325,13 +16330,13 @@ pub(super) fn assembled_composite_body_facts_hold(
         let Some(argument) = argument.as_program_value() else {
             return false;
         };
-        if parameter.c_type() != argument.c_type() {
+        if parameter.program_type() != argument.program_type() {
             return false;
         }
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     if bind_composite_witnesses(definition, arguments, &mut state, assumptions).is_none() {
@@ -19442,7 +19447,7 @@ fn evaluate_function_declared_resource_spec(
         };
         let accepts_allocation_pointer = name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 0
-            && matches!(&value, ProgramValue::Pointer(pointer) if pointer.c_type().pointee_type().is_some());
+            && matches!(&value, ProgramValue::Pointer(pointer) if pointer.program_type().pointee_type().is_some());
         let value = if name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 1
             && let ProgramValue::UInt64(bytes) = value.numeric_value()

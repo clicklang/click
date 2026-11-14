@@ -55,7 +55,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
             }
             let format = match term.ty() {
                 KernelType::Program(ty) => {
-                    MachineIntegerType::from_c_type(*ty).unwrap_or(MachineIntegerType::UInt8)
+                    MachineIntegerType::from_program_type(*ty).unwrap_or(MachineIntegerType::UInt8)
                 }
                 _ => MachineIntegerType::UInt8,
             };

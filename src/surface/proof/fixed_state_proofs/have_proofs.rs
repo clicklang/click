@@ -458,8 +458,12 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
                 };
                 format!(
                     "cannot compare `{}` and `{}` with `{operator}`",
-                    describe_c0_type(crate::surface::generics::c0_type_from_kernel(left)),
-                    describe_c0_type(crate::surface::generics::c0_type_from_kernel(right))
+                    describe_interface_type(
+                        crate::surface::generics::interface_type_from_program_type(left)
+                    ),
+                    describe_interface_type(
+                        crate::surface::generics::interface_type_from_program_type(right)
+                    )
                 )
             }
             None => refusal.message,
@@ -835,7 +839,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                     Some(&states.entry_state),
                     assumptions,
                 )?;
-            if value.c_type() != *expected {
+            if value.program_type() != *expected {
                 return Err("fold initializer has the wrong type".into());
             }
             Ok((crate::kernel::AlgebraicValue::Program(value), obligations))
@@ -1095,7 +1099,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
         _ => fixed_state.state.memory().clone(),
     };
     let element_type = contract_array_ref_element_type(contract_environment.array_refs, expression)
-        .or_else(|| pointer.c_type().pointee_type())
+        .or_else(|| pointer.program_type().pointee_type())
         .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
     Ok((
         ClickArrayRef {
@@ -1431,7 +1435,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     units: Vec<Proof<'a>>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claims: &[FunctionClaimRef<'_>],
     require_explicit_closers: bool,
     spec_definitions: SpecDefinitions<'_>,

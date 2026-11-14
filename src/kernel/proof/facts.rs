@@ -1614,7 +1614,7 @@ impl ProofFacts {
     pub(crate) fn freshen_pointer_forall_body(
         &self,
         binder: Variable,
-        c_type: ProgramType,
+        program_type: ProgramType,
         body: &Proposition,
     ) -> Option<(Variable, Proposition)> {
         if !self.reserved_variables.contains(&binder) {
@@ -1622,7 +1622,7 @@ impl ProofFacts {
         }
         let body_variables = crate::kernel::proposition_variables(body);
         let fresh = self.fresh_universal_witness(&body_variables)?;
-        let pointer = if matches!(c_type, ProgramType::FunctionPointer(_)) {
+        let pointer = if matches!(program_type, ProgramType::FunctionPointer(_)) {
             Pointer::symbolic_function(fresh)
         } else {
             Pointer::symbolic(fresh)

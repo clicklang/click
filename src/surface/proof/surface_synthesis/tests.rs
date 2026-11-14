@@ -489,7 +489,7 @@ fn file_scope_static_array_call_requirements_are_spellable() {
 /// int32 len)`, its byte pointer an external argument and its length
 /// symbolic, exactly as the fixture reaches the call.
 fn external_byte_range_caller() -> (
-    Vec<syntax::C0Parameter>,
+    Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
     ExecutionState,
 ) {
@@ -500,8 +500,16 @@ fn external_byte_range_caller() -> (
     let pointer = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer);
     let length = ProgramValue::Int32(MachineTerm::Variable(Variable(1)));
     let parameters = vec![
-        syntax::C0Parameter::new(C0Type::UInt8Pointer, "bytes".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32, "len".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::UInt8Pointer,
+            "bytes".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "len".to_string(),
+            None,
+        ),
     ];
     let arguments = vec![
         ProgramExpression::Value(pointer.clone()),
@@ -580,8 +588,8 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
 #[test]
 fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
     let (mut parameters, mut arguments, state) = external_byte_range_caller();
-    parameters.push(syntax::C0Parameter::new(
-        C0Type::UInt8Pointer,
+    parameters.push(crate::languages::interface::ImportedParameter::new(
+        InterfaceType::UInt8Pointer,
         "alias".to_string(),
         None,
     ));
@@ -669,7 +677,7 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
 fn external_symbolic_element_context(
     memory: Memory,
 ) -> (
-    Vec<syntax::C0Parameter>,
+    Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
     ExecutionState,
 ) {
@@ -680,8 +688,16 @@ fn external_symbolic_element_context(
     let pointer = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer);
     let index = ProgramValue::Int32(MachineTerm::Variable(Variable(100_001)));
     let parameters = vec![
-        syntax::C0Parameter::new(C0Type::UInt8Pointer, "bytes".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32, "index".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::UInt8Pointer,
+            "bytes".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "index".to_string(),
+            None,
+        ),
     ];
     let arguments = vec![
         ProgramExpression::Value(pointer.clone()),
@@ -772,7 +788,7 @@ fn full_external_guarded_range_surface() -> ClickProposition {
         },
     };
     let all_before_loadable = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "__click_q1".into(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
@@ -794,7 +810,7 @@ fn full_external_guarded_range_surface() -> ClickProposition {
         )),
     };
     ClickProposition::Exists {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "__click_q0".into(),
         written_name: None,
         body: Box::new(ClickProposition::And(
@@ -1265,11 +1281,11 @@ fn strlen_quantified_element_range_requirement_round_trips() {
 }
 
 fn external_element_range_context(
-    parameter_type: syntax::C0Type,
+    parameter_type: crate::languages::interface::InterfaceType,
     pointer_type: ProgramType,
     width: u32,
 ) -> (
-    Vec<syntax::C0Parameter>,
+    Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
     ExecutionState,
 ) {
@@ -1281,15 +1297,23 @@ fn external_element_range_context(
         ),
     };
     let pointer = ProgramValue::typed_pointer(pointer, pointer_type);
-    let parameters = vec![syntax::C0Parameter::new(
+    let parameters = vec![crate::languages::interface::ImportedParameter::new(
         parameter_type,
         "elements".to_string(),
         None,
     )]
     .into_iter()
     .chain([
-        syntax::C0Parameter::new(C0Type::Int32, "start".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32, "end".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "start".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "end".to_string(),
+            None,
+        ),
     ])
     .collect();
     let arguments = vec![
@@ -1451,13 +1475,13 @@ fn quantified_loadability_uses_saved_snapshot() {
 fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
     for (parameter_type, pointer_type, width, spelling) in [
         (
-            syntax::C0Type::UInt16Pointer,
+            crate::languages::interface::InterfaceType::UInt16Pointer,
             ProgramType::UInt16Pointer,
             2,
             "uint16",
         ),
         (
-            syntax::C0Type::Int32Pointer,
+            crate::languages::interface::InterfaceType::Int32Pointer,
             ProgramType::Int32Pointer,
             4,
             "int32",
@@ -1506,7 +1530,7 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
     }
 
     let (parameters, arguments, state) =
-        external_element_range_context(C0Type::Int32Pointer, ProgramType::Int32Pointer, 4);
+        external_element_range_context(InterfaceType::Int32Pointer, ProgramType::Int32Pointer, 4);
     let requirement =
         external_element_range_requirement(4, MachineTerm::constant(3), MachineTerm::constant(8));
     let synthesized = {
@@ -1545,8 +1569,11 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
 
 #[test]
 fn named_element_range_does_not_infer_start_from_an_unrelated_index() {
-    let (parameters, arguments, state) =
-        external_element_range_context(syntax::C0Type::Int32Pointer, ProgramType::Int32Pointer, 4);
+    let (parameters, arguments, state) = external_element_range_context(
+        crate::languages::interface::InterfaceType::Int32Pointer,
+        ProgramType::Int32Pointer,
+        4,
+    );
     let mut requirement = external_element_range_requirement(
         4,
         MachineTerm::Variable(Variable(100_001)),
@@ -2890,17 +2917,21 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
         "viewable(p->last)"
     );
     let plain_fact = relower_written_proposition(&plain, &state).unwrap();
-    let padded = syntax::C0StructLayout::from_explicit_fields(
+    let padded = crate::languages::interface::RecordLayout::from_explicit_fields(
         vec![
-            ("first".into(), C0Type::Int32, 0, 4),
-            ("last".into(), C0Type::Int32, 4, 4),
+            ("first".into(), InterfaceType::Int32, 0, 4),
+            ("last".into(), InterfaceType::Int32, 4, 4),
         ],
         16,
         8,
     )
     .unwrap();
-    let parameter = syntax::C0Parameter::new(C0Type::Int32Pointer, "p".into(), None)
-        .with_pointee_struct_layout("item".into(), padded);
+    let parameter = crate::languages::interface::ImportedParameter::new(
+        InterfaceType::Int32Pointer,
+        "p".into(),
+        None,
+    )
+    .with_pointee_struct_layout("item".into(), padded);
     let clipped = synthesize_struct_loadable_segment(
         &pointer.offset_by_bytes(4),
         &MachineTerm::constant(4),
@@ -3661,22 +3692,26 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
 fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
     // A C++ receiver uses a byte pointer internally, with its 16-byte
     // nominal object layout retained separately. `p + 8` is not its field.
-    let layout = syntax::C0StructLayout::from_explicit_fields(
+    let layout = crate::languages::interface::RecordLayout::from_explicit_fields(
         vec![
             (
                 "header".into(),
-                C0Type::UInt64(crate::languages::c::target::LongRank::LongLong),
+                InterfaceType::UInt64(crate::languages::c::target::LongRank::LongLong),
                 0,
                 8,
             ),
-            ("side".into(), C0Type::Int32, 8, 4),
+            ("side".into(), InterfaceType::Int32, 8, 4),
         ],
         16,
         8,
     )
     .unwrap();
-    let parameter = syntax::C0Parameter::new(C0Type::UInt8Pointer, "p".into(), None)
-        .with_pointee_struct_layout("Square".into(), layout);
+    let parameter = crate::languages::interface::ImportedParameter::new(
+        InterfaceType::UInt8Pointer,
+        "p".into(),
+        None,
+    )
+    .with_pointee_struct_layout("Square".into(), layout);
     assert!(parameter.struct_layout().is_none());
     let pointer = Pointer {
         block: PointerBlock::Concrete("square".into()),

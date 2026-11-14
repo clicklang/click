@@ -1377,21 +1377,21 @@ fn annotate_surface_at_snapshot(
                 ClickProposition::Implies(child(), right)
             }
             ClickProposition::ForAll {
-                click_type: c_type,
+                click_type: interface_type,
                 name,
                 ..
             } => ClickProposition::ForAll {
-                click_type: c_type.clone(),
+                click_type: interface_type.clone(),
                 name: name.clone(),
                 written_name: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
             ClickProposition::Exists {
-                click_type: c_type,
+                click_type: interface_type,
                 name,
                 ..
             } => ClickProposition::Exists {
-                click_type: c_type.clone(),
+                click_type: interface_type.clone(),
                 name: name.clone(),
                 written_name: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
@@ -2154,7 +2154,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
 fn describe_runtime_error_before_statement(
     error: &crate::kernel::RuntimeError,
     state: &ExecutionState,
-    function: &syntax::C0Function,
+    function: &crate::languages::interface::ImportedFunction,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let missing_names = |text: &str| {

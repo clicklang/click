@@ -117,7 +117,7 @@ impl CallerRequirementIndex {
     pub(in crate::surface) fn from_entry_facts(
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
-        parameters: &[syntax::C0Parameter],
+        parameters: &[crate::languages::interface::ImportedParameter],
         entry_facts: &[Proposition],
         entry_fact_origins: &[EntryFactOrigin],
         entry_snapshot: crate::kernel::MemorySnapshotIdentity,
@@ -141,7 +141,7 @@ impl CallerRequirementIndex {
     pub(in crate::surface) fn from_entry_facts_elaborated(
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
-        parameters: &[syntax::C0Parameter],
+        parameters: &[crate::languages::interface::ImportedParameter],
         entry_facts: &[Proposition],
         entry_fact_origins: &[EntryFactOrigin],
         entry_snapshot: crate::kernel::MemorySnapshotIdentity,
@@ -203,7 +203,7 @@ impl CallerRequirementIndex {
                         parameters
                             .iter()
                             .find(|parameter| parameter.name() == name)
-                            .map(syntax::C0Parameter::c_type)
+                            .map(crate::languages::interface::ImportedParameter::interface_type)
                     },
                 )
             });
@@ -565,12 +565,12 @@ mod tests {
     ) -> FunctionBlock {
         FunctionBlock {
             body: Default::default(),
-            c_object_names: Default::default(),
+            program_object_names: Default::default(),
             recursion_peers: Vec::new(),
             call_ranked_numeric_recursion: false,
             signature: FunctionSignature {
                 c_source: None,
-                return_type: C0Type::Int32,
+                return_type: InterfaceType::Int32,
                 return_struct_name: None,
                 return_pointee_constant: false,
                 return_reference: false,
@@ -578,7 +578,7 @@ mod tests {
                 parameters: parameter_names
                     .iter()
                     .map(|name| FunctionParameter {
-                        click_type: ClickType::Program(C0Type::Int32),
+                        click_type: ClickType::Program(InterfaceType::Int32),
                         name: (*name).to_string(),
                         struct_name: None,
                         function_pointer_signature: None,
@@ -775,8 +775,8 @@ mod tests {
         let index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -830,8 +830,8 @@ mod tests {
             let index = CallerRequirementIndex::from_entry_facts(
                 owner.clone(),
                 &block,
-                &[syntax::C0Parameter::new(
-                    C0Type::Int32,
+                &[crate::languages::interface::ImportedParameter::new(
+                    InterfaceType::Int32,
                     "p".to_string(),
                     None,
                 )],
@@ -881,8 +881,8 @@ mod tests {
         let duplicate_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &duplicate_block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -906,8 +906,8 @@ mod tests {
         let duplicate_source_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &function_with_parameters("caller", vec![direct_predicate("readable", "p")], &["p"]),
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -950,8 +950,8 @@ mod tests {
         let overfull_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &overfull_block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -1012,8 +1012,8 @@ mod tests {
         let index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],
@@ -1042,8 +1042,8 @@ mod tests {
         let valid_index = CallerRequirementIndex::from_entry_facts(
             owner.clone(),
             &valid_block,
-            &[syntax::C0Parameter::new(
-                C0Type::Int32,
+            &[crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32,
                 "p".to_string(),
                 None,
             )],

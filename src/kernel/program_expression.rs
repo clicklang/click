@@ -237,8 +237,8 @@ pub fn pointer_value(pointer: Pointer) -> ProgramExpression {
     ProgramExpression::Value(ProgramValue::pointer(pointer))
 }
 
-pub fn typed_pointer_value(pointer: Pointer, c_type: ProgramType) -> ProgramExpression {
-    ProgramExpression::Value(ProgramValue::typed_pointer(pointer, c_type))
+pub fn typed_pointer_value(pointer: Pointer, program_type: ProgramType) -> ProgramExpression {
+    ProgramExpression::Value(ProgramValue::typed_pointer(pointer, program_type))
 }
 
 pub fn less_than(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {

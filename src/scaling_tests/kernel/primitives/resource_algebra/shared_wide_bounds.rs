@@ -8,7 +8,8 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
             block: "wide_bound_scaling".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018502));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018502));
         for _ in 0..size {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
@@ -55,7 +56,8 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1081501));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1081501));
         for _ in 0..size {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);

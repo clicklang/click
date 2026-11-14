@@ -4371,9 +4371,9 @@ int main() {{ ensures result == 7; }} {main}"#
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn program_entry_resource_bindings_expand_and_reverify() {
-    for (c_type, click_type, suffix) in [("unsigned int", "uint32", "u32")] {
+    for (interface_type, click_type, suffix) in [("unsigned int", "uint32", "u32")] {
         let c_source = format!(
-            "{c_type} state[2] = {{7,9}}; {c_type} read_pair({c_type} *p) {{ return p[0] + p[1]; }} int main(void) {{ return read_pair(state); }}"
+            "{interface_type} state[2] = {{7,9}}; {interface_type} read_pair({interface_type} *p) {{ return p[0] + p[1]; }} int main(void) {{ return read_pair(state); }}"
         );
         let helper_proof =
             "by { unfold(pair(p)); step_until(function.exit); fold(pair(p)); solve(); }";
@@ -4382,7 +4382,7 @@ fn program_entry_resource_bindings_expand_and_reverify() {
             r#"
 resource pair(p: {click_type}*) {{ owns p[0..2]; }}
 verifying "main.c";
-{c_type} read_pair({c_type} *p) {{
+{interface_type} read_pair({interface_type} *p) {{
     requires viewable(p[0..2]); owns pair(p);
     ensures result == old(p[0]) + old(p[1]);
 }} {helper_proof}
@@ -4436,11 +4436,12 @@ unsigned long read_pair(unsigned long *p) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_21")]
 fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
-    for (c_type, suffix) in [("unsigned int", "u32"), ("unsigned long", "u64")] {
-        let c_source = format!("{c_type} bump({c_type} *p) {{ *p += 1; return *p; }}");
+    for (interface_type, suffix) in [("unsigned int", "u32"), ("unsigned long", "u64")] {
+        let c_source =
+            format!("{interface_type} bump({interface_type} *p) {{ *p += 1; return *p; }}");
         let click_source = format!(
             r#"verifying "main.c";
-{c_type} bump({c_type} *p) {{
+{interface_type} bump({interface_type} *p) {{
     requires viewable(p[0..1]); owns p[0..1];
     ensures to_integer(*p) == to_integer(old(*p) + 1{suffix});
     ensures *p == p[0];

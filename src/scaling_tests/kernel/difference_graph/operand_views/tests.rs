@@ -7,7 +7,7 @@ fn graph_overflow_queries_visit_shared_dag_nodes_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let variable = Variable(997831);
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), variable);
+        let mut root = KernelTerm::variable(KernelType::Program(ty.program_type()), variable);
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 ty,
@@ -57,7 +57,8 @@ fn check_changing_context_prefixes(bounded: bool) {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(998301));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(998301));
         let zero = KernelTermImport::default()
             .machine_arithmetic(ty, &0u32.into())
             .unwrap();
@@ -115,11 +116,12 @@ fn growing_shared_order_sources_are_indexed_without_exporting_prefixes() {
     for size in [32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(998701));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(998701));
         let one = KernelTermImport::default()
             .machine_arithmetic(ty, &1u32.into())
             .unwrap();
-        let upper = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(998702));
+        let upper = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(998702));
         let mut graph = DifferenceGraph::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

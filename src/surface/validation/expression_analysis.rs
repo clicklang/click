@@ -1067,11 +1067,10 @@ pub(super) fn validate_well_founded_click_recursion(
             && matches!(measure, Some(ClickRecursionMeasure::Int32 { .. }))
             && (!matches!(
                 definition.return_type(),
-                ClickType::Program(C0Type::Int32 | C0Type::Bool)
-            ) || definition
-                .parameters()
-                .iter()
-                .any(|parameter| parameter.click_type() != &ClickType::Program(C0Type::Int32)))
+                ClickType::Program(InterfaceType::Int32 | InterfaceType::Bool)
+            ) || definition.parameters().iter().any(|parameter| {
+                parameter.click_type() != &ClickType::Program(InterfaceType::Int32)
+            }))
         {
             return Err(ClickError::new(format!(
                 "recursive pure function `{name}` currently supports only int32 parameters and an int32 or bool result"
@@ -1157,7 +1156,7 @@ fn click_function_decreases_parameter(
         )));
     };
     match parameter.click_type() {
-        ClickType::Program(C0Type::Int32) => Ok(Some(ClickRecursionMeasure::Int32 {
+        ClickType::Program(InterfaceType::Int32) => Ok(Some(ClickRecursionMeasure::Int32 {
             parameter: name.to_string(),
         })),
         ClickType::Algebraic(algebraic_type) => Ok(Some(ClickRecursionMeasure::Algebraic {

@@ -85,19 +85,19 @@ fn binder(proposition: &SpecProposition) -> Option<(Binder, &SpecProposition)> {
         ForAllPointer {
             name,
             variable,
-            c_type,
+            program_type,
             body,
         }
         | ExistsPointer {
             name,
             variable,
-            c_type,
+            program_type,
             body,
         } => (
             matches!(proposition, ForAllPointer { .. }),
             name,
             *variable,
-            Sort::ProgramPointer(*c_type),
+            Sort::ProgramPointer(*program_type),
             body,
         ),
         _ => return None,

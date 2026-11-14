@@ -53,7 +53,7 @@ impl ExecutionValue {
         }
     }
     pub fn byte_width(&self) -> u32 {
-        self.c_type().byte_width()
+        self.program_type().byte_width()
     }
     /// Import a native machine producer's result once at its execution boundary.
     /// Other result families keep their exact native payloads.
@@ -67,7 +67,7 @@ impl ExecutionValue {
             ) {
                 return Self::Native(value);
             }
-            let format = MachineIntegerType::from_c_type(value.c_type()).unwrap();
+            let format = MachineIntegerType::from_program_type(value.program_type()).unwrap();
             if let Some(root) = KernelTermImport::default().machine_arithmetic(format, term) {
                 return Self::Shared(root);
             }
@@ -83,8 +83,8 @@ impl ExecutionValue {
                     let KernelType::Program(ty) = term.ty() else {
                         unreachable!()
                     };
-                    let format =
-                        MachineIntegerType::from_c_type(*ty).expect("machine call result type");
+                    let format = MachineIntegerType::from_program_type(*ty)
+                        .expect("machine call result type");
                     // The native result carrier needs only this call root.
                     // Keep numeric argument DAGs shared across the handoff;
                     // explicit KernelTermExport remains the structural export.
@@ -110,9 +110,9 @@ impl ExecutionValue {
             Self::Shared(_) => std::borrow::Cow::Owned(self.clone().into_native()),
         }
     }
-    pub fn c_type(&self) -> ProgramType {
+    pub fn program_type(&self) -> ProgramType {
         match self {
-            Self::Native(value) => value.c_type(),
+            Self::Native(value) => value.program_type(),
             Self::Shared(term) => match term.ty() {
                 KernelType::Program(ty) => *ty,
                 _ => unreachable!(),
@@ -122,7 +122,7 @@ impl ExecutionValue {
     pub(in crate::kernel) fn machine(
         &self,
     ) -> Option<(MachineIntegerType, MachineOperandView<'_>)> {
-        let format = MachineIntegerType::from_c_type(self.c_type())?;
+        let format = MachineIntegerType::from_program_type(self.program_type())?;
         match self {
             Self::Native(value) => {
                 let (crate::kernel::integer_c_value!(term)) = value else {
@@ -177,7 +177,8 @@ impl StoredExecutionValue {
         match self.0.identity.get_or_init(|| match &self.0.value {
             ExecutionValue::Shared(root) => Some(
                 SharedMachineIntegerTerm::observe_shared(
-                    MachineIntegerType::from_c_type(self.c_type()).expect("machine storage"),
+                    MachineIntegerType::from_program_type(self.program_type())
+                        .expect("machine storage"),
                     root.clone(),
                 )
                 .expect("retained machine storage"),
@@ -187,7 +188,7 @@ impl StoredExecutionValue {
                     return None;
                 };
                 Some(SharedMachineIntegerTerm::intern(
-                    MachineIntegerType::from_c_type(value.c_type()).unwrap(),
+                    MachineIntegerType::from_program_type(value.program_type()).unwrap(),
                     term.clone(),
                 ))
             }

@@ -42,8 +42,10 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
         for size in [16u64, 64, 256] {
             let _session = VerificationSession::enter();
             let item = Variable(1003000);
-            let mut root =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(1003001));
+            let mut root = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(1003001),
+            );
             let seed = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -54,7 +56,7 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                         [
                             root.clone(),
                             KernelTerm::variable(
-                                KernelType::Program(format.c_type()),
+                                KernelType::Program(format.program_type()),
                                 Variable(1003002 + index),
                             ),
                         ],

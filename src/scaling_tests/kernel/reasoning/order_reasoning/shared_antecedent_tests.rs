@@ -8,7 +8,7 @@ fn growing_antecedent_operands_do_not_export_shared_prefixes() {
         let format = MachineIntegerType::UInt64;
         let variable = Variable(997711);
         let variables = BTreeSet::from([variable]);
-        let mut root = KernelTerm::variable(KernelType::Program(format.c_type()), variable);
+        let mut root = KernelTerm::variable(KernelType::Program(format.program_type()), variable);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

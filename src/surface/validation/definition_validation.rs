@@ -144,7 +144,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .map(|definition| (definition.name(), definition))
         .collect::<BTreeMap<_, _>>();
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(file)?,
@@ -180,8 +180,8 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             .filter_map(|parameter| {
                 parameter
                     .click_type()
-                    .c_type()
-                    .map(|c_type| (parameter.name().to_string(), c_type))
+                    .interface_type()
+                    .map(|interface_type| (parameter.name().to_string(), interface_type))
             })
             .collect::<BTreeMap<_, _>>();
         validate_predicate_calls_in_proposition(
@@ -382,7 +382,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 validate_contract_proposition_names(
                     proposition,
                     &requires_type_environment,
-                    &function.c_object_names,
+                    &function.program_object_names,
                     "requires",
                     &context,
                 )?;
@@ -426,7 +426,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                     validate_contract_proposition_names(
                         proposition,
                         &ensures_type_environment,
-                        &function.c_object_names,
+                        &function.program_object_names,
                         "ensures",
                         &context,
                     )?;
@@ -450,7 +450,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                         &click_function_types,
                         &context,
                     )?;
-                    if function.signature().return_type() == C0Type::Void {
+                    if function.signature().return_type() == InterfaceType::Void {
                         // The Integer-aware entry point, not the C-only one.
                         // A `void` function's `ensures` may name an Integer
                         // Click function exactly as every other clause may,
@@ -507,15 +507,15 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 /// objects are resolved by the source-aware parser rather than this scope.
 fn validate_contract_proposition_names(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
-    c_objects: &BTreeSet<String>,
+    variables: &BTreeMap<String, InterfaceType>,
+    program_objects: &BTreeSet<String>,
     clause: &str,
     context: &str,
 ) -> Result<(), ClickError> {
     let mut names = BTreeSet::new();
     crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
     if let Some(name) = names.iter().find(|name| {
-        !variables.contains_key(*name) && !c_objects.contains(*name) && !name.contains("::")
+        !variables.contains_key(*name) && !program_objects.contains(*name) && !name.contains("::")
     }) {
         if name == "result" && clause == "ensures" {
             return Err(ClickError::new(format!(
@@ -721,8 +721,8 @@ pub(in crate::surface) fn program_expression_reads_no_memory(
 
 fn validate_contract_applications_in_proposition(
     proposition: &ClickProposition,
-    contracts: &BTreeMap<String, C0Type>,
-    variables: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -751,8 +751,8 @@ fn validate_contract_applications_in_proposition(
 
 fn validate_contract_applications_in_proposition_one(
     proposition: &ClickProposition,
-    contracts: &BTreeMap<String, C0Type>,
-    variables: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -767,7 +767,7 @@ fn validate_contract_applications_in_proposition_one(
                 };
                 let actual =
                     infer_contract_expression_type(mutex, variables, click_functions, context)?;
-                if !actual.is_some_and(C0Type::is_object_pointer) {
+                if !actual.is_some_and(InterfaceType::is_object_pointer) {
                     return Err(ClickError::new(format!(
                         "held expects a mutex pointer in {context}"
                     )));
@@ -795,10 +795,13 @@ fn validate_contract_applications_in_proposition_one(
                         click_functions,
                         context,
                     )?;
-                    if !actual.is_some_and(C0Type::is_object_pointer) {
+                    if !actual.is_some_and(InterfaceType::is_object_pointer) {
                         return Err(ClickError::new(format!(
                             "same_object expects pointer arguments in {context}, got {}",
-                            actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type)
+                            actual.map_or_else(
+                                || "an unknown type".to_string(),
+                                describe_interface_type
+                            )
                         )));
                     }
                 }
@@ -821,7 +824,8 @@ fn validate_contract_applications_in_proposition_one(
                 if actual.is_some_and(|actual| actual.is_pointer()) {
                     return Err(ClickError::new(format!(
                         "contract `{name}` value parameters are scalars, got {} in {context}",
-                        actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type)
+                        actual
+                            .map_or_else(|| "an unknown type".to_string(), describe_interface_type)
                     )));
                 }
             }
@@ -839,8 +843,8 @@ fn validate_contract_applications_in_proposition_one(
             if actual != Some(*expected) {
                 return Err(ClickError::new(format!(
                     "contract `{name}` expects {}, got {} in {context}",
-                    describe_c0_type(*expected),
-                    actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type),
+                    describe_interface_type(*expected),
+                    actual.map_or_else(|| "an unknown type".to_string(), describe_interface_type),
                 )));
             }
             Ok(())
@@ -874,24 +878,25 @@ fn validate_contract_applications_in_proposition_one(
             context,
         ),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
         }
         | ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
         } => {
             let mut variables = variables.clone();
-            match c_type {
+            match interface_type {
                 ClickType::Resource => {
                     variables.remove(name);
                 }
-                ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
-                    variables.insert(name.clone(), *c_type);
+                ClickType::Program(interface_type)
+                | ClickType::CObjectPointer { interface_type, .. } => {
+                    variables.insert(name.clone(), *interface_type);
                 }
                 ClickType::Integer => {
                     variables.remove(name);
@@ -916,7 +921,7 @@ fn validate_contract_applications_in_proposition_one(
         ClickProposition::RangeAll { item, body, .. }
         | ClickProposition::RangeAny { item, body, .. } => {
             let mut variables = variables.clone();
-            variables.insert(item.clone(), C0Type::Int32);
+            variables.insert(item.clone(), InterfaceType::Int32);
             validate_contract_applications_in_proposition(
                 body,
                 contracts,
@@ -994,7 +999,7 @@ fn reject_held_outside_execution(
 fn validate_theorem_definition(
     theorem: &TheoremDefinition,
     predicates: &BTreeMap<String, usize>,
-    contracts: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, usize>,
     click_function_types: &BTreeMap<String, ClickFunctionType>,
 ) -> Result<(), ClickError> {
@@ -1093,7 +1098,7 @@ fn validate_resource_definition<'a>(
     resources: &BTreeMap<String, usize>,
     recursive_resources: &BTreeSet<String>,
     predicates: &BTreeMap<String, usize>,
-    contracts: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, usize>,
     click_function_types: &BTreeMap<String, ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
@@ -1165,11 +1170,11 @@ fn validate_resource_definition<'a>(
     let mut variables = definition
         .parameters()
         .iter()
-        .map(|parameter| (parameter.name().to_string(), parameter.c_type()))
+        .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
         .collect::<BTreeMap<_, _>>();
     for witness in composite_body.witnesses() {
         if variables
-            .insert(witness.name().to_string(), witness.c_type())
+            .insert(witness.name().to_string(), witness.interface_type())
             .is_some()
         {
             return Err(ClickError::new(format!(
@@ -1308,7 +1313,7 @@ fn validate_resource_definition<'a>(
 fn validate_iterated_resource_clauses(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_function_types: &BTreeMap<String, ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1363,7 +1368,7 @@ fn validate_iterated_resource_clauses(
         // a fold consumes both from one context, where owned memory is a
         // partition, so no cell is ever held twice.
         let mut scoped = variables.clone();
-        scoped.insert(index.to_string(), C0Type::Int32);
+        scoped.insert(index.to_string(), InterfaceType::Int32);
         let clause_guard = clause
             .guard
             .as_ref()
@@ -1390,11 +1395,11 @@ fn validate_iterated_resource_clauses(
                 else {
                     continue;
                 };
-                if ty != C0Type::Int32 {
+                if ty != InterfaceType::Int32 {
                     return Err(ClickError::new(format!(
                         "{context}: the guard compares `int32` cells in this slice, but `{}` has type `{}`",
                         crate::surface::diagnostics::describe_contract_expression(side),
-                        describe_c0_type(ty)
+                        describe_interface_type(ty)
                     )));
                 }
             }
@@ -1404,7 +1409,7 @@ fn validate_iterated_resource_clauses(
         // same read-authority check a body fact gets. A guard over a cell the
         // body does not own could change while the resource is folded.
         let guard_fact = ClickProposition::ForAll {
-            click_type: ClickType::Program(C0Type::Int32),
+            click_type: ClickType::Program(InterfaceType::Int32),
             name: index.to_string(),
             written_name: None,
             body: Box::new(ClickProposition::Implies(
@@ -1560,7 +1565,7 @@ fn validate_resource_fact_memory_read_authority(
             witness.name().to_string(),
             crate::kernel::ProgramValue::typed_pointer(
                 crate::kernel::Pointer::symbolic(crate::kernel::Variable(4_100_000 + index as u64)),
-                witness.c_type().to_kernel_type(),
+                witness.interface_type().to_kernel_type(),
             ),
         );
     }
@@ -1570,7 +1575,7 @@ fn validate_resource_fact_memory_read_authority(
         .map(|parameter| {
             (
                 parameter.name().to_string(),
-                parameter.c_type(),
+                parameter.interface_type(),
                 parameter.struct_name().map(str::to_string),
             )
         })
@@ -1578,7 +1583,7 @@ fn validate_resource_fact_memory_read_authority(
             composite_body
                 .witnesses()
                 .iter()
-                .map(|witness| (witness.name().to_string(), witness.c_type(), None)),
+                .map(|witness| (witness.name().to_string(), witness.interface_type(), None)),
         )
         .collect::<Vec<_>>();
     let arguments = bound_names
@@ -1603,8 +1608,12 @@ fn validate_resource_fact_memory_read_authority(
         .collect::<BTreeMap<_, _>>();
     let validation_parameters = bound_names
         .iter()
-        .map(|(name, c_type, struct_name)| {
-            syntax::C0Parameter::new(*c_type, name.clone(), struct_name.clone())
+        .map(|(name, interface_type, struct_name)| {
+            crate::languages::interface::ImportedParameter::new(
+                *interface_type,
+                name.clone(),
+                struct_name.clone(),
+            )
         })
         .collect::<Vec<_>>();
     // A contained resource's formation domains are part of the assumed body
@@ -2228,10 +2237,10 @@ fn quantified_index_interval(
 /// The zero of an unsigned binder's type, spelled as the matching typed
 /// literal, or `None` for a type whose values may be negative.
 fn unsigned_binder_zero(binder_type: &ClickType) -> Option<ProgramExpression> {
-    let value = match binder_type.c_type()? {
-        C0Type::UInt8 => crate::kernel::uint8(0),
-        C0Type::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
-        C0Type::UInt64(_) => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+    let value = match binder_type.interface_type()? {
+        InterfaceType::UInt8 => crate::kernel::uint8(0),
+        InterfaceType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+        InterfaceType::UInt64(_) => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         _ => return None,
     };
     Some(ProgramExpression::Value(value))

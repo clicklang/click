@@ -251,7 +251,8 @@ pub(in crate::surface::proof) struct ExecutionProofContext<'a> {
     pub(in crate::surface::proof) tactic_index: usize,
     pub(in crate::surface::proof) function_block: &'a FunctionBlock,
     pub(in crate::surface::proof) function: &'a ProgramFunction,
-    pub(in crate::surface::proof) parsed_function: &'a syntax::C0Function,
+    pub(in crate::surface::proof) parsed_function:
+        &'a crate::languages::interface::ImportedFunction,
     pub(in crate::surface::proof) arguments: &'a [ProgramExpression],
     pub(in crate::surface::proof) function_environment: &'a ExecutionEnvironment,
     pub(in crate::surface::proof) resource_environment: &'a ResourceEnvironment,

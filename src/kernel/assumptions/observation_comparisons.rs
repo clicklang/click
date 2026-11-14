@@ -67,7 +67,7 @@ impl ResourceKey {
                         _ => None,
                     };
                     if let Some(term) = term {
-                        let format = MachineIntegerType::from_c_type(value.c_type())
+                        let format = MachineIntegerType::from_program_type(value.program_type())
                             .expect("integer argument");
                         return ResourceArgumentKey::Machine(
                             format,
@@ -600,7 +600,7 @@ mod compound_observation_lookup_tests {
     fn scaled_word_sources_retain_shared_indices_and_exact_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(991440));
+        let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(991440));
         let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let zero = MachineTerm::constant(0);
         for truth in [false, true] {
@@ -723,8 +723,8 @@ mod compound_observation_lookup_tests {
             ty,
             MachineBinaryOp::Multiply,
             [
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(989001)),
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(989002)),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(989001)),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(989002)),
             ],
         );
         let retained = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();

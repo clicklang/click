@@ -240,7 +240,7 @@ fn instantiate_lowered_predicate_definition(
         } else {
             let actual = match arguments.get(argument_index) {
                 Some(Term::ProgramValue(value)) => Some(ClickType::Program(
-                    generics::c0_type_from_kernel(value.c_type()),
+                    generics::interface_type_from_program_type(value.program_type()),
                 )),
                 Some(Term::Algebraic(value)) => {
                     Some(generics::click_type_from_algebraic_value_type(
@@ -339,8 +339,8 @@ pub(in crate::surface) fn decode_predicate_arguments(
                     ));
                 };
                 default_memory.get_or_insert_with(|| memory.clone());
-                let element_type =
-                    click_array_element_type(parameter.c_type()).ok_or_else(|| {
+                let element_type = click_array_element_type(parameter.interface_type())
+                    .ok_or_else(|| {
                         format!(
                             "predicate `{}` argument `{}` is not an array-ref parameter",
                             definition.name(),

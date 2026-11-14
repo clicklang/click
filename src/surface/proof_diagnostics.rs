@@ -79,7 +79,7 @@ impl MemoryHistoryDiagnostic {
             .and_then(|at| at.snapshot().derivation())
             .and_then(|derivation| match derivation.as_ref() {
                 crate::kernel::MemoryDerivation::Store { value, .. } => {
-                    Some(value.c_type().byte_width())
+                    Some(value.program_type().byte_width())
                 }
                 _ => None,
             });
@@ -1152,9 +1152,14 @@ mod tests {
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
         use crate::kernel::{MachineTerm, Memory, ProgramExpression, ProgramValue, Variable};
-        use crate::languages::c::syntax::{C0Parameter, C0Type};
+        use crate::languages::interface::{ImportedParameter, InterfaceType};
+
         let variable = Variable(786_901);
-        let parameters = [C0Parameter::new(C0Type::Int32, "input".into(), None)];
+        let parameters = [ImportedParameter::new(
+            InterfaceType::Int32,
+            "input".into(),
+            None,
+        )];
         let arguments = [ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(variable),
         ))];
@@ -1168,7 +1173,11 @@ mod tests {
         assert!(report.contains("input"), "{report}");
         assert!(!report.contains("<unnamed"), "{report}");
 
-        let preferred = [C0Parameter::new(C0Type::Int32, "loop_value".into(), None)];
+        let preferred = [ImportedParameter::new(
+            InterfaceType::Int32,
+            "loop_value".into(),
+            None,
+        )];
         let mut labels = render::SnapshotLabels::naming(crate::surface::ParameterBinding::new(
             &preferred, &arguments,
         ));

@@ -1697,7 +1697,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_zero_witness_closure");
         let Some(ClickProposition::Exists {
-            click_type: ClickType::Program(syntax::C0Type::Int32),
+            click_type: ClickType::Program(crate::languages::interface::InterfaceType::Int32),
             name,
             written_name,
             ..

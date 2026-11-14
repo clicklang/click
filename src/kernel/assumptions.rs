@@ -531,8 +531,8 @@ pub fn conditions_equal_ignoring_memories(left: &ConditionTerm, right: &Conditio
     {
         // Candidate selection only. The context's snapshot bridge separately
         // compares both complete designations before accepting this candidate.
-        return a.c_type() == c.c_type()
-            && b.c_type() == d.c_type()
+        return a.program_type() == c.program_type()
+            && b.program_type() == d.program_type()
             && pointers_equal_with_load_atoms(
                 a.pointer(),
                 c.pointer(),
@@ -4304,7 +4304,10 @@ impl PureFactContext {
         for spelling in self.equality_graph.pointer_spellings(address) {
             if let Some(ProgramValue::Pointer(value)) = start.known_value(&spelling) {
                 self.equality_graph.add_checked_pointer_value_equality(
-                    &PointerValue::new(Pointer::loaded_value(memory, address), value.c_type()),
+                    &PointerValue::new(
+                        Pointer::loaded_value(memory, address),
+                        value.program_type(),
+                    ),
                     &value,
                 );
                 return;
@@ -10340,7 +10343,7 @@ impl ExecutionPureFact {
     }
 
     pub(in crate::kernel) fn logical_read_equation(value: PointerValue, read: Pointer) -> Self {
-        let read = PointerValue::new(read, value.c_type());
+        let read = PointerValue::new(read, value.program_type());
         Self::logical_pointer_value_equation(value, read)
     }
 
@@ -11161,7 +11164,7 @@ mod integer_observation_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
             let variable =
-                |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+                |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
             let root = KernelTerm::machine_binary_shared(
                 ty,
                 Op::Multiply,
@@ -13075,7 +13078,7 @@ mod shared_load_atom_comparison_tests {
                             .machine_arithmetic(ty, &MachineTerm::Variable(v))
                             .unwrap()
                     } else {
-                        KernelTerm::variable(KernelType::Program(ty.c_type()), v)
+                        KernelTerm::variable(KernelType::Program(ty.program_type()), v)
                     }
                 };
                 let product = |v, op| {
@@ -13325,7 +13328,7 @@ mod shared_load_atom_comparison_tests {
                     false,
                 )]);
                 let variable =
-                    |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+                    |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
                 let root = KernelTerm::machine_binary_shared(
                     ty,
                     MachineBinaryOp::Multiply,

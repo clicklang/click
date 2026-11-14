@@ -3,7 +3,8 @@
 use super::CppType;
 use crate::kernel;
 use crate::kernel::{MachineIntegerConstant, MachineIntegerType, ProgramExpression, ProgramType};
-use crate::languages::c::syntax::{C0Type, LongRank};
+use crate::languages::c::syntax::LongRank;
+use crate::languages::interface::InterfaceType;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ScalarKind {
@@ -162,17 +163,17 @@ impl ScalarKind {
         }
     }
 
-    pub fn proof_type(self) -> C0Type {
+    pub fn proof_type(self) -> InterfaceType {
         match self {
-            Self::Bool => C0Type::Bool,
-            Self::UInt8 => C0Type::UInt8,
-            Self::Int32 => C0Type::Int32,
-            Self::Int64 => C0Type::Int64(LongRank::Long),
-            Self::UInt32 => C0Type::UInt32,
-            Self::UInt64 => C0Type::UInt64(LongRank::Long),
-            Self::Int128 => C0Type::Int128,
-            Self::UInt128 => C0Type::UInt128,
-            Self::Parameter(name) => C0Type::Parameter(name),
+            Self::Bool => InterfaceType::Bool,
+            Self::UInt8 => InterfaceType::UInt8,
+            Self::Int32 => InterfaceType::Int32,
+            Self::Int64 => InterfaceType::Int64(LongRank::Long),
+            Self::UInt32 => InterfaceType::UInt32,
+            Self::UInt64 => InterfaceType::UInt64(LongRank::Long),
+            Self::Int128 => InterfaceType::Int128,
+            Self::UInt128 => InterfaceType::UInt128,
+            Self::Parameter(name) => InterfaceType::Parameter(name),
         }
     }
 
@@ -186,18 +187,18 @@ impl ScalarKind {
         }
     }
 
-    pub fn pointer_proof_type(self) -> Option<C0Type> {
+    pub fn pointer_proof_type(self) -> Option<InterfaceType> {
         match self {
-            Self::Int32 => Some(C0Type::Int32Pointer),
-            Self::UInt32 => Some(C0Type::UInt32Pointer),
-            Self::UInt8 => Some(C0Type::UInt8Pointer),
-            Self::Parameter(name) => Some(C0Type::ParameterPointer(name)),
+            Self::Int32 => Some(InterfaceType::Int32Pointer),
+            Self::UInt32 => Some(InterfaceType::UInt32Pointer),
+            Self::UInt8 => Some(InterfaceType::UInt8Pointer),
+            Self::Parameter(name) => Some(InterfaceType::ParameterPointer(name)),
             _ => None,
         }
     }
 
     pub fn parse_literal(self, value: &str) -> Option<ScalarLiteral> {
-        let ty = MachineIntegerType::from_c_type(self.kernel_type())?;
+        let ty = MachineIntegerType::from_program_type(self.kernel_type())?;
         let value = MachineIntegerConstant::parse_decimal(ty.format(), value)?;
         Some(ScalarLiteral { ty, value })
     }

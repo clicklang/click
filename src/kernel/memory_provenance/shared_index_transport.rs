@@ -125,7 +125,7 @@ pub(in crate::kernel) fn map_index_with_fold(
             let KernelType::Program(ty) = node.ty() else {
                 return None;
             };
-            node.rewritten_machine_leaf(MachineIntegerType::from_c_type(*ty)?, &leaf, &next)
+            node.rewritten_machine_leaf(MachineIntegerType::from_program_type(*ty)?, &leaf, &next)
         } else {
             let children: Vec<_> = children
                 .iter()
@@ -149,7 +149,7 @@ pub(in crate::kernel) fn map_index_with_fold(
                     return None;
                 };
                 let updated = KernelTerm::machine_if_shared(
-                    MachineIntegerType::from_c_type(*ty)?,
+                    MachineIntegerType::from_program_type(*ty)?,
                     [condition, arguments[1].clone(), arguments[2].clone()],
                 );
                 rebuild(&updated, &children)?

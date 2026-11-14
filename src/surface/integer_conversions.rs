@@ -1,18 +1,18 @@
 //! Public spelling and source types of explicit Integer conversions.
 use super::*;
 
-pub(super) fn integer_conversion_target(name: &str) -> Option<C0Type> {
+pub(super) fn integer_conversion_target(name: &str) -> Option<InterfaceType> {
     Some(match name {
-        "to_int8" => C0Type::Int8,
-        "to_int16" => C0Type::Int16,
-        "to_int32" => C0Type::Int32,
-        "to_uint8" => C0Type::UInt8,
-        "to_uint16" => C0Type::UInt16,
-        "to_uint32" => C0Type::UInt32,
-        "to_int64" => C0Type::Int64(LongRank::Long),
-        "to_uint64" => C0Type::UInt64(LongRank::Long),
-        "to_int128" => C0Type::Int128,
-        "to_uint128" => C0Type::UInt128,
+        "to_int8" => InterfaceType::Int8,
+        "to_int16" => InterfaceType::Int16,
+        "to_int32" => InterfaceType::Int32,
+        "to_uint8" => InterfaceType::UInt8,
+        "to_uint16" => InterfaceType::UInt16,
+        "to_uint32" => InterfaceType::UInt32,
+        "to_int64" => InterfaceType::Int64(LongRank::Long),
+        "to_uint64" => InterfaceType::UInt64(LongRank::Long),
+        "to_int128" => InterfaceType::Int128,
+        "to_uint128" => InterfaceType::UInt128,
         _ => return None,
     })
 }
@@ -21,19 +21,19 @@ pub(super) fn is_integer_conversion(name: &str) -> bool {
     name == "to_integer" || integer_conversion_target(name).is_some()
 }
 
-pub(super) fn machine_integer_source_type(c_type: C0Type) -> bool {
+pub(super) fn machine_integer_source_type(interface_type: InterfaceType) -> bool {
     matches!(
-        c_type,
-        C0Type::Int8
-            | C0Type::Int16
-            | C0Type::Int32
-            | C0Type::UInt8
-            | C0Type::UInt16
-            | C0Type::UInt32
-            | C0Type::Int64(_)
-            | C0Type::UInt64(_)
-            | C0Type::Int128
-            | C0Type::UInt128
+        interface_type,
+        InterfaceType::Int8
+            | InterfaceType::Int16
+            | InterfaceType::Int32
+            | InterfaceType::UInt8
+            | InterfaceType::UInt16
+            | InterfaceType::UInt32
+            | InterfaceType::Int64(_)
+            | InterfaceType::UInt64(_)
+            | InterfaceType::Int128
+            | InterfaceType::UInt128
     )
 }
 

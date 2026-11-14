@@ -165,7 +165,7 @@ fn machine_arithmetic(
     }
     // The operation's operands, read under the same snapshot.
     let mut machine = false;
-    let mut c_types = Vec::new();
+    let mut interface_types = Vec::new();
     let mut contract_pending = vec![inner];
     let mut c_pending = Vec::new();
     let mut top = true;
@@ -193,7 +193,7 @@ fn machine_arithmetic(
             ContractExpression::IntegerLiteral(_) => return None,
             ContractExpression::ProgramExpression(ProgramExpression::Value(value)) if !top => {
                 machine = true;
-                c_types.push(value.clone());
+                interface_types.push(value.clone());
             }
             ContractExpression::ProgramExpression(fragment) => {
                 if top && !c_arithmetic(fragment) {
@@ -214,7 +214,7 @@ fn machine_arithmetic(
     }
     while let Some(expression) = c_pending.pop() {
         match expression {
-            ProgramExpression::Value(value) => c_types.push(value.clone()),
+            ProgramExpression::Value(value) => interface_types.push(value.clone()),
             ProgramExpression::Add(left, right)
             | ProgramExpression::Subtract(left, right)
             | ProgramExpression::Multiply(left, right)
@@ -236,11 +236,11 @@ fn machine_arithmetic(
     }
     // Current-state expressions without typed operands need their type
     // retained by the producer; do not infer it from variable spellings.
-    if !snapshot && c_types.is_empty() {
+    if !snapshot && interface_types.is_empty() {
         return comparison;
     }
     let mut machine_type = "int32";
-    for value in c_types {
+    for value in interface_types {
         machine_type = match value {
             ProgramValue::Int32(_) => continue,
             ProgramValue::UInt32(_) => "uint32",

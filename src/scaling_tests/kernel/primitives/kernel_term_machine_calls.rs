@@ -47,10 +47,11 @@ fn common_call_numeric_identity_is_linear_cold_and_constant_warm() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(995830));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(995830));
         for _ in 0..size {
             root = KernelTerm::intern(
-                KernelType::Program(format.c_type()),
+                KernelType::Program(format.program_type()),
                 KernelTermNode::Call {
                     name: "identity_chain".into(),
                     arguments: vec![root.clone(), root],

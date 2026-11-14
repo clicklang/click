@@ -17,8 +17,8 @@ pub(in crate::kernel::spec) fn cast_narrowing(
     let SpecValue::Shared(root) = value else {
         return None;
     };
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     if source.format().bits() <= destination.format().bits()
         || source.format().bits() > 64
         || !root.is_shared_machine_operand()
@@ -37,8 +37,8 @@ pub(in crate::kernel::spec) fn cast_widening(
     let SpecValue::Shared(root) = value else {
         return None;
     };
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     if source.format().bits() >= destination.format().bits()
         || destination.format().bits() > 64
         || !root.is_shared_machine_operand()
@@ -57,8 +57,8 @@ pub(in crate::kernel::spec) fn cast_signedness(
     let SpecValue::Shared(root) = value else {
         return None;
     };
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     if source == destination
         || source.format().bits() != destination.format().bits()
         || source.format().bits() > 64
@@ -127,8 +127,8 @@ fn cast_wide(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
     let SpecValue::Shared(root) = value else {
         return None;
     };
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     if source == destination
         || (source.format().bits() != 128 && destination.format().bits() != 128)
         || !root.is_shared_machine_operand()

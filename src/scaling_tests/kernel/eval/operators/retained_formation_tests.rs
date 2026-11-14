@@ -8,7 +8,7 @@ fn growing_coordinate_guards_retain_shared_indices_without_exports() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut index =
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(993300));
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(993300));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {

@@ -1009,7 +1009,7 @@ mod shared_bound_tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             let make = |id| {
                 let variable =
-                    KernelTerm::variable(KernelType::Program(format.c_type()), Variable(id));
+                    KernelTerm::variable(KernelType::Program(format.program_type()), Variable(id));
                 let root = KernelTerm::machine_binary_shared(
                     format,
                     MachineBinaryOp::Add,
@@ -1101,8 +1101,8 @@ mod shared_bound_tests {
             ty,
             MachineBinaryOp::Add,
             [
-                KernelTerm::variable(KernelType::Program(ty.c_type()), a),
-                KernelTerm::variable(KernelType::Program(ty.c_type()), b),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), a),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), b),
             ],
         );
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
@@ -1135,7 +1135,7 @@ mod shared_bound_tests {
         };
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(994801);
-        let root = KernelTerm::variable(KernelType::Program(Ty::Int32.c_type()), variable);
+        let root = KernelTerm::variable(KernelType::Program(Ty::Int32.program_type()), variable);
         let base = SharedMachineIntegerTerm::from_shared(Ty::Int32, root.clone()).unwrap();
         let literal = crate::kernel::KernelTermImport::default()
             .machine_arithmetic(Ty::Int32, &MachineTerm::constant(1))
@@ -1235,8 +1235,8 @@ mod shared_bound_tests {
             ty,
             MachineBinaryOp::Add,
             [
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(994101)),
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(994102)),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994101)),
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994102)),
             ],
         );
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();

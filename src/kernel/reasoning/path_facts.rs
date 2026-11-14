@@ -2737,7 +2737,7 @@ mod native_observation_guard_tests {
         for truth in [None, Some(false), Some(true)] {
             let _session = crate::kernel::VerificationSession::enter();
             let variable =
-                |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+                |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
             let product = KernelTerm::machine_binary_shared(
                 ty,
                 MachineBinaryOp::Multiply,
@@ -2918,8 +2918,14 @@ mod shared_reconstruction_tests {
             T::UInt64,
             MachineBinaryOp::Add,
             [
-                KernelTerm::variable(KernelType::Program(T::UInt64.c_type()), Variable(1018202)),
-                KernelTerm::variable(KernelType::Program(T::UInt64.c_type()), Variable(1018203)),
+                KernelTerm::variable(
+                    KernelType::Program(T::UInt64.program_type()),
+                    Variable(1018202),
+                ),
+                KernelTerm::variable(
+                    KernelType::Program(T::UInt64.program_type()),
+                    Variable(1018203),
+                ),
             ],
         );
         let offset = scaled(V::Shared(&root).retain(T::Int64), 8, true);
