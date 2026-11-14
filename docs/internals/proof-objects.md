@@ -451,7 +451,7 @@ checked clause metadata and derived resource facts in `RetainedClosingEntry`.
 Each prepared guard case owns its corresponding entry view while sharing the
 checked clause metadata. The checked entry transfer prepares the static-storage
 footprint input before body tactics. Range projection runs only when the open
-footprint goal needs it; it never reevaluates entry clauses. Closing consumes these inputs instead of binding the
+footprint goal needs it; it never reevaluates entry clauses. The closing-goal checks consume these inputs instead of binding the
 arguments, reevaluating entry clauses or projecting entry resources again.
 Normal and exceptional postcondition goals use the retained entry and the
 current outcome. Resource/effect closing likewise reads the proof-owned result
