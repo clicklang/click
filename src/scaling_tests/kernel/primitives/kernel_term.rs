@@ -552,3 +552,60 @@ fn conditional_observation_retyping_matches_native_import_without_expanding_dags
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn shared_read_descriptor_identity_does_not_expand_offset_dags() {
+    use std::hash::{Hash, Hasher};
+    let _session = crate::kernel::VerificationSession::enter();
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| {
+                KernelTerm::variable(
+                    KernelType::Program(ProgramType::Int32),
+                    Variable(1017500 + i),
+                )
+            })
+            .collect::<Vec<_>>();
+        let memory = intern_memory(Memory::new());
+        for size in [16, 64, 256] {
+            let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+            for _ in 0..size {
+                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                    .into_shared()
+                    .unwrap();
+            }
+            let address = SharedPointerAddress::new(
+                SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(1017100))),
+                offset,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let ((first, second), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let first = KernelTerm::shared_scalar_read_descriptor(
+                        MachineIntegerType::Int32,
+                        &memory,
+                        &address,
+                        LoadKind::Int32,
+                    );
+                    let second = KernelTerm::shared_scalar_read_descriptor(
+                        MachineIntegerType::Int32,
+                        &memory,
+                        &address,
+                        LoadKind::Int32,
+                    );
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    first.hash(&mut hasher);
+                    second.hash(&mut hasher);
+                    let _ = hasher.finish();
+                    (first, second)
+                });
+            assert_eq!(first, second);
+            assert!(first.0.machine_leaf.0.get().is_none());
+            assert!(
+                work <= 64,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+}

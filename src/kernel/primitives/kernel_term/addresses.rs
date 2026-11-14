@@ -54,27 +54,52 @@ impl Hash for ExactBlock {
 }
 
 #[derive(Clone)]
-pub(crate) struct SharedPointerBlock(Arc<BlockData>);
+pub(crate) struct SharedPointerBlock(BlockStorage);
+#[derive(Clone)]
+enum BlockStorage {
+    // These atoms already have scalar identities. They need neither an arena
+    // allocation nor weak-entry cleanup on every read descriptor import.
+    Inline(PointerBlock),
+    Interned(Arc<BlockData>),
+}
 struct BlockData {
     id: u64,
     source: ExactBlock,
 }
 impl std::fmt::Debug for SharedPointerBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("SharedPointerBlock")
-            .field(&self.0.id)
-            .finish()
+        match &self.0 {
+            BlockStorage::Inline(block) => {
+                f.debug_tuple("SharedPointerBlock").field(block).finish()
+            }
+            BlockStorage::Interned(node) => {
+                f.debug_tuple("SharedPointerBlock").field(&node.id).finish()
+            }
+        }
     }
 }
 impl PartialEq for SharedPointerBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.0.id == other.0.id
+        match (&self.0, &other.0) {
+            (BlockStorage::Inline(a), BlockStorage::Inline(b)) => a == b,
+            (BlockStorage::Interned(a), BlockStorage::Interned(b)) => a.id == b.id,
+            _ => false,
+        }
     }
 }
 impl Eq for SharedPointerBlock {}
 impl Hash for SharedPointerBlock {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.id.hash(state);
+        match &self.0 {
+            BlockStorage::Inline(block) => {
+                0u8.hash(state);
+                block.hash(state);
+            }
+            BlockStorage::Interned(node) => {
+                1u8.hash(state);
+                node.id.hash(state);
+            }
+        }
     }
 }
 #[derive(Default)]
@@ -85,6 +110,19 @@ struct BlockInterner {
 }
 impl SharedPointerBlock {
     pub(crate) fn import(block: &PointerBlock) -> Self {
+        if matches!(
+            block,
+            PointerBlock::Symbolic(_)
+                | PointerBlock::FunctionSymbolic(_)
+                | PointerBlock::ExternalArgument
+                | PointerBlock::ExternalObject(_)
+                | PointerBlock::LoadedPointer(_)
+                | PointerBlock::Heap(_)
+                | PointerBlock::Temporary(_)
+        ) {
+            crate::instrumentation::record_deterministic_work(1);
+            return Self(BlockStorage::Inline(block.clone()));
+        }
         // Import reads this selected atom once. Call payloads remain explicit
         // compatibility handles until the pointer-call producer slice.
         crate::instrumentation::record_deterministic_work(9);
@@ -107,7 +145,7 @@ impl SharedPointerBlock {
         }
         let key = ExactBlock::new(block);
         if let Some(node) = arena.nodes.get(&key).and_then(Weak::upgrade) {
-            return Self(node);
+            return Self(BlockStorage::Interned(node));
         }
         let id = arena.next_id;
         arena.next_id = id.checked_add(1).expect("block identity exhausted");
@@ -117,17 +155,20 @@ impl SharedPointerBlock {
         });
         arena.nodes.insert(key.clone(), Arc::downgrade(&node));
         arena.cleanup.push_back(key);
-        Self(node)
+        Self(BlockStorage::Interned(node))
     }
     pub(crate) fn native_atom(&self) -> &PointerBlock {
-        &self.0.source.source
+        match &self.0 {
+            BlockStorage::Inline(block) => block,
+            BlockStorage::Interned(node) => &node.source.source,
+        }
     }
 }
 
 /// Cloning, comparing and hashing prepared addresses inspect only handles.
 /// There is no retained native Pointer or native offset tree.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct SharedPointerAddress(Arc<KernelPointerAddress>);
+pub struct SharedPointerAddress(Arc<KernelPointerAddress>);
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub(crate) struct KernelPointerAddress {
     pub(crate) block: SharedPointerBlock,

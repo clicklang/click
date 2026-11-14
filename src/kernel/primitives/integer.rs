@@ -675,14 +675,11 @@ impl SharedMachineIntegerTerm {
     /// A direct read compares arena identity before any native address data.
     pub(crate) fn with_mapped_index(&self, mapped: MachineTerm) -> Self {
         if let Some(root) = self.shared_operand() {
-            let unchanged = if let KernelTermNode::MemoryLoad {
-                memory,
-                address,
-                kind,
-            } = root.node()
+            let unchanged = if let Some(MachineTerm::MemoryLoad(memory, address, kind)) =
+                root.machine_read_leaf()
             {
                 matches!(&mapped, MachineTerm::MemoryLoad(other, pointer, other_kind)
-                    if memory.arena_id() == other.arena_id() && address == pointer.as_ref() && kind == other_kind)
+                    if memory.arena_id() == other.arena_id() && address == pointer && kind == other_kind)
             } else {
                 !root.has_machine_reads()
                     && !root.has_machine_conversions()

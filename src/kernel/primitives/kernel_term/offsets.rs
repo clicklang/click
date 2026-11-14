@@ -23,8 +23,13 @@ pub(crate) enum KernelPointerOffset {
 #[derive(Clone)]
 pub(crate) struct SharedPointerOffset(Arc<OffsetData>);
 struct OffsetData {
-    id: u64,
+    id: OffsetIdentity,
     node: KernelPointerOffset,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+enum OffsetIdentity {
+    Constant(i64),
+    Interned(u64),
 }
 impl std::fmt::Debug for SharedPointerOffset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -50,6 +55,7 @@ struct OffsetInterner {
     cleanup: VecDeque<KernelPointerOffset>,
     next_id: u64,
 }
+
 impl SharedPointerOffset {
     pub(crate) fn node(&self) -> &KernelPointerOffset {
         &self.0.node
@@ -79,7 +85,7 @@ impl SharedPointerOffset {
         let id = interner.next_id;
         interner.next_id = id.checked_add(1).expect("offset identity exhausted");
         let value = Arc::new(OffsetData {
-            id,
+            id: OffsetIdentity::Interned(id),
             node: node.clone(),
         });
         interner.nodes.insert(node.clone(), Arc::downgrade(&value));
@@ -104,6 +110,15 @@ impl KernelPointerOffset {
     }
 
     pub(crate) fn into_shared(self) -> Result<SharedPointerOffset, &'static str> {
+        // Constant displacements already have scalar identities. Their value
+        // supplies equality directly, without interner insertion or upkeep.
+        if let Self::Constant(value) = &self {
+            crate::instrumentation::record_deterministic_work(1);
+            return Ok(SharedPointerOffset(Arc::new(OffsetData {
+                id: OffsetIdentity::Constant(*value),
+                node: self,
+            })));
+        }
         // One node plus bounded arena upkeep. Charge its fixed allowance so
         // an unrelated arena population cannot change deterministic work.
         crate::instrumentation::record_deterministic_work(9);

@@ -34,7 +34,11 @@ impl KernelTerm {
             return None;
         };
         Some(self.0.machine_leaf.get_or_init(|| {
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), *kind)
+            MachineTerm::MemoryLoad(
+                memory.clone(),
+                Box::new(address.export().expect("retained read address")),
+                *kind,
+            )
         }))
     }
 
@@ -47,14 +51,30 @@ impl KernelTerm {
         if !exact_address(address) {
             return None;
         }
-        Some(Self::intern(
+        Some(Self::shared_scalar_read_descriptor(
+            format,
+            memory,
+            &SharedPointerAddress::import(address),
+            kind,
+        ))
+    }
+
+    /// Retain the selected common address. This only constructs read syntax;
+    /// memory selection, access evidence and value resolution stay with callers.
+    pub(crate) fn shared_scalar_read_descriptor(
+        format: MachineIntegerType,
+        memory: &SharedMemory,
+        address: &SharedPointerAddress,
+        kind: LoadKind,
+    ) -> Self {
+        Self::intern(
             KernelType::Program(format.program_type()),
             KernelTermNode::MemoryLoad {
                 memory: memory.clone(),
                 address: address.clone(),
                 kind,
             },
-        ))
+        )
     }
 }
 
@@ -110,7 +130,7 @@ mod tests {
             let native = MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), kind);
             let term = KernelTermImport::default().machine(format, &native);
             assert!(
-                matches!(term.node(), KernelTermNode::MemoryLoad { memory: m, address: p, kind: k } if m == &memory && p == &address && *k == kind)
+                matches!(term.node(), KernelTermNode::MemoryLoad { memory: m, address: p, kind: k } if m == &memory && p == &SharedPointerAddress::import(&address) && *k == kind)
             );
             assert!(term.is_shared_machine_operand());
             crate::kernel::eval::clear_load_variable_registry();
@@ -123,6 +143,58 @@ mod tests {
             assert_eq!(KernelTermExport::machine(&term).unwrap(), native);
             assert_eq!(KernelTermImport::default().machine(format, &native), term);
         }
+    }
+
+    #[test]
+    fn shared_read_addresses_preserve_call_payloads_ignored_by_logical_identity() {
+        let _session = VerificationSession::enter();
+        let memory = intern_memory(Memory::new());
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1017200)),
+            ProgramType::Int32Pointer,
+        );
+        let mut outputs = Vec::new();
+        let mut roots = Vec::new();
+        for constant in [false, true] {
+            let call = SharedPureApplication::intern(
+                "read_address".into(),
+                vec![PureFunctionArgument::Value(ProgramValue::Pointer(
+                    pointer.clone().with_pointee_constant(constant),
+                ))],
+            );
+            let payload = call.payload_id();
+            let address = Pointer {
+                block: PointerBlock::PureFunctionApplication(call),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let root = KernelTerm::scalar_read_descriptor(
+                MachineIntegerType::Int32,
+                &memory,
+                &address,
+                LoadKind::Int32,
+            )
+            .unwrap();
+            let output = KernelTermExport::machine(&root).unwrap();
+            let MachineTerm::MemoryLoad(_, address, _) = &output else {
+                panic!("read")
+            };
+            let PointerBlock::PureFunctionApplication(call) = &address.block else {
+                panic!("call address")
+            };
+            assert_eq!(call.payload_id(), payload);
+            let [PureFunctionArgument::Value(ProgramValue::Pointer(argument))] = call.arguments()
+            else {
+                panic!("pointer argument")
+            };
+            assert_eq!(argument.pointee_constant(), constant);
+            roots.push(root);
+            outputs.push(output);
+        }
+        assert_eq!(
+            outputs[0], outputs[1],
+            "native logical read identity is unchanged"
+        );
+        assert_ne!(roots[0], roots[1], "exact payloads must not coalesce");
     }
 
     #[test]
@@ -385,14 +457,11 @@ mod tests {
         else {
             panic!("outer read")
         };
-        assert_eq!(actual, &address);
-        let PointerOffsetTerm::Int32Scaled { value, .. } = &actual.offset else {
+        assert_eq!(actual, &SharedPointerAddress::import(&address));
+        let KernelPointerOffset::Int32Scaled { value, .. } = actual.node().offset.node() else {
             panic!("index read retained")
         };
-        assert!(matches!(
-            value.shared_operand().unwrap().node(),
-            KernelTermNode::MemoryLoad { .. }
-        ));
+        assert!(matches!(value.node(), KernelTermNode::MemoryLoad { .. }));
     }
 
     #[test]

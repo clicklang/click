@@ -1928,7 +1928,14 @@ impl EqualityGraph {
                                 pointers.push(pointer);
                             }
                         }
-                        N::MemoryLoad { address, .. } => pointers.push(address.clone()),
+                        N::MemoryLoad { .. } => {
+                            let MachineTerm::MemoryLoad(_, address, _) =
+                                term.machine_read_leaf().expect("read descriptor")
+                            else {
+                                unreachable!("read descriptor")
+                            };
+                            pointers.push(address.as_ref().clone());
+                        }
                         N::MachineLiteral(_) => {}
                         // Native pointer discovery treats conditionals and folds as
                         // opaque; registering one does not inspect its children.
