@@ -3172,6 +3172,9 @@ impl CheckedFunctionEntry {
                 })??,
             )
         };
+        if let (Some(cases), Some(transfer)) = (&cases, &boundary_transfer) {
+            cases.retain_closing_footprint(transfer, &assumptions);
+        }
         let entry = Self {
             cases,
             caller_state: caller_state.clone(),

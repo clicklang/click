@@ -23,6 +23,8 @@ pub(crate) struct PreparedContractEntryCases {
     pub(super) arguments: Vec<ProgramExpression>,
     pub(super) byte_order: Proposition,
     pub(super) raw_entry_state: ExecutionState,
+    pub(super) closing_entry: Arc<RetainedClosingEntry>,
+    closing_footprint: std::sync::OnceLock<RetainedClosingFootprint>,
     pub(super) cases: Vec<PreparedContractEntryCase>,
 }
 
@@ -30,6 +32,7 @@ pub(crate) struct PreparedContractEntryCases {
 pub(super) struct PreparedContractEntryCase {
     pub(super) assumptions: PureFactContext,
     pub(super) entry_state: ExecutionState,
+    pub(super) closing_entry: Arc<RetainedClosingEntry>,
 }
 
 impl std::fmt::Debug for PreparedContractEntryCases {
@@ -56,6 +59,19 @@ impl PreparedContractEntryCases {
 
     pub(crate) fn caller_state(&self) -> &ExecutionState {
         &self.state
+    }
+
+    pub(crate) fn closing_entry(&self) -> &RetainedClosingEntry {
+        &self.closing_entry
+    }
+
+    pub(crate) fn retain_closing_footprint(
+        &self,
+        transfer: &crate::kernel::functions::CheckedBoundaryResourceTransfer,
+        assumptions: &PureFactContext,
+    ) {
+        let footprint = RetainedClosingFootprint::from_transfer(transfer, assumptions);
+        let _ = self.closing_footprint.set(footprint);
     }
 }
 
@@ -153,12 +169,36 @@ pub(crate) fn prepare_function_contract_entry_cases(
     let ContractEntry {
         subject,
         assumptions,
+        facts,
+        resources,
         ..
     } = entry;
     let state = &subject.state;
     let function = &subject.function;
     let arguments = &subject.arguments;
     let base_assumptions = assumptions.assume_proposition(byte_order.clone());
+    let closing_facts = facts
+        .iter()
+        .filter(|fact| {
+            matches!(
+                fact.origin(),
+                ContractEntryFactOrigin::CompositeDefinition
+                    | ContractEntryFactOrigin::PopulationFact
+                    | ContractEntryFactOrigin::Observable
+            )
+        })
+        .map(|fact| fact.proposition().clone())
+        .collect();
+    let closing_entry = Arc::new(RetainedClosingEntry::from_producer(
+        state.clone(),
+        function,
+        arguments.to_vec(),
+        resources.state,
+        resources.required,
+        resources.checked,
+        base_assumptions.clone(),
+        closing_facts,
+    ));
     let resource_condition_cases = contract_resource_condition_cases(
         state,
         function,
@@ -189,9 +229,12 @@ pub(crate) fn prepare_function_contract_entry_cases(
             .ok_or("could not expand the composite resources of the contract entry state")?;
             raw_entry_state.clone().with_resource_context(resources)
         };
+        let closing_case =
+            Arc::new(closing_entry.for_case(function, entry_state.clone(), assumptions.clone()));
         cases.push(PreparedContractEntryCase {
             assumptions,
             entry_state,
+            closing_entry: closing_case,
         });
     }
     Ok(PreparedContractEntryCases {
@@ -202,6 +245,8 @@ pub(crate) fn prepare_function_contract_entry_cases(
         arguments: arguments.to_vec(),
         byte_order,
         raw_entry_state,
+        closing_entry,
+        closing_footprint: std::sync::OnceLock::new(),
         cases,
     })
 }
@@ -1390,7 +1435,14 @@ pub struct ContractEntry {
     /// The propositions of `facts`, for membership.
     stated: BTreeSet<Proposition>,
     /// The entry state holding the contract's expanded entry resources.
-    resource_state: ExecutionState,
+    resources: ContractEntryResources,
+}
+
+#[derive(Clone, Debug)]
+struct ContractEntryResources {
+    state: ExecutionState,
+    required: ResourceContext,
+    checked: Arc<[crate::kernel::functions::CheckedResourceFact]>,
 }
 
 impl ContractEntry {
@@ -1421,8 +1473,8 @@ impl ContractEntry {
     fn resources_supply(&self, proposition: &Proposition) -> bool {
         matches!(proposition, Proposition::MemoryLoadable { .. })
             && resources_certify_loadability(
-                &self.resource_state,
-                self.resource_state.resources(),
+                &self.resources.state,
+                self.resources.state.resources(),
                 proposition,
                 &self.assumptions,
             )
@@ -1436,7 +1488,7 @@ pub fn program_function_contract_entry(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
 ) -> Result<ContractEntry, String> {
-    let (assumptions, facts, resource_state) =
+    let (assumptions, facts, resources) =
         program_function_contract_entry_facts(caller_state, function, arguments)?;
     let predicate_bodies = function
         .contract_requires()
@@ -1505,7 +1557,7 @@ pub fn program_function_contract_entry(
         assumptions,
         facts: entry_facts.0,
         stated,
-        resource_state,
+        resources,
     })
 }
 
@@ -1517,7 +1569,14 @@ fn program_function_contract_entry_facts(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-) -> Result<(PureFactContext, Vec<ContractEntryFact>, ExecutionState), String> {
+) -> Result<
+    (
+        PureFactContext,
+        Vec<ContractEntryFact>,
+        ContractEntryResources,
+    ),
+    String,
+> {
     let mut assumptions = PureFactContext::new();
     let mut entry_facts = ContractEntryFactLog(Vec::new());
     if let Some(message) =
@@ -2255,7 +2314,15 @@ fn program_function_contract_entry_facts(
             proposition,
         );
     }
-    Ok((assumptions, entry_facts.0, entry_state))
+    Ok((
+        assumptions,
+        entry_facts.0,
+        ContractEntryResources {
+            state: entry_state,
+            required: required_resources,
+            checked: required_entry_clauses.into(),
+        },
+    ))
 }
 
 pub(super) fn instantiate_contract_predicate_unfolding(
@@ -3656,7 +3723,7 @@ mod scaling_tests {
 mod prepared_entry_cases_tests {
     use super::*;
 
-    fn fixture(
+    pub(super) fn fixture(
         guards: usize,
         unrelated: usize,
     ) -> (ExecutionState, ProgramFunction, Vec<ProgramExpression>) {
