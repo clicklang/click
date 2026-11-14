@@ -171,35 +171,152 @@ contracts, or resource shapes.
 
 ## Remaining transport expansion inventory
 
-This is a migration checklist for the legacy transport dispatcher, not a count
-of distinct slow walks. There are five remaining work areas; each may need more
-than one fixture. A spelling variation belongs to its existing row rather than
-becoming a new roadmap item. Paths below are relative to `src/`.
+This is an evidence inventory, not a count of dispatcher arms or slow walks.
+Expansion probes were run with a production CLI built at `c226e007d` (merged
+in PR #2735); corpus counts were taken at `61b85bca0`. No verifier behavior
+was changed for this audit. Successful `click expand --claim` probes below
+also passed the CLI's replay with the implicit closer disabled.
 
-| Area | Remaining route and source anchor | Completion criterion |
-| --- | --- | --- |
-| T1: residual scalar observations | `surface/proof/fixed_state_proofs/fact_transport.rs`: load-variable/origin bridges in `check_fixed_state_fact_transport_using_facts_inner`, plus `certified_fact_transport_reaches_through`. Computed scalar comparisons over selected reads, constants, arithmetic/bitwise operators and `to_integer` now have an ordinary preservation/rewrite expansion. Indexed cells now select the address of their written place, including distinct indices on the same base; their ordinary preservation chains replay without implicit solve. Other read expressions, computed addresses, alternate cell spellings, and range-selected evidence still reach these routes. | Select each necessary equality and address guard in planning; emit explicit preservation/rewrite steps. Start with one reduced case, and identify a missing primitive before adding one. |
-| T2: logical structure and quantifiers | `certified_fact_transport_reaches`: top-level conjunctions with non-scalar leaves, top-level disjunction, implications with non-comparison leaves or binders, and universal-body recursion; `check_fixed_state_fact_transport_using_facts_inner`: `frame_quantified_transport`. | Decompose into ordinary logical steps and the already supported leaf proofs. Handle logical forms beyond scalar conjunction selection/regrouping and matching propositional trees under implications with scalar comparison leaves; give non-scalar leaves, guards and binders their own replay/refusal fixtures. |
-| T3: resource, range, and definedness facts | `certified_fact_transport_reaches`: separation/containment descriptor matching and atomic derivation of `CMemoryLoadable` / `CMemoryReadDefined`. | Replace each surviving route with named resource laws or explicit observations and guards. Current-snapshot restrictions with constant or named endpoints, including pointer aliases, expand through subrange/viewability laws and ordinary equality steps. Call-postcondition separation over memory ranges now expands through ordinary base/endpoint rewrites and assumption, including clauses with formation bounds; no historical transport is needed for this descriptor-equality case. Native byte-count range restrictions with direct endpoints now use the same subrange/viewability laws, including element-width scaling such as uint32 ranges. Displaced bases and computed native endpoints remain on the existing route. Signed int32 addition/subtraction in a selected upper endpoint now expands through explicit Integer bounds, definedness, the integer operation-identity law, and subrange/viewability laws. Computed lower endpoints, nested computations, and other index formats still need individual ordinary-proof migrations. Do not reintroduce implicit arithmetic into the library application. |
-| T4: proof-context adapters | `surface/proof/proof_object/fixed_state_steps.rs`: `apply_transport_using`, `apply_pure_transport_using`, `apply_fixed_state_transport_using`, `apply_execution_transport_using`; post-execution handling in `surface/proof/driver/claims.rs`. | Ordinary selected-footprint derivations now also run through auxiliary `have` scopes, and known targets after return or at branch joins use ordinary assumption proofs. The post-return adapter accepts the resulting target publication without requiring legacy source/target metadata. Audit remaining outcomes whose targets still require historical discovery; no adapter may retain an opaque transport simply because the proof phase differs. |
-| T5: discovery and legacy dispatcher retirement | `plan_explicit_fact_transport`, transition/effect collection in `check_fixed_state_fact_transport_using_facts_inner`, and `surface/proof/proof_object/execution_statements/search.rs`'s bare transport planners. | Budgeted discovery emits ordinary steps, including selected footprint evidence. Remove search from the explicit-operation path and retire the legacy dispatcher once its supported cases have ordinary expansions or deliberate bounded refusals. |
+### Confirmed generated output
 
-The marked scalar fixture `marked_constant_store_transport_expands_to_known_fact_lookup` is already migrated: after the unrelated call, the target is known and expansion emits an ordinary `have`/`assumption`. Its complete expansion replays with implicit solving disabled; changing the call to mutate the observed field is rejected. The open-resource scalar fixture `linear_open_expands_known_transport_to_assumption` likewise emits an ordinary lookup. Do not count their former nightly transport-output assertions as remaining historical cases.
+There are **five reproduced output shapes**, from four successful source
+examples. Two shapes occur in the same vector example. These may share fixes;
+they are not necessarily five different kernel primitives.
 
-The candidate search in `surface/proof/smart_execution/search.rs::fact_transport_candidate_search` first tries an empty premise list and can accept legacy transport before selecting any explicit footprint. Remaining historical cases need a planner that selects and emits each preservation link, rather than merely accepting that opaque success.
+| ID | Reproducer | Surviving generated operation | Work to isolate next |
+| --- | --- | --- | --- |
+| T1 | [`native_view_window.md`](../mdtests/native_view_window.md), claim `window.contract` | `transport(viewable(p[0u64..held]), viewable((p + start)[0u64..requested])) using { ... }` | Express the displaced window as an explicit containment/rebasing proof, then apply viewability restriction. Direct-endpoint same-base native ranges are already handled. |
+| T2 | `quantifier.c` / `quantifier.click` below, claim `keep.contract` | After `intro` and `instantiate`: `transport(at(function.entry, p[i] == 7), p[i] == 7) using { ... }` | Select the separation and preservation links for the instantiated read across the one disjoint store. |
+| T3 | `universal_bound.c` / `universal_bound.click` below, claim `stronger.contract` | After `instantiate`: `transport(at(function.entry, p[i] <= limit), p[i] < result) using { ... }` | Separate carrying the instantiated fact from the arithmetic that uses `result == limit + 1`. This example has no memory store. |
+| T4 | `restricted_solve_certifies_unchanged_prefix_after_indexed_store` in [`expansion_tests.rs`](../src/surface/tests/expansion_tests.rs), full `vector_push.contract` | The resource fold's prerequisite uses `transport(at(function.entry, viewable((owner->data as (int32 *))[0..owner->cap])), viewable(owner->data[0..owner->len])) using { ... }` | Isolate historical view evidence, pointer/endpoint equalities, and range restriction. The fold driver is the caller, not a separate proof principle. |
+| T5 | Same vector example and full contract | Under the quantified prefix goal: `transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using { ... }` | Select explicit preservation for an indexed read through the recorded owner pointer. Its only printed extra premise is an anchored `index <= owner->cap`; the legacy checker still supplies the historical reasoning. |
 
-T5 includes an explicit known cost violation: the legacy fixed-state route
-rebuilds transition assumptions with `assume_proposition_uncharged`, and its
-source comments acknowledge path-linear work. Converting a surface spelling
-does not remove that shared implementation; the endpoint is to make it
-unreachable from expanded proofs and then remove the obsolete route. Keep
-source/result normalization and premise/effect collection in this review too.
+The vector nightly test passed, and its full contract was separately expanded
+with the current CLI. To reproduce its test:
 
-For each row, retain a positive expansion/replay example with implicit solving
-disabled, relevant refusal controls, and deterministic growth evidence. Finish
-with a boundary test that expansion cannot create `ProofSearch`; the absence of
-`transport` text in a few examples alone is not the global guarantee. This
-inventory does not classify all non-transport entries in the operation ledger.
+```console
+cargo nextest run --lib --features fast-gate --run-ignored only -E 'test(restricted_solve_certifies_unchanged_prefix_after_indexed_store)'
+```
+
+For T1, run:
+
+```console
+click expand --claim window.contract mdtests/native_view_window.md
+```
+
+For T2 and T3, save each following C/Click pair in one directory and run
+`click expand --claim keep.contract quantifier.click` or
+`click expand --claim stronger.contract universal_bound.click`.
+
+```c filename=quantifier.c
+void keep(int32 p[], int32 n, int32 *q) { *q = 9; }
+```
+
+```click filename=quantifier.click
+verifying "quantifier.c";
+void keep(int32 p[], int32 n, int32 *q) {
+    views p[0..n];
+    owns q[0];
+    requires separate(memory(q[0]), memory(p[0..n]));
+    requires forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };
+    ensures forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };
+} by { step_until(function.exit); solve(); }
+```
+
+```c filename=universal_bound.c
+int32 stronger(int32 p[], int32 n, int32 limit) { return limit + 1; }
+```
+
+```click filename=universal_bound.click
+verifying "universal_bound.c";
+int32 stronger(int32 p[], int32 n, int32 limit) {
+    views p[0..n];
+    requires limit < 2147483647;
+    requires forall (i: int32) { 0 <= i and i < n implies p[i] <= limit };
+    ensures forall (i: int32) { 0 <= i and i < n implies p[i] < result };
+} by { step_until(function.exit); solve(); }
+```
+
+### Written syntax is a separate migration
+
+[`normalize_using_transported_int32_loads.md`](../mdtests/normalize_using_transported_int32_loads.md)
+passes and its full `write_other.contract` expansion retains
+`transport(at(entry, p[i]) == at(entry, p[i]), p[i] == at(entry, p[i])) using { i != k; }`.
+That operation is **already written in the input**. It demonstrates a surviving
+legacy consumer, not a smart tactic generating a new transport.
+
+A balanced-parenthesis text scan for `transport(...)` followed by `using {`
+found the following written sites. The scan covers `.click` files and Click
+fences in Markdown, excludes prose and Rust test strings, and is a syntax
+inventory rather than a proof-reachability claim.
+
+| Corpus | Files | Sites |
+| --- | ---: | ---: |
+| `mdtests/` | 167 | 238 |
+| `examples/` | 35 | 403 |
+| `library/` | 0 | 0 |
+| Total | 202 | 641 |
+
+Of those 167 mdtest files, 62 have failure expectations. They must retain their
+refusal coverage when rewritten; they are not 62 successful legacy proofs.
+Migrate written sites alongside each semantic fix where possible. A final
+corpus pass and syntax/dispatcher deletion are distinct from proving T1–T5.
+
+### Excluded or still unconfirmed
+
+Do not count these as additional confirmed generated-output families:
+
+- Computed lower endpoint `p[index + 1..length]`, nested upper endpoint
+  `p[index..index + 1 + 1]`, and native upper endpoint
+  `p[index..index + 1u64]`: the reduced probes fail with both plain and
+  restricted solve. The narrow probes supply `0 <= index` and the appropriate
+  upper bound (`index < length` or `index + 2 <= length`); the wide probe
+  supplies `index < length`; all supply `viewable(p[0..length])`. These are
+  search misses, not successful expansions retaining transport. This does
+  not establish that every spelling of these shapes fails.
+- Bare same-state range `transport` in a C proof, in both narrow and native
+  form, misses its source-only premise search in the tested examples. Bare
+  `transport` is not available in pure theorem proofs. Neither result is
+  evidence of another generated-output family.
+- `bound_universal_outcome_retains_instantiation_and_transport` fails in
+  `bubble_pass3` before expansion, while proving the loop's quantified bound.
+  It is not a current positive regression for its old output assertion.
+- `quantified_old_transport_expands_to_one_quantified_frame` and
+  `quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_proof`
+  both fail before expansion at the shifted-copy store's separation
+  prerequisite. T2 supplies a smaller successful quantified reproducer;
+  whole-quantifier transport is still unconfirmed by a passing fixture.
+- Residual scalar/address variants, logical wrappers beyond these examples,
+  and other proof-context adapters remain source-audit candidates. They get
+  another work item only after a successful expansion demonstrates it.
+
+### Producer paths and retirement boundary
+
+The principal remaining producer anchors are
+`surface/proof/surface_certificates.rs::plan_explicit_universal_conclusion_discharge`
+and `plan_explicit_loadability_transport`,
+`surface/proof/smart_closures/search.rs::try_carry_entry_conjunct`,
+`surface/proof/smart_execution/search.rs::{try_execution_fact_transport,fact_transport_candidate_search}`,
+and `surface/proof/proof_object/execution_statements/search.rs`'s planned
+transport adapters. These construct `TransportUsing`, but the driver can replace
+that construction with ordinary steps. A constructor occurrence alone is not
+an additional surviving expansion.
+
+The legacy fixed-state route still rebuilds transition assumptions with
+`assume_proposition_uncharged`; its source acknowledges path-linear work.
+The endpoint is to make that implementation unreachable from expanded proofs,
+then remove it, including obsolete source/result normalization and
+premise/effect collection. Finish with a boundary test that an expanded proof
+cannot create `ProofSearch`; a text search alone is insufficient.
+
+A concrete next sequence is T3, T2, T1, T4, T5, then the remaining written
+corpus and dispatcher retirement. That is **five proof migrations plus
+compatibility cleanup and deletion**, roughly six to eight PRs if the current
+families hold. T2/T5 may share a fix, and corpus migration can accompany each
+fix. Missing primitives or newly reproduced output shapes require a new design
+discussion rather than silently expanding a chunk. This inventory does not
+claim exhaustive coverage of all possible source programs or the unrelated
+fast-operation ledger.
 
 ## Outstanding measurement ledger
 
