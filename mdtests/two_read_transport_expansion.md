@@ -23,10 +23,12 @@ void keep(int32* p, int32* q, int32* r) {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
     have *q == *r by {
-        transport(at(statement(0).entry, *q == *r), *q == *r) using {
-            separate(statement(0).footprint, memory(*q));
-            separate(statement(0).footprint, memory(*r));
-        };
+        have *q == *r by {
+            normalize() using {
+                at(statement(0).entry, *q == *r);
+            };
+        }
+        assumption();
     }
     step();
     assumption();

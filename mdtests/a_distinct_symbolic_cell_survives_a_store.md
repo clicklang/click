@@ -1,10 +1,8 @@
-# a store does preserve a cell stated distinct from the one it writes
+# A store preserves a cell with a distinct index
 
-The companion of `store_does_not_preserve_a_symbolic_cell.md`: the frame
-transport is what carries the entry read to the post-store snapshot, and the
-premise it needs is the distinctness of the two indexes. A spec read leaves its
-load unresolved where it cannot decide the alias, so this premise, and not the
-shape of the load, is what makes the transport apply.
+The companion of `store_does_not_preserve_a_symbolic_cell.md`: `elements`
+turns `m != i` into cell separation, and `preserve` carries the selected
+read across the write. Without the index inequality, this chain cannot close.
 
 ```c filename=a_distinct_symbolic_cell_survives_a_store.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
@@ -26,14 +24,15 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     mark entry;
     step();
-    have at(entry, a[m]) == at(entry, a[m]) by normalize();
-    transport(
-        at(entry, a[m]) == at(entry, a[m]),
-        at(entry, a[m]) == a[m]
-    ) using {
-        at(entry, a[m]) == at(entry, a[m]);
-        m != i;
-    };
+    have separate(memory(a[i]), memory(a[m])) by {
+        apply(click::separation::elements(a, i, m)) using { m != i; };
+    }
+    have separate(statement(0).footprint, memory(a[m])) by {
+        normalize() using { separate(memory(a[i]), memory(a[m])); };
+    }
+    have a[m] == at(entry, a[m]) by {
+        preserve(separate(statement(0).footprint, memory(a[m])));
+    }
 }
 ```
 

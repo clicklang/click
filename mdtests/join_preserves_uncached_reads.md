@@ -35,9 +35,11 @@ void keep(struct pair* p, int32 x) {
     have p->tag == 42 by { assumption(); }
     have p->count == 17 by { assumption(); }
     have p->tag == 42 by {
-        transport(at(before_join, p->tag) == 42, p->tag == 42) using {
-            at(before_join, p->tag) == 42;
-        };
+        have p->tag == 42 by {
+            normalize() using {
+                at(before_join, p->tag) == 42;
+            };
+        }
         assumption();
     }
     step();

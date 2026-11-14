@@ -26,13 +26,10 @@ void alias_frame(struct node *p, struct node *n, struct node *g) {
 } by {
     step(); step(); step(); mark stored;
     step(); step();
-    transport(at(stored, parent->right == 0), p->right == 0) using {
-        at(stored, parent->right == 0);
-        parent == p;
-        at(stored, parent) == p;
-        separate(memory(parent->right), memory(n->left));
-        separate(memory(parent->right), memory(parent->tag));
-    };
+    have p->right == 0 by {
+        rewrite(p == parent);
+        normalize();
+    }
     step_until(function.exit); assumption();
 }
 ```

@@ -1,4 +1,4 @@
-# Single-statement transport of an abstract resource field
+# Single-statement preservation of an abstract resource field
 
 ```c filename=resource_frame.c
 void keep(int *p) { *p = 7; }
@@ -17,10 +17,7 @@ void keep(int *p) {
         normalize() using { separate(memory(*p), m); };
     }
     have m.value == at(statement(0).entry, m.value) by {
-        transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
-            m.value == at(statement(0).entry, m.value)) using {
-            separate(statement(0).footprint, m);
-        };
+        preserve(separate(statement(0).footprint, m));
     }
     step();
 }

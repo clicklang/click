@@ -56,13 +56,38 @@ int32 probe(int32 a[], int32 n, int32 k) {
         intro();
         have j <= n by { solve() using { j <= k; k <= n; }; }
         have viewable(a[0..j]) by {
-            transport(viewable(a[0..n]), viewable(a[0..j])) using {
-                viewable(a[0..n]);
-                0 <= j;
-                j <= n;
-                0 <= n - 0;
-                n - 0 <= 1073741823;
-            };
+            have viewable(a[0..j]) by {
+                have viewable(a[0..n]) by {
+                    assumption();
+                }
+                have 0 <= 0 by {
+                    arithmetic_certificate {
+                        trivial => 0 <= 0;
+                        conclusion 0;
+                    }
+                }
+                have viewable(a[0..j]) by {
+                    have contains(memory(a[0..n]), memory(a[0..j])) by {
+                        apply(click::separation::subrange(a, 0, n, 0, j)) using {
+                            0 <= 0;
+                            0 <= j;
+                            j <= n;
+                        };
+                    }
+                    apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..j]))) using {
+                        viewable(a[0..n]);
+                        0 <= j;
+                        j <= n;
+                        0 <= (to_integer(n) - 0);
+                        (to_integer(n) - 0) <= 1073741823;
+                        viewable(a[0..n]);
+                        0 <= 0;
+                        contains(memory(a[0..n]), memory(a[0..j]));
+                    };
+                }
+                assumption();
+            }
+            assumption();
         }
         assumption();
     }

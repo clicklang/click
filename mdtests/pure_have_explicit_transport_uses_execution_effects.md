@@ -28,12 +28,11 @@ int32 set_second_return_first(int32 p[2]) {
     unfold(first_is_seven);
     step();
     have p[0] == 7 by {
-        transport(
-            old(p[0]) == 7,
-            p[0] == 7
-        ) using {
-            old(p[0]) == 7;
-        };
+        have p[0] == 7 by {
+            normalize() using {
+                old(p[0]) == 7;
+            };
+        }
         assumption();
     }
     step();

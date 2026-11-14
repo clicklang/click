@@ -46,9 +46,12 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
     step();
     step();
     have b->v == old(b->v) by {
-        transport(at(m0, b->v) == old(b->v), b->v == old(b->v)) using {
-            at(m0, b->v) == old(b->v);
-        };
+        have b->v == old(b->v) by {
+            normalize() using {
+                at(m0, b->v) == old(b->v);
+            };
+        }
+        assumption();
     }
 }
 ```

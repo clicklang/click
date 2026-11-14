@@ -22,10 +22,12 @@ void put(int32* p, int32* q) {
     have separate(memory(p[0]), memory(q[0])) by { solve(); }
     step();
     have p[0] == 9 by {
-        transport(old(p[0]) == 9, p[0] == 9) using {
-            old(p[0]) == 9;
-            separate(memory(p[0]), memory(q[0]));
-        };
+        have p[0] == 9 by {
+            normalize() using {
+                old(p[0]) == 9;
+            };
+        }
+        assumption();
     }
 }
 ```

@@ -20,12 +20,12 @@ void copy(const struct callbacks* cb, struct callbacks* out) {
     transport((&table)->call == (&table)->call,
         cb->call == (&table)->call) using { cb == &table; };
     step();
-    transport(at(write, cb->call) == at(write, (&table)->call),
-        at(write, cb->call) == (&table)->call) using {
-        at(write, cb->call) == at(write, (&table)->call);
-        at(write, separate(memory(out->call), memory(cb->call)));
-        cb == &table;
-    };
+    have at(write, cb->call) == table.call by {
+        normalize() using {
+            at(write, cb->call) == at(write, table.call);
+            cb == &table;
+        };
+    }
     step();
     solve();
 }
