@@ -883,3 +883,62 @@ fn pointer_numeric_observations_retain_prepared_dags_without_export() {
         }
     }
 }
+
+#[test]
+fn pointer_call_handoffs_retain_prepared_argument_dags() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let value = SharedPointerValue::import(&PointerValue::new(
+        Pointer::symbolic(Variable(1025200)),
+        ProgramType::Int32Pointer,
+    ));
+    let memory = intern_memory(Memory::new());
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|n| KernelTerm::variable(KernelType::Integer, Variable(1025201 + n)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut argument =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1025800));
+            for _ in 0..size {
+                argument = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [argument.clone(), argument],
+                );
+            }
+            let exports = KernelTermExport::machine_export_count();
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let call = KernelTerm::checked_call(
+                    KernelType::Program(ProgramType::Int32Pointer),
+                    "pointer_select".into(),
+                    vec![argument.clone()],
+                );
+                KernelTerm::shared_pointer_call(call, value.clone())
+            });
+            let KernelTermNode::PointerCall { call, .. } = root.node() else {
+                panic!("pointer call")
+            };
+            let KernelTermNode::Call { arguments, .. } = call.node() else {
+                panic!("call")
+            };
+            assert_eq!(arguments[0], argument);
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 48, "size={size} unrelated={unrelated} work={work}");
+            let (reference, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::shared_array_reference(memory.clone(), root.clone(), ProgramType::Int32)
+            });
+            let KernelTermNode::ArrayReference { pointer, .. } = reference.node() else {
+                panic!("array argument")
+            };
+            assert_eq!(pointer, &root);
+            assert!(reference.0.pointer_leaf.get().is_none());
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(
+                work <= 16,
+                "size={size} unrelated={unrelated} array work={work}"
+            );
+        }
+    }
+}

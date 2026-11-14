@@ -261,7 +261,11 @@ mod scaling_tests {
 fn wide_call_identity_casts_keep_the_native_type_refusal() {
     let _session = VerificationSession::enter();
     for source in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
-        for target in [ProgramType::Int128, ProgramType::UInt128, ProgramType::Int32] {
+        for target in [
+            ProgramType::Int128,
+            ProgramType::UInt128,
+            ProgramType::Int32,
+        ] {
             for count in [1, 3] {
                 let root = call(source, "wide_call");
                 let native = SpecValue::Shared(root.clone()).into_native();
@@ -378,15 +382,19 @@ fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
         let bound = SpecExpression::Let {
             name: "result".into(),
             value: Box::new(call.clone()),
-            body: Box::new(SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                "result".into(),
-            ))),
+            body: Box::new(SpecExpression::ProgramExpression(
+                ProgramExpression::Variable("result".into()),
+            )),
         };
         let exports = KernelTermExport::machine_export_count();
         assert_eq!(produced_paths(&bound, false), produced_paths(&call, false));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         if format.format().bits() == 128 {
-            for target in [ProgramType::Int128, ProgramType::UInt128, ProgramType::Int32] {
+            for target in [
+                ProgramType::Int128,
+                ProgramType::UInt128,
+                ProgramType::Int32,
+            ] {
                 let cast = SpecExpression::Cast(Box::new(call.clone()), target);
                 for legacy in [false, true] {
                     let mut execution = ExecutionBudget::new();
@@ -424,7 +432,8 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
     let child = root.children()[0].clone();
     let exports = KernelTermExport::machine_export_count();
     let native = paths.pop().unwrap().value.into_native();
-    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native else {
+    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native
+    else {
         panic!()
     };
     let [PureFunctionArgument::SharedMachine(value)] = arguments.as_slice() else {
@@ -523,6 +532,104 @@ fn actual_call_comparisons_preserve_native_fact_forms() {
                 other.comparison(op, &expected).unwrap()
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+}
+
+#[test]
+fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
+    let _session = VerificationSession::enter();
+    let class = crate::kernel::effective_type::CAccessClass::Scalar(
+        crate::kernel::effective_type::CScalarClass::Int,
+    );
+    for (null, mode) in [false, true]
+        .into_iter()
+        .flat_map(|null| (0..3).map(move |mode| (null, mode)))
+    {
+        let pointer = PointerValue::new(
+            if null {
+                Pointer::null()
+            } else {
+                Pointer::symbolic(Variable(1025100))
+            },
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_constant(true)
+        .with_object_class(Some(class.clone()));
+        let call = |argument| SpecExpression::PureFunctionApplication {
+            name: "pointer_select".into(),
+            arguments: vec![{
+                let argument = if mode == 0 {
+                    SpecPureFunctionArgument::Value(argument)
+                } else {
+                    SpecPureFunctionArgument::ArrayRef {
+                        memory: SpecMemory::Current,
+                        pointer: argument,
+                        element_type: ProgramType::Int32,
+                    }
+                };
+                if mode == 2 {
+                    SpecPureFunctionArgument::ObjectPointer {
+                        argument: Box::new(argument),
+                        object_class: class.clone(),
+                    }
+                } else {
+                    argument
+                }
+            }],
+            result_type: ProgramType::Int32Pointer,
+            pointer_result: Some(std::sync::Arc::new(PurePointerResult {
+                classes: BTreeSet::new(),
+                arguments: BTreeSet::from([0]),
+            })),
+            result_object_class: Some(class.clone()),
+            projection: None,
+        };
+        let expression = call(call(SpecExpression::Value(ProgramValue::Pointer(pointer))));
+        let retained = produced_paths(&expression, false);
+        let native = produced_paths(&expression, true);
+        assert_eq!(retained.len(), 1, "mode={mode} null={null}");
+        assert_eq!(retained.len(), native.len());
+        for (actual, expected) in retained.iter().zip(&native) {
+            assert_eq!(
+                actual.value.clone().into_native(),
+                expected.value.clone().into_native()
+            );
+            assert_eq!(actual.facts, expected.facts);
+            assert_eq!(actual.obligations, expected.obligations);
+            let actual_pointer = actual.value.pointer().unwrap();
+            let expected_pointer = expected.value.pointer().unwrap();
+            assert_eq!(
+                actual_pointer.object_class(),
+                expected_pointer.object_class()
+            );
+            assert_eq!(
+                actual_pointer.object_origin_evidence(),
+                expected_pointer.object_origin_evidence()
+            );
+            assert_eq!(
+                actual_pointer.pointee_constant(),
+                expected_pointer.pointee_constant()
+            );
+            assert_eq!(
+                actual_pointer.pointee_volatile(),
+                expected_pointer.pointee_volatile()
+            );
+            if !null {
+                let KernelTermNode::PointerCall { call, .. } =
+                    actual.value.shared().unwrap().node()
+                else {
+                    panic!("retained pointer call");
+                };
+                let KernelTermNode::Call { arguments, .. } = call.node() else {
+                    panic!("generic call")
+                };
+                let child = match arguments[0].node() {
+                    KernelTermNode::ArrayReference { pointer, .. } => pointer,
+                    _ => &arguments[0],
+                };
+                assert!(matches!(child.node(), KernelTermNode::PointerCall { .. }));
+            }
         }
     }
 }

@@ -3270,6 +3270,25 @@ pub(super) fn raise_kernel_term(
                 }],
             }
         }
+        Node::PointerCall { call, .. } => recurse(call)?,
+        Node::ArrayReference {
+            memory, pointer, ..
+        } => {
+            if *memory == crate::kernel::intern_memory_ref(state.memory()) {
+                recurse(pointer)?
+            } else {
+                let entry = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())?;
+                if *memory != crate::kernel::intern_memory_ref(entry.memory()) {
+                    return None;
+                }
+                SurfaceTerm::Old(Box::new(raise_kernel_term(
+                    pointer,
+                    parameter_binding,
+                    &entry,
+                    bound_variables,
+                )?))
+            }
+        }
         Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
         | Node::PointerValue(value) => {

@@ -202,7 +202,7 @@ impl SpecCallArgument {
     pub(super) fn native_descriptor(&self) -> Option<&PureFunctionArgument> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(_) => None,
+            Self::Shared(value) => value.pointer_argument_native(),
         }
     }
 
@@ -210,6 +210,9 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
+                if let Some(descriptor) = value.pointer_argument_native() {
+                    return descriptor.clone();
+                }
                 let KernelType::Program(ty) = value.ty() else {
                     unreachable!("machine argument");
                 };
