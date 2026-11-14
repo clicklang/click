@@ -1000,8 +1000,7 @@ the conversion to write, such as `x as uint8`
 (`mdtests/a_narrow_typed_let_of_mixed_operands_is_refused.md`); the operand
 of a cast such as `(a + b) as uint8` has no expected type and keeps C's
 promoted `int` operation. Unsuffixed literals are Integer unless their context gives
-them a machine type
-([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md));
+them a machine type;
 compared with a 64- or 128-bit value, a literal is converted to that
 value's format as C converts it, so `0 < v` on an `int128` reads
 `0 < to_integer(v)`

@@ -239,8 +239,7 @@ Every library module with theorems, functions or predicates now uses
 these qualified names; the native-width integer lemmas and wrapping
 operations are `click::integer` declarations, such as
 `integer::int32_positive_is_nonnegative`, and keep their width prefixes
-until generic names replace them; see
-[`roadmap/standard-library.md`](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md).
+(generic width-free names were not taken, maintainer, 2026-11-09).
 
 ## Contracts are per function
 

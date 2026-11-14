@@ -38,8 +38,9 @@ Each declaration is in one layer, which sets its trust:
 - **Language library models** are assumed `extern` contracts for the C, C++ or
   Rust library the verified code calls, listed in
   [trust](../docs/concepts/trust.md#the-click-library). `c/string.click`
-  and the `cpp/` files are written here; the allocator family and
-  `snprintf` contracts are built into the C front end. The Rust core-method
+  and the `cpp/` files are written here; the allocator family is a
+  built-in primitive of the C front end and the kernel, and the `snprintf`
+  contracts are written by the C front end per format. The Rust core-method
   contracts are written in `rust/core.click` and, for the integer methods,
   `rust/integers.click`; the importer keeps only a name table.
 - **The specification library** is every other module: checked types, pure
@@ -74,8 +75,7 @@ A module is named by a `click::` path that mirrors its file:
 `import click::cstr;` is `cstr.click` and `import click::c::string;` is
 `c/string.click`. A declaration's qualified name adds its own name:
 `click::cstr::len`, or `cstr::len` once the module is in scope
-(`src/surface/parser/library_paths.rs`). The remaining design steps are recorded in
-[`roadmap/standard-library.md`](../roadmap/standard-library.md).
+(`src/surface/parser/library_paths.rs`).
 
 The library is checked on its own, like any dependency: `verify_standard_library`
 proves every library theorem that has a proof, checks each kernel standard

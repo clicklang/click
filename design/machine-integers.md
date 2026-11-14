@@ -5,8 +5,8 @@ the decisions below. It supersedes the 2026-10-16 wontfix rulings in
 [typed-indices.md](typed-indices.md#rulings) on a width-carrying term type
 and a single comparison family. It reopens the goal of the closed
 `issues/one-integer-term-type.md` (P1 by user direction, 2026-10-16),
-`git show 1e37d2df^:issues/one-integer-term-type.md`. The roadmap entry is
-[standard-library.md](../roadmap/standard-library.md#one-machine-integer-design).
+`git show 1e37d2df^:issues/one-integer-term-type.md`. The roadmap entry was
+`roadmap/standard-library.md`, closed and deleted on 2026-11-13.
 
 The site counts below come from text searches of `src/` at `3aea06b9`,
 excluding test files. They size the work; they are not an audit.

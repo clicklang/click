@@ -522,7 +522,7 @@ fn theorem(family: &Family, format: &Format) -> String {
 }
 
 /// The families the gate proves at every format: a comparison bridge and
-/// the range, the regression `roadmap/standard-library.md` names. Each costs
+/// the range, the standard-library item's intended regression. Each costs
 /// about a millisecond per format after the first verification's library
 /// setup (about 0.35s); the nightly per-format tests prove every family.
 const GATE_FAMILIES: &[&str] = &["less_equal_to_integer", "to_integer_bounds"];

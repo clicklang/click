@@ -54,7 +54,7 @@ verifying "rbtree.c";
   identities even though users initially write unqualified names.
 - Import aliases, private declarations, and explicit export lists are
   deferred. Qualified names and selective imports of Click library modules
-  moved to [standard-library.md](standard-library.md).
+  are delivered ([library/README.md](../library/README.md)).
 
 The first delivery imports algebraic types, pure functions, predicates,
 theorems, and resources. Importing a file containing `verifying` is rejected:
@@ -263,7 +263,7 @@ Concrete P2 handoff: retain this issue for the requirements below. Extend
 the same resolved graph and selection metadata to named contracts and
 external C specifications first; then replace the conservative
 imported-entry fallback with precise import-aware change selection. The
-library split moved to [standard-library.md](standard-library.md). Do not create a parallel include mechanism or proof cache.
+library split is delivered ([library/README.md](../library/README.md)). Do not create a parallel include mechanism or proof cache.
 
 ## Follow-up scope retained by this issue
 
@@ -273,7 +273,7 @@ requirements are implemented or the user explicitly reschedules them:
 
 - Import shared named contracts and supported external C specifications without
   changing their checked semantics or silently selecting executable targets.
-- The library split is tracked in [standard-library.md](standard-library.md).
+- The library split is delivered ([library/README.md](../library/README.md)).
   It uses this module mechanism, not a separate unchecked Rust-only include
   convention.
 - Complete precise import-aware incremental and `--changed-since` selection,

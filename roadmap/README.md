@@ -178,5 +178,4 @@ Proof language and tooling:
 - [Scaling: stamp out quadratic work in simple checking](scaling.md)
 - [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
-- [Design a consistent standard library](standard-library.md)
 - [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
