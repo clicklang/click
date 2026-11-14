@@ -14555,6 +14555,7 @@ pub struct SymbolicCExecution {
 /// entry they name, so a claim that holds on every one of them holds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CContractPathSet {
+    pub(super) closed_exit_obligations: Vec<Option<super::CClosedContractExit>>,
     /// Producer path identities, retained across authorized entry rebasing.
     pub(super) completion_path_origins: Vec<Theorem>,
     pub(super) paths: Vec<SymbolicCExecutionPath>,
@@ -14649,6 +14650,10 @@ pub struct CFunctionContractExecution {
 /// without covering the others.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CCheckedFunctionExecution {
+    pub(super) closed_exit_obligations: Vec<Option<super::CClosedContractExit>>,
+    /// The immutable outcome publication this proof completed. Return-path
+    /// completion uses this same input and preserves its checked path object.
+    pub(super) proof_candidates: Option<CFunctionExecutionCandidates>,
     pub(super) state: CState,
     pub(super) function: CFunction,
     pub(super) arguments: Vec<CExpression>,

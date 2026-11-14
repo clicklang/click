@@ -70,3 +70,78 @@ fn claim_closing_updates_only_selected_entries_and_preserves_forks() {
         assert!(indexed_work <= 6 * (count.ilog2() as usize + 1));
     }
 }
+
+#[test]
+fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
+    let execution = closing_execution();
+    let context = crate::kernel::CContractClosingContext::new(&execution);
+    let core = outcome();
+    for count in [16, 64, 256, 512] {
+        let mut claims = OutcomeClaimGoals::open(
+            (0..count).map(|index| (CFunctionContractClaimKey::Ensure(index), None)),
+            false,
+        );
+        let mut goal =
+            FunctionOutcomeObligation::new(0, Arc::new(OutcomeProofState::new(core.clone(), ())));
+        goal.closing = Some(context.open(0, &core));
+        goal.claims = Some(claims.clone());
+        assert_eq!(
+            goal.first_open_goal(),
+            Ok(Some(OutcomeGoal::Claim {
+                position: 0,
+                key: CFunctionContractClaimKey::Ensure(0)
+            }))
+        );
+        for index in 0..count {
+            claims = claims
+                .close(
+                    &CFunctionContractClaimKey::Ensure(index),
+                    receipt(),
+                    &core.identity,
+                )
+                .unwrap();
+        }
+        goal.claims = Some(claims);
+        for fact_count in [0, 64, 1024] {
+            let facts = (0..fact_count).fold(
+                crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                |facts, index| {
+                    facts.with_fact(crate::kernel::Proposition::ConditionIs(
+                        crate::kernel::ConditionTerm::equal(
+                            crate::kernel::MachineTerm::Variable(crate::kernel::Variable(
+                                976_000 + index,
+                            )),
+                            crate::kernel::MachineTerm::constant(0),
+                        ),
+                        true,
+                    ))
+                },
+            );
+            let proof = crate::kernel::proof::ProofObject::root(
+                (),
+                crate::kernel::proof::ProofBranch::new(
+                    ProofObligation::<(), _>::FunctionOutcome(goal.clone()),
+                    crate::kernel::proof::ProofBranchState::<()> {
+                        facts,
+                        unfolded_predicates: crate::kernel::proof::PersistentOrderedSet::default(),
+                        execution: None,
+                    },
+                ),
+            );
+            let ((result, work), indexed_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    proof.complete_function_outcome()
+                })
+            });
+            assert!(
+                indexed_work <= 10 * (count.ilog2() as usize + 1),
+                "{indexed_work} index visits for {count} claims"
+            );
+            assert!(result.is_err());
+            assert_eq!(
+                work, 2,
+                "{count} closed claims, {fact_count} unrelated facts"
+            );
+        }
+    }
+}

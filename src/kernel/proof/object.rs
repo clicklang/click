@@ -563,6 +563,31 @@ impl<L, P: Clone, O: Clone, S: Clone>
 impl<L: Clone, P: Clone, S: Clone, E: Clone>
     ProofObject<L, ProofObligation<P, Arc<OutcomeProofState<S>>>, E>
 {
+    /// Retire the outcome branch only after every source and closing goal is closed.
+    pub(crate) fn complete_function_outcome(&self) -> Result<Self, String> {
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .ok_or_else(|| "the outcome branch is no longer open".to_string())?;
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            return Err("completion requires a function outcome".into());
+        };
+        match outcome.first_open_goal()? {
+            Some(super::OutcomeGoal::Claim { key, .. }) => {
+                return Err(format!("outcome still owes contract claim {key:?}"));
+            }
+            Some(super::OutcomeGoal::Closing(goal)) => {
+                return Err(format!(
+                    "outcome still owes contract closing: {}",
+                    goal.description()
+                ));
+            }
+            None => {}
+        }
+        Ok(self.closed_focused())
+    }
+
     /// Open the contract judgment on this branch. Its requirements, facts,
     /// outcome identity and execution all come from this same checked branch;
     /// no separately supplied context can reuse a domain-discharge receipt.

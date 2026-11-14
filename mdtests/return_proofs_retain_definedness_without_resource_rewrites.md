@@ -2,7 +2,7 @@
 
 These `have` steps establish the arithmetic domain in the outcome proof.
 The contract goal consumes that evidence through ordinary obligation checking,
-and final certification consumes the completed claim. No resource rewrite or
+and proof completion retains the established contract claim. No resource rewrite or
 reconstruction of the proof facts from the C execution trace is needed.
 ```c filename=return_definedness.c
 int32 g[4];

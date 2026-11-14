@@ -4837,7 +4837,9 @@ impl PureFactContext {
         self.is_inconsistent()
     }
 
-    pub(crate) fn is_inconsistent(&self) -> bool {
+    /// Contradictions already retained by exact fact admission or congruence.
+    /// This query never initializes the ambient contradiction search index.
+    pub(in crate::kernel) fn has_retained_contradiction(&self) -> bool {
         if let Some(source) = self.observation_comparisons.false_source() {
             record_implicit_reasoning_provenance(self, source);
             return true;
@@ -4858,14 +4860,20 @@ impl PureFactContext {
         {
             return true;
         }
-        self.contradictions
-            .index(|| {
-                self.condition_facts
-                    .scan_for_upkeep()
-                    .map(|(condition, value)| (condition, *value))
-                    .collect()
-            })
-            .is_contradictory()
+        false
+    }
+
+    pub(crate) fn is_inconsistent(&self) -> bool {
+        self.has_retained_contradiction()
+            || self
+                .contradictions
+                .index(|| {
+                    self.condition_facts
+                        .scan_for_upkeep()
+                        .map(|(condition, value)| (condition, *value))
+                        .collect()
+                })
+                .is_contradictory()
     }
 
     /// Every contradiction rule applied to all of this context's facts at

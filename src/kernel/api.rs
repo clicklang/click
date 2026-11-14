@@ -5566,6 +5566,8 @@ pub fn prove_checked_c_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CCheckedFunctionExecution {
+        closed_exit_obligations: vec![None; path_count],
+        proof_candidates: None,
         state,
         function,
         arguments,
@@ -7164,6 +7166,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                     .iter()
                     .filter(|checked| checked.state == state && authorized(checked))
                     .map(|checked| CContractPathSet {
+                        closed_exit_obligations: checked.closed_exit_obligations.clone(),
                         boundary_transfers: vec![
                             checked.boundary_transfer().cloned();
                             checked.execution.paths.len()
@@ -7210,6 +7213,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             },
                         )
                         .map(|execution| CContractPathSet {
+                            closed_exit_obligations: checked.closed_exit_obligations.clone(),
                             boundary_transfers: vec![
                                 checked.boundary_transfer().cloned();
                                 execution.paths.len()

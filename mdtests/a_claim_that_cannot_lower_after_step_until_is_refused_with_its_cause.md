@@ -25,5 +25,5 @@ void preserve(int32* pool) {
 ```
 
 ```expect
-fail: every pending claim: `ensures to_integer(count(ticket((pool + 1)))) >= 0` failed for `preserve.ensures_1` path 0: could not lower the claim goal
+fail: contract closing for `preserve.ensures_1`: postcondition evaluation stopped at count(...) requires owning authority for that population
 ```

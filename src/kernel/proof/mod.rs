@@ -69,10 +69,10 @@ pub(crate) use object::{
     PropositionSplitError,
 };
 pub(crate) use obligations::{
-    AllocationLifetimeObligation, CheckedProposition, ClaimGoalError, ClaimGoalEvidence,
-    ClaimResourceReceipt, FrontierObligation, FunctionOutcomeObligation, LiveAllocationObligation,
-    OutcomeClaimGoals, OutcomeExecutionFacts, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
-    ProofObligation, PropositionObligation,
+    CheckedProposition, ClaimGoalError, ClaimGoalEvidence, ClaimResourceReceipt,
+    ContractClosingGoal, ContractClosingGoals, FrontierObligation, FunctionOutcomeObligation,
+    LiveAllocationObligation, OutcomeClaimGoals, OutcomeExecutionFacts, OutcomeGoal,
+    OutcomeIdentity, OutcomeProofCore, OutcomeProofState, ProofObligation, PropositionObligation,
 };
 pub(crate) use storage::{
     PersistentOrderedSet, PersistentSequence, PersistentVector, SharedValue, SharedVec,

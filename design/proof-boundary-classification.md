@@ -55,7 +55,7 @@ Scoped evidence: twelve named preparation controls passed on this baseline,
 including constructor counts at 1/8/32, missing-premise refusals, and expansion
 and cold replay. Snapshot-pointer and arithmetic-field regressions preserve the
 meaning of generated obligations. This establishes the selected routes, not a
-cost bound for every evaluator, observation, join or final certification.
+cost bound for every evaluator, observation, join or contract-closing operation.
 
 Two separate limits remain:
 

@@ -3442,6 +3442,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
     let execution = CFunctionContractExecution {
         pointer_result: None,
         cases: vec![vec![CContractPathSet {
+            closed_exit_obligations: vec![],
             completion_path_origins: Vec::new(),
             paths: vec![path],
             checked_resource_claims: vec![Vec::new()],
@@ -3545,6 +3546,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
     };
     let set = |path: &SymbolicCExecutionPath| CContractPathSet {
+        closed_exit_obligations: vec![],
         completion_path_origins: Vec::new(),
         paths: vec![path.clone()],
         checked_resource_claims: vec![Vec::new()],
@@ -3645,6 +3647,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     let execution = CFunctionContractExecution {
         pointer_result: None,
         cases: vec![vec![CContractPathSet {
+            closed_exit_obligations: vec![],
             completion_path_origins: Vec::new(),
             paths: vec![path],
             checked_resource_claims: vec![Vec::new()],
@@ -5895,7 +5898,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         // Summary ensures are symbolic facts, so forwarding needs the same
         // checked proposition completions that a Surface proof supplies.
         let mut completions = Vec::new();
-        for path in artifact.paths() {
+        let closing = crate::kernel::CContractClosingContext::new(&artifact);
+        let mut exit_completions = Vec::new();
+        for (path_index, path) in artifact.paths().iter().enumerate() {
             use crate::kernel::proof::*;
             let Proposition::CFunctionVerifies { outcome, .. } =
                 crate::kernel::api::proof_evidence_conclusion(path.theorem())
@@ -5905,23 +5910,33 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             let CFunctionOutcome::Return { value, state } = outcome else {
                 panic!("forwarding must return");
             };
-            let specification = c_function_specification(
-                proof_state.clone(),
-                arguments.clone(),
-                path.assumptions().pure_facts(),
-                outcome.clone(),
-            );
-            let theorem = prove_c_function_satisfies_specification_from_symbolic_path(
-                forward.clone(),
-                specification.clone(),
-                path,
-            )
-            .expect("checked forwarding specification");
             let mut facts = path.assumptions().pure_facts();
             facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
             let assumptions = facts.iter().fold(PureFactContext::new(), |context, fact| {
                 context.assume_proposition(fact.clone())
             });
+            let core = OutcomeProofCore {
+                identity: OutcomeIdentity::fresh(),
+                result: Arc::new(value.clone().into_native()),
+                store_consequences_available: true,
+                state: state.as_ref().clone().into(),
+                is_exceptional: false,
+                effect_facts: path.facts().clone().into(),
+            };
+            let owned = crate::kernel::CheckedPathSpecification::new(&forward, path)
+                .expect("forwarded path specification");
+            let (_, completion) = closing
+                .open(path_index, &core)
+                .close(
+                    &artifact,
+                    path,
+                    &owned,
+                    &core,
+                    &OutcomeClaimGoals::open([], false),
+                    &ProofFacts::from_ordered(&facts),
+                )
+                .expect("forwarded resource and effect obligations");
+            exit_completions.push(completion);
             for index in 0..2 {
                 let goals = c_function_ensure_goals(
                     &forward,
@@ -5970,12 +5985,24 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     .unwrap_or_else(|_| {
                         panic!("forwarded ensure {index} must follow from the call")
                     });
-                completions.push(crate::kernel::api::contract_certification::c_checked_function_proposition_with_reason(
-                    &forward, &specification, &theorem,
-                    &closed.completed_proposition().expect("closed ensure"), path,
-                ).expect("checked forwarded ensure"));
+                let owned =
+                    crate::kernel::api::contract_certification::CheckedPathSpecification::new(
+                        &forward, path,
+                    )
+                    .expect("forwarded path specification");
+                completions.push(
+                    owned
+                        .complete(
+                            &closed.completed_proposition().expect("closed ensure"),
+                            path,
+                        )
+                        .expect("checked forwarded ensure"),
+                );
             }
         }
+        let artifact = artifact
+            .with_closed_exit_obligations(exit_completions)
+            .expect("forwarded exit completions");
         let execution = prove_c_function_contract_execution_paths_with_checked_artifacts(
             proof_state.clone(),
             forward.clone(),
@@ -5985,12 +6012,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             CFunctionContractExecutionMode::VerifyLoops,
             &[artifact],
         );
-        let claims = c_verified_function_contract_claims_with_checked_propositions(
-            &forward,
-            &execution,
-            &completions,
-        )
-        .unwrap_or_else(|| panic!("forwarded construction claims for {name}"));
+        let claims =
+            c_function_contract_claims_from_completions(&forward, &execution, &completions)
+                .unwrap_or_else(|| panic!("forwarded construction claims for {name}"));
         let rule = c_verified_function_rule(forward.clone(), &claims)
             .expect("forwarded construction rule");
         environment = environment

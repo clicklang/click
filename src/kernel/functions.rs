@@ -285,6 +285,14 @@ impl PartialEq for CheckedBoundaryResourceTransfer {
 impl Eq for CheckedBoundaryResourceTransfer {}
 
 impl CheckedBoundaryResourceTransfer {
+    pub(crate) fn callee_entry(&self) -> &CState {
+        &self.callee
+    }
+
+    pub(crate) fn checked_entry_clauses(&self) -> Vec<CCheckedResourceFact> {
+        transfer_entry_clauses(&self.transfer)
+    }
+
     pub(crate) fn checked_function(&self) -> &CFunction {
         self.function.as_ref()
     }
@@ -8580,6 +8588,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
 /// Check that inherited loop-frame metadata was established from the checked
 /// entry transition before proof generation. This is an invariant check, not
 /// a second evaluator: source expressions are never re-evaluated here.
+#[cfg(test)]
 pub(crate) fn validate_resource_derived_loop_frames(
     function: &CFunction,
     _entry: &CState,
