@@ -449,7 +449,7 @@ fn nested_fold_binder_freshening_scales_with_selected_surface() {
             for n in 0..size {
                 let accumulator = format!("\0acc{n}");
                 let item = format!("\0item{n}");
-                markers.extend([accumulator.clone(), item.clone()]);
+                markers.extend([(accumulator.clone(), None), (item.clone(), None)]);
                 expression = SurfaceTerm::RangeFold {
                     start: Box::new(SurfaceTerm::IntegerLiteral("0".into())),
                     end: Box::new(SurfaceTerm::Binding("n".into())),
@@ -460,8 +460,7 @@ fn nested_fold_binder_freshening_scales_with_selected_surface() {
                 };
             }
             let (renamed, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::surface::lowering::name_synthesized_fold_binders(&expression, &markers)
-                    .unwrap()
+                crate::surface::lowering::name_synthesized_binders(&expression, &markers).unwrap()
             });
             assert_eq!(work, 4 * size + 1, "size={size}, unrelated={unrelated}");
             let text = diagnostics::describe_contract_expression(&renamed);
@@ -512,5 +511,58 @@ fn nested_fold_surface_raising_scales_without_ambient_local_scan() {
             }
             assert!(work <= 100 * size + 100, "size={size}: {work}");
         }
+    }
+}
+
+#[test]
+fn common_match_surface_work_tracks_selected_body_without_exports() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValueType, BindingNames, KernelMatch, KernelMatchArm,
+        KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp,
+        PureFunctionArgument,
+    };
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(CType::Int32)]);
+        let AlgebraicTermNode::Variable(id) = scrutinee.node else {
+            panic!()
+        };
+        let mut import = KernelTermImport::default();
+        let scrutinee = import.argument(&PureFunctionArgument::Algebraic(scrutinee));
+        let bound = KernelTerm::variable(KernelType::C(CType::Int32), Variable(991950));
+        let mut body = bound.clone();
+        for _ in 0..size {
+            body = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [body, bound.clone()],
+            );
+        }
+        let matched = KernelMatch::new(
+            KernelType::C(CType::Int32),
+            scrutinee,
+            vec![(
+                KernelMatchArm {
+                    variant: "Arm".into(),
+                    bindings: vec![bound],
+                    binding_names: BindingNames::written(&["item".into()]),
+                },
+                body,
+            )],
+        )
+        .unwrap();
+        let names = BTreeMap::from([(id, "payload".into())]);
+        let exports = KernelTermExport::machine_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            matches::raise_match(
+                &matched,
+                ParameterBinding::default(),
+                &CState::new(),
+                &names,
+            )
+        });
+        assert!(surface.is_some());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= 100 * size + 100, "size={size}, work={work}");
     }
 }

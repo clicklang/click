@@ -114,7 +114,7 @@ struct RewriteScope {
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum BindingCarrier {
+pub(crate) enum BindingCarrier {
     C,
     Integer,
     Algebraic,
@@ -321,6 +321,13 @@ pub(super) fn binding_variable(value: &AlgebraicValue) -> Option<(BindingCarrier
         }) => Some((BindingCarrier::Algebraic, *variable)),
         _ => None,
     }
+}
+
+/// Read an already typed declaration without a constructor field to replace.
+pub(crate) fn typed_declaration_variable(
+    binding: &AlgebraicValue,
+) -> Option<(BindingCarrier, Variable)> {
+    typed_binding_variable(&binding.value_type(), binding)
 }
 
 fn typed_binding_variable(

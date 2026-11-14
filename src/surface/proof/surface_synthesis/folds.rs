@@ -1,12 +1,19 @@
 use super::*;
 use crate::kernel::{KernelFold, KernelFoldIndex, KernelType};
 
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub(super) enum BinderCarrier {
+    C,
+    Integer,
+    Algebraic,
+}
+
 #[derive(Default)]
 struct FoldNames {
     active: bool,
     // Integer and C variables are separate namespaces even at the same ID.
-    names: BTreeMap<(bool, Variable), String>,
-    markers: Vec<String>,
+    names: BTreeMap<(BinderCarrier, Variable), String>,
+    markers: Vec<(String, Option<String>)>,
 }
 
 thread_local! {
@@ -14,7 +21,45 @@ thread_local! {
 }
 
 pub(super) fn binder_name(integer: bool, variable: Variable) -> Option<String> {
-    FOLD_NAMES.with(|slot| slot.borrow().names.get(&(integer, variable)).cloned())
+    let carrier = if integer {
+        BinderCarrier::Integer
+    } else {
+        BinderCarrier::C
+    };
+    scoped_binder_name(carrier, variable)
+}
+
+pub(super) fn scoped_binder_name(carrier: BinderCarrier, variable: Variable) -> Option<String> {
+    FOLD_NAMES.with(|slot| slot.borrow().names.get(&(carrier, variable)).cloned())
+}
+
+pub(super) fn marker(preferred: Option<&str>) -> String {
+    FOLD_NAMES.with(|slot| {
+        let mut names = slot.borrow_mut();
+        let marker = format!("\0binder{}", names.markers.len());
+        names
+            .markers
+            .push((marker.clone(), preferred.map(str::to_owned)));
+        marker
+    })
+}
+
+pub(super) fn scope(f: impl FnOnce() -> Option<SurfaceTerm>) -> Option<SurfaceTerm> {
+    let query = Query(FOLD_NAMES.with(|slot| {
+        let mut names = slot.borrow_mut();
+        let outermost = !names.active;
+        names.active = true;
+        outermost
+    }));
+    let expression = f()?;
+    if query.0 {
+        FOLD_NAMES.with(|slot| {
+            crate::surface::lowering::name_synthesized_binders(&expression, &slot.borrow().markers)
+                .ok()
+        })
+    } else {
+        Some(expression)
+    }
 }
 
 struct Query(bool);
@@ -26,12 +71,12 @@ impl Drop for Query {
     }
 }
 
-struct Binding {
-    key: (bool, Variable),
+pub(super) struct Binding {
+    key: (BinderCarrier, Variable),
     previous: Option<String>,
 }
 impl Binding {
-    fn enter(key: (bool, Variable), name: String) -> Self {
+    pub(super) fn enter(key: (BinderCarrier, Variable), name: String) -> Self {
         let previous = FOLD_NAMES.with(|slot| slot.borrow_mut().names.insert(key, name));
         Self { key, previous }
     }
@@ -105,80 +150,77 @@ fn raise_parts<T>(
     arguments: [&T; 4],
     recurse: impl Fn(&T) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
-    let query = Query(FOLD_NAMES.with(|slot| {
-        let mut names = slot.borrow_mut();
-        let outermost = !names.active;
-        names.active = true;
-        outermost
-    }));
-    let [start, end, initial, body] = arguments;
-    let start = recurse(start)?;
-    let end = recurse(end)?;
-    let initial = recurse(initial)?;
-    let initial = if integer_result {
-        integer_typed_expression(initial)
-    } else {
-        initial
-    };
-    let marker = || {
-        FOLD_NAMES.with(|slot| {
-            let mut names = slot.borrow_mut();
-            // Never exposed to parsing or printing: finalized once at query exit.
-            let marker = format!("\0fold{}", names.markers.len());
-            names.markers.push(marker.clone());
-            marker
-        })
-    };
-    let accumulator = marker();
-    let item = marker();
-    let body = {
-        let _acc = Binding::enter((integer_result, accumulator_id), accumulator.clone());
-        let _item = Binding::enter((index == KernelFoldIndex::Integer, item_id), item.clone());
-        recurse(body)?
-    };
-    let (start, end, bounds) = if index == KernelFoldIndex::Integer {
-        let start_name = marker();
-        let end_name = marker();
-        (
-            SurfaceTerm::Binding(start_name.clone()),
-            SurfaceTerm::Binding(end_name.clone()),
-            Some((start_name, start, end_name, end)),
-        )
-    } else {
-        (start, end, None)
-    };
-    let expression = SurfaceTerm::RangeFold {
-        start: Box::new(start),
-        end: Box::new(end),
-        initial: Box::new(initial),
-        accumulator,
-        item,
-        body: Box::new(body),
-    };
-    let expression = if let Some((start_name, start, end_name, end)) = bounds {
-        SurfaceTerm::Let {
-            name: start_name,
-            click_type: Some(ClickType::Integer),
-            value: Box::new(start),
-            body: Box::new(SurfaceTerm::Let {
-                name: end_name,
-                click_type: Some(ClickType::Integer),
-                value: Box::new(end),
-                body: Box::new(expression),
-            }),
-        }
-    } else {
-        expression
-    };
-    if query.0 {
-        FOLD_NAMES.with(|slot| {
-            crate::surface::lowering::name_synthesized_fold_binders(
-                &expression,
-                &slot.borrow().markers,
+    scope(|| {
+        let [start, end, initial, body] = arguments;
+        let start = recurse(start)?;
+        let end = recurse(end)?;
+        let initial = recurse(initial)?;
+        let initial = if integer_result {
+            integer_typed_expression(initial)
+        } else {
+            initial
+        };
+        let accumulator = marker(None);
+        let item = marker(None);
+        let body = {
+            let _acc = Binding::enter(
+                (
+                    if integer_result {
+                        BinderCarrier::Integer
+                    } else {
+                        BinderCarrier::C
+                    },
+                    accumulator_id,
+                ),
+                accumulator.clone(),
+            );
+            let _item = Binding::enter(
+                (
+                    if index == KernelFoldIndex::Integer {
+                        BinderCarrier::Integer
+                    } else {
+                        BinderCarrier::C
+                    },
+                    item_id,
+                ),
+                item.clone(),
+            );
+            recurse(body)?
+        };
+        let (start, end, bounds) = if index == KernelFoldIndex::Integer {
+            let start_name = marker(None);
+            let end_name = marker(None);
+            (
+                SurfaceTerm::Binding(start_name.clone()),
+                SurfaceTerm::Binding(end_name.clone()),
+                Some((start_name, start, end_name, end)),
             )
-            .ok()
-        })
-    } else {
+        } else {
+            (start, end, None)
+        };
+        let expression = SurfaceTerm::RangeFold {
+            start: Box::new(start),
+            end: Box::new(end),
+            initial: Box::new(initial),
+            accumulator,
+            item,
+            body: Box::new(body),
+        };
+        let expression = if let Some((start_name, start, end_name, end)) = bounds {
+            SurfaceTerm::Let {
+                name: start_name,
+                click_type: Some(ClickType::Integer),
+                value: Box::new(start),
+                body: Box::new(SurfaceTerm::Let {
+                    name: end_name,
+                    click_type: Some(ClickType::Integer),
+                    value: Box::new(end),
+                    body: Box::new(expression),
+                }),
+            }
+        } else {
+            expression
+        };
         Some(expression)
-    }
+    })
 }
