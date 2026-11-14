@@ -1688,6 +1688,175 @@ pub(super) fn viewability_restriction_steps(
     Some((steps, narrow_range))
 }
 
+/// A displaced view is first restricted to the offset, then rebased, then
+/// restricted to its requested length. Every link is an ordinary library law.
+pub(super) fn rebased_viewability_restriction_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<(ClickProposition, Vec<ProofStep>)>> {
+    let parent = viewability_resource(source)?;
+    let child = viewability_resource(target)?;
+    let (ResourceSubject::Memory(parent_segment), ResourceSubject::Memory(child_segment)) =
+        (&parent, &child)
+    else {
+        return None;
+    };
+    if parent_segment.state != child_segment.state {
+        return None;
+    }
+    let (base, lo, hi) = parent_segment.surface_range()?;
+    let (child_base, zero, requested) = child_segment.surface_range()?;
+    let ProgramExpression::Add(pointer, offset) =
+        contract_expression_as_program_expression(child_base)?
+    else {
+        return None;
+    };
+    if contract_expression_as_program_expression(base).as_ref() != Some(pointer.as_ref()) {
+        return None;
+    }
+    let is_zero = |value: &ContractExpression| {
+        matches!(
+            contract_expression_as_program_expression(value),
+            Some(ProgramExpression::Value(ProgramValue::Int32(value)
+                | ProgramValue::UInt64(value))) if matches!(value, MachineTerm::Constant { bits: 0, .. })
+        )
+    };
+    if !is_zero(zero) {
+        return None;
+    }
+    let offset = ContractExpression::ProgramExpression(*offset);
+    let remaining = ContractExpression::ProgramExpression(ProgramExpression::Subtract(
+        Box::new(contract_expression_as_program_expression(hi)?),
+        Box::new(contract_expression_as_program_expression(&offset)?),
+    ));
+    let range =
+        |template: &ContractSegment, start: &ContractExpression, end: &ContractExpression| {
+            let mut segment = template.clone();
+            segment.start = contract_expression_as_program_expression(start)?;
+            segment.end = contract_expression_as_program_expression(end)?;
+            let ContractSegmentSurface::Range {
+                start: written_start,
+                end: written_end,
+                ..
+            } = &mut segment.surface
+            else {
+                return None;
+            };
+            *written_start = start.clone();
+            *written_end = end.clone();
+            Some(ResourceSubject::Memory(segment))
+        };
+    let tail = range(parent_segment, &offset, hi)?;
+    let rebased = range(child_segment, zero, &remaining)?;
+    let contains = |a: &ResourceSubject, b: &ResourceSubject| ClickProposition::Contains {
+        parent: a.clone(),
+        child: b.clone(),
+    };
+    let viewable = |a: &ResourceSubject| {
+        let ResourceSubject::Memory(segment) = a else {
+            unreachable!()
+        };
+        ClickProposition::Loadable {
+            segment: segment.clone(),
+        }
+    };
+    // Keep computed machine endpoints inside an explicit observation. A bare
+    // subtraction in a comparison parses as mathematical integer arithmetic.
+    let observe = |value: &ContractExpression| ContractExpression::Call {
+        name: "to_integer".into(),
+        arguments: vec![value.clone()],
+    };
+    let bound =
+        |left: &ContractExpression, right: &ContractExpression| ClickProposition::Comparison {
+            left: observe(left),
+            operator: ComparisonOperator::LessEqual,
+            right: observe(right),
+        };
+    let apply = |name: &str, arguments, premises| {
+        vec![ProofStep::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: format!("click::separation::{name}"),
+                arguments,
+            },
+            premises,
+        }]
+    };
+    let arg = |resource: &ResourceSubject| ContractExpression::Resource(Box::new(resource.clone()));
+    let mut cited = premises.to_vec();
+    let mut goals = Vec::new();
+    for goal in [
+        bound(lo, &offset),
+        bound(&offset, hi),
+        bound(hi, hi),
+        bound(zero, &offset),
+        bound(zero, zero),
+        bound(zero, requested),
+        bound(requested, &remaining),
+    ] {
+        if !cited.contains(&goal) {
+            goals.push((
+                goal.clone(),
+                vec![ProofStep::ArithmeticUsing(cited.clone())],
+            ));
+            cited.push(goal);
+        }
+    }
+    for (a, b, steps) in [
+        (
+            &parent,
+            &tail,
+            apply(
+                "subrange",
+                vec![
+                    base.clone(),
+                    lo.clone(),
+                    hi.clone(),
+                    offset.clone(),
+                    hi.clone(),
+                ],
+                cited.clone(),
+            ),
+        ),
+        (
+            &tail,
+            &rebased,
+            apply(
+                "rebase",
+                vec![base.clone(), offset, hi.clone()],
+                cited.clone(),
+            ),
+        ),
+        (
+            &rebased,
+            &child,
+            apply(
+                "subrange",
+                vec![
+                    child_base.clone(),
+                    zero.clone(),
+                    remaining,
+                    zero.clone(),
+                    requested.clone(),
+                ],
+                cited.clone(),
+            ),
+        ),
+    ] {
+        let containment = contains(a, b);
+        goals.push((containment.clone(), steps));
+        goals.push((
+            viewable(b),
+            apply(
+                "viewable_restrict",
+                vec![arg(a), arg(b)],
+                vec![viewable(a), containment],
+            ),
+        ));
+    }
+    Some(goals)
+}
+
 /// Plan an element-range restriction whose kernel view has a native byte
 /// count. The ordinary resource laws perform the element-width scaling;
 /// planning only proves the written endpoint bounds.

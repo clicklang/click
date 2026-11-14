@@ -59,3 +59,10 @@ theorem viewable_restrict(A: Resource, B: Resource) {
     requires contains(A, B);
     ensures viewable(B);
 }
+
+// Rebase one nonnegative element interval without inspecting its contents.
+theorem rebase<T, I>(p: T*, lo: I, hi: I) {
+    requires 0 <= to_integer(lo);
+    requires lo <= hi;
+    ensures contains(memory(p[lo..hi]), memory((p + lo)[0..hi-lo]));
+}
