@@ -10,6 +10,8 @@ mod folds;
 pub use folds::KernelFold;
 pub(crate) use folds::KernelFoldIndex;
 mod machine;
+#[allow(dead_code)]
+mod matches;
 mod reads;
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
