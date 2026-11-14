@@ -172,8 +172,11 @@ contracts, or resource shapes.
 
 ## Remaining transport expansion inventory
 
-The remaining work is written-proof migration followed by syntax and dispatcher
-retirement. Counts are syntax sites, not independent slow walks or a claim that
+The remaining work is written-proof migration, removal of residual internal
+legacy producers, and syntax/dispatcher retirement. A selected expansion of
+`integer_sum_range_fold.md` and `rewrite_pointer_into_a_shifted_byte_view.md`
+still retained legacy nodes during the corpus pass; migrate these producers
+alongside their written consumers before deleting the dispatcher. Counts are syntax sites, not independent slow walks or a claim that
 every fixture currently verifies.
 
 ### Written syntax is a separate migration
@@ -183,10 +186,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 134 | 192 |
-| `examples/` | 30 | 373 |
+| `mdtests/` | 125 | 183 |
+| `examples/` | 30 | 371 |
 | `library/` | 0 | 0 |
-| Total | 164 | 565 |
+| Total | 155 | 554 |
 
 The 62 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text

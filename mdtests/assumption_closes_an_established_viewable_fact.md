@@ -1,6 +1,6 @@
 # `assumption()` closes a `viewable` goal from the identical established fact
 
-A narrowing established by `transport … using` is an ordinary available fact,
+A narrowing established by the separation restriction axioms is an ordinary available fact,
 and `assumption()` closes the identical `viewable` goal from it through the
 same exact indexed lookup it uses for any other goal. The DFS proofs once
 reported
@@ -39,55 +39,28 @@ int32 probe(int32 a[], int32 n, int32 k) {
     have viewable(a[0..n]);
     have 0 <= n - 0;
     have n - 0 <= 1073741823;
+    have 0 <= 0 by { normalize(); }
     have viewable(a[0..k]) by {
-        transport(viewable(a[0..n]), viewable(a[0..k])) using {
-            viewable(a[0..n]);
-            0 <= k;
-            k <= n;
-            0 <= n - 0;
-            n - 0 <= 1073741823;
+        have contains(memory(a[0..n]), memory(a[0..k])) by {
+            apply(click::separation::subrange(a, 0, n, 0, k)) using { 0 <= 0; 0 <= k; k <= n; };
+        }
+        apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..k]))) using {
+            viewable(a[0..n]); contains(memory(a[0..n]), memory(a[0..k]));
         };
     }
     have viewable(a[0..k]) and 0 <= k by {
         both { assumption(); } and { solve(); }
     }
     have forall (j: int32) { 0 <= j and j <= k implies viewable(a[0..j]) } by {
-        intro();
-        intro();
+        intro(); intro();
         have j <= n by { solve() using { j <= k; k <= n; }; }
         have viewable(a[0..j]) by {
-            have viewable(a[0..j]) by {
-                have viewable(a[0..n]) by {
-                    assumption();
-                }
-                have 0 <= 0 by {
-                    arithmetic_certificate {
-                        trivial => 0 <= 0;
-                        conclusion 0;
-                    }
-                }
-                have viewable(a[0..j]) by {
-                    have contains(memory(a[0..n]), memory(a[0..j])) by {
-                        apply(click::separation::subrange(a, 0, n, 0, j)) using {
-                            0 <= 0;
-                            0 <= j;
-                            j <= n;
-                        };
-                    }
-                    apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..j]))) using {
-                        viewable(a[0..n]);
-                        0 <= j;
-                        j <= n;
-                        0 <= (to_integer(n) - 0);
-                        (to_integer(n) - 0) <= 1073741823;
-                        viewable(a[0..n]);
-                        0 <= 0;
-                        contains(memory(a[0..n]), memory(a[0..j]));
-                    };
-                }
-                assumption();
+            have contains(memory(a[0..n]), memory(a[0..j])) by {
+                apply(click::separation::subrange(a, 0, n, 0, j)) using { 0 <= 0; 0 <= j; j <= n; };
             }
-            assumption();
+            apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..j]))) using {
+                viewable(a[0..n]); contains(memory(a[0..n]), memory(a[0..j]));
+            };
         }
         assumption();
     }

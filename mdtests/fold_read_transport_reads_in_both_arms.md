@@ -17,6 +17,50 @@ function weighted(v: int32[], lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if v[k] == 0 { v[k] } else { v[k] }) })
 }
 
+theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
+    requires 0 <= lo;
+    requires 0 <= hi;
+    requires hi <= n;
+    requires viewable(p[0..n]);
+    requires viewable(q[0..n]);
+    requires forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
+    ensures weighted(p, lo, hi) == weighted(q, lo, hi) by {
+        induct(hi) as ih;
+        if hi <= lo {
+            peel(weighted(p, lo, hi)) using { hi <= lo; };
+            peel(weighted(q, lo, hi)) using { hi <= lo; };
+            assumption();
+        } else {
+            have lo < hi;
+            have 0 <= to_integer(hi - 1) by { solve(); }
+            have to_integer(hi - 1) < to_integer(hi) by { solve(); }
+            have to_integer(hi - 1) <= to_integer(n) by { solve(); }
+            apply(ih(hi - 1)) using {
+                0 <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(hi);
+                0 <= lo;
+                to_integer(hi - 1) <= to_integer(n);
+                viewable(p[0..n]);
+                viewable(q[0..n]);
+                forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
+            };
+            have to_integer(hi - 1) < to_integer(n) by { solve(); }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
+            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1) using {
+                to_integer(lo) <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(n);
+            };
+            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
+            have to_integer(hi - 1) < 2147483647 by { solve(); }
+            peel(weighted(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            peel(weighted(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            rewrite(p[hi - 1] == q[hi - 1]);
+            assumption();
+        }
+    }
+}
+
+
 void set_end(int32 *v, int32 i, int32 n) {
     requires 0 <= i;
     requires i < n;
@@ -25,13 +69,42 @@ void set_end(int32 *v, int32 i, int32 n) {
 } by {
     mark entry;
     have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by normalize();
+    have 0 <= 0 by { normalize(); }
+    have 0 <= i by { assumption(); }
+    have i <= n by { solve(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+    have contains(memory(v[0..n]), memory(v[0..i])) by {
+        apply(click::separation::subrange(v, 0, n, 0, i)) using { 0 <= 0; 0 <= i; i <= n; };
+    }
+    have viewable(v[0..i]) by {
+        apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i]))) using {
+            viewable(v[0..n]); contains(memory(v[0..n]), memory(v[0..i]));
+        };
+    }
     step();
     have weighted(at(entry, v), 0, i) == weighted(v, 0, i) by {
-        transport(
-            weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i),
-            weighted(at(entry, v), 0, i) == weighted(v, 0, i)
-        ) using {
-            weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i);
+        have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
+            intro(); intro();
+            have i != k by { solve(); }
+            have separate(memory(v[i]), memory(v[k])) by {
+                apply(click::separation::elements(v, i, k)) using { i != k; };
+            }
+            have separate(statement(0).footprint, memory(v[k])) by {
+                normalize() using { separate(memory(v[i]), memory(v[k])); };
+            }
+            preserve(separate(statement(0).footprint, memory(v[k])));
+        }
+        have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+        have viewable(v[0..i]) by {
+            apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i]))) using {
+                viewable(v[0..n]); contains(memory(v[0..n]), memory(v[0..i]));
+            };
+        }
+        have i <= 1073741823 by { solve(); }
+        apply(same_weighted(v, at(entry, v), 0, i, i)) using {
+            0 <= 0; 0 <= i; i <= i;
+            viewable(v[0..i]); at(entry, viewable(v[0..i]));
+            forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) };
         };
         assumption();
     }

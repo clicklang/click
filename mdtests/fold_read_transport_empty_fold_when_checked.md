@@ -28,12 +28,8 @@ void mark_any(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by normalize();
     step();
     have zeros(v, lo, hi) == zeros(at(entry, v), lo, hi) by {
-        transport(
-            zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi),
-            zeros(v, lo, hi) == zeros(at(entry, v), lo, hi)
-        ) using {
-            zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi);
-        };
+        peel(zeros(v, lo, hi)) using { hi <= lo; };
+        peel(zeros(at(entry, v), lo, hi)) using { hi <= lo; };
         assumption();
     }
 }

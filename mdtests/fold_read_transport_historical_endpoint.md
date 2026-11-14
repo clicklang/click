@@ -18,6 +18,50 @@ function zeros(v: int32[], lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if v[k] == 0 { 1 } else { 0 }) })
 }
 
+theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
+    requires 0 <= lo;
+    requires 0 <= hi;
+    requires hi <= n;
+    requires viewable(p[0..n]);
+    requires viewable(q[0..n]);
+    requires forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
+    ensures zeros(p, lo, hi) == zeros(q, lo, hi) by {
+        induct(hi) as ih;
+        if hi <= lo {
+            peel(zeros(p, lo, hi)) using { hi <= lo; };
+            peel(zeros(q, lo, hi)) using { hi <= lo; };
+            assumption();
+        } else {
+            have lo < hi;
+            have 0 <= to_integer(hi - 1) by { solve(); }
+            have to_integer(hi - 1) < to_integer(hi) by { solve(); }
+            have to_integer(hi - 1) <= to_integer(n) by { solve(); }
+            apply(ih(hi - 1)) using {
+                0 <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(hi);
+                0 <= lo;
+                to_integer(hi - 1) <= to_integer(n);
+                viewable(p[0..n]);
+                viewable(q[0..n]);
+                forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
+            };
+            have to_integer(hi - 1) < to_integer(n) by { solve(); }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
+            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1) using {
+                to_integer(lo) <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(n);
+            };
+            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
+            have to_integer(hi - 1) < 2147483647 by { solve(); }
+            peel(zeros(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            peel(zeros(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            rewrite(p[hi - 1] == q[hi - 1]);
+            assumption();
+        }
+    }
+}
+
+
 void mark_at(int32 *v, int32 *m, int32 n) {
     requires 0 <= m[0];
     requires m[0] < n;
@@ -26,14 +70,52 @@ void mark_at(int32 *v, int32 *m, int32 n) {
     requires separate(memory(v[0..n]), memory(m[0..1]));
 } by {
     mark entry;
-    have zeros(at(entry, v), 0, at(entry, m[0])) == zeros(at(entry, v), 0, at(entry, m[0])) by normalize();
+    have exists (end: int32) { end == at(entry, m[0]) } by {
+        witness { end: at(entry, m[0]) };
+        assumption();
+    }
+    obtain (end: int32) { end == at(entry, m[0]) };
+    have zeros(at(entry, v), 0, end) == zeros(at(entry, v), 0, end) by normalize();
+    have 0 <= 0 by { normalize(); }
+    have 0 <= end by { assumption(); }
+    have end <= n by { solve(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+    have contains(memory(v[0..n]), memory(v[0..end])) by {
+        apply(click::separation::subrange(v, 0, n, 0, end)) using { 0 <= 0; 0 <= end; end <= n; };
+    }
+    have viewable(v[0..end]) by {
+        apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..end]))) using {
+            viewable(v[0..n]); contains(memory(v[0..n]), memory(v[0..end]));
+        };
+    }
+    have forall (k: int32) { 0 <= k and k < end implies separate(memory(v[m[0]]), memory(v[k])) } by {
+        intro(); intro();
+        have m[0] != k by { solve(); }
+        apply(click::separation::elements(v, m[0], k)) using { m[0] != k; };
+    }
     step();
-    have zeros(at(entry, v), 0, at(entry, m[0])) == zeros(v, 0, at(entry, m[0])) by {
-        transport(
-            zeros(at(entry, v), 0, at(entry, m[0])) == zeros(at(entry, v), 0, at(entry, m[0])),
-            zeros(at(entry, v), 0, at(entry, m[0])) == zeros(v, 0, at(entry, m[0]))
-        ) using {
-            zeros(at(entry, v), 0, at(entry, m[0])) == zeros(at(entry, v), 0, at(entry, m[0]));
+    have zeros(at(entry, v), 0, end) == zeros(v, 0, end) by {
+        have forall (k: int32) { 0 <= k and k < end implies v[k] == at(entry, v[k]) } by {
+            intro(); intro();
+            instantiate(at(entry, forall (j: int32) { 0 <= j and j < end implies separate(memory(v[m[0]]), memory(v[j])) }), k) using {
+                0 <= k; k < end;
+            };
+            have separate(statement(0).footprint, memory(v[k])) by {
+                normalize() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
+            }
+            preserve(separate(statement(0).footprint, memory(v[k])));
+        }
+        have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+        have viewable(v[0..end]) by {
+            apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..end]))) using {
+                viewable(v[0..n]); contains(memory(v[0..n]), memory(v[0..end]));
+            };
+        }
+        have end <= 1073741823 by { solve(); }
+        apply(same_zeros(v, at(entry, v), 0, end, end)) using {
+            0 <= 0; 0 <= end; end <= end;
+            viewable(v[0..end]); at(entry, viewable(v[0..end]));
+            forall (k: int32) { 0 <= k and k < end implies v[k] == at(entry, v[k]) };
         };
         assumption();
     }

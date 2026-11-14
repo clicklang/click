@@ -1041,16 +1041,20 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                     0 <= k;
                     k < at(region(8).entry, owner->len);
                 };
-                transport(at(region(8).exit, owner->data[k]) == at(region(8).entry, owner->data[k]), owner->data[k] == at(region(8).entry, owner->data[k])) using {
-                    at(region(8).exit, owner->data[k]) == at(region(8).entry, owner->data[k]);
-                    0 <= k;
-                    k < at(region(8).entry, owner->len);
-                };
-                transport(at(region(4).entry, owner->data[k]) == old(owner->data[k]), at(region(8).entry, owner->data[k]) == old(owner->data[k])) using {
-                    at(region(4).entry, owner->data[k]) == old(owner->data[k]);
-                    0 <= k;
-                    k < old(owner->len);
-                };
+                have owner->data[k] == at(region(8).entry, owner->data[k]) by {
+                    normalize() using {
+                        at(region(8).exit, owner->data[k]) == at(region(8).entry, owner->data[k]);
+                        0 <= k;
+                        k < at(region(8).entry, owner->len);
+                    };
+                }
+                have at(region(8).entry, owner->data[k]) == old(owner->data[k]) by {
+                    normalize() using {
+                        at(region(4).entry, owner->data[k]) == old(owner->data[k]);
+                        0 <= k;
+                        k < old(owner->len);
+                    };
+                }
                 rewrite(owner->data[k] == at(region(8).entry, owner->data[k]));
                 assumption();
             }
