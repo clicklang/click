@@ -15373,8 +15373,8 @@ impl FunctionPath {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ArgumentsPath {
-    pub(super) values: Vec<ProgramValue>,
+pub(super) struct ArgumentsPath<V = ProgramValue> {
+    pub(super) values: Vec<V>,
     pub(super) outcome: Option<FunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,

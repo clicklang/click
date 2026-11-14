@@ -645,9 +645,10 @@ fn write_program_lvalue_paths_without_local_reference(
         ) {
         value
     } else {
-        let Some(value) = crate::kernel::functions::coerce_program_value_with_pointee_constant(
+        let Some(converted) = crate::kernel::functions::coerce_program_value_with_pointee_constant(
             value
-                .into_native()
+                .native()
+                .into_owned()
                 .with_pointer_pointee_volatile(pointee_volatile),
             lvalue.value_type,
             pointee_constant,
@@ -660,7 +661,11 @@ fn write_program_lvalue_paths_without_local_reference(
                 obligations,
             )]);
         };
-        value.into()
+        if converted.program_type().is_pointer() {
+            value.retain_checked_pointer(converted)
+        } else {
+            converted.into()
+        }
     };
 
     let lvalue_access_designation = lvalue.designation.as_deref().map(|root| {

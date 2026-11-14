@@ -10,7 +10,7 @@ pub(crate) struct KernelSubobjectExtent {
     pub(crate) start: SharedPointerAddress,
     pub(crate) width: KernelTerm,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct KernelPointerQualifiers {
     pub(crate) volatile: bool,
     pub(crate) constant: bool,
@@ -58,6 +58,30 @@ impl SharedPointerValue {
     }
     pub(crate) fn node(&self) -> &KernelPointerValue {
         &self.0
+    }
+    /// Rebind only the declaration's type and cv qualifiers. Expression
+    /// children and evidence remain shared, including default qualifier shape.
+    pub(crate) fn with_binding_type_and_qualifiers(
+        &self,
+        program_type: ProgramType,
+        volatile: bool,
+        constant: bool,
+    ) -> Self {
+        let old = self.node();
+        let old_volatile = old.qualifiers.as_ref().is_some_and(|q| q.volatile);
+        let old_constant = old.qualifiers.as_ref().is_some_and(|q| q.constant);
+        if old.program_type == program_type && old_volatile == volatile && old_constant == constant
+        {
+            return self.clone();
+        }
+        let mut value = old.clone();
+        value.program_type = program_type;
+        if old_volatile != volatile || old_constant != constant {
+            let qualifiers = Arc::make_mut(value.qualifiers.get_or_insert_with(Default::default));
+            qualifiers.volatile = volatile;
+            qualifiers.constant = constant;
+        }
+        Self::new(value)
     }
     /// Whether an existing source binding retains this complete payload.
     /// This is deliberately separate from pointer equality: no address aliases,
@@ -295,7 +319,22 @@ impl KernelTerm {
                 *element_type,
             );
         }
-        let value = SharedPointerValue::import_produced(pointer);
+        self.with_pointer_payload(SharedPointerValue::import_produced(pointer))
+    }
+
+    pub(crate) fn with_pointer_payload(&self, value: SharedPointerValue) -> Self {
+        if let Some(old) = self.pointer_payload() {
+            if old.same_source_payload(&value) {
+                return self.clone();
+            }
+            // A changed address or type is a newly formed value, not the
+            // original call/read/arithmetic expression with another result.
+            if old.node().address != value.node().address
+                || old.node().program_type != value.node().program_type
+            {
+                return Self::shared_pointer_value(value);
+            }
+        }
         match self.node() {
             KernelTermNode::PointerCall { call, .. } => {
                 Self::shared_pointer_call(call.clone(), value)
