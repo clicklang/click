@@ -9169,7 +9169,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let candidate = (|| {
                     let mut prepared = search_input.clone();
                     let mut premises = surfaces.to_vec();
-                    if let Some(requirements) =
+                    if !matches!(
+                        search_input.goal(),
+                        Some(Proposition::CMemoryLoadable { wide: true, .. })
+                    ) && let Some(requirements) =
                         viewability_restriction_requirements(source, surface_goal)
                     {
                         for requirement in requirements {

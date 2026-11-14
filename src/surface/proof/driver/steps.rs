@@ -204,8 +204,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 driver_proof.lower_surface_proposition_direct(target, "transport target")?;
             let same_snapshot = match (&source_fact, &target_fact) {
                 (
-                    Proposition::CMemoryLoadable { memory: left, .. },
-                    Proposition::CMemoryLoadable { memory: right, .. },
+                    Proposition::CMemoryLoadable {
+                        memory: left,
+                        wide: false,
+                        ..
+                    },
+                    Proposition::CMemoryLoadable {
+                        memory: right,
+                        wide: false,
+                        ..
+                    },
                 ) if narrow_range => left == right,
                 (
                     Proposition::CResourceViewable { memory: left, .. }

@@ -5929,7 +5929,7 @@ fn source_expansion_preserves_proof_marks() {
 
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn marked_constant_store_transport_retains_load_identity() {
+fn marked_constant_store_transport_expands_to_known_fact_lookup() {
     let touch_c = r#"
         struct cell { int32 value; int32 other; };
 
@@ -6009,15 +6009,17 @@ fn marked_constant_store_transport_retains_load_identity() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the marked transport should expand and check");
+    assert!(!expanded.contains("transport("), "{expanded}");
     assert!(
-        expanded
-            .contains("transport(at(after_write, owner->value == 11), owner->value == 11) using {")
+        expanded.contains("have owner->value == 11 by {"),
+        "{expanded}"
     );
+    assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("the expanded marked transport should check");
 
     let corrupted = expanded.replacen(
-        "owner->value == 11) using {",
-        "owner->value == 12) using {",
+        "have owner->value == 11 by {",
+        "have owner->value == 12 by {",
         1,
     );
     assert_ne!(
@@ -6026,6 +6028,14 @@ fn marked_constant_store_transport_retains_load_identity() {
     );
     let corrupted_result = { verify_c0_sources(&corrupted, &sources) };
     corrupted_result.expect_err("tampering with the transport target must invalidate the proof");
+
+    let fully_expanded = expand_function_proof_source(click_source, &sources, "pipeline")
+        .expect("the complete marked proof should expand");
+    assert!(!fully_expanded.contains("transport("), "{fully_expanded}");
+    without_implicit_solve_for_claim("pipeline.contract", || {
+        verify_c0_sources(&fully_expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded marked proof should replay with implicit solving disabled");
 
     let mutating_c = touch_c.replace("owner->other = 0;", "owner->value = 0;");
     let mutating_click = click_source.replace(
@@ -10594,7 +10604,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn linear_open_retains_a_direct_bare_fact_transport() {
+fn linear_open_expands_known_transport_to_assumption() {
     let c_source = r#"
         int32 set_second_return_first(int32 p[2]) {
             p[1] = 9;
@@ -10635,9 +10645,9 @@ fn linear_open_retains_a_direct_bare_fact_transport() {
                     open.tactics.as_slice(),
                     [
                         ProofTactic::Step,
-                        ProofTactic::TransportUsing { premises, .. },
+                        ProofTactic::Have(have),
                         ProofTactic::Step,
-                    ] if !premises.is_empty()
+                    ] if matches!(&have.proof, SourceProof::Script(steps) if matches!(steps.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
@@ -10649,8 +10659,12 @@ fn linear_open_retains_a_direct_bare_fact_transport() {
         CProofClaim::Grouped,
     )
     .expect("the retained open-scope transport should expand");
-    verify_c0_sources(&expanded, &[("set_second_return_first.c", c_source)])
-        .expect("the explicit open-scope transport should independently re-derive");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("set_second_return_first.contract", || {
+        verify_c0_sources(&expanded, &[("set_second_return_first.c", c_source)])
+            .map_err(|error| error.report())
+    })
+    .expect("the ordinary open-scope proof should replay without implicit solving");
 }
 
 #[test]

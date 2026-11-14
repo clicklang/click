@@ -1631,6 +1631,9 @@ pub(super) fn viewability_restriction_requirements(
     source: &ClickProposition,
     target: &ClickProposition,
 ) -> Option<Vec<ClickProposition>> {
+    if source == target {
+        return None;
+    }
     let ResourceSubject::Memory(parent) = viewability_resource(source)? else {
         return None;
     };
@@ -1797,8 +1800,11 @@ pub(super) fn plan_explicit_loadability_transport(
             .map(|(_, surface)| surface.clone())
             .collect::<Vec<_>>();
         let mut tactics = Vec::new();
-        if let Some(requirements) =
-            viewability_restriction_requirements(surface_source, surface_goal)
+        // Native byte-count views can use scaled bounds or displaced bases.
+        // Their existing transport is not an element-subrange certificate.
+        if !matches!(goal, Proposition::CMemoryLoadable { wide: true, .. })
+            && let Some(requirements) =
+                viewability_restriction_requirements(surface_source, surface_goal)
         {
             for requirement in requirements {
                 if premises.contains(&requirement) {
