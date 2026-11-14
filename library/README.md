@@ -75,8 +75,7 @@ A module is named by a `click::` path that mirrors its file:
 `import click::cstr;` is `cstr.click` and `import click::c::string;` is
 `c/string.click`. A declaration's qualified name adds its own name:
 `click::cstr::len`, or `cstr::len` once the module is in scope
-(`src/surface/parser/library_paths.rs`). The remaining design steps are recorded in
-[`roadmap/standard-library.md`](../roadmap/standard-library.md).
+(`src/surface/parser/library_paths.rs`).
 
 The library is checked on its own, like any dependency: `verify_standard_library`
 proves every library theorem that has a proof, checks each kernel standard
