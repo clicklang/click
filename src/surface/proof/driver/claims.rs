@@ -1016,11 +1016,10 @@ mod exit_claim {
 
 use exit_claim::{ClaimCertificate, ClaimClosure, ClosedClaim};
 
-/// The kernel's lowering of a claim's ensure at this path's outcome, with
-/// the facts its loads introduced: the goal a claim proof closes is what
-/// claim certification lowers, so the completion matches by construction.
-/// A lowering with several paths is not yet closed as several goals.
-fn kernel_claim_goal<'a>(
+/// Contract closing constructs the kernel obligation for this postcondition
+/// at the checked outcome. Its evaluation requirements are ordinary proof
+/// obligations, and its completion retains the clause it establishes.
+fn contract_closing_goal<'a>(
     function: &'a CFunction,
     target: Option<&CFunctionContractClaimTarget>,
     pre_state: &CState,
@@ -1029,8 +1028,23 @@ fn kernel_claim_goal<'a>(
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
     return_context: &mut Option<Option<crate::kernel::CFunctionEnsureGoalContext<'a>>>,
-) -> Option<crate::kernel::CClaimGoal> {
-    let mut goals = match target? {
+) -> Result<Option<crate::kernel::CClaimGoal>, ClickError> {
+    // None denotes a structural claim or a proof-local clause of a function
+    // without a reusable contract, not a failed postcondition construction.
+    // Registered postconditions always return a kernel goal or an error.
+    let Some(target) = target else {
+        return Ok(None);
+    };
+    let claim_label = match target {
+        CFunctionContractClaimTarget::EnsureProposition(index) => {
+            format!("{}.ensures_{index}", function.name())
+        }
+        CFunctionContractClaimTarget::ExceptionalEnsureProposition(index) => {
+            format!("{}.exceptional_ensures_{index}", function.name())
+        }
+        _ => return Ok(None),
+    };
+    let mut goals = match target {
         CFunctionContractClaimTarget::EnsureProposition(contract_index) => return_context
             .get_or_insert_with(|| {
                 crate::instrumentation::measure_operation(
@@ -1048,8 +1062,19 @@ fn kernel_claim_goal<'a>(
                     },
                 )
             })
-            .as_ref()?
-            .goals(*contract_index, unfolded_predicates)?,
+            .as_ref()
+            .ok_or_else(|| {
+                ClickError::new(
+                    "contract closing could not construct the postcondition's entry and exit views",
+                )
+            })?
+            .goals(*contract_index, unfolded_predicates)
+            .map_err(|reason| {
+                ClickError::new(format!(
+                    "contract closing for `{}.ensures_{contract_index}`: {reason}",
+                    function.name(),
+                ))
+            })?,
         CFunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
             crate::kernel::c_function_exceptional_ensure_goals(
                 function,
@@ -1058,21 +1083,32 @@ fn kernel_claim_goal<'a>(
                 arguments,
                 outcome,
                 assumptions,
-            )?
+            )
+            .ok_or_else(|| {
+                ClickError::new("contract closing could not evaluate the exceptional postcondition")
+            })?
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    if goals.len() != 1 {
-        return None;
+    if goals.is_empty() {
+        return Err(ClickError::new(format!(
+            "contract closing could not evaluate `{claim_label}` at this outcome",
+        )));
     }
-    goals.pop()
+    if goals.len() != 1 {
+        return Err(ClickError::new(format!(
+            "contract closing produced {} evaluation paths for `{claim_label}`; establish the selecting condition before closing this claim",
+            goals.len(),
+        )));
+    }
+    Ok(goals.pop())
 }
 
 /// The forms an explicit closer may find a claim's goal in: the identity of
 /// a registered predicate ensure first, then the body when the proof has
 /// unfolded that predicate. A closer step is exact, so the closer tries each
 /// form; two forms at most.
-fn kernel_claim_goal_forms<'a>(
+fn contract_closing_goal_forms<'a>(
     function: &'a CFunction,
     target: Option<&CFunctionContractClaimTarget>,
     pre_state: &CState,
@@ -1081,18 +1117,19 @@ fn kernel_claim_goal_forms<'a>(
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
     return_context: &mut Option<Option<crate::kernel::CFunctionEnsureGoalContext<'a>>>,
-) -> Vec<crate::kernel::CClaimGoal> {
+) -> Result<Vec<Option<crate::kernel::CClaimGoal>>, ClickError> {
     let mut forms = Vec::new();
+    let mut failure = None;
     // With no unfolded predicates both configurations are identical. Both
     // forms lower against the same lazily prepared entry and exit views.
     let unfolded = (!unfolded_predicates.is_empty()).then_some(unfolded_predicates);
     for unfolds in std::iter::once(&[][..]).chain(unfolded) {
-        if let Some(form) = crate::instrumentation::measure_operation(
+        let candidate = crate::instrumentation::measure_operation(
             function.name(),
             "explicit return closer",
             "return claim goal lowering",
             || {
-                kernel_claim_goal(
+                contract_closing_goal(
                     function,
                     target,
                     pre_state,
@@ -1103,17 +1140,21 @@ fn kernel_claim_goal_forms<'a>(
                     return_context,
                 )
             },
-        ) && !forms.contains(&form)
-        {
-            forms.push(form);
+        );
+        match candidate {
+            Ok(form) if !forms.contains(&form) => forms.push(form),
+            Ok(_) => {}
+            Err(error) => failure = Some(error),
         }
     }
-    forms
+    if forms.is_empty() {
+        Err(failure.expect("at least one contract goal form was requested"))
+    } else {
+        Ok(forms)
+    }
 }
 
-/// Focuses a claim goal from an outcome Proof that carries the path's
-/// requirements: the kernel's lowering with the facts its loads introduced
-/// when there is one, else the surface's lowering of the surface goal.
+/// Requires the checked outcome from which contract closing opens its goals.
 fn required_outcome<'p, 'a>(root: &'p Option<Proof<'a>>) -> Result<&'p Proof<'a>, ClickError> {
     root.as_ref()
         .ok_or_else(|| ClickError::new("operation requires a retained outcome Proof"))
@@ -1126,46 +1167,10 @@ fn focus_claim_goal<'a>(
 ) -> Result<Proof<'a>, ClickError> {
     match kernel_goal {
         Some(goal) => root.driver().open_contract_claim(&goal, surface_goal),
+        // Structural claims and proof-local clauses have no reusable kernel
+        // postcondition. A failed registered postcondition construction is an
+        // Err and cannot reach this path.
         None => root.focus_fixed_state_surface_goal(surface_goal),
-    }
-}
-
-/// A goal a closer tries for one claim: the kernel's own goal for the claim,
-/// or a proposition the proof side lowered or rewrote for it.
-#[derive(Clone)]
-enum ClaimGoalCandidate {
-    Kernel(crate::kernel::CClaimGoal),
-    Lowered(Proposition),
-}
-
-impl ClaimGoalCandidate {
-    fn focus<'a>(
-        &self,
-        root: &Proof<'a>,
-        surface_goal: &ClickProposition,
-    ) -> Result<Proof<'a>, ClickError> {
-        match self {
-            Self::Kernel(goal) => root.driver().open_contract_claim(goal, surface_goal),
-            Self::Lowered(goal) => {
-                root.focus_lowered_outcome_claim(goal.clone(), &[], surface_goal)
-            }
-        }
-    }
-}
-
-/// The goals a closer tries for one proposition claim, in order: the kernel's
-/// forms of the claim when it has any, else the one goal `lower` gives.
-fn claim_goal_candidates(
-    kernel_goals: Vec<crate::kernel::CClaimGoal>,
-    lower: impl FnOnce() -> Result<Proposition, ClickError>,
-) -> Result<Vec<ClaimGoalCandidate>, ClickError> {
-    if kernel_goals.is_empty() {
-        Ok(vec![ClaimGoalCandidate::Lowered(lower()?)])
-    } else {
-        Ok(kernel_goals
-            .into_iter()
-            .map(ClaimGoalCandidate::Kernel)
-            .collect())
     }
 }
 
@@ -1201,7 +1206,7 @@ fn apply_claim_step<'a>(
     rewritten: Option<&(Proof<'a>, ProofCheckpoint<'a>)>,
     root: Option<&Proof<'a>>,
     surface_goal: &ClickProposition,
-    candidates: impl FnOnce() -> Result<Vec<ClaimGoalCandidate>, ClickError>,
+    candidates: impl FnOnce() -> Result<Vec<Option<crate::kernel::CClaimGoal>>, ClickError>,
     step: impl Fn(&Proof<'a>, ClaimProofOrigin) -> Result<Result<Proof<'a>, ClickError>, ClickError>,
 ) -> Result<Result<ClaimStepApplied<'a>, ClaimStepMiss>, ClickError> {
     if let Some((rewritten, checkpoint)) = rewritten {
@@ -1232,7 +1237,11 @@ fn apply_claim_step<'a>(
     };
     let mut last_error = None;
     for goal in candidates {
-        match step(&goal.focus(root, surface_goal)?, ClaimProofOrigin::Fresh)? {
+        let focused = match goal {
+            Some(goal) => root.driver().open_contract_claim(&goal, surface_goal)?,
+            None => root.focus_fixed_state_surface_goal(surface_goal)?,
+        };
+        match step(&focused, ClaimProofOrigin::Fresh)? {
             Ok(proof) => {
                 return Ok(Ok(ClaimStepApplied {
                     certificate: proof.certificate(),
@@ -1293,7 +1302,7 @@ fn begin_outcome_existence_proof<'a>(
     }
 
     let root = outcome_root.clone();
-    let kernel_goal = kernel_claim_goal(
+    let kernel_goal = contract_closing_goal(
         function,
         root.claim_goals()
             .and_then(|goals| goals.target(&claims[claim_index].key())),
@@ -1303,7 +1312,7 @@ fn begin_outcome_existence_proof<'a>(
         root.facts().assumptions(),
         &[],
         &mut None,
-    );
+    )?;
     let mut proof = focus_claim_goal(&root, kernel_goal, &surface_goal)?;
     for equality in &rewrite_claim_equalities[claim_index] {
         proof = proof
@@ -1334,7 +1343,7 @@ fn begin_outcome_existence_proof<'a>(
 /// kernel's lowering of the contract ensure at the outcome, closed by the
 /// direct logical closure or, when that does not apply, by the smart `solve`
 /// search whose certificate is checked like an explicit one. Either way the
-/// completion is what claim certification matches. When neither closes the
+/// completion retains the contract claim it proves. When neither closes the
 /// claim the reason names what stood in the way: the goal's lowering, a
 /// rewrite that did not apply, or the goal left unclosed with the sides it
 /// evaluated to and the checked proof context. The context is reported, not a
@@ -1384,7 +1393,7 @@ fn close_claim_directly_from_outcome<'a>(
     let kernel_goal = failed_attempt
         .is_none()
         .then(|| {
-            kernel_claim_goal(
+            contract_closing_goal(
                 function,
                 root.claim_goals()
                     .and_then(|goals| goals.target(&claim.key())),
@@ -1396,6 +1405,7 @@ fn close_claim_directly_from_outcome<'a>(
                 &mut None,
             )
         })
+        .transpose()?
         .flatten();
     let listed_goal = failed_attempt
         .and_then(Proof::goal)
@@ -2583,7 +2593,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 let claim_goals = direct_claims
                     .iter()
                     .map(|(claim_index, _, _)| {
-                        kernel_claim_goal_forms(
+                        contract_closing_goal_forms(
                             function,
                             outcome_proof.as_ref().and_then(Proof::claim_goals).and_then(|goals| goals.target(&claims[*claim_index].key())),
                             contract_pre_state,
@@ -2594,9 +2604,9 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                             ),
                             unfolded_predicates,
                             &mut claim_goal_context,
-                        )
+                        ).map(|forms| forms.into_iter().flatten().collect())
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>, _>>()?;
                 direct_proof.driver().complete_fixed_state_obligations_since(
                     &direct_base,
                     &surface_goals,
@@ -3170,6 +3180,19 @@ pub(super) fn finish_ordered_proof<'a>(
     let claim_targets: BTreeMap<_, _> = function
         .contract_claims()
         .iter()
+        // A proof-local clause may mention execution snapshots, which cannot
+        // occur in a reusable contract. Such a function has no modular
+        // proposition contract to register: prove its source clauses as local
+        // obligations. Never confuse failure to open a registered goal with
+        // this decision, made from the function's declared contract support.
+        .filter(|claim| {
+            function.opaque_contract_supported()
+                || !matches!(
+                    claim.target(),
+                    CFunctionContractClaimTarget::EnsureProposition(_)
+                        | CFunctionContractClaimTarget::ExceptionalEnsureProposition(_)
+                )
+        })
         .map(|claim| {
             crate::instrumentation::record_deterministic_work(1);
             (claim.key().clone(), claim.target().clone())
@@ -3307,8 +3330,7 @@ pub(super) fn finish_ordered_proof<'a>(
         let mut checked_resource_transitions_by_path = vec![false; execution.paths().len()];
         let mut checked_returned_resources_by_path =
             vec![crate::kernel::ResourceContext::new(); execution.paths().len()];
-        let mut returned_core = proof_execution.core.clone();
-        let mut any_return_resource_rewrite = false;
+        let mut checked_return_paths = Vec::new();
         let mut surface_closers_by_claim = vec![Vec::new(); claims.len()];
         let mut surface_grouped_closers_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_tactics_by_path = Vec::with_capacity(execution.paths().len());
@@ -4537,7 +4559,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     else {
                                         unreachable!("resource ensures were handled above")
                                     };
-                                    let kernel_goals = kernel_claim_goal_forms(
+                                    let kernel_goals = contract_closing_goal_forms(
                                         function,
                                         outcome_proof
                                             .as_ref()
@@ -4549,7 +4571,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &assumptions_from_propositions(&path_requirements),
                                         &unfolded_predicates,
                                         &mut return_claim_context,
-                                    );
+                                    )?;
                                     // Expansion can emit a checked `have` of
                                     // the original claim after rewriting it.
                                     // Independently prove that exact original
@@ -4557,7 +4579,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // failed rewritten proof as a success.
                                     if assumption && rewritten_claim_proofs[claim_index].is_some() {
                                         if let Some(root) = &fixed_state_root {
-                                            for original in &kernel_goals {
+                                            for original in kernel_goals.iter().flatten() {
                                                 let candidate = root
                                                     .driver()
                                                     .open_contract_claim_without_lowering_facts(
@@ -4595,38 +4617,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         rewritten_claim_proofs[claim_index].as_ref(),
                                         fixed_state_root.as_ref(),
                                         surface_goal,
-                                        || {
-                                            claim_goal_candidates(kernel_goals, || {
-                                                if assumption
-                                                    && let Some(recorded) =
-                                                        outcome_surface_propositions
-                                                            .available_kernel_matching(
-                                                                surface_goal,
-                                                                |fact| {
-                                                                    path_requirements
-                                                                        .contains_top_level(fact)
-                                                                },
-                                                            )
-                                                {
-                                                    return Ok(recorded.clone());
-                                                }
-                                                lower_ensure_proposition_goal(
-                                                    &path_requirements,
-                                                    surface_goal,
-                                                    parameter_binding,
-                                                    pre_state,
-                                                    &outcome,
-                                                    spec_definitions,
-                                                    &proof_execution.presentation.recorded_snapshots,
-                                                    &unfolded_predicates,
-                                                )
-                                                .map_err(|message| {
-                                                    ClickError::new(format!(
-                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `{closer_name}` could not lower goal: {message}"
-                                                    ))
-                                                })
-                                            })
-                                        },
+                                        || Ok(kernel_goals),
                                         |focused, origin| {
                                             // A rewritten claim proof applies the
                                             // written step as is; a fresh goal plans
@@ -4776,7 +4767,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     else {
                                         continue;
                                     };
-                                    let kernel_goals = kernel_claim_goal_forms(
+                                    let kernel_goals = contract_closing_goal_forms(
                                         function,
                                         outcome_proof
                                             .as_ref()
@@ -4788,32 +4779,14 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &assumptions_from_propositions(&path_requirements),
                                         &unfolded_predicates,
                                         &mut return_claim_context,
-                                    );
+                                    )?;
                                     // Continue the retained claim judgment, or
                                     // focus its exact lowering on the owning outcome.
                                     let applied = apply_claim_step(
                                         rewritten_claim_proofs[claim_index].as_ref(),
                                         Some(required_outcome(&outcome_proof)?),
                                         surface_goal,
-                                        || {
-                                            claim_goal_candidates(kernel_goals, || {
-                                                lower_ensure_proposition_goal(
-                                                    &path_requirements,
-                                                    surface_goal,
-                                                    parameter_binding,
-                                                    pre_state,
-                                                    &outcome,
-                                                    spec_definitions,
-                                                    &proof_execution.presentation.recorded_snapshots,
-                                                    &unfolded_predicates,
-                                                )
-                                                .map_err(|message| {
-                                                    ClickError::new(format!(
-                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` could not lower goal: {message}"
-                                                    ))
-                                                })
-                                            })
-                                        },
+                                        || Ok(kernel_goals),
                                         |proof, _| {
                                             Ok(proof.driver().apply_step(rewrite_step.clone()))
                                         },
@@ -5353,8 +5326,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // Named instances and authority wrappers retain checked
                     // resource exchanges after C returns. Certify their retained
                     // trace before accepting the resulting ownership representation.
-                    let rewritten_path;
-                    let certified_path = if has_return_resource_rewrite {
+                    let checked_return_path = if has_return_resource_rewrite {
                         let core = &outcome_proof
                             .as_ref()
                             .and_then(Proof::execution)
@@ -5362,43 +5334,38 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ClickError::new("return instance fold lost its checked execution")
                             })?
                             .core;
-                        rewritten_path = core
-                            .checked_return_path(
-                                execution,
-                                function,
-                                &assumptions_from_propositions(&base_certification_facts),
-                                path_index,
-                            )
-                            .map_err(|refusal| {
-                                let message = format!(
-                                    "could not certify return instance fold: {}",
-                                    refusal.reason
-                                );
-                                match (refusal.unjustified_fact, outcome_proof.as_ref()) {
-                                    (Some(fact), Some(proof)) => unjustified_return_fact_error(
-                                        proof,
-                                        &post_return_facts,
-                                        &fact,
-                                        &message,
-                                        path_index,
-                                    ),
-                                    _ => ClickError::new(message),
-                                }
-                            })?;
-                        returned_core
-                            .collect_return_resource_rewrites(core, path_index)
-                            .map_err(ClickError::new)?;
-                        any_return_resource_rewrite = true;
-                        &rewritten_path
+                        Some(
+                            core.checked_return_path(&completed_execution, path_index)
+                                .map_err(|refusal| {
+                                    let message = format!(
+                                        "could not certify return instance fold: {}",
+                                        refusal.reason
+                                    );
+                                    match (refusal.unjustified_fact, outcome_proof.as_ref()) {
+                                        (Some(fact), Some(proof)) => unjustified_return_fact_error(
+                                            proof,
+                                            &post_return_facts,
+                                            &fact,
+                                            &message,
+                                            path_index,
+                                        ),
+                                        _ => ClickError::new(message),
+                                    }
+                                })?,
+                        )
                     } else {
-                        completed_execution
+                        None
+                    };
+                    let certified_path = match &checked_return_path {
+                        Some(completed) => completed.path(),
+                        None => completed_execution
                             .paths()
                             .get(certified_path_index)
                             .ok_or_else(|| {
                                 ClickError::new(
                                     "return instance fold changed execution path coverage",
                                 )
-                            })?
+                            })?,
                     };
                     let Proposition::CFunctionVerifies {
                         outcome: specification_outcome,
@@ -5485,6 +5452,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             checked_proposition,
                             entry_context: proof_context.constants.entry_context.clone(),
                         });
+                    }
+                    if let Some(completed) = checked_return_path {
+                        checked_return_paths.push(completed);
                     }
                     if let Some(return_proof) = loop_return {
                         let per_claim = closures
@@ -5609,22 +5579,10 @@ pub(super) fn finish_ordered_proof<'a>(
                 }
             }
         }
-        let mut final_checked_execution = completed_execution.clone();
-        if any_return_resource_rewrite {
-            let completed = returned_core
-                .checked_function_execution(
-                    execution,
-                    function,
-                    assumptions_from_propositions(&base_certification_facts),
-                    function_environment.clone(),
-                    execution_semantics,
-                    execution_mode,
-                )
-                .map_err(|message| {
-                    ClickError::new(format!("could not certify all return folds: {message}"))
-                })?;
-            final_checked_execution = completed;
-        }
+        let final_checked_execution = completed_execution
+            .clone()
+            .with_checked_return_paths(checked_return_paths)
+            .map_err(ClickError::new)?;
         let completed_with_resource_claims =
             final_checked_execution.with_checked_resource_claims(checked_resource_claims_by_path);
         let completed_with_resource_claims = completed_with_resource_claims
@@ -6373,4 +6331,40 @@ fn unjustified_return_fact_error(
         |source_index| proof.at_source_tactic(source_index),
     );
     site.return_fold_certification_error(message.to_owned(), Some(fact.clone()), path_index)
+}
+
+#[cfg(test)]
+mod contract_closing_tests {
+    use super::*;
+
+    #[test]
+    fn missing_kernel_claim_is_refused_during_contract_closing() {
+        let function = crate::kernel::c_function(
+            CType::Int32,
+            "missing",
+            vec![],
+            crate::kernel::c_return(crate::kernel::c_int32_literal(0)),
+        );
+        let outcome = CFunctionOutcome::Return {
+            value: crate::kernel::int32(0).into(),
+            state: Box::new(CState::new()),
+        };
+        let error = contract_closing_goal(
+            &function,
+            Some(&CFunctionContractClaimTarget::EnsureProposition(0)),
+            &CState::new(),
+            &[],
+            &outcome,
+            &PureFactContext::new(),
+            &[],
+            &mut None,
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("no postcondition at contract index 0"),
+            "{error}"
+        );
+    }
 }

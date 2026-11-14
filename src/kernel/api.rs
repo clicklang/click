@@ -5566,6 +5566,7 @@ pub fn prove_checked_c_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CCheckedFunctionExecution {
+        proof_candidates: None,
         state,
         function,
         arguments,

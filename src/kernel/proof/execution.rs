@@ -296,6 +296,45 @@ pub(crate) struct CheckedReturnProposition {
     context: Arc<CheckedReturnContext>,
 }
 
+/// The selected checked return path and the producer it replaces. Only the
+/// proof operation constructs this receipt; publication preserves its theorem
+/// identity instead of rebuilding the completed resource trace a second time.
+pub(crate) struct CheckedReturnPath {
+    index: usize,
+    source: Theorem,
+    path: crate::kernel::SymbolicCExecutionPath,
+    deferred: bool,
+    error: Option<crate::kernel::CRuntimeError>,
+}
+
+impl CheckedReturnPath {
+    pub(crate) fn path(&self) -> &crate::kernel::SymbolicCExecutionPath {
+        &self.path
+    }
+}
+
+impl crate::kernel::CCheckedFunctionExecution {
+    pub(crate) fn with_checked_return_paths(
+        mut self,
+        paths: Vec<CheckedReturnPath>,
+    ) -> Result<Self, &'static str> {
+        for completed in paths {
+            let source = self
+                .execution
+                .paths
+                .get(completed.index)
+                .ok_or("return completion selected an unknown path")?;
+            if !Arc::ptr_eq(&source.theorem.proposition, &completed.source.proposition) {
+                return Err("return completion belongs to a different producer path");
+            }
+            self.execution.paths[completed.index] = completed.path;
+            self.deferred_contract_exits[completed.index] = completed.deferred;
+            self.deferred_contract_exit_errors[completed.index] = completed.error;
+        }
+        Ok(self)
+    }
+}
+
 /// Why [`ExecutionProofCore::checked_return_path`] refused a path: the
 /// kernel's reason and, when a return proof assumed a fact the path does not
 /// justify, that fact, for the diagnostic to name.
@@ -11200,6 +11239,7 @@ impl ExecutionProofCore {
             )?;
         let path_count = paths.len();
         Ok(crate::kernel::CCheckedFunctionExecution {
+            proof_candidates: Some(candidates.clone()),
             state: candidates.state().clone(),
             function: checked_function.clone(),
             arguments: candidates.arguments().to_vec(),
@@ -11229,31 +11269,47 @@ impl ExecutionProofCore {
         })
     }
 
-    /// One path theorem, not an assertion of whole-function coverage.
+    /// Complete a selected return path against the original checked function
+    /// execution. The receipt retains the exact path used by its claim proofs.
     pub(crate) fn checked_return_path(
         &self,
-        candidates: &CFunctionExecutionCandidates,
-        function: &CFunction,
-        assumptions: &PureFactContext,
+        execution: &crate::kernel::CCheckedFunctionExecution,
         path_index: usize,
-    ) -> Result<crate::kernel::SymbolicCExecutionPath, ReturnPathRefusal> {
-        let mut unjustified = None;
-        self.checked_execution_paths(
-            candidates,
-            function,
-            assumptions,
-            Some(path_index),
-            &mut unjustified,
-        )
-        .map_err(|reason| ReturnPathRefusal {
-            reason,
-            unjustified_fact: unjustified,
-        })?
-        .0
-        .pop()
-        .ok_or(ReturnPathRefusal {
+    ) -> Result<CheckedReturnPath, ReturnPathRefusal> {
+        let source = execution.paths().get(path_index).ok_or(ReturnPathRefusal {
             reason: "return fold selected an unknown path",
             unjustified_fact: None,
+        })?;
+        let candidates = execution
+            .proof_candidates
+            .as_ref()
+            .ok_or(ReturnPathRefusal {
+                reason: "return completion requires a proof-produced execution",
+                unjustified_fact: None,
+            })?;
+        let mut unjustified = None;
+        let (mut paths, _, deferred, errors) = self
+            .checked_execution_paths(
+                candidates,
+                &execution.function,
+                &execution.assumptions,
+                Some(path_index),
+                &mut unjustified,
+            )
+            .map_err(|reason| ReturnPathRefusal {
+                reason,
+                unjustified_fact: unjustified,
+            })?;
+        let path = paths.pop().ok_or(ReturnPathRefusal {
+            reason: "return fold selected an unknown path",
+            unjustified_fact: None,
+        })?;
+        Ok(CheckedReturnPath {
+            index: path_index,
+            source: source.theorem.clone(),
+            path,
+            deferred: deferred[0],
+            error: errors.into_iter().next().flatten(),
         })
     }
 
@@ -11263,6 +11319,7 @@ impl ExecutionProofCore {
     }
 
     /// Collect a finished outcome's exchange without copying sibling traces.
+    #[cfg(test)]
     pub(crate) fn collect_return_resource_rewrites(
         &mut self,
         source: &Self,

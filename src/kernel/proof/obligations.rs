@@ -508,8 +508,8 @@ impl OutcomeClaimGoals {
     }
 
     /// Closes `key` with `evidence`. A checked completion must have been
-    /// proved about `outcome` and, when it names a claim, must name this
-    /// one.
+    /// proved about `outcome`. A proposition postcondition requires the
+    /// completion of its own kernel-created contract obligation.
     pub(crate) fn close(
         &self,
         key: &CFunctionContractClaimKey,
@@ -521,6 +521,16 @@ impl OutcomeClaimGoals {
         if !matches!(goal.state, ClaimGoalState::Open) {
             return Err(ClaimGoalError::AlreadyClosed);
         }
+        let proposition_claim = matches!(
+            goal.target,
+            Some(
+                CFunctionContractClaimTarget::EnsureProposition(_)
+                    | CFunctionContractClaimTarget::ExceptionalEnsureProposition(_)
+            )
+        );
+        if proposition_claim && matches!(evidence, ClaimGoalEvidence::Resource(_)) {
+            return Err(ClaimGoalError::WrongClaim);
+        }
         if let ClaimGoalEvidence::Proposition(completion) = &evidence {
             if completion
                 .outcome()
@@ -528,9 +538,10 @@ impl OutcomeClaimGoals {
             {
                 return Err(ClaimGoalError::WrongOutcome);
             }
-            if completion
-                .claim()
-                .is_some_and(|target| goal.target.as_ref() != Some(target))
+            if (proposition_claim && completion.claim() != goal.target.as_ref())
+                || completion
+                    .claim()
+                    .is_some_and(|target| goal.target.as_ref() != Some(target))
             {
                 return Err(ClaimGoalError::WrongClaim);
             }
@@ -714,7 +725,18 @@ mod outcome_claim_goal_tests {
             refusal(&CFunctionContractClaimKey::Ensure(9), receipt()),
             ClaimGoalError::Unknown
         );
-        let closed = goals.close(&key, receipt(), &outcome.identity).unwrap();
+        assert_eq!(
+            refusal(&key, completion(&outcome, None)),
+            ClaimGoalError::WrongClaim
+        );
+        assert_eq!(refusal(&key, receipt()), ClaimGoalError::WrongClaim);
+        let closed = goals
+            .close(
+                &key,
+                completion(&outcome, Some(Target::EnsureProposition(0))),
+                &outcome.identity,
+            )
+            .unwrap();
         assert_eq!(
             closed
                 .close(&key, receipt(), &outcome.identity)

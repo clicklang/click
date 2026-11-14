@@ -3438,7 +3438,7 @@ fn verify_c0_sources_in_context(
                 .collect::<Vec<_>>();
             let certified_claims = {
                 let _certification_timing = VerificationTimingPhase::new("certification");
-                c_verified_function_contract_claims_with_checked_propositions(
+                c_function_contract_claims_from_completions(
                     &contract_function,
                     &contract_execution,
                     &checked_propositions,

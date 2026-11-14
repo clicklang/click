@@ -443,7 +443,9 @@ impl<'a> Proof<'a> {
                 self.step_error(match error {
                     ClaimGoalError::Unknown => "this outcome path owes no such claim",
                     ClaimGoalError::AlreadyClosed => "this claim is already closed on this path",
-                    ClaimGoalError::WrongClaim => "the completion proves a different claim",
+                    ClaimGoalError::WrongClaim => {
+                        "the completion does not prove this contract claim"
+                    }
                     ClaimGoalError::WrongOutcome => {
                         "the completion was proved about a different outcome path"
                     }
@@ -640,16 +642,6 @@ impl<'a> Proof<'a> {
             Some(surface.clone()),
             Some(goal),
         )
-    }
-
-    pub(in crate::surface::proof) fn focus_lowered_outcome_claim(
-        &self,
-        goal: Proposition,
-        lowering_facts: &[Proposition],
-        surface: &ClickProposition,
-    ) -> Result<Self, ClickError> {
-        let focused = self.focus_fixed_state_goal_with_surface(goal, Some(surface.clone()))?;
-        focused.with_claim_lowering_facts(self, lowering_facts)
     }
 
     pub(in crate::surface::proof) fn with_claim_lowering_facts(

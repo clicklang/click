@@ -2676,7 +2676,7 @@ fn execute_step_from_frontier_position_selecting_path(
     {
         // One checked source operation can have several completed outcomes,
         // including a terminal direct call followed by a return.
-        // Preserve every theorem and its own outcome for final certification.
+        // Preserve every theorem with its own outcome for contract closing.
 
         let mut common_pure_facts = transitions[0].pure_facts.clone();
         common_pure_facts.retain(|fact| {

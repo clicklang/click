@@ -678,7 +678,7 @@ pub(super) fn record_unfinished_path(
     record_retained_path(claim, path_index, true, false, lineage, retained, names);
 }
 
-/// Written steps whose final certification was refused are a checked prefix,
+/// Written steps preceding a refused contract completion are a checked prefix,
 /// not an accepted path and not an abandoned search candidate.
 pub(super) fn record_certification_failure_path(
     claim: &str,

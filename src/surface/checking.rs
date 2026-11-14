@@ -519,45 +519,6 @@ pub(super) fn apply_witness_tactic(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn lower_ensure_proposition_goal(
-    available_pure_facts: &(impl PropositionSource + ?Sized),
-    proposition: &ClickProposition,
-    parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    outcome: &CFunctionOutcome,
-    spec_definitions: SpecDefinitions<'_>,
-    recorded_snapshots: &RecordedSnapshots,
-    unfolded_predicates: &[String],
-) -> Result<Proposition, String> {
-    let CFunctionOutcome::Return { value, state } = outcome else {
-        return Err("the execution path does not return".to_string());
-    };
-    let proposition = lower_outcome_proposition_with_recorded_snapshots(
-        parameter_binding,
-        pre_state,
-        state,
-        &value.native(),
-        available_pure_facts,
-        proposition,
-        spec_definitions,
-        recorded_snapshots,
-    );
-    if crate::instrumentation::deadline_exceeded() {
-        return Err(format!(
-            "verification budget exhausted inside {}",
-            crate::instrumentation::deadline_context()
-        ));
-    }
-    let proposition = proposition?;
-    let assumptions = assumptions_from_propositions(available_pure_facts);
-    unfold_predicates_in_proposition(
-        spec_definitions,
-        unfolded_predicates,
-        &proposition,
-        &assumptions,
-    )
-}
-
 pub(super) fn comparison_condition(
     actual: MachineTerm,
     operator: ComparisonOperator,

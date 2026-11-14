@@ -5905,18 +5905,6 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             let CFunctionOutcome::Return { value, state } = outcome else {
                 panic!("forwarding must return");
             };
-            let specification = c_function_specification(
-                proof_state.clone(),
-                arguments.clone(),
-                path.assumptions().pure_facts(),
-                outcome.clone(),
-            );
-            let theorem = prove_c_function_satisfies_specification_from_symbolic_path(
-                forward.clone(),
-                specification.clone(),
-                path,
-            )
-            .expect("checked forwarding specification");
             let mut facts = path.assumptions().pure_facts();
             facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
             let assumptions = facts.iter().fold(PureFactContext::new(), |context, fact| {
@@ -5970,10 +5958,19 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     .unwrap_or_else(|_| {
                         panic!("forwarded ensure {index} must follow from the call")
                     });
-                completions.push(crate::kernel::api::contract_certification::c_checked_function_proposition_with_reason(
-                    &forward, &specification, &theorem,
-                    &closed.completed_proposition().expect("closed ensure"), path,
-                ).expect("checked forwarded ensure"));
+                let owned =
+                    crate::kernel::api::contract_certification::CheckedPathSpecification::new(
+                        &forward, path,
+                    )
+                    .expect("forwarded path specification");
+                completions.push(
+                    owned
+                        .complete(
+                            &closed.completed_proposition().expect("closed ensure"),
+                            path,
+                        )
+                        .expect("checked forwarded ensure"),
+                );
             }
         }
         let execution = prove_c_function_contract_execution_paths_with_checked_artifacts(
@@ -5985,12 +5982,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             CFunctionContractExecutionMode::VerifyLoops,
             &[artifact],
         );
-        let claims = c_verified_function_contract_claims_with_checked_propositions(
-            &forward,
-            &execution,
-            &completions,
-        )
-        .unwrap_or_else(|| panic!("forwarded construction claims for {name}"));
+        let claims =
+            c_function_contract_claims_from_completions(&forward, &execution, &completions)
+                .unwrap_or_else(|| panic!("forwarded construction claims for {name}"));
         let rule = c_verified_function_rule(forward.clone(), &claims)
             .expect("forwarded construction rule");
         environment = environment

@@ -9822,7 +9822,16 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
             continue;
         }
         // A counter of uncharged work may stay at zero.
-        let counter = matches!(*name, "materialized outcome facts" | "join arm effects");
+        let counter = matches!(
+            *name,
+            "materialized outcome facts" | "join arm effects" | "contract path preparation"
+        );
+        if *name == "contract path preparation" {
+            assert!(
+                work.iter().all(|units| *units == 0),
+                "closed propositions must not rebuild contract paths: {work:?}"
+            );
+        }
         assert!(
             counter || work.iter().all(|units| *units > 0),
             "{name} was not measured: {work:?}"

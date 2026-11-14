@@ -1770,8 +1770,9 @@ Condition lookup through implication-shaped call facts checks whether the
 conclusion can establish the requested condition before proving the
 antecedent. Sequential path composition also preserves already-generated
 required obligations without rerunning contextual search against the older
-base context; final certification remains responsible for discharging that
-frontier. These evaluation orders are logically neutral, but prevent ordinary
+base context. Remaining requirements belong to proof obligations and must be
+discharged before contract completion; legacy contract-path preparation still
+performs part of this work. These evaluation orders are logically neutral, but prevent ordinary
 verified-call chains from repeatedly scanning every earlier call fact.
 
 Smart execution and exact certification share the same bounded order

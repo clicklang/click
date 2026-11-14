@@ -98,6 +98,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             });
             let closer = match claim_closer {
                 Some(closer) => closer,
+                None if claim_goals.get(index).is_some_and(|forms| !forms.is_empty()) => return Err(driver_proof.step_error(
+                    "contract closing could not discharge its kernel obligation from the retained facts",
+                )),
                 None => driver_proof
                     .focus_fixed_state_surface_goal(goal)?
                     .driver()

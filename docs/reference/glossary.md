@@ -476,12 +476,26 @@ chooses one random concrete mutation.
 A proposition of the form `P implies Q`. It states that the consequent `Q`
 holds whenever the antecedent `P` holds; it doesn't assert `P` by itself.
 
+### Contract closing
+
+The proof operation that creates the obligations needed to establish the
+current contract from a checked outcome. Each obligation needs a proof;
+closing does not imply those proofs have succeeded. Tactics are the other
+source of proof obligations. See [Proof objects](../internals/proof-objects.md).
+
+### Implicit solver
+
+The automation that attempts an obligation's omitted proof. Existing code and
+diagnostics also call this the implicit closer. It proves obligations created
+by tactics or contract closing; it does not define the contract's obligations.
+
 ### Implicit tail
 
 The work that ends every proof script, including an omitted one. It runs the
 remaining C, splitting at each C branch the facts do not decide into execution
-paths that each run to function exit, then closes every open goal on every path
-with the implicit closer: direct closure, `solve`'s search, and, on a returned
+paths that each run to function exit. Contract closing creates the remaining
+contract obligations, and the implicit solver attempts every open goal on
+every path: direct closure, `solve`'s search, and, on a returned
 path holding the body of a resource the contract produces, a fold of that
 resource. An omitted proof is the implicit tail alone. See [Smart and simple
 tactics](../concepts/smart-and-simple-tactics.md).

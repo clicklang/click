@@ -14637,6 +14637,9 @@ pub struct CFunctionContractExecution {
 /// without covering the others.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CCheckedFunctionExecution {
+    /// The immutable outcome publication this proof completed. Return-path
+    /// completion uses this same input and preserves its checked path object.
+    pub(super) proof_candidates: Option<CFunctionExecutionCandidates>,
     pub(super) state: CState,
     pub(super) function: CFunction,
     pub(super) arguments: Vec<CExpression>,

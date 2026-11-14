@@ -2426,12 +2426,15 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
         &self,
         contract_index: usize,
         unfolded_predicates: &[String],
-    ) -> Option<Vec<CClaimGoal>> {
+    ) -> Result<Vec<CClaimGoal>, String> {
         let function = self.function;
         let entry_state = &self.entry_state;
         let post_state = &self.post_state;
         let assumptions = &self.assumptions;
-        let ensure = function.contract_ensures().get(contract_index)?;
+        let ensure = function
+            .contract_ensures()
+            .get(contract_index)
+            .ok_or_else(|| format!("no postcondition at contract index {contract_index}"))?;
         let ensure = function
             .predicate_unfoldings()
             .iter()
@@ -2453,39 +2456,28 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
             &lowering_assumptions,
             &mut budget,
         )
-        .ok()?;
-        // An ensure that reads memory the outcome shows freed is not stated at
-        // this outcome: no goal, so the claim's own lowering reports the load.
-        if paths.iter().any(|path| {
-            path.obligations.iter().any(|obligation| {
-                super::c_loadability_obligation_impossible_with_assumptions(
-                    obligation.proposition(),
-                    assumptions,
-                )
-            })
-        }) {
-            return None;
+        .map_err(|limit| format!("postcondition evaluation stopped at {}", limit.describe()))?;
+        if paths.is_empty() {
+            return Err(no_single_path_message("lowering", &paths, &budget));
         }
         let selected = exactly_selected_spec_proposition_path(&paths, assumptions);
         let paths = match selected {
             Some(path) if paths.len() > 1 => std::slice::from_ref(path),
             _ => paths.as_slice(),
         };
-        Some(
-            paths
-                .iter()
-                .map(|path| CClaimGoal {
-                    target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
-                    proposition: path.proposition.clone(),
-                    obligations: path.obligations.clone(),
-                    facts: path
-                        .facts
-                        .iter()
-                        .map(|fact| fact.proposition().clone())
-                        .collect(),
-                })
-                .collect(),
-        )
+        Ok(paths
+            .iter()
+            .map(|path| CClaimGoal {
+                target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
+                proposition: path.proposition.clone(),
+                obligations: path.obligations.clone(),
+                facts: path
+                    .facts
+                    .iter()
+                    .map(|fact| fact.proposition().clone())
+                    .collect(),
+            })
+            .collect())
     }
 }
 
@@ -2506,6 +2498,7 @@ pub fn c_function_ensure_goals(
 ) -> Option<Vec<CClaimGoal>> {
     CFunctionEnsureGoalContext::new(function, caller_state, arguments, outcome, assumptions)?
         .goals(contract_index, unfolded_predicates)
+        .ok()
 }
 
 /// Lowers one exceptional postcondition at a checked throwing outcome. The
@@ -2598,7 +2591,7 @@ pub fn c_verified_function_contract_claims(
     function: &CFunction,
     contract_execution: &CFunctionContractExecution,
 ) -> Option<Vec<CVerifiedFunctionContractClaim>> {
-    c_verified_function_contract_claims_with_checked_propositions(function, contract_execution, &[])
+    collect_function_contract_claims(function, contract_execution, &[], false)
 }
 
 /// Whether a lowered ensure folded to a constant truth: the kernel's own
@@ -2835,14 +2828,23 @@ fn native_literal_completion_key(exceptional: bool, value: &CValue) -> Option<(b
     }
 }
 
-/// Certifies contract claims while reusing proposition judgments already
-/// closed by the kernel proof object. Finalization still reconstructs the
-/// exact function paths and checks resources, effects, obligations, and claim
-/// coverage; it does not re-prove a proposition claim the proof completed.
-pub(crate) fn c_verified_function_contract_claims_with_checked_propositions(
+/// Collects contract claims from proof completion. Proposition clauses require
+/// their exact claim/path evidence and are never lowered or proved here.
+/// Resource and effect claims still use the legacy boundary implementation;
+/// migrating those remaining obligations belongs to contract closing.
+pub(crate) fn c_function_contract_claims_from_completions(
     function: &CFunction,
     contract_execution: &CFunctionContractExecution,
     checked_propositions: &[CCheckedFunctionProposition],
+) -> Option<Vec<CVerifiedFunctionContractClaim>> {
+    collect_function_contract_claims(function, contract_execution, checked_propositions, true)
+}
+
+fn collect_function_contract_claims(
+    function: &CFunction,
+    contract_execution: &CFunctionContractExecution,
+    checked_propositions: &[CCheckedFunctionProposition],
+    require_closing_evidence: bool,
 ) -> Option<Vec<CVerifiedFunctionContractClaim>> {
     if !contract_execution.is_complete() {
         return None;
@@ -2875,12 +2877,20 @@ pub(crate) fn c_verified_function_contract_claims_with_checked_propositions(
                 &claim_key,
                 operation_name,
                 || {
-                    claim_holds_on_some_path_set_of_every_case(
-                        function,
-                        claim,
-                        &cases,
-                        &checked_propositions,
-                    )
+                    if require_closing_evidence && is_proposition_claim(claim.target()) {
+                        closed_proposition_holds_on_every_case(
+                            claim.target(),
+                            &cases,
+                            &checked_propositions,
+                        )
+                    } else {
+                        claim_holds_on_some_path_set_of_every_case(
+                            function,
+                            claim,
+                            &cases,
+                            &checked_propositions,
+                        )
+                    }
                 },
             );
             if timings {
@@ -3035,6 +3045,69 @@ fn contract_path_set_views(
         .collect()
 }
 
+fn is_proposition_claim(target: &CFunctionContractClaimTarget) -> bool {
+    matches!(
+        target,
+        CFunctionContractClaimTarget::EnsureProposition(_)
+            | CFunctionContractClaimTarget::ExceptionalEnsureProposition(_)
+    )
+}
+
+/// Contract closing already proved this clause on its producer-owned paths.
+/// Consume that association without rebuilding states or lowering the clause.
+fn closed_proposition_holds_on_every_case(
+    target: &CFunctionContractClaimTarget,
+    cases: &[Vec<ContractPathSetView<'_>>],
+    checked: &CheckedPropositionIndex<'_>,
+) -> bool {
+    let origins = checked.by_path.get(target);
+    cases.iter().all(|alternatives| {
+        alternatives.iter().any(|view| {
+            view.set.paths.iter().enumerate().all(|(index, path)| {
+                crate::instrumentation::record_deterministic_work(1);
+                // The execution producer retains exact contradictions in its
+                // indexed context. An unreachable candidate owes no claim;
+                // outcome splitting likewise creates no goal for it.
+                if path
+                    .post_assumptions
+                    .as_ref()
+                    .unwrap_or(&path.assumptions)
+                    .has_retained_contradiction()
+                {
+                    return true;
+                }
+                if view
+                    .set
+                    .completion_path_origins
+                    .get(index)
+                    .is_some_and(|origin| {
+                        origins.is_some_and(|origins| {
+                            origins
+                                .contains(&(std::sync::Arc::as_ptr(&origin.proposition) as usize))
+                        })
+                    })
+                {
+                    return true;
+                }
+                // Checked proof execution retains the outcome itself. Do not
+                // walk the theorem's premise chain to rediscover its family.
+                matches!(
+                    (target, path.completion_origin.as_ref()),
+                    (_, Some(CFunctionOutcome::VerificationDiverges))
+                        | (
+                            CFunctionContractClaimTarget::EnsureProposition(_),
+                            Some(CFunctionOutcome::Throw { .. })
+                        )
+                        | (
+                            CFunctionContractClaimTarget::ExceptionalEnsureProposition(_),
+                            Some(CFunctionOutcome::Return { .. })
+                        )
+                )
+            })
+        })
+    })
+}
+
 /// A claim holds when every resource-guard case has one path set on all of
 /// whose paths it holds. Each set is a complete execution of the function
 /// under its case, so one certifying set is authority for the case.
@@ -3092,11 +3165,8 @@ pub fn c_unverified_function_contract_claims(
     function: &CFunction,
     contract_execution: &CFunctionContractExecution,
 ) -> Result<Vec<CFunctionContractClaimKey>, String> {
-    c_unverified_function_contract_claims_with_checked_propositions(
-        function,
-        contract_execution,
-        &[],
-    )
+    unverified_function_contract_claims(function, contract_execution, &[], false)
+        .map_err(|failure| failure.reason)
 }
 
 /// Diagnostic counterpart to checked-proposition-aware finalization. Keeping
@@ -3120,6 +3190,15 @@ pub(crate) fn c_unverified_function_contract_claims_diagnostic(
     contract_execution: &CFunctionContractExecution,
     checked_propositions: &[CCheckedFunctionProposition],
 ) -> Result<Vec<CFunctionContractClaimKey>, ContractPathPreparationFailure> {
+    unverified_function_contract_claims(function, contract_execution, checked_propositions, true)
+}
+
+fn unverified_function_contract_claims(
+    function: &CFunction,
+    contract_execution: &CFunctionContractExecution,
+    checked_propositions: &[CCheckedFunctionProposition],
+    require_closing_evidence: bool,
+) -> Result<Vec<CFunctionContractClaimKey>, ContractPathPreparationFailure> {
     if !contract_execution.is_complete() {
         return Err("certification produced no paths".to_string().into());
     }
@@ -3130,12 +3209,20 @@ pub(crate) fn c_unverified_function_contract_claims_diagnostic(
         .contract_claims()
         .iter()
         .filter(|claim| {
-            !claim_holds_on_some_path_set_of_every_case(
-                function,
-                claim,
-                &cases,
-                &checked_propositions,
-            )
+            if require_closing_evidence && is_proposition_claim(claim.target()) {
+                !closed_proposition_holds_on_every_case(
+                    claim.target(),
+                    &cases,
+                    &checked_propositions,
+                )
+            } else {
+                !claim_holds_on_some_path_set_of_every_case(
+                    function,
+                    claim,
+                    &cases,
+                    &checked_propositions,
+                )
+            }
         })
         .map(|claim| claim.key().clone())
         .collect::<Vec<_>>();
@@ -3963,4 +4050,157 @@ mod retained_literal_completion_scaling_tests {
     include!(
         "../../../scaling_tests/kernel/api/contract_certification/contract_claims/retained_literals.rs"
     );
+}
+
+#[cfg(test)]
+mod contract_closing_tests {
+    use super::*;
+
+    fn fixture(path_count: usize) -> (CFunction, CFunctionContractExecution) {
+        let function = c_function(CType::Int32, "closed", vec![], c_return(c_int32_literal(0)))
+            .with_contract(
+                vec![],
+                vec![SpecProposition::Comparison {
+                    left: SpecExpression::CExpression(c_int32_literal(0)),
+                    operator: CComparisonOperator::Equal,
+                    right: SpecExpression::CExpression(c_int32_literal(0)),
+                }],
+                vec![],
+                vec![CFunctionContractClaim::ensure_proposition(0, 0)],
+                true,
+            );
+        let paths = (0..path_count)
+            .map(|_| SymbolicCExecutionPath {
+                call_parameters: None,
+                completion_origin: None,
+                call_result: None,
+                assumptions: PureFactContext::new(),
+                post_assumptions: None,
+                facts: ExecutionFacts::new(),
+                effect_facts: ExecutionFacts::new(),
+                obligations: vec![],
+                theorem: Theorem::new(Proposition::CFunctionVerifies {
+                    state: Box::new(CState::new()),
+                    function: Box::new(function.clone()),
+                    arguments: vec![],
+                    outcome: CFunctionOutcome::Return {
+                        value: int32(0).into(),
+                        state: Box::new(CState::new()),
+                    },
+                }),
+                loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            })
+            .collect::<Vec<_>>();
+        let set = CContractPathSet {
+            completion_path_origins: paths.iter().map(|path| path.theorem.clone()).collect(),
+            paths,
+            checked_resource_claims: vec![],
+            checked_resource_transitions: vec![],
+            deferred_contract_exits: vec![],
+            deferred_contract_exit_errors: vec![],
+            checked_returned_resources: vec![],
+            completion_origin_state: None,
+            boundary_transfers: vec![],
+        };
+        let mut execution = CFunctionContractExecution::failed("fixture".into());
+        execution.cases = vec![vec![set]];
+        (function, execution)
+    }
+
+    fn completions(
+        function: &CFunction,
+        execution: &CFunctionContractExecution,
+    ) -> Vec<CCheckedFunctionProposition> {
+        execution.cases[0][0]
+            .paths
+            .iter()
+            .map(|path| CCheckedFunctionProposition {
+                path_origin: Some(path.theorem.clone()),
+                function: function.clone(),
+                specification: CFunctionSpecification::new(
+                    CState::new(),
+                    vec![],
+                    vec![],
+                    path_function_outcome(path).unwrap().clone(),
+                ),
+                proposition: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                claim: Some(CFunctionContractClaimTarget::EnsureProposition(0)),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn completed_claims_do_not_reconstruct_or_reprove_postconditions() {
+        let (function, execution) = fixture(2);
+        let proofs = completions(&function, &execution);
+        let cases = contract_path_set_views(&execution, false);
+        assert!(closed_proposition_holds_on_every_case(
+            &CFunctionContractClaimTarget::EnsureProposition(0),
+            &cases,
+            &checked_proposition_index(&proofs),
+        ));
+        assert!(
+            cases
+                .iter()
+                .flatten()
+                .all(|view| view.prepared.get().is_none())
+        );
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &proofs).is_some()
+        );
+        // A trivially true postcondition is still an unclosed obligation when
+        // its proof was not opened for the contract clause.
+        let mut untagged = proofs.clone();
+        for proof in &mut untagged {
+            proof.claim = None;
+        }
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &untagged).is_none()
+        );
+        // Independent execution-only checking remains a distinct API.
+        assert!(c_verified_function_contract_claims(&function, &execution).is_some());
+        let missing = c_unverified_function_contract_claims_with_checked_propositions(
+            &function, &execution, &untagged,
+        )
+        .unwrap();
+        assert_eq!(missing, vec![CFunctionContractClaimKey::Ensure(0)]);
+    }
+
+    #[test]
+    fn closing_evidence_must_cover_each_path_and_each_entry_case() {
+        let (function, mut execution) = fixture(2);
+        let proofs = completions(&function, &execution);
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &proofs[..1])
+                .is_none()
+        );
+        let mut wrong_clause = proofs.clone();
+        wrong_clause[1].claim = Some(CFunctionContractClaimTarget::EnsureProposition(1));
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &wrong_clause)
+                .is_none()
+        );
+        // An equal-looking theorem from a different producer is not this path.
+        let mut wrong_path = proofs.clone();
+        let original = wrong_path[1].path_origin.as_ref().unwrap();
+        wrong_path[1].path_origin = Some(Theorem::new(original.proposition().clone()));
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &wrong_path)
+                .is_none()
+        );
+        let (_, other_case) = fixture(1);
+        execution
+            .cases
+            .push(other_case.cases.into_iter().next().unwrap());
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &proofs).is_none()
+        );
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/api/contract_certification/contract_claims/closing_tests.rs"
+        );
+    }
 }
