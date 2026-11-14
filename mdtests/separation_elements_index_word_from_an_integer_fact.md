@@ -1,6 +1,6 @@
-# `separation::elements` takes its index word fact from an Integer fact
+# `separation::separate_elements` takes its index word fact from an Integer fact
 
-`separation::elements(q, m - 1, 0)` requires `i != j` of the `int32` index
+`separation::separate_elements(q, m - 1, 0)` requires `i != j` of the `int32` index
 words: `((m - 1) as int32) != 0`. The contract states the Integer fact
 `m - 1 != 0`, which `apply ... using { m - 1 != 0; }` refuses as a
 different fact. `solve` proves the word fact from it, by cases on the word
@@ -41,7 +41,7 @@ int32 read_first(int32 m) {
         have defined(m - 1) by solve();
         have ((m - 1) as int32) != 0 by solve();
         have separate(memory(q[m - 1]), memory(q[0])) by {
-            apply(separation::elements(q, m - 1, 0)) using {
+            apply(separation::separate_elements(q, m - 1, 0)) using {
                 defined(m - 1);
                 ((m - 1) as int32) != 0;
             };

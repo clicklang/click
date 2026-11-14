@@ -12,19 +12,19 @@ by `authority_establishes_and_retires_empty_stack_population` in
 The representation law `integer::uint32_from_le_bytes` is exercised in
 [`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).
 
-The separation axiom `separation::restrict` is verified in
+The separation axiom `separation::separate_restrict` is verified in
 [`resource_theorem_parameters.md`](resource_theorem_parameters.md), including
 forwarding through a user theorem and application to C struct fields.
-The element law `separation::elements` is verified in
+The element law `separation::separate_elements` is verified in
 [`separation_elements.md`](separation_elements.md) and
 [`separation_elements_types.md`](separation_elements_types.md).
 The element-address law `separation::distinct_elements` is verified in
 [`solve_proves_element_addresses_distinct_from_their_indices.md`](solve_proves_element_addresses_distinct_from_their_indices.md),
 explicitly and through `solve`.
-The generic range law `separation::subrange` is verified in
+The generic range law `separation::contains_subrange` is verified in
 [`generic_pointer_theorem_parameters.md`](generic_pointer_theorem_parameters.md),
 including nested generic applications and several element widths.
-The rebasing law `separation::rebase` is verified in
+The rebasing law `separation::contains_rebase` is verified in
 [`separation_rebase.md`](separation_rebase.md), with signed and unsigned bounds.
 The selected-cell law `separation::contains_element` is verified in
 [`separation_element_contains_the_selected_cell.md`](separation_element_contains_the_selected_cell.md),
@@ -1790,7 +1790,7 @@ theorem use_separation_star(A: Resource, B: Resource, C: Resource, E: Resource) 
             separate(A, C); separate(B, C);
         };
         apply(separation::contains_refl(C)) using {};
-        apply(separation::restrict(A * B, C, E, C)) using {
+        apply(separation::separate_restrict(A * B, C, E, C)) using {
             separate(A * B, C); contains(A * B, E); contains(C, C);
         };
     }

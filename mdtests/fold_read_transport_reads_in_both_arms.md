@@ -74,7 +74,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     have i <= n by { solve(); }
     have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
     have contains(memory(v[0..n]), memory(v[0..i])) by {
-        apply(click::separation::subrange(v, 0, n, 0, i)) using { 0 <= 0; 0 <= i; i <= n; };
+        apply(click::separation::contains_subrange(v, 0, n, 0, i)) using { 0 <= 0; 0 <= i; i <= n; };
     }
     have viewable(v[0..i]) by {
         apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i]))) using {
@@ -87,7 +87,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             intro(); intro();
             have i != k by { solve(); }
             have separate(memory(v[i]), memory(v[k])) by {
-                apply(click::separation::elements(v, i, k)) using { i != k; };
+                apply(click::separation::separate_elements(v, i, k)) using { i != k; };
             }
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { separate(memory(v[i]), memory(v[k])); };

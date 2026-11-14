@@ -8,7 +8,7 @@ theorem restrict_again(A: Resource, B: Resource, a: Resource, b: Resource) {
     requires contains(A, a);
     requires contains(B, b);
     ensures separate(a, b) by {
-        apply(separation::restrict(A, B, a, b)) using {
+        apply(separation::separate_restrict(A, B, a, b)) using {
             separate(A, B);
             contains(A, a);
             contains(B, b);
@@ -255,7 +255,7 @@ fn elements_separation_requires_distinct_indices() {
             theorem invalid(p: uint8*, i: {ty}, j: {ty}) {{
                 {requirement}
                 ensures separate(memory(p[i]), memory(p[j])) by {{
-                    apply(separation::elements(p, {arguments})) using {{}};
+                    apply(separation::separate_elements(p, {arguments})) using {{}};
                 }}
             }}
         "#
@@ -292,7 +292,7 @@ fn elements_separation_does_not_widen_byte_cells() {
         theorem invalid(p: uint8*, i: int32, j: int32) {
             requires i != j;
             ensures separate(memory(p[i..i+4]), memory(p[j])) by {
-                apply(separation::elements(p, i, j)) using { i != j; };
+                apply(separation::separate_elements(p, i, j)) using { i != j; };
             }
         }
     "#;

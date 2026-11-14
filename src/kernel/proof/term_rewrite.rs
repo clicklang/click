@@ -6044,14 +6044,15 @@ impl<'a> TermRewrite<'a> {
                         return false;
                     }
                 }
-                KernelTermNode::MemoryLoad {
-                    memory,
-                    address,
-                    kind,
-                } => {
+                KernelTermNode::MemoryLoad { .. } => {
+                    let MachineTerm::MemoryLoad(memory, address, kind) =
+                        shared.machine_read_leaf().expect("read descriptor")
+                    else {
+                        unreachable!("read descriptor")
+                    };
                     if view
                         .read()
-                        .is_some_and(|(m, p, k)| m == memory && p == address && k == *kind)
+                        .is_some_and(|(m, p, k)| m == memory && p == address.as_ref() && k == *kind)
                     {
                         continue;
                     }

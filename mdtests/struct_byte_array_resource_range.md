@@ -35,7 +35,7 @@ uint8 set_pointer(struct bytes* p, uint8 value) {
         apply(click::separation::contains_refl(memory(p->data[1..2])));
     }
     have separate(memory(p->data[2]), memory(p->data[1..2])) by {
-        apply(click::separation::restrict(memory(p->data[2..3]), memory(p->data[1..2]), memory(p->data[2]), memory(p->data[1..2]))) using {
+        apply(click::separation::separate_restrict(memory(p->data[2..3]), memory(p->data[1..2]), memory(p->data[2]), memory(p->data[1..2]))) using {
             separate(memory(p->data[2..3]), memory(p->data[1..2]));
             contains(memory(p->data[2..3]), memory(p->data[2]));
             contains(memory(p->data[1..2]), memory(p->data[1..2]));

@@ -23,8 +23,13 @@ pub(crate) enum KernelPointerOffset {
 #[derive(Clone)]
 pub(crate) struct SharedPointerOffset(Arc<OffsetData>);
 struct OffsetData {
-    id: u64,
+    id: OffsetIdentity,
     node: KernelPointerOffset,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+enum OffsetIdentity {
+    Constant(i64),
+    Interned(u64),
 }
 impl std::fmt::Debug for SharedPointerOffset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -50,6 +55,7 @@ struct OffsetInterner {
     cleanup: VecDeque<KernelPointerOffset>,
     next_id: u64,
 }
+
 impl SharedPointerOffset {
     pub(crate) fn node(&self) -> &KernelPointerOffset {
         &self.0.node
@@ -60,6 +66,11 @@ impl SharedPointerOffset {
             .get_or_init(Default::default)
             .lock()
             .expect("offset interner");
+        if let Some(value) = interner.nodes.get(&node).and_then(Weak::upgrade) {
+            return Self(value);
+        }
+        // Only insertion grows the arena. A live hit needs no garbage upkeep.
+        crate::instrumentation::record_deterministic_work(8);
         // As with the common term arena, bounded upkeep never scans the arena.
         for _ in 0..interner.cleanup.len().min(8) {
             let key = interner.cleanup.pop_front().unwrap();
@@ -73,13 +84,10 @@ impl SharedPointerOffset {
                 interner.cleanup.push_back(key);
             }
         }
-        if let Some(value) = interner.nodes.get(&node).and_then(Weak::upgrade) {
-            return Self(value);
-        }
         let id = interner.next_id;
         interner.next_id = id.checked_add(1).expect("offset identity exhausted");
         let value = Arc::new(OffsetData {
-            id,
+            id: OffsetIdentity::Interned(id),
             node: node.clone(),
         });
         interner.nodes.insert(node.clone(), Arc::downgrade(&value));
@@ -104,9 +112,18 @@ impl KernelPointerOffset {
     }
 
     pub(crate) fn into_shared(self) -> Result<SharedPointerOffset, &'static str> {
-        // One node plus bounded arena upkeep. Charge its fixed allowance so
-        // an unrelated arena population cannot change deterministic work.
-        crate::instrumentation::record_deterministic_work(9);
+        // Constant displacements already have scalar identities. Their value
+        // supplies equality directly, without interner insertion or upkeep.
+        if let Self::Constant(value) = &self {
+            crate::instrumentation::record_deterministic_work(1);
+            return Ok(SharedPointerOffset(Arc::new(OffsetData {
+                id: OffsetIdentity::Constant(*value),
+                node: self,
+            })));
+        }
+        // One selected node; a new arena entry pays its bounded upkeep inside
+        // intern. Reusing a live node performs no insertion or cleanup.
+        crate::instrumentation::record_deterministic_work(1);
         match &self {
             Self::Int32Scaled { value, .. }
                 if !matches!(

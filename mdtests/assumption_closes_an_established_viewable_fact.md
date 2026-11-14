@@ -42,7 +42,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
     have 0 <= 0 by { normalize(); }
     have viewable(a[0..k]) by {
         have contains(memory(a[0..n]), memory(a[0..k])) by {
-            apply(click::separation::subrange(a, 0, n, 0, k)) using { 0 <= 0; 0 <= k; k <= n; };
+            apply(click::separation::contains_subrange(a, 0, n, 0, k)) using { 0 <= 0; 0 <= k; k <= n; };
         }
         apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..k]))) using {
             viewable(a[0..n]); contains(memory(a[0..n]), memory(a[0..k]));
@@ -56,7 +56,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
         have j <= n by { solve() using { j <= k; k <= n; }; }
         have viewable(a[0..j]) by {
             have contains(memory(a[0..n]), memory(a[0..j])) by {
-                apply(click::separation::subrange(a, 0, n, 0, j)) using { 0 <= 0; 0 <= j; j <= n; };
+                apply(click::separation::contains_subrange(a, 0, n, 0, j)) using { 0 <= 0; 0 <= j; j <= n; };
             }
             apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..j]))) using {
                 viewable(a[0..n]); contains(memory(a[0..n]), memory(a[0..j]));

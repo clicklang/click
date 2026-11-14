@@ -66,7 +66,7 @@ its diagnostics name its own file and line. Types, pure functions, and
 theorems use ordinary Click declarations. Of the 147 library theorems, 111
 have checked proofs; 36 kernel standard theorems (13 machine-integer laws
 including `integer::uint32_from_le_bytes`, 5 Integer truncation laws, 6 `Nat`
-laws and 12 separation laws including `separation::restrict`) are backed by
+laws and 12 separation laws including `separation::separate_restrict`) are backed by
 trusted kernel constructors. Their declarations must match the corresponding kernel
 axioms exactly. The `extern` contracts are assumptions, listed in
 [trust](../docs/concepts/trust.md).

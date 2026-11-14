@@ -556,7 +556,10 @@ fn viewability_transport_expands_to_ordinary_restriction() {
         expanded.contains("separation::viewable_restrict"),
         "{expanded}"
     );
-    assert!(expanded.contains("separation::subrange"), "{expanded}");
+    assert!(
+        expanded.contains("separation::contains_subrange"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();

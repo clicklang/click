@@ -30,7 +30,7 @@ void clear(int32 *v, int32 *w, int32 n, int32 i) {
         apply(click::separation::contains_refl(memory(w[0..n])));
     }
     have separate(memory(v[i]), memory(w[0..n])) by {
-        apply(click::separation::restrict(memory(v[0..n]), memory(w[0..n]), memory(v[i]), memory(w[0..n]))) using {
+        apply(click::separation::separate_restrict(memory(v[0..n]), memory(w[0..n]), memory(v[i]), memory(w[0..n]))) using {
             separate(memory(v[0..n]), memory(w[0..n]));
             contains(memory(v[0..n]), memory(v[i]));
             contains(memory(w[0..n]), memory(w[0..n]));

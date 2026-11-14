@@ -131,14 +131,26 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
-            KernelTermNode::MemoryLoad { .. } => {
-                collect_machine_leaf(
+            KernelTermNode::MemoryLoad { address, .. } => match mode {
+                FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
+                    super::retained_pointers::collect_address_variables_with_summaries(
+                        address,
+                        mode,
+                        &mut leaf_variables,
+                        summaries,
+                    );
+                }
+                // Native binder readers treat reads as opaque, including their
+                // addresses. The expression reader also follows memory history
+                // and stored-load connections through its existing adapter.
+                FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
+                FoldVariableRead::ExpressionFree => collect_machine_leaf(
                     term.machine_read_leaf().expect("read node"),
                     mode,
                     &mut leaf_variables,
                     &mut SeenTerms::default(),
-                );
-            }
+                ),
+            },
             KernelTermNode::Variable(variable) => match term.ty() {
                 KernelType::Integer => {
                     if matches!(

@@ -32,7 +32,7 @@ void caller(struct node* child, int32* slot) {
     let { c: c } = step(touch, { b: b });
     have contains(at(before_call, b), statement(0).footprint) by { assumption(); }
     apply(separation::contains_refl(memory(*slot))) using {};
-    apply(separation::restrict(at(before_call, b), memory(*slot), statement(0).footprint, memory(*slot))) using {
+    apply(separation::separate_restrict(at(before_call, b), memory(*slot), statement(0).footprint, memory(*slot))) using {
         at(before_call, separate(b, memory(*slot)));
         contains(at(before_call, b), statement(0).footprint);
         contains(memory(*slot), memory(*slot));

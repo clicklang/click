@@ -47,7 +47,7 @@ int32 shifted_copy_effect_uses_covering_separate(int32 dst[], int32 src[], int32
                 apply(click::separation::contains_refl(memory(src[0..n])));
             }
             have separate(memory(dst[i]), memory(src[0..n])) by {
-                apply(click::separation::restrict(memory(dst[0..n]), memory(src[0..n]), memory(dst[i]), memory(src[0..n]))) using {
+                apply(click::separation::separate_restrict(memory(dst[0..n]), memory(src[0..n]), memory(dst[i]), memory(src[0..n]))) using {
                     separate(memory(dst[0..n]), memory(src[0..n]));
                     contains(memory(dst[0..n]), memory(dst[i]));
                     contains(memory(src[0..n]), memory(src[0..n]));

@@ -94,3 +94,79 @@ fn common_fold_scope_summaries_share_growing_variable_sets_between_initial_and_b
         assert!(pair[1] <= 6 * pair[0] + 32, "work={costs:?}");
     }
 }
+
+use crate::kernel::{
+    KernelPointerOffset, LoadKind, MachineBinaryOp, MachineIntegerType, PointerBlock, ProgramType,
+    SharedPointerAddress, SharedPointerBlock, VerificationSession,
+};
+
+#[test]
+fn shared_read_capture_visits_address_dags_and_nested_read_prefixes_once() {
+    let _session = VerificationSession::enter();
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| {
+                KernelTerm::variable(
+                    KernelType::Program(ProgramType::Int32),
+                    Variable(1016500 + i),
+                )
+            })
+            .collect::<Vec<_>>();
+        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
+        let blocks = [1016100, 1016101]
+            .map(|id| SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(id))));
+        for size in [16, 64, 256] {
+            let variable = Variable(1016102);
+            let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
+            for _ in 0..size {
+                let offset = KernelPointerOffset::Int32Scaled {
+                    value: root,
+                    byte_width: 4,
+                }
+                .into_shared()
+                .unwrap();
+                let children = blocks.each_ref().map(|block| {
+                    let address = SharedPointerAddress::new(block.clone(), offset.clone());
+                    KernelTerm::shared_scalar_read_descriptor(
+                        MachineIntegerType::Int32,
+                        &memory,
+                        &address,
+                        LoadKind::Int32,
+                    )
+                });
+                root = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    children,
+                );
+            }
+            let exports = crate::kernel::KernelTermExport::machine_export_count();
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    common_variables(&root, mode, &mut Default::default())
+                });
+                let expected: BTreeSet<_> = if mode == FoldVariableRead::MachineCapture {
+                    [Variable(1016100), Variable(1016101), variable]
+                        .into_iter()
+                        .collect()
+                } else {
+                    BTreeSet::new()
+                };
+                assert_eq!(variables.iter().copied().collect::<BTreeSet<_>>(), expected);
+                assert!(
+                    work <= 40 * size + 100,
+                    "mode={mode:?}, size={size}, unrelated={unrelated}, work={work}"
+                );
+            }
+            assert_eq!(
+                crate::kernel::KernelTermExport::machine_export_count(),
+                exports
+            );
+        }
+    }
+}

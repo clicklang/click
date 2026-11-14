@@ -22,7 +22,7 @@ void fill_t(uint8* dst) {
     have (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }) by {
         intro(); intro();
         have separate(memory(dst[4u64]), memory(dst[k])) by {
-            apply(separation::elements(dst, 4u64, k));
+            apply(separation::separate_elements(dst, 4u64, k));
         }
         have separate(statement(1).footprint, memory(dst[k])) by {
             normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };

@@ -634,7 +634,23 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
-    /// Inspect a read without rebuilding its address or surrounding arithmetic.
+    /// Read kind alone does not require a native address compatibility view.
+    pub(crate) fn read_kind(self) -> Option<LoadKind> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::MemoryLoad { kind, .. } => Some(*kind),
+                KernelTermNode::Legacy(_) => {
+                    Self::Legacy(root.machine_conversion_leaf()?).read_kind()
+                }
+                _ => None,
+            },
+            Self::Legacy(MachineTerm::MemoryLoad(_, _, kind)) => Some(*kind),
+            Self::Legacy(_) => None,
+        }
+    }
+
+    /// Native compatibility view of a selected read. Shared addresses are adapted
+    /// once at the read leaf; surrounding arithmetic is never exported.
     pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Pointer, LoadKind)> {
         if let Self::Shared(root) = self
             && let Some(value) = root.machine_conversion_leaf()
@@ -643,14 +659,7 @@ impl<'a> MachineOperandView<'a> {
         }
 
         match self {
-            Self::Shared(term) => match term.node() {
-                KernelTermNode::MemoryLoad {
-                    memory,
-                    address,
-                    kind,
-                } => Some((memory, address, *kind)),
-                _ => None,
-            },
+            Self::Shared(term) => Self::Legacy(term.machine_read_leaf()?).read(),
             Self::Legacy(MachineTerm::MemoryLoad(memory, address, kind)) => {
                 Some((memory, address, *kind))
             }

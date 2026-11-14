@@ -98,7 +98,7 @@ pub enum KernelTermNode {
     /// Native addresses remain an explicit input boundary during migration.
     MemoryLoad {
         memory: SharedMemory,
-        address: Pointer,
+        address: SharedPointerAddress,
         kind: LoadKind,
     },
     MachineObservation {
@@ -277,8 +277,8 @@ impl NodeKey {
             memory.arena_id().hash(&mut hash);
         }
         node.hash(&mut hash);
-        // A fresh legacy identity belongs to its producer. Read addresses also
-        // remain native. Keep mathematical conversion payloads containing them
+        // A fresh legacy identity belongs to its producer. Read observations
+        // still have native consumers. Keep conversion payloads containing them
         // outside shared observations until their scoped consumers migrate.
         // Inspect immediate children only; retain the result across growing DAGs.
         let opaque_observation_boundary = match &node {

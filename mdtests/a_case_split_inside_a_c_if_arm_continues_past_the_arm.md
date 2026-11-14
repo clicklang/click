@@ -57,7 +57,7 @@ int32 read_back(int32 u, int32 c) {
             assumption();
         } else {
             have separate(memory(loc[u]), memory(loc[0])) by {
-                apply(separation::elements(loc, u, 0)) using { u != 0; };
+                apply(separation::separate_elements(loc, u, 0)) using { u != 0; };
             }
             have separate(statement(4).footprint, memory(loc[0])) by {
                 normalize() using { separate(memory(loc[u]), memory(loc[0])); };

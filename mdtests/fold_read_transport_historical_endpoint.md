@@ -81,7 +81,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
     have end <= n by { solve(); }
     have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
     have contains(memory(v[0..n]), memory(v[0..end])) by {
-        apply(click::separation::subrange(v, 0, n, 0, end)) using { 0 <= 0; 0 <= end; end <= n; };
+        apply(click::separation::contains_subrange(v, 0, n, 0, end)) using { 0 <= 0; 0 <= end; end <= n; };
     }
     have viewable(v[0..end]) by {
         apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..end]))) using {
@@ -91,7 +91,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
     have forall (k: int32) { 0 <= k and k < end implies separate(memory(v[m[0]]), memory(v[k])) } by {
         intro(); intro();
         have m[0] != k by { solve(); }
-        apply(click::separation::elements(v, m[0], k)) using { m[0] != k; };
+        apply(click::separation::separate_elements(v, m[0], k)) using { m[0] != k; };
     }
     have contains(memory(v[0..n]), memory(v[m[0]])) by {
         apply(click::separation::contains_element(v, 0, n, m[0])) using { 0 <= m[0]; m[0] < n; };
@@ -100,7 +100,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
         apply(click::separation::contains_refl(memory(m[0..1])));
     }
     have separate(memory(v[m[0]]), memory(m[0..1])) by {
-        apply(click::separation::restrict(memory(v[0..n]), memory(m[0..1]), memory(v[m[0]]), memory(m[0..1]))) using {
+        apply(click::separation::separate_restrict(memory(v[0..n]), memory(m[0..1]), memory(v[m[0]]), memory(m[0..1]))) using {
             separate(memory(v[0..n]), memory(m[0..1]));
             contains(memory(v[0..n]), memory(v[m[0]]));
             contains(memory(m[0..1]), memory(m[0..1]));

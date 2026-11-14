@@ -90,12 +90,12 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     have i <= ((i + 1) as int32) by { solve() using { i <= 2147483646; }; }
     have ((i + 1) as int32) <= e by { solve() using { i < e; }; }
     have contains(memory(b[s..e]), memory(b[i..i+1])) by {
-        apply(separation::subrange(b, s, e, i, i+1)) using {
+        apply(separation::contains_subrange(b, s, e, i, i+1)) using {
             defined(i + 1); s <= i; i <= ((i+1) as int32); ((i+1) as int32) <= e;
         };
     }
     have separate(memory(a[0]), memory(b[i..i+1])) by {
-        apply(separation::restrict(memory(a[0..2]), memory(b[s..e]), memory(a[0]), memory(b[i..i+1]))) using {
+        apply(separation::separate_restrict(memory(a[0..2]), memory(b[s..e]), memory(a[0]), memory(b[i..i+1]))) using {
             defined(i + 1); separate(memory(a[0..2]), memory(b[s..e]));
             contains(memory(a[0..2]), memory(a[0])); contains(memory(b[s..e]), memory(b[i..i+1]));
         };
@@ -103,7 +103,7 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     have contains(memory(b[i..i+1]), memory(b[i])) by { normalize(); }
     have contains(memory(a[0]), memory(a[0])) by { normalize(); }
     have separate(memory(a[0]), memory(b[i])) by {
-        apply(separation::restrict(memory(a[0]), memory(b[i..i+1]), memory(a[0]), memory(b[i]))) using {
+        apply(separation::separate_restrict(memory(a[0]), memory(b[i..i+1]), memory(a[0]), memory(b[i]))) using {
             defined(i + 1); separate(memory(a[0]), memory(b[i..i+1]));
             contains(memory(a[0]), memory(a[0])); contains(memory(b[i..i+1]), memory(b[i]));
         };
