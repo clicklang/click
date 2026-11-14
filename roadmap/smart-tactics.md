@@ -183,10 +183,9 @@ There is **one remaining reproduced output shape**, in the vector example:
 
 | ID | Reproducer | Surviving generated operation | Work to isolate next |
 | --- | --- | --- | --- |
-| T5 | Same vector example and full contract | Under the quantified prefix goal: `transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using { ... }` | Select explicit preservation for an indexed read through the recorded owner pointer. Its only printed extra premise is an anchored `index <= owner->cap`; the legacy checker still supplies the historical reasoning. |
+| T5 | `restricted_solve_certifies_unchanged_prefix_after_indexed_store` in [`expansion_tests.rs`](../src/surface/tests/expansion_tests.rs), full `vector_push.contract` | Under the quantified prefix goal: `transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using { ... }` | Select explicit preservation for an indexed read through the recorded owner pointer. Its only printed extra premise is an anchored `index <= owner->cap`; the legacy checker still supplies the historical reasoning. |
 
-The vector nightly test passed, and its full contract was separately expanded
-with the current CLI. To reproduce its test:
+Run the vector regression individually:
 
 ```console
 cargo nextest run --lib --features fast-gate --run-ignored only -E 'test(restricted_solve_certifies_unchanged_prefix_after_indexed_store)'
