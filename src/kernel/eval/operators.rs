@@ -1796,7 +1796,10 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
     }
 }
 
-fn pointer_value_step_width(pointer: &PointerValue, expression_width: Option<u32>) -> Option<u32> {
+pub(super) fn pointer_value_step_width(
+    pointer: &PointerValue,
+    expression_width: Option<u32>,
+) -> Option<u32> {
     // GNU C treats void-pointer arithmetic as byte arithmetic. Other
     // pointers still require the expression's existing pointee evidence.
     if pointer.program_type() == ProgramType::VoidPointer {

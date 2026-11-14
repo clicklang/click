@@ -315,6 +315,13 @@ the prepared result. The pending-allocation return check accepts that carrier
 without changing allocation resolution. Arithmetic and other producer families
 remain separate slices.
 
+7n retains pointer addition, subtraction and byte-displacement results with
+their original common operand roots, selected stride and complete pointer
+payload. Native formation checking still supplies the existing guards, path
+facts and refusals through an explicit compatibility boundary. Result
+construction and handoffs preserve operand DAGs without exporting them;
+Surface spelling and dependency readers retain their prior payload policies.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface

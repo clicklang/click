@@ -200,11 +200,28 @@ impl KernelTerm {
         )
     }
 
+    pub(crate) fn shared_pointer_arithmetic(
+        operation: MachineBinaryOp,
+        byte_width: u32,
+        operands: [KernelTerm; 2],
+        value: SharedPointerValue,
+    ) -> Self {
+        Self::intern(
+            KernelType::Program(value.node().program_type),
+            KernelTermNode::PointerArithmetic {
+                operation,
+                byte_width,
+                operands,
+                value,
+            },
+        )
+    }
+
     pub(crate) fn pointer_payload(&self) -> Option<&SharedPointerValue> {
         match self.node() {
-            KernelTermNode::PointerValue(value) | KernelTermNode::PointerRead { value, .. } => {
-                Some(value)
-            }
+            KernelTermNode::PointerValue(value)
+            | KernelTermNode::PointerRead { value, .. }
+            | KernelTermNode::PointerArithmetic { value, .. } => Some(value),
             _ => None,
         }
     }

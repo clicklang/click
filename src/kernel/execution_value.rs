@@ -99,6 +99,21 @@ impl ExecutionValue {
         }
     }
 
+    /// Retain one selected operand before crossing a native checking boundary.
+    pub(in crate::kernel) fn common_operand(&self) -> KernelTerm {
+        match self {
+            Self::Shared(root) => root.clone(),
+            Self::Native(ProgramValue::Pointer(pointer)) => {
+                KernelTerm::retained_pointer_read(pointer).unwrap_or_else(|| {
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(pointer))
+                })
+            }
+            Self::Native(value) => {
+                KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone()))
+            }
+        }
+    }
+
     pub fn into_native(self) -> ProgramValue {
         match self {
             Self::Native(value) => value,
