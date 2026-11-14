@@ -1523,7 +1523,7 @@ impl LocalEnvironment {
         pointee_constant: bool,
     ) {
         let value = value.into();
-        if value.shared().is_none() || value.program_type().is_pointer() {
+        if value.shared().is_none() {
             self.set_typed_with_all_qualifiers(
                 name,
                 value.into_native(),
@@ -1535,20 +1535,77 @@ impl LocalEnvironment {
             );
             return;
         }
+        let value = if value.program_type().is_pointer() {
+            value
+                .into_value()
+                .with_pointer_binding(program_type, pointee_volatile, pointee_constant)
+                .into()
+        } else {
+            value
+        };
         let name = name.into();
-        let old = self.bindings.get(&name);
-        let slot = old
+        let slot = self
+            .bindings
+            .get(&name)
             .map(LocalBinding::slot)
             .cloned()
             .unwrap_or_else(|| Memory::local_pointer(&name));
-        let storage_declared = old.is_some_and(|binding| {
-            matches!(
-                binding,
-                LocalBinding::Object {
-                    storage_declared: true,
-                    ..
-                } | LocalBinding::UninitializedObject { .. }
-            )
+        self.set_retained_typed_qualified_with_all_qualifiers(
+            name,
+            value,
+            program_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+        );
+    }
+
+    pub(in crate::kernel) fn set_retained_typed_qualified_with_all_qualifiers(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<StoredExecutionValue>,
+        program_type: ProgramType,
+        slot: Pointer,
+        volatile: bool,
+        pointee_volatile: bool,
+        constant: bool,
+        pointee_constant: bool,
+    ) {
+        let value = value.into();
+        if value.shared().is_none() {
+            self.set_typed_qualified_with_all_qualifiers(
+                name,
+                value.into_native(),
+                program_type,
+                slot,
+                volatile,
+                pointee_volatile,
+                constant,
+                pointee_constant,
+            );
+            return;
+        }
+        let value_type = value.program_type();
+        let value = if value_type.is_pointer() {
+            value
+                .into_value()
+                .with_pointer_binding(value_type, pointee_volatile, pointee_constant)
+                .into()
+        } else {
+            value
+        };
+        let name = name.into();
+        let storage_declared = self.bindings.get(&name).is_some_and(|binding| {
+            binding.slot() == &slot
+                && matches!(
+                    binding,
+                    LocalBinding::Object {
+                        storage_declared: true,
+                        ..
+                    } | LocalBinding::UninitializedObject { .. }
+                )
         });
         self.insert_binding(
             name,
