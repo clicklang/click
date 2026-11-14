@@ -301,3 +301,20 @@ pub(crate) fn prove_viewable_restrict(
         )),
     ))
 }
+
+/// Observe the live storage named by one exact held permission. This says
+/// nothing about initialization or the value stored in any cell.
+pub(crate) fn observe_memory_view(state: &ExecutionState, range: &MemoryRange) -> Option<Theorem> {
+    crate::instrumentation::record_deterministic_work(1);
+    let resource = Resource::Memory(range.clone());
+    if !state
+        .resources()
+        .contains_exact_representation(&ResourceFact::own(resource.clone()))
+        && !state
+            .resources()
+            .contains_exact_representation(&ResourceFact::View(resource))
+    {
+        return None;
+    }
+    Some(Theorem::new(range.loadable_fact(state.memory())))
+}

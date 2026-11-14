@@ -2564,10 +2564,64 @@ impl<'a> Proof<'a> {
         })
     }
 
+    fn apply_memory_observation(
+        &self,
+        resource: &ResourceClause,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("observe_memory");
+        let resource = self.resolve_proof_resource_arguments(resource)?;
+        let view = self.premise_fixed_state_view().ok_or_else(|| {
+            self.step_error("memory observation requires a concrete program state")
+        })?;
+        let required = lower_resource_clause_at_current_locals_with_entry_and_assumptions(
+            &resource,
+            view.parameter_binding,
+            view.fixed_state.pre_state,
+            view.fixed_state.state,
+            view.fixed_state.result,
+            self.facts().assumptions(),
+        )?;
+        let range = required
+            .memory_range()
+            .ok_or_else(|| self.step_error("memory observation requires one memory range"))?;
+        let theorem = crate::kernel::observe_memory_view(view.fixed_state.state, range)
+            .ok_or_else(|| {
+                self.step_error(
+                    "observe requires the exact memory range to be held as a unit owner or view",
+                )
+            })?;
+        let proposition = theorem.proposition().clone();
+        let (ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment)) = resource
+        else {
+            unreachable!()
+        };
+        let surface = ClickProposition::Loadable { segment };
+        let mut locals = self.state().locals().clone();
+        locals
+            .surface_facts
+            .record_lowering(&surface, &proposition)?;
+        let added = (!self.facts().contains_top_level(&proposition))
+            .then(|| proposition.clone())
+            .into_iter()
+            .collect();
+        let facts = self.facts().with_kernel_checked_fact(proposition.clone());
+        let complete = self
+            .goal()
+            .is_some_and(|goal| facts.introduced_goal_available(goal));
+        Ok(self.checked_fact_transition(locals, facts, complete, added, vec![proposition]))
+    }
+
     pub(super) fn apply_execution_resource_observation(
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if matches!(
+            resource,
+            ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_)
+        ) {
+            return self.apply_memory_observation(resource);
+        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`observe` requires an execution-frontier proof"));
         };

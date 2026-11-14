@@ -5583,7 +5583,12 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
                 crate::surface::printing::describe_iterated_tactic(tactic)
             ));
         }
-        ProofTactic::ObserveResource(resource) => {
+        ProofTactic::ObserveResource(resource)
+            if !matches!(
+                resource,
+                ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_)
+            ) =>
+        {
             return Some(format!(
                 "`observe({})` must run before execution reaches function exit; move it before the `step_until(function.exit)` or last `step()` that reaches the exit",
                 crate::surface::printing::format_resource_target(resource)

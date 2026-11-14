@@ -1498,3 +1498,55 @@ fn unfolded_loop_predicates_retain_the_fact_context() {
         "unfolded predicates cause growing context rebuilds per loop: {counts:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: memory observation parameter and ownership scaling"]
+fn observing_one_memory_range_ignores_unrelated_parameters_and_owners() {
+    for owners in [false, true] {
+        let mut curves = Vec::new();
+        for count in [4usize, 16, 64] {
+            let parameters = std::iter::once("int32* selected".to_string())
+                .chain((1..count).map(|i| format!("int32* unused{i}")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let extra = if owners {
+                (1..count)
+                    .map(|i| format!("owns unused{i}[0..1];"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else {
+                String::new()
+            };
+            let c = format!("void check({parameters}) {{}}");
+            let proof = format!(
+                r#"
+                verifying "observe.c";
+                void check({parameters}) {{ owns selected[0..1]; {extra} }} by {{
+                    observe(selected[0..1]);
+                    observe(selected[0..1]);
+                    observe(selected[0..1]);
+                    step();
+                }}
+            "#
+            );
+            let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+                verify_c_sources(&proof, &[("observe.c", c.as_str())])
+            });
+            result.unwrap_or_else(|error| panic!("{count} / {owners}: {}", error.report()));
+            let work = samples
+                .iter()
+                .filter(|sample| sample.tactic.tactic_name == "observe")
+                .map(|sample| sample.work)
+                .collect::<Vec<_>>();
+            assert_eq!(work.len(), 3);
+            curves.push(work);
+        }
+        assert!(
+            curves.windows(2).all(|pair| pair[0]
+                .iter()
+                .zip(&pair[1])
+                .all(|(small, large)| *large <= *small + 32)),
+            "owners={owners}: {curves:?}"
+        );
+    }
+}
