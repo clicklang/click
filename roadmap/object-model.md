@@ -19,9 +19,6 @@ existing behavior.
 - Laws and operation audit: [C++ object model and shared memory semantics](../design/cpp-object-model.md).
 - Construction/return protocol: [aggregate construction](../design/aggregate-construction.md).
 - Subobject pointers: [subobject extents](../design/pointer-subobject-extents.md).
-- Record of the extractions already landed from the retired archive branch:
-  [recovery audit](../design/object-model-recovery-audit.md). Record new
-  results there, not here.
 - Later C++ coverage belongs to [cpp-support.md](cpp-support.md).
 
 ## Where it stands

@@ -20,11 +20,9 @@ for two populations, contributions already made and credits still to spend;
 each worker spends a credit and creates a contribution while it holds the
 lock, so the control's facts tie the counter to the contribution count.
 `mdtests/mutex_counter_*_rejected.md` refuse a wrong increment, a fabricated
-credit, a doubled contribution, and a total read before the second join. Both
-earlier proposals, the
-[counted-resource investigation](shared-count-authority.md) and the
-[explicit-authority proposal](explicit-authority.md), are superseded by
-population authority: a mutex protects an ordinary control that owns
+credit, a doubled contribution, and a total read before the second join. The
+earlier counted-resource and explicit-authority proposals were superseded by
+population authority and deleted (they remain in git history): a mutex protects an ordinary control that owns
 `authority(...)`, as `examples/shared-refcount/` shows.
 
 The unchanged [mutex parity source](mutex_held_parity.c) and its
