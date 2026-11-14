@@ -34,24 +34,6 @@ impl<'a> Proof<'a> {
         self.state().open_branches().ids()
     }
 
-    /// The open function-outcome goal derived for one checked path, if this
-    /// proof owns it. Path indices are the checked execution's deterministic
-    /// path order, recorded on each goal at derivation.
-    pub(in crate::surface::proof) fn outcome_branch_for_path(
-        &self,
-        path_index: usize,
-    ) -> Option<BranchId> {
-        self.state()
-            .open_branches()
-            .iter()
-            .find_map(|(id, branch)| match &branch.obligation {
-                Obligation::FunctionOutcome(outcome) if outcome.path_index == path_index => {
-                    Some(id)
-                }
-                _ => None,
-            })
-    }
-
     /// The line naming the C statement checked path `path_index` ended at,
     /// as [`describe_execution_statement_site`] spells a stepped statement, or
     /// nothing when the path recorded no statement.
@@ -550,17 +532,15 @@ impl<'a> Proof<'a> {
             .map_err(|reason| self.step_error(reason))
     }
 
-    pub(in crate::surface::proof) fn complete_outcome(&self) -> Result<Self, ClickError> {
+    pub(in crate::surface::proof) fn complete_outcome_in(
+        &self,
+        owner: &Self,
+    ) -> Result<Self, ClickError> {
         let state = self
             .state
-            .complete_function_outcome()
+            .complete_function_outcome_in(&owner.state)
             .map_err(|reason| self.step_error(reason))?;
-        Ok(Self {
-            state,
-            site: self.site.clone(),
-            context: self.context.clone(),
-            node: self.node.clone(),
-        })
+        Ok(owner.with_kernel_state(state))
     }
 
     /// The focused outcome path's claim goals, once opened.
@@ -660,6 +640,7 @@ impl<'a> Proof<'a> {
     /// from another path.
     pub(in crate::surface::proof) fn prepare_outcome_cases(
         &self,
+        owner: &mut Self,
     ) -> Result<Option<Self>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome routing requires an execution proof"));
@@ -696,12 +677,27 @@ impl<'a> Proof<'a> {
                     Proposition::Not(Box::new(condition))
                 }
             };
-            if facts.directly_conflicts_with(&fact) {
-                return Ok(None);
-            }
-            match super::super::claim_proofs::proof_case_fact_conflicts(&fact, facts.assumptions())
-            {
-                Ok(true) => return Ok(None),
+            let conflicts = facts.directly_conflicts_with(&fact);
+            match if conflicts {
+                Ok(true)
+            } else {
+                super::super::claim_proofs::proof_case_fact_conflicts(&fact, facts.assumptions())
+            } {
+                Ok(true) => {
+                    let facts = facts.with_kernel_checked_fact(fact.clone());
+                    let state = self
+                        .state
+                        .replace_focused_obligation_and_facts(
+                            self.focused_obligation().expect("outcome exists").clone(),
+                            facts,
+                        )
+                        .map_err(|_| self.step_error("outcome goal is no longer open"))?;
+                    let state = state
+                        .refute_function_outcome_in(&owner.state, &fact)
+                        .map_err(|reason| self.step_error(reason))?;
+                    *owner = owner.with_kernel_state(state);
+                    return Ok(None);
+                }
                 Err(()) => return Err(self.step_error(format!(
                     "proof branch routing reached an inconsistent assumption context at tactic {}",
                     case.tactic_index
@@ -861,7 +857,7 @@ impl<'a> Proof<'a> {
     /// directly rather than converting through a mutable execution-context adapter.
     pub(in crate::surface::proof) fn split_function_outcomes(
         &self,
-    ) -> Result<(Self, Vec<BranchId>), ClickError> {
+    ) -> Result<(Self, Vec<BranchId>, BTreeMap<usize, BranchId>), ClickError> {
         if !matches!(self.focused_obligation(), Some(Obligation::Frontier(_))) {
             return Err(self.step_error("outcome goals require an open execution frontier"));
         }
@@ -917,6 +913,7 @@ impl<'a> Proof<'a> {
             .as_ref()
             .and_then(|root| self.facts().introduced_since(root));
         let mut goals = Vec::new();
+        let mut path_indices = Vec::new();
         for (path_index, path) in checked.paths().iter().enumerate() {
             let provenance = execution.provenance_for_outcome(path_index);
             let retained_leaf = provenance
@@ -1012,6 +1009,7 @@ impl<'a> Proof<'a> {
                 });
                 facts = facts.with_kernel_checked_fact(fact.proposition().clone());
             }
+            path_indices.push(path_index);
             goals.push(OpenBranch::function_outcome(
                 OutcomeObligation::new(
                     path_index,
@@ -1062,9 +1060,6 @@ impl<'a> Proof<'a> {
                 },
             ));
         }
-        if goals.is_empty() {
-            return Ok((self.clone(), Vec::new()));
-        }
         let (state, outcome_ids) = self
             .state
             .replace_focused_with_checked_branches(goals)
@@ -1078,7 +1073,11 @@ impl<'a> Proof<'a> {
             // drain migration.
             node: ProofNode::marker(&self.node, self.focused_branch_id(), Vec::new()),
         };
-        Ok((successor, outcome_ids))
+        let by_path = path_indices
+            .into_iter()
+            .zip(outcome_ids.iter().copied())
+            .collect();
+        Ok((successor, outcome_ids, by_path))
     }
 
     /// Whether the checked execution frontier is a structural C `if`.

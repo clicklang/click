@@ -5694,7 +5694,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
         // its path-local result and facts while borrowing the frontier
         // snapshot by identity. The ancestor keeps its single frontier.
         let before_outcomes = fact_node_allocations();
-        let (outcomes, outcome_ids) = terminal
+        let (outcomes, outcome_ids, _) = terminal
             .split_function_outcomes()
             .expect("the terminal execution should expose typed outcome goals");
         outcome_samples.push((
@@ -13206,7 +13206,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     .expect("the checked structural driver should not error")
     .expect("the checked structural driver should retain this proof");
     assert!(checked.is_at_function_exit());
-    let (outcomes, ids) = checked
+    let (outcomes, ids, _) = checked
         .split_function_outcomes()
         .expect("the outer join should expose all terminal paths");
     let mut call_edges = ids
@@ -13657,7 +13657,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 .iter()
                 .all(|provenance| provenance.checked_leaf_facts.is_some())
         );
-        let (outcomes, ids) = joined.split_function_outcomes().unwrap();
+        let (outcomes, ids, _) = joined.split_function_outcomes().unwrap();
         assert_eq!(ids.len(), 2);
         // An unknown post-execution condition forks each outcome. Its
         // checked case delta extends that leaf, retaining its own guards
@@ -13699,7 +13699,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             }
         }
         take_outcome_fact_reads();
-        let (forked_goals, forked_ids) = forked.split_function_outcomes().unwrap();
+        let (forked_goals, forked_ids, _) = forked.split_function_outcomes().unwrap();
         assert_eq!(take_outcome_fact_reads().0, 4);
         assert_eq!(forked_ids.len(), 4);
         for (path, id) in forked_paths.iter().zip(forked_ids) {
@@ -13724,7 +13724,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         let mut mismatched = joined.clone();
         mismatched.state = mismatched_state;
         take_outcome_fact_reads();
-        let (_, mismatched_ids) = mismatched.split_function_outcomes().unwrap();
+        let (_, mismatched_ids, _) = mismatched.split_function_outcomes().unwrap();
         let (reused, imported) = take_outcome_fact_reads();
         assert_eq!(mismatched_ids.len(), 2);
         assert_eq!(
@@ -13766,7 +13766,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         );
         *narrowed_state.open_branches_mut() = narrowed_branches;
         narrowed.state = narrowed.state.with_state(narrowed_state);
-        let (selected_outcomes, selected_ids) = narrowed.split_function_outcomes().unwrap();
+        let (selected_outcomes, selected_ids, _) = narrowed.split_function_outcomes().unwrap();
         assert_eq!(selected_ids.len(), 1);
         assert_eq!(
             selected_outcomes
@@ -14101,7 +14101,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             .driver()
             .apply_step(ProofStep::Step)
             .expect("return step checks");
-        let (outcomes, ids) = terminal
+        let (outcomes, ids, _) = terminal
             .split_function_outcomes()
             .expect("checked exit produces an outcome");
         let root = outcomes
