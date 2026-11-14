@@ -3333,6 +3333,30 @@ pub(super) fn finish_ordered_proof<'a>(
             })
             .max()
             .unwrap_or(0);
+        // ABI-generated resource claims (for example construction-return
+        // storage) have no written clause or separate source proof. Once
+        // this proof reaches the last written resource clause, include the
+        // complete generated boundary too. With no written resource clauses,
+        // that is the ordinary body proof's obligation.
+        let last_written_resource = claim_targets
+            .iter()
+            .filter_map(|(key, target)| {
+                crate::instrumentation::record_deterministic_work(1);
+                match (key, target) {
+                    (
+                        CFunctionContractClaimKey::Ensure(source_index),
+                        CFunctionContractClaimTarget::EnsureResource(index),
+                    ) if *source_index < function_block.ensures().len() => Some(index + 1),
+                    _ => None,
+                }
+            })
+            .max()
+            .unwrap_or(0);
+        let resource_prefix = if resource_prefix >= last_written_resource {
+            function.resource_ensures().len()
+        } else {
+            resource_prefix
+        };
         let closing_context = crate::kernel::CContractClosingContext::for_resource_prefix(
             &completed_execution,
             resource_prefix,
