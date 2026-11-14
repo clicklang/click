@@ -392,8 +392,14 @@ lowered surface goal. Completed claims retain their producer path identity.
 Registration consumes these claim/path associations across every entry case
 without reconstructing the postcondition or proving it again.
 
-Outcome proofs also own joint returned-resource, allocation-lifetime and
-write-footprint obligations. Resource claim receipts describe individual
+Outcome proofs also own distinct joint returned-resource, allocation-lifetime
+and write-footprint obligations. The outcome's goal selector orders its source
+clauses first and then these three closing goals. Completing an outcome branch
+requires both sets of goals to have been opened and every applicable goal to
+be closed; finishing the last written clause alone does not complete it.
+Closing goal state is fixed-size and shared proof forks retain independent
+updates. The ordered Surface driver currently supplies these closing proofs
+through the existing kernel checkers. Resource claim receipts describe individual
 clauses; a checked resource transition alone does not discharge lifetime or
 joint boundary obligations. The closer checks those obligations against the
 retained outcome, receipts and body effects before producing an opaque exit

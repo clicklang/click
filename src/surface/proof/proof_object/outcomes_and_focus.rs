@@ -474,6 +474,29 @@ impl<'a> Proof<'a> {
         Ok((self.with_focused_outcome_obligation(goal)?, completion))
     }
 
+    pub(in crate::surface::proof) fn first_open_outcome_goal(
+        &self,
+    ) -> Result<Option<crate::kernel::proof::OutcomeGoal>, ClickError> {
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return Err(self.step_error("goal selection requires an outcome proof"));
+        };
+        goal.first_open_goal()
+            .map_err(|reason| self.step_error(reason))
+    }
+
+    pub(in crate::surface::proof) fn complete_outcome(&self) -> Result<Self, ClickError> {
+        let state = self
+            .state
+            .complete_function_outcome()
+            .map_err(|reason| self.step_error(reason))?;
+        Ok(Self {
+            state,
+            site: self.site.clone(),
+            context: self.context.clone(),
+            node: self.node.clone(),
+        })
+    }
+
     /// The focused outcome path's claim goals, once opened.
     pub(in crate::surface::proof) fn claim_goals(&self) -> Option<&OutcomeClaimGoals> {
         match self.focused_obligation() {

@@ -2978,12 +2978,10 @@ fn main_goal_claim(
     closures: &[ClaimClosure],
 ) -> Result<Option<usize>, ClickError> {
     match outcome_proof {
-        Some(proof) => {
-            let goals = proof.claim_goals().ok_or_else(|| {
-                proof.step_error("the outcome Proof no longer holds this path's claim goals")
-            })?;
-            Ok(goals.first_open_position())
-        }
+        Some(proof) => Ok(match proof.first_open_outcome_goal()? {
+            Some(crate::kernel::proof::OutcomeGoal::Claim { position, .. }) => Some(position),
+            Some(crate::kernel::proof::OutcomeGoal::Closing(_)) | None => None,
+        }),
         None => Ok(closures.iter().position(|closure| !closure.is_closed())),
     }
 }
@@ -5453,6 +5451,11 @@ pub(super) fn finish_ordered_proof<'a>(
                         .as_ref()
                         .unwrap_or(&proof)
                         .record_accepted_trace(&proof_label, path_index);
+                    if let Some(root) = outcome_proof.take() {
+                        // Retire only this checked outcome. Sibling paths are
+                        // completed by their own retained proofs.
+                        root.complete_outcome()?;
+                    }
                     drop(_path_certification_timing);
                 }
                 Ok(())
