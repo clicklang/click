@@ -4,6 +4,107 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
+/// Input retained across ordinary closing steps. Return rewrites are resolved
+/// once before the first step, and the same path identity reaches registration.
+struct ContractClosingInput {
+    returned: Option<crate::kernel::proof::CheckedReturnPath>,
+    path: crate::kernel::SymbolicCExecutionPath,
+    specification: crate::kernel::CheckedPathSpecification,
+}
+
+fn contract_closing_input(
+    root: Option<&Proof<'_>>,
+    execution: &CCheckedFunctionExecution,
+    function: &CFunction,
+    path_index: usize,
+    certified_path_index: usize,
+    has_return_resource_rewrite: bool,
+    post_return_facts: &[(usize, ProofFacts)],
+) -> Result<ContractClosingInput, ClickError> {
+    let returned = if has_return_resource_rewrite {
+        let root =
+            root.ok_or_else(|| ClickError::new("return instance fold lost its outcome proof"))?;
+        let core = &root
+            .execution()
+            .ok_or_else(|| ClickError::new("return instance fold lost its checked execution"))?
+            .core;
+        Some(
+            core.checked_return_path(execution, path_index)
+                .map_err(|refusal| {
+                    let message =
+                        format!("could not certify return instance fold: {}", refusal.reason);
+                    match refusal.unjustified_fact {
+                        Some(fact) => unjustified_return_fact_error(
+                            root,
+                            post_return_facts,
+                            &fact,
+                            &message,
+                            path_index,
+                        ),
+                        None => ClickError::new(message),
+                    }
+                })?,
+        )
+    } else {
+        None
+    };
+    let path = match &returned {
+        Some(returned) => returned.path(),
+        None => execution.paths().get(certified_path_index).ok_or_else(|| {
+            ClickError::new("return instance fold changed execution path coverage")
+        })?,
+    }
+    .clone();
+    let specification =
+        crate::kernel::CheckedPathSpecification::new(function, &path).ok_or_else(|| {
+            ClickError::new(format!(
+                "path {path_index} does not establish its exact function specification"
+            ))
+        })?;
+    Ok(ContractClosingInput {
+        returned,
+        path,
+        specification,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_next_contract_closing_goal<'a>(
+    outcome_proof: &mut Option<Proof<'a>>,
+    input: &mut Option<ContractClosingInput>,
+    execution: &CCheckedFunctionExecution,
+    function: &CFunction,
+    path_index: usize,
+    certified_path_index: usize,
+    has_return_resource_rewrite: bool,
+    post_return_facts: &[(usize, ProofFacts)],
+) -> Result<bool, ClickError> {
+    let Some(root) = outcome_proof.as_ref() else {
+        return Ok(false);
+    };
+    let Some(crate::kernel::proof::OutcomeGoal::Closing(kind)) = root.first_open_outcome_goal()?
+    else {
+        return Ok(false);
+    };
+    if input.is_none() {
+        *input = Some(contract_closing_input(
+            Some(root),
+            execution,
+            function,
+            path_index,
+            certified_path_index,
+            has_return_resource_rewrite,
+            post_return_facts,
+        )?);
+    }
+    let input = input.as_ref().expect("prepared closing input");
+    let proved =
+        root.prove_contract_closing_goal(kind, execution, &input.path, &input.specification)?;
+    check_verification_deadline()?;
+    *outcome_proof = Some(proved);
+    Ok(true)
+}
+
 #[cfg(test)]
 fn resource_receipts_jointly_available(
     available: &crate::kernel::ResourceContext,
@@ -2187,9 +2288,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         // added to the opened claim belongs there
         // too; otherwise the expanded proof stops
         // at the tactic that opened the claim.
-        if proof_context.constants.grouped_contract {
-            path_grouped_surface_closers.extend(added.iter().cloned());
-        }
+        path_grouped_surface_closers.extend(added.iter().cloned());
         record_claim_closure(
             outcome_proof,
             closures,
@@ -2200,7 +2299,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             ClaimClosure::by_continued_proposition(
                 claims[claim_index].key(),
                 path_index,
-                added,
+                Vec::new(),
                 completed.completed_proposition()?,
             ),
         )?;
@@ -2653,113 +2752,66 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                         "`{proof_label}` path {path_index}, tactic {tactic_index}: completed proposition authority did not match the checked claim set"
                     )));
                 }
-                if proof_context.constants.grouped_contract {
-                    // Each exact resource witness owns its
-                    // claim key. Serialize its explicit closer
-                    // after the checked proposition scopes.
-                    let certificate = if direct_resource_claims.is_empty() {
-                        certificate
-                    } else {
-                        let mut tactics = certificate.to_proof_tactics();
-                        tactics.extend(
-                            direct_resource_evidence
-                                .values()
-                                .map(|_| ProofTactic::Assumption),
-                        );
-                        ProofCertificate::from_proof_tactics(&tactics)
-                            .map_err(|error| {
-                                ClickError::new(format!(
-                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: grouped resource closer was invalid: {error}"
-                                ))
-                            })?
-                    };
-                    for ((claim_index, _, _), checked_proposition) in
-                        direct_claims.into_iter().zip(checked_propositions)
-                    {
-                        record_claim_closure(
-                            outcome_proof,
-                            closures,
-                            claims,
-                            completed_execution,
-                            path_index,
-                            claim_index,
-                            ClaimClosure::by_grouped_proposition(
-                                claims[claim_index].key(),
-                                path_index,
-                                &certificate,
-                                checked_proposition,
-                            ),
-                        )?;
-                    }
-                    for (claim_index, _, _) in &direct_resource_claims {
-                        record_claim_closure(outcome_proof, closures, claims, completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
-                            direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
-                    }
-                    path_grouped_surface_closers.extend(certificate.to_proof_tactics());
-                    if capturing_this_tactic {
-                        path_deferred_capture_tactics.extend(certificate.to_proof_tactics());
-                    }
+                // Each exact resource witness owns its
+                // claim key. Serialize its explicit closer
+                // after the checked proposition scopes.
+                let certificate = if direct_resource_claims.is_empty() {
+                    certificate
                 } else {
-                    for ((claim_index, _, _), checked_proposition) in
-                        direct_claims.into_iter().zip(checked_propositions)
-                    {
-                        record_claim_closure(
-                            outcome_proof,
-                            closures,
-                            claims,
-                            completed_execution,
+                    let mut tactics = certificate.to_proof_tactics();
+                    tactics.extend(
+                        direct_resource_evidence
+                            .values()
+                            .map(|_| ProofTactic::Assumption),
+                    );
+                    ProofCertificate::from_proof_tactics(&tactics)
+                        .map_err(|error| {
+                            ClickError::new(format!(
+                                "`{proof_label}` path {path_index}, tactic {tactic_index}: grouped resource closer was invalid: {error}"
+                            ))
+                        })?
+                };
+                for ((claim_index, _, _), checked_proposition) in
+                    direct_claims.into_iter().zip(checked_propositions)
+                {
+                    record_claim_closure(
+                        outcome_proof,
+                        closures,
+                        claims,
+                        completed_execution,
+                        path_index,
+                        claim_index,
+                        ClaimClosure::by_grouped_proposition(
+                            claims[claim_index].key(),
                             path_index,
-                            claim_index,
-                            ClaimClosure::by_checked_proposition(
-                                claims[claim_index].key(),
-                                path_index,
-                                &certificate,
-                                checked_proposition,
-                            ),
-                        )?;
-                    }
-                    // Resource productions were checked
-                    // before the attempt; their surface
-                    // certificate is the same trivial
-                    // Assumption that explicit closure
-                    // records — kernel certification
-                    // remains the resource authority.
-                    if !direct_resource_claims.is_empty() {
-                        let assumption_certificate =
-                            ProofCertificate::from_proof_tactics(&[
-                                ProofTactic::Assumption,
-                            ])
-                            .map_err(|error| {
-                                ClickError::new(format!(
-                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `solve` produced an invalid surface certificate: {error}"
-                                ))
-                            })?;
-                        for (claim_index, _, _) in &direct_resource_claims {
-                            record_claim_closure(
-                                outcome_proof,
-                                closures,
-                                claims,
-                                completed_execution,
-                                path_index,
-                                *claim_index,
-                                ClaimClosure::resource(
-                                    ClaimCertificate::Claim(
-                                        assumption_certificate.to_proof_tactics(),
-                                    ),
-                                    direct_resource_evidence.remove(claim_index).ok_or_else(
-                                        || {
-                                            ClickError::new(
-                                                "resource claim is missing its checked evidence",
-                                            )
-                                        },
-                                    )?,
-                                ),
-                            )?;
-                        }
-                    }
-                    if capturing_this_tactic {
-                        path_deferred_capture_tactics.extend(certificate.to_proof_tactics());
-                    }
+                            &certificate,
+                            checked_proposition,
+                        ),
+                    )?;
+                }
+                for (claim_index, _, _) in &direct_resource_claims {
+                    record_claim_closure(
+                        outcome_proof,
+                        closures,
+                        claims,
+                        completed_execution,
+                        path_index,
+                        *claim_index,
+                        ClaimClosure::resource(
+                            ClaimCertificate::GroupedTransition,
+                            direct_resource_evidence
+                                .remove(claim_index)
+                                .ok_or_else(|| {
+                                    ClickError::new(
+                                        "grouped resource claim is missing its checked evidence",
+                                    )
+                                })?,
+                        ),
+                    )?;
+                }
+                path_grouped_surface_closers.extend(certificate.to_proof_tactics());
+                if capturing_this_tactic {
+                    path_deferred_capture_tactics.extend(certificate.to_proof_tactics());
                 }
                 return Ok(());
             }
@@ -2819,9 +2871,10 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 completed_execution,
                 path_index,
                 claim_index,
-                ClaimClosure::by_exact_check_completing(
+                ClaimClosure::by_checked_proposition(
                     claim.key(),
                     path_index,
+                    &completed.certificate(),
                     completed.completed_proposition()?,
                 ),
             )?;
@@ -3713,6 +3766,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // attribution, never reapplied as a candidate certificate.
                     let mut opened_claim: Option<OpenedClaimProof<'_>> = None;
                     let mut has_return_resource_rewrite = false;
+                    let mut closing_input = None;
                     // Frame closure also applies the contract's returned
                     // resource transition. Track that ownership transition
                     // separately from the return-count interpretation above:
@@ -3956,6 +4010,57 @@ pub(super) fn finish_ordered_proof<'a>(
                                 context: timing_context,
                             }
                         });
+                        if matches!(
+                            post_tactic,
+                            PostExecutionTactic::FoldProved(_)
+                                | PostExecutionTactic::CloseOpen { .. }
+                                | PostExecutionTactic::Leaf(
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::ConstructResource(_)
+                                )
+                        ) {
+                            closing_input = None;
+                        }
+                        if matches!(post_tactic, PostExecutionTactic::SolveUsing(_))
+                            && let Some(root) = outcome_proof.as_ref()
+                            && let Some(crate::kernel::proof::OutcomeGoal::Closing(kind)) =
+                                root.first_open_outcome_goal()?
+                        {
+                            return Err(ClickError::new(format!(
+                                "`solve() using` requires a proposition goal; the current goal is {}; use `assumption()` for this closing operation",
+                                kind.description()
+                            )));
+                        }
+                        // Written assumption and solve select the same closing goal.
+                        // The implicit solver schedules that primitive for every omitted proof.
+                        if matches!(
+                            post_tactic,
+                            PostExecutionTactic::Leaf(ProofTactic::Assumption)
+                                | PostExecutionTactic::Solve
+                                | PostExecutionTactic::ImplicitSolve
+                        ) && !matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
+                            && prove_next_contract_closing_goal(
+                                &mut outcome_proof,
+                                &mut closing_input,
+                                &completed_execution,
+                                function,
+                                path_index,
+                                certified_path_index,
+                                has_return_resource_rewrite,
+                                &post_return_facts,
+                            )?
+                        {
+                            record_post_execution_surface_tactic(
+                                &mut path_grouped_surface_closers,
+                                &mut path_deferred_capture_tactics,
+                                path_capture,
+                                post_execution_index,
+                                *tactic_index,
+                                ProofTactic::Assumption,
+                            );
+                            continue;
+                        }
                         match post_tactic {
                             PostExecutionTactic::FoldProved(ProofTactic::StepProved {
                                 step,
@@ -4933,6 +5038,29 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut path_grouped_surface_closers,
                                     &mut path_deferred_capture_tactics,
                                 )?;
+                                if matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
+                                    && !super::proof_object::implicit_solve_disabled()
+                                {
+                                    while prove_next_contract_closing_goal(
+                                        &mut outcome_proof,
+                                        &mut closing_input,
+                                        &completed_execution,
+                                        function,
+                                        path_index,
+                                        certified_path_index,
+                                        has_return_resource_rewrite,
+                                        &post_return_facts,
+                                    )? {
+                                        record_post_execution_surface_tactic(
+                                            &mut path_grouped_surface_closers,
+                                            &mut path_deferred_capture_tactics,
+                                            path_capture,
+                                            post_execution_index,
+                                            *tactic_index,
+                                            ProofTactic::Assumption,
+                                        );
+                                    }
+                                }
                                 continue;
                             }
                             // Every other leaf advances the path's outcome
@@ -5037,29 +5165,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         "path closure and theorem assembly",
                     );
 
-                    // Closing pure claims with simple tactics does not itself
-                    // perform the return-resource exchange. In particular a
-                    // consuming contract may have no resource ensure whose
-                    // `assumption` closer would trigger it. After all open
-                    // bodies and deferred invariants have been checked, give
-                    // every completed path the same checked exit transition
-                    // that a closing `solve` would perform.
-                    if !resource_transition_applied
-                        && matches!(outcome, CFunctionOutcome::Return { .. })
-                        && crate::kernel::c_function_return_resources_definitionally_established(
-                            pre_state,
-                            function,
-                            arguments,
-                            &outcome,
-                            path_requirements.assumptions(),
-                        )
-                        && let Ok(transitioned) = required_outcome(&outcome_proof)?
-                            .apply_outcome_contract_resources(pre_state, function)
-                    {
-                        outcome = transitioned.focused_outcome_snapshot()?;
-                        outcome_proof = Some(transitioned);
-                    }
-
                     if !require_explicit_closers
                         && let Some(opened) = take_opened_claim(&mut opened_claim, &closures)
                     {
@@ -5140,9 +5245,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                             &completed_execution,
                                             path_index,
                                             claim_index,
-                                            ClaimClosure::by_exact_check_completing(
+                                            ClaimClosure::by_checked_proposition(
                                                 claims[claim_index].key(),
                                                 path_index,
+                                                &completed.certificate(),
                                                 completed.completed_proposition()?,
                                             ),
                                         )?;
@@ -5190,6 +5296,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                     )))
                                 }
                             }
+                        }
+                    }
+
+                    if !require_explicit_closers && !super::proof_object::implicit_solve_disabled()
+                    {
+                        while prove_next_contract_closing_goal(
+                            &mut outcome_proof,
+                            &mut closing_input,
+                            &completed_execution,
+                            function,
+                            path_index,
+                            certified_path_index,
+                            has_return_resource_rewrite,
+                            &post_return_facts,
+                        )? {
+                            path_grouped_surface_closers.push(ProofTactic::Assumption);
                         }
                     }
 
@@ -5260,65 +5382,26 @@ pub(super) fn finish_ordered_proof<'a>(
                     // Named instances and authority wrappers retain checked
                     // resource exchanges after C returns. Certify their retained
                     // trace before accepting the resulting ownership representation.
-                    let checked_return_path = if has_return_resource_rewrite {
-                        let core = &outcome_proof
-                            .as_ref()
-                            .and_then(Proof::execution)
-                            .ok_or_else(|| {
-                                ClickError::new("return instance fold lost its checked execution")
-                            })?
-                            .core;
-                        Some(
-                            core.checked_return_path(&completed_execution, path_index)
-                                .map_err(|refusal| {
-                                    let message = format!(
-                                        "could not certify return instance fold: {}",
-                                        refusal.reason
-                                    );
-                                    match (refusal.unjustified_fact, outcome_proof.as_ref()) {
-                                        (Some(fact), Some(proof)) => unjustified_return_fact_error(
-                                            proof,
-                                            &post_return_facts,
-                                            &fact,
-                                            &message,
-                                            path_index,
-                                        ),
-                                        _ => ClickError::new(message),
-                                    }
-                                })?,
-                        )
-                    } else {
-                        None
-                    };
-                    let certified_path = match &checked_return_path {
-                        Some(completed) => completed.path(),
-                        None => completed_execution
-                            .paths()
-                            .get(certified_path_index)
-                            .ok_or_else(|| {
-                                ClickError::new(
-                                    "return instance fold changed execution path coverage",
-                                )
-                            })?,
-                    };
-                    let checked_specification = crate::instrumentation::measure_operation(
-                        function_block.signature().name(),
-                        &proof_label,
-                        "specification certification",
-                        || crate::kernel::CheckedPathSpecification::new(function, certified_path),
-                    ).ok_or_else(|| ClickError::new(format!(
-                        "execution proof for `{proof_label}` path {path_index} does not certify its exact function specification"
-                    )))?;
-                    if let Some(root) = outcome_proof.take() {
-                        let (root, completion) = root.complete_contract_exit_obligations(
+                    let input = match closing_input {
+                        Some(input) => input,
+                        None => contract_closing_input(
+                            outcome_proof.as_ref(),
                             &completed_execution,
-                            certified_path,
-                            &checked_specification,
-                        )?;
+                            function,
+                            path_index,
+                            certified_path_index,
+                            has_return_resource_rewrite,
+                            &post_return_facts,
+                        )?,
+                    };
+                    let checked_return_path = input.returned;
+                    let certified_path = &input.path;
+                    let checked_specification = input.specification;
+                    if let Some(root) = outcome_proof.as_ref() {
+                        let completion = root.contract_exit_completion(certified_path)?;
                         checked_resource_transitions_by_path[path_index] =
                             completion.completes_boundary();
                         closed_exit_obligations.push(completion);
-                        outcome_proof = Some(root);
                     }
                     let specification = checked_specification.specification();
                     let theorem = checked_specification.theorem();
@@ -5404,13 +5487,15 @@ pub(super) fn finish_ordered_proof<'a>(
                         // of the closure that accepted the claim, not from a parallel
                         // record that could disagree with it.
                         for (claim_index, closure) in closures.iter().enumerate() {
-                            surface_closers_by_claim[claim_index].push(
-                                closure
-                                    .closed()
-                                    .map(ClosedClaim::claim_tactics)
-                                    .unwrap_or_default()
-                                    .to_vec(),
-                            );
+                            let mut tactics = closure
+                                .closed()
+                                .map(ClosedClaim::claim_tactics)
+                                .unwrap_or_default()
+                                .to_vec();
+                            if !proof_context.constants.grouped_contract {
+                                tactics.extend(path_grouped_surface_closers.iter().cloned());
+                            }
+                            surface_closers_by_claim[claim_index].push(tactics);
                         }
                         surface_grouped_closers_by_path.push(path_grouped_surface_closers);
                         surface_post_choices_by_path.push(surface_post_choices);

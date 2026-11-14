@@ -41,12 +41,12 @@ pub(crate) use branches::{BranchId, ProofBranch, ProofBranchState, ProofBranches
 pub(crate) use execution::OutcomeForkArm;
 pub(crate) use execution::{
     CheckedBranchSplit, CheckedBranchSplitError, CheckedCallEvent, CheckedCallEvents,
-    CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition, EvidenceRefusal,
-    ExceptionalContinuation, ExecutionEvidence, ExecutionFrontier, ExecutionProofCore,
-    ExecutionRegionKind, FrontierPosition, LoopControlExit, OutcomeEvidenceFork,
-    ProofExecutionContinuation, ProofExecutionState, RejectedResourceRewriteFact,
-    ResourceRewriteCheckError, UnestablishedInterfaceGoal, checked_branch_fact_is_available,
-    old_reference_state, take_unestablished_interface_goal,
+    CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition, CheckedReturnPath,
+    EvidenceRefusal, ExceptionalContinuation, ExecutionEvidence, ExecutionFrontier,
+    ExecutionProofCore, ExecutionRegionKind, FrontierPosition, LoopControlExit,
+    OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
+    RejectedResourceRewriteFact, ResourceRewriteCheckError, UnestablishedInterfaceGoal,
+    checked_branch_fact_is_available, old_reference_state, take_unestablished_interface_goal,
 };
 #[allow(unused_imports)]
 pub(crate) use fact_keys::propositions_are_alpha_equal;

@@ -398,12 +398,16 @@ clauses first and then these three closing goals. Completing an outcome branch
 requires both sets of goals to have been opened and every applicable goal to
 be closed; finishing the last written clause alone does not complete it.
 Closing goal state is fixed-size and shared proof forks retain independent
-updates. The ordered Surface driver currently supplies these closing proofs
-through the existing kernel checkers. Resource claim receipts describe individual
-clauses; a checked resource transition alone does not discharge lifetime or
-joint boundary obligations. The closer checks those obligations against the
-retained outcome, receipts and body effects before producing an opaque exit
-completion. A clause-specific proof closes the joint resource prefix through
+updates. An explicit `assumption()` discharges the selected closing goal using
+its retained outcome, receipts and body effects. Written `solve()` selects the
+same operation; the implicit solver schedules it for each omitted closing proof.
+Expansion records one `assumption()` per completed goal, so rechecking requires
+no implicit proof of these obligations. A checked resource transition retains
+resource/lifetime evidence without silently closing either goal. Explicit
+resource changes reopen the affected goals. Packaging an exit completion reads
+only the closed-goal state; it performs no additional resource or effect check.
+
+A clause-specific proof closes the joint resource prefix through
 its last selected resource clause; it cannot certify later clauses whose
 separate proofs have not run. Only a completion of the entire resource prefix
 supplies whole-boundary/body-safety evidence, which registration requires for

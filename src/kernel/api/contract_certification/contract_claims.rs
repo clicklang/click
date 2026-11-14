@@ -1669,6 +1669,7 @@ fn function_claim_holds_on_prepared_path(
     path: &CertifiedFunctionClaimPath,
     checked_propositions: &CheckedPropositionIndex<'_>,
     completion_origin_state: Option<&CState>,
+    checking_assumptions: Option<&PureFactContext>,
 ) -> bool {
     let CertifiedFunctionClaimPath {
         completion_path_origin,
@@ -1687,6 +1688,7 @@ fn function_claim_holds_on_prepared_path(
         checked_resource_claims,
         checked_resource_transition,
     } = path;
+    let assumptions = checking_assumptions.unwrap_or(assumptions);
     let mut budget = ExecutionBudget::beside_live_state();
     match claim.target() {
         CFunctionContractClaimTarget::BodySafety => true,
@@ -3212,6 +3214,7 @@ fn claim_holds_on_some_path_set_of_every_case(
                         path,
                         checked_propositions,
                         view.set.completion_origin_state.as_ref(),
+                        None,
                     )
                 })
             })

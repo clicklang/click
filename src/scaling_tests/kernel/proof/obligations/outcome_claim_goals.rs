@@ -145,3 +145,83 @@ fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
         }
     }
 }
+
+#[test]
+fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
+    let execution = closing_execution();
+    let path = &execution.paths()[0];
+    let specification =
+        crate::kernel::CheckedPathSpecification::new(execution.function(), path).unwrap();
+    let core = outcome();
+    let fact_sets = [0, 64, 1024].map(|fact_count| {
+        (
+            fact_count,
+            (0..fact_count).fold(
+                crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                |facts, index| {
+                    facts.with_fact(crate::kernel::Proposition::ConditionIs(
+                        crate::kernel::ConditionTerm::equal(
+                            crate::kernel::MachineTerm::Variable(crate::kernel::Variable(
+                                978_000 + index,
+                            )),
+                            crate::kernel::MachineTerm::constant(0),
+                        ),
+                        true,
+                    ))
+                },
+            ),
+        )
+    });
+    let mut baseline = None;
+    for count in [16, 64, 256, 512] {
+        let mut claims = OutcomeClaimGoals::open(
+            (0..count).map(|index| (CFunctionContractClaimKey::Ensure(index), None)),
+            false,
+        );
+        for index in 0..count {
+            claims = claims
+                .close(
+                    &CFunctionContractClaimKey::Ensure(index),
+                    receipt(),
+                    &core.identity,
+                )
+                .unwrap();
+        }
+        for (fact_count, facts) in &fact_sets {
+            let context = crate::kernel::CContractClosingContext::new(&execution);
+            let original = context.open(0, &core);
+            let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut closing = original.clone();
+                for kind in ContractClosingGoal::ORDER {
+                    closing = closing
+                        .prove_goal(
+                            kind,
+                            &execution,
+                            path,
+                            &specification,
+                            &core,
+                            &claims,
+                            facts,
+                        )
+                        .unwrap();
+                }
+                closing.completion(path).unwrap();
+                closing
+            });
+            assert_eq!(closed.first_open_goal(), None);
+            assert_eq!(
+                original.first_open_goal(),
+                Some(ContractClosingGoal::ReturnedResources)
+            );
+            assert_eq!(
+                work,
+                *baseline.get_or_insert(work),
+                "{count} closed claims, {fact_count} unrelated facts"
+            );
+            assert!(
+                work < 500,
+                "empty boundary must stay a small primitive: {work}"
+            );
+        }
+    }
+}

@@ -222,7 +222,10 @@ fn retained_caller_expansion_preserves_declared_object_return_evidence() {
     let position = c0_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
     without_implicit_solve(|| session.verify_at(&expanded, position.line, position.column))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    crate::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]

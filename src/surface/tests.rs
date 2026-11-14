@@ -2594,6 +2594,7 @@ macro_rules! test_batches {
 mod authority_private_body_tests;
 mod authority_transfer_wrapper_tests;
 mod back_edge_tests;
+mod contract_closing_tests;
 mod contract_tests;
 mod diagnostic_tests;
 mod execution_tests;

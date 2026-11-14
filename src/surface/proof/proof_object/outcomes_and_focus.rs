@@ -421,20 +421,23 @@ impl<'a> Proof<'a> {
         self.with_focused_outcome_obligation(goal)
     }
 
-    /// The implicit closer discharges the joint resource/lifetime and write
-    /// footprint goals before any function theorem is published.
-    pub(in crate::surface::proof) fn complete_contract_exit_obligations(
+    /// One ordinary proof operation discharges one selected closing goal.
+    pub(in crate::surface::proof) fn prove_contract_closing_goal(
         &self,
+        kind: crate::kernel::proof::ContractClosingGoal,
         execution: &CCheckedFunctionExecution,
         path: &crate::kernel::SymbolicCExecutionPath,
         specification: &crate::kernel::CheckedPathSpecification,
-    ) -> Result<(Self, crate::kernel::CClosedContractExit), ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("contract closing requires an execution proof"));
-        };
+    ) -> Result<Self, ClickError> {
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
             return Err(self.step_error("contract closing requires an outcome goal"));
         };
+        if !matches!(goal.first_open_goal(), Ok(Some(crate::kernel::proof::OutcomeGoal::Closing(selected))) if selected == kind)
+        {
+            return Err(
+                self.step_error("contract closing must follow the pending source obligations")
+            );
+        }
         let closing = goal
             .closing
             .as_ref()
@@ -443,35 +446,100 @@ impl<'a> Proof<'a> {
             .claims
             .as_ref()
             .ok_or_else(|| self.step_error("contract claim obligations were not generated"))?;
-        let (closing, completion) = closing.close(execution, path, specification, &goal.data.core, claims, self.facts())
-            .map_err(|refusal| {
-                use crate::kernel::CContractClosingRefusal as Refusal;
-                let binding = context.parameter_binding();
-                let label = context.claim_label;
-                let index = goal.path_index;
-                let message = match refusal {
-                    Refusal::Claim(key) => {
-                        let claim = match key {
-                            CFunctionContractClaimKey::Ensure(index) => FunctionClaimRef::Ensure(index, &context.function_block.ensures()[index]),
-                            _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")),
-                        };
-                        let clause = match claim.clause().ensure() {
-                            Ensure::Resource(resource) => crate::surface::validation::describe_resource_clause(resource),
-                            Ensure::Proposition(proposition) => crate::surface::diagnostics::describe_click_proposition(proposition),
-                        };
-                        format!("contract closing for `{label}` path {index}: unproved resource obligation {} `{clause}`", function_claim_label(context.function_block, &claim))
-                    }
-                    Refusal::Resource(reason) => format!("contract closing for `{label}` path {index}: resource/lifetime obligation: {reason}"),
-                    Refusal::Runtime(error) => format!("`{label}` path {index}: C operation could not be verified: {}{}", describe_runtime_error(&error, binding), self.describe_outcome_statement_site(index)),
-                    Refusal::Write(pointer) => format!("`{}.implicit_effect` failed on path {index}: write to `{}` is outside the mutable footprint", context.function_block.signature().name(), describe_pointer(&pointer, binding)),
-                    Refusal::Range(range) => format!("`{}.implicit_effect` failed on path {index}: write range `{}` is outside the mutable footprint", context.function_block.signature().name(), describe_memory_range(&range, binding)),
-                    Refusal::Storage(outside) => format!("`{label}` path {index}: write to storage outside the owned footprint: {}; own the written cells", crate::surface::diagnostics::describe_storage_writes_outside_footprint(&outside, binding)),
-                };
-                self.step_error(message)
-            })?;
+        let closing = closing
+            .prove_goal(
+                kind,
+                execution,
+                path,
+                specification,
+                &goal.data.core,
+                claims,
+                self.facts(),
+            )
+            .map_err(|refusal| self.contract_closing_error(refusal))?;
         let mut goal = goal.clone();
         goal.closing = Some(closing);
-        Ok((self.with_focused_outcome_obligation(goal)?, completion))
+        self.with_focused_outcome_obligation(goal)
+    }
+
+    /// Package completed evidence without discovering or checking obligations.
+    pub(in crate::surface::proof) fn contract_exit_completion(
+        &self,
+        path: &crate::kernel::SymbolicCExecutionPath,
+    ) -> Result<crate::kernel::CClosedContractExit, ClickError> {
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return Err(self.step_error("contract closing requires an outcome goal"));
+        };
+        goal.closing
+            .as_ref()
+            .ok_or_else(|| self.step_error("contract closing obligations were not generated"))?
+            .completion(path)
+            .map_err(|refusal| self.contract_closing_error(refusal))
+    }
+
+    fn contract_closing_error(
+        &self,
+        refusal: crate::kernel::CContractClosingRefusal,
+    ) -> ClickError {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return self.step_error("contract closing requires an execution proof");
+        };
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return self.step_error("contract closing requires an outcome goal");
+        };
+        use crate::kernel::CContractClosingRefusal as Refusal;
+        let binding = context.parameter_binding();
+        let label = context.claim_label;
+        let index = goal.path_index;
+        let message = match refusal {
+            Refusal::Claim(key) => {
+                let claim = match key {
+                            CFunctionContractClaimKey::Ensure(index) => match context.function_block.ensures().get(index) { Some(clause) => FunctionClaimRef::Ensure(index, clause), None => return self.step_error(format!("contract closing for `{label}` path {index}: unproved generated returned-storage obligation")) },
+                            _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")),
+                        };
+                let clause = match claim.clause().ensure() {
+                    Ensure::Resource(resource) => {
+                        crate::surface::validation::describe_resource_clause(resource)
+                    }
+                    Ensure::Proposition(proposition) => {
+                        crate::surface::diagnostics::describe_click_proposition(proposition)
+                    }
+                };
+                format!(
+                    "contract closing for `{label}` path {index}: unproved resource obligation {} `{clause}`",
+                    function_claim_label(context.function_block, &claim)
+                )
+            }
+            Refusal::Pending(kind) => format!(
+                "contract closing for `{label}` path {index}: unproved {} obligation; prove it explicitly with `assumption()` or supply the facts and resources needed by the implicit solver",
+                kind.description()
+            ),
+            Refusal::Resource(reason) => format!(
+                "contract closing for `{label}` path {index}: resource/lifetime obligation: {reason}"
+            ),
+            Refusal::Runtime(error) => format!(
+                "`{label}` path {index}: C operation could not be verified: {}{}",
+                describe_runtime_error(&error, binding),
+                self.describe_outcome_statement_site(index)
+            ),
+            Refusal::Write(pointer) => format!(
+                "`{}.implicit_effect` failed on path {index}: write to `{}` is outside the mutable footprint",
+                context.function_block.signature().name(),
+                describe_pointer(&pointer, binding)
+            ),
+            Refusal::Range(range) => format!(
+                "`{}.implicit_effect` failed on path {index}: write range `{}` is outside the mutable footprint",
+                context.function_block.signature().name(),
+                describe_memory_range(&range, binding)
+            ),
+            Refusal::Storage(outside) => format!(
+                "`{label}` path {index}: write to storage outside the owned footprint: {}; own the written cells",
+                crate::surface::diagnostics::describe_storage_writes_outside_footprint(
+                    &outside, binding
+                )
+            ),
+        };
+        self.step_error(message)
     }
 
     pub(in crate::surface::proof) fn first_open_outcome_goal(
