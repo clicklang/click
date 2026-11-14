@@ -155,6 +155,9 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     LoopHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
+    /// Every range a loop declared it may write lies in an object proven
+    /// distinct from the read's.
+    LoopHavocWriteSetInDistinctObjects,
     LoopHavocKeptRange {
         range: MemoryRange,
         first: PointerInRangeEvidence,
@@ -800,6 +803,15 @@ impl MemoryDagHopJustification {
                         evidence.checks(range, pointer, bytes, assumptions)
                     })
             }
+            Self::LoopHavocWriteSetInDistinctObjects => matches!(
+                derivation,
+                MemoryDerivation::LoopHavoc {
+                    mutable_ranges: Some(mutable_ranges),
+                    ..
+                } if mutable_ranges
+                    .iter()
+                    .all(|range| range.base().block.proven_distinct(&pointer.block))
+            ),
             Self::SeededLoadsOfBase => super::step_effect::seeded_loads_preserve_base(derivation),
             Self::SeededStoresDistinctBlock => matches!(
                 derivation,

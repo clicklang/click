@@ -120,8 +120,9 @@ pub(in crate::kernel) enum BlockSeparation {
 /// What the querying context offers a walk towards an answer.
 ///
 /// Only the cell arm is given this. The `cross_loop_havoc` flag is the
-/// caller's, not the edge's: the naming walk never crosses a loop havoc,
-/// while memory-load reasoning may under its own gates.
+/// caller's, not the edge's: the naming walk crosses a loop havoc only when
+/// its write set lies in other objects, while memory-load reasoning may cross
+/// more under its own gates.
 pub(in crate::kernel) struct Evidence<'a> {
     pub(in crate::kernel) assumptions: &'a PureFactContext,
     pub(in crate::kernel) cross_loop_havoc: bool,
@@ -144,7 +145,7 @@ pub(in crate::kernel) struct Evidence<'a> {
 /// | `LocalLifetimeEnded` | separate on proven distinctness | separate when the retired object is proven distinct; affected for this one |
 /// | `HeapFreed` | separate on two separation ladders | separate when the released allocation's object is proven distinct; affected when it is this one |
 /// | `CallHavoc` | separate on range disjointness, or when a range the caller kept owning holds the cell | separate when every declared range's object is proven distinct |
-/// | `LoopHavoc(Some)` | separate under the extended-bridging and explicit-check gates, and never on the naming path | separate when every declared range's object is proven distinct |
+/// | `LoopHavoc(Some)` | separate when every declared range's object is proven distinct; otherwise only under the extended-bridging and explicit-check gates, and never on the naming path | separate when every declared range's object is proven distinct |
 /// | `LoopHavoc(None)` | never separate | never separate |
 ///
 /// Two kinds still refuse a block outright, and both for want of a name on the
@@ -560,6 +561,15 @@ fn cell_effect(
             kept_by_function,
             ..
         } => {
+            // A loop whose checked write set lies in other objects leaves this
+            // whole object alone, as the block arm says; a cell in it is left
+            // alone too, on every walk, so the two answers cannot disagree.
+            if mutable_ranges
+                .iter()
+                .all(|range| range.base().block.proven_distinct(&pointer.block))
+            {
+                return hop(MemoryDagHopJustification::LoopHavocWriteSetInDistinctObjects);
+            }
             if !evidence.cross_loop_havoc
                 || !extended_dag_bridging_active()
                 || !explicit_dag_check_active()
