@@ -178,20 +178,15 @@ every fixture currently verifies.
 
 ### Written syntax is a separate migration
 
-[`heap_pointer_field_keeps_target_identity.md`](../mdtests/heap_pointer_field_keeps_target_identity.md)
-still contains written `transport(at(stored, defined(h->target)),
-defined(h->target)) using { ... }`. Current initializedness must be established
-with explicit ordinary steps before removing that consumer.
-
 A balanced-parenthesis scan of `.click` files and Click fences in Markdown,
 excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 135 | 194 |
-| `examples/` | 35 | 403 |
+| `mdtests/` | 134 | 192 |
+| `examples/` | 30 | 373 |
 | `library/` | 0 | 0 |
-| Total | 170 | 597 |
+| Total | 164 | 565 |
 
 The 62 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text

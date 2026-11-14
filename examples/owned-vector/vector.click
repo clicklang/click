@@ -583,10 +583,7 @@ int32 vector_grow(struct vector* owner) {
             intro();
             extract(0 <= k);
             extract(k < old(owner->len));
-            transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-                0 <= k;
-                k < old(owner->len);
-            };
+            have owner->data[k] == old(owner->data[k]) by { assumption(); }
             assumption();
         }
         fold(allocated_vector(owner));
@@ -880,8 +877,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 0 implies owner->len == old(owner->len) by {
                 intro();
-                transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
-                };
+                have owner->len == old(owner->len) by { assumption(); }
                 assumption();
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
@@ -1020,11 +1016,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 assumption();
             }
             have old(owner->len) < owner->cap by {
-                transport(at(region(8).entry, owner->len) < at(region(8).entry, owner->cap), old(owner->len) < owner->cap) using {
-                    at(region(8).entry, owner->len) < at(region(8).entry, owner->cap);
-                    at(region(8).entry, owner->len) == old(owner->len);
-                    owner->cap == at(region(8).entry, owner->cap);
-                };
+
                 assumption();
             }
             have owner->data[old(owner->len)] == value by {
@@ -1373,9 +1365,7 @@ int32 vector_clear(struct vector* owner) {
     step();
     have owner->len == 0;
     have 1 <= at(region(0).entry, owner->cap);
-    transport(at(region(0).entry, 1) <= at(region(0).entry, owner->cap), 1 <= owner->cap) using {
-        at(region(0).entry, 1) <= at(region(0).entry, owner->cap);
-    };
+    have 1 <= owner->cap by { assumption(); }
     assumption();
     fold(empty_vector(owner));
     assumption();

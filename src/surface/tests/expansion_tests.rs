@@ -20840,8 +20840,10 @@ fn atomic_store_scalar_framing_expands_and_replays() {
         let verified = verify_c_sources(&source, &sources)
             .unwrap_or_else(|error| panic!("{}", error.report()));
         let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
-        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
-            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+        without_implicit_solve_for_claim(&format!("{function}.contract"), || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
 

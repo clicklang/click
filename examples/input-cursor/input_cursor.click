@@ -239,9 +239,7 @@ int32 input_cursor_shared_pipeline(
     }
     have left->data == data;
     step();
-    transport(at(region(4).entry, left->pos) < at(region(4).entry, left->len), left->pos < left->len) using {
-        at(region(4).entry, left->pos) < at(region(4).entry, left->len);
-    };
+    have left->pos < left->len by { assumption(); }
     have right->pos < right->len by {
         solve() using {
             1 <= length;
@@ -252,25 +250,15 @@ int32 input_cursor_shared_pipeline(
     have right->pos == 0;
     have right->data == data;
     have left->data == data by {
-        transport(at(region(4).entry, left->data) == data, left->data == data) using {
-            at(region(4).entry, left->data) == data;
-        };
+
         assumption();
     }
-    transport(at(region(4).entry, left->len) == length, left->len == length) using {
-        at(region(4).entry, left->len) == length;
-    };
+    have left->len == length by { assumption(); }
     step();
-    transport(at(region(5).entry, right->len) == length, right->len == length) using {
-        at(region(5).entry, right->len) == length;
-    };
-    transport(at(region(5).entry, left->len) == length, left->len == length) using {
-        at(region(5).entry, left->len) == length;
-    };
+    have right->len == length by { assumption(); }
+    have left->len == length by { assumption(); }
     have right->pos == 0 by {
-        transport(at(region(5).entry, right->pos) == 0, right->pos == 0) using {
-            at(region(5).entry, right->pos) == 0;
-        };
+
         assumption();
     }
     have 0 < right->len by {

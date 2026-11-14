@@ -254,20 +254,9 @@ int32 owned_split_buffer_pipeline(
     step();
     unfold(owned_split_buffer(owner));
     step();
-    transport(at(region(3).entry, owner->split) == 1, owner->split == 1) using {
-        at(region(3).entry, owner->split) == 1;
-        2 <= length;
-        at(region(3).entry, owner->data) == data;
-    };
-    transport(at(region(3).entry, owner->len) == length, owner->len == length) using {
-        at(region(3).entry, owner->len) == length;
-        2 <= length;
-        at(region(3).entry, owner->data) == data;
-    };
-    transport(at(region(3).entry, owner->data) == data, owner->data == data) using {
-        at(region(3).entry, owner->data) == data;
-        2 <= length;
-    };
+    have owner->split == 1 by { assumption(); }
+    have owner->len == length by { assumption(); }
+    have owner->data == data by { assumption(); }
     have 1 < length by {
         arithmetic_certificate {
             premise 0: at(function.entry, 2 <= length) => at(function.entry, 2 <= length);
@@ -278,15 +267,8 @@ int32 owned_split_buffer_pipeline(
         assumption();
     }
     step();
-    transport(at(region(4).entry, owner->data) == data, owner->data == data) using {
-        at(region(4).entry, owner->data) == data;
-        2 <= length;
-    };
-    transport(at(region(4).entry, 1) < at(region(4).entry, owner->len), 1 < owner->len) using {
-        at(region(4).entry, 1) < at(region(4).entry, owner->len);
-        owner->data == data;
-        2 <= length;
-    };
+    have owner->data == data by { assumption(); }
+    have 1 < owner->len by { assumption(); }
     have data[1] == right_value by {
         normalize() using {
             at(region(5).entry, *(owner->data + 1)) == at(region(5).entry, right_value);
@@ -304,9 +286,7 @@ int32 owned_split_buffer_pipeline(
     };
     fold(owned_split_buffer(owner));
     step();
-    transport(at(statement(6).entry, data[1]) == right_value, data[1] == right_value) using {
-        at(statement(6).entry, data[1]) == right_value;
-    };
+    have data[1] == right_value by { assumption(); }
     apply(int32_equality_transitive(c(result), data[1], right_value)) using {
         c(result) == data[1];
         data[1] == right_value;

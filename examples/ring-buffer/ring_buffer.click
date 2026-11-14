@@ -75,17 +75,10 @@ int32 ring_buffer_push_wrap(
     mark filled;
     step();
     have data[0] == value by {
-        transport(at(filled, data[0]) == value, data[0] == value) using {
-            at(filled, data[0]) == value;
-            separate(memory(data[0]), memory(owner->tail));
-        };
+        assumption();
     }
     have owner->data == data by {
-        transport(old(owner->data) == data, owner->data == data) using {
-            old(owner->data) == data;
-            separate(memory(data[0]), memory(owner->data));
-            separate(memory(owner->tail), memory(owner->data));
-        };
+        assumption();
     }
     have owner->data[0] == value by {
         rewrite(owner->data == data);
