@@ -1761,11 +1761,17 @@ pub(super) fn rebased_viewability_restriction_steps(
             segment: segment.clone(),
         }
     };
+    // Keep computed machine endpoints inside an explicit observation. A bare
+    // subtraction in a comparison parses as mathematical integer arithmetic.
+    let observe = |value: &ContractExpression| ContractExpression::Call {
+        name: "to_integer".into(),
+        arguments: vec![value.clone()],
+    };
     let bound =
         |left: &ContractExpression, right: &ContractExpression| ClickProposition::Comparison {
-            left: left.clone(),
+            left: observe(left),
             operator: ComparisonOperator::LessEqual,
-            right: right.clone(),
+            right: observe(right),
         };
     let apply = |name: &str, arguments, premises| {
         vec![ProofStep::ApplyTheoremUsing {

@@ -7255,7 +7255,7 @@ endpoint, inspect memory, or search facts. It grants no ownership.
 
 ```click
 theorem rebase<T, I>(p: T*, lo: I, hi: I) {
-    requires 0 <= lo;
+    requires 0 <= to_integer(lo);
     requires lo <= hi;
     ensures contains(memory(p[lo..hi]), memory((p + lo)[0..hi-lo]));
 }
