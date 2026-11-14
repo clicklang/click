@@ -242,7 +242,9 @@ children. Bound-variable ordinals apply only to the body, with the enclosing
 scope restored on success or refusal; free variables and snapshot identities
 remain distinct. Integer checking uses a named compatibility adapter retaining
 shared endpoints, also reused by scoped rewriting. This does not activate fold
-producers or change fold reduction laws.
+producers or change fold reduction laws. Fold child keys remain boxed so this
+variant does not enlarge ordinary scalar keys. The full scaling, related fact
+matching/arithmetic, rewrite and registration selection passes 1,676 tests.
 
 ## Chunk 5: execution value handoffs
 

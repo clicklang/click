@@ -823,10 +823,10 @@ enum AlphaBitvectorKey {
         else_term: Box<Self>,
     },
     RangeFold {
-        start: AlphaMachineKey,
-        end: AlphaMachineKey,
-        initial: AlphaMachineKey,
-        body: AlphaMachineKey,
+        start: Box<AlphaMachineKey>,
+        end: Box<AlphaMachineKey>,
+        initial: Box<AlphaMachineKey>,
+        body: Box<AlphaMachineKey>,
     },
     PureFunctionApplication {
         name: String,

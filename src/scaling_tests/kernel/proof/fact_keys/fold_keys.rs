@@ -3,6 +3,8 @@ use crate::kernel::{KernelFoldIndex, KernelTerm, MachineBinaryOp};
 
 #[test]
 fn common_fold_alpha_keys_scale_with_selected_shared_bodies_without_exports() {
+    // A fold's four DAGs must not inflate every scalar key in proof state.
+    assert!(std::mem::size_of::<AlphaBitvectorKey>() <= 64);
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let fold = |acc| {

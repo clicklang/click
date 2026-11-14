@@ -56,10 +56,10 @@ pub(super) fn machine_fold_key<const ALLOW_LOADS: bool>(
         bindings.bitvector.remove(&accumulator);
     }
     Some(AlphaBitvectorKey::RangeFold {
-        start,
-        end,
-        initial,
-        body: body?,
+        start: Box::new(start),
+        end: Box::new(end),
+        initial: Box::new(initial),
+        body: Box::new(body?),
     })
 }
 
@@ -216,8 +216,5 @@ mod tests {
 
 #[cfg(test)]
 mod scaling_tests {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/scaling_tests/kernel/proof/fact_keys/fold_keys.rs"
-    ));
+    include!("../../../scaling_tests/kernel/proof/fact_keys/fold_keys.rs");
 }
