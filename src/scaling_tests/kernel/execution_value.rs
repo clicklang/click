@@ -38,3 +38,48 @@ fn retained_execution_handoffs_do_not_walk_the_value_dag() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = Memory::new();
+        for n in 0..unrelated {
+            memory.symbolic_pointer_load(
+                &Pointer::symbolic(Variable(1019000 + n)),
+                ProgramType::Int32Pointer,
+            );
+        }
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let values = (0..size)
+                .map(|n| {
+                    memory.symbolic_pointer_load(
+                        &Pointer::symbolic(Variable(1020000 + n)),
+                        ProgramType::Int32Pointer,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let exports = KernelTermExport::machine_export_count();
+            let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
+                values
+                    .into_iter()
+                    .map(ExecutionValue::retain_native)
+                    .collect::<Vec<_>>()
+            });
+            assert!(retained.iter().all(|value| matches!(
+                value.shared().map(KernelTerm::node),
+                Some(KernelTermNode::PointerRead { .. })
+            )));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(
+                work <= 64 * size as usize,
+                "size={size} unrelated={unrelated} work={work}"
+            );
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 5, "{samples:?}");
+        }
+    }
+}

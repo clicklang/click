@@ -62,6 +62,7 @@ mod tests {
         with_proof_local_value_names(names, || {
             for (name, pointer) in values {
                 let retained = SharedPointerValue::import(&pointer);
+                let read_root = crate::kernel::KernelTerm::retained_pointer_read(&pointer);
                 let root = crate::kernel::KernelTermImport::default().argument(
                     &crate::kernel::PureFunctionArgument::Value(ProgramValue::Pointer(
                         pointer.clone(),
@@ -83,6 +84,17 @@ mod tests {
                     raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new()),
                     Some(expression.clone()),
                 );
+                if let Some(root) = read_root {
+                    assert_eq!(
+                        raise_kernel_term(
+                            &root,
+                            ParameterBinding::default(),
+                            &state,
+                            &BTreeMap::new()
+                        ),
+                        Some(expression.clone()),
+                    );
+                }
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
                 let spec = crate::surface::lowering::elaborate_fixed_state_expression(
                     &expression,
@@ -149,6 +161,31 @@ mod tests {
             ))
         };
         check_names(vec![("a_before", make(before)), ("z_after", make(after))]);
+    }
+
+    #[test]
+    fn pointer_read_roots_raise_through_exact_complete_names() {
+        let _session = VerificationSession::enter();
+        let memory = Memory::new();
+        let address = Pointer::symbolic(Variable(1018010));
+        let seeded = memory.clone().with_seeded_cells(
+            address.clone(),
+            8,
+            ProgramType::Int32Pointer,
+            0,
+            1,
+            crate::kernel::intern_memory(memory),
+        );
+        let crate::kernel::ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) =
+            seeded.load(&address)
+        else {
+            panic!("read result");
+        };
+        assert!(crate::kernel::KernelTerm::retained_pointer_read(&pointer).is_some());
+        check_names(vec![
+            ("read", pointer.clone()),
+            ("const_read", pointer.with_pointee_constant(true)),
+        ]);
     }
 
     #[test]

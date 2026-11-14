@@ -32,7 +32,7 @@ pub(crate) struct KernelPointerValue {
 /// Exact producer handle. Logical equality is a separate checker operation;
 /// it must not discard qualifiers or proof evidence from this payload.
 #[derive(Clone)]
-pub(crate) struct SharedPointerValue(Arc<KernelPointerValue>);
+pub struct SharedPointerValue(Arc<KernelPointerValue>);
 impl std::fmt::Debug for SharedPointerValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("SharedPointerValue")

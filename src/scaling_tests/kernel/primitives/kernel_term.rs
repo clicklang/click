@@ -664,3 +664,49 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
         }
     }
 }
+
+#[test]
+fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for unrelated in [0, 128, 512] {
+        let mut memory = Memory::new();
+        for n in 0..unrelated {
+            memory = memory.with_block(format!("pointer-read-unrelated-{n}"), 8);
+        }
+        let memory = intern_memory(memory);
+        let value = SharedPointerValue::import(&PointerValue::new(
+            Pointer::symbolic(Variable(1018100)),
+            ProgramType::Int32Pointer,
+        ));
+        for size in [16, 64, 256] {
+            let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+            for _ in 0..size {
+                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                    .into_shared()
+                    .unwrap();
+            }
+            let address = SharedPointerAddress::new(
+                SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(1018101))),
+                offset,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let root =
+                    KernelTerm::shared_pointer_read(value.clone(), memory.clone(), address.clone());
+                assert_eq!(
+                    root,
+                    KernelTerm::shared_pointer_read(value.clone(), memory.clone(), address.clone())
+                );
+                let mut carried = crate::kernel::ExecutionValue::from(root.clone());
+                for _ in 0..32 {
+                    carried = carried.clone();
+                }
+                assert_eq!(carried.shared(), Some(&root));
+                root
+            });
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 32, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}
