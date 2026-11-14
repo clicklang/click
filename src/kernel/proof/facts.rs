@@ -1744,6 +1744,17 @@ impl ProofFacts {
         }
     }
 
+    /// Publish the explicit entry resource input in the fact context retained
+    /// by the body proof. This builds address indexes without changing facts
+    /// or permissions, before any checked step can depend on that lineage.
+    pub(super) fn prepare_entry_resources(&mut self, resources: &crate::kernel::ResourceContext) {
+        resources.synchronize_memory_equalities(&self.assumptions);
+        self.assumptions = self
+            .assumptions
+            .clone()
+            .with_prepared_resource_addresses(resources);
+    }
+
     pub(crate) fn assumptions(&self) -> &PureFactContext {
         &self.assumptions
     }

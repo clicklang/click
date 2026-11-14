@@ -1590,9 +1590,12 @@ fn unfolding_composite_rejects_concretely_overlapping_owned_children() {
     let error = verify_c_sources(click_source, &[("preserve.c", c_source)])
         .expect_err("a composite fact must not authorize overlapping owned children");
     assert!(
-        error.message().contains(
-            "could not expand required composite resources before call (owns overlapping)"
-        ),
+        error
+            .message()
+            .contains("could not open contract entry for `preserve.contract`")
+            && error.message().contains(
+                "could not evaluate the composite resource facts required at the contract entry"
+            ),
         "{}",
         error.message()
     );

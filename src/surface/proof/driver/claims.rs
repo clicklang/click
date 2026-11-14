@@ -551,11 +551,6 @@ fn prove_claims_by_checked_tactics(
         state.memory(),
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
-    let entry_context = Arc::new(ProofEntryContext {
-        state: state.clone(),
-        arguments: arguments.clone(),
-        pure_facts: pure_facts.clone(),
-    });
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts_elaborated(
         caller_source_owner.clone(),
         function_block,
@@ -593,23 +588,38 @@ fn prove_claims_by_checked_tactics(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
         proof_label,
     )?;
-    let function_entry_state = program_function_entry_state(&state, &function, &arguments)
-        .ok_or_else(|| {
-            ClickError::new(format!("`{proof_label}` could not bind function arguments"))
-        })?;
-    let (mut pure_facts, mut entry_fact_origins) = contract_entry_view(
-        pure_facts,
-        entry_fact_origins,
+    let opened_entry = crate::kernel::proof::OpenedContractEntry::open(
         &state,
         &function,
         &arguments,
-    );
-    pure_facts.push(function_environment.byte_order_fact());
-    entry_fact_origins.push(EntryFactOrigin::Derived);
-    // Entry selection can rebuild the fact context. Publish the held input
-    // in that final lineage, so pointer stores advance its address index
-    // rather than leaving a later unrelated call to walk their history.
-    pure_facts.prepare_resource_addresses(state.resources());
+        &pure_facts,
+        function_environment,
+    )
+    .map_err(|error| {
+        ClickError::new(format!(
+            "could not open contract entry for `{proof_label}`: {}",
+            crate::surface::diagnostics::describe_runtime_error(
+                &error,
+                ParameterBinding::new(parsed_function.parameters(), &arguments),
+            ),
+        ))
+    })?;
+    let function_entry_state = opened_entry.entry_state().clone();
+    let entry_fact_origins = opened_entry
+        .source_origins()
+        .iter()
+        .map(|origin| {
+            origin.map_or(EntryFactOrigin::Derived, |index| {
+                entry_fact_origins[index].clone()
+            })
+        })
+        .collect::<Vec<_>>();
+    let pure_facts = PureFactList::from_proof_facts(opened_entry.facts());
+    let entry_context = Arc::new(ProofEntryContext {
+        state: state.clone(),
+        arguments: arguments.clone(),
+        pure_facts: pure_facts.clone(),
+    });
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
     // self-call raise the descent obligations. Certification derives the same
@@ -689,26 +699,7 @@ fn prove_claims_by_checked_tactics(
         surface_propositions,
         PersistentSequence::default(),
     );
-    initial
-        .core
-        .record_checked_function_entry_with_facts(
-            &function,
-            &arguments,
-            constants
-                .function_entry_state
-                .as_ref()
-                .expect("a function proof has a checked entry state"),
-            &ProofFacts::from_source(&pure_facts),
-        )
-        .map_err(|error| {
-            ClickError::new(format!(
-                "could not check the function entry resources: {}",
-                crate::surface::diagnostics::describe_runtime_error(
-                    &error,
-                    ParameterBinding::new(parsed_function.parameters(), &arguments),
-                ),
-            ))
-        })?;
+    initial.core = opened_entry.into_execution_core();
     // The checked drivers are tried in order: the structural driver owns
     // scopes and branches, and the flat driver owns linear proofs. A decline
     // tries the next checked driver; an error is terminal.
@@ -3165,7 +3156,7 @@ pub(super) fn finish_ordered_proof<'a>(
     // goals now, and the working-set parity invariant below must hold for
     // every drain before its working vector is finalized.
     let direct_view = proof.finalization_view()?;
-    let (outcome_substrate, _) = proof.split_function_outcomes()?;
+    let (mut outcome_substrate, _, outcome_branches) = proof.split_function_outcomes()?;
     let (state, frontier, proof_execution, proof_context, branch_path) = (
         direct_view.state,
         direct_view.frontier,
@@ -3380,9 +3371,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 let rejected = !matches!(
                     execution.paths()[path_index].outcome(),
                     FunctionOutcome::VerificationDiverges
-                ) && outcome_substrate
-                    .outcome_branch_for_path(path_index)
-                    .is_none();
+                ) && !outcome_branches.contains_key(&path_index);
                 (!rejected).then_some(path_index)
             })
             .collect();
@@ -3680,18 +3669,19 @@ pub(super) fn finish_ordered_proof<'a>(
                         )));
                     }
                     let mut outcome = path.outcome().clone();
-                    let mut outcome_proof = if matches!(
-                        outcome,
-                        FunctionOutcome::VerificationDiverges
-                    ) {
-                        None
-                    } else {
-                        let goal = outcome_substrate.outcome_branch_for_path(path_index).ok_or_else(|| ClickError::new(
-                            format!("`{proof_label}` path {path_index}: missing checked outcome goal")))?;
-                        outcome_substrate
-                            .focus_branch(goal)?
-                            .prepare_outcome_cases()?
-                    };
+                    let mut outcome_proof =
+                        if matches!(outcome, FunctionOutcome::VerificationDiverges) {
+                            None
+                        } else {
+                            let goal = outcome_branches.get(&path_index).copied().ok_or_else(|| {
+                            ClickError::new(format!(
+                                "`{proof_label}` path {path_index}: missing checked outcome goal"
+                            ))
+                        })?;
+                            outcome_substrate
+                                .focus_branch(goal)?
+                                .prepare_outcome_cases(&mut outcome_substrate)?
+                        };
                     if outcome_proof.is_none()
                         && !matches!(outcome, FunctionOutcome::VerificationDiverges)
                     {
@@ -5562,13 +5552,18 @@ pub(super) fn finish_ordered_proof<'a>(
                     if let Some(root) = outcome_proof.take() {
                         // Retire only this checked outcome. Sibling paths are
                         // completed by their own retained proofs.
-                        root.complete_outcome()?;
+                        outcome_substrate = root.complete_outcome_in(&outcome_substrate)?;
                     }
                     drop(_path_certification_timing);
                 }
                 Ok(())
             },
         )?;
+        if !outcome_substrate.is_complete() {
+            return Err(ClickError::new(format!(
+                "`{proof_label}` still owns unfinished outcome cases"
+            )));
+        }
         // This is surface routing, never additional proof authority. If
         // either outcome cannot decide the guard, retain the existing refusal.
         let distinct_terminal_suffixes = surface_post_tactics_by_path
@@ -6277,71 +6272,6 @@ mod evidence_tests {
 
 /// The entry facts a proof starts from: the kernel's contract entry, seen
 /// the way the contract's source states it.
-///
-/// The kernel builds the entry from the contract. A proof keeps each fact
-/// of `surface_facts` the entry states, with its source origin. Complete
-/// pointer equations use the entry producer's exact form; other facts retain
-/// their existing source aliases. The proof takes the entry's own spelling of
-/// what the contract's clauses and parameters say beside them. What the
-/// entry's resources state at depth stays out of view until the proof
-/// observes or opens the resource.
-fn contract_entry_view(
-    surface_facts: PureFactList,
-    surface_origins: Vec<EntryFactOrigin>,
-    state: &ExecutionState,
-    function: &ProgramFunction,
-    arguments: &[ProgramExpression],
-) -> (PureFactList, Vec<EntryFactOrigin>) {
-    let Ok(entry) = crate::kernel::program_function_contract_entry(state, function, arguments)
-    else {
-        return (surface_facts, surface_origins);
-    };
-    let mut facts = Vec::new();
-    let mut origins = Vec::new();
-    let mut kept = BTreeSet::new();
-    for (fact, origin) in surface_facts.iter().zip(surface_origins) {
-        // Surface lowering can name a complete pointer read differently from
-        // the entry producer. Admitting both equations derives extra
-        // read-over-write facts which later look like new entry assumptions.
-        // Keep the producer's form instead. Other source aliases retain their
-        // existing selection, including source-spellable resource ranges.
-        let selected = match fact {
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::PointerValueEqual(..), _) => {
-                entry.explicitly_states(fact)
-            }
-            _ => entry.states(fact),
-        };
-        if selected {
-            facts.push(fact.clone());
-            origins.push(origin);
-            kept.insert(fact);
-        }
-    }
-    for fact in entry.facts() {
-        use crate::kernel::ContractEntryFactOrigin as Origin;
-        let visible = !matches!(
-            fact.origin(),
-            Origin::CompositeDefinition
-                | Origin::PopulationFact
-                | Origin::Observable
-                | Origin::ResourceQuantity
-                | Origin::PredicateBody(_)
-        );
-        if visible && kept.insert(fact.proposition()) {
-            facts.push(fact.proposition().clone());
-            origins.push(EntryFactOrigin::Derived);
-        }
-    }
-    let facts = PureFactList::from(facts);
-    // The authoritative entry view selects a new premise lineage. Publish the
-    // selected resource input at this producer boundary, before proof steps;
-    // permission queries only advance the paired graph's checked deltas.
-    state
-        .resources()
-        .synchronize_memory_equalities(&facts.context());
-    (facts, origins)
-}
-
 /// The refusal of a return fold whose proof assumed `fact` without the path
 /// justifying it. It names the fact as written and is placed at the
 /// post-return tactic that introduced it, the first whose successor holds

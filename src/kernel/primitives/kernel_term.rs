@@ -23,8 +23,11 @@ mod addresses;
 mod offsets;
 #[allow(dead_code)]
 mod pointers;
+pub(crate) use addresses::SharedPointerAddress;
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
+pub(crate) use offsets::{KernelPointerOffset, SharedPointerOffset};
+pub(crate) use pointers::SharedPointerValue;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
 

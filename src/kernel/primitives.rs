@@ -71,7 +71,6 @@ pub(crate) use contracts::{
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
-pub(crate) use kernel_term::KernelMatchArm;
 pub(crate) use kernel_term::{
     KernelFold, KernelFoldIndex, KernelMatch, KernelTermExport, KernelTermImport,
     clear_integer_bridge_memo,
@@ -79,6 +78,10 @@ pub(crate) use kernel_term::{
 pub use kernel_term::{
     KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm, KernelTermNode,
     KernelType,
+};
+pub(crate) use kernel_term::{
+    KernelMatchArm, KernelPointerOffset, SharedPointerAddress, SharedPointerOffset,
+    SharedPointerValue,
 };
 mod machine_integer;
 pub use machine_integer::{

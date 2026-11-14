@@ -44,7 +44,7 @@ pub(crate) use execution::{
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition, CheckedReturnPath,
     EvidenceRefusal, ExceptionalContinuation, ExecutionEvidence, ExecutionFrontier,
     ExecutionProofCore, ExecutionRegionKind, FrontierPosition, LoopControlExit,
-    OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
+    OpenedContractEntry, OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
     RejectedResourceRewriteFact, ResourceRewriteCheckError, UnestablishedInterfaceGoal,
     checked_branch_fact_is_available, old_reference_state, take_unestablished_interface_goal,
 };
