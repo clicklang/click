@@ -4280,3 +4280,77 @@ fn range_fold_surface_separates_integer_and_machine_binder_ids() {
     assert!(folds::binder_name(true, id).is_none());
     assert!(folds::binder_name(false, id).is_none());
 }
+
+#[test]
+fn common_match_surface_preserves_written_binders_and_relowers_nested_results() {
+    use crate::kernel::{AlgebraicValueType, KernelMatch};
+    let _session = crate::kernel::VerificationSession::enter();
+    let scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(CType::Int32)]);
+    let algebraic_values = BTreeMap::from([(
+        "payload".to_string(),
+        crate::kernel::SpecAlgebraicExpression {
+            algebraic_type: scrutinee.algebraic_type.clone(),
+            node: crate::kernel::SpecAlgebraicExpressionNode::Variable(Variable(991900)),
+        },
+    )]);
+    let values = BTreeMap::from([
+        (
+            "payload".to_string(),
+            CValue::Parameter(Box::new(scrutinee.clone())),
+        ),
+        (
+            "n".to_string(),
+            CValue::Int32(MachineTerm::Variable(Variable(991951))),
+        ),
+    ]);
+    let state = CState::new()
+        .with_local("payload", CValue::Parameter(Box::new(scrutinee)))
+        .with_local("n", CValue::Int32(MachineTerm::Variable(Variable(991951))));
+    let declarations = "spec enum MatchScope { Arm(int32) }";
+    for requirement in [
+        "(match payload { MatchScope::Arm(item) => item }) == 0",
+        "(match payload { MatchScope::Arm(item) => to_integer(item) }) == to_integer(0)",
+        "(match payload { MatchScope::Arm(item) => MatchScope::Arm(item ^ 1) }) == payload",
+        "(match payload { MatchScope::Arm(item) => MatchScope::Arm(item) }) == payload",
+        "(match payload { MatchScope::Arm(item) => (0..n).fold(item, |acc, index| { acc }) }) == 0",
+        "(0..n).fold(0, |acc, index| { match payload { MatchScope::Arm(item) => acc } }) == 0",
+    ] {
+        let source = format!(
+            "{declarations} theorem probe(payload: MatchScope, n: int32) {{ requires {requirement}; ensures true; }}"
+        );
+        let file = parser::parse(&source).unwrap();
+        let lower = |proposition: &ClickProposition| {
+            crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+            SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::with_algebraic_types(file.click_function_definitions(), file.algebraic_type_definitions())),
+            FixedStateLoweringOptions { algebraic_values: Some(&algebraic_values), ..Default::default() },
+        ).unwrap().0
+        };
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!()
+        };
+        let original = lower(written);
+        let spelled =
+            synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+                .unwrap_or_else(|| panic!("match spelling: {original:?}"));
+        let text = crate::surface::printing::source_click_proposition(&spelled);
+        if text.contains("match ") {
+            assert!(text.contains("Arm(item)"), "{requirement}: {text}");
+        }
+        assert!(!text.contains('\0'));
+        let parsed = parser::parse(&format!(
+        "{declarations} theorem probe(payload: MatchScope, n: int32) {{ requires {text}; ensures true; }}"
+    ))
+    .unwrap();
+        let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!()
+        };
+        let repeated = lower(written);
+        assert!(
+            crate::kernel::proof::propositions_are_alpha_equal(&original, &repeated),
+            "{original:?} vs {repeated:?}"
+        );
+    }
+}

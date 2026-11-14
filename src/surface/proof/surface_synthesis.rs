@@ -13,6 +13,7 @@ use crate::kernel::{
 mod tests;
 
 mod folds;
+mod matches;
 
 use crate::kernel::c_local_source_name as surface_local_name;
 
@@ -2201,7 +2202,9 @@ fn synthesize_surface_bool(
     match condition {
         ConditionTerm::Constant(value) => Some(bool_literal(*value)),
         ConditionTerm::Variable(variable) => {
-            if let Some(name) = bound_variables.get(variable) {
+            if let Some(name) = folds::binder_name(false, *variable)
+                .or_else(|| bound_variables.get(variable).cloned())
+            {
                 return Some(ContractExpression::Binding(name.clone()));
             }
             synthesize_surface_bitvector(
@@ -3231,11 +3234,15 @@ pub(super) fn raise_kernel_term(
         }
         Node::Legacy(legacy) => match legacy.value() {
             crate::kernel::PureFunctionArgument::Integer(value) => {
-                let fold = crate::kernel::KernelFold::import_integer(
-                    &mut crate::kernel::KernelTermImport::default(),
-                    value,
-                )?;
-                folds::raise_fold(&fold, parameter_binding, state, bound_variables)?
+                let mut import = crate::kernel::KernelTermImport::default();
+                if let Some(matched) =
+                    crate::kernel::KernelMatch::import_integer(&mut import, value)
+                {
+                    matches::raise_match(&matched, parameter_binding, state, bound_variables)?
+                } else {
+                    let fold = crate::kernel::KernelFold::import_integer(&mut import, value)?;
+                    folds::raise_fold(&fold, parameter_binding, state, bound_variables)?
+                }
             }
             value => {
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
@@ -4701,7 +4708,9 @@ fn synthesize_surface_bitvector(
             let term = crate::kernel::KernelTerm::integer_to_machine(*destination, operand).ok()?;
             raise_kernel_term(&term, parameter_binding, state, bound_variables)
         }
-        MachineTerm::AlgebraicMatch { .. } => None,
+        MachineTerm::AlgebraicMatch { .. } => {
+            matches::raise_machine_match(term, parameter_binding, state, bound_variables)
+        }
     }
 }
 
@@ -5563,7 +5572,8 @@ fn synthesize_surface_pointer(
     // A pointer a proof binder names, such as a match arm's payload.
     if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
         (&pointer.block, &pointer.offset)
-        && let Some(name) = bound_variables.get(variable)
+        && let Some(name) =
+            folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
         return Some(CExpression::Variable(name.clone()));
     }
@@ -6084,7 +6094,20 @@ fn synthesize_surface_algebraic(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("algebraic")?;
+    if let crate::kernel::AlgebraicTermNode::Variable(variable) = &term.node
+        && let Some(name) = folds::scoped_binder_name(folds::BinderCarrier::Algebraic, *variable)
+    {
+        return Some(SurfaceTerm::Binding(name));
+    }
     match &term.node {
+        crate::kernel::AlgebraicTermNode::Match { .. } => {
+            let matched = crate::kernel::KernelMatch::import_algebraic(
+                &mut crate::kernel::KernelTermImport::default(),
+                term,
+            )?;
+            matches::raise_match(&matched, parameter_binding, state, bound_variables)
+        }
+
         crate::kernel::AlgebraicTermNode::Variable(variable)
             if let Some(name) = bound_variables.get(variable) =>
         {

@@ -298,7 +298,7 @@ Surface support are ready. The three focused payload tests and the full
 scaling selection (1,566 tests) pass.
 
 
-6i ([PR #2744](https://github.com/clicklang/click/pull/2744)) prepares scoped variable readers, current-memory dependency collection and
+6i ([PR #2744](https://github.com/clicklang/click/pull/2744), merged) prepares scoped variable readers, current-memory dependency collection and
 capture-safe rewriting for common match payloads. Each arm keeps its typed
 binding scope; the scrutinee remains outside it. Readers preserve the distinct
 native free-variable, connection, capture and binder-collection policies.
@@ -315,7 +315,7 @@ related match, fold, rewrite and variable-collection selection passes all 2,111
 tests on this implementation.
 
 
-6j prepares checked constructor reduction and machine alpha identity for common
+6j ([PR #2745](https://github.com/clicklang/click/pull/2745), merged) prepares checked constructor reduction and machine alpha identity for common
 match payloads. Native and common reducers share typed field substitution,
 including duplicate-binder refusal, pointer evidence and simultaneous capture-safe
 replacement. Symbolic scrutinees do not reduce. Machine arm keys use the same
@@ -323,6 +323,17 @@ borrowed native/common child walker; unsupported Integer and algebraic match key
 remain unsupported. Reduction and identity retain shared machine bodies rather
 than exporting native expression trees. All 1,957 tests in the full scaling and
 related match, rewrite and fact-key selection pass, including five new checks.
+
+
+6k prepares common match spelling through the existing Surface `match` form.
+Ordered arms retain typed C, Integer and algebraic scopes, including nested
+folds; written binder names are preferred and conflicting names are freshened.
+Common machine bodies raise directly. Private binder markers are finalized
+once across the selected output, with arithmetic traversed iteratively to
+avoid the reproduced stack overflow on a 128-node match body. This changes
+neither language syntax nor evaluator reduction policy. All 2,100 tests in the
+full scaling and related Surface, match, fold and substitution selection pass,
+including six print/parse/lower round trips and typed-field scope checks.
 
 ## Chunk 5: execution value handoffs
 

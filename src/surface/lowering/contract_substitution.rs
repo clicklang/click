@@ -637,7 +637,14 @@ fn prepare_contract_match_arm(
             body: substitute_contract_expression_in(&arm.body, substitutions)?,
             type_name: arm.type_name.clone(),
             variant: arm.variant.clone(),
-            bindings: arm.bindings.clone(),
+            bindings: arm
+                .bindings
+                .iter()
+                .map(|name| match substitutions.value(name) {
+                    Some(ContractExpression::Binding(name)) => name.clone(),
+                    _ => name.clone(),
+                })
+                .collect(),
         });
     }
     let mut shadowed = substitutions.clone();
@@ -4908,21 +4915,29 @@ mod tests {
 /// Resolve private synthesis markers in one pass over the selected output.
 /// Targets avoid every referenced and declared name, so this pass cannot
 /// capture a user binding and need not rescan each nested binder's body.
-pub(in crate::surface) fn name_synthesized_fold_binders(
+pub(in crate::surface) fn name_synthesized_binders(
     expression: &ContractExpression,
-    markers: &[String],
+    markers: &[(String, Option<String>)],
 ) -> Result<ContractExpression, String> {
     let mut used = BTreeSet::new();
     collect_contract_expression_referenced_names(expression, &mut used);
     collect_contract_expression_binding_names(expression, &mut used);
     let mut values = BTreeMap::new();
     let mut next = 0usize;
-    for marker in markers {
-        let name = loop {
-            let candidate = format!("__click_binder_{next}");
-            next += 1;
-            if used.insert(candidate.clone()) {
-                break candidate;
+    for (marker, preferred) in markers {
+        let preferred = preferred
+            .as_ref()
+            .filter(|name| !name.is_empty() && !used.contains(*name));
+        let name = if let Some(name) = preferred {
+            used.insert(name.clone());
+            name.clone()
+        } else {
+            loop {
+                let candidate = format!("__click_binder_{next}");
+                next += 1;
+                if used.insert(candidate.clone()) {
+                    break candidate;
+                }
             }
         };
         values.insert(marker.clone(), ContractExpression::Binding(name));
@@ -4939,6 +4954,7 @@ fn substitute_fresh_synthesis_expression(
     enum Task<'a> {
         Visit(&'a ContractExpression),
         Fold(&'a str, &'a str),
+        Binary(fn(Box<ContractExpression>, Box<ContractExpression>) -> ContractExpression),
     }
     let mut pending = vec![Task::Visit(expression)];
     let mut values = Vec::new();
@@ -4963,6 +4979,46 @@ fn substitute_fresh_synthesis_expression(
                     ]
                     .map(Task::Visit),
                 );
+            }
+            Task::Visit(expression @ ContractExpression::Add(left, right))
+            | Task::Visit(expression @ ContractExpression::Subtract(left, right))
+            | Task::Visit(expression @ ContractExpression::Multiply(left, right))
+            | Task::Visit(expression @ ContractExpression::Divide(left, right))
+            | Task::Visit(expression @ ContractExpression::Remainder(left, right))
+            | Task::Visit(expression @ ContractExpression::ShiftLeft(left, right))
+            | Task::Visit(expression @ ContractExpression::RustShiftLeft(left, right))
+            | Task::Visit(expression @ ContractExpression::ShiftRight(left, right))
+            | Task::Visit(expression @ ContractExpression::RustShiftRight(left, right))
+            | Task::Visit(expression @ ContractExpression::BitwiseAnd(left, right))
+            | Task::Visit(expression @ ContractExpression::BitwiseOr(left, right))
+            | Task::Visit(expression @ ContractExpression::BitwiseXor(left, right)) => {
+                crate::instrumentation::record_deterministic_work(1);
+                let construct: fn(
+                    Box<ContractExpression>,
+                    Box<ContractExpression>,
+                ) -> ContractExpression = match expression {
+                    ContractExpression::Add(..) => ContractExpression::Add,
+                    ContractExpression::Subtract(..) => ContractExpression::Subtract,
+                    ContractExpression::Multiply(..) => ContractExpression::Multiply,
+                    ContractExpression::Divide(..) => ContractExpression::Divide,
+                    ContractExpression::Remainder(..) => ContractExpression::Remainder,
+                    ContractExpression::ShiftLeft(..) => ContractExpression::ShiftLeft,
+                    ContractExpression::RustShiftLeft(..) => ContractExpression::RustShiftLeft,
+                    ContractExpression::ShiftRight(..) => ContractExpression::ShiftRight,
+                    ContractExpression::RustShiftRight(..) => ContractExpression::RustShiftRight,
+                    ContractExpression::BitwiseAnd(..) => ContractExpression::BitwiseAnd,
+                    ContractExpression::BitwiseOr(..) => ContractExpression::BitwiseOr,
+                    ContractExpression::BitwiseXor(..) => ContractExpression::BitwiseXor,
+                    _ => unreachable!(),
+                };
+                pending.push(Task::Binary(construct));
+                pending.push(Task::Visit(right));
+                pending.push(Task::Visit(left));
+            }
+            Task::Binary(construct) => {
+                let right = values.pop().unwrap();
+                let left = values.pop().unwrap();
+                values.push(construct(Box::new(left), Box::new(right)));
             }
             Task::Visit(expression) => {
                 crate::instrumentation::record_deterministic_work(1);
