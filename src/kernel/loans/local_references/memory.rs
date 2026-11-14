@@ -13,6 +13,11 @@ use crate::kernel::{ExecutionState, PointerValue};
 pub(in crate::kernel) struct LocalScalarReference(LocalReferenceId);
 
 impl LocalScalarReference {
+    #[cfg(test)]
+    pub(in crate::kernel) fn fresh_for_payload_test() -> Self {
+        Self(LocalReferenceId::fresh().expect("test reference identity"))
+    }
+
     pub(in crate::kernel) fn id(&self) -> LocalReferenceId {
         self.0
     }
