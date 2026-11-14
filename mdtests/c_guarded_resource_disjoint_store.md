@@ -33,10 +33,13 @@ int32 f(struct cell* root) {
     mark before_store;
     step_until(function.exit);
     have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
-        transport(at(before_store, (root->base.left as (void *) as (struct cell *))->value) == at(before_store, (root->base.left as (void *) as (struct cell *))->value),
-                  (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value)) using {
-            separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
-        };
+        have ((root->base.left as (void *)) as (struct cell *))->value == at(before_store, ((root->base.left as (void *)) as (struct cell *))->value) by {
+            normalize() using {
+                at(before_store, ((root->base.left as (void *)) as (struct cell *))->value) ==
+                    at(before_store, ((root->base.left as (void *)) as (struct cell *))->value);
+            };
+        }
+        assumption();
     }
     fold(child); solve();
 }

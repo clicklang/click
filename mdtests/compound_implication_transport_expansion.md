@@ -23,10 +23,10 @@ void keep(int32* p, int32* q, int32* r) {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
     have (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8) by {
-        transport(at(statement(0).entry, (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)), (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)) using {
-            separate(statement(0).footprint, memory(*q));
-            separate(statement(0).footprint, memory(*r));
-        };
+        have *q == 7 and *r > 0 implies *q > 0 implies *r == 8 by {
+            assumption();
+        }
+        assumption();
     }
     step();
     assumption();

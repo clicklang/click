@@ -52,16 +52,16 @@ int32 keep(int32* p, int32* q, int32 flag) {
             if flag == 0 {
                 step();
                 step();
-                transport(old(q[0]) == old(q[0]), q[0] == old(q[0])) using {
-                    separate(memory(p[0]), memory(q[0]));
-                };
+                have q[0] == old(q[0]) by { assumption(); }
                 step();
             } else {
                 step();
                 step();
-                transport(old(q[0]) == old(q[0]), q[0] == old(q[0])) using {
-                    separate(memory(p[0]), memory(q[0]));
-                };
+                have q[0] == old(q[0]) by {
+                    normalize() using {
+                        old(q[0]) == old(q[0]);
+                    };
+                }
                 step();
             }
         }

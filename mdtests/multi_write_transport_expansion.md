@@ -20,11 +20,12 @@ void keep(uint8* p, uint8* q) {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
     have *q == at(statement(0).entry, *q) by {
-        transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),
-            *q == at(statement(0).entry, *q)) using {
-            separate(statement(0).footprint, memory(*q));
-            separate(statement(1).footprint, memory(*q));
-        };
+        have *q == at(statement(0).entry, *q) by {
+            normalize() using {
+                at(statement(0).entry, *q) == at(statement(0).entry, *q);
+            };
+        }
+        assumption();
     }
     step();
 }

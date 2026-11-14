@@ -1,4 +1,4 @@
-# Literal transport does not invoke the read-preservation axiom
+# Literal equality needs no read-preservation axiom
 
 ```c filename=keep.c
 void keep(unsigned char *p, unsigned char *q) { *p = 0; }
@@ -16,10 +16,7 @@ void keep(uint8* p, uint8* q) {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
     have 1 == at(statement(0).entry, 1) by {
-        transport(at(statement(0).entry, 1) == at(statement(0).entry, 1),
-            1 == at(statement(0).entry, 1)) using {
-            separate(statement(0).footprint, memory(*q));
-        };
+        normalize();
     }
     step();
 }

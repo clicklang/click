@@ -172,40 +172,42 @@ contracts, or resource shapes.
 
 ## Remaining transport expansion inventory
 
-This is an evidence inventory, not a count of dispatcher arms or slow walks.
-Expansion probes were run with a production CLI built at `c226e007d` (merged
-in PR #2735); corpus counts were taken at `61b85bca0`. No verifier behavior
-was changed for this audit. Successful `click expand --claim` probes below
-also passed the CLI's replay with the implicit closer disabled.
+The remaining work is written-proof migration followed by syntax and dispatcher
+retirement. Counts are syntax sites, not independent slow walks or a claim that
+every fixture currently verifies.
 
 ### Written syntax is a separate migration
 
-[`normalize_using_transported_int32_loads.md`](../mdtests/normalize_using_transported_int32_loads.md)
-passes and its full `write_other.contract` expansion retains
-`transport(at(entry, p[i]) == at(entry, p[i]), p[i] == at(entry, p[i])) using { i != k; }`.
-That operation is **already written in the input**. It demonstrates a surviving
-legacy consumer, not a smart tactic generating a new transport.
+[`heap_pointer_field_keeps_target_identity.md`](../mdtests/heap_pointer_field_keeps_target_identity.md)
+still contains written `transport(at(stored, defined(h->target)),
+defined(h->target)) using { ... }`. Current initializedness must be established
+with explicit ordinary steps before removing that consumer.
 
-A balanced-parenthesis text scan for `transport(...)` followed by `using {`
-found the following written sites. The scan covers `.click` files and Click
-fences in Markdown, excludes prose and Rust test strings, and is a syntax
-inventory rather than a proof-reachability claim.
+A balanced-parenthesis scan of `.click` files and Click fences in Markdown,
+excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 167 | 238 |
+| `mdtests/` | 119 | 178 |
 | `examples/` | 35 | 403 |
 | `library/` | 0 | 0 |
-| Total | 202 | 641 |
+| Total | 154 | 581 |
 
-Of those 167 mdtest files, 62 have failure expectations. They must retain their
-refusal coverage when rewritten; they are not 62 successful legacy proofs.
-Migrate written sites alongside each semantic fix where possible. A final
-corpus pass and syntax/dispatcher deletion are distinct from these generated forms.
+The 62 mdtests with failure expectations still require migration while retaining
+their semantic refusals. Positive fixtures also need full-file verification:
+selected-tactic expansion verifies a prefix, so it does not establish that the
+rewritten proof's remaining suffix closes. Remaining groups include historical
+initializedness, computed range bounds, loop frames, and call preservation.
+The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Excluded or still unconfirmed
 
 Do not count these as additional confirmed generated-output families:
+
+- `named_root_call_preserves_aliased_pointer_field` reaches its unchanged
+  deterministic smart-work limit while proving `cursor->left == rid` after the
+  helper call. Repair that proof explicitly before migrating its written sites;
+  a successful expansion prefix is not a passing whole-fixture regression.
 
 - Computed lower endpoint `p[index + 1..length]`, nested upper endpoint
   `p[index..index + 1 + 1]`, and native upper endpoint

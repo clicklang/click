@@ -48,10 +48,12 @@ int read_saved(struct Box *box) {
         normalize() using { box->start == k; box->p == at(before, box->p); };
     }
     have box->p[box->start] == 22 by {
-        transport(at(before, box->p)[k] == 22, box->p[box->start] == 22) using {
-            at(before, box->p)[k] == 22;
-            box->p + box->start == at(before, box->p) + k;
-        };
+        have box->p[box->start] == 22 by {
+            rewrite(22 == at(before, box->p)[k]);
+            rewrite((box->p + box->start) == (at(before, box->p) + k));
+            normalize();
+        }
+        assumption();
     }
     let r = fold(region(box), { start: k, end: e });
     step();

@@ -15,7 +15,7 @@ verifying "one-view.c";
 int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
  step_until(loop(0));
  have chunk == bytes;
- have viewable(bytes[0..4]) by { transport(at(function.entry,viewable(bytes[0..4])),viewable(bytes[0..4])) using { at(function.entry,viewable(bytes[0..4])); 0 <= 4; }; }
+ have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
  have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
  loop {
  decreases inner;
@@ -25,7 +25,8 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant bytes == old(bytes);
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
- have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
+ have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
+ have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
   }
  }
 }
@@ -33,7 +34,7 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
 int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
  step_until(loop(0));
  have chunk == bytes;
- have viewable(bytes[0..4]) by { transport(at(function.entry,viewable(bytes[0..4])),viewable(bytes[0..4])) using { at(function.entry,viewable(bytes[0..4])); 0 <= 4; }; }
+ have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
  have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
  loop {
  decreases inner;
@@ -43,7 +44,8 @@ int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant bytes == old(bytes);
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
- have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
+ have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
+ have viewable(chunk[0..4]) by { rewrite(chunk == bytes); assumption(); }
   }
  }
 }

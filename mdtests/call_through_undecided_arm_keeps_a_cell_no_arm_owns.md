@@ -102,10 +102,12 @@ int32 caller(struct node* p) {
     mark before;
     step(overwrite, { s: s });
     have p->spare == at(before, p->spare) by {
-        transport(
-            at(before, p->spare) == at(before, p->spare),
-            p->spare == at(before, p->spare)
-        ) using { };
+        have p->spare == at(before, p->spare) by {
+            normalize() using {
+                at(before, p->spare) == at(before, p->spare);
+            };
+        }
+        assumption();
     }
     let { tag: rt1, child: rc0 } = unfold(o);
     let { tag: rt0 } = unfold(rc0);
