@@ -110,6 +110,10 @@ struct BlockInterner {
 }
 impl SharedPointerBlock {
     pub(crate) fn import(block: &PointerBlock) -> Self {
+        Self::import_with_upkeep(block, false)
+    }
+
+    fn import_with_upkeep(block: &PointerBlock, producer: bool) -> Self {
         if matches!(
             block,
             PointerBlock::Symbolic(_)
@@ -132,22 +136,28 @@ impl SharedPointerBlock {
             .lock()
             .expect("block arena");
         let key = ExactBlock::new(block);
-        if let Some(node) = arena.nodes.get(&key).and_then(Weak::upgrade) {
-            return Self(BlockStorage::Interned(node));
-        }
-        // Existing live atoms add no entries. Keep bounded cleanup on insertion.
-        crate::instrumentation::record_deterministic_work(8);
-        for _ in 0..arena.cleanup.len().min(8) {
-            let key = arena.cleanup.pop_front().unwrap();
-            if arena
-                .nodes
-                .get(&key)
-                .is_some_and(|node| node.strong_count() == 0)
-            {
-                arena.nodes.remove(&key);
-            } else {
-                arena.cleanup.push_back(key);
+        let live = arena.nodes.get(&key).and_then(Weak::upgrade);
+        // A new pointer producer advances bounded arena upkeep, even when its
+        // named block is already live. Later descriptor imports reuse live
+        // components without upkeep. Admission therefore has the same work
+        // whether another verification previously used this block spelling.
+        if producer || live.is_none() {
+            crate::instrumentation::record_deterministic_work(8);
+            for _ in 0..arena.cleanup.len().min(8) {
+                let key = arena.cleanup.pop_front().unwrap();
+                if arena
+                    .nodes
+                    .get(&key)
+                    .is_some_and(|node| node.strong_count() == 0)
+                {
+                    arena.nodes.remove(&key);
+                } else {
+                    arena.cleanup.push_back(key);
+                }
             }
+        }
+        if let Some(node) = live {
+            return Self(BlockStorage::Interned(node));
         }
         let id = arena.next_id;
         arena.next_id = id.checked_add(1).expect("block identity exhausted");
@@ -187,6 +197,12 @@ impl SharedPointerAddress {
     pub(crate) fn import(pointer: &Pointer) -> Self {
         Self::new(
             SharedPointerBlock::import(&pointer.block),
+            KernelPointerOffset::import(&pointer.offset),
+        )
+    }
+    pub(crate) fn import_produced(pointer: &Pointer) -> Self {
+        Self::new(
+            SharedPointerBlock::import_with_upkeep(&pointer.block, true),
             KernelPointerOffset::import(&pointer.offset),
         )
     }

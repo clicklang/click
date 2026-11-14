@@ -101,6 +101,8 @@ pub enum KernelTermNode {
         address: SharedPointerAddress,
         kind: LoadKind,
     },
+    /// Complete formed pointer value with prepared address and metadata children.
+    PointerValue(SharedPointerValue),
     /// Complete pointer read result and its producer-retained definition.
     /// Access authority and read-over-write evidence remain outside the term.
     PointerRead {
@@ -1426,7 +1428,7 @@ impl KernelTermExport {
             KernelTermNode::Fold(fold) if term.ty() == &KernelType::Integer => {
                 PureFunctionArgument::Integer(fold.integer_compatibility(self)?.into())
             }
-            KernelTermNode::PointerRead { value, .. } => {
+            KernelTermNode::PointerRead { value, .. } | KernelTermNode::PointerValue(value) => {
                 PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
             }
             KernelTermNode::Legacy(value) => value.value().clone(),

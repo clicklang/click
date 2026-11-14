@@ -131,7 +131,7 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
-            KernelTermNode::PointerRead { value, .. } => {
+            KernelTermNode::PointerRead { value, .. } | KernelTermNode::PointerValue(value) => {
                 super::retained_pointers::collect_pointer_variables(
                     value,
                     mode,

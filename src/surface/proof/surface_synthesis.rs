@@ -3270,11 +3270,11 @@ pub(super) fn raise_kernel_term(
                 }],
             }
         }
-        Node::PointerRead { value, .. } => {
+        Node::PointerRead { value, .. } | Node::PointerValue(value) => {
             if let Some(name) = pointer_names::shared_name(value) {
                 SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name))
             } else {
-                synthesize_surface_value(term.pointer_read_native()?, parameter_binding, state)?
+                synthesize_surface_value(term.pointer_native()?, parameter_binding, state)?
             }
         }
         Node::Legacy(legacy) => match legacy.value() {
