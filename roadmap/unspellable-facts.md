@@ -351,6 +351,11 @@ object checks. Builtin/thread argument descriptors remain explicit native adapte
 aggregate copy binding is unchanged. Return conversion and physical memory cells
 remain the next two boundaries.
 
+7s retains complete pointers through return coercion, scalar contract-result
+bindings and caller result assignment. Modular pointer results enter the common
+carrier at their final handoff. Existing const-drop refusals, declared qualifiers,
+object-type metadata and aggregate-return ABI/copy behavior remain unchanged.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
