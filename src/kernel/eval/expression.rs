@@ -3514,10 +3514,14 @@ fn read_retained_lvalue_paths_without_ranges(
                                     }
                                     value => value.clone(),
                                 };
-                                native
+                                let native = native
                                     .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
-                                    .with_pointer_pointee_constant(lvalue.pointee_is_constant())
-                                    .into()
+                                    .with_pointer_pointee_constant(lvalue.pointee_is_constant());
+                                if native.program_type().is_pointer() {
+                                    value.retain_checked_pointer(native)
+                                } else {
+                                    native.into()
+                                }
                             };
                         ExpressionOutcome::Value(value)
                     }

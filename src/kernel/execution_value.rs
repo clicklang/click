@@ -108,6 +108,44 @@ impl ExecutionValue {
         }
     }
 
+    pub(in crate::kernel) fn with_pointer_binding(
+        self,
+        program_type: ProgramType,
+        volatile: bool,
+        constant: bool,
+    ) -> Self {
+        if let Self::Shared(root) = &self
+            && let Some(pointer) = root.pointer_payload()
+        {
+            return root
+                .with_pointer_payload(pointer.with_binding_type_and_qualifiers(
+                    program_type,
+                    volatile,
+                    constant,
+                ))
+                .into();
+        }
+        Self::retain_formed_pointer(
+            self.into_native()
+                .retag_pointer(program_type)
+                .with_pointer_pointee_volatile(volatile)
+                .with_pointer_pointee_constant(constant),
+        )
+    }
+
+    /// Preserve the selected producer after an existing native conversion or
+    /// entry-metadata operation. A changed address/type forms a new value.
+    pub(in crate::kernel) fn retain_checked_pointer(&self, value: ProgramValue) -> Self {
+        if let (Some(root), ProgramValue::Pointer(pointer)) = (self.shared(), &value) {
+            return root.refined_pointer_argument(pointer).into();
+        }
+        if value.program_type().is_pointer() {
+            Self::retain_formed_pointer(value)
+        } else {
+            value.into()
+        }
+    }
+
     /// Retain one selected operand before crossing a native checking boundary.
     pub(in crate::kernel) fn common_operand(&self) -> KernelTerm {
         match self {
@@ -226,6 +264,7 @@ enum StoredIdentity<'a> {
 impl StoredExecutionValue {
     fn identity(&self) -> StoredIdentity<'_> {
         match self.0.identity.get_or_init(|| match &self.0.value {
+            ExecutionValue::Shared(root) if root.pointer_payload().is_some() => None,
             ExecutionValue::Shared(root) => Some(
                 SharedMachineIntegerTerm::observe_shared(
                     MachineIntegerType::from_program_type(self.program_type())
@@ -269,10 +308,9 @@ impl std::ops::Deref for StoredExecutionValue {
 }
 impl From<ExecutionValue> for StoredExecutionValue {
     fn from(value: ExecutionValue) -> Self {
-        let value = if value
-            .shared()
-            .is_some_and(|root| !root.is_shared_machine_operand())
-        {
+        let value = if value.shared().is_some_and(|root| {
+            !root.is_shared_machine_operand() && root.pointer_payload().is_none()
+        }) {
             ExecutionValue::Native(value.into_native())
         } else {
             value
@@ -346,6 +384,81 @@ mod tests {
         assert_eq!(hash(&native), hash(&shared));
         assert_eq!(shared.shared(), Some(&root));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn pointer_local_storage_retains_root_and_native_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1027000)),
+            ProgramType::Int32Pointer,
+        );
+        let root = KernelTerm::shared_pointer_call(
+            KernelTerm::checked_call(
+                KernelType::Program(ProgramType::Int32Pointer),
+                "local_source".into(),
+                vec![],
+            ),
+            SharedPointerValue::import(&pointer),
+        );
+        let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+        let native = StoredExecutionValue::from(ProgramValue::Pointer(pointer.clone()));
+        assert_eq!(stored, native);
+        assert_eq!(stored.cmp(&native), std::cmp::Ordering::Equal);
+        let hash = |value: &StoredExecutionValue| {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut h);
+            h.finish()
+        };
+        assert_eq!(hash(&stored), hash(&native));
+        assert_eq!(stored.shared(), Some(&root));
+        let mut state = ExecutionState::new();
+        state.locals.set_retained_typed_with_all_qualifiers(
+            "p",
+            stored,
+            ProgramType::Int32Pointer,
+            false,
+            false,
+            false,
+            false,
+        );
+        assert_eq!(state.locals.get("p").unwrap().shared(), Some(&root));
+        for (volatile, constant) in [(false, true), (true, true), (true, false), (false, false)] {
+            let value = ExecutionValue::Shared(root.clone()).with_pointer_binding(
+                ProgramType::Int32Pointer,
+                volatile,
+                constant,
+            );
+            assert!(matches!(
+                value.shared().unwrap().node(),
+                KernelTermNode::PointerCall { .. }
+            ));
+            let expected = pointer
+                .clone()
+                .with_pointee_volatile(volatile)
+                .with_pointee_constant(constant);
+            assert!(
+                value
+                    .shared()
+                    .unwrap()
+                    .pointer_payload()
+                    .unwrap()
+                    .same_source_payload(&SharedPointerValue::import(&expected))
+            );
+            assert_eq!(value.pointer().unwrap().pointee_constant(), constant);
+            assert_eq!(value.pointer().unwrap().pointee_volatile(), volatile);
+        }
+        let retagged = ExecutionValue::Shared(root).with_pointer_binding(
+            ProgramType::VoidPointer,
+            false,
+            false,
+        );
+        assert_eq!(retagged.program_type(), ProgramType::VoidPointer);
+        assert!(matches!(
+            retagged.shared().unwrap().node(),
+            KernelTermNode::PointerValue { .. }
+        ));
     }
 
     #[test]

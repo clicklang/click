@@ -343,6 +343,14 @@ conditionals and selected constructor-match arms. Equal pointer arms keep the
 existing complete left payload, including when one input is still native.
 Branch facts, guarded obligations and unsupported pointer-match refusals are unchanged.
 
+7r retains complete pointer roots in local storage, assignment, lookup and
+ordinary execution-call argument paths. Stored equality/hash/order keep native
+pointer identity; declaration qualifiers and entry metadata retain their existing
+rules. Callee bindings retain the selected producer after native conversion and
+object checks. Builtin/thread argument descriptors remain explicit native adapters;
+aggregate copy binding is unchanged. Return conversion and physical memory cells
+remain the next two boundaries.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
