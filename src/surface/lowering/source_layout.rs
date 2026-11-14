@@ -100,6 +100,12 @@ struct SourceExecutionLayoutData {
     call_targets: BTreeMap<usize, String>,
     /// The regions that are a loop's own test, `loop(i).test()`.
     loop_tests: BTreeSet<usize>,
+    /// The number of each region that is a call inside an expression: its
+    /// result is the state's call result of that number while its statement
+    /// runs.
+    call_numbers: BTreeMap<usize, u32>,
+    /// The region of each call step, by its number.
+    call_regions: BTreeMap<u32, usize>,
     /// The local each call region assigns its result to, for
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
@@ -204,7 +210,10 @@ fn expression_reads(expression: &CExpression) -> bool {
             crate::kernel::binary_c_expression!(a, b) => {
                 pending.extend([(a.as_ref(), true), (b.as_ref(), true)])
             }
-            CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+            CExpression::Value(_)
+            | CExpression::Variable(_)
+            | CExpression::FunctionAddress(_)
+            | CExpression::CallResult { .. } => {}
         }
     }
     false
@@ -234,9 +243,9 @@ fn kernel_statement_reads(statement: &CStatement) -> bool {
         | CStatement::HeapFree {
             pointer: expression,
         } => expression_reads(expression),
-        CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. } => {
-            arguments.iter().any(expression_reads)
-        }
+        CStatement::Call { arguments, .. }
+        | CStatement::CallAssign { arguments, .. }
+        | CStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
         CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
             expression_reads(pointer) || expression_reads(value)
         }
@@ -614,8 +623,13 @@ impl SourceExecutionLayout {
             if let syntax::C0Statement::LoopTest { .. } = statement {
                 layout.loop_tests.insert(index);
             }
+            if let syntax::C0Statement::CallResult { call, .. } = statement {
+                layout.call_numbers.insert(index, *call);
+                layout.call_regions.insert(*call, index);
+            }
             if let syntax::C0Statement::CallAssign { function_name, .. }
-            | syntax::C0Statement::Call { function_name, .. } = statement
+            | syntax::C0Statement::Call { function_name, .. }
+            | syntax::C0Statement::CallResult { function_name, .. } = statement
             {
                 layout.call_targets.insert(
                     index,
@@ -1026,6 +1040,16 @@ impl SourceExecutionLayout {
         self.data.call_results.get(&region).map(String::as_str)
     }
 
+    /// The number of the call inside an expression that `region` is.
+    pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {
+        self.data.call_numbers.get(&region).copied()
+    }
+
+    /// The region of the call step numbered `call`.
+    pub(in crate::surface) fn call_region(&self, call: u32) -> Option<usize> {
+        self.data.call_regions.get(&call).copied()
+    }
+
     /// The local receiving a fresh allocation, rather than an arbitrary
     /// call result that may alias an allocation introduced elsewhere.
     pub(in crate::surface) fn allocation_result_local(&self, region: usize) -> Option<&str> {
@@ -1382,7 +1406,9 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Variable(name) => {
             names.insert(name.clone());
         }
@@ -1911,6 +1937,8 @@ mod source_execution_layout_tests {
                 source_statements: BTreeMap::new(),
                 call_targets: BTreeMap::new(),
                 loop_tests: BTreeSet::new(),
+                call_numbers: BTreeMap::new(),
+                call_regions: BTreeMap::new(),
                 call_results: BTreeMap::new(),
                 allocation_regions: BTreeSet::new(),
                 temporary_call_regions: BTreeMap::new(),

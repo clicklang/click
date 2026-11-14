@@ -1171,7 +1171,8 @@ impl<'a> Proof<'a> {
             // one successor, as the kernel's call has, even inside a `try`:
             // a destructible local's unwind cleanup wraps every call.
             if let CStatement::Call { function_name, .. }
-            | CStatement::CallAssign { function_name, .. } = &statement
+            | CStatement::CallAssign { function_name, .. }
+            | CStatement::CallResult { function_name, .. } = &statement
             {
                 return Ok(context
                     .function_environment

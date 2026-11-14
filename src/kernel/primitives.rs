@@ -3723,6 +3723,12 @@ pub enum CExpression {
         variant: String,
         index: usize,
     },
+    /// The result of call `call` of this statement, which the statement's
+    /// own `CStatement::CallResult` step made: the term the call returned.
+    CallResult {
+        call: u32,
+        function_name: String,
+    },
     /// Whether an enum value is of variant `variant`, as a `bool`: the test
     /// a Rust `match` arm makes. An undecided test splits on the variant.
     EnumIs {
@@ -5380,6 +5386,19 @@ pub enum CStatement {
         target: String,
         function_name: String,
         arguments: Vec<CExpression>,
+    },
+    /// A call inside an expression of the statement that follows it: its
+    /// result is that statement's `CExpression::CallResult { call, .. }`,
+    /// never a variable of the program.
+    CallResult {
+        call: u32,
+        function_name: String,
+        arguments: Vec<CExpression>,
+        /// The callee's declared result type, which the result takes as an
+        /// assignment to a local of that type would; `None` keeps the
+        /// contract's own.
+        result_type: Option<CType>,
+        result_pointee_constant: bool,
     },
     Call {
         function_name: String,
@@ -10130,6 +10149,80 @@ pub struct CState {
     /// nothing — the outermost one — has nothing to collide with and keeps
     /// the plain spelling.
     pub(super) enclosing_frame_holds_locals: bool,
+    /// The results of the calls a statement makes inside its expressions,
+    /// by the call's number in its function, while that statement runs: the
+    /// call step sets one, the rest of the statement reads it, and the
+    /// statement's end drops what it read. `None` is the canonical state at
+    /// every statement boundary.
+    pub(crate) call_results: Option<Arc<BTreeMap<u32, CValue>>>,
+}
+
+impl CExpression {
+    /// Whether evaluating this expression reads a call's result.
+    pub(crate) fn reads_call_result(&self) -> bool {
+        match self {
+            CExpression::CallResult { .. } => true,
+            CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {
+                false
+            }
+            CExpression::EnumConstruct { fields, .. } => {
+                fields.iter().any(CExpression::reads_call_result)
+            }
+            CExpression::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                condition.reads_call_result()
+                    || then_branch.reads_call_result()
+                    || else_branch.reads_call_result()
+            }
+            CExpression::Cast { expression, .. }
+            | CExpression::FloatNegate(expression)
+            | CExpression::FloatClassification { expression, .. }
+            | CExpression::EnumField {
+                value: expression, ..
+            }
+            | CExpression::EnumIs {
+                value: expression, ..
+            }
+            | CExpression::BitwiseNot(expression)
+            | CExpression::AddressOf(expression)
+            | CExpression::CheckedObjectAddress(expression)
+            | CExpression::Not(expression)
+            | CExpression::Load(expression)
+            | CExpression::PointerOffsetBytes {
+                pointer: expression,
+                ..
+            }
+            | CExpression::Subobject {
+                pointer: expression,
+                ..
+            }
+            | CExpression::TypedLoad {
+                pointer: expression,
+                ..
+            } => expression.reads_call_result(),
+            crate::kernel::binary_c_expression!(left, right) => {
+                left.reads_call_result() || right.reads_call_result()
+            }
+        }
+    }
+}
+
+impl CState {
+    /// Records the term call `call` of the running statement returned.
+    pub(super) fn set_call_result(&mut self, call: u32, value: CValue) {
+        let mut results = self.call_results.as_deref().cloned().unwrap_or_default();
+        results.insert(call, value);
+        self.call_results = Some(Arc::new(results));
+    }
+
+    /// The term call `call` of the running statement returned, once its call
+    /// step has run.
+    pub(crate) fn call_result(&self, call: u32) -> Option<&CValue> {
+        self.call_results.as_ref()?.get(&call)
+    }
 }
 
 #[derive(Clone)]

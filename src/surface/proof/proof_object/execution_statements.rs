@@ -448,12 +448,14 @@ impl<'a> Proof<'a> {
     /// Plain `step()` bindings accept assignments; call bindings retain the
     /// explicit callee and binder-map path.
     ///
-    /// A call whose result is used in a condition or a return expression is
-    /// lowered as an assignment to one synthesized local, so naming that
-    /// local's post-call value is what gives a proof a surface name for the
-    /// result. A call in statement position discards its result and has no
-    /// such local; naming it is an error rather than a silent no-op.
-    fn frontier_result_local(&self, name: &String, assignment: bool) -> Result<String, ClickError> {
+    /// A call whose result the rest of its statement reads is a call step of
+    /// its own, and its result is that step's. A call in statement position
+    /// discards its result; naming it is an error rather than a silent no-op.
+    fn frontier_result_local(
+        &self,
+        name: &String,
+        assignment: bool,
+    ) -> Result<FrontierResult, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`step` requires an execution-frontier proof"));
         };
@@ -479,8 +481,11 @@ impl<'a> Proof<'a> {
             "step",
         )?;
         match statement {
-            CStatement::Assign { name, .. } if assignment => Ok(name),
-            CStatement::CallAssign { target, .. } if !assignment => Ok(target),
+            CStatement::Assign { name, .. } if assignment => Ok(FrontierResult::Local(name)),
+            CStatement::CallAssign { target, .. } if !assignment => {
+                Ok(FrontierResult::Local(target))
+            }
+            CStatement::CallResult { call, .. } if !assignment => Ok(FrontierResult::Call(call)),
             _ if assignment => Err(self.step_error(format!(
                 "`let {{ result: {name} }} = step()` requires a scalar assignment at the frontier"
             ))),
@@ -892,21 +897,22 @@ impl<'a> Proof<'a> {
         // bound as the proof-local value the surface name denotes from here on.
         let result_binding = match &result_target {
             Some((name, target)) => {
-                let value = checked
-                    .execution
-                    .core
-                    .state
-                    .locals()
-                    .get(target)
-                    .cloned()
-                    .ok_or_else(|| {
-                        self.step_error(format!(
-                            "`let {{ result: {name} }} = step(...)` found no assignment result"
-                        ))
-                    })?;
+                let state = &checked.execution.core.state;
+                let value = match target {
+                    FrontierResult::Local(target) => state
+                        .locals()
+                        .get(target)
+                        .map(|value| value.clone().into_native()),
+                    FrontierResult::Call(call) => state.call_result(*call).cloned(),
+                }
+                .ok_or_else(|| {
+                    self.step_error(format!(
+                        "`let {{ result: {name} }} = step(...)` found no assignment result"
+                    ))
+                })?;
                 Some((
                     name.clone(),
-                    ContractExpression::CFragment(CExpression::Value(value.into_native())),
+                    ContractExpression::CFragment(CExpression::Value(value)),
                 ))
             }
             None => None,
@@ -1138,6 +1144,11 @@ impl<'a> Proof<'a> {
                 arguments,
             }
             | CStatement::CallAssign {
+                function_name,
+                arguments,
+                ..
+            }
+            | CStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -2093,3 +2104,11 @@ thread_local! {
 mod driver;
 
 mod search;
+
+/// Where the statement at the frontier leaves the result a `step` binds.
+enum FrontierResult {
+    /// The local it assigns.
+    Local(String),
+    /// The result of this call step.
+    Call(u32),
+}

@@ -8,7 +8,9 @@ pub(in crate::surface) fn c_expression_uses_variable(
     variable: &str,
 ) -> bool {
     match expression {
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => false,
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => false,
         CExpression::Variable(name) => name == variable,
         CExpression::Cast { expression, .. } => c_expression_uses_variable(expression, variable),
         CExpression::FloatNegate(expression)

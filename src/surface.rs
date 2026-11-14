@@ -2833,7 +2833,9 @@ pub(crate) fn collect_c_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Variable(name) => {
             names.insert(name.clone());
         }
@@ -4192,8 +4194,9 @@ impl RecordedSnapshots {
 
     fn record_call_result(&mut self, index: usize, value: Option<CValue>) {
         crate::instrumentation::record_deterministic_work(1);
+        // A pointer-sized integer is named by its numeric value.
         if let Some(CValue::Bool(term) | crate::kernel::integer_c_value!(term)) =
-            self.call_results.get(&index)
+            self.call_results.get(&index).map(CValue::numeric_value)
         {
             self.call_result_points
                 .remove(&(crate::kernel::held_term_fingerprint(term), index));
@@ -4205,7 +4208,9 @@ impl RecordedSnapshots {
         }
         self.call_results.remove(&index);
         if let Some(value) = value.filter(|value| *value != CValue::Void) {
-            if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) = &value {
+            if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) =
+                value.numeric_value()
+            {
                 self.call_result_points
                     .insert((crate::kernel::held_term_fingerprint(term), index), ());
             }
@@ -4257,6 +4262,27 @@ impl RecordedSnapshots {
             .map(|(index, term)| (loop_iterations_spelling(*index), term))
     }
 
+    /// Each recorded call's result with the source spelling that names it,
+    /// `<call>.result`. Diagnostics only.
+    pub(in crate::surface) fn call_result_bindings(&self) -> Vec<(String, &CValue)> {
+        let Some(layout) = self.source_layout.as_ref() else {
+            return Vec::new();
+        };
+        self.call_results
+            .iter()
+            .filter_map(|(index, value)| {
+                let steps = layout.source_path_spelling(*index, ProgramPointKind::Exit)?;
+                Some((
+                    format!(
+                        "{}.result",
+                        diagnostics::describe_code_region_ref(&CodeRegionRef::Path(steps))
+                    ),
+                    value,
+                ))
+            })
+            .collect()
+    }
+
     /// The call that produced the algebraic value `term`: one index lookup.
     fn call_result_naming_algebraic(
         &self,
@@ -4282,7 +4308,7 @@ impl RecordedSnapshots {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if matches!(self.call_results.get(index), Some(CValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
+            if matches!(self.call_results.get(index).map(CValue::numeric_value), Some(CValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
             {
                 return Some(CodeRegionRef::Region(*index));
             }
@@ -4700,12 +4726,18 @@ impl RecordedSnapshots {
             kind: ProgramPointKind::Exit,
         }) = &selector
         {
-            let result = self
-                .source_layout
-                .as_ref()
-                .and_then(|layout| layout.call_result_local(*index))
-                .and_then(|local| state.locals().get(local))
-                .map(|value| value.clone().into_native());
+            // A call inside an expression leaves its result in the state by
+            // its number; one assigned to a local leaves it there.
+            let result =
+                self.source_layout
+                    .as_ref()
+                    .and_then(|layout| match layout.call_number(*index) {
+                        Some(call) => state.call_result(call).cloned(),
+                        None => layout
+                            .call_result_local(*index)
+                            .and_then(|local| state.locals().get(local))
+                            .map(|value| value.clone().into_native()),
+                    });
             self.record_call_result(*index, result);
         }
         self.record_value_points(&selector, &state);

@@ -3642,6 +3642,7 @@ fn statement_contains_internal_throw(statement: &CStatement) -> bool {
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }

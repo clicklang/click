@@ -4166,6 +4166,11 @@ fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<Str
                 function_name,
                 arguments,
                 ..
+            }
+            | S::CallResult {
+                function_name,
+                arguments,
+                ..
             } if function_name == "pthread_create" => {
                 if let Some(E::FunctionAddress(name)) = arguments.get(2) {
                     workers.insert(name.clone());
@@ -4295,6 +4300,7 @@ fn c0_statement_calls_recording(
             | syntax::C0Statement::Assign { .. }
             | syntax::C0Statement::CallAssign { .. }
             | syntax::C0Statement::Call { .. }
+            | syntax::C0Statement::CallResult { .. }
             | syntax::C0Statement::IndirectCall { .. }
             | syntax::C0Statement::HeapAllocate { .. }
             | syntax::C0Statement::HeapFree { .. }
@@ -4409,6 +4415,7 @@ fn c0_statement_calls_recording(
             }
             syntax::C0Expression::Void
             | syntax::C0Expression::Variable(_)
+            | syntax::C0Expression::CallResult { .. }
             | syntax::C0Expression::Int32Literal(_)
             | syntax::C0Expression::UInt8Literal(_)
             | syntax::C0Expression::UInt32Literal(_)
@@ -4517,6 +4524,11 @@ fn c0_statement_calls_recording(
                 calls.push(dependencies);
             }
             syntax::C0Statement::Call {
+                function_name,
+                arguments,
+                ..
+            }
+            | syntax::C0Statement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -5704,6 +5716,11 @@ fn validate_modeled_pthread_calls(
             ..
         }
         | S::CallAssign {
+            function_name,
+            arguments,
+            ..
+        }
+        | S::CallResult {
             function_name,
             arguments,
             ..

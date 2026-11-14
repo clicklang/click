@@ -18502,7 +18502,10 @@ fn resolve_retained_aggregate_fields(
         }
     }
     match expression {
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Value(_)
+        | CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::AddressOf(inner) | CExpression::CheckedObjectAddress(inner) => {
             resolve_retained_aggregate_fields(entry, state, inner, false, assumptions, budget)?
         }

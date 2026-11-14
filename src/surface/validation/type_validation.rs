@@ -3524,9 +3524,10 @@ fn validate_pointer_cast_operands(
             }
             validate_pointer_cast_operands(operand, variables, context)
         }
-        CExpression::Value(_) | CExpression::FunctionAddress(_) | CExpression::Variable(_) => {
-            Ok(())
-        }
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::Variable(_)
+        | CExpression::CallResult { .. } => Ok(()),
         CExpression::FloatNegate(inner)
         | CExpression::FloatClassification {
             expression: inner, ..
@@ -3704,7 +3705,8 @@ pub(in crate::surface) fn infer_c_expression_type(
         .then_some(C0Type::Int32),
         CExpression::AddressOf(_)
         | CExpression::CheckedObjectAddress(_)
-        | CExpression::FunctionAddress(_) => None,
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => None,
         CExpression::PointerOffsetBytes { pointer, .. }
         | CExpression::Subobject { pointer, .. } => infer_c_expression_type(pointer, variables),
         CExpression::LessThan(_, _)

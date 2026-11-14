@@ -4114,6 +4114,15 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
             })
         }
         CExpression::Value(_) => Ok(ContractExpression::CFragment(expression.clone())),
+        // A call step's result is spelled by its call.
+        CExpression::CallResult {
+            call,
+            function_name,
+        } => crate::surface::diagnostics::call_step_region(*call)
+            .map(ContractExpression::RegionResult)
+            .ok_or_else(|| {
+                format!("the result of the call to `{function_name}` has no source spelling")
+            }),
         CExpression::Variable(name) => Ok(substitutions
             .value(name)
             .cloned()
@@ -4336,7 +4345,9 @@ pub(in crate::surface) fn substitute_c_fragment_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<CExpression, String> {
     match expression {
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => Ok(expression.clone()),
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => Ok(expression.clone()),
         CExpression::Variable(name) => {
             let Some(substitution) = substitutions.value(name) else {
                 return Ok(expression.clone());

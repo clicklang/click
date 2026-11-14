@@ -263,6 +263,7 @@ fn child_expressions<'a>(
         C0Expression::ScalarUpdate { .. } => {}
         C0Expression::Void
         | C0Expression::Variable(_)
+        | C0Expression::CallResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)
@@ -366,7 +367,9 @@ pub(crate) fn child_statements<'a>(
             ..
         }
         | C0Statement::Assign { expression, .. } => expressions.push(expression),
-        C0Statement::CallAssign { arguments, .. } | C0Statement::Call { arguments, .. } => {
+        C0Statement::CallAssign { arguments, .. }
+        | C0Statement::Call { arguments, .. }
+        | C0Statement::CallResult { arguments, .. } => {
             expressions.extend(arguments.iter());
         }
         C0Statement::IndirectCall {

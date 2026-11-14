@@ -2121,7 +2121,13 @@ fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
             CStatement::Return(_) => Some(true),
             // A throwing call can resume in the enclosing handler before
             // the return this sequence would otherwise reach.
-            CStatement::Call { .. } | CStatement::CallAssign { .. } if catches_exceptions => None,
+            CStatement::Call { .. }
+            | CStatement::CallAssign { .. }
+            | CStatement::CallResult { .. }
+                if catches_exceptions =>
+            {
+                None
+            }
             // A nonlocal transfer can bypass a later return in a sequence.
             // A throw may enter a surrounding handler instead of exiting.
             CStatement::Break

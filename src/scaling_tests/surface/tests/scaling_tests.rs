@@ -11086,3 +11086,33 @@ fn a_loop_exit_reads_only_the_points_its_pass_recorded() {
         );
     }
 }
+
+/// A call inside an expression is its own step, and its result lives in the
+/// path state only until the statement that reads it: checking `n` such
+/// statements is work linear in `n`, with no result carried past its
+/// statement.
+#[test]
+fn nested_call_results_scale_with_the_statements_that_read_them() {
+    use crate::instrumentation::measure_deterministic_work;
+    let sidecar = "verifying \"probe.c\";
+        extern int32 id(int32 v) { ensures result == v; }
+        int32 f(int32 x) { ensures result == result; }";
+    let mut samples = Vec::new();
+    for size in [8, 16, 32] {
+        let body = "    x = id(x) ^ 1;\n".repeat(size);
+        let program = format!("int id(int v);\nint f(int x) {{\n{body}    return x;\n}}\n");
+        let (result, work) = measure_deterministic_work(|| {
+            verify_c0_sources(sidecar, &[("probe.c", program.as_str())])
+        });
+        result.expect("each call step's result is read by its own statement");
+        samples.push((size, work));
+    }
+    let per_statement = |(size, work): (usize, usize)| work / size;
+    let smallest = per_statement(samples[0]);
+    assert!(
+        samples
+            .iter()
+            .all(|sample| per_statement(*sample) <= smallest * 3 / 2),
+        "nested call results grew per statement: {samples:?}"
+    );
+}

@@ -4341,6 +4341,11 @@ fn source_backed_call_requirement_surface(
             function_name,
             arguments,
             ..
+        }
+        | CStatement::CallResult {
+            function_name,
+            arguments,
+            ..
         } => (function_name, arguments),
         _ => return None,
     };

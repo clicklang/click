@@ -4123,6 +4123,12 @@ fn synthesize_surface_bitvector(
     {
         return Some(ContractExpression::RegionResult(region));
     }
+    if let Some(result) = state_call_result(
+        state,
+        |value| matches!(value.numeric_value(), CValue::Bool(held) | crate::kernel::integer_c_value!(held) if held == term),
+    ) {
+        return Some(result);
+    }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|slot| slot.borrow().as_ref()?.call_result_naming_integer(term))
     {
@@ -5799,6 +5805,19 @@ fn synthesize_surface_pointer(
     )?)
 }
 
+/// `<call>.result` for the result of one of the running statement's call
+/// steps that `matches`: the state holds only that statement's calls.
+fn state_call_result(
+    state: &CState,
+    matches: impl Fn(&CValue) -> bool,
+) -> Option<ContractExpression> {
+    let (call, _) = state.call_results.as_ref()?.iter().find(|(_, value)| {
+        crate::instrumentation::record_deterministic_work(1);
+        matches(value)
+    })?;
+    crate::surface::diagnostics::call_step_region(*call).map(ContractExpression::RegionResult)
+}
+
 /// `<region>.result` for a call's result temporary `local`, which no source
 /// name spells.
 pub(super) fn call_result_expression(local: &str) -> Option<ContractExpression> {
@@ -5864,6 +5883,12 @@ fn synthesize_surface_pointer_expression(
         return Some(ContractExpression::CFragment(pointer));
     }
     if let Some(result) = synthesize_call_result_pointer(pointer, state) {
+        return Some(result);
+    }
+    if let Some(result) = state_call_result(
+        state,
+        |value| matches!(value, CValue::Pointer(held) if held.pointer() == pointer),
+    ) {
         return Some(result);
     }
     if parameter_binding.arguments.iter().any(|argument| {
@@ -6138,6 +6163,12 @@ fn synthesize_surface_algebraic(
                 )));
             }
             // A value a call returned is spelled by its call.
+            if let Some(result) = state_call_result(
+                state,
+                |value| matches!(value, CValue::Parameter(held) if held.as_ref() == term),
+            ) {
+                return Some(result);
+            }
             if let Some(region) = SYNTHESIS_RECORDED_POINTS
                 .with(|slot| slot.borrow().as_ref()?.call_result_naming_algebraic(term))
             {

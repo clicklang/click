@@ -67,7 +67,7 @@ fn substitute_c_expression_variables(
         )
     };
     match expression {
-        Value(_) | FunctionAddress(_) => expression.clone(),
+        Value(_) | FunctionAddress(_) | CallResult { .. } => expression.clone(),
         Cast {
             expression: body,
             target_type,
@@ -584,6 +584,11 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             CStatement::Call {
                 function_name,
                 arguments,
+            }
+            | CStatement::CallResult {
+                function_name,
+                arguments,
+                ..
             } => {
                 for path in &paths {
                     check_structural_recursive_call(
@@ -1153,7 +1158,7 @@ fn expression_address_taken_locals(expression: &CExpression, names: &mut BTreeSe
     use CExpression::*;
     let mut inner = |body: &CExpression| expression_address_taken_locals(body, names);
     match expression {
-        Value(_) | Variable(_) | FunctionAddress(_) => {}
+        Value(_) | Variable(_) | FunctionAddress(_) | CallResult { .. } => {}
         Cast { expression, .. } => inner(expression),
         FloatNegate(expression)
         | FloatClassification { expression, .. }
@@ -1221,6 +1226,7 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         Variable(name) => {
             names.insert(name.clone());
         }
+        CallResult { .. } => {}
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
@@ -1321,9 +1327,9 @@ fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<Str
         | CStatement::Assign { expression, .. }
         | CStatement::Return(expression)
         | CStatement::Throw(expression) => escapes(expression),
-        CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
-            arguments.iter().for_each(escapes)
-        }
+        CStatement::CallAssign { arguments, .. }
+        | CStatement::Call { arguments, .. }
+        | CStatement::CallResult { arguments, .. } => arguments.iter().for_each(escapes),
         CStatement::HeapAllocate { bytes, .. } => escapes(bytes),
         CStatement::HeapFree { pointer } => escapes(pointer),
         CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
@@ -1652,7 +1658,9 @@ fn statement_calls_visiting(
         return;
     }
     match statement {
-        CStatement::CallAssign { function_name, .. } | CStatement::Call { function_name, .. } => {
+        CStatement::CallAssign { function_name, .. }
+        | CStatement::Call { function_name, .. }
+        | CStatement::CallResult { function_name, .. } => {
             calls.insert(function_name.clone());
         }
         CStatement::Seq(statements) => {
@@ -1761,6 +1769,7 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         | CStatement::Assign { .. }
         | CStatement::Update { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
         | CStatement::LoopTest { .. }
@@ -2077,6 +2086,11 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
             CStatement::Call {
                 function_name,
                 arguments,
+            }
+            | CStatement::CallResult {
+                function_name,
+                arguments,
+                ..
             } => {
                 self.check_recursive_call(function_name, arguments, &lower_bounds)?;
                 Ok(lower_bounds)
@@ -2231,6 +2245,7 @@ fn termination_measure_display(measure: &CExpression) -> String {
         | EnumConstruct { .. }
         | EnumField { .. }
         | EnumIs { .. }
+        | CallResult { .. }
         | Value(_) => "…".to_string(),
     }
 }
@@ -2735,6 +2750,7 @@ fn c_ranking_measure_term_unfolded(
         EnumConstruct { .. } | EnumField { .. } | EnumIs { .. } => {
             Err("termination measures may not read Rust enum values".into())
         }
+        CallResult { .. } => Err("termination measures may not read a call's result".into()),
         Conditional {
             condition,
             then_branch,
@@ -3377,6 +3393,7 @@ fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CSt
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
@@ -3691,6 +3708,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
@@ -3963,6 +3981,7 @@ fn check_loops(
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
@@ -4113,7 +4132,7 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
                 taken.insert(name.to_string());
             }
         }
-        Variable(_) => {}
+        Variable(_) | CallResult { .. } => {}
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
@@ -4203,7 +4222,9 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
         | CStatement::Assign { expression, .. }
         | CStatement::Return(expression)
         | CStatement::Throw(expression) => visit(expression),
-        CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
+        CStatement::CallAssign { arguments, .. }
+        | CStatement::Call { arguments, .. }
+        | CStatement::CallResult { arguments, .. } => {
             arguments.iter().for_each(visit);
         }
         CStatement::HeapAllocate { bytes, .. } => visit(bytes),
@@ -4560,9 +4581,9 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
         statement_calls_function(left, callee) || statement_calls_function(right, callee)
     };
     match statement {
-        CStatement::Call { function_name, .. } | CStatement::CallAssign { function_name, .. } => {
-            function_name == callee
-        }
+        CStatement::Call { function_name, .. }
+        | CStatement::CallResult { function_name, .. }
+        | CStatement::CallAssign { function_name, .. } => function_name == callee,
         CStatement::While { body, .. } => statement_calls_function(body, callee),
         CStatement::Seq(statements) => both(statements.first(), &statements.rest()),
         CStatement::If {
@@ -4623,7 +4644,9 @@ fn self_call_loop_indices(
         self_call_loop_indices(statement, callee, next_index, enclosing, found);
     };
     match statement {
-        CStatement::Call { function_name, .. } | CStatement::CallAssign { function_name, .. } => {
+        CStatement::Call { function_name, .. }
+        | CStatement::CallResult { function_name, .. }
+        | CStatement::CallAssign { function_name, .. } => {
             if callee.contains(function_name) {
                 found.extend(enclosing.iter().copied());
             }

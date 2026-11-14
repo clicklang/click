@@ -1306,16 +1306,24 @@ keep their names (its calls, `.result`s, test and body statements); after a
 loop that left on several, those names are refused, since each path recorded
 them at its own state.
 
+A call nested in an expression is a call step of its own,
+`CStatement::CallResult { call, .. }`, run just before the statement that
+holds it. The step leaves the call's result in the path state by its number
+(`CState::call_results`), and the statement reads it there as
+`CExpression::CallResult { call, .. }`; the result ends with the first
+statement that reads it, or with the condition that decides a branch. The
+surface spells it by its call, `statement(i).call(f, j).result`, from the state
+or from the call's recorded exit. A call's result has the callee's declared
+type, as an assignment to a local of that type would give it.
+
 #### Where the implementation departs from this
 
-Program expressions (`CExpression`) have no call. Calls are statements,
-`CStatement::CallAssign` and `CStatement::Call`, so each front end moves a
-call out of the expression that holds it into a local:
+Other expressions with effects still move into locals:
 
-- The C front end assigns each call nested in an expression to a temporary
-  `__click_call_result<N>` (`fresh_synthesized_call_name` in
-  `src/languages/c/syntax.rs`), including a loop condition's calls, whose test
-  then reads the temporary.
+- The C front end assigns the value of `p++`, of an assignment inside an
+  expression, of `?:`, `&&`, `||`, `({ })` and `WRITE_ONCE`, and of a call
+  through a callback, to a temporary `__click_call_result<N>` (`fresh_synthesized_call_name` in
+  `src/languages/c/syntax.rs`).
 - The Rust importer gives every MIR local the user did not name a local
   `__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's
   result to such a temporary, so a `for` loop's `next` result is one and a

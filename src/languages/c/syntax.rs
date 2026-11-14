@@ -2950,6 +2950,19 @@ pub enum C0Statement {
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
     },
+    /// A call inside an expression of the statement that follows it. Its
+    /// result is that statement's `C0Expression::CallResult { call, .. }`,
+    /// never a variable.
+    CallResult {
+        call: u32,
+        function_name: String,
+        arguments: Vec<C0Expression>,
+        /// The callee's declared result type, when it is declared here.
+        result_type: Option<C0Type>,
+        result_pointee_constant: bool,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
+    },
     Call {
         function_name: String,
         arguments: Vec<C0Expression>,
@@ -3133,6 +3146,18 @@ pub enum C0Expression {
     /// the kernel, so the kernel continues to execute calls only as checked
     /// statement transitions. The position identifies the source call site
     /// for diagnostics emitted while performing that lowering.
+    /// The result of a call this expression's statement made in its own
+    /// step, `C0Statement::CallResult { call, .. }`: the term the call
+    /// returned, with the callee's declared result type.
+    CallResult {
+        call: u32,
+        function_name: String,
+        /// The callee's declared result type; `None` when the callee is
+        /// declared only later in the translation unit, or not at all.
+        c_type: Option<C0Type>,
+        pointee_constant: bool,
+        struct_name: Option<String>,
+    },
     Call {
         function_name: String,
         arguments: Vec<C0Expression>,
@@ -5626,6 +5651,7 @@ impl C0Statement {
             | Self::Assign { site, .. }
             | Self::CallAssign { site, .. }
             | Self::Call { site, .. }
+            | Self::CallResult { site, .. }
             | Self::IndirectCall { site, .. }
             | Self::HeapAllocate { site, .. }
             | Self::HeapFree { site, .. }
@@ -5657,6 +5683,7 @@ impl C0Statement {
             | Self::Assign { site, .. }
             | Self::CallAssign { site, .. }
             | Self::Call { site, .. }
+            | Self::CallResult { site, .. }
             | Self::IndirectCall { site, .. }
             | Self::HeapAllocate { site, .. }
             | Self::HeapFree { site, .. }
@@ -5807,6 +5834,23 @@ impl C0Statement {
                     .map(C0Expression::to_kernel_expression)
                     .collect(),
             ),
+            Self::CallResult {
+                call,
+                function_name,
+                arguments,
+                result_type,
+                result_pointee_constant,
+                ..
+            } => crate::kernel::CStatement::CallResult {
+                call: *call,
+                function_name: function_name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(C0Expression::to_kernel_expression)
+                    .collect(),
+                result_type: result_type.map(|c_type| c_type.to_kernel_type()),
+                result_pointee_constant: *result_pointee_constant,
+            },
             Self::Call {
                 function_name,
                 arguments,
@@ -5975,6 +6019,14 @@ impl C0Expression {
 
     fn lower_expression(&self) -> crate::kernel::CExpression {
         match self {
+            Self::CallResult {
+                call,
+                function_name,
+                ..
+            } => crate::kernel::CExpression::CallResult {
+                call: *call,
+                function_name: function_name.clone(),
+            },
             Self::Void => crate::kernel::c_void_value(),
             Self::Variable(name) => crate::kernel::c_variable(name.clone()),
             Self::Call { .. } => {
@@ -6582,6 +6634,7 @@ fn validate_function_returns(
         | C0Statement::Assign { .. }
         | C0Statement::CallAssign { .. }
         | C0Statement::Call { .. }
+        | C0Statement::CallResult { .. }
         | C0Statement::IndirectCall { .. }
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
@@ -7057,6 +7110,7 @@ fn statement_contains_control_transfer(statement: &C0Statement) -> bool {
         | C0Statement::Assign { .. }
         | C0Statement::CallAssign { .. }
         | C0Statement::Call { .. }
+        | C0Statement::CallResult { .. }
         | C0Statement::IndirectCall { .. }
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
@@ -7620,6 +7674,7 @@ fn evaluate_static_integer_expression(
         C0Expression::CheckedArrayIndex { index, .. } => evaluate_static_integer_expression(index),
         C0Expression::Void
         | C0Expression::Variable(_)
+        | C0Expression::CallResult { .. }
         | C0Expression::Call { .. }
         | C0Expression::IndirectCall { .. }
         | C0Expression::Assignment { .. }
@@ -8373,6 +8428,7 @@ fn contains_aggregate_value(expression: &C0Expression) -> bool {
         }
         C0Expression::Void
         | C0Expression::Variable(_)
+        | C0Expression::CallResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)
@@ -8694,6 +8750,9 @@ struct Parser {
     address_taken_variables: BTreeSet<String>,
     next_scoped_name: u32,
     next_synthesized_call: u32,
+    /// The number the next call inside an expression gets: its result is
+    /// `C0Expression::CallResult` with that number.
+    next_call_result: u32,
     callback_statement_sources: imbl::OrdMap<String, C0Expression>,
     next_synthesized_aggregate: u32,
     next_string_literal: u32,
@@ -9268,6 +9327,7 @@ impl Parser {
             address_taken_variables: BTreeSet::new(),
             next_scoped_name: 0,
             next_synthesized_call: 0,
+            next_call_result: 0,
             callback_statement_sources: imbl::OrdMap::new(),
             next_synthesized_aggregate: 0,
             next_string_literal: 0,
@@ -15008,6 +15068,7 @@ impl Parser {
 
     fn aggregate_struct_name(&self, expression: &C0Expression) -> Option<String> {
         match expression {
+            C0Expression::CallResult { .. } => None,
             C0Expression::Variable(name) => self.variable_struct_values.get(name).cloned(),
             C0Expression::Call { function_name, .. } => self
                 .function_declaration(function_name)
@@ -15095,6 +15156,7 @@ impl Parser {
             | C0Expression::AddressOf(_)
             | C0Expression::Void
             | C0Expression::Variable(_)
+            | C0Expression::CallResult { .. }
             | C0Expression::FunctionAddress(_)
             | C0Expression::Int32Literal(_)
             | C0Expression::UInt8Literal(_)
@@ -15269,7 +15331,9 @@ impl Parser {
                         return true;
                     }
                 }
-                C0Statement::CallAssign { arguments, .. } | C0Statement::Call { arguments, .. } => {
+                C0Statement::CallAssign { arguments, .. }
+                | C0Statement::Call { arguments, .. }
+                | C0Statement::CallResult { arguments, .. } => {
                     if arguments
                         .iter()
                         .any(|expression| self.expression_contains_lowerable_expression(expression))
@@ -15435,6 +15499,7 @@ impl Parser {
                 }
                 C0Expression::Void
                 | C0Expression::Variable(_)
+                | C0Expression::CallResult { .. }
                 | C0Expression::FunctionAddress(_)
                 | C0Expression::Int32Literal(_)
                 | C0Expression::UInt8Literal(_)
@@ -15496,6 +15561,7 @@ impl Parser {
                 }
                 C0Expression::Void
                 | C0Expression::Variable(_)
+                | C0Expression::CallResult { .. }
                 | C0Expression::FunctionAddress(_)
                 | C0Expression::Int32Literal(_)
                 | C0Expression::UInt8Literal(_)
@@ -15525,6 +15591,9 @@ impl Parser {
     /// static-storage scalars, and address-exposed automatic scalars are not.
     fn expression_reads_potentially_changed_value(&self, expression: &C0Expression) -> bool {
         match expression {
+            // A call's result is the term the call returned: nothing the
+            // statement does afterwards changes it.
+            C0Expression::CallResult { .. } => false,
             C0Expression::Void
             | C0Expression::Call { .. }
             | C0Expression::IndirectCall { .. }
@@ -15961,6 +16030,7 @@ impl Parser {
                     },
                 ))
             }
+            statement @ C0Statement::CallResult { .. } => Ok(statement),
             C0Statement::IndirectCall {
                 function,
                 signature,
@@ -16640,43 +16710,49 @@ impl Parser {
                     });
                     return Ok((prefix, C0Expression::Variable(target)));
                 }
-                let target = self.fresh_synthesized_call_name();
-                if let Some((return_type, constant, struct_name)) = self
-                    .function_declaration_for_call(&function_name)
-                    .map(|function| {
-                        (
-                            function.return_type,
-                            function.return_pointee_constant,
-                            function.return_pointer_struct_name.clone(),
-                        )
-                    })
+                // The call is a step of its own; the rest of the expression
+                // reads the term it returns by the call's number.
+                let call = self.next_call_result;
+                self.next_call_result = self.next_call_result.saturating_add(1);
+                let (c_type, pointee_constant, struct_name) = if let Some(function) =
+                    self.function_declaration_for_call(&function_name)
                 {
-                    self.variable_types.insert(target.clone(), return_type);
-                    if constant {
-                        self.variable_pointee_constants.insert(target.clone());
-                    }
-                    if let Some(struct_name) = struct_name {
-                        self.variable_structs.insert(target.clone(), struct_name);
-                    }
+                    (
+                        Some(function.return_type),
+                        function.return_pointee_constant,
+                        function.return_pointer_struct_name.clone(),
+                    )
                 } else if let Some(signature) = self.variable_function_pointers.get(&function_name)
                 {
-                    self.variable_types
-                        .insert(target.clone(), signature.return_type);
-                    if signature.return_pointee_constant {
-                        self.variable_pointee_constants.insert(target.clone());
-                    }
-                    if let Some(struct_name) = &signature.return_struct_name {
-                        self.variable_structs
-                            .insert(target.clone(), struct_name.clone());
-                    }
-                }
-                prefix.push(C0Statement::CallAssign {
-                    target: target.clone(),
-                    function_name,
+                    (
+                        Some(signature.return_type),
+                        signature.return_pointee_constant,
+                        signature.return_struct_name.clone(),
+                    )
+                } else if function_name == CONSTANT_P_UNKNOWN {
+                    // `__builtin_constant_p` has type `int`.
+                    (Some(C0Type::Int32), false, None)
+                } else {
+                    (None, false, None)
+                };
+                prefix.push(C0Statement::CallResult {
+                    call,
+                    function_name: function_name.clone(),
                     arguments,
+                    result_type: c_type,
+                    result_pointee_constant: pointee_constant,
                     site: C0Site::NONE,
                 });
-                Ok((prefix, C0Expression::Variable(target)))
+                Ok((
+                    prefix,
+                    C0Expression::CallResult {
+                        call,
+                        function_name,
+                        c_type,
+                        pointee_constant,
+                        struct_name,
+                    },
+                ))
             }
             C0Expression::IndirectCall {
                 function,
@@ -18979,6 +19055,9 @@ impl Parser {
 
     fn expression_is_float(&self, expression: &C0Expression) -> bool {
         match expression {
+            C0Expression::CallResult { c_type, .. } => {
+                matches!(c_type, Some(C0Type::Float32 | C0Type::Float64))
+            }
             C0Expression::Float32Literal(_)
             | C0Expression::Float64Literal(_)
             | C0Expression::FloatNegate(_) => true,
@@ -19327,6 +19406,7 @@ impl Parser {
     /// same kernel byte type. This only inspects the expression being checked.
     fn source_expression_type(&self, expression: &C0Expression) -> Option<C0Type> {
         match expression {
+            C0Expression::CallResult { c_type, .. } => *c_type,
             C0Expression::Variable(name) => {
                 let c_type = self.variable_types.get(name).copied()?;
                 if self.string_literal_names.contains(name) {
@@ -21344,6 +21424,7 @@ fn statement_continues_enclosing_loop(statement: &C0Statement) -> bool {
         | C0Statement::Assign { .. }
         | C0Statement::CallAssign { .. }
         | C0Statement::Call { .. }
+        | C0Statement::CallResult { .. }
         | C0Statement::IndirectCall { .. }
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
@@ -21447,6 +21528,7 @@ fn prepend_condition_check_before_loop_continues(
         | C0Statement::Assign { .. }
         | C0Statement::CallAssign { .. }
         | C0Statement::Call { .. }
+        | C0Statement::CallResult { .. }
         | C0Statement::IndirectCall { .. }
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
@@ -21517,6 +21599,7 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
         C0Expression::CheckedArrayIndex { index, .. } => first_embedded_call_position(index),
         C0Expression::Void
         | C0Expression::Variable(_)
+        | C0Expression::CallResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)
@@ -21610,6 +21693,7 @@ fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition
         }
         C0Expression::Void
         | C0Expression::Variable(_)
+        | C0Expression::CallResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)
@@ -21645,6 +21729,7 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
         | C0Expression::SizeOfUnion { .. }
         | C0Expression::SizeOfType { .. } => false,
         C0Expression::Variable(_)
+        | C0Expression::CallResult { .. }
         | C0Expression::Call { .. }
         | C0Expression::IndirectCall { .. }
         | C0Expression::StatementExpression { .. }

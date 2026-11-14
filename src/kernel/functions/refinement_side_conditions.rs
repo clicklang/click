@@ -499,7 +499,10 @@ pub(super) fn algebraic_match_covers_each_variant_once(
 
 pub(super) fn c_expression_supports_stateful_memory_refinement(expression: &CExpression) -> bool {
     match expression {
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => true,
+        CExpression::Value(_)
+        | CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => true,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
@@ -548,7 +551,10 @@ pub(super) fn c_expression_supports_stateful_memory_refinement(expression: &CExp
 
 pub(in crate::kernel) fn c_expression_is_state_independent(expression: &CExpression) -> bool {
     match expression {
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => true,
+        CExpression::Value(_)
+        | CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => true,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
@@ -618,7 +624,9 @@ pub(super) fn spec_reads_current_parameter(node: SpecNode<'_>, parameter_name: &
 pub(super) fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool {
     match expression {
         CExpression::Variable(variable) => variable == name,
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => false,
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => false,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
@@ -669,7 +677,10 @@ pub(super) fn c_expression_takes_address_of_variable(expression: &CExpression, n
         CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
             c_expression_mentions_variable(expression, name)
         }
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => false,
+        CExpression::Value(_)
+        | CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => false,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
@@ -809,7 +820,9 @@ pub(super) fn spec_expression_parameter_offset(
 pub(super) fn c_expression_uses_object_address(expression: &CExpression, name: &str) -> bool {
     match expression {
         CExpression::Variable(variable) => variable == name,
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => false,
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => false,
         // A scalar or pointer load produces a value, not the address of the
         // containing object. Inline arrays still denote embedded storage.
         CExpression::TypedLoad {
@@ -930,7 +943,9 @@ pub(super) fn statement_writes_aggregate_parameter(
                 *unknown_write = true;
             }
         }
-        CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. } => {
+        CStatement::Call { arguments, .. }
+        | CStatement::CallResult { arguments, .. }
+        | CStatement::CallAssign { arguments, .. } => {
             if arguments
                 .iter()
                 .any(|argument| c_expression_takes_address_of_variable(argument, parameter_name))
