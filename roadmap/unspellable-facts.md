@@ -237,6 +237,13 @@ read snapshots. This remains staged until fold roots are activated; the Integer
 compatibility boundary has not been removed. All four focused parity/scaling
 tests and the full scaling plus rewrite selection (1,682 tests) pass.
 
+6d shares the machine fold alpha-key implementation between native and common
+children. Bound-variable ordinals apply only to the body, with the enclosing
+scope restored on success or refusal; free variables and snapshot identities
+remain distinct. Integer checking uses a named compatibility adapter retaining
+shared endpoints, also reused by scoped rewriting. This does not activate fold
+producers or change fold reduction laws.
+
 ## Chunk 5: execution value handoffs
 
 Retain already-supported machine-integer results through execution, one PR per
