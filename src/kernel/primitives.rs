@@ -5456,6 +5456,13 @@ pub enum CStatement {
         then_branch: Box<CStatement>,
         else_branch: Box<CStatement>,
     },
+    /// A loop's own test, inside a pass, after the statements the loop runs
+    /// between its entry and its test: true continues the pass, false leaves
+    /// the loop. It is a position of the loop as written, `loop(i).test`, never
+    /// a statement of the source program.
+    LoopTest {
+        condition: CExpression,
+    },
     While {
         condition: CExpression,
         invariant: Vec<Proposition>,

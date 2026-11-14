@@ -6636,6 +6636,9 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
         CStatement::If { condition, .. } => {
             format!("if ({})", describe_c_guard(condition))
         }
+        CStatement::LoopTest { condition } => {
+            format!("the loop's test ({})", describe_c_guard(condition))
+        }
         CStatement::While {
             condition,
             do_while,
@@ -7483,6 +7486,7 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Loop(index) => format!("loop({index})"),
                 SourcePathStep::Region(index) => format!("region({index})"),
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
+                SourcePathStep::Test => "test()".to_string(),
                 SourcePathStep::Assignment(local, index) => format!("assignment({local}, {index})"),
                 SourcePathStep::Read(index) => format!("read({index})"),
                 SourcePathStep::ReadEvent(index) => format!("read_event({index})"),

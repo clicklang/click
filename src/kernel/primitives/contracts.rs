@@ -3645,6 +3645,7 @@ fn statement_contains_internal_throw(statement: &CStatement) -> bool {
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Return(_)
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }

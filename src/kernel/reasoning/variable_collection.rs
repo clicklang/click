@@ -847,6 +847,9 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
         | CStatement::Assert {
             condition: expression,
             ..
+        }
+        | CStatement::LoopTest {
+            condition: expression,
         } => {
             collect_c_expression_bitvector_variables(expression, variables);
         }

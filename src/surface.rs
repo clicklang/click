@@ -3423,6 +3423,17 @@ const POINTER_POINTS_OFFERED: usize = 4;
 type ReadEventNames<T> =
     crate::persistent::PersistentMap<T, crate::persistent::PersistentSet<(usize, usize)>>;
 
+/// A position in a path's recorded history.
+#[derive(Clone, Default)]
+struct RecordedHistoryMark(Option<std::sync::Arc<RecordedSnapshotChange>>);
+
+/// Points one path recorded at a range of regions, with their call results.
+#[derive(Clone, Default)]
+struct RecordedRegionPoints {
+    snapshots: Vec<(SnapshotSelector, CState)>,
+    call_results: Vec<(usize, CValue)>,
+}
+
 #[derive(Clone)]
 struct RecordedSnapshots {
     effect_log: imbl::Vector<crate::kernel::CResource>,
@@ -3480,6 +3491,10 @@ struct RecordedSnapshots {
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Pointer, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
     call_results: crate::persistent::PersistentMap<usize, CValue>,
+    /// The points inside a loop that left at several places, by the loop
+    /// and its number of leaving paths: each path recorded the point at its
+    /// own state, so after the loop the name has no one state.
+    ambiguous_exit_points: crate::persistent::PersistentMap<SnapshotSelector, (usize, usize)>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
     read_event_results: crate::persistent::PersistentMap<(usize, usize), CValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
@@ -3552,6 +3567,7 @@ impl Default for RecordedSnapshots {
             pointer_points: crate::persistent::PersistentMap::default(),
             allocation_results: crate::persistent::PersistentMap::default(),
             call_results: crate::persistent::PersistentMap::default(),
+            ambiguous_exit_points: crate::persistent::PersistentMap::default(),
             call_result_points: crate::persistent::PersistentMap::default(),
             read_event_results: Default::default(),
             read_event_counts: Default::default(),
@@ -4092,6 +4108,89 @@ impl RecordedSnapshots {
         ))
     }
 
+    /// Where this path's change history stands now: `recorded_since` reads
+    /// the points recorded after it.
+    fn history_mark(&self) -> RecordedHistoryMark {
+        RecordedHistoryMark(self.version.history.clone())
+    }
+
+    /// The program points this path recorded since `mark`, newest state of
+    /// each, with the call results recorded at them: what a loop's exit
+    /// carries out of the pass that left, so the proof after the loop can
+    /// name the points of that pass. The walk visits the changes made since
+    /// `mark` and no others, so it costs what the pass itself recorded.
+    fn recorded_since(&self, mark: &RecordedHistoryMark) -> RecordedRegionPoints {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut points = RecordedRegionPoints::default();
+        let mut change = self.version.history.as_ref();
+        while let Some(entry) = change {
+            if mark
+                .0
+                .as_ref()
+                .is_some_and(|marked| std::sync::Arc::ptr_eq(marked, entry))
+            {
+                break;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if let SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind,
+            }) = &entry.selector
+                && seen.insert(entry.selector.clone())
+                && let Some(state) = self.get(&entry.selector)
+            {
+                points
+                    .snapshots
+                    .push((entry.selector.clone(), state.clone()));
+                if *kind == ProgramPointKind::Exit
+                    && let Some(value) = self.call_results.get(index)
+                {
+                    points.call_results.push((*index, value.clone()));
+                }
+            }
+            change = entry.parent.as_ref();
+        }
+        points.snapshots.reverse();
+        points
+    }
+
+    /// Notes that loop `loop_index` left on several paths, which recorded
+    /// these points: each at its own state, so none is recorded here and a
+    /// read of one is refused naming the paths.
+    fn record_ambiguous_exit_points(&mut self, loop_index: usize, paths: &[RecordedRegionPoints]) {
+        for points in paths {
+            for (selector, _) in &points.snapshots {
+                crate::instrumentation::record_deterministic_work(1);
+                self.ambiguous_exit_points
+                    .insert(selector.clone(), (loop_index, paths.len()));
+            }
+        }
+    }
+
+    /// Why `selector` has no recorded state after a loop that left on
+    /// several paths, when that is the reason.
+    fn ambiguous_exit_refusal(&self, selector: &SnapshotSelector) -> Option<String> {
+        let (loop_index, paths) = self.ambiguous_exit_points.get(selector)?;
+        let SnapshotSelector::ProgramPoint(point) = selector else {
+            return None;
+        };
+        Some(format!(
+            "`loop({loop_index})` left on {paths} paths, and each recorded `{}` at its own state, so after the loop it names no one state; a fact every leaving path states about that point is kept after the loop, so state what you need on each path before it leaves",
+            crate::surface::diagnostics::describe_program_point_ref(point)
+        ))
+    }
+
+    /// Records points another path recorded, as `recorded_since` returned
+    /// them.
+    fn record_region_points(&mut self, points: &RecordedRegionPoints) {
+        for (selector, state) in &points.snapshots {
+            self.insert(selector.clone(), state.clone());
+        }
+        for (index, value) in &points.call_results {
+            self.record_call_result(*index, Some(value.clone()));
+        }
+    }
+
     fn record_call_result(&mut self, index: usize, value: Option<CValue>) {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(CValue::Bool(term) | crate::kernel::integer_c_value!(term)) =
@@ -4588,6 +4687,7 @@ impl RecordedSnapshots {
 
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
         let selector = self.recorded_spelling(selector.into());
+        self.ambiguous_exit_points.remove(&selector);
         self.effect_offsets
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
@@ -7050,6 +7150,9 @@ pub enum SourcePathStep {
     Region(usize),
     /// The statement's `j`th call of `f`, in evaluation order; a chain's end.
     Call(String, usize),
+    /// A loop's own test, after the calls its condition makes: `test()`; a
+    /// chain's end.
+    Test,
     /// The statement's `j`th own region that assigns local `x`, in executable
     /// order; a chain's end.
     Assignment(String, usize),

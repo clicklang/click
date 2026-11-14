@@ -59,12 +59,14 @@ pub(crate) enum LoopControlExit {
     /// The natural cycle's checked forward `goto` leaves the loop at its
     /// named exit target.
     NaturalExit(crate::kernel::CControlTargetId),
+    /// The loop's own test is false: the path leaves the loop there.
+    TestFalse,
 }
 
 impl LoopControlExit {
     /// Whether this path leaves the loop rather than returning to its head.
     pub(crate) fn is_exit(self) -> bool {
-        matches!(self, Self::Break | Self::NaturalExit(_))
+        matches!(self, Self::Break | Self::NaturalExit(_) | Self::TestFalse)
     }
 }
 
@@ -8122,7 +8124,14 @@ impl ExecutionProofCore {
             && (self.frontier.in_loop_body
                 || matches!(self.frontier.region, ExecutionRegionKind::LoopBody))
         {
+            let at_loop_test = matches!(
+                checked_evidence_conclusion(&theorem),
+                Proposition::CStatementExecutes { statement, .. }
+                    | Proposition::CStatementVerifies { statement, .. }
+                    if matches!(statement.as_ref(), CStatement::LoopTest { .. })
+            );
             match &outcome {
+                CStatementOutcome::Break(_) if at_loop_test => Some(LoopControlExit::TestFalse),
                 CStatementOutcome::Break(_) => Some(LoopControlExit::Break),
                 CStatementOutcome::Continue(_) => Some(LoopControlExit::Continue),
                 _ => None,

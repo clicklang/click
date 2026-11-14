@@ -1326,7 +1326,9 @@ fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<Str
         }
         CStatement::HeapAllocate { bytes, .. } => escapes(bytes),
         CStatement::HeapFree { pointer } => escapes(pointer),
-        CStatement::Assert { condition, .. } => escapes(condition),
+        CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
+            escapes(condition)
+        }
         CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
             escapes(pointer);
             escapes(value);
@@ -1696,6 +1698,7 @@ fn statement_calls_visiting(
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }
@@ -1760,6 +1763,7 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         | CStatement::Call { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }
@@ -3376,6 +3380,7 @@ fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CSt
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }
@@ -3689,6 +3694,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }
@@ -3960,6 +3966,7 @@ fn check_loops(
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }
@@ -4201,7 +4208,9 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
         }
         CStatement::HeapAllocate { bytes, .. } => visit(bytes),
         CStatement::HeapFree { pointer } => visit(pointer),
-        CStatement::Assert { condition, .. } => visit(condition),
+        CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
+            visit(condition)
+        }
         CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
             visit(pointer);
             visit(value);
@@ -4581,6 +4590,7 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }
@@ -4667,6 +4677,7 @@ fn self_call_loop_indices(
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }

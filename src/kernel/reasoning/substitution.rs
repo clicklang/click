@@ -986,6 +986,9 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             condition: s.c_expression(condition),
             label: label.clone(),
         },
+        CStatement::LoopTest { condition } => CStatement::LoopTest {
+            condition: s.c_expression(condition),
+        },
         CStatement::Seq(statements) => CStatement::Seq(
             statements.map(|statement| std::sync::Arc::new(walk_c_statement(statement, s))),
         ),
@@ -2645,6 +2648,9 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
         | CStatement::Assert {
             condition: expression,
             ..
+        }
+        | CStatement::LoopTest {
+            condition: expression,
         } => collect_c_expression_bound_variables(expression, variables),
         CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
             for argument in arguments {

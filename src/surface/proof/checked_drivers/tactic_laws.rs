@@ -452,6 +452,21 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         LoopStepPolicy::ApplyVerifiedRule,
     )?;
     execution.record_terminal_loop_return_proofs(&certificates.returns)?;
+    // A loop that leaves on one path names that pass's points after it: its
+    // calls, its test and its body's statements, as the pass recorded them.
+    // Several leaving paths would give one name several states, so then none
+    // is recorded.
+    match certificates.exit_points.get(&loop_index).map(Vec::as_slice) {
+        Some([points]) => execution
+            .presentation
+            .recorded_snapshots
+            .record_region_points(points),
+        Some(paths) if paths.len() > 1 => execution
+            .presentation
+            .recorded_snapshots
+            .record_ambiguous_exit_points(loop_index, paths),
+        _ => {}
+    }
     // The rule was verified on its own copy of this proof's state, counting
     // identities from this proof's mark, and applying it leaves the ones it
     // invented in the state here: the head's havoc of every local the body

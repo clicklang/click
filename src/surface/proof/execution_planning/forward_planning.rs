@@ -163,10 +163,12 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             let mut final_exit_candidates_by_context = Vec::with_capacity(contexts.len());
             let mut break_exits_by_context = Vec::with_capacity(contexts.len());
             let mut return_exits_by_context = Vec::with_capacity(contexts.len());
+            let mut exit_points_by_context = Vec::with_capacity(contexts.len());
             for context in &contexts {
                 let mut final_exit_candidates = Vec::new();
                 let mut break_exits = Vec::new();
                 let mut return_exits = Vec::new();
+                let mut exit_points = Vec::new();
                 let assumptions = assumptions_from_propositions(&context.pure_facts);
                 if let Some((clause, proof)) = initialization_proof {
                     let initialization = verify_loop_initialization_pure_proof(
@@ -331,6 +333,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         final_exit_candidates.extend(result.final_exit_candidates);
                         break_exits.extend(result.break_exits);
                         return_exits.extend(result.return_exits);
+                        exit_points.extend(result.exit_points);
                         environment
                             .frontier_loop_certificates
                             .borrow_mut()
@@ -391,6 +394,14 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 final_exit_candidates_by_context.push(final_exit_candidates);
                 break_exits_by_context.push(break_exits);
                 return_exits_by_context.push(return_exits);
+                environment
+                    .frontier_loop_certificates
+                    .borrow_mut()
+                    .exit_points
+                    .entry(loop_index)
+                    .or_default()
+                    .extend(exit_points.iter().cloned());
+                exit_points_by_context.push(exit_points);
             }
             let source = environment.frontier_loop_source;
             if initialization_proof.is_some() {
@@ -475,6 +486,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 Some(&final_exit_candidates_by_context),
                 Some(&break_exits_by_context),
                 Some(&return_exits_by_context),
+                Some(&exit_points_by_context),
             )
         }
         CStatement::Return(_) => {
@@ -548,6 +560,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 None,
                 None,
                 None,
+                None,
             )?;
             bypassed.extend(advanced);
             Ok(bypassed)
@@ -610,6 +623,7 @@ fn advance_execution_proof_statement(
     loop_final_exit_candidates: Option<&[Vec<CLoopFinalExitCandidate>]>,
     loop_break_exits: Option<&[Vec<CLoopBreakExit>]>,
     loop_return_exits: Option<&[Vec<CLoopReturnExit>]>,
+    loop_exit_points: Option<&[Vec<RecordedRegionPoints>]>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     let mut advanced = Vec::new();
     for (context_index, mut context) in contexts.into_iter().enumerate() {
@@ -774,6 +788,17 @@ fn advance_execution_proof_statement(
                         kind: ProgramPointKind::Exit,
                     };
                     recorded_snapshots.insert(exit_point.clone(), *exit_state.clone());
+                    // A loop that leaves on one path names that pass's
+                    // points after it: its calls, its test, its body's
+                    // statements, as the pass recorded them. Several leaving
+                    // paths would give one name several states, so then
+                    // none is recorded.
+                    if let Some([points]) = loop_exit_points
+                        .and_then(|points| points.get(context_index))
+                        .map(Vec::as_slice)
+                    {
+                        recorded_snapshots.record_region_points(points);
+                    }
                     if let Some(iterations) = &transition.loop_iterations {
                         recorded_snapshots.record_loop_iterations(loop_index, iterations);
                     }
