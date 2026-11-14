@@ -80,6 +80,25 @@ impl SpecValue {
 
     pub(super) fn numeric(self) -> Self {
         match self {
+            // This is an explicit numeric projection. The complete C-value
+            // record remains in its execution carrier; it is not an integer term.
+            Self::Native(ProgramValue::PointerInteger(record)) => {
+                let numeric = *record.numeric;
+                if matches!(
+                    &numeric,
+                    ProgramValue::Int64(MachineTerm::PointerAddress(..))
+                        | ProgramValue::UInt64(MachineTerm::PointerAddress(..))
+                ) {
+                    let root = KernelTermImport::default()
+                        .argument(&PureFunctionArgument::Value(numeric.clone()));
+                    if matches!(root.node(), KernelTermNode::PointerAddress { .. }) {
+                        return root.into();
+                    }
+                }
+                // Other complete-word payloads keep their established numeric
+                // admission policy; this slice activates address observations.
+                Self::Native(numeric)
+            }
             Self::Native(value) => Self::Native(value.numeric_value().clone()),
             shared => shared,
         }
@@ -159,6 +178,23 @@ impl SpecCallArgument {
     pub(super) fn from_value(value: SpecValue) -> Self {
         match value {
             SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
+            SpecValue::Shared(value)
+                if matches!(value.node(), KernelTermNode::PointerAddress { .. }) =>
+            {
+                let KernelType::Program(ty) = value.ty() else {
+                    unreachable!()
+                };
+                let format =
+                    MachineIntegerType::from_program_type(*ty).expect("address observation type");
+                Self::Native(PureFunctionArgument::Value(
+                    format.value_from_term(
+                        value
+                            .machine_conversion_leaf()
+                            .expect("address observation")
+                            .clone(),
+                    ),
+                ))
+            }
             SpecValue::Shared(value) => Self::Shared(value),
         }
     }
@@ -194,4 +230,54 @@ pub(super) fn call_arguments(arguments: Vec<SpecCallArgument>) -> Vec<PureFuncti
         .into_iter()
         .map(SpecCallArgument::into_payload)
         .collect()
+}
+
+#[cfg(test)]
+mod pointer_observation_tests {
+    use super::*;
+    #[test]
+    fn numeric_pointer_projection_retains_the_address_without_changing_complete_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1024900)),
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_constant(true)
+        .with_pointee_volatile(true);
+        let numeric = ProgramValue::UInt64(MachineTerm::object_pointer_address(
+            pointer.pointer().clone(),
+            pointer.object_class(),
+        ));
+        let value = ProgramValue::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(numeric.clone()),
+            pointer: Box::new(pointer),
+            kind: PointerIntegerKind::Exact,
+        });
+        let complete = SpecValue::Native(value.clone());
+        let projected = complete.clone().numeric();
+        assert!(matches!(
+            projected.shared().unwrap().node(),
+            KernelTermNode::PointerAddress { .. }
+        ));
+        assert_eq!(projected.clone().into_native(), numeric);
+        assert_eq!(
+            SpecCallArgument::from_value(projected.clone()).native_descriptor(),
+            Some(&PureFunctionArgument::Value(numeric.clone())),
+            "opaque call arguments keep their exact native descriptor"
+        );
+        let other = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+            1024902,
+        ))));
+        assert_eq!(
+            projected
+                .comparison(ComparisonOperator::Equal, &other)
+                .unwrap(),
+            SpecValue::Native(numeric.clone())
+                .comparison(ComparisonOperator::Equal, &other)
+                .unwrap(),
+            "exact fact kind remains the native address comparison"
+        );
+        assert_eq!(projected.observe(), SpecValue::Native(numeric).observe());
+        assert_eq!(complete.into_native(), value);
+    }
 }

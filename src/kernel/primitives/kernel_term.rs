@@ -15,6 +15,7 @@ mod machine;
 mod matches;
 pub(crate) use matches::KernelMatch;
 pub(crate) use matches::KernelMatchArm;
+mod pointer_observations;
 mod reads;
 // Prepared pointer payloads; producer activation follows scoped consumers and spelling.
 #[allow(dead_code)]
@@ -117,6 +118,11 @@ pub enum KernelTermNode {
         value: SharedPointerValue,
         memory: SharedMemory,
         address: SharedPointerAddress,
+    },
+    /// Address observation retains its exact prepared address and object annotation.
+    PointerAddress {
+        address: SharedPointerAddress,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     MachineObservation {
         format: MachineIntegerType,
@@ -323,7 +329,7 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::MemoryLoad { .. } => true,
+            KernelTermNode::MemoryLoad { .. } | KernelTermNode::PointerAddress { .. } => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,
@@ -381,7 +387,9 @@ impl NodeKey {
             KernelTermNode::Call { .. } => {
                 matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
-            KernelTermNode::MachineLiteral(_) | KernelTermNode::MemoryLoad { .. } => true,
+            KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::MemoryLoad { .. }
+            | KernelTermNode::PointerAddress { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
@@ -401,6 +409,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_conversions = match &node {
+            KernelTermNode::PointerAddress { .. } => true,
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
@@ -871,7 +880,9 @@ impl KernelTerm {
     ) -> Self {
         if matches!(
             self.node(),
-            KernelTermNode::Legacy(_) | KernelTermNode::Call { .. }
+            KernelTermNode::Legacy(_)
+                | KernelTermNode::Call { .. }
+                | KernelTermNode::PointerAddress { .. }
         ) && rewritten == original
         {
             return self.clone();

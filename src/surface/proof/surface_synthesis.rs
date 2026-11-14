@@ -3332,6 +3332,19 @@ pub(super) fn raise_kernel_term(
             }
         }
         Node::MachineUnary { operand, .. } => SurfaceTerm::BitwiseNot(Box::new(recurse(operand)?)),
+        Node::PointerAddress { .. } => {
+            let expression = synthesize_surface_bitvector(
+                term.machine_conversion_leaf()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            if term.ty() == &crate::kernel::KernelType::Program(ProgramType::Int64) {
+                synthesize_observation_operand(expression, ProgramType::Int64)?
+            } else {
+                expression
+            }
+        }
         Node::MemoryLoad { .. } => synthesize_surface_bitvector(
             term.machine_read_leaf()?,
             parameter_binding,

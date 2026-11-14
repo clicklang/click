@@ -830,3 +830,56 @@ fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
         }
     }
 }
+
+#[test]
+fn pointer_numeric_observations_retain_prepared_dags_without_export() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = SharedPointerValue::import(&PointerValue::new(
+        Pointer::symbolic(Variable(1024200)),
+        ProgramType::Int32Pointer,
+    ));
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|n| {
+                KernelTerm::variable(
+                    KernelType::Program(ProgramType::Int32),
+                    Variable(1024201 + n),
+                )
+            })
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut index =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1024800));
+            for _ in 0..size {
+                index = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [index.clone(), index],
+                );
+            }
+            let address = SharedPointerAddress::new(
+                pointer.node().address.node().block.clone(),
+                KernelPointerOffset::Int32Scaled {
+                    value: index,
+                    byte_width: 4,
+                }
+                .into_shared()
+                .unwrap(),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (numeric, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::shared_pointer_address_observation(
+                    MachineIntegerType::UInt64,
+                    address.clone(),
+                    AddressObjectClass::NONE,
+                )
+            });
+            assert!(
+                matches!(numeric.node(), KernelTermNode::PointerAddress { address: a, .. } if a == &address)
+            );
+            assert!(numeric.0.machine_leaf.0.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 48, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}

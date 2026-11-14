@@ -129,7 +129,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 .into_term()
                 .with_machine_observation_type(format),
-                KernelTermNode::Legacy(_) | KernelTermNode::Call { .. }
+                KernelTermNode::Legacy(_)
+                | KernelTermNode::Call { .. }
+                | KernelTermNode::PointerAddress { .. }
                     if machine_payload(&term).is_some() =>
                 {
                     let value = machine_payload(&term).expect("retained machine leaf");

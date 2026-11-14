@@ -46,6 +46,18 @@ impl KernelTerm {
     /// mathematical integer conversion. The surrounding machine DAG is never
     /// exported; conversion Integer payloads stay shared.
     pub(crate) fn machine_conversion_leaf(&self) -> Option<&MachineTerm> {
+        if let KernelTermNode::PointerAddress {
+            address,
+            object_class,
+        } = self.node()
+        {
+            return Some(self.0.machine_leaf.get_or_init(|| {
+                MachineTerm::PointerAddress(
+                    Box::new(address.export().expect("address observation")),
+                    AddressObjectClass::new(object_class.clone()),
+                )
+            }));
+        }
         if let KernelTermNode::Legacy(value) = self.node()
             && let Some(operand) = value.machine_operand()
         {
@@ -622,6 +634,18 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         use MachineTerm as Old;
         crate::instrumentation::record_deterministic_work(1);
+        if matches!(
+            result,
+            MachineIntegerType::Int64 | MachineIntegerType::UInt64
+        ) && let Old::PointerAddress(address, object_class) = term
+            && let Some(address) = KernelTerm::scalar_read_address(address)
+        {
+            return KernelTerm::shared_pointer_address_observation(
+                result,
+                address,
+                object_class.clone(),
+            );
+        }
         if let Some(read) = self.scalar_read(result, term) {
             return read;
         }
@@ -755,6 +779,13 @@ impl KernelTermExport {
                 then_term: Box::new(Self::machine(&arguments[1])?),
                 else_term: Box::new(Self::machine(&arguments[2])?),
             },
+            Node::PointerAddress {
+                address,
+                object_class,
+            } => Old::PointerAddress(
+                Box::new(address.export()?),
+                AddressObjectClass::new(object_class.clone()),
+            ),
             Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::MemoryLoad {
