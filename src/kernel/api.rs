@@ -4768,12 +4768,18 @@ fn statement_kernel_variables<'scope>(
 
 pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
     state: ExecutionState,
-    statement: ProgramStatement,
+    statement: impl Into<crate::kernel::StatementProofInput>,
     assumptions: PureFactContext,
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
+    let crate::kernel::StatementProofInput {
+        statement,
+        loop_evidence,
+    } = statement.into();
+    let loop_evidence =
+        loop_evidence.map(|evidence| evidence.executed_under(execution_semantics.loops));
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
     let execution = execute_execution_statement_verification_paths(
         &state,
@@ -4816,6 +4822,7 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
         assumptions,
         paths,
         &environment,
+        loop_evidence,
     )
 }
 
@@ -4863,7 +4870,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
 
 pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     state: ExecutionState,
-    statement: ProgramStatement,
+    statement: impl Into<crate::kernel::StatementProofInput>,
     assumptions: PureFactContext,
     environment: ExecutionEnvironment,
     initialization_proven: bool,
@@ -4873,6 +4880,12 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     return_exits: Vec<LoopReturnExit>,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
+    let crate::kernel::StatementProofInput {
+        statement,
+        loop_evidence,
+    } = statement.into();
+    let loop_evidence =
+        loop_evidence.map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
     let Some(while_loop) = crate::kernel::loops::WhileLoop::of(&statement) else {
         return (
             SymbolicExecution {
@@ -4915,6 +4928,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         assumptions,
         paths,
         &environment,
+        loop_evidence,
     )
 }
 
@@ -4924,6 +4938,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
     assumptions: PureFactContext,
     paths: Vec<StatementExecutionPath>,
     environment: &ExecutionEnvironment,
+    loop_evidence: Option<crate::kernel::termination::loop_evidence::LoopEvidence>,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
     // A rule's paths are the loop statement's successors: the joined exit,
     // a proven-divergent loop, each checked natural forward jump, and each
@@ -4950,7 +4965,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
     .then(|| VerifiedLoopRule {
         symbolic_entry_state: state.clone(),
         loop_statement: statement.clone(),
-        loop_index: None,
+        loop_evidence,
         required_assumptions: assumptions.clone(),
         paths: paths.clone(),
         composite_resource_definitions: Vec::new(),
@@ -8553,13 +8568,13 @@ fn rewrite_int32_term_by_exact_equality(
             else_term: Box::new(rewrite_int32_term_by_exact_equality(else_term, from, to)),
         },
         MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::PureFunctionApplication {
-                name: name.clone(),
-                arguments: arguments
+            MachineTerm::rebuild_pure_application(
+                name.clone(),
+                arguments
                     .iter()
                     .map(|argument| rewrite_int32_term_by_exact_equality(argument, from, to))
                     .collect(),
-            }
+            )
         }
         MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {
             term.clone()

@@ -492,6 +492,13 @@ partial-correctness rules for modular calls and retain their own
 native loop-rule outputs; each loop strategy owns the measure checked by its
 back-edge proof. Strategies for the same source loop may use different measures.
 An unranked strategy still prevents a ranked sibling from covering the loop.
+Loop opening selects the source identity through the whole-contract owner,
+checks executable shape and measure eligibility, and retains the exact statement
+that its proof will execute. A successful producer carries that identity and
+eligible measure in its rule; a completed rule cannot be retagged. Termination
+consumes this authority without repeating source matching or escape checks.
+The flat source-loop shape index and address-taken set are built once at function
+setup; opening a selected loop reads its direct range and explicit body.
 No common measure is reconstructed from source annotations after body closure.
 
 Program closing has separate generation, proof execution, and completion APIs.
@@ -536,6 +543,30 @@ closed native proof, retained bodies, and termination rules into
 `CompletedProgramContracts`. It does not analyze source, interpret verdicts,
 retry proofs, or discover requirements. Source formats proof-execution failures
 before calling this packaging operation.
+
+Concrete loop-exit coverage is fixed in the ordinary body's source namespace
+at opening. Loop/body source mismatch is refused before proof execution.
+Successful `ApplyVerifiedRules` execution publishes coverage for loops it ran
+concretely or avoided, with summary-owned loops excluded. A loop summary also
+retains the nested-loop execution mode and coverage established by its producer;
+an outer summary does not automatically prove its inner loops terminate.
+Script joins intersect coverage, and discarded attempts publish nothing.
+`VerifiedFunctionRule` retains this native evidence for modular reuse and
+program termination. Local termination consumes it by loop index, without
+matching completed bodies or inferring execution from annotation flags.
+Independent API inputs without an ordinary owner retain their separate input
+adapter, which runs before termination obligation generation and leaves already
+owned evidence untouched.
+
+Every declared claim owns a root cell for every entry case, including source-only
+snapshot clauses and other nonmodular postconditions. Reusable-rule eligibility
+is separate from this obligation inventory. Opening a source-only proposition
+proof captures its selected declaration key from the outcome's claim table;
+ordinary proof completion retains that key and outcome identity. A generic
+proposition completion, another clause's proof, or a resource receipt cannot
+close it. Completed outcomes retire these captured cells through the same
+persistent progress counters as reusable claims. Completing only the boundary
+leaves omitted source clauses open, even if the frontend skips them.
 
 Startup and source-only contracts retain native termination subjects without
 gaining unsupported modular rules; rule eligibility is fixed at body opening.

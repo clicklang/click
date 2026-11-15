@@ -17,6 +17,7 @@ struct RootState {
     executions: PersistentVector<Arc<CheckedFunctionExecution>>,
     subject: ProgramFunction,
     preferred_subject: bool,
+    concrete_loop_exits: Option<Arc<crate::kernel::termination::loop_evidence::ConcreteLoopExits>>,
     loop_rules: PersistentVector<VerifiedLoopRule>,
     completed: Option<Arc<ContractBodyProof>>,
 }
@@ -62,10 +63,20 @@ impl WholeContractRoot {
                 closed: PersistentMap::default(),
                 executions: PersistentVector::default(),
                 preferred_subject: false,
+                concrete_loop_exits: None,
                 loop_rules: PersistentVector::default(),
                 completed: None,
             }))),
         }
+    }
+
+    /// Open this owner's selected source loop before any of its proofs run.
+    pub(crate) fn open_loop_proof(
+        &self,
+        index: usize,
+        statement: ProgramStatement,
+    ) -> Result<crate::kernel::StatementProofInput, TerminationError> {
+        self.plan.entry.function.open_loop_proof(index, statement)
     }
 
     pub(in crate::kernel) fn plan(&self) -> &WholeContractProof {
@@ -111,6 +122,14 @@ impl WholeContractRoot {
             state.subject = execution.function.clone();
         }
         state.preferred_subject |= preferred;
+        let exits = self
+            .plan
+            .loop_exits
+            .completed(execution.execution_semantics.loops, loop_rules.iter());
+        state.concrete_loop_exits = Some(match &state.concrete_loop_exits {
+            Some(previous) => previous.intersect(&exits),
+            None => exits,
+        });
         state.executions.push(execution);
         for rule in loop_rules.iter() {
             crate::instrumentation::record_deterministic_work(1);
@@ -160,6 +179,12 @@ impl WholeContractRoot {
         let rule = VerifiedFunctionRule {
             pointer_result,
             function: state.subject.clone(),
+            concrete_loop_exits: Some(
+                state
+                    .concrete_loop_exits
+                    .clone()
+                    .unwrap_or_else(|| self.plan.loop_exits.unknown()),
+            ),
             loop_semantics,
             checked_callees,
             applied_tactics,
@@ -203,6 +228,12 @@ impl ContractRootAttempt {
         for rule in child.loop_rules.iter() {
             crate::instrumentation::record_deterministic_work(1);
             parent.loop_rules.push(rule.clone());
+        }
+        if let Some(exits) = child.concrete_loop_exits {
+            parent.concrete_loop_exits = Some(match &parent.concrete_loop_exits {
+                Some(previous) => previous.intersect(&exits),
+                None => exits,
+            });
         }
         if !child.executions.is_empty() {
             if parent.executions.is_empty()

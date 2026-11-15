@@ -94,15 +94,27 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         })
         .collect();
     // The locals the body borrows, `_5 = &mut o`.
+    // The locals a borrow names: a borrow is a statement's value, or a call's
+    // argument, `f(&mut x)`.
     let borrowed: BTreeSet<&str> = mir
         .blocks
         .iter()
-        .flat_map(|block| &block.statements)
-        .filter_map(|statement| match statement {
-            S::Assign {
-                value: E::Borrow { place, .. },
-                ..
-            } => match place.as_ref() {
+        .flat_map(|block| {
+            let arguments = match &block.terminator {
+                T::Call { arguments, .. } => arguments.as_slice(),
+                _ => &[],
+            };
+            block
+                .statements
+                .iter()
+                .filter_map(|statement| match statement {
+                    S::Assign { value, .. } => Some(value),
+                    _ => None,
+                })
+                .chain(arguments)
+        })
+        .filter_map(|value| match value {
+            E::Borrow { place, .. } => match place.as_ref() {
                 E::Local { name } => Some(name.as_str()),
                 _ => None,
             },

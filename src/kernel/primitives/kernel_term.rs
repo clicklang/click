@@ -124,6 +124,11 @@ pub enum KernelTermNode {
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    FloatConvert {
+        source: ProgramType,
+        destination: ProgramType,
+        operand: KernelTerm,
+    },
     FloatNegate {
         operand: KernelTerm,
     },
@@ -442,6 +447,7 @@ impl NodeKey {
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
@@ -474,6 +480,9 @@ impl NodeKey {
             KernelTermNode::MachineLiteral(_)
             | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::FloatConvert { destination, .. } => {
+                MachineIntegerType::from_program_type(*destination).is_some()
+            }
             KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
@@ -498,6 +507,7 @@ impl NodeKey {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
+            KernelTermNode::FloatConvert { .. } => shared_machine_operand,
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
@@ -524,7 +534,9 @@ impl NodeKey {
         // this syntax summary so each query skips unchanged shared prefixes.
         let conditional_machine_rewrites = match &node {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
-            KernelTermNode::Call { .. } => shared_machine_operand,
+            KernelTermNode::Call { .. } | KernelTermNode::FloatConvert { .. } => {
+                shared_machine_operand
+            }
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::IntegerToMachine { .. }
             | KernelTermNode::MachineCast { .. }
@@ -792,6 +804,7 @@ impl KernelTerm {
             | KernelTermNode::IntegerIf { arguments }
             | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
@@ -891,6 +904,11 @@ impl KernelTerm {
         format: MachineIntegerType,
         operand: MachineOperandView<'_>,
     ) -> Self {
+        if let MachineOperandView::Legacy(value) = operand
+            && let Some(root) = KernelTermImport::default().float_to_machine(format, value)
+        {
+            return root;
+        }
         match operand {
             MachineOperandView::Shared(root) => root.with_machine_observation_type(format),
             MachineOperandView::Legacy(_) if operand.binary().is_some() => {

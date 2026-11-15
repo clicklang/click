@@ -50,6 +50,20 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
     recursive: bool,
 ) -> Result<ClickProposition, String> {
     match proposition {
+        ClickProposition::Value(expression) => {
+            let reduced = lambdas::reduce_head_fully(expression)?;
+            if let ContractExpression::Proposition(body) = reduced.as_ref() {
+                unfold_selected_predicates_in_proposition(
+                    predicate_environment,
+                    selected,
+                    body,
+                    active,
+                    recursive,
+                )
+            } else {
+                Ok(ClickProposition::Value(reduced.into_owned()))
+            }
+        }
         ClickProposition::ChangesOnly { .. } => Ok(proposition.clone()),
 
         ClickProposition::PredicateCall { name, arguments } if selected(name) => {
@@ -373,6 +387,10 @@ fn substitute_click_proposition_nonlogical(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ClickProposition, String> {
     match proposition {
+        ClickProposition::Value(expression) => Ok(ClickProposition::Value(
+            substitute_contract_expression_in(expression, substitutions)?,
+        )),
+
         ClickProposition::ChangesOnly {
             before,
             after,
@@ -823,6 +841,9 @@ fn collect_click_proposition_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match proposition {
+        ClickProposition::Value(expression) => {
+            collect_contract_expression_binding_names(expression, names)
+        }
         ClickProposition::ChangesOnly { resources, .. } => {
             for r in resources {
                 collect_resource_subject_binding_names(r, names);
@@ -899,6 +920,9 @@ pub(in crate::surface) fn collect_contract_expression_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            collect_click_proposition_binding_names(proposition, names)
+        }
         ContractExpression::Resource(subject) => {
             collect_resource_subject_binding_names(subject, names)
         }
@@ -1200,6 +1224,10 @@ fn rewrite_click_proposition_expression(
         rewrite_click_proposition_expression(value, source, target, preserve_snapshots)
     };
     match proposition {
+        ClickProposition::Value(value) => {
+            let (value, changed) = expression(value);
+            (ClickProposition::Value(value), changed)
+        }
         ClickProposition::ChangesOnly { .. } => (proposition.clone(), false),
 
         ClickProposition::Comparison {
@@ -1644,6 +1672,18 @@ fn rewrite_contract_expression_exact(
         (left, right, left_changed || right_changed)
     };
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            let (proposition, changed) = rewrite_click_proposition_expression(
+                proposition,
+                source,
+                target,
+                preserve_snapshots,
+            );
+            (
+                ContractExpression::Proposition(Box::new(proposition)),
+                changed,
+            )
+        }
         ContractExpression::Resource(_) => (expression.clone(), false),
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -2448,6 +2488,9 @@ fn apply_contract_let_expressions_inner(
     capture_names: &BTreeSet<String>,
 ) -> Result<ClickProposition, String> {
     match proposition {
+        ClickProposition::Value(expression) => Ok(ClickProposition::Value(
+            apply_contract_lets_to_expression(expression, bindings)?,
+        )),
         ClickProposition::ChangesOnly {
             before,
             after,
@@ -2864,6 +2907,9 @@ fn collect_contract_expression_referenced_names_one(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            collect_click_proposition_referenced_names(proposition, names)
+        }
         ContractExpression::Resource(subject) => {
             collect_resource_subject_referenced_names(subject, names)
         }
@@ -3094,6 +3140,9 @@ fn collect_click_proposition_referenced_names_one(
     names: &mut BTreeSet<String>,
 ) {
     match proposition {
+        ClickProposition::Value(expression) => {
+            collect_contract_expression_referenced_names(expression, names)
+        }
         ClickProposition::ChangesOnly { resources, .. } => {
             for r in resources {
                 collect_resource_subject_referenced_names(r, names);
@@ -3515,6 +3564,18 @@ pub(in crate::surface) fn pure_function_result_value(
     definition: &ClickFunctionDefinition,
     value: ContractExpression,
 ) -> ContractExpression {
+    if definition.return_type() == &ClickType::Integer {
+        // The declaration supplies the carrier even when the body consists
+        // only of contextual numerals (for example, `if P { 1 } else { 0 }`).
+        // Keep that context in the defining equation used by `unfold`.
+        let name = "__click_integer_result".to_string();
+        return ContractExpression::Let {
+            name: name.clone(),
+            click_type: Some(ClickType::Integer),
+            value: Box::new(value),
+            body: Box::new(ContractExpression::Binding(name)),
+        };
+    }
     let Some(target_type) = pure_function_result_scalar_type(definition) else {
         return value;
     };
@@ -3827,6 +3888,9 @@ fn substitute_contract_expression_node(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
     match expression {
+        ContractExpression::Proposition(proposition) => Ok(ContractExpression::Proposition(
+            Box::new(substitute_click_proposition_in(proposition, substitutions)?),
+        )),
         ContractExpression::Resource(subject) => Ok(ContractExpression::Resource(Box::new(
             substitute_resource_subject(subject, substitutions)?,
         ))),
@@ -4812,6 +4876,7 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         contract_expression_as_program_expression_resolving_fields(expression, field)
     };
     match expression {
+        ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -4967,6 +5032,7 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
     match expression {
+        ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)

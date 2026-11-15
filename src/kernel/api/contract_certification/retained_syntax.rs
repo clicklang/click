@@ -110,6 +110,35 @@ impl Comparison {
                     continue;
                 }
             }
+            if matches!(left, Operand::Shared(root) if matches!(root.node(), N::FloatConvert { .. }))
+                || matches!(right, Operand::Shared(root) if matches!(root.node(), N::FloatConvert { .. }))
+            {
+                let (Some((a, av)), Some((b, bv))) =
+                    (numeric_conversion(left), numeric_conversion(right))
+                else {
+                    return false;
+                };
+                if a != b {
+                    return false;
+                }
+                pending.push((av, bv));
+                continue;
+            }
+            // Float atoms have a bounded native reading. Compound float syntax
+            // keeps the native certification refusal until its own reader moves.
+            let atom = |view| match view {
+                Operand::Shared(root)
+                    if crate::kernel::FloatOperandView::from_shared(root).is_some() =>
+                {
+                    crate::kernel::FloatOperandView::from_shared(root)?
+                        .native_compat()
+                        .map(Operand::Legacy)
+                }
+                view => Some(view),
+            };
+            let (Some(left), Some(right)) = (atom(left), atom(right)) else {
+                return false;
+            };
             if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =
                 (left.binary(), right.binary())
             {
@@ -383,10 +412,60 @@ impl Comparison {
     }
 }
 
+fn numeric_conversion(view: Operand<'_>) -> Option<((ProgramType, ProgramType), Operand<'_>)> {
+    match view {
+        Operand::Shared(root) => match root.node() {
+            N::FloatConvert {
+                source,
+                destination,
+                operand,
+            } => Some(((*source, *destination), Operand::Shared(operand))),
+            _ => None,
+        },
+        Operand::Legacy(MachineTerm::PureFunctionApplication { name, arguments }) => {
+            let [operand] = arguments.as_slice() else {
+                return None;
+            };
+            Some((
+                crate::kernel::primitives::float_conversion::numeric_float_conversion_types(name)?,
+                Operand::Legacy(operand),
+            ))
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, VerificationSession};
+
+    #[test]
+    fn retained_float_conversions_keep_native_certification_admission() {
+        let _session = VerificationSession::enter();
+        let variable = MachineTerm::Variable(Variable(999985));
+        for source in [
+            variable.clone(),
+            MachineTerm::opaque_conversion("c_float64_to_float32", variable.clone()),
+            MachineTerm::Float32Negate(Box::new(variable)),
+        ] {
+            let native = MachineTerm::opaque_conversion("c_float32_to_int32", source);
+            let root = crate::kernel::KernelTermImport::default()
+                .machine(MachineIntegerType::Int32, &native);
+            let expected =
+                Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native));
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                Comparison::default().machine(Operand::Shared(&root), Operand::Legacy(&native)),
+                expected
+            );
+            assert_eq!(
+                Comparison::default().machine(Operand::Legacy(&native), Operand::Shared(&root)),
+                expected
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     fn retained_leaf(value: u32) -> KernelTerm {
         KernelTerm::retained_native_machine_operand(

@@ -1723,7 +1723,7 @@ fn adding_a_loop_rule_collects_only_that_rules_variables() {
     let rule = |index: u64| VerifiedLoopRule {
         symbolic_entry_state: ExecutionState::default(),
         loop_statement: program_skip(),
-        loop_index: Some(index as usize),
+        loop_evidence: None,
         required_assumptions: PureFactContext::new()
             .assume_proposition(guard_operand_fact(1_000_000 + index, true)),
         paths: Vec::new(),

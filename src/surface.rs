@@ -308,6 +308,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "or",
     "owns",
     "predicate",
+    "prop",
     "preserve",
     "premise",
     "produces",
@@ -404,6 +405,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "implies",
     "lambda",
     "lambda-application",
+    "proposition-value",
     "let-where",
     "match-expression",
     "not",
@@ -1110,6 +1112,8 @@ pub enum ClickType {
     },
     /// An exact, specification-only signed integer with no C representation.
     Integer,
+    /// A specification proposition, distinct from a C Bool value.
+    Proposition,
     Algebraic(AlgebraicTypeApplication),
     /// A pure specification function; never a C function pointer.
     Function {
@@ -1126,7 +1130,7 @@ impl ClickType {
             Self::Program(interface_type) | Self::CObjectPointer { interface_type, .. } => {
                 Some(*interface_type)
             }
-            Self::Integer => None,
+            Self::Integer | Self::Proposition => None,
             Self::Algebraic(_) | Self::Function { .. } => None,
         }
     }
@@ -1704,7 +1708,6 @@ struct ClickFunctionType {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
-    memory_independent: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2351,6 +2354,8 @@ pub enum ResourceKind {
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum ClickProposition {
+    /// Assert a proposition-valued expression, such as a lambda application.
+    Value(ContractExpression),
     ChangesOnly {
         before: SnapshotSelector,
         after: SnapshotSelector,
@@ -2438,6 +2443,7 @@ impl Clone for ClickProposition {
 
 fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
     match proposition {
+        ClickProposition::Value(expression) => ClickProposition::Value(expression.clone()),
         ClickProposition::ChangesOnly {
             before,
             after,
@@ -3039,6 +3045,9 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            collect_current_proposition_variables(proposition, names)
+        }
         ContractExpression::Resource(subject) => {
             collect_current_resource_subject_variables(subject, names)
         }
@@ -3186,6 +3195,9 @@ fn collect_current_proposition_variables(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
+            ClickProposition::Value(expression) => {
+                collect_current_contract_expression_variables(expression, names)
+            }
             ClickProposition::ChangesOnly { .. } => {}
 
             ClickProposition::Comparison { left, right, .. } => {
@@ -3397,7 +3409,9 @@ pub enum SurfaceTerm {
         then_branch: Box<ContractExpression>,
         else_branch: Box<ContractExpression>,
     },
-    /// A typed, lexically scoped pure specification function.
+    /// A proposition carried as a specification value.
+    Proposition(Box<ClickProposition>),
+    /// A typed, lexically scoped specification function; reads use application state.
     Lambda {
         parameters: Vec<(String, ClickType)>,
         result: ClickType,
@@ -7999,6 +8013,9 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            click_proposition_reads_memory(proposition, callees)
+        }
         ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -8147,6 +8164,9 @@ fn click_proposition_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match proposition {
+        ClickProposition::Value(expression) => {
+            contract_expression_reads_memory(expression, callees)
+        }
         ClickProposition::Comparison { left, right, .. } => {
             contract_expression_reads_memory(left, callees)
                 || contract_expression_reads_memory(right, callees)
@@ -9769,7 +9789,9 @@ impl FunctionParameter {
             ClickType::Program(interface_type)
             | ClickType::CObjectPointer { interface_type, .. } => *interface_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
-            ClickType::Function { .. } => panic!("a specification function has no C type"),
+            ClickType::Proposition | ClickType::Function { .. } => {
+                panic!("a specification function has no C type")
+            }
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
             }

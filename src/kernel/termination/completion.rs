@@ -246,7 +246,8 @@ impl ProgramContractProof {
                 .extend_from_slice(body.loop_rules());
             subjects.insert(name, rule.clone());
         }
-        let rules = subjects.into_values().collect::<Vec<_>>();
+        let subjects = subjects.into_values().collect::<Vec<_>>();
+        let rules = prepare_independent_loop_exits(&subjects, &loop_rules);
         let heights = program_termination_height_plan(&rules, inputs.inline_bodies);
         let obligations = super::obligations::TerminationObligations::generate(
             &rules,
@@ -390,6 +391,7 @@ mod tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, vec![], body),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),

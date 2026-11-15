@@ -133,3 +133,116 @@ fn float_arithmetic_native_boundaries_walk_only_explicit_output_size() {
         }
     }
 }
+
+#[test]
+fn conversion_rebuild_does_not_scan_symbolic_operand_prefixes() {
+    for size in [16, 64, 256] {
+        let mut operand = MachineTerm::Variable(Variable(999951));
+        for _ in 0..size {
+            operand = MachineTerm::Float32Negate(Box::new(operand));
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            MachineTerm::rebuild_pure_application("c_float32_to_float64".into(), vec![operand])
+        });
+        assert!(matches!(
+            result,
+            MachineTerm::PureFunctionApplication { .. }
+        ));
+        assert!(work <= 1, "size={size}: work={work}");
+    }
+}
+
+#[test]
+fn float_conversion_chains_preserve_shared_operands_without_exports() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(999962));
+        let mut source = ProgramType::Float32;
+        let exports = KernelTermExport::machine_export_count();
+        for _ in 0..size {
+            let target = if source == ProgramType::Float32 {
+                KernelFloatType::Float64
+            } else {
+                KernelFloatType::Float32
+            };
+            let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::float_convert(target, source, root.clone()).unwrap()
+            });
+            assert!(work <= 4, "size={size}: work={work}");
+            assert_eq!(next.children()[0].id(), root.id());
+            root = next;
+            source = target.program_type();
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        let (native, export_work) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermExport::float(&root).unwrap()
+        });
+        assert!(export_work <= 3 * size + 4, "{size}: {export_work}");
+        let (again, import_work) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(native))
+        });
+        assert_eq!(again, root);
+        assert!(import_work <= 5 * size + 8, "{size}: {import_work}");
+    }
+}
+
+#[test]
+fn float_to_machine_construction_retains_shared_float_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut operand =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(999972));
+        for _ in 0..size {
+            operand = KernelTerm::float_binary(
+                KernelFloatType::Float32,
+                FloatBinaryOperator::Add,
+                [operand.clone(), operand],
+            )
+            .unwrap();
+        }
+        let exports = KernelTermExport::machine_export_count();
+        for target in [ProgramType::Int8, ProgramType::UInt32, ProgramType::Int64] {
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::numeric_float_convert(target, ProgramType::Float32, operand.clone())
+                    .unwrap()
+            });
+            assert!(work <= 4, "size={size}, work={work}");
+            assert_eq!(root.children()[0].id(), operand.id());
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
+fn float_to_machine_observations_and_exact_matching_do_not_export_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut operand =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(999975));
+        for _ in 0..size {
+            operand = KernelTerm::float_binary(
+                KernelFloatType::Float32,
+                FloatBinaryOperator::Add,
+                [operand.clone(), operand],
+            )
+            .unwrap();
+        }
+        let root =
+            KernelTerm::numeric_float_convert(ProgramType::Int32, ProgramType::Float32, operand)
+                .unwrap();
+        let other = root.with_machine_observation_type(MachineIntegerType::UInt32);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let shared = crate::kernel::SharedMachineIntegerTerm::from_shared(
+                MachineIntegerType::Int32,
+                root.clone(),
+            )
+            .unwrap();
+            assert_eq!(shared.operand_view().root_width(), None);
+            assert!(crate::kernel::shared_machine_syntax_equal(&root, &other));
+        });
+        assert!(work <= 8, "size={size}, work={work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

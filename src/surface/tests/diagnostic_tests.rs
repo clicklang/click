@@ -1916,9 +1916,11 @@ fn statement_sites_change_nothing_but_the_location_line() {
     ];
     for (proof, expected_sites) in cases {
         let click_source = format!("{header}{proof}");
-        // The first verification in a process also builds shared caches;
-        // both measured runs come after it.
-        let _ = verify_c_sources(&click_source, &[("f.c", SITED_C_SOURCE)]);
+        // Keep the warm results alive: rejected generated proofs retain
+        // shared Integer terms through weak interning, just as successes do.
+        // Both measured presentations must start with those terms available.
+        let _warm_original = verify_c_sources(&click_source, &[("f.c", SITED_C_SOURCE)]);
+        let _warm_moved = verify_c_sources(&click_source, &[("f.c", &shifted)]);
         let (original, original_work) = crate::instrumentation::measure_deterministic_work(|| {
             verify_c_sources(&click_source, &[("f.c", SITED_C_SOURCE)])
         });

@@ -5680,3 +5680,175 @@ fn numeric_float_cast_syntax_keeps_pointer_targets_and_c_style_refusals() {
         assert_eq!(error.kind, ClickErrorKind::Syntax, "{error:?}");
     }
 }
+
+#[test]
+fn common_float_conversions_round_trip_existing_casts() {
+    use crate::kernel::KernelFloatType;
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(999963));
+    let names = BTreeMap::from([(Variable(999963), "x".to_string())]);
+    for (source_spelling, source_type) in [
+        ("int8", ProgramType::Int8),
+        ("uint8", ProgramType::UInt8),
+        ("int16", ProgramType::Int16),
+        ("uint16", ProgramType::UInt16),
+        ("int32", ProgramType::Int32),
+        ("uint32", ProgramType::UInt32),
+        ("int64", ProgramType::Int64),
+        ("uint64", ProgramType::UInt64),
+        ("float", ProgramType::Float32),
+        ("double", ProgramType::Float64),
+    ] {
+        let source_value = match source_type {
+            ProgramType::Float32 => ProgramValue::Float32(variable.clone()),
+            ProgramType::Float64 => ProgramValue::Float64(variable.clone()),
+            _ => MachineIntegerType::from_program_type(source_type)
+                .unwrap()
+                .value_from_term(variable.clone()),
+        };
+        let state = ExecutionState::new().with_local("x", source_value);
+        for (format, target_spelling) in [
+            (KernelFloatType::Float32, "float"),
+            (KernelFloatType::Float64, "double"),
+        ] {
+            if source_type == format.program_type() {
+                continue;
+            }
+            let source = MachineTerm::opaque_conversion(
+                format!(
+                    "c_{}_to_{}",
+                    crate::kernel::program_type_spelling(source_type),
+                    crate::kernel::program_type_spelling(format.program_type())
+                ),
+                variable.clone(),
+            );
+            let (widen, narrow) = if format == KernelFloatType::Float32 {
+                ("c_float32_to_float64", "c_float64_to_float32")
+            } else {
+                ("c_float64_to_float32", "c_float32_to_float64")
+            };
+            let nested = MachineTerm::opaque_conversion(
+                narrow,
+                MachineTerm::opaque_conversion(widen, source.clone()),
+            );
+            for source in [source, nested] {
+                let expected = format.value(source.clone());
+                let root = crate::kernel::KernelTermImport::default().float(format, &source);
+                let surface =
+                    raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+                let text = diagnostics::describe_contract_expression(&surface);
+                let parsed = parser::parse(&format!(
+                    "function probe(x: {source_spelling}) -> {target_spelling} {{ {text} }}"
+                ))
+                .unwrap_or_else(|error| panic!("{text}: {error}"));
+                let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                    parsed.click_function_definitions()[0].body().unwrap(),
+                    BTreeMap::new(),
+                    &state,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                    None,
+                    &RecordedSnapshots::new(),
+                    SpecDefinitions::new(
+                        &PredicateEnvironment::new(&[]),
+                        &ClickFunctionEnvironment::new(&[]),
+                    ),
+                    BTreeSet::new(),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+                let (value, _) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+                assert_eq!(value, expected, "{text}");
+            }
+        }
+    }
+}
+
+#[test]
+fn common_float_to_integer_conversions_round_trip_with_definedness() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(999963));
+    let names = BTreeMap::from([(Variable(999963), "x".to_string())]);
+    for (source_spelling, source_type) in [
+        ("float", ProgramType::Float32),
+        ("double", ProgramType::Float64),
+    ] {
+        let source_value = match source_type {
+            ProgramType::Float32 => ProgramValue::Float32(variable.clone()),
+            ProgramType::Float64 => ProgramValue::Float64(variable.clone()),
+            _ => MachineIntegerType::from_program_type(source_type)
+                .unwrap()
+                .value_from_term(variable.clone()),
+        };
+        let state = ExecutionState::new().with_local("x", source_value);
+        for (format, target_spelling) in [
+            (MachineIntegerType::Int8, "int8"),
+            (MachineIntegerType::UInt8, "uint8"),
+            (MachineIntegerType::Int16, "int16"),
+            (MachineIntegerType::UInt16, "uint16"),
+            (MachineIntegerType::Int32, "int32"),
+            (MachineIntegerType::UInt32, "uint32"),
+            (MachineIntegerType::Int64, "int64"),
+            (MachineIntegerType::UInt64, "uint64"),
+        ] {
+            if source_type == format.program_type() {
+                continue;
+            }
+            let source = MachineTerm::opaque_conversion(
+                format!(
+                    "c_{}_to_{}",
+                    crate::kernel::program_type_spelling(source_type),
+                    crate::kernel::program_type_spelling(format.program_type())
+                ),
+                variable.clone(),
+            );
+            {
+                let expected = format.value_from_term(source.clone());
+                let root = crate::kernel::KernelTermImport::default().machine(format, &source);
+                let surface =
+                    raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+                let text = diagnostics::describe_contract_expression(&surface);
+                let parsed = parser::parse(&format!(
+                    "function probe(x: {source_spelling}) -> {target_spelling} {{ {text} }}"
+                ))
+                .unwrap_or_else(|error| panic!("{text}: {error}"));
+                let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                    parsed.click_function_definitions()[0].body().unwrap(),
+                    BTreeMap::new(),
+                    &state,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                    None,
+                    &RecordedSnapshots::new(),
+                    SpecDefinitions::new(
+                        &PredicateEnvironment::new(&[]),
+                        &ClickFunctionEnvironment::new(&[]),
+                    ),
+                    BTreeSet::new(),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+                let (value, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+                assert_eq!(value, expected, "{text}");
+                assert!(
+                    !obligations.is_empty(),
+                    "symbolic conversion must retain its definedness obligations: {text}"
+                );
+            }
+        }
+    }
+}

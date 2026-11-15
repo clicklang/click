@@ -64,7 +64,7 @@ library module's own proofs are checked against the whole library.
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
 theorems use ordinary Click declarations. Ordinary library theorems have checked
-proofs. The Integer order axioms `add_le`, `le_antisymmetric`, `multiply_order_nonnegative`, and
+proofs. The Integer order axioms `add_le`, `le_antisymmetric`, `lt_step_le`, `multiply_order_nonnegative`, and
 `round_down_le` are trusted declarations of rules previously internal to
 arithmetic certificates; ordinary explicit applications need no certificate.
 Kernel standard theorems (13 machine-integer laws including `integer::uint32_from_le_bytes`, 5 Integer truncation laws, 6 `Nat`

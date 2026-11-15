@@ -340,6 +340,7 @@ pub(super) fn print_proposition(
         );
     }
     match proposition {
+        ClickProposition::Value(expression) => describe_contract_expression(expression),
         ClickProposition::Comparison {
             left,
             operator,
@@ -447,6 +448,22 @@ pub(super) fn print_proposition(
             validation::describe_click_type(click_type),
             print_proposition(body, mode)
         ),
+        ClickProposition::RangeAll { start, end, .. }
+        | ClickProposition::RangeAny { start, end, .. }
+            if let Some(predicate) = lambdas::range_predicate(proposition) =>
+        {
+            let method = if matches!(proposition, ClickProposition::RangeAll { .. }) {
+                "all"
+            } else {
+                "any"
+            };
+            format!(
+                "({}..{}).{method}({})",
+                describe_contract_expression(start),
+                describe_contract_expression(end),
+                describe_contract_expression(predicate)
+            )
+        }
         ClickProposition::RangeAll {
             start,
             end,

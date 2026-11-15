@@ -319,3 +319,154 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
         }
     }
 }
+
+fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
+    let symbolic = |id| Pointer::symbolic(Variable(id));
+    let mut samples = Vec::new();
+    for count in [4_u64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let selected = symbolic(8_910_000);
+        let neighbor = symbolic(8_920_000);
+        let mut facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(selected.clone(), neighbor.clone()),
+            true,
+        );
+        for index in 1..count {
+            if axis != "owners" {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        if axis == "aliases" {
+                            selected.clone()
+                        } else {
+                            symbolic(8_930_000)
+                        },
+                        symbolic(8_940_000 + index),
+                    ),
+                    true,
+                );
+            }
+        }
+        let start = u32::from(!overlap);
+        let mut resources = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new(neighbor, start.into(), (start + 1).into())),
+        );
+        if axis == "owners" {
+            for index in 0..count {
+                resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                    MemoryRange::new(symbolic(8_950_000 + index), 0u32.into(), 1u32.into()),
+                ));
+            }
+        }
+        resources.synchronize_memory_equalities(&facts);
+        let state = ExecutionState::new()
+            .with_population_creation_tracking()
+            .with_memory(Memory::new().with_block(selected.block.clone(), 8))
+            .with_resource_context(resources);
+        let output = ResourceSpec::owned_memory(MemorySegment::new(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
+        ))
+        .with_role(ResourceTransferRole::Produce)
+        .with_snapshot(ResourceSnapshot::Post);
+        let function = program_function(
+            ProgramType::Void,
+            "produce_one_cell",
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            program_skip(),
+        )
+        .with_resource_summary(vec![], vec![output]);
+        let environment = environment(&function);
+        let arguments = [crate::kernel::program_expression::pointer_value(
+            selected.clone(),
+        )];
+        let execute = || {
+            let _operation = crate::kernel::search::FastOperationScope::enter(
+                "constant produced ownership call",
+            );
+            execute_program_function_call_paths(
+                &state,
+                &function,
+                &arguments,
+                &facts,
+                ExecutionContext::apply_verified_rules(&environment),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        };
+        let ((paths, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(execute)
+        });
+        let phases = events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::OperationFinished {
+                    name, work, ..
+                } if name.starts_with("ensured resource")
+                    || name == "ensured composite frontier check" =>
+                {
+                    Some((name.as_str(), *work))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        eprintln!("call phases {axis}/{overlap}/{count}: {phases:?}");
+        let succeeds = matches!(
+            paths.as_slice(),
+            [FunctionPath {
+                outcome: FunctionOutcome::Return { .. },
+                ..
+            }]
+        );
+        assert_eq!(succeeds, !overlap, "{axis}/{count}: {paths:?}");
+        let lowering_work = phases
+            .iter()
+            .find(|(name, _)| *name == "ensured resource lowering")
+            .unwrap()
+            .1;
+        samples.push((count, work, lowering_work));
+    }
+    eprintln!(
+        "produced ownership call axis={axis}, overlap={overlap}, (count,total,lowering): {samples:?}"
+    );
+    for (_, total, work) in &samples {
+        assert!(
+            *total <= samples[0].1 + 32,
+            "whole call scans {axis}: {samples:?}"
+        );
+        assert!(
+            *work <= samples[0].2 + 16,
+            "return construction scans {axis}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn produced_call_return_aliases_success() {
+    check_produced_call_return_lowering("aliases", false);
+}
+
+#[test]
+fn produced_call_return_aliases_overlap_refusal() {
+    check_produced_call_return_lowering("aliases", true);
+}
+
+#[test]
+fn produced_call_return_owners_success() {
+    check_produced_call_return_lowering("owners", false);
+}
+
+#[test]
+fn produced_call_return_owners_overlap_refusal() {
+    check_produced_call_return_lowering("owners", true);
+}
+
+#[test]
+fn produced_call_return_unrelated_aliases_success() {
+    check_produced_call_return_lowering("unrelated_aliases", false);
+}
+
+#[test]
+fn produced_call_return_unrelated_aliases_overlap_refusal() {
+    check_produced_call_return_lowering("unrelated_aliases", true);
+}

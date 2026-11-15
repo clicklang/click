@@ -64,6 +64,11 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     {
         return holds == *value;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && let Some(holds) = computation::integer_operation_bound_comparison(condition)
+    {
+        return holds == *value;
+    }
     // Constructor congruence is definitional reduction over the goal's own
     // structure: two applications of one constructor are equal when their
     // corresponding fields are. The walk is bounded by the goal.
@@ -326,6 +331,49 @@ pub(crate) fn normalize_using_conditions(
                     None => break,
                 }
             }
+        }
+    }
+    // Native orders can be the lowered form of written Integer observations.
+    // Use their unique order reading, retaining the actual operand handles.
+    // No fact selection is involved: at most four explicit bounds are read.
+    if matches!(
+        (premises.len(), goal),
+        (
+            2,
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
+        ) | (
+            4,
+            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(..), true)
+        )
+    ) {
+        let bounds = premises
+            .iter()
+            .map(|premise| {
+                let reading =
+                    crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                        premise,
+                    )
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| premise.clone());
+                match reading {
+                    Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true) => {
+                        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(b, a), true)
+                    }
+                    other => other,
+                }
+            })
+            .collect::<Vec<_>>();
+        if bounds.len() == 2
+            && (super::integer_operation_identity::check(0, &[0, 1], &bounds, goal).is_ok()
+                || super::integer_cast_identity::check(0, &[0, 1], &bounds, goal).is_ok())
+        {
+            return Ok(());
+        }
+        if bounds.len() == 4
+            && super::integer_product_bounds::check(0, &[0, 1, 2, 3], &bounds, goal).is_ok()
+        {
+            return Ok(());
         }
     }
     // Rule L-Eq through a cited `Bool` equality (Stage 5): `a == b` with
@@ -912,6 +960,21 @@ fn polarity_forms_by(
         };
         conditions.append(&mut equivalent);
     }
+    // Exact Integer equality and disequality are two spellings of one
+    // condition at opposite polarities, before mirroring either orientation.
+    let integer_opposites = conditions
+        .iter()
+        .filter_map(|(condition, value)| match condition {
+            ConditionTerm::IntegerEqual(a, b) => {
+                Some((ConditionTerm::IntegerNotEqual(a.clone(), b.clone()), !value))
+            }
+            ConditionTerm::IntegerNotEqual(a, b) => {
+                Some((ConditionTerm::IntegerEqual(a.clone(), b.clone()), !value))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    conditions.extend(integer_opposites);
     // An equality or disequality states one claim in either orientation
     // (`b != a` for `a != b`), as an order claim does in its mirrored
     // direction: one more exact lookup per spelling.

@@ -31,7 +31,7 @@ pub(crate) struct WholeContractProof {
     open: PersistentMap<ContractCompletionGoal, BranchId>,
     proof: RootProof,
     modular: bool,
-    claim_cells: bool,
+    loop_exits: Arc<crate::kernel::termination::loop_evidence::PreparedLoopExits>,
 }
 
 impl std::fmt::Debug for WholeContractProof {
@@ -183,18 +183,20 @@ impl ContractBodyProof {
 impl WholeContractProof {
     pub(crate) fn open(entry: Arc<PreparedContractEntryCases>) -> Result<Self, String> {
         let function = &entry.function;
+        let loop_exits =
+            crate::kernel::termination::loop_evidence::PreparedLoopExits::open(function)?;
         if entry.cases.is_empty() {
             return Err("the contract entry has no cases".into());
         }
         // Fix reusable-rule eligibility at opening. A startup or a contract
         // with source-only clauses still owns its body/termination proof, but
         // completing it must not expose an unsupported modular contract.
-        let claim_cells = function.opaque_contract_supported()
+        let reusable_claims = function.opaque_contract_supported()
             && !function.contract_claims().is_empty()
             && (function.is_program_entry()
                 || (function_contract_claims_are_complete(function)
                     && function.verified_direct_contract_supported()));
-        let modular = claim_cells && !function.is_program_entry();
+        let modular = reusable_claims && !function.is_program_entry();
         let mut keys = BTreeSet::new();
         for claim in function.contract_claims() {
             if !keys.insert(claim.key()) {
@@ -205,14 +207,12 @@ impl WholeContractProof {
         for case in 0..entry.cases.len() {
             crate::instrumentation::record_deterministic_work(1);
             goals.push(ContractCompletionGoal::Boundary { case });
-            if claim_cells {
-                for claim in function.contract_claims() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    goals.push(ContractCompletionGoal::Claim {
-                        case,
-                        key: claim.key().clone(),
-                    });
-                }
+            for claim in function.contract_claims() {
+                crate::instrumentation::record_deterministic_work(1);
+                goals.push(ContractCompletionGoal::Claim {
+                    case,
+                    key: claim.key().clone(),
+                });
             }
         }
         let branch = |goal| {
@@ -240,7 +240,7 @@ impl WholeContractProof {
             open,
             proof,
             modular,
-            claim_cells,
+            loop_exits,
         })
     }
 
@@ -341,6 +341,7 @@ impl AdmittedContractProof {
         let rule = VerifiedFunctionRule {
             pointer_result: self.execution.pointer_result.clone(),
             function: self.function,
+            concrete_loop_exits: Some(self.owner.loop_exits.unknown()),
             loop_semantics: self.execution.loop_semantics,
             checked_callees: self.execution.checked_callees.clone(),
             applied_tactics: self.execution.applied_tactics.clone(),
@@ -427,11 +428,7 @@ impl ContractProofProgress {
             remaining_paths,
             "contract boundary",
         );
-        let claims = if owner.claim_cells {
-            execution.function.contract_claims()
-        } else {
-            &[]
-        };
+        let claims = owner.entry.function.contract_claims();
         for claim in claims {
             let operation = match claim.target() {
                 FunctionContractClaimTarget::BodySafety => "contract claim: body safety",
@@ -532,7 +529,7 @@ impl ContractProofProgress {
         match (claims, closing) {
             (Some(claims), Some(closing)) => {
                 for key in claims
-                    .completed_proposition_keys()
+                    .completed_outcome_claim_keys()
                     .chain(closing.completed_claim_keys())
                 {
                     next.finish_goal(ContractPathGoal::Claim(key.clone()));
@@ -589,6 +586,15 @@ mod tests {
         path_count: usize,
         claim_count: usize,
     ) -> (WholeContractProof, ContractProofProgress, Vec<Goal>) {
+        fixture_with_support(case_count, path_count, claim_count, true)
+    }
+
+    fn fixture_with_support(
+        case_count: usize,
+        path_count: usize,
+        claim_count: usize,
+        modular: bool,
+    ) -> (WholeContractProof, ContractProofProgress, Vec<Goal>) {
         let (base, _) = contract_closing_tests::fixture(path_count);
         let ensure = base.contract_ensures()[0].clone();
         let function = base.with_contract(
@@ -598,7 +604,7 @@ mod tests {
             (0..claim_count)
                 .map(|index| FunctionContractClaim::ensure_proposition(index, index))
                 .collect(),
-            true,
+            modular,
         );
         let mut entry = prepare_function_contract_entry_cases(
             program_function_contract_entry(&ExecutionState::new(), &function, &[]).unwrap(),
@@ -682,6 +688,114 @@ mod tests {
                 .is_complete()
         );
         Ok(())
+    }
+
+    fn source_completion(goal: &Goal, key: &FunctionContractClaimKey) -> CheckedProposition {
+        let fact = Proposition::Predicate {
+            name: "source_clause".into(),
+            arguments: vec![],
+        };
+        let proof: Root = ProofObject::root(
+            (),
+            ProofBranch::new(
+                crate::kernel::proof::ProofObligation::FunctionOutcome(goal.clone()),
+                ProofBranchState {
+                    facts: ProofFacts::from_ordered(std::slice::from_ref(&fact)),
+                    execution: None,
+                },
+            ),
+        );
+        proof
+            .focus_source_contract_claim(key, fact, ())
+            .unwrap()
+            .apply_known(PropositionKnownContext::Exact)
+            .unwrap_or_else(|_| panic!("the selected source clause is an exact root fact"))
+            .completed_proposition()
+            .unwrap()
+    }
+
+    fn source_goal(mut goal: Goal, count: usize) -> Goal {
+        let mut core = goal.data.core.clone();
+        core.is_exceptional = false;
+        goal.data = Arc::new(OutcomeProofState::new(core, ()));
+        goal.claims = Some(OutcomeClaimGoals::open(
+            (0..count).map(|i| (FunctionContractClaimKey::Ensure(i), None)),
+            false,
+        ));
+        goal
+    }
+
+    #[test]
+    fn nonmodular_boundary_completion_cannot_skip_source_claim_cells() {
+        let (mut owner, mut progress, goals) = fixture_with_support(2, 2, 2, false);
+        assert!(!owner.modular);
+        assert_eq!(owner.open.len(), 6);
+        for mut goal in goals {
+            goal.claims = Some(OutcomeClaimGoals::open([], false));
+            finish(&mut progress, goal).unwrap();
+        }
+        owner.accept_progress(&progress);
+        assert_eq!(
+            owner.open.len(),
+            4,
+            "boundary proof does not imply source-clause proofs"
+        );
+        assert!(matches!(
+            owner.first_open(),
+            Some(ContractCompletionGoal::Claim { .. })
+        ));
+    }
+
+    #[test]
+    fn source_clause_proofs_retire_all_entry_cells_without_modular_reuse() {
+        let (mut owner, mut progress, goals) = fixture_with_support(2, 2, 2, false);
+        let untouched = progress.clone();
+        for (path, goal) in goals.into_iter().enumerate() {
+            let mut goal = source_goal(goal, 2);
+            for i in 0..2 {
+                let key = FunctionContractClaimKey::Ensure(i);
+                let completion = source_completion(&goal, &key);
+                let other = FunctionContractClaimKey::Ensure(1 - i);
+                assert!(
+                    goal.claims
+                        .as_ref()
+                        .unwrap()
+                        .close(
+                            &other,
+                            ClaimGoalEvidence::Proposition(completion.clone()),
+                            &goal.data.core.identity
+                        )
+                        .is_err()
+                );
+                goal.claims = Some(
+                    goal.claims
+                        .as_ref()
+                        .unwrap()
+                        .close(
+                            &key,
+                            ClaimGoalEvidence::Proposition(completion),
+                            &goal.data.core.identity,
+                        )
+                        .unwrap(),
+                );
+            }
+            finish(&mut progress, goal).unwrap();
+            owner.accept_progress(&progress);
+            assert_eq!(
+                owner.first_open().is_none(),
+                path == 1,
+                "all live outcomes must contribute"
+            );
+        }
+        assert!(owner.first_open().is_none());
+        assert!(
+            !owner.modular,
+            "source-only proofs cannot create a reusable rule"
+        );
+        assert!(
+            untouched.closed.is_empty(),
+            "proof forks retain their own open cells"
+        );
     }
 
     #[test]

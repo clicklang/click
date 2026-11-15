@@ -2613,6 +2613,7 @@ fn collect_conjunctive_loadability_segments(
     segments: &mut Vec<ContractSegment>,
 ) {
     match proposition {
+        ClickProposition::Value(_) => {}
         ClickProposition::Loadable { segment } => segments.push(segment.clone()),
         ClickProposition::And(left, right) => {
             collect_conjunctive_loadability_segments(left, segments);
@@ -2909,6 +2910,18 @@ fn evaluate_entry_resource_context(
 
 fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
     match proposition {
+        ClickProposition::Value(expression) => {
+            let mut found = false;
+            fixed_state_proofs::conversion_conditions::walk_written_expressions(
+                expression,
+                &mut |term| {
+                    if let ContractExpression::Proposition(body) = term {
+                        found |= click_proposition_mentions_defined(body);
+                    }
+                },
+            );
+            found
+        }
         ClickProposition::Defined { .. } => true,
         ClickProposition::At { proposition, .. } | ClickProposition::Not(proposition) => {
             click_proposition_mentions_defined(proposition)

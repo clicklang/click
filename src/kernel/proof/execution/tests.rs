@@ -760,6 +760,7 @@ fn returned_proposition_event(
                 effect_facts: ExecutionFacts::new().into(),
             }),
             None,
+            None,
         ),
     }))
 }

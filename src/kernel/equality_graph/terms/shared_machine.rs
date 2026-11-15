@@ -106,7 +106,7 @@ impl TermClasses {
                 continue;
             }
             let class = match term.node() {
-                N::Fold(_) | N::Match(_) => {
+                N::Fold(_) | N::Match(_) | N::FloatConvert { .. } => {
                     let format = match width {
                         W::Bits8 => MachineIntegerType::UInt8,
                         W::Bits16 => MachineIntegerType::UInt16,
@@ -509,6 +509,43 @@ impl TermClasses {
 mod tests {
     use super::*;
     use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn common_float_conversion_registration_matches_native_classes_without_export() {
+        use crate::kernel::{KernelTermExport, KernelType, ProgramType};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+        ] {
+            let native = T::opaque_conversion(
+                format!(
+                    "c_float32_to_{}",
+                    crate::kernel::program_type_spelling(format.program_type())
+                ),
+                T::Variable(Variable(999974)),
+            );
+            let root = KernelTerm::numeric_float_convert(
+                format.program_type(),
+                ProgramType::Float32,
+                KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(999974)),
+            )
+            .unwrap();
+            for width in [W::Bits8, W::Bits16, W::Bits32, W::Bits64, W::Bits128] {
+                let mut classes = TermClasses::default();
+                let exports = KernelTermExport::machine_export_count();
+                let shared = classes.intern_shared_machine(&root, width);
+                let written = classes.intern_typed_machine(&native, width);
+                assert_eq!(
+                    classes.root(shared),
+                    classes.root(written),
+                    "{format:?} {width:?}"
+                );
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
 
     #[test]
     fn common_boolean_cast_registration_matches_native_classes() {

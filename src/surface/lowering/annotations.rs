@@ -105,6 +105,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
+        ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -199,7 +200,7 @@ pub(in crate::surface) fn resolve_resource_field_schema(
         .iter()
         .map(|field| {
             let ty = match field.click_type() {
-                ClickType::Function { .. } => {
+                ClickType::Proposition | ClickType::Function { .. } => {
                     return Err(ClickError::new(
                         "specification function fields are not supported",
                     ));
@@ -1802,9 +1803,9 @@ fn annotate_function(
     } else {
         lowerer.lower_statement(parsed_function.body(), parsed_function.control_targets())?
     };
-    let natural_control_loop = parsed_function.natural_control_loop().is_some();
-    let body = if let Some((backedge_target, natural_exit_target, _)) =
-        parsed_function.natural_control_loop()
+    let natural_source = parsed_function.natural_control_loop();
+    let natural_control_loop = natural_source.is_some();
+    let body = if let Some((backedge_target, natural_exit_target, _)) = natural_source
         && function_block.structural_clauses().for_loop(0).is_some()
     {
         let invariant_checks = lowerer.loop_invariant_checks(0)?;
@@ -1852,6 +1853,7 @@ fn annotate_function(
     .with_return_pointee_constant(parsed_function.return_pointee_is_constant())
     .with_return_pointee_class(parsed_function.return_pointee_class())
     .with_source_body(source_body)
+    .with_natural_loop_source(natural_source.map(|(target, exit, _)| (target, exit)))
     .with_control_targets_from(&parsed_kernel_function);
     if parsed_kernel_function.is_program_entry() {
         function = function.with_program_entry();
@@ -2879,6 +2881,7 @@ pub(in crate::surface) fn function_contract_summary(
 
 fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> bool {
     match proposition {
+        ClickProposition::Value(_) => true,
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
@@ -4287,6 +4290,9 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
+            ClickProposition::Value(expression) => {
+                self.lower_proposition_value(expression, environment)
+            }
             ClickProposition::At { .. } => {
                 self.lower_at_proposition_to_spec(proposition, environment)
             }
@@ -4330,6 +4336,69 @@ impl AnnotationLowerer<'_> {
             | ClickProposition::Defined { .. } => {
                 self.lower_atomic_proposition_to_spec(proposition, environment)
             }
+        }
+    }
+
+    fn lower_proposition_value(
+        &mut self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecProposition, String> {
+        if let Some(reduced) = lambdas::reduce_head(expression)? {
+            return self.lower_proposition_value(&reduced, environment);
+        }
+        match expression {
+            ContractExpression::Proposition(proposition) => {
+                self.click_proposition_to_spec_proposition(proposition, environment)
+            }
+            ContractExpression::At {
+                selector,
+                expression,
+            } => self.lower_at_proposition_to_spec(
+                &ClickProposition::At {
+                    selector: selector.clone(),
+                    proposition: Box::new(ClickProposition::Value(expression.as_ref().clone())),
+                },
+                environment,
+            ),
+            ContractExpression::Let {
+                name,
+                click_type,
+                value,
+                body,
+            } => {
+                let mut body_environment = environment.clone();
+                body_environment.values.remove(name);
+                body_environment.integer_values.remove(name);
+                body_environment.algebraic_values.remove(name);
+                body_environment.array_refs.remove(name);
+                if *click_type == Some(ClickType::Integer)
+                    || (click_type.is_none()
+                        && self.contract_expression_is_integer(value, environment))
+                {
+                    let value = self.lower_contract_integer_to_spec(value, environment)?;
+                    body_environment.integer_values.insert(name.clone(), value);
+                } else {
+                    let mut value = self.lower_contract_expression_to_spec(value, environment)?;
+                    if let Some(ClickType::Program(ty)) = click_type {
+                        value = value.at_machine_type(ty.to_kernel_type());
+                    }
+                    body_environment.values.insert(name.clone(), value);
+                }
+                self.lower_proposition_value(body, &body_environment)
+            }
+            _ if self.contract_expression_click_type_in_scope(
+                expression,
+                environment,
+                &mut Vec::new(),
+            ) == Some(ClickType::Program(InterfaceType::Bool)) =>
+            {
+                self.click_proposition_to_spec_proposition(
+                    &bool_truth(expression.clone()),
+                    environment,
+                )
+            }
+            _ => Err("a proposition application must produce Prop or Bool".into()),
         }
     }
 
@@ -4897,7 +4966,7 @@ impl AnnotationLowerer<'_> {
                     );
                     for (parameter, argument) in definition.parameters().iter().zip(arguments) {
                         match parameter.click_type() {
-                            ClickType::Function { .. } => {
+                            ClickType::Proposition | ClickType::Function { .. } => {
                                 return Err(
                                     "specification function parameters are not supported yet"
                                         .into(),
@@ -6252,6 +6321,7 @@ impl AnnotationLowerer<'_> {
             return self.lower_region_parameter_read(region, name, &accesses, environment);
         }
         match expression {
+            ContractExpression::Proposition(_) => Err("a Prop is not a C scalar value".into()),
             ContractExpression::Resource(_) => Err("a Resource descriptor is not a C value".into()),
             ContractExpression::Lambda { .. } => {
                 Err("a specification lambda must be applied to produce a scalar".into())
@@ -7680,7 +7750,7 @@ impl AnnotationLowerer<'_> {
             .zip(arguments)
             .map(|(parameter, argument)| {
                 let lowered = match parameter.click_type() {
-                    ClickType::Function { .. } => {
+                    ClickType::Proposition | ClickType::Function { .. } => {
                         Err("specification function parameters are not supported yet".into())
                     }
                     ClickType::Resource => {
@@ -7871,7 +7941,7 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Option<ClickType>, String> {
         match expected {
             ClickType::Resource => Ok(Some(ClickType::Resource)),
-            ClickType::Function { .. } => {
+            ClickType::Proposition | ClickType::Function { .. } => {
                 Err("specification function parameters are not supported yet".into())
             }
             ClickType::Algebraic(_) => {
@@ -8472,14 +8542,31 @@ impl AnnotationLowerer<'_> {
                 diagnostics::describe_code_region_ref(region)
             )
         })?;
-        let [RegionParameterAccess::Field(field_name), rest @ ..] = accesses else {
+        let field_count = accesses
+            .iter()
+            .take_while(|access| matches!(access, RegionParameterAccess::Field(_)))
+            .count();
+        if field_count == 0 {
             return Err(format!("read a field of `{}`", spelled()));
-        };
+        }
+        // Aggregate layouts flatten embedded records into dotted field paths.
+        // Keep that exact path when reading a copied parameter, just as a
+        // returned aggregate field does; a span's size is such a nested field.
+        let field_name = accesses[..field_count]
+            .iter()
+            .map(|access| match access {
+                RegionParameterAccess::Field(name) => *name,
+                _ => unreachable!(),
+            })
+            .collect::<Vec<_>>()
+            .join(".");
+        let rest = &accesses[field_count..];
         let field = layout
             .fields()
             .iter()
             .find(|field| {
-                field.name() == *field_name || field.name().strip_prefix('_') == Some(*field_name)
+                field.name() == field_name
+                    || field.name().strip_prefix('_') == Some(field_name.as_str())
             })
             .ok_or_else(|| format!("`{}` has no field `{field_name}`", spelled()))?;
         let (offset, value_type) = match rest {
@@ -9890,7 +9977,7 @@ fn click_type_to_algebraic_value_type(
 ) -> Result<AlgebraicValueType, String> {
     match click_type {
         ClickType::Resource => Err("Resource is not an algebraic field type".into()),
-        ClickType::Function { .. } => {
+        ClickType::Proposition | ClickType::Function { .. } => {
             Err("specification function datatype fields are not supported".into())
         }
         ClickType::Parameter(name) => Err(format!("unresolved type parameter `{name}`")),

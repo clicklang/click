@@ -12286,7 +12286,13 @@ fn produced_memory_initialization(
         if extent == Some(0) {
             continue;
         }
-        let start = range.start_pointer();
+        // Transfer checking established this output's authority and bounds.
+        // Mark the same checked bytes at their unique concrete storage
+        // anchor, so a descriptor-held alias initializes the original object.
+        // This is one indexed address-class lookup, never an alias search.
+        let start = assumptions
+            .equality_graph
+            .storage_address(&range.start_pointer());
         if segment.is_uninitialized() {
             memory = memory.with_uninitialized_object(
                 start,
@@ -12804,9 +12810,10 @@ fn evaluate_contract_return_resource_context(
                 Err(error) => return Ok(Err(error)),
             }
         };
-        // Each returned fact is checked against the context as it grows, and
-        // the whole return is normalized once at the end, not after every
-        // clause.
+        // Admit each returned clause against the growing context, retaining
+        // its occurrence. Consumers compose the pieces of their requested
+        // footprint; constructing outputs must not discover optional merges
+        // by walking the ambient pointer/endpoint equality classes.
         context = match context
             .try_compose_into_valid_context_delaying_normalization([resource.clone()], assumptions)
         {
@@ -12851,7 +12858,7 @@ fn evaluate_contract_return_resource_context(
         }
         deferred = waiting;
     }
-    Ok(Ok(context.normalized(assumptions)))
+    Ok(Ok(context))
 }
 
 /// The memory a context's owned composites hold, opened through their

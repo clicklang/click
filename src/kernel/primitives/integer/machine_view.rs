@@ -50,6 +50,7 @@ pub(crate) fn shared_machine_syntax_variables(
                 }
                 KernelTermNode::MachineLiteral(_)
                 | KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::PointerAddress { .. }
@@ -121,6 +122,7 @@ pub(crate) fn shared_machine_conversion_leaves(
             matches!(
                 node,
                 KernelTermNode::IntegerToMachine { .. }
+                    | KernelTermNode::FloatConvert { .. }
                     | KernelTermNode::BoolCast { .. }
                     | KernelTermNode::Legacy(_)
                     | KernelTermNode::PointerAddress { .. }
@@ -998,6 +1000,7 @@ impl<'a> MachineOperandView<'a> {
                 }
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
                 KernelTermNode::Variable(_)
+                | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::MachineIf { .. }
                 | KernelTermNode::Fold(_)
                 | KernelTermNode::Match(_) => None,

@@ -267,6 +267,63 @@ attaching this equation to ordinary word reads. Moving production to the
 selected output transfer restores the ordinary read path. The completion
 validation below includes the formerly failing retained-memory and Rust cases.
 
+## Writable-byte span composition
+
+`tests/fixtures/cpp-byte-output/span.cpp` constructs a genuine pinned
+`std::span<std::byte>` over an unwritten caller uint32, copies the descriptor
+into a body-checked helper, writes four elements through `operator[]`, and
+returns the exact word `0x12345678`. Its sidecar consumes four unwritten bytes,
+produces four initialized bytes, and specifies each byte. Descriptor state and
+backing authority remain separate.
+
+Four repairs make these boundaries compose:
+
+- `library/cpp/span.click` supplies the dynamic pointer/count constructor's
+  explicit library assumption. It initializes the descriptor, with no grant
+  of backing ownership. Signature selection excludes static extent, iterator
+  pairs and other count types.
+- `R.parameter(name)` field reads retain flattened nested record paths.
+  libstdc++ stores span length inside `_M_extent`, so a precondition about the
+  copied descriptor previously had no round-tripping Surface spelling even
+  though the equality checker knew its value. The smaller `span-size` fixture
+  isolates this boundary without byte writes.
+- Output initialization and empty external-write-footprint checking use the
+  address class's unique concrete storage anchor. An authenticated descriptor
+  alias can therefore initialize the original word and identify a write to
+  this function's local storage. The checked transfer still supplies bounds,
+  lifetime and authority; address equality grants none of them.
+
+- Native byte and halfword read observations retain their own widths when a
+  word or pointer has also been read at that address. Previously the wider
+  observation could suppress narrow-read equality registration during retained
+  replay, although ordinary and cold checking succeeded.
+
+Design check: the field reader does work in its explicit access path and the
+selected layout. The two fast checking changes use the existing indexed
+storage-anchor query, keyed by the selected output/write address, without
+walking aliases or memory history. Native narrow widths come from the explicit
+load kind and use the existing indexed observation registry. Lowering never
+chooses a term from facts.
+The new deterministic controls grow unrelated memory and the selected address's
+equality history at 8, 32, 128 and 512 entries.
+
+`pinned_writable_byte_span_modular_output_initializes_uint32_offline` checks the
+ordinary proof, expanded cold checking with implicit solving disabled for
+`probe.contract`, and retained replay. It refuses a short call, an out-of-span
+index even with enough physical backing, missing write permission and a missing
+byte. `pinned_writable_byte_span_output_requires_live_backing_offline` copies a
+span over a helper's local word into an external descriptor: observing its size
+remains valid after that backing expires, while writing through it or exporting
+ownership of the expired bytes is refused. Kernel controls also keep external
+storage writes outside an empty mutable footprint.
+
+This is a four-byte composition witness under the pinned little-endian profile.
+It does not establish Bitcoin cursor/serialization verification or broaden the
+word-representation rule to other storage or scalar types. The separate
+`pinned_writable_byte_span_by_value_preserves_pointer_snapshot` witness for
+`as_writable_bytes` currently fails on both the saved pre-change binary and
+this implementation; its returned-pointer snapshot path remains unresolved.
+
 ## Native-interface evidence matrix
 
 This closes the bounded entry/call audit for the supported native profiles.

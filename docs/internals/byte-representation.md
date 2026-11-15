@@ -203,6 +203,16 @@ the modular contract and exact `0x12345678` result, including proof replay and
 missing-byte, permission and stale-word controls. Existing artifact controls
 check authenticated `std::byte` declarations independently.
 
+The writable-span witness in `tests/fixtures/cpp-byte-output/span.cpp` uses
+that same transfer through a copied `std::span<std::byte>`. A produced range
+can name a loaded descriptor pointer instead of the declared object's address.
+After transfer checking establishes authority and bounds, initialization uses
+the selected address class's unique concrete storage anchor. The representation
+rule then selects the original uint32 declaration. Empty external-footprint
+checking uses the same indexed anchor to recognize writes to function-local
+storage; external storage still needs its declared footprint. Neither lookup
+walks the alias class or changes a lowered term from facts.
+
 ## Typed and byte views never contradict
 
 Memory keeps one description of any byte. A one-byte store either rewrites

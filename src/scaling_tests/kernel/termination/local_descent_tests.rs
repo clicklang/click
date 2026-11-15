@@ -54,6 +54,7 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         body = ProgramStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
         [VerifiedFunctionRule {
             pointer_result: None,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -119,11 +120,15 @@ fn independent_loop_measure_ownership_costs_its_explicit_strategy_outputs() {
                         "n".into(),
                     )),
                 }];
+                rule.loop_evidence = function
+                    .open_loop_proof(0, rule.loop_statement.clone())
+                    .unwrap()
+                    .loop_evidence;
                 rule
             })
             .collect::<Vec<_>>();
         let ((ranked, unranked), work) = crate::instrumentation::measure_deterministic_work(|| {
-            verified_loop_ranking_measures("drain", &function.source_body, &rules).unwrap()
+            verified_loop_ranking_measures(&rules)
         });
         assert_eq!(ranked[&0].len(), count);
         assert!(unranked.is_empty());

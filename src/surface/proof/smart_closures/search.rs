@@ -97,47 +97,63 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        if integer_composition::parts(goal).is_none() {
+        #[cfg(test)]
+        integer_composition::note_refusal("entered selected Integer route");
+        if integer_affine_claim(goal).is_none() {
             return Ok(None);
         }
-        let kernels = premises
-            .iter()
-            .map(|surface| {
-                search_input.lower_cited_surface_proposition(surface, "Integer composition premise")
-            })
-            .collect::<Result<Vec<_>, ClickError>>()?;
-        if kernels
-            .iter()
-            .any(|kernel| integer_composition::parts(kernel).is_none())
-        {
-            return Ok(None);
+        let mut pairs = Vec::with_capacity(premises.len());
+        for surface in premises {
+            let kernel = search_input
+                .lower_cited_surface_proposition(surface, "Integer arithmetic premise")?;
+            if integer_affine_claim(&kernel).is_none()
+                && crate::kernel::proof::integer_arithmetic::integer_disequality_claims(&kernel)
+                    .is_empty()
+            {
+                return Ok(None);
+            }
+            // A declined route leaves the original tactic's diagnostic and
+            // native definedness/observation handling authoritative.
+            if !search_input
+                .facts()
+                .listed_premise_available(&kernel, &[], false)
+            {
+                #[cfg(test)]
+                integer_composition::note_refusal(format!(
+                    "unavailable Integer source: {surface:?} => {kernel:?}"
+                ));
+                return Ok(None);
+            }
+            pairs.push((kernel, surface.clone()));
         }
-        let pairs = premises
-            .iter()
-            .enumerate()
-            .map(|(index, surface)| {
-                let kernel = kernels[index].clone();
-                if !search_input
-                    .facts()
-                    .listed_premise_available(&kernel, &[], false)
-                {
-                    return Err(search_input.step_error(format!(
-                        "`solve() using` premise {index} is not exactly available"
-                    )));
-                }
-                Ok((kernel, surface.clone()))
-            })
-            .collect::<Result<Vec<_>, ClickError>>()?;
+        #[cfg(test)]
+        integer_composition::note_refusal("selected Integer sources are available");
         let kernels = pairs
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
-        let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &kernels)
-            .and_then(ArithmeticPlan::integer_affine)
-        else {
-            return Ok(None);
-        };
-        Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal)
+        for engine in [
+            ArithmeticEngine::IntegerAffine,
+            ArithmeticEngine::IntegerRefutation,
+        ] {
+            let Some(plan) =
+                plan_arithmetic(engine, goal, &kernels).and_then(ArithmeticPlan::integer_affine)
+            else {
+                continue;
+            };
+            if let Some(closed) = attempt::candidate_outcome(Self::apply_integer_composition(
+                search_input,
+                &plan,
+                &pairs,
+                surface_goal,
+                &[],
+            ))?
+            .flatten()
+            {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
     }
 
     /// The fact `lower <u upper` as a proof that has it in that spelling,
@@ -1240,8 +1256,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 surface_goal,
                 &spellings,
             )
-            && let Some(proof) =
-                Self::apply_integer_composition(search_input, &direct, &pairs, surface_goal)?
+            && let Some(proof) = attempt::candidate_outcome(Self::apply_integer_composition(
+                search_input,
+                &direct,
+                &pairs,
+                surface_goal,
+                &[],
+            ))?
+            .flatten()
         {
             return Ok(Some(proof));
         }
@@ -1315,6 +1337,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
             }
         };
+        if let Some(closed) = attempt::candidate_outcome(Self::apply_integer_composition(
+            search_input,
+            &certificate,
+            &pairs,
+            surface_goal,
+            &ranges,
+        ))?
+        .flatten()
+        {
+            return Ok(Some(closed));
+        }
         let Some(surface) = integer_plan_to_surface_certificate_with_ranges(
             &certificate,
             &pairs,
@@ -1468,7 +1501,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
     /// to_integer(b)` or `to_integer((T)x) == to_integer(x)`, spelled from
     /// `written`: its two type-range bounds by selected-premise arithmetic, then the identity
-    /// by `integer_operation_identity` or `integer_cast_identity`. Each
+    /// by `normalize using` those two bounds. Each
     /// operand was found after its operation, so the reverse order proves
     /// the innermost identity first. Returns the proof with the identities
     /// established and their spellings, or the identity that missed.
@@ -1501,7 +1534,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let conversion =
                 crate::kernel::machine_integer::conversion::integer_conversion(observed).is_some();
-            let cast = conversion || matches!(value, IntegerTerm::Machine(_));
             let spelled_value = match value {
                 // The conversion's operand as the observation itself writes
                 // it, `E` of `to_integer(to_T(E))`: lowering is fact-stable,
@@ -1637,25 +1669,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
-            let step = ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
-                SpecialArithmeticCertificate {
-                    premises: vec![lower, upper],
-                    nodes: vec![if cast {
-                        SpecialArithmeticNode::IntegerCastIdentity {
-                            bounds: vec![0, 1],
-                            result: identity,
-                        }
-                    } else {
-                        SpecialArithmeticNode::IntegerOperationIdentity {
-                            bounds: vec![0, 1],
-                            result: identity,
-                        }
-                    }],
-                    conclusion: 0,
-                },
-            ));
-            let Ok(closed) = scope.driver().apply_step(step) else {
-                return Ok(Err(failed.clone()));
+            let step = ProofStep::NormalizeUsing(vec![lower, upper]);
+            let closed = match scope.driver().apply_step(step) {
+                Ok(closed) => closed,
+                Err(_) => return Ok(Err(failed.clone())),
             };
             proof = closed.join()?;
             established.extend(
@@ -1669,9 +1686,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// A bound `target <= a * b` (`lower`) or `a * b <= target` on a product
-    /// of two machine observations, from the operands' type ranges by
-    /// `integer_product_bounds`: each operand's two range bounds as a
-    /// `have`, then the bound by the certificate over those four premises,
+    /// of two machine observations, from the operands' type ranges:
+    /// each operand's two range bounds as a `have`, then the product bound
+    /// by normalization using those four explicit premises,
     /// the shape `click expand` writes. The four corner products of the
     /// ranges are compared with `target` first, so a range that cannot give
     /// the bound costs no step. Reads no fact and no other premise: the work
@@ -1736,16 +1753,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let scope = proof.driver().open_have(bound.clone())?;
-        let step = ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
-            SpecialArithmeticCertificate {
-                premises,
-                nodes: vec![SpecialArithmeticNode::IntegerProductBounds {
-                    bounds: vec![0, 1, 2, 3],
-                    result: bound.clone(),
-                }],
-                conclusion: 0,
-            },
-        ));
+        let step = ProofStep::NormalizeUsing(premises);
         let Ok(closed) = scope.driver().apply_step(step) else {
             return Ok(None);
         };
@@ -1955,7 +1963,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let replacement = match &click_type {
-            ClickType::Function { .. } | ClickType::Resource => return Ok(None),
+            ClickType::Proposition | ClickType::Function { .. } | ClickType::Resource => {
+                return Ok(None);
+            }
             ClickType::Integer | ClickType::Algebraic(_) => {
                 ContractExpression::Binding(choice_name.clone())
             }
@@ -3172,12 +3182,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 else {
                     continue;
                 };
-                if let Some(proof) = Self::apply_integer_composition(
+                if let Some(proof) = attempt::candidate_outcome(Self::apply_integer_composition(
                     search_input,
                     &plan,
                     &anchored_pairs,
                     surface_goal,
-                )? {
+                    &[],
+                ))?
+                .flatten()
+                {
                     return Ok(Some(proof));
                 }
                 if let Some(certificate) =
@@ -10271,6 +10284,34 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             return None;
         };
+        // Reuse the selected recorded premises and plan directly. Sending
+        // this back through ArithmeticUsing would lower and plan it again.
+        if tactics.len() == 1
+            && let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
+            && let Some(surface_goal) = search_input.surface_goal()
+            && let Some(pairs) = listed
+                .iter()
+                .map(|surface| {
+                    premise_pairs
+                        .iter()
+                        .find(|(_, written)| written == surface)
+                        .cloned()
+                })
+                .collect::<Option<Vec<_>>>()
+        {
+            let kernels = pairs
+                .iter()
+                .map(|(kernel, _)| kernel.clone())
+                .collect::<Vec<_>>();
+            if let Some(plan) = crate::surface::checking::arithmetic_plans(goal, &kernels, true)
+                .find_map(ArithmeticPlan::integer_affine)
+                && let Ok(Some(Some(closed))) = attempt::candidate_outcome(
+                    Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal, &[]),
+                )
+            {
+                return Some(closed);
+            }
+        }
         // A rule closing with Integer arithmetic names the premises it reads;
         // its certificate is planned from their recorded kernel forms, as
         // `arithmetic() using` would plan it from their lowered spellings.
@@ -10278,7 +10319,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(certificate) =
                 search_input.arithmetic_certificate_from_recorded(goal, listed, premise_pairs)
         {
-            *tactics.last_mut()? = certificate;
+            if search_input.surface_goal().is_none()
+                || !matches!(
+                    &certificate,
+                    ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
+                        family: ArithmeticCertificateFamily::Integer(_)
+                    })
+                )
+            {
+                *tactics.last_mut()? = certificate;
+            }
         }
         // The planner selects only Surface-expressible explicit operations.
         // Apply those through the same recursive Proof driver used by

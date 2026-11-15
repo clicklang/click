@@ -538,7 +538,7 @@ void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
             let source = if opaque {
                 source.replace("resource positive", "predicate positive_value(x: int32) { x > 0 }\nresource positive")
                 .replace("fact x > 0;", "fact positive_value(x);")
-                .replace("by { known(); }", "by { have positive_value(x) by { unfold(positive_value); known(); } known(); }")
+                .replace("by { known(); }", "by { have positive_value(x) by { unfold(positive_value(x)); known(); } known(); }")
             } else {
                 source
             };

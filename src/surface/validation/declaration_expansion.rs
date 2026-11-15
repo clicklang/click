@@ -3344,6 +3344,10 @@ fn expand_declared_resource_proposition_one(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ClickProposition, ClickError> {
     match proposition {
+        ClickProposition::Value(expression) => Ok(ClickProposition::Value(
+            expand_declared_resource_expression(expression, resource_definitions)?,
+        )),
+
         ClickProposition::ChangesOnly {
             before,
             after,
@@ -3860,6 +3864,10 @@ fn expand_declared_resource_expression_children(
     let recurse =
         |expression| expand_declared_resource_expression(expression, resource_definitions);
     Ok(match expression {
+        ContractExpression::Proposition(proposition) => ContractExpression::Proposition(Box::new(
+            expand_declared_resource_proposition(*proposition, resource_definitions)?,
+        )),
+
         ContractExpression::Lambda {
             parameters,
             result,

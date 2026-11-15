@@ -678,7 +678,8 @@ theorem shift_bound(v: uint64) {{
             let expanded =
                 crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1)
                     .unwrap();
-            assert!(expanded.contains("operation_bound"), "{expanded}");
+            assert!(expanded.contains("normalize();"), "{expanded}");
+            assert!(!expanded.contains("operation_bound"), "{expanded}");
             without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
             let missing = source.replace(&format!("    requires {premise};\n"), "");
             assert!(crate::surface::verify_click_theorems(&missing).is_err());
@@ -736,10 +737,7 @@ theorem identity(x: {ty}) {{
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
-        assert!(
-            expanded.contains("integer_operation_identity"),
-            "{expanded}"
-        );
+        assert!(expanded.contains("normalize() using"), "{expanded}");
         without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         let omitted = source.replace(&format!("using {{ {bound}; }}"), "using {}");
         assert!(
@@ -793,9 +791,8 @@ theorem product_identity(a: uint16, b: uint16) {
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
-        for rule in ["integer_product_bounds", "integer_operation_identity"] {
-            assert_eq!(expanded.matches(rule).count(), 1, "{rule}: {expanded}");
-        }
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(expanded.contains("normalize() using"), "{expanded}");
         without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         // Without the upper bound the product may wrap; nothing gives it.
         let unbounded =
@@ -832,7 +829,8 @@ theorem strict(a: {ty}, b: {ty}) {{
                 crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1)
                     .unwrap();
             assert!(
-                expanded.contains("less_than_from_not_equal") && !expanded.contains("signed_int32"),
+                expanded.contains("click::integer::le_ne_lt")
+                    && !expanded.contains("arithmetic_certificate"),
                 "{ty}: {expanded}"
             );
             without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
@@ -866,9 +864,12 @@ theorem successor_identity(x: int32) {
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+        // The source's outer have and one generated identity proof.
         assert_eq!(
-            expanded.matches("integer_operation_identity").count(),
-            1,
+            expanded
+                .matches("have to_integer((x + 1)) == (to_integer(x) + 1) by")
+                .count(),
+            2,
             "{expanded}"
         );
         crate::surface::verify_click_theorems(&expanded).unwrap();

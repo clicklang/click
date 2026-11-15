@@ -139,6 +139,7 @@ pub(crate) use spec::{
     refine_object_pointer_argument_using_facts, with_preserved_integer_comparisons,
 };
 mod termination;
+pub(crate) use termination::StatementProofInput;
 // Checked internal fork/join; binding to imported pthread declarations is a
 // separate checkpoint, so no C execution path invokes these rules yet.
 mod threads;

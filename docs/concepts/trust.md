@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 155 theorems, 39 of them kernel standard, in 4,100 lines | `library/` |
+| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 159 theorems, 39 of them kernel standard, in 5,500 lines | `library/` |
 | Library models: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library models](#library-models)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -119,11 +119,11 @@ call to one is checked against its [library model](#library-models). See
 
 ## The Click library
 
-The `library/` modules declare 155 theorems. `verify_standard_library`
+The `library/` modules declare 159 theorems. `verify_standard_library`
 checks each one, in one of two ways; the gate runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
-- **116 are proved.** Their written or default proofs are checked like any
+- **120 are proved.** Their written or default proofs are checked like any
   other proof. They include the `int32` increment, predecessor, order and
   definedness lemmas, the in-range `+` and `-` observation laws at `int32`,
   `int64`, `uint32` and `uint64`, the `uint32` and `uint64` product laws,
@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 25 `axiom`s, which are trusted, not proved.
+The library also declares 26 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -171,7 +171,7 @@ names. Another is `integer::uint32_difference_decreases_after_increment`: under
 as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
 
-Four foundational Integer order axioms in `library/integer.click` expose
+Five foundational Integer order axioms in `library/integer.click` expose
 rules that arithmetic certificates already used: `add_le` adds two
 inequalities; `multiply_order_nonnegative` preserves order when scaling by a
 nonnegative factor; `round_down_le` concludes `value <= bound` from
@@ -179,7 +179,10 @@ nonnegative factor; `round_down_le` concludes `value <= bound` from
 `value * divisor <= bound * divisor + remainder`; and `le_antisymmetric`
 concludes equality from opposite non-strict Integer bounds. The scaling
 declaration previously had a certificate proof; it is now trusted directly.
-Addition, rounding, and antisymmetry are new declarations. Their stated guards and conclusions have an independent
+The `lt_step_le` axiom states Integer discreteness: `a < b` implies
+`a + 1 <= b`. Its reverse and the non-strict-bound-plus-disequality rule
+are proved theorems. Addition, rounding, antisymmetry, and discreteness are
+new declarations. Their stated guards and conclusions have an independent
 BigInt oracle regression, including negative and arbitrary-width values.
 
 Only the built-in library modules may declare a primitive `type`, a bodyless

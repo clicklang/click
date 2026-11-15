@@ -5020,6 +5020,13 @@ pub(super) fn contract_expression_mentions_program_local(
     parameter_names: &BTreeSet<&str>,
 ) -> bool {
     match expression {
+        ContractExpression::Proposition(_) => {
+            let mut names = BTreeSet::new();
+            collect_contract_expression_referenced_names(expression, &mut names);
+            names
+                .iter()
+                .any(|name| !parameter_names.contains(name.as_str()))
+        }
         ContractExpression::Resource(subject) => {
             let mut names = BTreeSet::new();
             crate::surface::lowering::collect_resource_subject_referenced_names(

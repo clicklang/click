@@ -63,6 +63,9 @@ pub(in crate::surface) fn program_expression_uses_variable(
 
 pub(in crate::surface) fn contains_old_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            proposition_contains_old_expression(proposition)
+        }
         ContractExpression::Resource(subject) => resource_subject_contains_old_expression(subject),
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -146,6 +149,9 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
 
 pub(in crate::surface) fn contains_resource_count(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            proposition_contains_resource_count(proposition)
+        }
         ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -228,6 +234,7 @@ pub(in crate::surface) fn proposition_contains_resource_count(
     proposition: &ClickProposition,
 ) -> bool {
     match proposition {
+        ClickProposition::Value(expression) => contains_resource_count(expression),
         ClickProposition::Comparison { left, right, .. } => {
             contains_resource_count(left) || contains_resource_count(right)
         }
@@ -278,6 +285,10 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
     visited_predicates: &mut BTreeSet<String>,
 ) -> bool {
     match proposition {
+        ClickProposition::Value(expression) => {
+            let mut calls = Vec::new();
+            contract_expression_reads_memory(expression, &mut calls)
+        }
         // Liveness of storage the body itself owns is stable under a loan:
         // a live loan over any of those bytes forbids freeing the
         // allocation. Liveness of anything else is not.
@@ -356,6 +367,9 @@ pub(in crate::surface) fn collect_resource_count_families(
 ) {
     fn collect_expression(expression: &ContractExpression, families: &mut BTreeSet<String>) {
         match expression {
+            ContractExpression::Proposition(proposition) => {
+                collect_resource_count_families(proposition, families)
+            }
             ContractExpression::Resource(_) => {}
             ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
@@ -467,6 +481,7 @@ pub(in crate::surface) fn collect_resource_count_families(
     }
 
     match proposition {
+        ClickProposition::Value(expression) => collect_expression(expression, families),
         ClickProposition::Comparison { left, right, .. } => {
             collect_expression(left, families);
             collect_expression(right, families);
@@ -519,6 +534,16 @@ pub(in crate::surface) fn collect_called_predicates(
     names: &mut BTreeSet<String>,
 ) {
     match proposition {
+        ClickProposition::Value(expression) => {
+            crate::surface::proof::fixed_state_proofs::conversion_conditions::walk_written_expressions(
+                expression,
+                &mut |term| {
+                    if let ContractExpression::Proposition(body) = term {
+                        collect_called_predicates(body, names);
+                    }
+                },
+            );
+        }
         ClickProposition::PredicateCall { name, .. } => {
             names.insert(name.clone());
         }
@@ -587,6 +612,7 @@ pub(in crate::surface) fn proposition_contains_old_expression(
     proposition: &ClickProposition,
 ) -> bool {
     match proposition {
+        ClickProposition::Value(expression) => contains_old_expression(expression),
         ClickProposition::ChangesOnly { resources, .. } => resources
             .iter()
             .any(resource_subject_contains_old_expression),
@@ -639,6 +665,9 @@ pub(in crate::surface) fn proposition_contains_old_expression(
 
 pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            proposition_contains_at_expression(proposition)
+        }
         ContractExpression::Resource(subject) => resource_subject_contains_at_expression(subject),
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -754,6 +783,7 @@ pub(in crate::surface) fn proposition_contains_at_expression(
     proposition: &ClickProposition,
 ) -> bool {
     match proposition {
+        ClickProposition::Value(expression) => contains_at_expression(expression),
         ClickProposition::ChangesOnly { .. } => true,
 
         ClickProposition::Comparison { left, right, .. } => {
@@ -835,6 +865,9 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         return;
     }
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            collect_click_function_calls_in_proposition(proposition, calls)
+        }
         ContractExpression::Resource(subject) => {
             collect_click_function_calls_in_resource_subject(subject, calls)
         }
@@ -1013,6 +1046,7 @@ fn collect_click_function_calls_in_proposition_one(
     calls: &mut BTreeSet<String>,
 ) {
     match proposition {
+        ClickProposition::Value(expression) => collect_click_function_calls(expression, calls),
         ClickProposition::ChangesOnly { resources, .. } => {
             for r in resources {
                 collect_click_function_calls_in_resource_subject(r, calls);
@@ -1364,6 +1398,16 @@ fn validate_recursive_calls_in_expression(
         )
     };
     match expression {
+        ContractExpression::Proposition(proposition) => validate_recursive_calls_in_proposition(
+            caller,
+            proposition,
+            lower_bounds,
+            structural_subterms,
+            definitions,
+            function_calls,
+            measures,
+            algebraic_definitions,
+        ),
         ContractExpression::Resource(_) => Ok(()),
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -1598,6 +1642,16 @@ fn validate_recursive_calls_in_proposition(
         )
     };
     match proposition {
+        ClickProposition::Value(expression) => validate_recursive_calls_in_expression(
+            caller,
+            expression,
+            lower_bounds,
+            structural_subterms,
+            definitions,
+            function_calls,
+            measures,
+            algebraic_definitions,
+        ),
         ClickProposition::ChangesOnly { resources, .. } => {
             for resource in resources {
                 validate_recursive_calls_in_resource_subject(

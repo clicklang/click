@@ -925,6 +925,41 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         ))
     }
 
+    /// Open a source-only clause on its existing outcome cell. The selected
+    /// key travels with the semantic proposition root through ordinary proof.
+    pub(crate) fn focus_source_contract_claim(
+        &self,
+        key: &crate::kernel::FunctionContractClaimKey,
+        proposition: Proposition,
+        presentation: P,
+    ) -> Result<Self, String> {
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .ok_or("source clause requires an open outcome")?;
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            return Err("source clause requires a function outcome".into());
+        };
+        let claims = outcome
+            .claims
+            .as_ref()
+            .ok_or("outcome has no declared claim cells")?;
+        claims.require_source_claim(key)?;
+        Ok(Self::root(
+            self.state.locals.clone(),
+            ProofBranch::new(
+                ProofObligation::Proposition(super::PropositionObligation::for_source_claim(
+                    proposition,
+                    presentation,
+                    outcome.data.clone(),
+                    key.clone(),
+                )),
+                branch.state.clone(),
+            ),
+        ))
+    }
+
     /// Returns an owned, kernel-issued record of the exact root proposition
     /// discharged by this proof. The record is available only after every
     /// branch in the proof lineage has closed.
@@ -939,6 +974,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             self.state.open_branches.root_branch().state.facts.clone(),
             goal.outcome.as_deref().map(|outcome| outcome.core.clone()),
             goal.claim().cloned(),
+            goal.source_claim().cloned(),
         ))
     }
 

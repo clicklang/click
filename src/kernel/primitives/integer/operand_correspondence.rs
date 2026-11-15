@@ -111,6 +111,32 @@ fn shared_operand_leaf_pairs_with_policy(
                 pairs.insert(key, equal.then(Pairs::default));
                 continue;
             }
+            if matches!(left.node(), KernelTermNode::FloatConvert { .. })
+                || matches!(right.node(), KernelTermNode::FloatConvert { .. })
+            {
+                let equal = match (left.node(), right.node()) {
+                    (
+                        KernelTermNode::FloatConvert {
+                            source: a,
+                            destination: at,
+                            operand: av,
+                        },
+                        KernelTermNode::FloatConvert {
+                            source: b,
+                            destination: bt,
+                            operand: bv,
+                        },
+                    ) => {
+                        a == b
+                            && at == bt
+                            && super::observation_identity::normalize(av)
+                                == super::observation_identity::normalize(bv)
+                    }
+                    _ => false,
+                };
+                pairs.insert(key, equal.then(Pairs::default));
+                continue;
+            }
             let (a, b) = (V(left), V(right));
             if a.fold().is_some()
                 || b.fold().is_some()
@@ -348,6 +374,22 @@ pub(crate) fn machine_operand_syntax_cmp(
             Task::Pair(a, b) => (a, b),
         };
         crate::instrumentation::record_deterministic_work(1);
+        if matches!(a, V::Shared(root) if matches!(root.node(), KernelTermNode::FloatConvert { .. }))
+            || matches!(b, V::Shared(root) if matches!(root.node(), KernelTermNode::FloatConvert { .. }))
+        {
+            // Native ordering is needed only at this explicit candidate-ordering boundary.
+            let native = |view: V<'_>| match view {
+                V::Legacy(value) => value.clone(),
+                V::Shared(root) => {
+                    crate::kernel::KernelTermExport::machine(root).expect("machine syntax")
+                }
+            };
+            let order = native(a).cmp(&native(b));
+            if !order.is_eq() {
+                return order;
+            }
+            continue;
+        }
         if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
             let order = a.cmp(b);
             if !order.is_eq() {

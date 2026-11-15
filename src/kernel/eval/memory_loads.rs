@@ -4049,7 +4049,7 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
             } => {
                 let first = term_results.len() - argument_count;
                 let arguments = term_results.split_off(first);
-                term_results.push(MachineTerm::PureFunctionApplication { name, arguments });
+                term_results.push(MachineTerm::rebuild_pure_application(name, arguments));
             }
             Task::RebuildConditionBinary(op) => {
                 let right = term_results.pop().expect("visited right condition operand");
@@ -4177,6 +4177,9 @@ pub(in crate::kernel) fn operand_mentions_a_memory_load(
     if operand.read().is_some() {
         return true;
     }
+    if matches!(root.node(), KernelTermNode::FloatConvert { .. }) {
+        return common_float_conversion_mentions_load(root);
+    }
     if let Some(leaf) = root.machine_conversion_leaf() {
         return term_mentions_a_memory_load(leaf);
     }
@@ -4194,8 +4197,68 @@ pub(in crate::kernel) fn operand_mentions_a_memory_load(
         matches!(
             leaf.node(),
             KernelTermNode::Fold(_) | KernelTermNode::Match(_)
-        ) || term_mentions_a_memory_load(leaf.machine_conversion_leaf().expect("conversion leaf"))
+        ) || if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
+            common_float_conversion_mentions_load(leaf)
+        } else {
+            term_mentions_a_memory_load(leaf.machine_conversion_leaf().expect("conversion leaf"))
+        }
     })
+}
+
+fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
+    let mut pending = vec![root];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(term) = pending.pop() {
+        if !seen.insert(term.id()) {
+            continue;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        match term.node() {
+            KernelTermNode::FloatRead(_) | KernelTermNode::MemoryLoad { .. } => return true,
+            KernelTermNode::Legacy(value) => {
+                let crate::kernel::PureFunctionArgument::Value(value) = value.value() else {
+                    unreachable!("numeric conversion operand");
+                };
+                let native = match value {
+                    ProgramValue::Int8(value)
+                    | ProgramValue::UInt8(value)
+                    | ProgramValue::Int16(value)
+                    | ProgramValue::UInt16(value)
+                    | ProgramValue::Int32(value)
+                    | ProgramValue::UInt32(value)
+                    | ProgramValue::Int64(value)
+                    | ProgramValue::UInt64(value)
+                    | ProgramValue::Int128(value)
+                    | ProgramValue::UInt128(value)
+                    | ProgramValue::Float32(value)
+                    | ProgramValue::Float64(value) => value,
+                    _ => unreachable!("numeric conversion operand"),
+                };
+                if term_mentions_a_memory_load(native) {
+                    return true;
+                }
+            }
+            KernelTermNode::FloatLiteral { .. }
+            | KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::Variable(_) => {}
+            KernelTermNode::FloatConvert { .. }
+            | KernelTermNode::FloatNegate { .. }
+            | KernelTermNode::FloatBinary { .. } => pending.extend(term.children()),
+            _ => {
+                if let Some(view) = crate::kernel::FloatOperandView::from_shared(term) {
+                    if term_mentions_a_memory_load(view.native_compat().expect("native float atom"))
+                    {
+                        return true;
+                    }
+                } else if operand_mentions_a_memory_load(crate::kernel::MachineOperandView::Shared(
+                    term,
+                )) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool {
@@ -4600,10 +4663,23 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
     let MachineTerm::MemoryLoad(origin, original_pointer, original_kind) = bits else {
         return bits.clone();
     };
+    // A native narrow read has its own width. A word or pointer observed
+    // at the same address must not turn this byte/halfword into a wider read.
+    let narrow_bytes = match original_kind {
+        LoadKind::Int8 | LoadKind::UInt8 => Some(1),
+        LoadKind::Int16 | LoadKind::UInt16 => Some(2),
+        _ => None,
+    };
     if let Some((read, typed)) = SCALAR_READ_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
         let MachineTerm::MemoryLoad(memory, pointer, kind) = &read else {
             unreachable!("cached scalar read")
         };
+        if let Some(bytes) = narrow_bytes {
+            let id = read_observations::record(memory, pointer, *kind, origin, bytes);
+            read_observations::select(id);
+            read_observations::produced(&read, bits);
+            return read;
+        }
         // A conservative, untyped selection is not an observed access width.
         // Once a producer supplies the width, select its version with that
         // width instead of treating the earlier guess as an eight-byte load.
@@ -4643,7 +4719,8 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
     let MachineTerm::MemoryLoad(memory, pointer, kind) = candidate else {
         unreachable!("selected scalar read")
     };
-    let recorded_bytes = recorded_load_access_width(origin, original_pointer)
+    let recorded_bytes = narrow_bytes
+        .or_else(|| recorded_load_access_width(origin, original_pointer))
         .or_else(|| recorded_load_access_width(&memory, &pointer))
         .or_else(|| {
             existing_read_access_width(origin, original_pointer, *original_kind)
@@ -5141,6 +5218,41 @@ mod tests {
             assert_eq!(ordinary, entry);
             assert_eq!(load_variable_registry_len(), before);
         }
+    }
+
+    #[test]
+    fn native_narrow_reads_keep_their_width_beside_word_observations() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(Memory::new());
+        let pointer = Pointer::symbolic(Variable(993151));
+        record_load_access_width(memory.memory(), &pointer, 8);
+        for (kind, bytes) in [
+            (LoadKind::Int8, 1),
+            (LoadKind::UInt8, 1),
+            (LoadKind::Int16, 2),
+            (LoadKind::UInt16, 2),
+        ] {
+            let raw = MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
+            for _ in 0..2 {
+                let read = canonical_scalar_read(&raw);
+                assert_eq!(
+                    scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&read))
+                        .unwrap()
+                        .bytes,
+                    bytes,
+                    "{kind:?}: both initial selection and cache hits keep native width"
+                );
+            }
+        }
+        let wide = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+        let read = canonical_scalar_read(&wide);
+        assert_eq!(
+            scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&read))
+                .unwrap()
+                .bytes,
+            8,
+            "the legacy pointer carrier still retains its recorded width"
+        );
     }
 
     #[test]
@@ -8791,5 +8903,43 @@ mod structural_read_connective_tests {
         clear_load_variable_registry();
         assert_eq!(comparison_form(&wrap(leaf)), Some(wrap(expected)));
         assert_eq!(load_variable_registry_len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod float_conversion_load_tests {
+    use super::*;
+
+    #[test]
+    fn retained_float_conversion_load_detection_keeps_opaque_integer_source_payloads() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let read = MachineTerm::MemoryLoad(
+            crate::kernel::intern_memory(Memory::new()),
+            Box::new(Pointer::symbolic(Variable(999977))),
+            LoadKind::Int32,
+        );
+        for source in [read, MachineTerm::Variable(Variable(999978))] {
+            let native = MachineTerm::opaque_conversion(
+                "c_float32_to_int32",
+                MachineTerm::opaque_conversion(
+                    "c_int32_to_float32",
+                    MachineTerm::PureFunctionApplication {
+                        name: "opaque_integer_source".into(),
+                        arguments: vec![source],
+                    },
+                ),
+            );
+            let root = crate::kernel::KernelTermImport::default()
+                .machine(MachineIntegerType::Int32, &native);
+            let exports = crate::kernel::KernelTermExport::machine_export_count();
+            assert_eq!(
+                operand_mentions_a_memory_load(crate::kernel::MachineOperandView::Shared(&root)),
+                term_mentions_a_memory_load(&native)
+            );
+            assert_eq!(
+                crate::kernel::KernelTermExport::machine_export_count(),
+                exports
+            );
+        }
     }
 }

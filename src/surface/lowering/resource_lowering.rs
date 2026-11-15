@@ -1657,6 +1657,11 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
         expressions: &mut Vec<&'a ContractExpression>,
     ) {
         match proposition {
+            ClickProposition::Value(expression) => {
+                if let ContractExpression::Proposition(body) = expression {
+                    collect(body, expressions);
+                }
+            }
             ClickProposition::Comparison { left, right, .. } => {
                 if contains_partial_arithmetic(left) {
                     expressions.push(left);
@@ -2787,6 +2792,9 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
     argument: &ContractExpression,
 ) -> Result<ProgramExpression, ClickError> {
     match argument {
+        ContractExpression::Proposition(_) => {
+            Err(ClickError::new("a Prop is not a C resource argument"))
+        }
         ContractExpression::Resource(_) => {
             Err(ClickError::new("a Resource descriptor is not a C argument"))
         }
@@ -2994,6 +3002,22 @@ fn lower_resource_segment_with_values(
         return Err(ClickError::new(format!(
             "could not lower `{resource_name}` resource: segment base did not evaluate to a pointer"
         )));
+    };
+    // A local pointer has no function-parameter entry. Its evaluated typed
+    // value still supplies the element width; do not use the legacy int32
+    // default for ranges selected through a byte or wide-integer local.
+    // Only a named pointer base uses this path. Field/address expressions
+    // retain their explicitly supplied frontend layout widths.
+    let element_width = if matches!(segment.surface, ContractSegmentSurface::Range { .. })
+        && matches!(segment.base, ProgramExpression::Variable(_))
+        && segment.field_element_width().is_none()
+    {
+        base.program_type()
+            .pointee_type()
+            .map(ProgramType::byte_width)
+            .unwrap_or(element_width)
+    } else {
+        element_width
     };
     let base_value = base;
     // A clause through a member pointer may not claim past the member

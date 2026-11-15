@@ -713,6 +713,77 @@ mod tests {
     }
 
     #[test]
+    fn float_conversion_readers_preserve_all_native_collection_modes() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            crate::kernel::KernelFloatType::Float32,
+            crate::kernel::KernelFloatType::Float64,
+        ] {
+            let left = Box::new(MachineTerm::Variable(Variable(999933)));
+            let right = Box::new(MachineTerm::MemoryLoad(
+                intern_memory(Memory::new()),
+                Box::new(Pointer::symbolic(Variable(999934))),
+                format.load_kind(),
+            ));
+            let native = match format {
+                crate::kernel::KernelFloatType::Float32 => {
+                    MachineTerm::Float32Negate(Box::new(MachineTerm::Float32Binary {
+                        operator: crate::kernel::FloatBinaryOperator::Divide,
+                        left,
+                        right,
+                    }))
+                }
+                crate::kernel::KernelFloatType::Float64 => {
+                    MachineTerm::Float64Negate(Box::new(MachineTerm::Float64Binary {
+                        operator: crate::kernel::FloatBinaryOperator::Divide,
+                        left,
+                        right,
+                    }))
+                }
+            };
+            let (name, target) = match format {
+                crate::kernel::KernelFloatType::Float32 => (
+                    "c_float32_to_float64",
+                    crate::kernel::KernelFloatType::Float64,
+                ),
+                crate::kernel::KernelFloatType::Float64 => (
+                    "c_float64_to_float32",
+                    crate::kernel::KernelFloatType::Float32,
+                ),
+            };
+            let integer = MachineTerm::opaque_conversion(
+                format!(
+                    "c_{}_to_int32",
+                    crate::kernel::program_type_spelling(format.program_type())
+                ),
+                native.clone(),
+            );
+            let native = MachineTerm::opaque_conversion(name, native);
+            for argument in [
+                PureFunctionArgument::Value(target.value(native)),
+                PureFunctionArgument::Value(ProgramValue::Int32(integer)),
+            ] {
+                let root = KernelTermImport::default().argument(&argument);
+                for mode in [
+                    FoldVariableRead::IntegerFree,
+                    FoldVariableRead::ExpressionFree,
+                    FoldVariableRead::MachineCapture,
+                    FoldVariableRead::IntegerBinders,
+                    FoldVariableRead::MachineBinders,
+                ] {
+                    let mut expected = BTreeSet::new();
+                    collect_argument(&argument, mode, &mut expected, &mut SeenTerms::default());
+                    let actual = common_variables(&root, mode, &mut Default::default())
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>();
+                    assert_eq!(actual, expected, "{format:?} {mode:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn float_atom_readers_preserve_all_native_collection_modes() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [

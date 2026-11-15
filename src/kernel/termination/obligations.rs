@@ -23,7 +23,6 @@ pub(super) struct FunctionTerminationObligations {
     pub recursive_callees: BTreeSet<String>,
     pub recursive_measure: Option<FunctionTerminationMeasure>,
     pub loop_indices: Vec<usize>,
-    pub lowered_loop_body: bool,
     pub calls: Vec<TerminationCallObligation>,
 }
 
@@ -79,6 +78,15 @@ impl TerminationObligations {
             })
         };
         let mut levels = BTreeMap::<usize, Vec<String>>::new();
+        let retained_exits = partial_rules
+            .iter()
+            .filter_map(|rule| {
+                charge_termination_work(1);
+                rule.concrete_loop_exits
+                    .as_ref()
+                    .map(|exits| (rule.function.name(), exits))
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut function_goals = BTreeMap::new();
         let mut callbacks = Vec::new();
         let mut makes_pointer_calls = false;
@@ -142,10 +150,42 @@ impl TerminationObligations {
                 &function.source_body
             };
             let mut loop_indices = Vec::new();
-            visit_loop_obligations(loop_body, &mut 0, &mut |index| {
-                loop_indices.push(index);
-                Ok(())
-            })?;
+            if let Some(exits) = retained_exits.get(name.as_str()) {
+                loop_indices.extend(0..exits.count);
+            } else {
+                visit_loop_obligations(loop_body, &mut 0, &mut |index| {
+                    loop_indices.push(index);
+                    Ok(())
+                })?;
+            }
+            if let Some(plan) = plans.get(name) {
+                let addressed = std::cell::OnceCell::new();
+                let owned = loop_rules
+                    .get(name)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|rule| {
+                        charge_termination_work(1);
+                        rule.loop_evidence.as_ref().map(|evidence| evidence.index)
+                    })
+                    .collect::<BTreeSet<_>>();
+                for (&index, measure) in &plan.loop_measures {
+                    if owned.contains(&index) {
+                        continue;
+                    }
+                    if let LoopTerminationMeasure::Ranking(components) = measure {
+                        for component in components {
+                            if let RankingMeasureKey::ProgramExpression(expression) = component {
+                                reject_address_escaped_expression_measure(
+                                    name,
+                                    expression,
+                                    addressed.get_or_init(|| address_taken_locals(loop_body)),
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
             let recursive_measure = plans
                 .get(name)
                 .and_then(|plan| plan.recursive_measure.clone());
@@ -155,7 +195,6 @@ impl TerminationObligations {
                     recursive_callees,
                     recursive_measure,
                     loop_indices,
-                    lowered_loop_body,
                     calls: requirements,
                 },
             );

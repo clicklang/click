@@ -93,7 +93,7 @@ int32 increment_value(int32 x) {
     ensures result_value: result == inc(x);
     ensures predicate_value: one_more(x, result) by {
         step_until(function.exit);
-        unfold(one_more);
+        unfold(one_more(x, result));
         solve();
     }
 }

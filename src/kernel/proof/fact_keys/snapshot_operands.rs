@@ -119,6 +119,13 @@ fn intern(node: Node) -> SnapshotBlindBitvectorKey {
 }
 
 pub(super) fn written(term: &MachineTerm) -> SnapshotBlindBitvectorKey {
+    // Conversions remain exact opaque keys, with the same identity on both
+    // sides of the native/shared boundary. Import without evaluating the call.
+    if let Some(root) =
+        crate::kernel::KernelTermImport::default().float_to_machine(MachineIntegerType::Int32, term)
+    {
+        return operand(crate::kernel::MachineOperandView::Shared(&root));
+    }
     let node = match term {
         MachineTerm::PointerAddress(pointer, _) => {
             Node::Address(Box::new(snapshot_blind_pointer_key(pointer)))
@@ -239,7 +246,9 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
             ))
         } else if matches!(
             root.node(),
-            crate::kernel::KernelTermNode::Fold(_) | crate::kernel::KernelTermNode::Match(_)
+            crate::kernel::KernelTermNode::Fold(_)
+                | crate::kernel::KernelTermNode::Match(_)
+                | crate::kernel::KernelTermNode::FloatConvert { .. }
         ) {
             intern(Node::ExactOperand(
                 crate::kernel::SharedMachineIntegerTerm::observe_shared(
@@ -301,6 +310,26 @@ mod tests {
         KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp,
         MachineOperandView as V,
     };
+
+    #[test]
+    fn float_conversion_snapshot_keys_are_exact_across_observation_widths() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for name in ["c_float32_to_int32", "c_float32_to_uint64"] {
+            let native =
+                MachineTerm::opaque_conversion(name, MachineTerm::Variable(Variable(998209)));
+            let different =
+                MachineTerm::opaque_conversion(name, MachineTerm::Variable(Variable(998210)));
+            let expected = written(&native);
+            assert_ne!(expected, written(&different));
+            assert!(!expected.requires_checked_match());
+            for format in crate::kernel::machine_integer::FORMATS {
+                let root = KernelTermImport::default().machine(format, &native);
+                let before = KernelTermExport::machine_export_count();
+                assert_eq!(operand(V::Shared(&root)), expected);
+                assert_eq!(KernelTermExport::machine_export_count(), before);
+            }
+        }
+    }
 
     #[test]
     fn conditional_keys_preserve_guard_policy_and_shared_arms() {

@@ -10,11 +10,12 @@ int32 f(const uint8* bytes) { const uint8* cursor = bytes; int32 outer = 0; whil
 ```
 
 ```click
+import click::separation;
 verifying "alias-nested-call.c";
 int32 read(const uint8* p) { views p[0..4]; ensures 0 <= result and result <= 255; }
 int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
  step_until(loop(0));
- have viewable(bytes[0..8]) by { transport(at(function.entry,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(function.entry,viewable(bytes[0..8])); 0 <= 8; }; }
+ have viewable(bytes[0..8]) by { observe(bytes[0..8]); }
  loop {
  decreases 2 - outer;
  views bytes[0..8];
@@ -31,9 +32,45 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   have to_integer(4 * outer) <= 4 by { solve() using { 0 <= outer; outer < 2; }; }
   have to_integer(4 * outer + 4) <= 8 by { solve() using { 0 <= outer; outer < 2; }; }
   have to_integer(4 * outer) <= to_integer(4 * outer + 4) by { solve() using { 0 <= outer; outer < 2; }; }
-  have viewable(bytes[0..8]) by { transport(at(outer_head,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(outer_head,viewable(bytes[0..8])); bytes == old(bytes); 0 <= 8; }; }
-  have viewable(bytes[4 * outer..4 * outer + 4]) by { transport(viewable(bytes[0..8]),viewable(bytes[4 * outer..4 * outer + 4])) using { viewable(bytes[0..8]); 0 <= to_integer(4 * outer); to_integer(4 * outer) <= to_integer(4 * outer + 4); to_integer(4 * outer + 4) <= 8; }; }
-  have viewable(chunk[0..4]) by { rewrite(chunk, bytes + (4 * outer)); solve() using { viewable(bytes[4 * outer..4 * outer + 4]); }; }
+  have viewable(bytes[0..8]) by { observe(bytes[0..8]); }
+  have contains(memory(bytes[0..8]), memory(bytes[4 * outer..4 * outer + 4])) by {
+   apply(separation::contains_subrange(bytes, 0, 8, 4 * outer, 4 * outer + 4)) using {
+    0 <= to_integer(4 * outer);
+    to_integer(4 * outer) <= to_integer(4 * outer + 4);
+    to_integer(4 * outer + 4) <= 8;
+   };
+  }
+  have viewable(bytes[4 * outer..4 * outer + 4]) by {
+   apply(separation::viewable_restrict(memory(bytes[0..8]), memory(bytes[4 * outer..4 * outer + 4]))) using {
+    viewable(bytes[0..8]); contains(memory(bytes[0..8]), memory(bytes[4 * outer..4 * outer + 4]));
+   };
+  }
+  have viewable(chunk[0..4]) by {
+   rewrite(chunk, bytes + (4 * outer));
+   have contains(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)])) by {
+    apply(separation::contains_rebase(bytes, 4 * outer, 4 * outer + 4)) using {
+     0 <= to_integer(4 * outer); to_integer(4 * outer) <= to_integer(4 * outer + 4);
+    };
+   }
+   have viewable((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]) by {
+    apply(separation::viewable_restrict(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]))) using {
+     viewable(bytes[4 * outer..4 * outer + 4]);
+     contains(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]));
+    };
+   }
+   have 0 <= 0 by { normalize(); }
+   have 0 <= 4 by { normalize(); }
+   have to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer)) by { normalize(); }
+   have contains(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4])) by {
+    apply(separation::contains_subrange(bytes + (4 * outer), 0, (4 * outer + 4) - (4 * outer), 0, 4)) using {
+     0 <= 0; 0 <= 4; to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer));
+    };
+   }
+   apply(separation::viewable_restrict(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4]))) using {
+    viewable((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]);
+    contains(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4]));
+   };
+  }
   loop {
    decreases inner;
    views chunk[0..4];
@@ -41,8 +78,8 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
    invariant 0 <= inner and inner <= 1;
    invariant chunk == bytes + (4 * outer);
    invariant 0 <= outer and outer < 2;
-   preserve by { mark inner_head; step(); step(); step();
-    have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
+   preserve by { step(); step(); step(); step();
+    have viewable(chunk[0..4]) by { observe(chunk[0..4]); }
    }
   }
   mark after_inner;
@@ -74,7 +111,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
     at(after_inner, outer) < 2;
    };
   }
-  have viewable(bytes[0..8]) by { transport(at(outer_head,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(outer_head,viewable(bytes[0..8])); bytes == old(bytes); 0 <= 8; }; }
+  have viewable(bytes[0..8]) by { observe(bytes[0..8]); }
  }
  }
 }

@@ -1493,7 +1493,7 @@ fn unfolded_loop_predicates_retain_the_fact_context() {
                 "predicate reflexive(x: int32) { x == x }\nint32 caller",
             )
             .replace("owns p[0..4];", "owns p[0..4]; requires reflexive(0);")
-            .replace("} by {", "} by { unfold(reflexive);");
+            .replace("} by {", "} by { unfold(reflexive(0));");
         (c, click)
     }
     let counts = [3, 6, 12].map(|n| {

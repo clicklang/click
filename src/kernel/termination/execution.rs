@@ -130,35 +130,10 @@ impl TerminationObligations {
 
         let empty = BTreeMap::new();
         let loop_measures = plan.map_or(&empty, |plan| &plan.loop_measures);
-        for measures in loop_measures.values() {
-            let LoopTerminationMeasure::Ranking(measures) = measures else {
-                continue;
-            };
-            for measure in measures {
-                // A pure component reaches this pass only as the
-                // spelling the plan names it by; the lowered
-                // expression, and so its escape check, lives on the
-                // certified loop head that
-                // `verified_loop_ranking_measures` reads below.
-                let RankingMeasureKey::ProgramExpression(measure) = measure else {
-                    continue;
-                };
-                reject_address_escaped_expression_measure(
-                    name,
-                    measure,
-                    addressed.get_or_init(|| address_taken_locals(&function.source_body)),
-                )?;
-            }
-        }
-        let loop_source_body = if requirements.lowered_loop_body {
-            function.body()
-        } else {
-            &function.source_body
-        };
-        let (certified, uncertified_paths) = match verified_loop_rules.get(name) {
-            Some(rules) => verified_loop_ranking_measures(name, loop_source_body, rules)?,
-            None => (BTreeMap::new(), BTreeSet::new()),
-        };
+        let (certified, uncertified_paths) = verified_loop_rules
+            .get(name)
+            .map(|rules| verified_loop_ranking_measures(rules))
+            .unwrap_or_default();
         // A presentation clause may come from a ranked proof branch,
         // while a sibling honestly declares only partial correctness.
         // Preserve that as an unranked-loop refusal (and allow an
@@ -190,18 +165,9 @@ impl TerminationObligations {
             .ruled
             .get(name.as_str())
             .map(|index| &self.partial_rules[*index])
+            && let Some(exits) = &rule.concrete_loop_exits
         {
-            let ruled_loops = verified_loop_rules
-                .get(name)
-                .map(|rules| {
-                    rules
-                        .iter()
-                        .filter_map(|rule| rule.loop_index)
-                        .collect::<BTreeSet<_>>()
-                })
-                .unwrap_or_default();
-            let executed = loops_executed_to_exit(function, rule.loop_semantics(), &ruled_loops);
-            unranked.retain(|index| !executed.contains(index));
+            unranked.retain(|index| !exits.contains(index));
         }
         if let Some(index) = unranked.first() {
             // An unranked loop is the function's own defect, so it is

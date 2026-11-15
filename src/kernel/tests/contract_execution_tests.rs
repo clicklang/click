@@ -1590,6 +1590,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1712,6 +1713,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1791,6 +1793,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1856,6 +1859,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1940,6 +1944,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -2020,6 +2025,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5224,6 +5230,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5312,6 +5319,7 @@ fn opaque_rule_environment(function: ProgramFunction) -> ExecutionEnvironment {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5442,6 +5450,7 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
             .with_verified_function_rule(VerifiedFunctionRule {
                 pointer_result: None,
                 function: other,
+                concrete_loop_exits: None,
                 loop_semantics: LoopSemantics::Verify,
                 checked_callees: None,
                 applied_tactics: Default::default(),

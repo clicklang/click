@@ -210,6 +210,18 @@ impl Proof<'_> {
             }
         }
         match proposition {
+            ClickProposition::Value(expression) => {
+                if !matches!(expression, ContractExpression::Proposition(_)) {
+                    *expression = crate::surface::lambdas::reduce_head_fully(expression)
+                        .map_err(|message| self.step_error(message))?
+                        .into_owned();
+                }
+                if let ContractExpression::Proposition(body) = expression {
+                    self.unfold_selected_surface_goal(
+                        body, selected, predicates, names, scopes, bound, changed, false,
+                    )?;
+                }
+            }
             ClickProposition::And(left, right)
             | ClickProposition::Or(left, right)
             | ClickProposition::Implies(left, right) => {

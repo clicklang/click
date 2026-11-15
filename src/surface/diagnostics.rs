@@ -3514,6 +3514,7 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
     let mut expressions = Vec::new();
     while let Some(proposition) = pending.pop() {
         match proposition {
+            ClickProposition::Value(expression) => expressions.push(expression),
             ClickProposition::Comparison { left, right, .. } => {
                 expressions.push(left);
                 expressions.push(right);
@@ -7039,6 +7040,12 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            format!(
+                "prop {{ {} }}",
+                printing::source_click_proposition(proposition)
+            )
+        }
         ContractExpression::Resource(subject) => describe_resource_subject(subject),
         ContractExpression::RegionAllocation(region) => {
             format!("{}.allocation", describe_code_region_ref(region))
@@ -7061,7 +7068,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 .collect::<Vec<_>>()
                 .join(", "),
             validation::describe_click_type(result),
-            describe_contract_expression(body)
+            match body.as_ref() {
+                ContractExpression::Proposition(proposition) =>
+                    printing::source_click_proposition(proposition),
+                body => describe_contract_expression(body),
+            }
         ),
         ContractExpression::Apply {
             function,

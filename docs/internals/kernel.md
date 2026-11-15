@@ -473,7 +473,11 @@ holds on that rule's loop head; a loop with a nonnegative int32 quantity, or
 an unsigned machine quantity under unsigned order, that strictly descends on
 every back edge terminates whichever quantity it was.
 The plan only says which loop to point at, and a rule is bound to its source
-loop by index and executable shape, a comparison that ignores the measure.
+loop by index and executable shape at loop opening, before initialization or
+preservation executes. This comparison ignores the measure. Opening also checks
+measure eligibility and retains the statement together with its source authority;
+the successful loop producer publishes that authority directly. Termination
+consumption neither rematches source shape nor rechecks eligibility.
 Matching the measures on top of that turns a plan describing one measure and a
 certificate carrying another into a named refusal instead of a silent
 mismatch, so weakening it can cost a diagnostic and not a theorem. A
@@ -1377,8 +1381,9 @@ expression that reads it. To move, the temporary must:
 
 `x = a + b * c` is then one expression again.
 
-A value with a checked operator (`+ - * / % << >>`) moves only into a read
-whose lowering emits that operator's panic check:
+A value with a checked operator (`+ - * / % << >>`) or an indexed read
+(`a[i]`) moves only into a read whose lowering emits its panic or bounds
+check:
 
 - an assignment's value;
 - an assertion;
@@ -1399,8 +1404,12 @@ These still stay a temporary:
 
 - a call's result read more than once, so a `for` loop's `next` result is one
   and a proof sees it;
-- a borrow;
-- an indexed place or slice;
+- a borrow, unless its one read in its block takes it whole: a call
+  argument (`t = &mut x; f(t)` is `f(&mut x)`, whose loan lasts the call), a
+  local's whole value (`let r = &mut x`), or a reborrow (`&mut *t` is the
+  borrow). A borrow of a place rooted at a local moves past statements that
+  do not name that local;
+- a slice;
 - a local that roots a place (`&t`, `t.f`, `t[i]`);
 - an enum `match` scrutinee, whose proof split names a local.
 

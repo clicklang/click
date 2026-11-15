@@ -143,3 +143,93 @@ fn footprint_refusal_names_the_goal_and_the_solver_that_failed() {
         );
     }
 }
+
+fn source_only_clauses(grouped: bool, last_value: i32) -> String {
+    let clauses = format!(
+        r#"
+        ensures result == at(first, x) + 1{};
+        ensures at(first, x) == {last_value}{};
+    "#,
+        if grouped {
+            ""
+        } else {
+            " by { step(); mark first; }"
+        },
+        if grouped {
+            ""
+        } else {
+            " by { step(); mark first; }"
+        }
+    );
+    format!(
+        r#"verifying "source_cells.c";
+        int32 set_twice(int32 x) {{ {clauses} }} {}
+    "#,
+        if grouped {
+            "by { step(); mark first; }"
+        } else {
+            ""
+        }
+    )
+}
+
+const SOURCE_CELLS_C: &[(&str, &str)] = &[(
+    "source_cells.c",
+    "int32 set_twice(int32 x) { x = 1; x = 2; return x; }",
+)];
+
+#[test]
+fn grouped_source_only_claims_complete_and_expand_as_ordinary_proofs() {
+    let source = source_only_clauses(true, 1);
+    verify_c_sources(&source, SOURCE_CELLS_C).unwrap();
+    let expanded = expand_function_proof_source(&source, SOURCE_CELLS_C, "set_twice").unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, SOURCE_CELLS_C))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+fn separate_source_only_clauses_complete_their_own_cells() {
+    verify_c_sources(&source_only_clauses(false, 1), SOURCE_CELLS_C).unwrap();
+}
+
+#[test]
+fn proving_one_source_only_clause_cannot_cover_a_false_sibling() {
+    for grouped in [false, true] {
+        assert!(verify_c_sources(&source_only_clauses(grouped, 9), SOURCE_CELLS_C).is_err());
+    }
+}
+
+#[test]
+fn concrete_and_avoided_loops_need_no_summary_measure() {
+    let c = [(
+        "concrete_exits.c",
+        "int32 concrete(int32 n) { while (n > 0) { n = n - 1; } return n; } int32 avoided(int32 n) { if (n < 0) { while (1) {} } return n; }",
+    )];
+    let source = r#"verifying "concrete_exits.c";
+        int32 concrete(int32 n) { requires n == 2; ensures result == 0; }
+        int32 avoided(int32 n) { requires n >= 0; ensures result == n; }
+    "#;
+    verify_c_sources(source, &c).unwrap();
+    let expanded = expand_function_proof_source(source, &c, "concrete").unwrap();
+    let expanded = expand_function_proof_source(&expanded, &c, "avoided").unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &c))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+fn an_empty_loop_summary_does_not_publish_concrete_exit_evidence() {
+    let c = [(
+        "concrete_summary.c",
+        "int32 summarized(void) { while (1) {} return 0; }",
+    )];
+    let source = r#"verifying "concrete_summary.c";
+        int32 summarized() { ensures result == 0; } by { loop {} }
+    "#;
+    let error =
+        verify_c_sources(source, &c).expect_err("an unranked summary is only partial correctness");
+    assert!(
+        error.message().contains("loop") && error.message().contains("decreases"),
+        "{}",
+        error.message()
+    );
+}

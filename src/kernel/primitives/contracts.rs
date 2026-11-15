@@ -1223,6 +1223,8 @@ impl ProgramFunction {
             }),
             string_literals: Vec::new(),
             address_taken_locals: AddressTakenLocals::default(),
+            loop_source_index: LoopSourceIndexCache::default(),
+            natural_loop_source: None,
         }
     }
 
@@ -1289,6 +1291,16 @@ impl ProgramFunction {
 
     pub fn with_source_body(mut self, source_body: ProgramStatement) -> Self {
         self.source_body = source_body;
+        self.loop_source_index = LoopSourceIndexCache::default();
+        self
+    }
+
+    pub(crate) fn with_natural_loop_source(
+        mut self,
+        source: Option<(ControlTargetId, Option<ControlTargetId>)>,
+    ) -> Self {
+        self.natural_loop_source = source;
+        self.loop_source_index = LoopSourceIndexCache::default();
         self
     }
 
@@ -1316,6 +1328,7 @@ impl ProgramFunction {
     pub(crate) fn with_body(mut self, body: ProgramStatement) -> Self {
         self.body = body;
         self.address_taken_locals = AddressTakenLocals::default();
+        self.loop_source_index = LoopSourceIndexCache::default();
         self
     }
 
@@ -1337,10 +1350,13 @@ impl ProgramFunction {
             static_storage,
             string_literals,
             address_taken_locals: _,
+            loop_source_index: _,
+            natural_loop_source,
         } = self;
         *program_entry == other.program_entry
             && name == &other.name
             && *inline_body == other.inline_body
+            && natural_loop_source == &other.natural_loop_source
             && source_body == &other.source_body
             && control_targets == &other.control_targets
             && contract_interface == &other.contract_interface
@@ -3515,7 +3531,7 @@ impl FunctionContract {
     /// Automatic concrete-pointer formation may cross a proof-parameter
     /// contract, but only after it has separately established that the
     /// binding between the two declarations is forced. The explicit
-    /// `unfold(Name)` route keeps refusing proof parameters: its proof block
+    /// `unfold(Name(callback))` route keeps refusing proof parameters: its proof block
     /// has no way to introduce the instances.
     pub(crate) fn has_compatible_signature_and_composite_vocabulary(
         &self,
@@ -4019,11 +4035,6 @@ impl VerifiedLoopRule {
             .loop_invariant_correspondence
             .iterations
             .as_ref()
-    }
-
-    pub(crate) fn with_loop_index(mut self, loop_index: usize) -> Self {
-        self.loop_index = Some(loop_index);
-        self
     }
 
     pub fn with_composite_resource_definitions(

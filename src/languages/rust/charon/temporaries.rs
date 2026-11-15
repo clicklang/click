@@ -15,7 +15,14 @@
 //! - named by a statement rather than read by an expression;
 //! - the storage of a place, as in `&t`, `t.f` or `t[i]`;
 //! - an enum `match` scrutinee;
-//! - assigned a call, a borrow or a slice.
+//! - assigned a call or a slice, or a borrow its one read does not take
+//!   whole.
+//!
+//! A borrow moves into the read that takes it whole: an argument of its
+//! block's call, `f(&mut x)`, a local's whole value, `let r = &mut x`, or a
+//! reborrow, `&mut *t`, which is the borrow itself. A borrow of a place
+//! rooted at a local, `x` or `x.f`, also moves past a statement that does
+//! not name that local, since the place's address is unchanged.
 
 use super::super::schema::{
     Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place,
@@ -62,6 +69,46 @@ pub(super) fn substitute_pure_values(
         // ahead, with nothing since that could change them.
         let mut pending = BTreeMap::<String, E>::new();
         let mut kept = Vec::with_capacity(block.statements.len());
+        // A borrow is the value its one read takes whole: an argument of the
+        // block's call, `f(&mut x)`, whose loan lasts the call, or a local's
+        // whole value, `let r = &mut x`.
+        let mut borrow_readers = match &block.terminator {
+            T::Call { arguments, .. } => arguments
+                .iter()
+                .filter_map(|argument| match argument {
+                    E::Local { name } => Some(name.clone()),
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>(),
+            _ => BTreeSet::new(),
+        };
+        borrow_readers.extend(
+            block
+                .statements
+                .iter()
+                .filter_map(|statement| match statement {
+                    S::Assign {
+                        target: E::Local { .. },
+                        value: E::Local { name },
+                    } => Some(name.clone()),
+                    // A reborrow, `&mut *t`, of a borrow `t = &mut x` is
+                    // `&mut x`.
+                    S::Assign {
+                        value: E::Borrow { place, .. },
+                        ..
+                    } => match place.as_ref() {
+                        E::Deref { reference, .. } => match reference.as_ref() {
+                            E::Local { name } => Some(name.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    },
+                    _ => None,
+                }),
+        );
+        // The pending borrows of a place rooted at a local, by that local:
+        // the place's address is the same until a statement names the local.
+        let mut rooted = BTreeMap::<String, String>::new();
         for mut statement in std::mem::take(&mut block.statements) {
             for (name, value) in substitute_statement(&mut statement, &mut pending) {
                 removed.remove(&name);
@@ -74,7 +121,16 @@ pub(super) fn substitute_pure_values(
                 S::Assign {
                     target: E::Local { name },
                     value,
-                } if substitutable(name) && pure(value) => {
+                } if substitutable(name)
+                    && (pure(value)
+                        || (matches!(value, E::Borrow { place, .. } if pure(place))
+                            && borrow_readers.contains(name))) =>
+                {
+                    if let E::Borrow { place, .. } = value
+                        && let Some(root) = place_root(place)
+                    {
+                        rooted.insert(name.clone(), root.clone());
+                    }
                     pending.insert(name.clone(), value.clone());
                     removed.insert(name.clone());
                     continue;
@@ -87,8 +143,19 @@ pub(super) fn substitute_pure_values(
                     // Anything else may change what a pending value reads,
                     // so no pending value moves past it: its definition goes
                     // back just before this statement, past nothing but
-                    // storage markers, checks and other pure definitions.
+                    // storage markers, checks and other pure definitions. A
+                    // borrow of a place rooted at a local the statement does
+                    // not name moves past it: its address is unchanged.
+                    let mentioned = mentioned_locals(&statement);
                     for (name, value) in std::mem::take(&mut pending) {
+                        if rooted
+                            .get(&name)
+                            .is_some_and(|root| !mentioned.contains(root))
+                        {
+                            pending.insert(name, value);
+                            continue;
+                        }
+                        rooted.remove(&name);
                         removed.remove(&name);
                         kept.push(S::Assign {
                             target: E::Local { name },
@@ -537,6 +604,32 @@ fn expression_uses(
     }
 }
 
+/// The local a place of fields is rooted at, `x` of `x.f.g`; `None` for a
+/// place through a reference or an index, whose address a statement can
+/// change.
+fn place_root(place: &E) -> Option<&String> {
+    match place {
+        E::Local { name } => Some(name),
+        E::Field { base, .. } => place_root(base),
+        _ => None,
+    }
+}
+
+/// Every local `statement` names: those it reads, assigns, or names by a
+/// field.
+fn mentioned_locals(statement: &S) -> BTreeSet<String> {
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    statement_uses(statement, &mut reads, &mut named);
+    named.extend(reads.into_keys());
+    if let S::Assign { target, .. } = statement
+        && let Some(root) = place_root(target)
+    {
+        named.insert(root.clone());
+    }
+    named
+}
+
 /// The locals a place reads. A local that roots a place, as in `&x`, `x.f`
 /// or `x[i]`, is the place's storage rather than a value, so it is named and
 /// never moves; the reference a `*r` place goes through and an index are
@@ -670,6 +763,13 @@ fn substitute(expression: &mut E, pending: &mut Pending, prepared: bool) {
     );
     for child in children_mut(expression) {
         substitute(child, pending, prepared && operands);
+    }
+    // The place a borrow names, read through it: `*(&mut x)` is `x`.
+    if let E::Deref { reference, .. } = expression
+        && let E::Borrow { place, .. } = reference.as_mut()
+    {
+        let place = std::mem::replace(place.as_mut(), E::Boolean { value: false });
+        *expression = place;
     }
 }
 
@@ -885,6 +985,113 @@ mod tests {
             T::Return,
         );
         assert!(locals.contains(&"t1".to_string()));
+    }
+
+    #[test]
+    fn a_borrow_the_block_s_call_takes_is_that_argument() {
+        // `t1 = &mut a; f(t1)` is `f(&mut a)`.
+        let mut locals = ["a", "t1"].map(place).to_vec();
+        let borrow = E::Borrow {
+            place: Box::new(local("a")),
+            value_type: Type::U32,
+        };
+        let mut blocks = vec![MirBlock {
+            statements: vec![assign("t1", borrow)],
+            terminator: T::Call {
+                function: "f".into(),
+                arguments: vec![local("t1")],
+                owned_arguments: Vec::new(),
+                destination: "unit".into(),
+                target: 0,
+                through_pointer: false,
+                result: None,
+            },
+            terminator_site: None,
+        }];
+        let temporaries = BTreeSet::from(["t1".to_string()]);
+        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        assert!(locals.iter().all(|local| local.name != "t1"));
+        assert!(blocks[0].statements.is_empty());
+        assert!(matches!(
+            &blocks[0].terminator,
+            T::Call { arguments, .. } if matches!(arguments.as_slice(), [E::Borrow { .. }])
+        ));
+    }
+
+    fn call(arguments: Vec<E>) -> T {
+        T::Call {
+            function: "f".into(),
+            arguments,
+            owned_arguments: Vec::new(),
+            destination: "unit".into(),
+            target: 0,
+            through_pointer: false,
+            result: None,
+        }
+    }
+
+    fn borrow(place: E) -> E {
+        E::Borrow {
+            place: Box::new(place),
+            value_type: Type::U32,
+        }
+    }
+
+    #[test]
+    fn a_reborrowed_borrow_is_the_borrow_and_passes_unrelated_statements() {
+        // `t1 = &mut a; t2 = &mut *t1; x = b; f(t2)` is `x = b; f(&mut a)`:
+        // the reborrow of a borrow is the borrow, and `x = b` names no local
+        // the borrowed place is rooted at.
+        let (locals, block) = substituted(
+            vec![
+                assign("t1", borrow(local("a"))),
+                assign(
+                    "t2",
+                    borrow(E::Deref {
+                        reference: Box::new(local("t1")),
+                        value_type: Type::U32,
+                    }),
+                ),
+                assign("x", local("b")),
+            ],
+            call(vec![local("t2")]),
+        );
+        assert_eq!(locals, ["a", "b", "x"]);
+        assert!(matches!(block.statements.as_slice(), [S::Assign { .. }]));
+        assert!(matches!(
+            &block.terminator,
+            T::Call { arguments, .. } if matches!(
+                arguments.as_slice(),
+                [E::Borrow { place, .. }] if matches!(place.as_ref(), E::Local { name } if name == "a")
+            )
+        ));
+    }
+
+    #[test]
+    fn a_borrow_does_not_pass_a_statement_naming_its_place() {
+        // `x = a` reads `a`, so `t1 = &mut a` stays before it.
+        let (locals, _) = substituted(
+            vec![assign("t1", borrow(local("a"))), assign("x", local("a"))],
+            call(vec![local("t1")]),
+        );
+        assert!(locals.contains(&"t1".to_string()));
+    }
+
+    #[test]
+    fn a_borrow_a_named_local_takes_whole_is_its_value() {
+        // `t1 = &mut a; x = t1` is `x = &mut a`.
+        let (locals, block) = substituted(
+            vec![assign("t1", borrow(local("a"))), assign("x", local("t1"))],
+            T::Return,
+        );
+        assert!(!locals.contains(&"t1".to_string()));
+        assert!(matches!(
+            block.statements.as_slice(),
+            [S::Assign {
+                value: E::Borrow { .. },
+                ..
+            }]
+        ));
     }
 
     #[test]

@@ -305,6 +305,18 @@ fn library_method(axiom: &super::schema::CppAxiom) -> Option<(String, &'static s
     } else {
         class.dynamic
     }?;
+    // The pointer/count constructor is a member template. Restrict this
+    // model to dynamic extent; static extent has a different state shape.
+    if class.class == "span"
+        && extent.is_none()
+        && method == "span"
+        && axiom.signature == format!("void ({} *, unsigned long) noexcept", element.signature)
+    {
+        return Some((
+            super::names::path_name(&["std", "span<T>", "span<T *>"]),
+            SPAN_LIBRARY,
+        ));
+    }
     class
         .methods
         .iter()
@@ -329,9 +341,10 @@ pub(super) fn library_generic(axiom: &super::schema::CppAxiom) -> Option<String>
 /// template's method: such a template has no generic method in the import,
 /// only the instances its axioms are.
 pub(crate) fn is_library_generic(generic: &str) -> bool {
-    LIBRARY_FUNCTIONS
-        .iter()
-        .any(|(_, _, path, _)| super::names::path_name(path) == generic)
+    super::names::path_name(&["std", "span<T>", "span<T *>"]) == generic
+        || LIBRARY_FUNCTIONS
+            .iter()
+            .any(|(_, _, path, _)| super::names::path_name(path) == generic)
         || LIBRARY_CLASSES.iter().any(|class| {
             [class.dynamic, class.fixed]
                 .into_iter()
@@ -462,6 +475,40 @@ mod tests {
             ("__data_", InterfaceType::UInt8Pointer, None, 8, 8),
         ]));
         assert!(!ambiguous.contains_key("std_span_data"), "{ambiguous:?}");
+    }
+
+    #[test]
+    fn dynamic_span_pointer_count_constructor_has_a_selected_library_contract() {
+        let axiom = |name: &str, signature: &str| super::super::schema::CppAxiom {
+            qualified_name: name.into(),
+            signature: signature.into(),
+        };
+        let generic = library_generic(&axiom(
+            "std::span<std::byte>::span",
+            "void (enum std::byte *, unsigned long) noexcept",
+        ))
+        .unwrap();
+        assert!(is_library_generic(&generic));
+        assert_eq!(
+            crate::languages::cpp::names::cpp_display_name(&generic).unwrap(),
+            "std::span<T>::span<T *>"
+        );
+        for (name, signature) in [
+            (
+                "std::span<std::byte, 4>::span",
+                "void (enum std::byte *, unsigned long) noexcept",
+            ),
+            (
+                "std::span<std::byte>::span",
+                "void (enum std::byte *, int) noexcept",
+            ),
+            (
+                "std::span<std::byte>::span",
+                "void (enum std::byte *, enum std::byte *) noexcept",
+            ),
+        ] {
+            assert!(library_generic(&axiom(name, signature)).is_none());
+        }
     }
 
     #[test]

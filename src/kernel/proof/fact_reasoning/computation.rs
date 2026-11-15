@@ -353,7 +353,11 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
             IntegerTerm::Add(a, b) | IntegerTerm::Subtract(a, b) | IntegerTerm::Multiply(a, b) => {
                 match (constants.get(&a.id()), constants.get(&b.id())) {
                     (Some(a), Some(b)) => {
-                        let bits = (a.bits() as usize + 1).saturating_mul(b.bits() as usize + 1);
+                        let bits = if matches!(term.as_ref(), IntegerTerm::Multiply(..)) {
+                            (a.bits() as usize + 1).saturating_mul(b.bits() as usize + 1)
+                        } else {
+                            a.bits().max(b.bits()) as usize + 1
+                        };
                         if crate::instrumentation::deadline_exceeded_with_work(bits) {
                             return None;
                         }
@@ -438,6 +442,74 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
         ConditionTerm::IntegerGreaterThan(..) => constant > zero,
         _ => constant >= zero,
     })
+}
+
+/// Check an exact type range or one intrinsic quotient/shift/remainder bound.
+/// Only the two operands' fixed bound shapes select observations; no facts,
+/// operand history, or nested operations are searched.
+pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> Option<bool> {
+    fn scaled(term: &SharedIntegerTerm) -> Option<&SharedMachineIntegerTerm> {
+        match term.as_ref() {
+            IntegerTerm::Machine(value) => Some(value),
+            IntegerTerm::Multiply(a, b) => match (a.as_ref(), b.as_ref()) {
+                (IntegerTerm::Constant(_), IntegerTerm::Machine(value))
+                | (IntegerTerm::Machine(value), IntegerTerm::Constant(_)) => Some(value),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn observation(term: &SharedIntegerTerm) -> Option<&SharedMachineIntegerTerm> {
+        scaled(term).or_else(|| match term.as_ref() {
+            IntegerTerm::Add(a, b) if a.as_const().is_some() => scaled(b),
+            IntegerTerm::Add(a, b) if b.as_const().is_some() => scaled(a),
+            IntegerTerm::Subtract(a, b) if b.as_const().is_some() => scaled(a),
+            _ => None,
+        })
+    }
+    let (left, right) = match condition {
+        ConditionTerm::IntegerLessEqual(left, right) => (left, right),
+        ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+        _ => return None,
+    };
+    // Exact type ranges inspect just the observation and its stated endpoint.
+    // Unrelated constant comparisons should not construct affine range claims.
+    if let (IntegerTerm::Constant(endpoint), IntegerTerm::Machine(value)) =
+        (left.as_ref(), right.as_ref())
+        && endpoint == &crate::kernel::machine_integer::range::observation_range(value).0
+    {
+        return Some(true);
+    }
+    if let (IntegerTerm::Machine(value), IntegerTerm::Constant(endpoint)) =
+        (left.as_ref(), right.as_ref())
+        && endpoint == &crate::kernel::machine_integer::range::observation_range(value).1
+    {
+        return Some(true);
+    }
+    let mut expected = None;
+    for value in [observation(left), observation(right)]
+        .into_iter()
+        .flatten()
+    {
+        for upper in [false, true] {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(bound) = crate::kernel::machine_integer::bounds::operation_bound(value, upper)
+            else {
+                continue;
+            };
+            if expected.is_none() {
+                expected = Some(super::super::integer_arithmetic::integer_affine_claim(
+                    &Proposition::ConditionIs(condition.clone(), true),
+                )?);
+            }
+            if super::super::integer_arithmetic::integer_affine_claim(&bound).as_ref()
+                == expected.as_ref()
+            {
+                return Some(true);
+            }
+        }
+    }
+    None
 }
 
 /// The affine form of `left - right`: each atom's coefficient and the

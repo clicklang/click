@@ -3741,3 +3741,27 @@ fn local_predicate_unfold_keeps_heap_snapshots_distinct() {
     .expect_err("an entry definition must not prove a predicate over changed memory");
     assert!(error.message().contains("known"), "{error}");
 }
+
+#[test]
+fn local_predicate_unfold_preserves_proposition_values() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem selected(x: int32) {
+            requires x > 0;
+            ensures prop { positive(x) and x == x } by {
+                unfold(positive(x));
+                known();
+            }
+            ensures prop { positive(x) and x == x } by {
+                unfold(prop { positive(x) and x == x });
+                known();
+            }
+            ensures prop { prop { positive(x) } and true } by {
+                unfold(positive(x));
+                known();
+            }
+        }
+    "#;
+    without_implicit_solve(|| verify_click_theorems(source))
+        .expect("a proposition value retains the selected definition operation");
+}
