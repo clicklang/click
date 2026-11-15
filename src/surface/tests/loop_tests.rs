@@ -2603,6 +2603,20 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
     }
 }
 
+#[test]
+#[ignore = "nightly: pointer cursor invariant expansion and cold replay"]
+fn pointer_cursor_invariant_expands_and_replays() {
+    let (click, sources) = loop_fixture("pointer_cursor_loop_expansion");
+    let sources = borrowed_sources(&sources);
+    verify_c_sources(&click, &sources).unwrap();
+    let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
 // Loop resource selection must use the same checked pointer-alias graph as
 // calls; an abstract outer cursor is not the input's syntactic block.
 #[test]
@@ -2628,7 +2642,11 @@ fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
         assert!(verify_c_sources(&forged, &sources).is_err());
     }
     let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
-    verify_c_sources(&expanded, &sources).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
