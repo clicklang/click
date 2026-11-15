@@ -582,6 +582,24 @@ Validation: all 2,794 selected tests passed, including every scaling test,
 algebraic/Boolean/call/nat checks, readers/rewrites, Surface synthesis and full
 ordinary example projects. The quality gate exited 0.
 
+8s.2 represents algebraic reads with their abstract type, exact snapshot and
+shared address. Boolean and algebraic reads reuse the same snapshot descriptor,
+keeping producer arena identity separate from native observation equality.
+Import/export, syntax comparison, observation normalization and existing Surface
+read spelling support the common form. Selected algebraic read results retain
+it; broader binding and execution handoffs remain 8t.
+
+Dependency readers preserve the native UInt64 read-carrier policy, including
+stored-load connections and havoc origins. Read resolution, canonical snapshot
+selection and evidence requirements remain unchanged. Fourteen focused tests
+passed, covering snapshot/type identity, native/common keys, all reader modes,
+actual read results, constant-work construction with growing shared addresses,
+and existing Boolean read and algebraic fact-key regressions.
+Validation: all 2,214 broader tests passed, including every scaling test,
+abstract/parameter/memory checks, algebraic and Boolean behavior, readers,
+rewrites, Surface synthesis and full ordinary example projects. The quality
+gate exited 0.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes

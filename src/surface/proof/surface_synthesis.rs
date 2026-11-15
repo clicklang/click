@@ -3114,7 +3114,7 @@ pub(super) fn raise_kernel_term(
         Node::Match(matched) => {
             matches::raise_match(matched, parameter_binding, state, bound_variables)?
         }
-        Node::Constructor(_) => {
+        Node::Constructor(_) | Node::AlgebraicRead(_) => {
             let argument = crate::kernel::KernelTermExport::default()
                 .argument(term)
                 .ok()?;

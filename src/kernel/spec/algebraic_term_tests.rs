@@ -1198,3 +1198,43 @@ fn common_constructor_projection_preserves_fields_and_refusals() {
     }
     assert_eq!(KernelTermExport::algebraic_export_count(), exports);
 }
+
+#[test]
+fn algebraic_read_result_preserves_native_snapshot_and_type() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = TypeParameterName::intern("SpecReadT").algebraic_type();
+    let native = AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::MemoryLoad {
+            memory: intern_memory(Memory::new()),
+            pointer: Box::new(Pointer::symbolic(Variable(999749))),
+        },
+    };
+    let expression = SpecAlgebraicExpression {
+        algebraic_type: ty,
+        node: SpecAlgebraicExpressionNode::ProgramValue(Box::new(SpecExpression::Value(
+            ProgramValue::Parameter(Box::new(native.clone())),
+        ))),
+    };
+    for disabled in [false, true] {
+        let mut execution = ExecutionBudget::new();
+        let mut budget = SpecEvaluation::logical(&mut execution);
+        budget.machine_result_production_disabled = disabled;
+        let paths = evaluate_spec_algebraic_at_state_in(
+            &ExecutionState::new(),
+            &expression,
+            None,
+            &PureFactContext::new(),
+            &mut budget,
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            matches!(&paths[0].value, AlgebraicResult::Shared(root) if matches!(root.node(), KernelTermNode::AlgebraicRead(_))),
+            !disabled
+        );
+        assert_eq!(paths[0].value.clone().into_native_compat(), native);
+        assert!(paths[0].obligations.is_empty());
+        assert!(!paths[0].facts.has_path_conditions());
+    }
+}

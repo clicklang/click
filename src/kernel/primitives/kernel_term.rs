@@ -14,6 +14,7 @@ pub(crate) use folds::KernelFoldIndex;
 mod algebraic;
 mod algebraic_call;
 mod algebraic_if;
+mod algebraic_read;
 pub(crate) use algebraic_call::KernelAlgebraicCall;
 mod algebraic_equality;
 mod machine;
@@ -23,6 +24,7 @@ pub(crate) use matches::KernelMatchArm;
 pub(crate) use matches::{KernelConstructor, KernelMatch};
 mod pointer_observations;
 mod reads;
+pub use reads::KernelSnapshotRead;
 // Prepared pointer payloads; producer activation follows scoped consumers and spelling.
 #[allow(dead_code)]
 mod addresses;
@@ -69,6 +71,7 @@ pub enum KernelTermNode {
     },
     BoolLiteral(bool),
     BoolRead(KernelBooleanRead),
+    AlgebraicRead(KernelSnapshotRead),
     BoolCast {
         destination: MachineIntegerType,
         operand: KernelTerm,
@@ -380,7 +383,8 @@ impl NodeKey {
             | KernelTermNode::PointerOffsetEqual { .. }
             | KernelTermNode::PointerEqual { .. }
             | KernelTermNode::PointerValueEqual(_)
-            | KernelTermNode::BoolRead(_) => true,
+            | KernelTermNode::BoolRead(_)
+            | KernelTermNode::AlgebraicRead(_) => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,
@@ -1529,6 +1533,7 @@ impl KernelTermExport {
                 KernelTermNode::Match(_)
                     | KernelTermNode::AlgebraicCall(_)
                     | KernelTermNode::AlgebraicIf { .. }
+                    | KernelTermNode::AlgebraicRead(_)
                     | KernelTermNode::Constructor(_)
                     | KernelTermNode::Variable(_)
             )

@@ -27,20 +27,7 @@ impl KernelTerm {
             let PureFunctionArgument::Algebraic(value) = value.value() else {
                 return root;
             };
-            match value.node {
-                AlgebraicTermNode::Variable(_)
-                | AlgebraicTermNode::Constructor { .. }
-                | AlgebraicTermNode::If { .. }
-                | AlgebraicTermNode::PureFunctionApplication { .. } => {
-                    KernelTermImport::default().algebraic(value)
-                }
-                AlgebraicTermNode::Match { .. } => {
-                    KernelMatch::import_algebraic(&mut KernelTermImport::default(), value)
-                        .expect("match")
-                        .into_term()
-                }
-                _ => root,
-            }
+            KernelTermImport::default().algebraic(value)
         }
         let mut pending = vec![(self.clone(), other.clone())];
         let mut seen = std::collections::HashSet::new();
@@ -95,6 +82,13 @@ impl KernelTerm {
                     KernelTermNode::AlgebraicIf { arguments: a },
                     KernelTermNode::AlgebraicIf { arguments: b },
                 ) => pending.extend(a.iter().cloned().zip(b.iter().cloned())),
+                (KernelTermNode::AlgebraicRead(a), KernelTermNode::AlgebraicRead(b)) => {
+                    let (am, aa) = a.parts();
+                    let (bm, ba) = b.parts();
+                    if am != bm || !aa.syntax_equal(ba) {
+                        return Some(false);
+                    }
+                }
                 (KernelTermNode::AlgebraicCall(a), KernelTermNode::AlgebraicCall(b))
                     if a.name == b.name
                         && a.shared_machine_arguments == b.shared_machine_arguments
