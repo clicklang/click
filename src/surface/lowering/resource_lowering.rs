@@ -1657,6 +1657,11 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
         expressions: &mut Vec<&'a ContractExpression>,
     ) {
         match proposition {
+            ClickProposition::Value(expression) => {
+                if let ContractExpression::Proposition(body) = expression {
+                    collect(body, expressions);
+                }
+            }
             ClickProposition::Comparison { left, right, .. } => {
                 if contains_partial_arithmetic(left) {
                     expressions.push(left);
@@ -2787,6 +2792,9 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
     argument: &ContractExpression,
 ) -> Result<ProgramExpression, ClickError> {
     match argument {
+        ContractExpression::Proposition(_) => {
+            Err(ClickError::new("a Prop is not a C resource argument"))
+        }
         ContractExpression::Resource(_) => {
             Err(ClickError::new("a Resource descriptor is not a C argument"))
         }

@@ -399,6 +399,9 @@ impl Analysis<'_> {
     ) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
+            ContractExpression::Proposition(proposition) => {
+                self.check_proposition(proposition, bindings, definition)?
+            }
             ContractExpression::Resource(_) => {}
             ContractExpression::Lambda { body, .. } => {
                 self.check_expression(body, bindings, definition)?
@@ -597,6 +600,9 @@ impl Analysis<'_> {
         definition: &ClickFunctionDefinition,
     ) -> Result<(), String> {
         match proposition {
+            ClickProposition::Value(expression) => {
+                self.check_expression(expression, bindings, definition)?;
+            }
             ClickProposition::Comparison { left, right, .. } => {
                 self.check_expression(left, bindings, definition)?;
                 self.check_expression(right, bindings, definition)?;

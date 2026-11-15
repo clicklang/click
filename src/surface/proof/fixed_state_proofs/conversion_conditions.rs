@@ -864,6 +864,9 @@ pub(in crate::surface) fn walk_written_expressions(
     visit(expression);
     let mut children: Vec<&ContractExpression> = Vec::new();
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            walk_written_expressions_in_proposition(proposition, visit)
+        }
         ContractExpression::Resource(_) => {}
         ContractExpression::Lambda { .. } => {}
         ContractExpression::Apply {
@@ -967,6 +970,7 @@ pub(in crate::surface) fn walk_written_expressions_in_proposition(
     visit: &mut impl FnMut(&ContractExpression),
 ) {
     match proposition {
+        ClickProposition::Value(expression) => walk_written_expressions(expression, visit),
         ClickProposition::Comparison { left, right, .. } => {
             walk_written_expressions(left, visit);
             walk_written_expressions(right, visit);

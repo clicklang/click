@@ -10,6 +10,102 @@ pub(super) fn signature(parameters: &[(String, ClickType)], result: &ClickType) 
     }
 }
 
+/// Application may already be elaborated into typed argument/result lets
+/// when a surrounding proposition alias is substituted.
+pub(super) fn is_proposition_value(expression: &ContractExpression) -> bool {
+    match expression {
+        ContractExpression::Proposition(_) => true,
+        ContractExpression::Apply { function, .. } => {
+            application_result_type(function) == Ok(ClickType::Proposition)
+        }
+        ContractExpression::Let {
+            name,
+            click_type,
+            value,
+            body,
+        } => {
+            if matches!(body.as_ref(), ContractExpression::Binding(binding) if binding == name) {
+                match click_type {
+                    Some(ClickType::Proposition) => true,
+                    Some(_) => false,
+                    None => is_proposition_value(value),
+                }
+            } else {
+                is_proposition_value(body)
+            }
+        }
+        ContractExpression::At { expression, .. } | ContractExpression::Old(expression) => {
+            is_proposition_value(expression)
+        }
+        _ => false,
+    }
+}
+
+/// Range predicates use ordinary application under the existing quantifier.
+pub(super) fn range_proposition(
+    start: ContractExpression,
+    end: ContractExpression,
+    predicate: ContractExpression,
+    all: bool,
+) -> ClickProposition {
+    let mut names = BTreeSet::new();
+    lowering::collect_contract_expression_referenced_names(&predicate, &mut names);
+    lowering::collect_contract_expression_binding_names(&predicate, &mut names);
+    let mut index = 0;
+    let item = loop {
+        let name = format!("__click_range_{index}");
+        index += 1;
+        if !names.contains(&name) {
+            break name;
+        }
+    };
+    let body = Box::new(ClickProposition::Value(ContractExpression::Apply {
+        function: Box::new(predicate),
+        arguments: vec![ContractExpression::Binding(item.clone())],
+    }));
+    if all {
+        ClickProposition::RangeAll {
+            start,
+            end,
+            item,
+            written_item: Some("item".into()),
+            body,
+        }
+    } else {
+        ClickProposition::RangeAny {
+            start,
+            end,
+            item,
+            written_item: Some("item".into()),
+            body,
+        }
+    }
+}
+
+pub(super) fn range_predicate(proposition: &ClickProposition) -> Option<&ContractExpression> {
+    let (item, body) = match proposition {
+        ClickProposition::RangeAll { item, body, .. }
+        | ClickProposition::RangeAny { item, body, .. } => (item, body),
+        _ => return None,
+    };
+    let ClickProposition::Value(ContractExpression::Apply {
+        function,
+        arguments,
+    }) = body.as_ref()
+    else {
+        return None;
+    };
+    let [ContractExpression::Binding(argument)] = arguments.as_slice() else {
+        return None;
+    };
+    if item != argument {
+        return None;
+    }
+    let mut captures = BTreeSet::new();
+    lowering::collect_contract_expression_referenced_names(function, &mut captures);
+    (!captures.contains(item)).then_some(function)
+}
+
 /// A value-based fold applies its step to the primitive fold's two bound
 /// values. Fresh binders keep the step's lexical captures outside that scope.
 /// The primitive remains the common lowering target for the older shorthand.
@@ -119,6 +215,18 @@ pub(super) fn reduce_head(
             click_type,
             value,
             body,
+        } if *click_type == Some(ClickType::Proposition) || is_proposition_value(value) => {
+            lowering::substitute_contract_expression(
+                body,
+                &BTreeMap::from([(name.clone(), value.as_ref().clone())]),
+            )
+            .map(Some)
+        }
+        ContractExpression::Let {
+            name,
+            click_type,
+            value,
+            body,
         } if matches!(value.as_ref(), ContractExpression::Lambda { .. }) => {
             let ContractExpression::Lambda {
                 parameters, result, ..
@@ -217,6 +325,93 @@ pub(super) fn reduce_head(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proposition_lambdas_reject_wrong_value_categories_and_signatures() {
+        let mut accepted = Vec::new();
+        for source in [
+            "function bad() -> int32 { let f = |x: int32| -> Prop { x == x }; f(0) + 1 }",
+            "function bad() -> int32 { let p: Bool = (|x: int32| -> Prop { x == x })(0); 0 }",
+            "theorem bad() { ensures (0..3).all(|x: int32| -> Bool { true }) by solve(); }",
+            "theorem bad() { ensures (0..3).any(|x: Integer| -> Prop { x == x }) by solve(); }",
+            "theorem bad() { ensures (0..3).all(|x: int32, y: int32| -> Prop { x == y }) by solve(); }",
+            "theorem bad() { ensures (|| -> Prop { true })() == true by solve(); }",
+            "function bad() -> int32 { let unused = |x: int32| -> Prop { x + true == 0 }; 0 }",
+            "function bad(p: int32*) -> int32 { let unused = |x: int32| -> Prop { p[x] == 0 }; 0 }",
+        ] {
+            if parser::parse(source).is_ok() {
+                accepted.push(source);
+            }
+        }
+        assert!(
+            accepted.is_empty(),
+            "incorrectly accepted: {}",
+            accepted.join("\n")
+        );
+    }
+
+    #[test]
+    fn proposition_lambdas_cannot_prove_a_false_application() {
+        let source = "theorem bad() { ensures (|x: Integer| -> Prop { x > 0 })(0) by solve(); }";
+        let error =
+            verify_click_theorems(source).expect_err("application preserves the proposition");
+        assert_eq!(error.kind(), ClickErrorKind::Proof, "{}", error.report());
+    }
+
+    #[test]
+    fn proposition_lambda_proofs_expand_and_recheck_without_search() {
+        let cases = [
+            (
+                "theorem test(x: Integer) { let p = |n: Integer| -> Prop { n == n }; let claim = p(x); ensures claim by solve(); }",
+                "by solve();",
+            ),
+            (
+                "function captured(limit: int32, value: int32) -> Integer { let p = |x: int32| -> Prop { x < limit }; let limit: int32 = 0; if p(value) { 1 } else { 0 } } theorem test() { ensures captured(5, 3) == 1 by { unfold(captured(5, 3)); solve(); } }",
+                "by { unfold(captured(5, 3)); solve(); }",
+            ),
+            (
+                "theorem test(x: Integer) { let p: fn(Integer) -> Prop = |n: Integer| -> Prop { n == n }; ensures p(x) by solve(); }",
+                "by solve();",
+            ),
+            (
+                "theorem test(x: Integer) { ensures (|n: Integer| -> Prop { forall (y: Integer) { n + y == y + n } })(x) by { intro(); solve(); } }",
+                "by { intro(); solve(); }",
+            ),
+            (
+                "theorem test(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures (lo..hi).all(p) by { intro() as k; intro(); solve(); } }",
+                "by { intro() as k; intro(); solve(); }",
+            ),
+            (
+                "theorem test(lo: int32, hi: int32) { let p = |x: int32| -> Prop { x == lo }; requires lo < hi; ensures (lo..hi).any(p) by { witness { item: lo }; solve(); } }",
+                "by { witness { item: lo }; solve(); }",
+            ),
+        ];
+        for (source, proof) in cases {
+            let verified = verify_click_theorems(source)
+                .unwrap_or_else(|error| panic!("{source}: {}", error.report()));
+            let expanded = verified[0].expanded_proof_source().unwrap();
+            assert!(!expanded.contains("solve("), "{expanded}");
+            let rechecked = source.replace(proof, &expanded);
+            verify_click_theorems(&rechecked)
+                .unwrap_or_else(|error| panic!("{rechecked}: {}", error.report()));
+        }
+    }
+
+    #[test]
+    fn proposition_lambda_source_round_trips() {
+        let source = "function test(offset: Integer) -> int32 { let p: fn(Integer) -> Prop = |x: Integer| -> Prop { forall (y: Integer) { x + y == y + x } and x == offset }; 0 }";
+        let file = parser::parse(source).unwrap();
+        let original = file.click_function_definitions()[0].body().unwrap();
+        let printed = diagnostics::describe_contract_expression(original);
+        let reparsed = parser::parse(&format!(
+            "function test(offset: Integer) -> int32 {{ {printed} }}"
+        ))
+        .unwrap();
+        assert_eq!(
+            Some(original),
+            reparsed.click_function_definitions()[0].body()
+        );
+    }
 
     #[test]
     fn lambda_folds_reject_incompatible_step_signatures() {

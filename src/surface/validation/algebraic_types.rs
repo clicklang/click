@@ -255,7 +255,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
                         },
                     );
                 }
-                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
                     return Err(ClickError::new("unresolved resource match binding type"));
                 }
                 // Mathematical bindings are carried into the kernel as
@@ -1198,7 +1198,7 @@ pub(super) fn validate_algebraic_type_uses(
             )?;
         }
         match (definition.return_type(), body_type) {
-            (ClickType::Function { .. }, _) => {
+            (ClickType::Proposition | ClickType::Function { .. }, _) => {
                 return Err(ClickError::new(
                     "specification function parameters and results are not supported yet",
                 ));
@@ -1476,6 +1476,17 @@ fn validate_algebraic_proposition_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(expression) => {
+            validate_algebraic_expression(
+                expression,
+                variables,
+                click_functions,
+                predicates,
+                definitions,
+                context,
+            )?;
+            Ok(())
+        }
         ClickProposition::Comparison { left, right, .. } => {
             validate_algebraic_expression(
                 left,
@@ -1564,7 +1575,7 @@ fn validate_algebraic_proposition_one(
                 }
                 ClickType::Integer => variables.hide(name),
                 ClickType::Algebraic(_) => unreachable!("handled above"),
-                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
                     unreachable!("refused above")
                 }
             }
@@ -1678,7 +1689,7 @@ fn validate_algebraic_proposition_one(
                     continue;
                 };
                 match (expected.click_type(), actual) {
-                    (ClickType::Function { .. }, _) => {
+                    (ClickType::Proposition | ClickType::Function { .. }, _) => {
                         return Err(ClickError::new(
                             "specification function parameters and results are not supported yet",
                         ));
@@ -1946,7 +1957,9 @@ fn expression_is_integer_match_result(
                         ClickType::Integer => {
                             integer_bindings.insert(binding.clone());
                         }
-                        ClickType::Function { .. } | ClickType::Parameter(_) => {}
+                        ClickType::Proposition
+                        | ClickType::Function { .. }
+                        | ClickType::Parameter(_) => {}
                     }
                 }
                 let arm_body = substitute_contract_expression(&arm.body, &algebraic_bindings)
@@ -2051,6 +2064,17 @@ fn validate_algebraic_expression_node(
         );
     }
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            validate_algebraic_proposition(
+                proposition,
+                variables,
+                click_functions,
+                predicates,
+                definitions,
+                context,
+            )?;
+            Ok(None)
+        }
         ContractExpression::Resource(_) => Ok(None),
         ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
             "{context}: the method `{method}` was not resolved by its receiver's type"
@@ -2161,7 +2185,7 @@ fn validate_algebraic_expression_node(
                 let expected = instantiate_field_type(definition, algebraic_type, field)?;
                 let field_type = &expected;
                 match (&expected, actual_algebraic) {
-                    (ClickType::Function { .. }, _) => {
+                    (ClickType::Proposition | ClickType::Function { .. }, _) => {
                         return Err(ClickError::new(
                             "specification function parameters and results are not supported yet",
                         ));
@@ -2350,7 +2374,7 @@ fn validate_algebraic_expression_node(
                         ClickType::Resource => {
                             return Err(ClickError::new("Resource is not an algebraic field type"));
                         }
-                        ClickType::Function { .. } => {
+                        ClickType::Proposition | ClickType::Function { .. } => {
                             return Err(ClickError::new(
                                 "specification function fields are not supported",
                             ));
@@ -2820,7 +2844,7 @@ fn validate_algebraic_expression_node(
                     .transpose()?
                     .unwrap_or_else(|| expected.click_type().clone());
                 match (&expected, actual) {
-                    (ClickType::Function { .. }, _) => {
+                    (ClickType::Proposition | ClickType::Function { .. }, _) => {
                         return Err(ClickError::new(
                             "specification function parameters and results are not supported yet",
                         ));
@@ -2947,7 +2971,9 @@ fn validate_algebraic_expression_node(
                 .transpose()?;
             Ok(return_type.and_then(|return_type| match return_type {
                 ClickType::Resource => None,
-                ClickType::Function { .. } | ClickType::Parameter(_) => None,
+                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
+                    None
+                }
                 ClickType::Algebraic(application) => Some(application),
                 ClickType::Program(_) | ClickType::CObjectPointer { .. } => None,
                 ClickType::Integer => None,
@@ -3450,6 +3476,17 @@ fn infer_generic_expression_type(
         return Ok(Some(cast_type));
     }
     match expression {
+        ContractExpression::Proposition(_) => {
+            infer_scoped_spec_value_type(
+                expression,
+                &variables.program_value_types,
+                &variables.integers,
+                click_functions,
+                context,
+                false,
+            )?;
+            Ok(Some(ClickType::Proposition))
+        }
         ContractExpression::Resource(_) => Ok(Some(ClickType::Resource)),
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -3825,6 +3862,25 @@ fn validate_generic_proposition_types(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(expression) => {
+            let actual = infer_generic_expression_type(
+                expression,
+                variables,
+                click_functions,
+                definitions,
+                context,
+            )?;
+            if matches!(
+                actual,
+                Some(ClickType::Proposition) | Some(ClickType::Program(InterfaceType::Bool))
+            ) {
+                Ok(())
+            } else {
+                Err(ClickError::new(
+                    "a proposition application must produce Prop or Bool",
+                ))
+            }
+        }
         ClickProposition::Comparison {
             operator,
             left,
@@ -4070,7 +4126,7 @@ fn validate_type_application(
             ClickType::Resource => {
                 return Err(ClickError::new("Resource is not an algebraic field type"));
             }
-            ClickType::Function { .. } => {
+            ClickType::Proposition | ClickType::Function { .. } => {
                 return Err(ClickError::new(
                     "specification function fields are not supported",
                 ));

@@ -66,6 +66,14 @@ fn with_locals<T>(
     result
 }
 
+/// Only syntactic categories are needed during parsing; full signatures stay
+/// in the typed AST. Copying an alias never copies its parameter list.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SpecificationBinding {
+    Function { proposition_result: bool },
+    Proposition,
+}
+
 /// What the `let` names in scope at the parse position are as operands: the
 /// contract or theorem lets parsed so far and the enclosing `let ... ;`
 /// expressions, with the machine type of each machine one where its value
@@ -74,12 +82,22 @@ fn with_locals<T>(
 pub(super) struct LetOperands {
     operands: LocalOperands,
     machine_types: BTreeMap<String, InterfaceType>,
+    specification_types: BTreeMap<String, SpecificationBinding>,
 }
 
 /// A `let` binding's previous meaning, restored when its scope ends.
-pub(super) type ShadowedLet = (String, Option<LocalOperand>, Option<InterfaceType>);
+pub(super) type ShadowedLet = (
+    String,
+    Option<LocalOperand>,
+    Option<InterfaceType>,
+    Option<SpecificationBinding>,
+);
 
 impl Parser {
+    pub(super) fn specification_binding_kind(&self, name: &str) -> Option<SpecificationBinding> {
+        self.let_operands.specification_types.get(name).copied()
+    }
+
     /// What `name` is as an operand: a binding of the expression being
     /// read, then a `let` in scope.
     fn local_operand(&self, scope: &LocalOperands, name: &str) -> Option<LocalOperand> {
@@ -98,6 +116,50 @@ impl Parser {
         click_type: Option<&ClickType>,
         value: Option<&ContractExpression>,
     ) -> ShadowedLet {
+        let specification_type = match click_type {
+            Some(ClickType::Function { result, .. }) => Some(SpecificationBinding::Function {
+                proposition_result: result.as_ref() == &ClickType::Proposition,
+            }),
+            Some(ClickType::Proposition) => Some(SpecificationBinding::Proposition),
+            Some(_) => None,
+            None => value.and_then(|value| match value {
+                ContractExpression::Lambda { result, .. } => Some(SpecificationBinding::Function {
+                    proposition_result: *result == ClickType::Proposition,
+                }),
+                ContractExpression::Proposition(_) => Some(SpecificationBinding::Proposition),
+                ContractExpression::Apply { function, .. } => {
+                    let proposition_result = match function.as_ref() {
+                        ContractExpression::Binding(name)
+                        | ContractExpression::CBinding(name)
+                        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                            name,
+                        )) => matches!(
+                            self.specification_binding_kind(name),
+                            Some(SpecificationBinding::Function {
+                                proposition_result: true
+                            })
+                        ),
+                        _ => {
+                            lambdas::application_result_type(function) == Ok(ClickType::Proposition)
+                        }
+                    };
+                    proposition_result.then_some(SpecificationBinding::Proposition)
+                }
+                ContractExpression::Binding(name)
+                | ContractExpression::CBinding(name)
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                    self.specification_binding_kind(name)
+                }
+                _ => None,
+            }),
+        };
+        let previous_specification = match specification_type {
+            Some(ty) => self
+                .let_operands
+                .specification_types
+                .insert(name.to_string(), ty),
+            None => self.let_operands.specification_types.remove(name),
+        };
         let (operand, machine_type) = match click_type {
             Some(ClickType::Integer) => (LocalOperand::Integer, None),
             Some(ClickType::Program(interface_type))
@@ -128,7 +190,12 @@ impl Parser {
                 .insert(name.to_string(), interface_type),
             None => self.let_operands.machine_types.remove(name),
         };
-        (name.to_string(), previous_operand, previous_type)
+        (
+            name.to_string(),
+            previous_operand,
+            previous_type,
+            previous_specification,
+        )
     }
 
     /// Records a contract's or theorem's `let`, in scope for the rest of
@@ -143,7 +210,17 @@ impl Parser {
 
     /// Ends the scope of the `let` bindings `shadowed` recorded, latest first.
     pub(super) fn unbind_let_operands(&mut self, shadowed: Vec<ShadowedLet>) {
-        for (name, operand, machine_type) in shadowed.into_iter().rev() {
+        for (name, operand, machine_type, specification_type) in shadowed.into_iter().rev() {
+            match specification_type {
+                Some(ty) => {
+                    self.let_operands
+                        .specification_types
+                        .insert(name.clone(), ty);
+                }
+                None => {
+                    self.let_operands.specification_types.remove(&name);
+                }
+            }
             match operand {
                 Some(operand) => self.let_operands.operands.insert(name.clone(), operand),
                 None => self.let_operands.operands.remove(&name),

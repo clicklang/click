@@ -759,6 +759,7 @@ fn validate_contract_applications_in_proposition_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(_) => Ok(()),
         ClickProposition::PredicateCall { name, arguments } => {
             if name == "held" {
                 let [mutex] = arguments.as_slice() else {
@@ -906,7 +907,7 @@ fn validate_contract_applications_in_proposition_one(
                 ClickType::Algebraic(_) => {
                     variables.remove(name);
                 }
-                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
                     return Err(ClickError::new(
                         "this quantifier binder type is not supported",
                     ));
@@ -1707,6 +1708,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(_) => Ok(()),
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Loadable { .. }
@@ -1828,6 +1830,17 @@ fn collect_resource_fact_reads_from_proposition(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(expression) => {
+            collect_resource_fact_reads_from_contract_expression(
+                expression,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
         ClickProposition::ChangesOnly { resources, .. } => {
             for r in resources {
                 collect_resource_fact_reads_from_resource_subject(
@@ -2356,6 +2369,17 @@ fn collect_resource_fact_reads_from_contract_expression(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            collect_resource_fact_reads_from_proposition(
+                proposition,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
         ContractExpression::Resource(_) => Ok(()),
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)

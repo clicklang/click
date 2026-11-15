@@ -96,6 +96,7 @@ documentation inventory keep the following accepted words synchronized.
 | `and`, `or`, `implies`, `not`, `in` | Proposition connectives and sequence membership. `and`, `or`, and `implies` have increasing precedence except right-associative `implies`; `in` has comparison precedence. |
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |
 | `all`, `any`, `fold` | Range proposition and expression methods. |
+| `prop` | Proposition value: `prop { P }`. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
 | `old`, `at`, `c`, `rust` | Point-reading and program-binding forms: `c(name)` names a C binding where a Click name has the same spelling, and `rust(name)` a Rust one. |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
@@ -623,19 +624,46 @@ function captured(offset: Integer) -> Integer {
 }
 ```
 
-This first slice supports `Integer`, `Bool`, 8–64 bit integers, and
+Lambdas support `Integer`, `Bool`, 8–64 bit integers, and
 floating-point scalar parameters and results. The result type checks the body even when the lambda
 is unused. Lambdas may capture pure values and other local lambdas; they may
 call named specification functions classified as independent of C memory.
 Memory reads, resource observations, and snapshot selectors inside lambda
 bodies are refused. Function-valued declaration parameters and results,
-function equality, proposition-valued lambdas, and algebraic lambda
-parameters/results are not supported yet. `.fold` accepts these lambda
-values as its step. `.all` and `.any` retain their existing inline binder
-syntax; they do not yet accept lambda values.
+function equality and algebraic lambda parameters/results are not supported
+yet. A lambda may also return `Prop`, as described below. `.fold`, `.all`,
+and `.any` accept lambda values.
 
 Applications elaborate to typed lexical value bindings, using existing kernel
 terms. They introduce no higher-order proof search or automatic extensionality.
+
+### Proposition-valued lambdas
+
+`Prop` is a specification proposition, distinct from a C `Bool`. A lambda
+returning `Prop` parses its body as a proposition: comparisons, connectives,
+and quantifiers retain their logical meaning. Application asserts that
+proposition when written in a clause. A `Prop` is refused in a scalar value slot such as a `Bool` let or function
+argument; propositions have no arithmetic or equality. A `Bool` function
+body retains its existing logical-body syntax, which reads a proposition
+as `if P { true } else { false }`.
+
+<!-- verified-example: mdtests/proposition_lambdas.md -->
+```click
+theorem direct_proposition_lambda(x: Integer) {
+    ensures (|value: Integer| -> Prop { value == value })(x) by solve();
+}
+```
+
+`fn(Integer) -> Prop` spells a proposition-valued lambda's signature.
+`prop { P }` constructs a proposition value directly; local `let` bindings
+can name that value or a proposition application. Lambda arguments remain
+scalar or `Integer` values: proposition and function parameters, and opaque
+function-valued declaration interfaces, are not supported yet. Named
+propositions still use `predicate`; `function ... -> Prop` is not introduced.
+A `Prop`
+lambda has the same restrictions on memory reads, resource observations,
+and snapshot selectors as other typed lambdas. Named predicates with a
+memory-dependent or unclassified body are not accepted inside it.
 
 ## Ranges and binders
 
@@ -648,6 +676,34 @@ hi`. A range can introduce a binder through `.all`, `.any`, or `.fold`:
 (lo..hi).any(|k| { p[k] == needle })
 (lo..hi).fold(0, |acc, k| { acc + p[k] })
 ```
+
+### Range predicates
+
+`(lo..hi).all(predicate)` and `(lo..hi).any(predicate)` accept a lambda
+with exactly the signature `fn(Index) -> Prop`, where `Index` is `int32`
+or `uint64`, as selected by the bounds. The predicate can be a typed
+literal or a local value/alias with lexical captures. A `Bool` result is
+refused; the predicate is a proposition, including for an empty range.
+The existing unannotated `.all(|k| { P })` and `.any(|k| { P })` shorthands
+remain supported, including guarded memory reads.
+
+<!-- verified-example: mdtests/proposition_lambdas.md -->
+```click
+theorem existential_range_lambda(lo: int32, hi: int32) {
+    let same = |x: int32| -> Prop { x == lo };
+    requires lo < hi;
+    ensures (lo..hi).any(same) by {
+        witness { item: lo };
+        solve();
+    }
+}
+```
+
+The value forms use `item` as the written range binder. An `.any` witness
+therefore names `item`; an `.all` proof may choose a binder with
+`intro() as k`. The universal range proof introduces both its index and
+its range condition, as `intro() as k; intro();`. Elaborated applications
+use the existing universal/existential range terms and add no proof search.
 
 ### Range folds
 
