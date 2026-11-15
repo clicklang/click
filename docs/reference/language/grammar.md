@@ -628,12 +628,12 @@ Lambdas support `Integer`, `Bool`, 8–64 bit integers, and
 floating-point scalar parameters and results. The result type checks the body even when the lambda
 is unused. Lambdas may capture values (including pointers) and other local
 lambdas, read memory, and call memory-reading specification functions.
-Capturing a pointer captures its value, not a memory snapshot. Reads and
+Capturing a pointer captures its value, not a memory state. Reads and
 current-state observations in the body use the state selected at application;
 applications retain the existing read-permission and definedness obligations,
 including beneath range-membership guards. Constructing an unused lambda
 requires no read permission. `old` and `at` inside lambda bodies are refused;
-select a snapshot around the application instead, as `old(read(0))`. A value
+select a state around the application instead, as `old(read(0))`. A value
 loaded before construction can be captured separately. Capturing a pointer
 grants no memory permission: proving `defined(read(i))` still requires a
 view covering the selected cell.
@@ -677,7 +677,7 @@ can name that value or a proposition application. Lambda arguments remain
 scalar or `Integer` values: proposition and function parameters, and opaque
 function-valued declaration interfaces, are not supported yet. Named
 propositions still use `predicate`; `function ... -> Prop` is not introduced.
-A `Prop` lambda uses the same application-state reads and body snapshot
+A `Prop` lambda uses the same application-state reads and body state
 restriction as scalar-valued lambdas; it may call named predicates.
 
 ## Ranges and binders

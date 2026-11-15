@@ -383,7 +383,7 @@ fn transport_premise_holds(context: &PureFactContext, premise: &Proposition) -> 
 /// Certifies a stated condition target from one explicit condition source and
 /// deterministic memory-resolution evidence. Unlike whole-fact transport,
 /// this permits a target to retain an old load on one side while transporting
-/// the other side to a newer snapshot.
+/// the other side to a newer state.
 pub(crate) fn program_condition_fact_target_reaches_in_context(
     source: &Proposition,
     target: &Proposition,
@@ -1685,9 +1685,9 @@ fn abstract_execution_state_for_join_across_with_policy(
             .blocks
             .diff(&sibling.memory.blocks)
             .filter_map(|change| match change {
-                crate::kernel::primitives::SnapshotMapChange::Removed(_) => None,
-                crate::kernel::primitives::SnapshotMapChange::Added(block)
-                | crate::kernel::primitives::SnapshotMapChange::Changed(block) => {
+                crate::kernel::primitives::HashedOrdMapChange::Removed(_) => None,
+                crate::kernel::primitives::HashedOrdMapChange::Added(block)
+                | crate::kernel::primitives::HashedOrdMapChange::Changed(block) => {
                     block.is_havoc_block().then(|| block.clone())
                 }
             })
@@ -1896,7 +1896,7 @@ fn abstract_execution_state_for_join_across_with_policy(
 
     // The arms' memories are one memory when they differ only inside the
     // blocks the join preserves anyway. The differences are read off the
-    // structure the snapshots share, so equal memories cost nothing and
+    // structure the states share, so equal memories cost nothing and
     // unequal ones cost what differs.
     let common_memory = preserve_exact_common_memory
         && sibling_states
@@ -4778,6 +4778,8 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
         statement,
         loop_evidence,
     } = statement.into();
+    let loop_evidence =
+        loop_evidence.map(|evidence| evidence.executed_under(execution_semantics.loops));
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
     let execution = execute_execution_statement_verification_paths(
         &state,
@@ -4882,6 +4884,8 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         statement,
         loop_evidence,
     } = statement.into();
+    let loop_evidence =
+        loop_evidence.map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
     let Some(while_loop) = crate::kernel::loops::WhileLoop::of(&statement) else {
         return (
             SymbolicExecution {

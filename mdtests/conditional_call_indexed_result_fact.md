@@ -2,7 +2,7 @@
 
 C evaluation names the graph cell at the state where the call argument is
 read. The post-store historical index therefore matches the call fact directly.
-The explicit transport also proves its equality to the entry value.
+Explicit preservation also proves its equality to the entry value.
 
 ```c filename=conditional_call_indexed_result_fact.c
 extern int32 visit(int32 *next, int32 *visited, int32 n, int32 from);
@@ -45,12 +45,21 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
     step();
     mark entry;
     have at(entry, next[cur]) == old(next[cur]) by {
-        have old(next[cur]) == old(next[cur]) by normalize();
-        transport(old(next[cur]) == old(next[cur]), at(entry, next[cur]) == old(next[cur])) using {
-            old(next[cur]) == old(next[cur]); 0 <= cur; cur < n;
-            separate(memory(next[0..n]), memory(visited[0..n]));
-        };
-        known();
+        have contains(memory(next[0..n]), memory(next[cur])) by {
+            apply(click::separation::contains_element(next, 0, n, cur)) using { 0 <= cur; cur < n; };
+        }
+        have contains(memory(visited[cur]), memory(visited[cur])) by { normalize(); }
+        have separate(memory(visited[cur]), memory(next[cur])) by {
+            apply(click::separation::separate_restrict(memory(visited[cur]), memory(next[0..n]), memory(visited[cur]), memory(next[cur]))) using {
+                separate(memory(visited[cur]), memory(next[0..n]));
+                contains(memory(visited[cur]), memory(visited[cur]));
+                contains(memory(next[0..n]), memory(next[cur]));
+            };
+        }
+        have separate(statement(0).footprint, memory(next[cur])) by {
+            normalize() using { separate(memory(visited[cur]), memory(next[cur])); };
+        }
+        preserve(separate(statement(0).footprint, memory(next[cur])));
     }
     let { result: r } = step(visit, {});
     have r == 0 implies visited[at(entry, next[cur])] != 0 by { known(); }

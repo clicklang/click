@@ -196,6 +196,98 @@ impl From<&ProgramStatement> for StatementProofInput {
 pub(in crate::kernel) struct LoopEvidence {
     pub index: usize,
     pub measure: Option<LoopTerminationMeasure>,
+    end: usize,
+    bare_descendants: BTreeSet<usize>,
+    framed_descendants: BTreeSet<usize>,
+    mode: LoopSemantics,
+}
+
+impl LoopEvidence {
+    pub(in crate::kernel) fn executed_under(mut self, mode: LoopSemantics) -> Self {
+        self.mode = mode;
+        self
+    }
+}
+
+fn nested_loop_modes(
+    statement: &ProgramStatement,
+    next: &mut usize,
+    bare: &mut BTreeSet<usize>,
+    framed: &mut BTreeSet<usize>,
+    summary: bool,
+) {
+    fn visit(
+        statement: &ProgramStatement,
+        next: &mut usize,
+        bare: &mut BTreeSet<usize>,
+        framed: &mut BTreeSet<usize>,
+        routes: [bool; 2],
+        summary_head: bool,
+        constrain_descendants: bool,
+    ) {
+        charge_termination_work(1);
+        let mut descendants = routes;
+        if let ProgramStatement::While {
+            invariant,
+            invariant_checks,
+            effect_checks,
+            resource_specs,
+            ranking_measures,
+            structural_measure,
+            ..
+        } = statement
+        {
+            let index = *next;
+            *next += 1;
+            if !summary_head {
+                let unannotated = invariant.is_empty()
+                    && invariant_checks.is_empty()
+                    && resource_specs.is_empty()
+                    && ranking_measures.is_empty()
+                    && structural_measure.is_none();
+                let no_effects = effect_checks.is_empty();
+                let inherited = effect_checks
+                    .iter()
+                    .all(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived);
+                let allowed = [
+                    routes[0] && unannotated && no_effects,
+                    routes[1] && unannotated && inherited,
+                ];
+                if allowed[0] {
+                    bare.insert(index);
+                } else if allowed[1] {
+                    framed.insert(index);
+                }
+                // A nested abstraction also hides its descendants. The head
+                // of this selected proof is explicitly proved; only nested
+                // loops can take the implicit summary route within it.
+                if constrain_descendants {
+                    descendants = allowed;
+                }
+            }
+        }
+        children_all(statement, |child| {
+            visit(
+                child,
+                next,
+                bare,
+                framed,
+                descendants,
+                false,
+                constrain_descendants,
+            );
+            true
+        });
+    }
+    visit(
+        statement,
+        next,
+        bare,
+        framed,
+        [true, true],
+        summary,
+        summary,
+    );
 }
 
 impl ProgramFunction {
@@ -247,9 +339,171 @@ impl ProgramFunction {
                 ranking_measures.iter().map(RankingComponent::key).collect(),
             ))
         };
+        let mut end = index;
+        let mut bare_descendants = BTreeSet::new();
+        let mut framed_descendants = BTreeSet::new();
+        nested_loop_modes(
+            &statement,
+            &mut end,
+            &mut bare_descendants,
+            &mut framed_descendants,
+            true,
+        );
+        bare_descendants.remove(&index);
+        framed_descendants.remove(&index);
         Ok(StatementProofInput {
             statement,
-            loop_evidence: Some(LoopEvidence { index, measure }),
+            loop_evidence: Some(LoopEvidence {
+                index,
+                measure,
+                end,
+                bare_descendants,
+                framed_descendants,
+                mode: LoopSemantics::Verify,
+            }),
+        })
+    }
+}
+
+/// The source loop namespace fixed before body proof execution. A completed
+/// `ApplyVerifiedRules` body ran every unsummarized loop to exit or avoided it.
+/// Summaries keep their separate ranking obligations.
+#[derive(Clone, Debug)]
+pub(in crate::kernel) struct PreparedLoopExits {
+    count: usize,
+    bare: BTreeSet<usize>,
+    framed: BTreeSet<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ConcreteLoopExits {
+    pub count: usize,
+    pub(super) concrete: BTreeSet<usize>,
+}
+
+impl ConcreteLoopExits {
+    pub fn contains(&self, index: &usize) -> bool {
+        charge_termination_work(1);
+        self.concrete.contains(index)
+    }
+
+    pub fn intersect(&self, other: &Self) -> Arc<Self> {
+        let concrete = self
+            .concrete
+            .iter()
+            .filter_map(|index| {
+                charge_termination_work(1);
+                other.concrete.contains(index).then_some(*index)
+            })
+            .collect();
+        Arc::new(Self {
+            count: self.count,
+            concrete,
+        })
+    }
+
+    pub(super) fn independent(count: usize, concrete: BTreeSet<usize>) -> Arc<Self> {
+        Arc::new(Self { count, concrete })
+    }
+}
+
+impl PreparedLoopExits {
+    pub fn open(function: &ProgramFunction) -> Result<Arc<Self>, String> {
+        let source = function
+            .loop_source_index
+            .0
+            .get_or_init(|| LoopSourceIndex::new(function));
+        let mut body = LoopSourceIndex::default();
+        body.collect(function.body());
+        let natural_unwrapped = function.natural_loop_source.is_some()
+            && !contains_natural_control_loop(function.body());
+        let offset = usize::from(natural_unwrapped);
+        if source.loops.len() != body.loops.len() + offset {
+            return Err(format!(
+                "body opening for `{}` has different source loops",
+                function.name()
+            ));
+        }
+        // Compare disjoint outer loop ranges once. Nested loops share those
+        // ranges and are not compared again, keeping opening linear in the
+        // selected source even for deeply nested loops.
+        let mut end = 0;
+        for (index, range) in body.loops.iter().enumerate() {
+            charge_termination_work(1);
+            if range.start < end {
+                continue;
+            }
+            end = range.end;
+            let expected = &source.loops[index + offset];
+            if source.shape[expected.clone()] != body.shape[range.clone()] {
+                return Err(format!(
+                    "body opening for `{}` does not match source loop {}",
+                    function.name(),
+                    index + offset
+                ));
+            }
+        }
+        let mut bare = BTreeSet::new();
+        let mut framed = BTreeSet::new();
+        let mut next = offset;
+        nested_loop_modes(function.body(), &mut next, &mut bare, &mut framed, false);
+        if natural_unwrapped {
+            bare.insert(0);
+        }
+        Ok(Arc::new(Self {
+            count: source.loops.len(),
+            bare,
+            framed,
+        }))
+    }
+
+    pub fn unknown(&self) -> Arc<ConcreteLoopExits> {
+        Arc::new(ConcreteLoopExits {
+            count: self.count,
+            concrete: BTreeSet::new(),
+        })
+    }
+
+    pub fn completed(
+        &self,
+        mode: LoopSemantics,
+        rules: impl Iterator<Item = impl std::borrow::Borrow<VerifiedLoopRule>>,
+    ) -> Arc<ConcreteLoopExits> {
+        let mut concrete = self
+            .bare
+            .iter()
+            .chain(
+                self.framed
+                    .iter()
+                    .filter(|_| mode == LoopSemantics::ApplyVerifiedRules),
+            )
+            .map(|index| {
+                charge_termination_work(1);
+                *index
+            })
+            .collect::<BTreeSet<_>>();
+        for rule in rules {
+            charge_termination_work(1);
+            match &rule.borrow().loop_evidence {
+                Some(evidence) => {
+                    for index in evidence.index..evidence.end {
+                        charge_termination_work(1);
+                        let nested_concrete = evidence.bare_descendants.contains(&index)
+                            || (evidence.mode == LoopSemantics::ApplyVerifiedRules
+                                && evidence.framed_descendants.contains(&index));
+                        if index == evidence.index || !nested_concrete {
+                            concrete.remove(&index);
+                        }
+                    }
+                }
+                // An independent summary names no source loop. It grants no
+                // concrete-execution authority for this body.
+                None => concrete.clear(),
+            }
+        }
+        Arc::new(ConcreteLoopExits {
+            count: self.count,
+            concrete,
         })
     }
 }
@@ -302,7 +556,11 @@ mod tests {
             rule.loop_evidence,
             Some(LoopEvidence {
                 index: 0,
-                measure: None
+                measure: None,
+                end: 1,
+                bare_descendants: BTreeSet::new(),
+                framed_descendants: BTreeSet::new(),
+                mode: LoopSemantics::Verify,
             })
         );
         assert_eq!(
@@ -411,6 +669,273 @@ mod tests {
         let changed = original.clone().with_source_body(ProgramStatement::Skip);
         assert!(changed.open_loop_proof(0, source.clone()).is_err());
         assert!(original.open_loop_proof(0, source).is_ok());
+    }
+
+    fn concrete_body(size: usize) -> (crate::kernel::WholeContractRoot, CheckedFunctionExecution) {
+        use crate::kernel::proof::*;
+        let returning = crate::kernel::program_return(int32_literal(0));
+        let tail = if size == 0 {
+            returning.clone()
+        } else {
+            ProgramStatement::Seq(
+                ProgramStatementSequence::from_statements(
+                    std::iter::once(Arc::new(returning.clone()))
+                        .chain((0..size).map(|_| Arc::new(ProgramStatement::Skip))),
+                )
+                .unwrap(),
+            )
+        };
+        let function = ProgramFunction::new(
+            ProgramType::Int32,
+            "concrete_body",
+            vec![],
+            ProgramStatement::seq(Arc::new(loop_statement()), Arc::new(tail)),
+        )
+        .with_contract(
+            vec![],
+            vec![],
+            vec![],
+            vec![FunctionContractClaim::body_safety()],
+            true,
+        );
+        let caller = ExecutionState::new();
+        let environment = ExecutionEnvironment::new();
+        let opened = OpenedContractEntry::open(
+            &caller,
+            &function,
+            &[],
+            &Vec::<Proposition>::new(),
+            &environment,
+        )
+        .unwrap()
+        .open_contract_root(None)
+        .unwrap();
+        let root = opened.contract_root().unwrap().clone();
+        let entry = opened.entry_state().clone();
+        let facts = opened.facts().assumptions().clone();
+        let mut core = opened.into_execution_core();
+        core.record_condition_transition(
+            &function,
+            &[],
+            Theorem::new(Proposition::ProgramConditionEvaluates {
+                state: Box::new(entry.clone()),
+                condition: int32_literal(0),
+                outcome: ConditionOutcome::Value(false),
+            }),
+            facts.clone(),
+            &[],
+            &[],
+        )
+        .unwrap();
+        let outcome = StatementOutcome::Return {
+            value: crate::kernel::api::int32(0).into(),
+            state: Box::new(entry.clone()),
+        };
+        core.record_statement_transition(
+            &function,
+            &[],
+            Theorem::new(Proposition::ProgramStatementVerifies {
+                state: Box::new(entry),
+                statement: Box::new(returning),
+                outcome: outcome.clone(),
+            }),
+            facts.clone(),
+            &Vec::<ExecutionPureFact>::new(),
+            &[],
+        )
+        .unwrap();
+        let (outcome, obligations) = crate::kernel::program_function_outcome_from_statement_outcome(
+            &caller,
+            &function,
+            outcome,
+            vec![],
+            &facts,
+        );
+        let candidates = crate::kernel::program_function_execution_candidates_from_outcomes(
+            caller,
+            function.clone(),
+            vec![],
+            vec![(outcome, vec![], obligations)],
+        );
+        let execution = core
+            .checked_function_execution(
+                &candidates,
+                &function,
+                facts,
+                environment,
+                ExecutionSemantics::APPLY_VERIFIED_RULES,
+                FunctionContractExecutionMode::ExecuteLoops,
+            )
+            .unwrap();
+        (root, execution)
+    }
+
+    fn completed_body(
+        root: &crate::kernel::WholeContractRoot,
+        execution: CheckedFunctionExecution,
+        rules: Vec<VerifiedLoopRule>,
+    ) -> crate::kernel::CompletedContractExecution {
+        use crate::kernel::proof::*;
+        let core = execution.open_outcome(0).unwrap();
+        let mut closing = crate::kernel::ContractClosingContext::new(&execution).open(0, &core);
+        for goal in [
+            ContractClosingGoal::ReturnedResources,
+            ContractClosingGoal::AllocationLifetime,
+            ContractClosingGoal::WriteFootprint,
+        ] {
+            closing = closing.fixture_close_goal(goal);
+        }
+        let mut outcome =
+            FunctionOutcomeObligation::new(0, Arc::new(OutcomeProofState::new(core, ())));
+        outcome.claims = Some(OutcomeClaimGoals::open([], false));
+        outcome.closing = Some(closing);
+        let proof: ProofObject<
+            (),
+            crate::kernel::proof::ProofObligation<(), Arc<OutcomeProofState<()>>>,
+            (),
+        > = ProofObject::root(
+            (),
+            ProofBranch::new(
+                crate::kernel::proof::ProofObligation::FunctionOutcome(outcome),
+                ProofBranchState {
+                    facts: ProofFacts::default(),
+                    unfolded_predicates: Default::default(),
+                    execution: None,
+                },
+            ),
+        );
+        let mut owner = proof
+            .open_contract_execution(
+                execution,
+                Some(root),
+                std::iter::once(proof.focused_branch()),
+            )
+            .unwrap();
+        proof
+            .complete_function_outcome_in_execution(&proof, &mut owner)
+            .unwrap()
+            .finish_contract_execution(owner)
+            .unwrap()
+            .with_loop_rules(rules.into())
+    }
+
+    #[test]
+    fn concrete_exit_authority_is_published_only_by_completed_body_proofs() {
+        let (root, execution) = concrete_body(0);
+        let attempted = root.begin_attempt();
+        completed_body(attempted.root(), execution.clone(), vec![]).publish(false);
+        drop(attempted);
+        assert!(
+            root.finish().is_err(),
+            "an abandoned proof publishes no concrete exits"
+        );
+        let attempted = root.begin_attempt();
+        completed_body(attempted.root(), execution, vec![]).publish(false);
+        attempted.commit();
+        let rule = root.finish().unwrap().into_rule().unwrap();
+        assert!(rule.concrete_loop_exits.as_ref().unwrap().contains(&0));
+        let heights = program_termination_height_plan(std::slice::from_ref(&rule), &[]);
+        let verdicts = program_verified_function_termination_rules(
+            &[rule],
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &heights,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        assert!(verdicts.refusals.is_empty());
+    }
+
+    #[test]
+    fn a_summarized_sibling_cannot_inherit_concrete_exit_authority() {
+        for reverse in [false, true] {
+            let (root, execution) = concrete_body(0);
+            let concrete = root.begin_attempt();
+            let summarized = root.begin_attempt();
+            completed_body(concrete.root(), execution.clone(), vec![]).publish(false);
+            let summary = prove(root.open_loop_proof(0, loop_statement()).unwrap());
+            completed_body(summarized.root(), execution, vec![summary]).publish(false);
+            if reverse {
+                summarized.commit();
+                concrete.commit();
+            } else {
+                concrete.commit();
+                summarized.commit();
+            }
+            let rule = root.finish().unwrap().into_rule().unwrap();
+            assert!(!rule.concrete_loop_exits.as_ref().unwrap().contains(&0));
+            let heights = program_termination_height_plan(std::slice::from_ref(&rule), &[]);
+            let verdicts = program_verified_function_termination_rules(
+                &[rule],
+                &[],
+                &BTreeMap::new(),
+                &[],
+                &heights,
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+            )
+            .unwrap();
+            assert_eq!(
+                verdicts.refusals["concrete_body"],
+                TerminationRefusal::UnrankedLoop { index: 0 }
+            );
+        }
+    }
+
+    #[test]
+    fn body_source_mismatch_is_refused_at_opening() {
+        let original = loop_statement();
+        let changed =
+            crate::kernel::program_while(int32_literal(1), vec![], ProgramStatement::Skip);
+        let function = function(original).with_source_body(changed);
+        assert!(
+            PreparedLoopExits::open(&function)
+                .unwrap_err()
+                .contains("does not match source loop")
+        );
+    }
+
+    #[test]
+    fn nested_summary_coverage_respects_the_producing_loop_mode() {
+        let framed = crate::kernel::program_while_with_invariant_and_effect_checks(
+            int32_literal(0),
+            vec![],
+            vec![],
+            vec![LoopEffectCheck::new_with_origin(
+                crate::kernel::LoopEffect::Mutable(vec![]),
+                crate::kernel::LoopEffectSpan::Whole,
+                LoopEffectOrigin::InheritedResourceDerived,
+                None,
+            )],
+            loop_statement(),
+        );
+        let outer = crate::kernel::program_while(int32_literal(0), vec![], framed);
+        let function = function(outer.clone());
+        let plan = PreparedLoopExits::open(&function).unwrap();
+        let mut rule = prove(function.open_loop_proof(0, outer).unwrap());
+        let verified = plan.completed(LoopSemantics::ApplyVerifiedRules, std::iter::once(&rule));
+        assert!(!verified.contains(&0));
+        assert!(
+            !verified.contains(&1),
+            "verification may summarize the inherited-frame inner loop"
+        );
+        assert!(
+            !verified.contains(&2),
+            "an implicit summary hides its bare descendant"
+        );
+        rule.loop_evidence = rule
+            .loop_evidence
+            .map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
+        let concrete = plan.completed(LoopSemantics::ApplyVerifiedRules, std::iter::once(&rule));
+        assert!(
+            concrete.contains(&1),
+            "checked phase execution unrolls an unruled inner loop"
+        );
+        assert!(concrete.contains(&2));
     }
 
     mod scaling_tests {

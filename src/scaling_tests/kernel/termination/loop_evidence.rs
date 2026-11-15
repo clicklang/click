@@ -57,3 +57,63 @@ fn opening_work_grows_with_the_selected_loop_body() {
         assert!(work <= 8 * size + 32, "{size}: {work} selected-body work");
     }
 }
+
+#[test]
+fn opening_nested_loop_coverage_is_linear_in_selected_source() {
+    for size in [16, 64, 256, 512] {
+        let body = (0..size).fold(ProgramStatement::Skip, |body, _| {
+            crate::kernel::program_while(int32_literal(0), vec![], body)
+        });
+        let function = function(body);
+        let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
+            PreparedLoopExits::open(&function).unwrap()
+        });
+        assert_eq!(plan.count, size);
+        assert!(
+            work <= 16 * size + 32,
+            "{size} nested loops: {work} opening work"
+        );
+    }
+}
+
+#[test]
+fn termination_consumes_concrete_exit_authority_without_walking_unrelated_body() {
+    for size in [1, 16, 64, 256, 1024] {
+        let (root, execution) = concrete_body(size);
+        let attempt = root.begin_attempt();
+        completed_body(attempt.root(), execution, vec![]).publish(false);
+        attempt.commit();
+        let rule = root.finish().unwrap().into_rule().unwrap();
+        let rules = [rule];
+        let heights = program_termination_height_plan(&rules, &[]);
+        let goals = super::super::super::obligations::TerminationObligations::generate(
+            &rules,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &heights,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            false,
+        )
+        .unwrap();
+        let (refusal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            goals
+                .prove_local_descent(&"concrete_body".to_string())
+                .unwrap()
+        });
+        assert!(refusal.is_none());
+        assert!(
+            work <= 16,
+            "{size} unrelated body statements: {work} proof work"
+        );
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            prepare_independent_loop_exits(&rules, &BTreeMap::new())
+        });
+        assert!(
+            work <= 4,
+            "owned evidence must bypass the independent adapter: {work}"
+        );
+    }
+}

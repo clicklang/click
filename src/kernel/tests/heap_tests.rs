@@ -1023,7 +1023,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
 }
 
 #[test]
-fn consuming_a_whole_range_drops_snapshot_equivalent_prefix_residues() {
+fn consuming_a_whole_range_drops_state_equivalent_prefix_residues() {
     let owner = Pointer {
         block: "owner".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -1084,6 +1084,7 @@ fn scoped_call_borrows_end_before_free() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1756,6 +1757,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),

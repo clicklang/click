@@ -89,7 +89,7 @@ fn aggregate_results_have_anonymous_storage_and_end_with_their_expression() {
         execute_execution_statement(&ended, &read, &PureFactContext::default()),
         Some(StatementOutcome::UndefinedBehavior(_))
     ));
-    // A historical result keeps its own snapshot; re-execution allocates a new object.
+    // A historical result keeps its own state; re-execution allocates a new object.
     assert!(result.memory.has_block(&pointer.block));
     let again = materialize(&ended, &source, &layout, &mut budget);
     assert_ne!(&pointer, again.aggregate_step_objects.get(&0).unwrap());

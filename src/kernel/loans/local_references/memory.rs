@@ -100,7 +100,7 @@ impl ExecutionState {
         let (resources, mut inserted) = self
             .resources()
             .clone()
-            .try_compose_into_valid_context_with_occurrences(
+            .try_compose_with_legacy_discovery_and_occurrences(
                 [binding.backing.owned.clone()],
                 assumptions,
             )

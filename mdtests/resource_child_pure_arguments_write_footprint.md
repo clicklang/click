@@ -45,11 +45,10 @@ void caller(int32* p) {
     let { child: c } = unfold(root);
     unfold(c);
     have p[0] == at(before_call, p[0]) by {
-        transport(at(before_call, p[0]) == at(before_call, p[0]),
-                  p[0] == at(before_call, p[0])) using { };
+        known();
     }
 }
 ```
 ```expect
-fail: transport
+fail: `have` failed for `p[0] == at(before_call, p[0])`
 ```

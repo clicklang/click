@@ -3,12 +3,12 @@
 //! binding and capture avoidance without adding higher-order kernel search.
 use super::*;
 
-/// Snapshot selection belongs around application, not inside its delayed body.
+/// Memory state selection belongs around application, not inside its delayed body.
 /// Check source literals too, since declaration aliases may be unused.
 pub(super) fn validate_body_state(body: &ContractExpression) -> Result<(), ClickError> {
     if contains_old_expression(body) || contains_at_expression(body) {
         return Err(ClickError::new(
-            "specification lambda bodies cannot select snapshots with old or at; select the state at application instead",
+            "specification lambda bodies cannot select retained_states with old or at; select the state at application instead",
         ));
     }
     Ok(())
@@ -637,17 +637,17 @@ mod tests {
     }
 
     #[test]
-    fn typed_lambdas_refuse_snapshot_selectors_even_when_unused() {
+    fn typed_lambdas_refuse_state_selectors_even_when_unused() {
         for body in ["old(p[x])", "at(function.entry, p[x])"] {
             let source = format!(
                 "theorem test(p: int32*) {{ let unused = |x: int32| -> int32 {{ {body} }}; ensures true by solve(); }}"
             );
             let error = parser::parse(&source)
-                .expect_err("body snapshot selection remains explicit at application");
+                .expect_err("body retained_state selection remains explicit at application");
             assert!(
                 error
                     .message()
-                    .contains("lambda bodies cannot select snapshots"),
+                    .contains("lambda bodies cannot select retained_states"),
                 "{}",
                 error.report()
             );
