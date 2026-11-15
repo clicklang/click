@@ -647,6 +647,13 @@ scaling test timed out under the broad load, then passed alone in 11.6 seconds
 under the unchanged 30-second limit. The final seven-test selection passed;
 quality checks passed. No limits or budgets changed.
 
+Before 8v, the approved pointer-cast prerequisite adds `p as (float *)` and
+`p as (double *)` to Click parsing and prints these targets with their source
+names. Existing pointer-cast, access and definedness rules remain unchanged.
+Both widths round-trip printed loads and indexed reads; pointer-stride proof
+fixtures pass. All 325 selected cast, parser, diagnostic, documentation and
+fixture tests passed, with no fact-stability differences.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes
