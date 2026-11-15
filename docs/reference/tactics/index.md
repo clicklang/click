@@ -2123,6 +2123,23 @@ implemented.
 
 ### Arithmetic certificates
 
+Migration to ordinary arithmetic proofs has begun. These certificate rules
+have named laws, applied with explicit `using` premises:
+
+| Certificate operation | Ordinary law |
+| --- | --- |
+| Add two non-strict Integer bounds | `integer::add_le(a, b, c, d)` |
+| Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
+| Round an Integer upper bound | `integer::round_down_le(value, bound, divisor, remainder)` |
+
+`solve() using` expands a direct sum of two selected non-strict Integer bounds
+to `apply(integer::add_le(...)) using { ... }`. Other arithmetic still uses
+the certificate forms below. The [library reference](../library/index.md#foundational-integer-order-axioms)
+states the laws' exact guards. General affine composition, equality and
+refutation plans, signed interval proofs, and specialized cast, pointer and
+floating rules remain to migrate; their replacement is not implicit in `apply`.
+
+
 **Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
 
 **Expansion output.** `click expand` writes it; a person writes `solve()

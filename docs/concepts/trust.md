@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 147 theorems, 36 of them kernel standard, in 4,100 lines | `library/` |
+| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 149 theorems, 39 of them kernel standard, in 4,100 lines | `library/` |
 | Library models: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library models](#library-models)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -119,11 +119,11 @@ call to one is checked against its [library model](#library-models). See
 
 ## The Click library
 
-The `library/` modules declare 147 theorems. `verify_standard_library`
+The `library/` modules declare 149 theorems. `verify_standard_library`
 checks each one, in one of two ways; the gate runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
-- **111 are proved.** Their written or default proofs are checked like any
+- **110 are proved.** Their written or default proofs are checked like any
   other proof. They include the `int32` increment, predecessor, order and
   definedness lemmas, the in-range `+` and `-` observation laws at `int32`,
   `int64`, `uint32` and `uint64`, the `uint32` and `uint64` product laws,
@@ -134,7 +134,7 @@ checks each one, in one of two ways; the gate runs it
   lemmas (`u32::multiply_to_integer`), each with a pinned proof of explicit
   steps (`known()`, `normalize()`, `arithmetic_certificate`, and
   `apply` of earlier library theorems).
-- **36 are kernel standard theorems.** They have no proof. The check is
+- **39 are kernel standard theorems.** They have no proof. The check is
   only that the declaration's parameters, premises and conclusion match the
   proposition a Rust kernel builder constructs (`prove_*`, mostly in
   `src/kernel/api.rs`); the theorem is then recorded as an axiom
@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 21 `axiom`s, which are trusted, not proved.
+The library also declares 24 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -166,10 +166,21 @@ Seven are the laws of the primitive type `Vec<T>` in
 sequences of fewer than 2^64 values satisfy them all, so they are consistent.
 Eleven in `library/rust/chunks_exact.click` and two in
 `library/rust/slice_iter.click` describe the Rust iterators of the same
-names. The last is `integer::uint32_difference_decreases_after_increment`: under
+names. Another is `integer::uint32_difference_decreases_after_increment`: under
 `value < bound`, `(0 - value) + (bound - 1)` is below `(0 - value) + bound`
 as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
+
+Three foundational Integer order axioms in `library/integer.click` expose
+rules that arithmetic certificates already used: `add_le` adds two
+inequalities; `multiply_order_nonnegative` preserves order when scaling by a
+nonnegative factor; and `round_down_le` concludes `value <= bound` from
+`0 < divisor`, `remainder < divisor`, and
+`value * divisor <= bound * divisor + remainder`. The scaling declaration
+previously had a certificate proof; it is now trusted directly. The other two
+are new declarations. Their stated guards and conclusions have an independent
+BigInt oracle regression, including negative and arbitrary-width values.
+
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The
 kernel reads each instance of a primitive type as a rigid type, so no

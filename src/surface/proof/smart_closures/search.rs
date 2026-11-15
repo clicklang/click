@@ -18,6 +18,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_arithmetic_using");
+        if let Some(proof) = Self::try_integer_add_le_using(search_input, premises)? {
+            return Ok(proof);
+        }
         if let Some(proof) = Self::try_unsigned_order_step_using(search_input, premises) {
             return Ok(proof);
         }
@@ -39,6 +42,54 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ))),
             Err(None) => ordinary,
         }
+    }
+
+    /// Stage one of ordinary arithmetic expansion: one addition of two
+    /// explicitly selected Integer bounds becomes a named law application.
+    /// Other arithmetic remains on the existing planner routes.
+    fn try_integer_add_le_using(
+        search_input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_integer_add_le_using");
+        let [first, second] = premises else {
+            return Ok(None);
+        };
+        if !matches!(
+            search_input.goal(),
+            Some(Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(_, _),
+                true
+            ))
+        ) || !matches!(
+            search_input.surface_goal(),
+            Some(ClickProposition::Comparison {
+                left: ContractExpression::Add(_, _),
+                operator: ComparisonOperator::LessEqual,
+                ..
+            })
+        ) {
+            return Ok(None);
+        }
+        let Some((a, ComparisonOperator::LessEqual, b)) = integer_surface_ordered_parts(first)
+        else {
+            return Ok(None);
+        };
+        let Some((c, ComparisonOperator::LessEqual, d)) = integer_surface_ordered_parts(second)
+        else {
+            return Ok(None);
+        };
+        let candidate = search_input
+            .driver()
+            .apply_step(ProofStep::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: "click::integer::add_le".into(),
+                    arguments: vec![a, b, c, d],
+                },
+                premises: premises.to_vec(),
+            });
+        Ok(attempt::candidate_outcome(candidate)?.filter(|proof| proof.is_complete()))
     }
 
     /// The fact `lower <u upper` as a proof that has it in that spelling,
@@ -9632,6 +9683,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 return Some(closed);
             }
+        }
+        if let Ok(Some(closed)) = Self::try_integer_add_le_using(&proof, surfaces) {
+            return Some(closed);
         }
         // A definedness goal is left to the typed candidates and the
         // `int32_defined` / `int64_defined` closer below, so an

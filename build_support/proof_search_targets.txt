@@ -226,3 +226,4 @@ requirement_kernel_atoms_for_search
 try_ordinary_viewability_restriction_closure
 try_universal_steps_with_arithmetic
 try_history_indexed_equalities
+try_integer_add_le_using
