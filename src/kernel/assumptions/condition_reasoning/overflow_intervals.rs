@@ -957,7 +957,7 @@ impl PureFactContext {
     ) -> Option<bool> {
         let left = opaque_operand(left);
         let right = opaque_operand(right);
-        if left.conditional().is_none() && right.conditional().is_none() {
+        if left.conditional_view().is_none() && right.conditional_view().is_none() {
             return None;
         }
         let (left_lower, left_upper) = self.signed_interval_view(left)?;
@@ -1171,7 +1171,7 @@ impl PureFactContext {
                 return (lo <= hi).then_some((lo, hi));
             }
         }
-        if let Some((_, [left, right])) = term.conditional() {
+        if let Some((_, [left, right])) = term.conditional_view() {
             let (a, b) = self.signed_interval_view(left)?;
             let (c, d) = self.signed_interval_view(right)?;
             return Some((a.min(c), b.max(d)));

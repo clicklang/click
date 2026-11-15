@@ -2479,7 +2479,7 @@ impl PureFactContext {
             visiting.remove(&id);
             return result;
         }
-        if term.conditional().is_some() {
+        if term.conditional_view().is_some() {
             return self.conditional_constant_resolution_view(term, visiting);
         }
         let MachineOperandView::Legacy(term) = term else {
@@ -2530,7 +2530,8 @@ impl PureFactContext {
             .map(|operand| operand.operand_view());
         let contains_fold = |operand: MachineOperandView<'_>| matches!(operand, MachineOperandView::Shared(root) if root.has_machine_folds());
         if !operands.iter().any(|operand| {
-            (matches!(operand, MachineOperandView::Shared(_)) && operand.conditional().is_some())
+            (matches!(operand, MachineOperandView::Shared(_))
+                && operand.conditional_view().is_some())
                 || contains_fold(*operand)
         }) {
             return None;

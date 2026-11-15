@@ -90,7 +90,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
 | 7 | Complete pointers and read addresses | Implemented as 7a–7u below, one PR per slice. Supported pointer producers and execution/storage handoffs retain common roots; checking and Surface consumers preserve metadata, snapshot identity and existing rules. |
-| 8 | Remaining Boolean and opaque expression payloads | Open |
+| 8 | Remaining Boolean and opaque expression payloads | Inventory and authorized PR sequence below; implementation open. |
 | 9 | Unified raising/lowering and certificate boundaries | Open |
 | 10 | Duplicate storage removal and final closure | Open |
 
@@ -187,6 +187,104 @@ that syntax comparison with arithmetic observation equality.
 [PR #2701](https://github.com/clicklang/click/pull/2701) closes the integer
 call-result sequence, not the wider KernelTerm/SurfaceTerm migration or the
 other result families.
+
+## Chunk 8: remaining Boolean and opaque expression payloads
+
+Deliver sequentially, one PR per row. Prepare consumer support and existing
+Surface spelling before switching live producers. Preserve exact producer
+metadata separately from observation/fact identity, existing reductions and
+refusals, binder scope, snapshots and evidence. Do not add search, indexes or
+larger budgets. General raising/lowering and certificate consolidation stays in
+package 9; duplicate-storage removal and final migration closure stay in 10.
+Routine sequencing changes are allowed; discuss unexpected semantic or scope
+changes before implementing them.
+
+| Subchunk | Boundary | Completion criterion |
+| --- | --- | --- |
+| 8a | Payload inventory | Assign live legacy expression paths and distinguish opaque identities from expression trees. |
+| 8b | Boolean operand views | Inspect common Boolean roots without exporting entire conditions. |
+| 8c | Boolean dependencies | Variables, captures and memory dependencies follow common children. |
+| 8d | Boolean substitution | Preserve shared children and binder scope. |
+| 8e | Boolean snapshot transport | Preserve read identities and evidence requirements. |
+| 8f | Boolean identity and fact keys | Preserve native/common matching and comparison-format equivalences. |
+| 8g | Pointer-offset equality | Retain shared offset operands. |
+| 8h | Raw pointer equality | Retain shared address operands. |
+| 8i | Complete-pointer equality | Preserve designation, extent and complete-payload distinctions. |
+| 8j | Overflow conditions | Retain typed operands and existing operation/width rules. |
+| 8k | Boolean reads | Retain snapshot and shared address. |
+| 8l | Boolean pure calls | Retain common arguments and result structure. |
+| 8m | Boolean composition and casts | Equality, conditionals and Boolean-to-machine conversions preserve children through production. |
+| 8n | Boolean local/call handoffs | Bindings, arguments and returns retain roots. |
+| 8o | Boolean storage and temporary results | Memory receipt and statement-result handoffs retain structure. |
+| 8p | Algebraic atoms and constructors | Typed variables and constructor fields replace generic wrappers. |
+| 8q | Algebraic projections and variant tests | Use common operands with existing reductions/refusals. |
+| 8r | Algebraic equality | Preserve constructor and type distinctions. |
+| 8s | Algebraic pure calls | Retain common arguments and results. |
+| 8s.1 | Algebraic conditionals | Retain condition and both branches with existing reduction behavior. |
+| 8s.2 | Algebraic reads | Retain memory snapshot, address and abstract type. |
+| 8t | Algebraic handoffs | Bindings, result carriers and package-6 matches preserve roots. |
+| 8u | Float value foundation | Typed literals/views preserve exact bits, widths and identity. |
+| 8v | Float reads | Retain common addresses and exact snapshots. |
+| 8w | Float arithmetic | Existing negation and binary operations retain operands. |
+| 8x | Float conversions | Existing integer/float and width conversions preserve definedness. |
+| 8y | Float conditions | Comparisons/classifications preserve NaN and signed-zero behavior. |
+| 8z | Float pure calls | Retain common arguments and results. |
+| 8aa | Float execution handoffs | Locals, arguments, returns and temporary results retain roots. |
+| 8ab | Float memory storage | Store/load retain structure through the existing memory model. |
+| 8ac | Mixed-family argument adapters | Migrated Boolean/algebraic/float/pointer/numeric expressions no longer receive generic wrappers in calls. |
+| 8ad | Closure | Remove superseded adapters; validate nested combinations, Surface round trips, fact stability and scaling; account for every remaining legacy arm. |
+
+8a records the baseline inventory and authorized sequence in
+[PR #2801](https://github.com/clicklang/click/pull/2801). The docs-only gate
+passed all 44 documentation tests.
+
+8b adds borrowed Boolean operands and a borrowed machine-conditional view.
+Shape and branch-only readers in decision dispatch, interval checks, snapshot
+keys, syntax ordering and equality-graph admission no longer export the guard.
+Consumers that actually require native conditions keep an explicitly named
+compatibility conversion. This prepares the following dependency and rewrite
+slices without switching producers or changing proof rules. Native/shared view
+regressions preserve written comparison formats and exact opaque payloads; a
+multi-size regression checks that inspecting growing guards does no export work
+beside unrelated arena terms. All 1,753 selected tests passed, including every
+scaling test and the Boolean, condition-reasoning, snapshot-key and equality-graph
+selections.
+
+### 8a inventory
+
+Source baseline: `20100ea35` (after package 7 closure). This inventory describes
+expression-bearing compatibility paths, not a requirement to eliminate opaque
+snapshot, variable, function or allocation identities. The two additional
+algebraic slices, 8s.1 and 8s.2, were explicitly approved after this inventory
+identified their omission from the original sequence.
+
+| Entry point / payload | Current boundary | Assigned slices |
+| --- | --- | --- |
+| `kernel_term/boolean.rs`, `KernelTermImport::condition` | Constants, variables, numeric comparisons, Boolean equality/conditionals and calls already have common roots. The fallback wraps the entire other condition in `LegacyBool`. | Views/readers/transport/keys 8b–8f; production and handoffs 8l–8o. |
+| `ConditionTerm::{PointerOffsetEqual, PointerEqual, PointerValueEqual}` | Whole native operands inside the Boolean fallback despite package-7 shared pointer support. | 8g, 8h, 8i respectively. |
+| `ConditionTerm::{Overflows, BoolLoad}` | Operation/width operands or snapshot/address hidden in the fallback. | 8j, 8k. |
+| `ConditionTerm::{AlgebraicEqual, Float32, Float64}` | Native algebraic trees or float comparison/classification operands. | 8r, 8y. |
+| `KernelTermImport::argument` | Integer and shared/native machine integers are imported; other `PureFunctionArgument` values use generic `Legacy`. Dedicated pointer routes already bypass this fallback. | Boolean 8l–8o; algebraic 8p–8t; floats 8u–8ab; mixed callers 8ac. |
+| `AlgebraicTermNode` | Variable, Constructor, PureFunctionApplication, If and MemoryLoad remain native; Match has package-6 common support but its children can cross this boundary. `ProgramValue::Parameter` carries an algebraic tree too. | 8p, 8s, 8s.1, 8s.2, then 8t; projections/variant reductions 8q. |
+| `ProgramValue::{Float32, Float64}` and float `MachineTerm` operations | Float values use native machine carriers; generic imports can hide their operands. Include shared `If`, variables, loads and calls when auditing each float consumer, not only float-specific variants. | 8u–8ab; composition/handoffs in 8aa. |
+| Integer, machine, Boolean and pointer call importers | `ApplicationArgument` / `ExactApplicationArgument` preserve exact payload position but can wrap complete nonnumeric expressions. | Family-specific calls 8l/8s/8z, mixed adapters 8ac. |
+| `retained_native_machine_operand`, machine importer fallback | Unsupported native expression roots remain exact legacy leaves; migrated numeric, pointer, fold and match routes must retain their established behavior. | Family-specific work above; exhaustive remaining-arm audit 8ad. |
+| `machine_observation_leaf`, `bool_observation_leaf`, `native_observation_leaf` | Observation equality is deliberately distinct from exact producer payload identity; the leaf may still contain an expression tree. | Boolean 8f, family-specific consumers and 8ac–8ad; do not erase the identity distinction. |
+| `ExecutionValue`, `StoredExecutionValue`, `StoredMemoryValue` | Common numeric/pointer carriers exist; Boolean, algebraic and float handoffs remain native. Memory/temporary carrier keys retain original native equality/order/hash contracts. | 8n–8o, 8t, 8aa–8ab. |
+
+`LegacyIdentity` has Integer, AlgebraicVariable, Machine, MachineObservation,
+NativeObservation, ApplicationArgument, ExactApplicationArgument and Fresh
+forms. An identity token is not itself an expression migration defect. Inspect
+its associated `KernelLegacyTerm.value`: if it hides children, those children
+belong to the family slices above. Snapshot identities, binder IDs, type names,
+function names and allocation IDs remain legitimate opaque descriptors; keeping
+one does not justify retaining an entire expression tree as an opaque payload.
+`Void` has no expression children. Array-reference and pointer-integer arguments
+must preserve the package-7 descriptors through 8ac, not restart pointer work.
+
+The inventory is a boundary assignment, not completion evidence for the later
+slices. Each implementation PR records its actual producer/consumer changes and
+checks here; 8ad must reconcile the remaining fallbacks against the final code.
 
 ## Chunk 7: complete pointers and read addresses
 

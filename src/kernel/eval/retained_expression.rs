@@ -1722,7 +1722,7 @@ mod tests {
             false,
         );
         let statement = ProgramStatement::StepValue {
-            step: 11,
+            steps: vec![11],
             expression: ProgramExpression::Add(
                 Box::new(ProgramExpression::Variable("p".into())),
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(

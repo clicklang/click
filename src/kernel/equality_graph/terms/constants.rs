@@ -45,7 +45,7 @@ impl TermClasses {
     ) {
         let root = self.root(node);
         let key = MachineAtom::from_operand(MachineIntegerType::Int32, term);
-        if term.conditional().is_some() {
+        if term.conditional_view().is_some() {
             let terms = self
                 .scalar_witnesses
                 .conditionals

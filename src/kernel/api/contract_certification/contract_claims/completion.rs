@@ -430,6 +430,7 @@ mod tests {
         let goals = (0..path_count)
             .map(|path_index| {
                 let core = OutcomeProofCore {
+                    publication: None,
                     identity: OutcomeIdentity::fresh(),
                     store_consequences_available: false,
                     result: Arc::new(int32(0)),
@@ -589,6 +590,7 @@ mod tests {
             super::super::super::entry_authority_tests::checked_execution(0, None).unwrap();
         let owner = WholeContractProof::open(entry).unwrap();
         let core = OutcomeProofCore {
+            publication: None,
             identity: OutcomeIdentity::fresh(),
             store_consequences_available: false,
             result: Arc::new(ProgramValue::Void),

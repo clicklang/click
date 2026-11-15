@@ -4260,10 +4260,12 @@ fn execute_execution_statement_leaf_paths(
         ProgramStatement::Call {
             function_name,
             arguments,
+            callee,
         } => execute_program_call_paths(
             state,
             None,
             function_name,
+            callee.as_ref(),
             arguments,
             assumptions,
             execution_context,
@@ -4277,11 +4279,13 @@ fn execute_execution_statement_leaf_paths(
             arguments,
             result_type,
             result_pointee_constant,
+            callee,
         } => {
             let mut paths = execute_program_call_paths(
                 state,
                 Some(*call),
                 function_name,
+                callee.as_ref(),
                 arguments,
                 assumptions,
                 execution_context,
@@ -4347,7 +4351,7 @@ fn execute_execution_statement_leaf_paths(
         // The operator's value on this path is the step's result, with the
         // operator's type as an assignment would give it.
         ProgramStatement::StepValue {
-            step,
+            steps,
             expression,
             value_type,
             pointee_constant,
@@ -4383,7 +4387,9 @@ fn execute_execution_statement_leaf_paths(
                                     }
                                     None => ExecutionValue::from(value).retain_pointer_result(),
                                 };
-                                next.set_retained_step_result(*step, value);
+                                for step in steps {
+                                    next.set_retained_step_result(*step, value.clone());
+                                }
                                 StatementOutcome::Normal(Box::new(next))
                             }
                             None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),

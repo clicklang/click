@@ -144,6 +144,7 @@ impl OutcomeIdentity {
 /// Surface-independent payload-aware state for one checked function outcome.
 #[derive(Clone)]
 pub(crate) struct OutcomeProofCore {
+    pub(crate) publication: Option<Arc<crate::kernel::PublishedFunctionOutcome>>,
     pub(crate) identity: OutcomeIdentity,
     pub(crate) result: Arc<ProgramValue>,
     pub(crate) store_consequences_available: bool,
@@ -639,7 +640,7 @@ impl OutcomeClaimGoals {
         if let ClaimGoalEvidence::Proposition(completion) = &evidence {
             if completion
                 .outcome()
-                .is_some_and(|core| !core.identity.same_as(outcome))
+                .is_none_or(|core| !core.identity.same_as(outcome))
             {
                 return Err(ClaimGoalError::WrongOutcome);
             }
@@ -679,6 +680,7 @@ mod outcome_claim_goal_tests {
 
     fn outcome() -> OutcomeProofCore {
         OutcomeProofCore {
+            publication: None,
             identity: OutcomeIdentity::fresh(),
             result: Arc::new(int32(0)),
             state: ExecutionState::new().into(),
@@ -1074,11 +1076,11 @@ mod outcome_claim_goal_tests {
         let specification =
             crate::kernel::CheckedPathSpecification::new(execution.function(), path).unwrap();
         let transitioned = transitioned
-            .prove_goal(
+            .prove_goal_for_specification(
                 ContractClosingGoal::ReturnedResources,
                 &execution,
                 path,
-                &specification,
+                specification.specification(),
                 &core,
                 goal.claims.as_ref().unwrap(),
                 &super::super::ProofFacts::from_ordered(&[]),
@@ -1102,11 +1104,11 @@ mod outcome_claim_goal_tests {
         let mut closed = transitioned;
         while let Some(kind) = closed.first_open_goal() {
             closed = closed
-                .prove_goal(
+                .prove_goal_for_specification(
                     kind,
                     &execution,
                     path,
-                    &specification,
+                    specification.specification(),
                     &core,
                     goal.claims.as_ref().unwrap(),
                     &super::super::ProofFacts::from_ordered(&[]),

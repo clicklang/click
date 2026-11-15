@@ -571,31 +571,13 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
     pub(in crate::surface::proof) theorem: Theorem,
 }
 
-/// Spell generated call-result locals by their introducing source region.
-/// Only names in this condition are inspected; no ambient state is searched.
+/// The C condition as a proof proposition. A step result in it is spelled by
+/// its step, by the conversion every C fragment gets.
 pub(in crate::surface::proof) fn surface_program_condition(
     condition: &ProgramExpression,
     state: &ExecutionState,
 ) -> Result<ClickProposition, ClickError> {
-    let mut names = BTreeSet::new();
-    crate::surface::collect_program_expression_referenced_names(condition, &mut names);
-    let mut substitutions = BTreeMap::new();
-    for name in names {
-        if crate::surface::diagnostics::is_call_result_temporary(&name) {
-            let result = super::super::surface_synthesis::call_result_expression(&name)
-                .ok_or_else(|| {
-                    ClickError::new(format!(
-                        "call result `{name}` has no source region for its proof condition"
-                    ))
-                })?;
-            substitutions.insert(name, result);
-        }
-    }
-    let surface = surface_program_condition_unresolved(condition, state);
-    if substitutions.is_empty() {
-        return Ok(surface);
-    }
-    substitute_click_proposition(&surface, &substitutions).map_err(ClickError::new)
+    Ok(surface_program_condition_unresolved(condition, state))
 }
 
 fn surface_program_condition_unresolved(

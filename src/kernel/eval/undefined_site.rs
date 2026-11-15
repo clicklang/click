@@ -86,9 +86,16 @@ pub(super) fn statement_expressions<'a>(
         | ProgramStatement::LoopTest { condition }
         | ProgramStatement::If { condition, .. }
         | ProgramStatement::While { condition, .. } => expressions.push((condition, true)),
-        ProgramStatement::CallAssign { arguments, .. }
-        | ProgramStatement::Call { arguments, .. }
-        | ProgramStatement::CallResult { arguments, .. } => {
+        ProgramStatement::CallAssign { arguments, .. } => {
+            expressions.extend(arguments.iter().map(|argument| (argument, false)));
+        }
+        ProgramStatement::Call {
+            arguments, callee, ..
+        }
+        | ProgramStatement::CallResult {
+            arguments, callee, ..
+        } => {
+            expressions.extend(callee.iter().map(|callee| (&callee.pointer, false)));
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }
         ProgramStatement::Store { pointer, value }

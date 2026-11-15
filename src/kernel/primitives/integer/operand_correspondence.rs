@@ -287,7 +287,7 @@ pub(crate) fn machine_operand_syntax_cmp(
     use std::cmp::Ordering;
     fn header(view: V<'_>) -> MachineTerm {
         let zero = || Box::new(MachineTerm::constant(0));
-        if view.conditional().is_some() {
+        if view.conditional_view().is_some() {
             MachineTerm::If {
                 condition: Box::new(ConditionTerm::Constant(false)),
                 then_term: zero(),

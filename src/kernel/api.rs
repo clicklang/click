@@ -2172,6 +2172,7 @@ pub fn program_call(
     ProgramStatement::Call {
         function_name: function_name.into(),
         arguments,
+        callee: None,
     }
 }
 
@@ -5279,6 +5280,7 @@ pub fn prove_checked_program_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CheckedFunctionExecution {
+        published_outcomes: Default::default(),
         contract_completion: None,
         entry_authority: None,
         closed_exit_obligations: vec![None; path_count],
@@ -8217,6 +8219,7 @@ pub(crate) fn prove_executed_contract_refinement(
         ProgramStatement::Call {
             function_name: callback.name().to_string(),
             arguments,
+            callee: None,
         }
     } else {
         ProgramStatement::seq(
@@ -8423,6 +8426,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
         ProgramStatement::Call {
             function_name: callee_name.to_string(),
             arguments,
+            callee: None,
         }
     } else {
         ProgramStatement::seq(

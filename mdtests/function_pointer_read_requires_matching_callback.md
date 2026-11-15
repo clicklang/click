@@ -25,16 +25,13 @@ void symbolic(int32* p, const struct callbacks* cb) {
     views cb->call;
     ensures true;
 } by {
-    step();
     have cb == &table by { assumption(); }
-    step();
     apply(target_has_contract());
-    have Invoke(cb->call) by { assumption(); }
     step(Invoke);
     step_until(function.exit); solve();
 }
 ```
 
 ```expect
-fail: requires the current goal as an available semantic fact
+fail: contract `Invoke` is not established for this callback with its call signature
 ```

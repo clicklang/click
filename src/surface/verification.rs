@@ -4477,15 +4477,21 @@ fn c_statement_calls_recording(
             syntax::C0Statement::Call {
                 function_name,
                 arguments,
+                callee,
                 ..
             }
             | syntax::C0Statement::CallResult {
                 function_name,
                 arguments,
+                callee,
                 ..
             } => {
                 let mut dependencies = BTreeSet::new();
-                if !function_pointer_names.contains(function_name) {
+                // A call through a function pointer names no function; the
+                // functions it may reach are the addresses it reads.
+                if let Some(callee) = callee {
+                    collect_function_addresses(&callee.pointer, &mut dependencies);
+                } else if !function_pointer_names.contains(function_name) {
                     match c_allocator_function(function_name) {
                         Some(function) => {
                             allocator.insert(function);

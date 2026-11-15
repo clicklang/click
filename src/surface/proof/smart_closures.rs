@@ -4350,6 +4350,7 @@ fn source_backed_call_requirement_surface(
         ProgramStatement::Call {
             function_name,
             arguments,
+            ..
         }
         | ProgramStatement::CallAssign {
             function_name,

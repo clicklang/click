@@ -4142,6 +4142,9 @@ fn substitute_program_expression_as_contract_with_numerals_in(
                 crate::kernel::StepOrigin::Prior(local) => {
                     format!("the value `{local}` held before its update has no source spelling")
                 }
+                crate::kernel::StepOrigin::Value(what) => {
+                    format!("the value of {what} has no source spelling")
+                }
                 crate::kernel::StepOrigin::Operator(kind) => format!(
                     "the value of {} has no source spelling",
                     crate::surface::diagnostics::describe_operator_kind(*kind)

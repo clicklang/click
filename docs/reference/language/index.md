@@ -3912,6 +3912,7 @@ before it and counted from zero there:
 | `loop(i).statement(j)` | the `j`th statement of loop `i`'s body |
 | `S.region(j)` | the `j`th atomic region of `S`'s own, in executable order |
 | `S.call(f, j)` | `S`'s `j`th call of `f`, in the order the calls run |
+| `S.call(j)` | `S`'s `j`th call of any callee, a call through a function pointer included, in the order the calls run |
 | `loop(i).test()` | the test of loop `i` whose condition calls a function, after those calls; refused for a pure condition, which is tested at the head |
 | `S.assignment(x, j)` | `S`'s `j`th atomic region of its own that assigns local `x` |
 | `S.read(j)` | `S`'s `j`th atomic region of its own with an explicit scalar memory load |

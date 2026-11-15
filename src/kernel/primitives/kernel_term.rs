@@ -4,6 +4,7 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
+pub(crate) use boolean::BooleanOperandView;
 // Scoped payloads shared by evaluation, checking, and Surface synthesis.
 #[allow(dead_code)]
 mod folds;
