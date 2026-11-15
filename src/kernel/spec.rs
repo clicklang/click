@@ -10153,10 +10153,9 @@ pub(super) fn program_value_comparison_proposition(
             }
             _ => return None,
         };
-        return Some(Proposition::ConditionIs(
-            condition,
-            !matches!(operator, ComparisonOperator::NotEqual),
-        ));
+        // Float conditions retain the requested operator, including NotEqual.
+        // Unlike integer equality, inequality needs no additional negation.
+        return Some(Proposition::ConditionIs(condition, true));
     }
 
     if matches!(left, ProgramValue::UInt64(_)) || matches!(right, ProgramValue::UInt64(_)) {
@@ -10661,3 +10660,6 @@ mod conditional_tests;
 
 #[cfg(test)]
 mod execution_handoff_tests;
+
+#[cfg(test)]
+mod float_comparison_tests;
