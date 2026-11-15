@@ -208,6 +208,17 @@ source/scaling/documentation/Rust run has 1,915 passes and nine Rust tests that
 stop during frontend setup because this environment lacks the pinned Charon
 bundle; those nine do not reach verification. The full nightly suite was not
 run. The focused proof-mode regression above passes separately.
+### Report naming follow-up
+
+Full error reports now format an unresolved prerequisite with the same retained
+proof naming context as the rest of the diagnostic and the concise CLI report.
+The original report had discarded that context for the prerequisite, printing
+`<pointer A>` even though the match binder `identity` was retained. The fact is
+expressible as `root->rb_node == identity`; its explicit rewrite proof checks.
+This report fix is independent of the prerequisite reconstruction repair above;
+it changes no proof checking or synthesis. The repaired fixture is the
+acceptance witness for the fold behavior.
+
 
 ## Remaining interface audit
 
