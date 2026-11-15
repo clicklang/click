@@ -329,6 +329,12 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         resource_environment,
         theorem_environment,
         function: &annotated,
+        loop_source: proof_context.function,
+        loop_owner: proof_context
+            .constants
+            .entry_context
+            .as_ref()
+            .and_then(|entry| entry.strategy_root.as_ref().or(entry.completion.as_ref())),
         arguments,
         surface_propositions: &execution.presentation.surface_propositions,
         source_layout: &source_layout,
@@ -379,7 +385,6 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
                 "`{claim_label}` tactic {tactic_index}: `loop` did not construct a verified rule for loop({loop_index})"
             ))
         })?
-        .with_loop_index(loop_index)
         .with_composite_resource_definitions(
             annotated.composite_resource_definitions().iter().cloned(),
         );

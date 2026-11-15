@@ -27,6 +27,8 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     pub(in crate::surface::proof) resource_environment: &'a ResourceEnvironment,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
     pub(in crate::surface::proof) function: &'a ProgramFunction,
+    pub(in crate::surface::proof) loop_source: &'a ProgramFunction,
+    pub(in crate::surface::proof) loop_owner: Option<&'a crate::kernel::WholeContractRoot>,
     pub(in crate::surface::proof) arguments: &'a [ProgramExpression],
     pub(in crate::surface::proof) surface_propositions: &'a SurfacePropositionMap,
     pub(in crate::surface::proof) source_layout: &'a SourceExecutionLayout,

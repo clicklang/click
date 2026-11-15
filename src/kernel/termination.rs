@@ -4,6 +4,8 @@ pub(crate) use ordinary::{
     TerminationCheckReport, termination_predicate_spelling,
 };
 mod execution;
+pub(in crate::kernel) mod loop_evidence;
+pub(crate) use loop_evidence::StatementProofInput;
 mod obligations;
 pub(in crate::kernel) use completion::ProgramBodyOwner;
 pub(in crate::kernel) mod completion;
@@ -3427,12 +3429,14 @@ fn join_measure_components(components: impl Iterator<Item = String>) -> String {
 /// The function's loops in the order `check_loops` numbers them: a loop
 /// before the loops in its body, then the rest in source order. One walk,
 /// so looking up every verified loop rule costs the function once.
+#[cfg(test)]
 fn loops_in_order(statement: &ProgramStatement) -> Vec<&ProgramStatement> {
     let mut loops = Vec::new();
     collect_loops_in_order(statement, &mut loops);
     loops
 }
 
+#[cfg(test)]
 fn collect_loops_in_order<'a>(
     statement: &'a ProgramStatement,
     loops: &mut Vec<&'a ProgramStatement>,
@@ -3580,74 +3584,36 @@ fn same_statement_shape(left: &ProgramStatement, right: &ProgramStatement) -> bo
     }
 }
 
-/// The declared `decreases` measure each verified loop rule certified.
-///
-/// A rule's loop head carries the measure whose back-edge members its bundle
-/// closed. Matching the rule to the source loop by index and executable shape
-/// is what binds that certification to this function's loop.
+/// Consume the identity and eligible measure retained by each successful loop
+/// producer. No source reconstruction or measure checking takes place here.
 fn verified_loop_ranking_measures(
-    function_name: &str,
-    source_body: &ProgramStatement,
     rules: &[VerifiedLoopRule],
-) -> Result<
-    (
-        BTreeMap<usize, Vec<LoopTerminationMeasure>>,
-        BTreeSet<usize>,
-    ),
-    TerminationError,
-> {
+) -> (
+    BTreeMap<usize, Vec<LoopTerminationMeasure>>,
+    BTreeSet<usize>,
+) {
     let mut certified: BTreeMap<usize, Vec<LoopTerminationMeasure>> = BTreeMap::new();
     let mut unranked = BTreeSet::new();
-    let loops = loops_in_order(source_body);
-    let addressed = address_taken_locals(source_body);
     for rule in rules {
         charge_termination_work(1);
-        let Some(index) = rule.loop_index else {
+        let Some(evidence) = &rule.loop_evidence else {
             continue;
         };
-        let Some(&source_loop) = loops.get(index) else {
-            return Err(error(format!(
-                "verified loop rule for `{function_name}` refers to nonexistent loop {index}"
-            )));
-        };
-        if !same_statement_shape(source_loop, &rule.loop_statement) {
-            return Err(error(format!(
-                "verified loop rule for `{function_name}` does not match loop {index}'s source shape"
-            )));
-        }
-        let ProgramStatement::While {
-            ranking_measures,
-            structural_measure,
-            ..
-        } = &rule.loop_statement
-        else {
-            return Err(error(format!(
-                "verified loop rule for `{function_name}` is not a while loop"
-            )));
-        };
-        for component in ranking_measures {
-            reject_address_escaped_ranking_component(function_name, component, &addressed)?;
-        }
-        let measure = match structural_measure {
-            Some(binder) => LoopTerminationMeasure::Structural(binder.clone()),
-            None if ranking_measures.is_empty() => {
-                unranked.insert(index);
-                continue;
+        match &evidence.measure {
+            Some(measure) => certified
+                .entry(evidence.index)
+                .or_default()
+                .push(measure.clone()),
+            None => {
+                unranked.insert(evidence.index);
             }
-            None => LoopTerminationMeasure::Ranking(
-                ranking_measures.iter().map(RankingComponent::key).collect(),
-            ),
-        };
-        // Each strategy owns the measure checked by its own back-edge proof.
-        // Different strategies for this source loop need not share a measure.
-        certified.entry(index).or_default().push(measure);
+        }
     }
-    // Termination needs every summarized path to carry a ranking proof. A
-    // ranked sibling cannot stand in for an unranked execution of this loop.
+    // Every summarized strategy must carry a ranking proof.
     for index in &unranked {
         certified.remove(index);
     }
-    Ok((certified, unranked))
+    (certified, unranked)
 }
 
 fn ranking_affine_form(term: &MachineTerm) -> (BTreeMap<MachineTerm, i64>, i64) {
@@ -4612,24 +4578,16 @@ fn check_expression_measure_recursion(
         &mut enclosing,
         &mut self_call_loops,
     );
-    let loops = loops_in_order(&function.source_body);
     for index in self_call_loops {
         charge_termination_work(1);
-        // The rule is bound to this source loop the way
-        // `verified_loop_ranking_measures` binds one: by index and executable
-        // shape. Reading the shape here too keeps this check standing on its
-        // own rather than on that later pass's ordering. The loops are
-        // listed once, so each index is a lookup.
-        let source_loop = loops.get(index).copied();
         let anchored = loop_rules.iter().any(|rule| {
-            rule.loop_index == Some(index)
+            rule.loop_evidence
+                .as_ref()
+                .is_some_and(|evidence| evidence.index == index)
                 && rule
                     .recursion_anchor
                     .as_ref()
                     .is_some_and(|anchor| anchor.ranks(name, function.contract_interface()))
-                && source_loop.is_some_and(|source_loop| {
-                    same_statement_shape(source_loop, &rule.loop_statement)
-                })
         });
         if !anchored {
             return Err(error(format!(
@@ -6871,10 +6829,13 @@ mod local_descent_tests {
         let ProgramStatement::Seq(statements) = &function.source_body else {
             unreachable!("`self_call_in_loop_rule` builds a sequence");
         };
+        let opening = function
+            .open_loop_proof(0, statements.rest().as_ref().clone())
+            .unwrap();
         VerifiedLoopRule {
             symbolic_entry_state: ExecutionState::default(),
-            loop_statement: statements.rest().as_ref().clone(),
-            loop_index: Some(0),
+            loop_statement: opening.statement,
+            loop_evidence: opening.loop_evidence,
             required_assumptions: PureFactContext::new(),
             paths: Vec::new(),
             composite_resource_definitions: Vec::new(),
@@ -6898,12 +6859,11 @@ mod local_descent_tests {
             source: "other_level(n)".into(),
             expression: SpecExpression::ProgramExpression(ProgramExpression::Variable("n".into())),
         }];
-        let (ranked, unranked) = verified_loop_ranking_measures(
-            "drain",
-            &function.source_body,
-            &[first.clone(), second.clone()],
-        )
-        .expect("independent strategies need not name the same measure");
+        second.loop_evidence = function
+            .open_loop_proof(0, second.loop_statement.clone())
+            .unwrap()
+            .loop_evidence;
+        let (ranked, unranked) = verified_loop_ranking_measures(&[first.clone(), second.clone()]);
         assert_eq!(ranked[&0].len(), 2);
         assert!(unranked.is_empty());
         check_loops(
@@ -6934,9 +6894,12 @@ mod local_descent_tests {
             unreachable!();
         };
         ranking_measures.clear();
+        second.loop_evidence = function
+            .open_loop_proof(0, second.loop_statement.clone())
+            .unwrap()
+            .loop_evidence;
         for rules in [[first.clone(), second.clone()], [second, first]] {
-            let (ranked, unranked) =
-                verified_loop_ranking_measures("drain", &function.source_body, &rules).unwrap();
+            let (ranked, unranked) = verified_loop_ranking_measures(&rules);
             assert!(ranked.is_empty(), "a ranked sibling cannot cover this path");
             assert_eq!(unranked, BTreeSet::from([0]));
         }

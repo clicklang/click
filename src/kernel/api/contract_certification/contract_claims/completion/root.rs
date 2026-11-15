@@ -68,6 +68,15 @@ impl WholeContractRoot {
         }
     }
 
+    /// Open this owner's selected source loop before any of its proofs run.
+    pub(crate) fn open_loop_proof(
+        &self,
+        index: usize,
+        statement: ProgramStatement,
+    ) -> Result<crate::kernel::StatementProofInput, TerminationError> {
+        self.plan.entry.function.open_loop_proof(index, statement)
+    }
+
     pub(in crate::kernel) fn plan(&self) -> &WholeContractProof {
         &self.plan
     }

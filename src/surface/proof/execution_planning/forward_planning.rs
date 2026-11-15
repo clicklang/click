@@ -133,17 +133,13 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     "execution proof traversal region({statement_index}) does not match loop({loop_index})"
                 )));
             }
-            // An early refusal: the kernel checks every certified loop's
-            // measures against the function again when it records
-            // termination, so the function-wide walk is shared by the loops.
-            crate::kernel::program_reject_address_escaped_loop_measures(
-                environment.function_block.signature().name(),
-                ranking_measures,
-                environment.source_layout.address_taken_locals(|| {
-                    crate::kernel::program_address_taken_locals(environment.function.source_body())
-                }),
-            )
-            .map_err(ClickError::new)?;
+            let opening = match environment.loop_owner {
+                Some(owner) => owner.open_loop_proof(loop_index, statement.clone()),
+                None => environment
+                    .loop_source
+                    .open_loop_proof(loop_index, statement.clone()),
+            }
+            .map_err(|error| ClickError::new(error.message()))?;
             let loop_clause = environment
                 .function_block
                 .structural_clauses()
@@ -475,6 +471,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 contexts,
                 statement_index,
                 Some(loop_index),
+                Some(&opening),
                 environment,
                 verified_loop_rules,
                 if loop_clause.is_some() {
@@ -553,6 +550,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 active,
                 statement_index,
                 None,
+                None,
                 environment,
                 verified_loop_rules,
                 LoopPreservationSource::Automatic,
@@ -616,6 +614,7 @@ fn advance_execution_proof_statement(
     contexts: Vec<PlanningExecutionContext>,
     statement_index: usize,
     loop_index: Option<usize>,
+    opening: Option<&crate::kernel::StatementProofInput>,
     environment: &ExecutionProofEnvironment<'_>,
     verified_loop_rules: &mut Vec<VerifiedLoopRule>,
     loop_preservation_source: LoopPreservationSource,
@@ -625,6 +624,7 @@ fn advance_execution_proof_statement(
     loop_return_exits: Option<&[Vec<LoopReturnExit>]>,
     loop_exit_points: Option<&[Vec<RecordedRegionPoints>]>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
+    let input = opening.cloned().unwrap_or_else(|| statement.into());
     let mut advanced = Vec::new();
     for (context_index, mut context) in contexts.into_iter().enumerate() {
         record_code_region_program_snapshot_state(
@@ -669,7 +669,7 @@ fn advance_execution_proof_statement(
             (false, false) => certified_statement_transitions(
                 &context.state,
                 &context.pure_facts,
-                statement,
+                input.clone(),
                 environment.function_environment,
                 Some(environment.spec_definitions.predicates),
                 ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
@@ -682,7 +682,7 @@ fn advance_execution_proof_statement(
             _ => certified_loop_exit_transitions_with_proven_phases(
                 &context.state,
                 &context.pure_facts,
-                statement,
+                input.clone(),
                 environment.function_environment,
                 Some(environment.spec_definitions.predicates),
                 &label,
@@ -726,7 +726,7 @@ fn advance_execution_proof_statement(
                     }
                 ))
             })?;
-            verified_loop_rules.push(loop_rule.with_loop_index(loop_index));
+            verified_loop_rules.push(loop_rule);
         }
         for transition in transitions {
             let mut surface_propositions = context.surface_propositions.clone();

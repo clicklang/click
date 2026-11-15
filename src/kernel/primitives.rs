@@ -6481,6 +6481,10 @@ pub struct ProgramFunction {
     pub(super) static_storage: std::sync::Arc<FunctionStaticStorage>,
     pub(super) string_literals: Vec<StringLiteral>,
     pub(super) address_taken_locals: AddressTakenLocals,
+    pub(super) loop_source_index: LoopSourceIndexCache,
+    /// A frontend-identified whole-body cycle. Its source identity exists
+    /// before a frontier clause adds the executable proof wrapper.
+    pub(super) natural_loop_source: Option<(ControlTargetId, Option<ControlTargetId>)>,
 }
 
 /// The locals whose address a function's body takes, found once per body
@@ -6489,6 +6493,31 @@ pub struct ProgramFunction {
 /// ordering ignore it.
 #[derive(Clone, Debug, Default)]
 pub(super) struct AddressTakenLocals(Arc<std::sync::OnceLock<BTreeSet<String>>>);
+
+/// Derived source-loop shapes and eligibility data, shared by function clones.
+#[derive(Clone, Debug, Default)]
+pub(super) struct LoopSourceIndexCache(
+    pub(super) Arc<std::sync::OnceLock<crate::kernel::termination::loop_evidence::LoopSourceIndex>>,
+);
+impl PartialEq for LoopSourceIndexCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for LoopSourceIndexCache {}
+impl std::hash::Hash for LoopSourceIndexCache {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl PartialOrd for LoopSourceIndexCache {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for LoopSourceIndexCache {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
 
 impl PartialEq for AddressTakenLocals {
     fn eq(&self, _: &Self) -> bool {
@@ -7519,11 +7548,8 @@ impl VerifiedFunctionContractClaim {
 pub struct VerifiedLoopRule {
     pub(super) symbolic_entry_state: ExecutionState,
     pub(super) loop_statement: ProgramStatement,
-    /// Source traversal index for the loop this rule certifies. The index is
-    /// assigned by the proof driver after the kernel constructs the rule so
-    /// termination checking can safely recover annotations from a nested
-    /// frontier rule without changing the contract function's shape.
-    pub(super) loop_index: Option<usize>,
+    /// Source identity retained by the loop-opening operation.
+    pub(super) loop_evidence: Option<crate::kernel::termination::loop_evidence::LoopEvidence>,
     pub(super) required_assumptions: PureFactContext,
     pub(super) paths: Vec<StatementExecutionPath>,
     pub(super) composite_resource_definitions: Vec<CompositeResourceDefinition>,
