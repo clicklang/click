@@ -2311,6 +2311,12 @@ fn synthesize_surface_bool(
             then_branch: Box::new(operand(then_condition)?),
             else_branch: Box::new(operand(else_condition)?),
         }),
+        ConditionTerm::Float32(_) | ConditionTerm::Float64(_) => raise_kernel_term(
+            &crate::kernel::KernelTermImport::default().condition(condition),
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
         ConditionTerm::AlgebraicEqual(left, right) => {
             proposition_bool_value(ClickProposition::Comparison {
                 left: synthesize_surface_algebraic(
@@ -3346,6 +3352,44 @@ pub(super) fn raise_kernel_term(
                     C::GreaterEqual => ComparisonOperator::GreaterEqual,
                 },
                 right: recurse(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::FloatCompare {
+            operator,
+            arguments,
+            ..
+        } => {
+            use crate::kernel::ComparisonOperator as C;
+            proposition_bool_value(ClickProposition::Comparison {
+                left: recurse(&arguments[0])?,
+                operator: match operator {
+                    C::Equal => ComparisonOperator::Equal,
+                    C::NotEqual => ComparisonOperator::NotEqual,
+                    C::LessThan => ComparisonOperator::LessThan,
+                    C::LessEqual => ComparisonOperator::LessEqual,
+                    C::GreaterThan => ComparisonOperator::GreaterThan,
+                    C::GreaterEqual => ComparisonOperator::GreaterEqual,
+                },
+                right: recurse(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::FloatClassify {
+            classification,
+            operand,
+            ..
+        } => {
+            use crate::kernel::FloatClassification as C;
+            proposition_bool_value(ClickProposition::FloatClassification {
+                expression: recurse(operand)?,
+                classification: match classification {
+                    C::Finite => syntax::CFloatClassification::Finite,
+                    C::Infinite => syntax::CFloatClassification::Infinite,
+                    C::Zero => syntax::CFloatClassification::Zero,
+                    C::Subnormal => syntax::CFloatClassification::Subnormal,
+                    C::Nan => syntax::CFloatClassification::Nan,
+                },
             })
             .ok()?
         }

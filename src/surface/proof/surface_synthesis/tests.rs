@@ -5850,3 +5850,84 @@ fn common_float_to_integer_conversions_round_trip_with_definedness() {
         }
     }
 }
+
+#[test]
+fn common_float_predicates_round_trip_existing_spelling() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(999977));
+    let names = BTreeMap::from([(Variable(999977), "x".to_string())]);
+    for (spelling, value) in [
+        ("float", ProgramValue::Float32(variable.clone())),
+        ("double", ProgramValue::Float64(variable.clone())),
+    ] {
+        let state = ExecutionState::new().with_local("x", value);
+        let mut conditions = vec![];
+        for operator in [
+            crate::kernel::ComparisonOperator::Equal,
+            crate::kernel::ComparisonOperator::NotEqual,
+            crate::kernel::ComparisonOperator::LessThan,
+            crate::kernel::ComparisonOperator::LessEqual,
+            crate::kernel::ComparisonOperator::GreaterThan,
+            crate::kernel::ComparisonOperator::GreaterEqual,
+        ] {
+            conditions.push(crate::kernel::FloatCondition::Comparison {
+                operator,
+                left: Box::new(variable.clone()),
+                right: Box::new(variable.clone()),
+            });
+        }
+        for classification in [
+            crate::kernel::FloatClassification::Finite,
+            crate::kernel::FloatClassification::Infinite,
+            crate::kernel::FloatClassification::Zero,
+            crate::kernel::FloatClassification::Subnormal,
+            crate::kernel::FloatClassification::Nan,
+        ] {
+            conditions.push(crate::kernel::FloatCondition::Classification {
+                classification,
+                value: Box::new(variable.clone()),
+            });
+        }
+        for condition in conditions {
+            let condition = if spelling == "float" {
+                ConditionTerm::Float32(condition)
+            } else {
+                ConditionTerm::Float64(condition)
+            };
+            let root = crate::kernel::KernelTermImport::default().condition(&condition);
+            let surface =
+                raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+            let text = diagnostics::describe_contract_expression(&surface);
+            let parsed = parser::parse(&format!(
+                "function probe(x: {spelling}) -> Bool {{ {text} }}"
+            ))
+            .unwrap();
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                parsed.click_function_definitions()[0].body().unwrap(),
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedStates::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (value, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(value, ProgramValue::of_bool(condition), "{text}");
+            assert!(obligations.is_empty(), "{text}");
+        }
+    }
+}

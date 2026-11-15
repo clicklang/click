@@ -36,7 +36,7 @@ fn machine_payload(term: &KernelTerm) -> Option<&MachineTerm> {
     term.machine_conversion_leaf()
 }
 
-pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
+pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm {
     if !root.has_opaque_observation_boundary() {
         return root.clone();
     }
@@ -98,6 +98,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 KernelTermNode::Fold(fold) => fold.arguments.to_vec(),
                 KernelTermNode::MachineBinary { arguments, .. }
                 | KernelTermNode::FloatBinary { arguments, .. }
+                | KernelTermNode::FloatCompare { arguments, .. }
                 | KernelTermNode::BoolOverflow { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
                 | KernelTermNode::IntegerCompare { arguments, .. }
@@ -110,7 +111,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 KernelTermNode::Constructor(constructor) => constructor.fields.clone(),
                 KernelTermNode::AlgebraicCall(call) => call.arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
-                KernelTermNode::FloatConvert { operand, .. } | KernelTermNode::FloatNegate { operand } | KernelTermNode::BoolCast { operand, .. }
+                KernelTermNode::FloatClassify { operand, .. } | KernelTermNode::FloatConvert { operand, .. } | KernelTermNode::FloatNegate { operand } | KernelTermNode::BoolCast { operand, .. }
                 | KernelTermNode::MachineObservation { operand, .. }
                 | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
@@ -244,6 +245,14 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     ));
                     KernelTerm::bool_observation_leaf(condition, identity)
                 }
+                KernelTermNode::FloatCompare { format, operator, arguments } => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::FloatCompare { format: *format, operator: *operator, arguments: arguments.each_ref().map(|arg| get(arg)) },
+                ),
+                KernelTermNode::FloatClassify { format, classification, operand } => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::FloatClassify { format: *format, classification: *classification, operand: get(operand) },
+                ),
                 KernelTermNode::AlgebraicEqual { arguments } => {
                     KernelTerm::algebraic_equal_raw(arguments.each_ref().map(|arg| get(arg)))
                 }

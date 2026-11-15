@@ -246,3 +246,41 @@ fn float_to_machine_observations_and_exact_matching_do_not_export_prefixes() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn float_predicate_readers_keep_growing_shared_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = KernelFloatType::Float32;
+        let mut value =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999978));
+        for _ in 0..size {
+            value =
+                KernelTerm::float_binary(format, FloatBinaryOperator::Add, [value.clone(), value])
+                    .unwrap();
+        }
+        let before = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let comparison = KernelTerm::float_compare(
+                format,
+                ComparisonOperator::Equal,
+                [value.clone(), value.clone()],
+            )
+            .unwrap();
+            let classification =
+                KernelTerm::float_classify(format, FloatClassification::Nan, value.clone())
+                    .unwrap();
+            let (_, _, [a, b]) = BooleanOperandView::Shared(&comparison)
+                .float_comparison()
+                .unwrap();
+            assert!(a.syntax_equal(b));
+            let (_, _, operand) = BooleanOperandView::Shared(&classification)
+                .float_classification()
+                .unwrap();
+            assert!(operand.syntax_equal(FloatOperandView::Shared(&value)));
+            assert_eq!(classification.children()[0].id(), value.id());
+        });
+        assert!(work <= 8, "size={size}, work={work}");
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+    }
+}

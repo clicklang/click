@@ -625,7 +625,7 @@ pub(super) fn clear_machine_observation_memo() {
     MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow_mut().clear());
 }
 
-mod observation_identity;
+pub(in crate::kernel::primitives) mod observation_identity;
 
 impl SharedMachineIntegerTerm {
     /// An explicit native operand already imported in this verification.

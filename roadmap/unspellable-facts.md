@@ -712,7 +712,7 @@ All 1,851 selected checks passed, including the complete scaling suite and
 nested cast round trips. Float-to-integer conversions remain the second 8x
 slice; 8x and 8y–8ad are not closed by this change.
 
-8x second slice retains float-to-integer operands in the same conversion node.
+8x second slice ([PR #2887](https://github.com/clicklang/click/pull/2887)) retains float-to-integer operands in the same conversion node.
 The written destination is distinct from a checker's integer observation type,
 so reinterpreting a result does not change the conversion on export. Integer
 carriers, equality registration, scoped variable readers and selected rewrites
@@ -726,6 +726,23 @@ preserve state-blind versus memory-blind policies. Memory state operand keys
 retain exact opaque conversion identity across integer observation widths.
 Freshness and contract-syntax readers accept the retained conversion as well.
 Float execution and storage handoffs remain 8aa–8ab.
+
+Before 8y, [PR #2891](https://github.com/clicklang/click/pull/2891) fixes an
+existing polarity error: float `!=` already carries `NotEqual`, so lowering
+must not negate it again. Ordinary, NaN and signed-zero cases retain their IEEE
+meaning in propositions and Boolean values.
+
+8y retains float comparisons and classifications as typed Boolean nodes with
+common float operands. Borrowed predicate readers preserve comparison width,
+operator, classification and exact operand syntax, including signed-zero and
+NaN payloads. These are structural constructors; existing producers retain
+IEEE evaluation rules. Condition import is now exhaustive without a generic
+legacy fallback. Shared predicates raise directly to the existing comparison
+and classification spellings, including when used as Boolean values. Native
+condition export and selected Boolean rewrite/key adapters remain explicit
+boundaries for the closure audit; this does not migrate float calls or storage.
+The 90 focused float checks, float fact-stability audit (zero differences),
+2,155 reader/scaling checks and quality checks passed.
 
 ### 8a inventory
 
