@@ -989,3 +989,29 @@ fn boolean_guard_views_do_not_export_growing_prefixes() {
         }
     }
 }
+
+#[test]
+fn boolean_dependency_walk_visits_shared_connectives_once() {
+    for size in [16, 64, 256] {
+        let atom = KernelTerm::variable(KernelType::Bool, Variable(967_000));
+        let mut root = atom.clone();
+        for _ in 0..size {
+            root = KernelTerm::intern(
+                KernelType::Bool,
+                KernelTermNode::BoolEqual {
+                    arguments: [root.clone(), root],
+                },
+            );
+        }
+        let (count, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut count = 0;
+            BooleanOperandView::Shared(&root).for_each_dependency_leaf(|leaf| {
+                assert!(matches!(leaf, BooleanOperandView::Shared(value) if value == &atom));
+                count += 1;
+            });
+            count
+        });
+        assert_eq!(count, 1);
+        assert_eq!(work, size + 1);
+    }
+}

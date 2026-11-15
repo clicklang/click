@@ -1387,6 +1387,34 @@ fn push_read(reads: &mut Vec<ResourceRead>, resource: OwnedResource, point: Prog
     }
 }
 
+fn collect_condition_operand_reads(
+    condition: crate::kernel::BooleanOperandView<'_>,
+    reads: &mut Vec<ResourceRead>,
+) {
+    condition.for_each_dependency_leaf(|leaf| {
+        if let crate::kernel::BooleanOperandView::Shared(root) = leaf
+            && matches!(
+                root.node(),
+                crate::kernel::KernelTermNode::BoolLiteral(_)
+                    | crate::kernel::KernelTermNode::Variable(_)
+                    | crate::kernel::KernelTermNode::Call { .. }
+            )
+        {
+            return;
+        }
+
+        if let Some((_, _, operands)) = leaf.comparison() {
+            for operand in operands {
+                collect_operand_reads(operand, reads);
+            }
+        } else {
+            // Integer comparison leaves retain their existing integer reader;
+            // calls and opaque conditions retain the native admission rules.
+            collect_condition_reads(&leaf.native(), reads);
+        }
+    });
+}
+
 fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRead>) {
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
@@ -1489,11 +1517,11 @@ fn collect_operand_reads(
         }
         if let Some(leaf) = view.read_source() {
             collect_bitvector_reads(&leaf, reads);
-        } else if let Some((condition, arms)) = view.conditional() {
-            collect_condition_reads(&condition, reads);
-            pending.extend(arms);
+        } else if let Some((condition, arms)) = view.conditional_view() {
+            collect_condition_operand_reads(condition, reads);
+            pending.extend(arms.into_iter().rev());
         } else if let Some((T::Int32 | T::UInt32, _, operands)) = view.binary() {
-            pending.extend(operands);
+            pending.extend(operands.into_iter().rev());
         } else if let Some((T::Int32 | T::UInt32, U::BitwiseNot, operand)) = view.unary() {
             pending.push(operand);
         } else if let Some((encoding, _, _, operand)) = view.cast() {

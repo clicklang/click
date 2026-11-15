@@ -11,6 +11,28 @@ pub(crate) enum BooleanOperandView<'a> {
 }
 
 impl<'a> BooleanOperandView<'a> {
+    /// Visit dependency-bearing Boolean leaves, sharing a common connective
+    /// once. Call arguments and native opaque leaves keep the reader's rules.
+    pub(crate) fn for_each_dependency_leaf(self, mut visit: impl FnMut(Self)) {
+        let mut pending = vec![self];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(view) = pending.pop() {
+            if let Self::Shared(root) = view
+                && !seen.insert(root.id())
+            {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(children) = view.conditional() {
+                pending.extend(children.into_iter().rev());
+            } else if let Some(children) = view.equality() {
+                pending.extend(children.into_iter().rev());
+            } else {
+                visit(view);
+            }
+        }
+    }
+
     pub(crate) fn native_leaf(self) -> Option<&'a ConditionTerm> {
         match self {
             Self::Native(value) => Some(value),
