@@ -19,7 +19,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         driver_proof
             .driver()
-            .complete_fixed_state_obligations_inner(None, goals, &[])
+            .complete_fixed_state_obligations_inner(None, goals, &[], &[])
             .map(|(certificate, _)| certificate)
     }
 
@@ -35,6 +35,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         since: &ProofCheckpoint<'a>,
         goals: &[ClickProposition],
         claim_goals: &[Vec<crate::kernel::ContractClaimGoal>],
+        claim_keys: &[FunctionContractClaimKey],
     ) -> Result<
         (
             ProofCertificate,
@@ -45,7 +46,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         driver_proof
             .driver()
-            .complete_fixed_state_obligations_inner(Some(since), goals, claim_goals)
+            .complete_fixed_state_obligations_inner(Some(since), goals, claim_goals, claim_keys)
     }
 
     pub(in crate::surface::proof) fn complete_fixed_state_obligations_inner(
@@ -53,6 +54,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         since: Option<&ProofCheckpoint<'a>>,
         goals: &[ClickProposition],
         claim_goals: &[Vec<crate::kernel::ContractClaimGoal>],
+        claim_keys: &[FunctionContractClaimKey],
     ) -> Result<
         (
             ProofCertificate,
@@ -101,10 +103,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 None if claim_goals.get(index).is_some_and(|forms| !forms.is_empty()) => return Err(driver_proof.step_error(
                     "contract closing could not discharge its kernel obligation from the retained facts",
                 )),
-                None => driver_proof
-                    .focus_fixed_state_surface_goal(goal)?
-                    .driver()
-                    .apply_step(ProofStep::Known)?,
+                None => {
+                    let focused = match claim_keys.get(index) {
+                        Some(key) => driver_proof.focus_source_contract_claim(key, goal)?,
+                        None => driver_proof.focus_fixed_state_surface_goal(goal)?,
+                    };
+                    focused.driver().apply_step(ProofStep::Known)?
+                },
             };
             checked_propositions.push(closer.completed_proposition()?);
             steps.extend_from_slice(closer.certificate().steps());

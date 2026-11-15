@@ -3204,6 +3204,16 @@ impl<'a> Proof<'a> {
         surface_goal: Option<ClickProposition>,
         claim_goal: Option<&crate::kernel::ContractClaimGoal>,
     ) -> Result<Self, ClickError> {
+        self.focus_fixed_state_goal_for_cell(goal, surface_goal, claim_goal, None)
+    }
+
+    fn focus_fixed_state_goal_for_cell(
+        &self,
+        goal: Proposition,
+        surface_goal: Option<ClickProposition>,
+        claim_goal: Option<&crate::kernel::ContractClaimGoal>,
+        source_claim: Option<&FunctionContractClaimKey>,
+    ) -> Result<Self, ClickError> {
         let fixed_state_context = matches!(self.context.as_ref(), ProofContext::FixedState(_))
             && matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));
         // A function-outcome goal is itself a result-aware fixed-state proof context:
@@ -3221,7 +3231,19 @@ impl<'a> Proof<'a> {
         let focused = Self {
             site: self.site.clone(),
             context: self.context.clone(),
-            state: if let Some(claim_goal) = claim_goal {
+            state: if let Some(key) = source_claim {
+                self.state
+                    .focus_source_contract_claim(
+                        key,
+                        goal,
+                        PropositionPresentation {
+                            surface: surface_goal.clone().map(Arc::new),
+                            surface_bindings: PersistentMap::default(),
+                            ..PropositionPresentation::default()
+                        },
+                    )
+                    .map_err(|message| self.step_error(message))?
+            } else if let Some(claim_goal) = claim_goal {
                 self.state
                     .focus_contract_claim(
                         claim_goal,
@@ -3299,6 +3321,17 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         let kernel = self.lower_surface_goal(goal, "fixed-state obligation")?;
         self.focus_fixed_state_goal_with_surface(kernel, Some(goal.clone()))
+    }
+
+    /// A proof-local clause owns its declaration key even when it has no
+    /// reusable contract proposition. Capture the cell before proof execution.
+    pub(super) fn focus_source_contract_claim(
+        &self,
+        key: &FunctionContractClaimKey,
+        goal: &ClickProposition,
+    ) -> Result<Self, ClickError> {
+        let kernel = self.lower_surface_goal(goal, "source contract clause")?;
+        self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
     }
 
     pub(super) fn is_complete(&self) -> bool {

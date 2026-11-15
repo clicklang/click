@@ -90,3 +90,34 @@ fn ordinary_completion_visits_selected_goals_without_scanning_siblings() {
         }
     }
 }
+
+#[test]
+fn selected_source_clause_completion_ignores_sibling_claims() {
+    for size in [16_usize, 64, 256, 1024] {
+        let (_, _, goals) = fixture_with_support(1, 1, size, false);
+        let goal = source_goal(goals[0].clone(), size);
+        let key = FunctionContractClaimKey::Ensure(size - 1);
+        let ((closed, work), indexed) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let completion = source_completion(&goal, &key);
+                goal.claims
+                    .as_ref()
+                    .unwrap()
+                    .close(
+                        &key,
+                        ClaimGoalEvidence::Proposition(completion),
+                        &goal.data.core.identity,
+                    )
+                    .unwrap()
+            })
+        });
+        assert_eq!(closed.first_open_position(), Some(0));
+        assert!(closed.evidence(&key).is_some());
+        assert!(goal.claims.as_ref().unwrap().evidence(&key).is_none());
+        assert!(work <= 64, "{size} sibling claims: {work} work");
+        assert!(
+            indexed <= 128 * (size.ilog2() as usize + 1),
+            "{size} sibling claims: {indexed} index work"
+        );
+    }
+}
