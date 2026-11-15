@@ -3868,6 +3868,7 @@ fn execute_verified_function_applications_with_suspension(
             interface,
             post_state.memory.clone(),
             &effective_assumptions,
+            &mut facts,
             budget,
         )? {
             Ok(memory) => memory,
@@ -12234,6 +12235,7 @@ fn produced_memory_initialization(
     interface: &FunctionContractInterface,
     mut memory: Memory,
     assumptions: &PureFactContext,
+    facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Memory, RuntimeError>> {
     for resource in interface.resource_ensures() {
@@ -12305,6 +12307,21 @@ fn produced_memory_initialization(
                 }
             }
             None => memory = memory.with_initialized_object(&start, extent),
+        }
+        // Only an explicit complete byte output needs this representation
+        // equation. Ordinary scalar reads keep their retained roots and do
+        // no extra byte-view work. Initialization is supplied above by the
+        // checked output clause, never by the numeric equation.
+        if extent == 4
+            && range.element_width() == 1
+            && segment.value_runs().is_none()
+            && let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
+                &memory,
+                &start,
+                budget.program_byte_order(),
+            )
+        {
+            facts.push(ExecutionPureFact::certified(equation));
         }
     }
     Ok(Ok(memory))

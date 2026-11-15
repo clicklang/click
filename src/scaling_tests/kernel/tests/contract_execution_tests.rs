@@ -233,7 +233,11 @@ fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
 #[test]
 fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
     let mut measurements = Vec::new();
-    for count in [0u32, 16, 64, 256] {
+    for count in [8u32, 32, 128, 512] {
+        // Compare cold, nonempty contexts at every size. Empty indexes have
+        // a distinct constant fast path; warm read caches can otherwise make
+        // later cases cheaper and hide the injected scan control.
+        let _session = crate::kernel::VerificationSession::enter();
         let mut memory = Memory::new();
         let mut resources = ResourceContext::new();
         for index in 0..count {
@@ -285,7 +289,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
         assert!(indexed(&costs), "indexed work: {costs:?}");
         let scanned = costs
             .iter()
-            .zip([0u32, 16, 64, 256])
+            .zip([8u32, 32, 128, 512])
             .map(|(work, size)| work + usize::try_from(size).unwrap())
             .collect::<Vec<_>>();
         assert!(

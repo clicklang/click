@@ -98,7 +98,7 @@ and arithmetic are preserved, not retagged.
 ### Sequencing
 
 Each new C++ slice must preserve the invariants and satisfy the relevant
-entry/call checks in [object-model.md](object-model.md); there is no blanket
+entry/call checks in the [native-interface matrix](../design/object-model-current-audit.md#native-interface-evidence-matrix); there is no blanket
 feature freeze. The [object-model design](../design/cpp-object-model.md)
 records accepted laws and historical implementation notes, not upstream
 support claims.
@@ -152,9 +152,11 @@ implementation:
   `std::ios_base::failure`; that exception model is
   [cpp-exceptions.md](cpp-exceptions.md). `ser_readdata32` is a later
   candidate. It needs the selected writable byte-span path and a modular
-  byte-output composition witness. The shared output-buffer contract already
-  supports `consumes uninitialized(...)` and initialized `produces`; check
-  its C++ byte/word composition under [object-model.md](object-model.md).
+  byte-output composition witness. That small composition is now checked in
+  the [object-model audit](../design/object-model-current-audit.md#modular-byte-output-composition):
+  `consumes uninitialized(...)` and initialized `produces` establish the exact
+  uint32 across proof modes. The selected writable span/serialization path
+  still needs its own unchanged-source witness.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

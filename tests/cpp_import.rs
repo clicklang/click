@@ -177,23 +177,15 @@ fn check_trivial_record_parameter_copy(tools: bool) {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = r#"verifying "copy.cpp";
-int32 change(struct View value) {
- owns value.data[0..1];
- ensures result == 7;
- ensures load_int32(old(value.data)) == 9;
-}
-int32 probe(struct View& input) {
- views input.data; views input.size;
- owns input.data[0..1];
- requires input.size <= 2147483631;
- ensures result == old(input.size) + 16;
- ensures input.size == old(input.size);
- ensures input.data == old(input.data);
- ensures input.data[0] == 9;
-}
-"#;
-    check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
+    let proof_source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/cpp-verification/native-interface/descriptor-copy.click"),
+    )
+    .unwrap();
+    let proof = proof_source.as_str();
+    click::surface::with_proof_trace("probe", || {
+        check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
+    });
     if tools {
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -7233,8 +7225,13 @@ fn check_sidecar_tactic_with_tools(
     );
     fs::write(&sidecar, &source).unwrap();
     let parsed = read_click_project(&sidecar, &source).unwrap();
-    verify_program_prepared_project(&parsed, import)
-        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    verify_program_prepared_project(&parsed, import).unwrap_or_else(|error| {
+        panic!(
+            "{}\n{}\n{source}",
+            error.report(),
+            error.trace_context_report().unwrap_or_default()
+        )
+    });
     if !tools {
         return;
     }
@@ -18062,22 +18059,24 @@ fn cpp_native_word_and_byte_pointer_stores_verify_offline() {
         ("unsigned int", "uint32", "4294967295u32"),
         ("unsigned char", "uint8", "255u8"),
     ] {
-        let source = format!(
-            "{source_type} probe({source_type}* p, {source_type} value) noexcept {{ *(p + 1) = value; return *(p + 1); }}"
-        );
-        let project = Project::with_fixture("pointer.cpp", "probe", &source);
-        refresh_import(&project.config()).unwrap();
-        fs::remove_file(&project.exporter).unwrap();
-        let import = load_import(&project.config()).unwrap();
-        let sidecar = format!(
-            "verifying \"pointer.cpp\"; {contract_type} probe({contract_type}* p, {contract_type} value) {{ owns p[0..2]; requires value == {literal}; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; }}"
-        );
-        check_selected_claim_certificate(&project, &import, &sidecar);
-        let bad = sidecar.replace("owns p[0..2];", "views p[0..2];");
-        let path = project.directory.join("bad.click");
-        fs::write(&path, &bad).unwrap();
-        let parsed = read_click_project(&path, &bad).unwrap();
-        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        for access in ["*(p + 1)", "p[1]", "1[p]"] {
+            let source = format!(
+                "{source_type} probe({source_type}* p, {source_type} value) noexcept {{ {access} = value; return {access}; }}"
+            );
+            let project = Project::with_fixture("pointer.cpp", "probe", &source);
+            refresh_import(&project.config()).unwrap();
+            fs::remove_file(&project.exporter).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let sidecar = format!(
+                "verifying \"pointer.cpp\"; {contract_type} probe({contract_type}* p, {contract_type} value) {{ owns p[0..2]; requires value == {literal}; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; }}"
+            );
+            check_selected_claim_certificate(&project, &import, &sidecar);
+            let bad = sidecar.replace("owns p[0..2];", "views p[0..2];");
+            let path = project.directory.join("bad.click");
+            fs::write(&path, &bad).unwrap();
+            let parsed = read_click_project(&path, &bad).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
     }
 }
 
@@ -19694,4 +19693,65 @@ fn linked_cpp_sources_refuse_an_unproved_callee_and_differing_definitions() {
         "{stderr}"
     );
     let _ = fs::remove_dir_all(project);
+}
+
+#[test]
+#[ignore = "nightly: native-interface unwritten reference entry and caller checks"]
+fn cpp_native_interface_reference_binding_does_not_initialize_storage_offline() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cpp-verification/native-interface");
+    let cpp = fs::read_to_string(fixture.join("reference.cpp")).unwrap();
+    let proof = fs::read_to_string(fixture.join("reference.click")).unwrap();
+    for (name, cpp, accepted) in [
+        ("write", cpp.clone(), true),
+        (
+            "bind",
+            cpp.replace("alias = 7;", "")
+                .replace("return value;\n}", "return 7;\n}"),
+            true,
+        ),
+        ("read", cpp.replace("alias = 7;", ""), false),
+    ] {
+        let project = Project::with_fixture("interface.cpp", "probe", &cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        if accepted {
+            check_selected_claim_certificate(&project, &import, &proof);
+        } else {
+            let path = project.directory.join("bad.click");
+            fs::write(&path, &proof).unwrap();
+            let parsed = read_click_project(&path, &proof).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).expect_err(name);
+            assert!(error.message().contains("uninitialized"), "{error}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: native-interface record-copy input initialization and caller authority"]
+fn cpp_native_interface_record_copy_checks_every_source_field_offline() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cpp-verification/native-interface");
+    let cpp = fs::read_to_string(fixture.join("copy.cpp")).unwrap();
+    let proof = fs::read_to_string(fixture.join("copy.click")).unwrap();
+    let project = Project::with_fixture("interface.cpp", "probe", &cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_selected_claim_certificate(&project, &import, &proof);
+    for invalid in [
+        proof.replace("views source.unused;", "owns uninitialized(source.unused);"),
+        proof.replace("views source.unused;", ""),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &invalid).unwrap();
+        let parsed = read_click_project(&path, &invalid).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).expect_err("copy input");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{error}"
+        );
+    }
 }
