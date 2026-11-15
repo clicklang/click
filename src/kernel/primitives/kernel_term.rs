@@ -15,6 +15,7 @@ mod machine;
 mod matches;
 pub(crate) use matches::KernelMatch;
 pub(crate) use matches::KernelMatchArm;
+mod pointer_observations;
 mod reads;
 // Prepared pointer payloads; producer activation follows scoped consumers and spelling.
 #[allow(dead_code)]
@@ -101,12 +102,38 @@ pub enum KernelTermNode {
         address: SharedPointerAddress,
         kind: LoadKind,
     },
+    /// Complete formed pointer value with prepared address and metadata children.
+    PointerValue(SharedPointerValue),
+    /// A pointer argument with its selected memory snapshot.
+    ArrayReference {
+        memory: SharedMemory,
+        pointer: KernelTerm,
+        element_type: ProgramType,
+    },
+    /// Generic call structure plus the complete checked pointer result.
+    PointerCall {
+        call: KernelTerm,
+        value: SharedPointerValue,
+    },
+    /// Pointer arithmetic keeps its exact input roots beside the complete
+    /// checked result payload. Formation evidence stays on the execution path.
+    PointerArithmetic {
+        operation: MachineBinaryOp,
+        byte_width: u32,
+        operands: [KernelTerm; 2],
+        value: SharedPointerValue,
+    },
     /// Complete pointer read result and its producer-retained definition.
     /// Access authority and read-over-write evidence remain outside the term.
     PointerRead {
         value: SharedPointerValue,
         memory: SharedMemory,
         address: SharedPointerAddress,
+    },
+    /// Address observation retains its exact prepared address and object annotation.
+    PointerAddress {
+        address: SharedPointerAddress,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     MachineObservation {
         format: MachineIntegerType,
@@ -226,7 +253,7 @@ struct TermData {
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
     machine_leaf: MachineLeafCache,
-    pointer_leaf: std::sync::OnceLock<Box<ProgramValue>>,
+    pointer_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
 }
 
 struct NodeKeyData {
@@ -313,7 +340,7 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::MemoryLoad { .. } => true,
+            KernelTermNode::MemoryLoad { .. } | KernelTermNode::PointerAddress { .. } => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,
@@ -371,7 +398,9 @@ impl NodeKey {
             KernelTermNode::Call { .. } => {
                 matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
-            KernelTermNode::MachineLiteral(_) | KernelTermNode::MemoryLoad { .. } => true,
+            KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::MemoryLoad { .. }
+            | KernelTermNode::PointerAddress { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
@@ -391,6 +420,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_conversions = match &node {
+            KernelTermNode::PointerAddress { .. } => true,
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
@@ -861,7 +891,9 @@ impl KernelTerm {
     ) -> Self {
         if matches!(
             self.node(),
-            KernelTermNode::Legacy(_) | KernelTermNode::Call { .. }
+            KernelTermNode::Legacy(_)
+                | KernelTermNode::Call { .. }
+                | KernelTermNode::PointerAddress { .. }
         ) && rewritten == original
         {
             return self.clone();
@@ -1426,8 +1458,14 @@ impl KernelTermExport {
             KernelTermNode::Fold(fold) if term.ty() == &KernelType::Integer => {
                 PureFunctionArgument::Integer(fold.integer_compatibility(self)?.into())
             }
-            KernelTermNode::PointerRead { value, .. } => {
+            KernelTermNode::PointerRead { value, .. }
+            | KernelTermNode::PointerArithmetic { value, .. }
+            | KernelTermNode::PointerCall { value, .. }
+            | KernelTermNode::PointerValue(value) => {
                 PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
+            }
+            KernelTermNode::ArrayReference { .. } => {
+                term.pointer_argument_native().unwrap().clone()
             }
             KernelTermNode::Legacy(value) => value.value().clone(),
             KernelTermNode::IntegerLiteral(value) => {

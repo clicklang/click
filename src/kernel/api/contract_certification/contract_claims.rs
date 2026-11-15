@@ -4,6 +4,9 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 mod completion;
 pub(crate) use completion::{ContractCompletionGoal, WholeContractProof};
 
+mod retained_context;
+pub(crate) use retained_context::{RetainedClosingEntry, RetainedClosingFootprint};
+
 mod closing;
 #[cfg(test)]
 pub(crate) use closing::check_empty_footprint as check_empty_contract_write_footprint;
@@ -1083,7 +1086,7 @@ struct CertifiedFunctionClaimPath {
     exit_state: Option<ExecutionState>,
     entry_state: ExecutionState,
     required_resources: ResourceContext,
-    checked_required_resources: Vec<crate::kernel::functions::CheckedResourceFact>,
+    checked_required_resources: Arc<[crate::kernel::functions::CheckedResourceFact]>,
     entry_resources: ResourceContext,
     post_state: Option<ExecutionState>,
     post_resources: Option<ResourceContext>,
@@ -1091,6 +1094,7 @@ struct CertifiedFunctionClaimPath {
     effect_facts: ExecutionFacts,
     checked_resource_claims: Vec<FunctionContractClaimKey>,
     checked_resource_transition: bool,
+    effect_projection: Option<Arc<Result<FunctionMemoryEffectProjection, String>>>,
 }
 
 /// Diagnostic evidence from a failed contract path preparation. This carries
@@ -1166,16 +1170,6 @@ fn prepare_function_claim_path(
             .to_string()
             .into());
     };
-    // Closing uses the proof-owned outcome after its explicit resource
-    // operations. Execution-only callers retain their original body outcome.
-    let outcome = checked_outcome.unwrap_or(outcome);
-    // The exit's produced binders are held as the proof's exit holds them:
-    // one the body left unnamed takes the only instance of its family.
-    let adopted_outcome = crate::kernel::functions::exit_with_unheld_produced_binders_adopted(
-        function,
-        outcome.clone(),
-        &assumptions,
-    );
     let Some(entry_state) = program_function_entry_state(caller_state, function, arguments) else {
         return Err("the function entry state cannot be reconstructed"
             .to_string()
@@ -1235,6 +1229,92 @@ fn prepare_function_claim_path(
     for fact in &population_facts {
         assumptions = assumptions.assume_proposition(fact.clone());
     }
+    let Some(entry_resources) =
+        super::super::super::functions::expand_all_composite_resource_facts_at_state(
+            entry_state.resources(),
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )
+    else {
+        return Err("the entry resource context cannot be expanded"
+            .to_string()
+            .into());
+    };
+    // The contract's own folded field-bearing instances make the cells their
+    // unmatched bodies own readable, as they did while the clauses were
+    // evaluated; certification reads the entry through the same authority.
+    let entry_resources = with_unmatched_instance_body_views(
+        entry_resources,
+        required_resources.facts(),
+        function,
+        &entry_state,
+        &assumptions,
+    );
+    let Ok(resource_facts) = entry_resources.observable_facts(&assumptions) else {
+        return Err("the entry resource context is not observable"
+            .to_string()
+            .into());
+    };
+    entry_state = entry_state.with_resource_context(entry_resources.clone());
+    let facts = definition_facts
+        .into_iter()
+        .chain(population_facts)
+        .chain(resource_facts)
+        .collect::<Vec<_>>();
+    let entry = RetainedClosingEntry {
+        caller: caller_state.clone(),
+        arguments: arguments.to_vec(),
+        state: entry_state,
+        required: required_resources,
+        checked: checked_required_resources.into(),
+        assumptions,
+        facts: facts.into(),
+        projection: None,
+    };
+    prepare_closing_path(
+        function,
+        path,
+        &entry,
+        checked_outcome.unwrap_or(outcome),
+        checked_resource_claims,
+        checked_resource_transition,
+        deferred_contract_exit,
+        deferred_contract_exit_error,
+        checked_returned_resources,
+        capture_failure,
+        checked_transfer,
+    )
+}
+
+/// Complete the selected outcome against its retained entry input. Resource
+/// and effect checks remain ordinary goals; no entry clause is evaluated here.
+fn prepare_closing_path(
+    function: &ProgramFunction,
+    path: &SymbolicExecutionPath,
+    entry: &RetainedClosingEntry,
+    outcome: &FunctionOutcome,
+    checked_resource_claims: Vec<FunctionContractClaimKey>,
+    checked_resource_transition: bool,
+    deferred_contract_exit: bool,
+    deferred_contract_exit_error: Option<RuntimeError>,
+    checked_returned_resources: ResourceContext,
+    capture_failure: bool,
+    checked_transfer: Option<&crate::kernel::functions::CheckedBoundaryResourceTransfer>,
+) -> Result<CertifiedFunctionClaimPath, ContractPathPreparationFailure> {
+    let caller_state = &entry.caller;
+    let arguments = entry.arguments.as_slice();
+    let entry_state = entry.state.clone();
+    let required_resources = entry.required.clone();
+    let checked_required_resources = entry.checked.clone();
+    let entry_resources = entry.state.resources().clone();
+    let assumptions = entry.assumptions.clone();
+    let mut budget = ExecutionBudget::beside_live_state();
+    let adopted_outcome = crate::kernel::functions::exit_with_unheld_produced_binders_adopted(
+        function,
+        outcome.clone(),
+        &assumptions,
+    );
     let deferred_body_outcome = if deferred_contract_exit {
         match outcome {
             FunctionOutcome::Return { value, state } => {
@@ -1315,34 +1395,6 @@ fn prepare_function_claim_path(
         None
     };
     let outcome = resolved_outcome.as_ref().unwrap_or(outcome);
-    let Some(entry_resources) =
-        super::super::super::functions::expand_all_composite_resource_facts_at_state(
-            entry_state.resources(),
-            function.composite_resource_definitions(),
-            &entry_state,
-            &assumptions,
-        )
-    else {
-        return Err("the entry resource context cannot be expanded"
-            .to_string()
-            .into());
-    };
-    // The contract's own folded field-bearing instances make the cells their
-    // unmatched bodies own readable, as they did while the clauses were
-    // evaluated; certification reads the entry through the same authority.
-    let entry_resources = with_unmatched_instance_body_views(
-        entry_resources,
-        required_resources.facts(),
-        function,
-        &entry_state,
-        &assumptions,
-    );
-    let Ok(resource_facts) = entry_resources.observable_facts(&assumptions) else {
-        return Err("the entry resource context is not observable"
-            .to_string()
-            .into());
-    };
-    entry_state = entry_state.with_resource_context(entry_resources.clone());
     #[cfg(test)]
     let context_entries_before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
     // A verification condition may be local to one symbolic path. Branch
@@ -1359,15 +1411,13 @@ fn prepare_function_claim_path(
         // state and the assumable obligations, never the conditions whose
         // truth certification still needs to establish. Rebuilding it from
         // the path's facts would cost each path its whole history.
-        let post_assumptions = assumptions_with_propositions(post_assumptions, &definition_facts);
-        let post_assumptions = assumptions_with_propositions(&post_assumptions, &population_facts);
-        let post_assumptions = assumptions_with_propositions(&post_assumptions, &resource_facts);
+        let post_assumptions = assumptions_with_propositions(post_assumptions, &entry.facts);
         assumptions_with_path_context(&post_assumptions, &[], path.obligations())
     } else {
         // Keep the established resource-fact/path-fact precedence for legacy
         // producers and paths with observable entry-resource propositions.
         let execution_facts = path.execution_facts();
-        let assumptions = assumptions_with_propositions(&assumptions, &resource_facts);
+        let assumptions = assumptions_with_propositions(&assumptions, &entry.facts);
         assumptions_with_path_context(&assumptions, &execution_facts, path.obligations())
     };
     #[cfg(test)]
@@ -1407,6 +1457,7 @@ fn prepare_function_claim_path(
             effect_facts,
             checked_resource_claims,
             checked_resource_transition,
+            effect_projection: entry.projection.clone(),
         });
     }
     let (value, raw_exit_state, exceptional) = match &adopted_outcome {
@@ -1614,6 +1665,7 @@ fn prepare_function_claim_path(
         effect_facts,
         checked_resource_claims,
         checked_resource_transition,
+        effect_projection: entry.projection.clone(),
     })
 }
 
@@ -1702,6 +1754,7 @@ fn function_claim_holds_on_prepared_path(
         effect_facts,
         checked_resource_claims,
         checked_resource_transition,
+        effect_projection,
     } = path;
     let assumptions = checking_assumptions.unwrap_or(assumptions);
     let mut budget = ExecutionBudget::beside_live_state();
@@ -2005,17 +2058,27 @@ fn function_claim_holds_on_prepared_path(
             )
         }
         FunctionContractClaimTarget::Effect => {
-            let Ok(Ok(projection)) =
-                crate::kernel::functions::project_contract_memory_effects_with_guard_policy(
-                    entry_state,
-                    function.contract_interface(),
-                    Some(checked_required_resources),
-                    assumptions,
-                    &mut budget,
-                    true,
-                )
-            else {
-                return false;
+            let independent_projection;
+            let projection = if let Some(retained) = effect_projection {
+                let Ok(projection) = retained.as_ref() else {
+                    return false;
+                };
+                projection
+            } else {
+                let Ok(Ok(projection)) =
+                    crate::kernel::functions::project_contract_memory_effects_with_guard_policy(
+                        entry_state,
+                        function.contract_interface(),
+                        Some(checked_required_resources),
+                        assumptions,
+                        &mut budget,
+                        true,
+                    )
+                else {
+                    return false;
+                };
+                independent_projection = projection;
+                &independent_projection
             };
             let mutable_ranges = projection.ranges().to_vec();
             // A footprint that reaches unnamed memory covers every write.
@@ -2405,13 +2468,6 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         outcome: &FunctionOutcome,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        let FunctionOutcome::Return {
-            value,
-            state: return_state,
-        } = outcome
-        else {
-            return None;
-        };
         let mut entry_state = contract_view_of_entry(
             program_function_entry_state(caller_state, function, arguments)?,
             function,
@@ -2425,6 +2481,38 @@ impl<'a> FunctionEnsureGoalContext<'a> {
                 assumptions,
             )?;
         entry_state = entry_state.with_resource_context(expanded_entry_resources);
+        Self::at_entry(function, caller_state, entry_state, outcome, assumptions)
+    }
+
+    pub(crate) fn from_retained_entry(
+        function: &'a ProgramFunction,
+        entry: &RetainedClosingEntry,
+        outcome: &FunctionOutcome,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        Self::at_entry(
+            function,
+            &entry.caller,
+            entry.state.clone(),
+            outcome,
+            assumptions,
+        )
+    }
+
+    fn at_entry(
+        function: &'a ProgramFunction,
+        caller_state: &ExecutionState,
+        entry_state: ExecutionState,
+        outcome: &FunctionOutcome,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let FunctionOutcome::Return {
+            value,
+            state: return_state,
+        } = outcome
+        else {
+            return None;
+        };
         let exit_memory = crate::kernel::functions::function_exit_memory(
             caller_state,
             return_state,
@@ -2550,14 +2638,6 @@ pub(crate) fn program_function_exceptional_ensure_goals(
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ContractClaimGoal>> {
-    let ensure = function.exceptional_ensures().get(contract_index)?;
-    let FunctionOutcome::Throw {
-        value,
-        state: throw_state,
-    } = outcome
-    else {
-        return None;
-    };
     let mut entry_state = contract_view_of_entry(
         program_function_entry_state(caller_state, function, arguments)?,
         function,
@@ -2570,6 +2650,40 @@ pub(crate) fn program_function_exceptional_ensure_goals(
         assumptions,
     )?;
     entry_state = entry_state.with_resource_context(expanded_entry_resources);
+    exceptional_goals_at_entry(function, contract_index, entry_state, outcome, assumptions)
+}
+
+pub(crate) fn program_function_exceptional_ensure_goals_from_entry(
+    function: &ProgramFunction,
+    contract_index: usize,
+    entry: &RetainedClosingEntry,
+    outcome: &FunctionOutcome,
+    assumptions: &PureFactContext,
+) -> Option<Vec<ContractClaimGoal>> {
+    exceptional_goals_at_entry(
+        function,
+        contract_index,
+        entry.state.clone(),
+        outcome,
+        assumptions,
+    )
+}
+
+fn exceptional_goals_at_entry(
+    function: &ProgramFunction,
+    contract_index: usize,
+    entry_state: ExecutionState,
+    outcome: &FunctionOutcome,
+    assumptions: &PureFactContext,
+) -> Option<Vec<ContractClaimGoal>> {
+    let ensure = function.exceptional_ensures().get(contract_index)?;
+    let FunctionOutcome::Throw {
+        value,
+        state: throw_state,
+    } = outcome
+    else {
+        return None;
+    };
     let mut post_state = entry_state
         .clone()
         .with_memory(throw_state.memory().clone());

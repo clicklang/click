@@ -1603,7 +1603,7 @@ fn execute_function_paths(
         function,
         "verification argument evaluation",
         || {
-            evaluate_program_arguments_paths(
+            evaluate_retained_program_arguments_paths(
                 state,
                 arguments,
                 assumptions,
@@ -1626,10 +1626,15 @@ fn execute_function_paths(
             &arguments_path.facts,
             &arguments_path.obligations,
         );
+        let native_arguments = arguments_path
+            .values
+            .iter()
+            .map(|value| value.native().into_owned())
+            .collect::<Vec<_>>();
         if let Some(undefined_behavior) = freed_pointer_argument_conversion(
             state,
             function.contract_interface(),
-            &arguments_path.values,
+            &native_arguments,
             &path_assumptions,
         ) {
             paths.push(FunctionPath::new(
@@ -1643,7 +1648,7 @@ fn execute_function_paths(
             state,
             function.name(),
             function.contract_interface(),
-            &arguments_path.values,
+            &native_arguments,
             &path_assumptions,
         ) {
             paths.push(FunctionPath::new(
@@ -1655,21 +1660,25 @@ fn execute_function_paths(
         }
         let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
             function,
-            &arguments_path.values,
+            &native_arguments,
             &arguments_path.obligations,
             &path_assumptions,
         ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                    argument_binding_error(function, &arguments_path.values).to_string(),
+                    argument_binding_error(function, &native_arguments).to_string(),
                 )),
                 arguments_path.facts,
                 arguments_path.obligations,
             ));
             continue;
         };
-        let Some(callee_state) = bind_program_function_arguments(state, function, &argument_values)
-        else {
+        let Some(callee_state) = bind_program_function_arguments_retained(
+            state,
+            function,
+            &argument_values,
+            &arguments_path.values,
+        ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     argument_binding_error(function, &argument_values).to_string(),
@@ -2046,7 +2055,7 @@ pub(super) fn execute_program_function_call_paths(
     }
 
     let mut paths = Vec::new();
-    for arguments_path in evaluate_program_arguments_paths(
+    for arguments_path in evaluate_retained_program_arguments_paths(
         caller_state,
         arguments,
         assumptions,
@@ -2067,10 +2076,15 @@ pub(super) fn execute_program_function_call_paths(
             &arguments_path.facts,
             &arguments_path.obligations,
         );
+        let native_arguments = arguments_path
+            .values
+            .iter()
+            .map(|value| value.native().into_owned())
+            .collect::<Vec<_>>();
         if let Some(undefined_behavior) = freed_pointer_argument_conversion(
             caller_state,
             function.contract_interface(),
-            &arguments_path.values,
+            &native_arguments,
             &path_assumptions,
         ) {
             paths.push(FunctionPath::new(
@@ -2084,7 +2098,7 @@ pub(super) fn execute_program_function_call_paths(
             caller_state,
             function.name(),
             function.contract_interface(),
-            &arguments_path.values,
+            &native_arguments,
             &path_assumptions,
         ) {
             paths.push(FunctionPath::new(
@@ -2096,13 +2110,13 @@ pub(super) fn execute_program_function_call_paths(
         }
         let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
             function,
-            &arguments_path.values,
+            &native_arguments,
             &arguments_path.obligations,
             &path_assumptions,
         ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                    argument_binding_error(function, &arguments_path.values).to_string(),
+                    argument_binding_error(function, &native_arguments).to_string(),
                 )),
                 arguments_path.facts,
                 arguments_path.obligations,
@@ -2122,9 +2136,12 @@ pub(super) fn execute_program_function_call_paths(
             ));
             continue;
         }
-        let Some(callee_state) =
-            bind_program_function_arguments(caller_state, function, &argument_values)
-        else {
+        let Some(callee_state) = bind_program_function_arguments_retained(
+            caller_state,
+            function,
+            &argument_values,
+            &arguments_path.values,
+        ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     argument_binding_error(function, &argument_values).to_string(),
@@ -3059,7 +3076,7 @@ fn execute_verified_function_applications_with_suspension(
             false => None,
         };
     let mut paths = Vec::new();
-    'arguments: for arguments_path in evaluate_program_arguments_paths(
+    'arguments: for arguments_path in evaluate_retained_program_arguments_paths(
         caller_state,
         arguments,
         assumptions,
@@ -4803,7 +4820,7 @@ fn execute_verified_function_applications_with_suspension(
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = FunctionOutcome::Return {
-            value: result.into(),
+            value: ExecutionValue::from(result).retain_pointer_result().into(),
             state: Box::new(return_state),
         };
         if let Some(function) = evidence {
@@ -5106,7 +5123,7 @@ fn prepare_verified_function_call<'a>(
     application: FunctionContractApplication<'a>,
     candidate_ordinal: usize,
     source_arguments: &[ProgramExpression],
-    arguments_path: ArgumentsPath,
+    arguments_path: ArgumentsPath<ExecutionValue>,
     require_established: bool,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
@@ -5155,10 +5172,15 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.facts,
         &arguments_path.obligations,
     );
+    let native_arguments = arguments_path
+        .values
+        .iter()
+        .map(|value| value.native().into_owned())
+        .collect::<Vec<_>>();
     if let Some(undefined_behavior) = freed_pointer_argument_conversion(
         caller_state,
         contract_interface,
-        &arguments_path.values,
+        &native_arguments,
         &path_assumptions,
     ) {
         return Ok(Err(FunctionPath::new(
@@ -5171,7 +5193,7 @@ fn prepare_verified_function_call<'a>(
         caller_state,
         application.name,
         contract_interface,
-        &arguments_path.values,
+        &native_arguments,
         &path_assumptions,
     ) {
         return Ok(Err(FunctionPath::new(
@@ -5182,7 +5204,7 @@ fn prepare_verified_function_call<'a>(
     }
     let Some((mut argument_values, argument_obligations)) = coerce_contract_arguments(
         contract_interface,
-        &arguments_path.values,
+        &native_arguments,
         &arguments_path.obligations,
         &path_assumptions,
     ) else {
@@ -5191,7 +5213,7 @@ fn prepare_verified_function_call<'a>(
                 contract_argument_binding_error(
                     contract_interface,
                     application.name,
-                    &arguments_path.values,
+                    &native_arguments,
                 ),
             )),
             arguments_path.facts,
@@ -5229,6 +5251,7 @@ fn prepare_verified_function_call<'a>(
         contract_interface,
         &argument_values,
         application.storage,
+        &arguments_path.values,
     ) else {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(

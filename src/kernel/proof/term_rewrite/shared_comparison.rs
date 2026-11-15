@@ -240,7 +240,9 @@ impl TermRewrite<'_> {
                     )
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
-                KernelTermNode::Legacy(_) | KernelTermNode::Call { .. } => {
+                KernelTermNode::Legacy(_)
+                | KernelTermNode::Call { .. }
+                | KernelTermNode::PointerAddress { .. } => {
                     let original = term
                         .machine_conversion_leaf()
                         .expect("retained native operand");

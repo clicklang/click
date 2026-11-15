@@ -83,3 +83,117 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
         }
     }
 }
+
+#[test]
+fn pointer_branch_handoffs_retain_selected_dags_without_export() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let value = SharedPointerValue::import(&PointerValue::new(
+        Pointer::symbolic(Variable(1026300)),
+        ProgramType::Int32Pointer,
+    ));
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Integer, Variable(1026301 + i)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut argument =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1026900));
+            for _ in 0..size {
+                argument = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [argument.clone(), argument],
+                );
+            }
+            let root = KernelTerm::shared_pointer_call(
+                KernelTerm::checked_call(
+                    KernelType::Program(ProgramType::Int32Pointer),
+                    "selected".into(),
+                    vec![argument],
+                ),
+                value.clone(),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut value = ExecutionValue::Shared(root.clone());
+                for _ in 0..32 {
+                    value = value.retain_pointer_result();
+                }
+                value
+            });
+            assert_eq!(result.shared(), Some(&root));
+            assert_eq!(work, 0, "size={size} unrelated={unrelated}");
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+}
+
+#[test]
+fn pointer_local_bindings_preserve_prepared_dags_at_constant_work() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let payload = SharedPointerValue::import(&PointerValue::new(
+        Pointer::symbolic(Variable(1027200)),
+        ProgramType::Int32Pointer,
+    ));
+    for unrelated in [0, 128, 512] {
+        let mut state = ExecutionState::new();
+        for n in 0..unrelated {
+            state.locals.set_typed(
+                format!("unrelated_{n}"),
+                ProgramValue::Int32(MachineTerm::constant(n)),
+                ProgramType::Int32,
+            );
+        }
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let mut argument =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1027201));
+            for _ in 0..size {
+                argument = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [argument.clone(), argument],
+                );
+            }
+            let root = KernelTerm::shared_pointer_call(
+                KernelTerm::checked_call(
+                    KernelType::Program(ProgramType::Int32Pointer),
+                    "local_source".into(),
+                    vec![argument],
+                ),
+                payload.clone(),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for n in 0..32 {
+                    state.locals.set_retained_typed_with_all_qualifiers(
+                        "selected",
+                        ExecutionValue::Shared(root.clone()),
+                        ProgramType::Int32Pointer,
+                        false,
+                        n % 2 == 0,
+                        false,
+                        n % 3 == 0,
+                    );
+                    assert!(matches!(
+                        state
+                            .locals
+                            .get("selected")
+                            .unwrap()
+                            .shared()
+                            .unwrap()
+                            .node(),
+                        KernelTermNode::PointerCall { .. }
+                    ));
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work < 4096, "size={size} unrelated={unrelated} work={work}");
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+    }
+}

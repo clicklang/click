@@ -39,6 +39,7 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                 // below with one query-local seen set.
                 KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::Legacy(_)
+                | KernelTermNode::PointerAddress { .. }
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::Fold(_)
                 | KernelTermNode::Match(_) => PersistentSet::default(),

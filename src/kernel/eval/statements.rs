@@ -645,9 +645,10 @@ fn write_program_lvalue_paths_without_local_reference(
         ) {
         value
     } else {
-        let Some(value) = crate::kernel::functions::coerce_program_value_with_pointee_constant(
+        let Some(converted) = crate::kernel::functions::coerce_program_value_with_pointee_constant(
             value
-                .into_native()
+                .native()
+                .into_owned()
                 .with_pointer_pointee_volatile(pointee_volatile),
             lvalue.value_type,
             pointee_constant,
@@ -660,7 +661,11 @@ fn write_program_lvalue_paths_without_local_reference(
                 obligations,
             )]);
         };
-        value.into()
+        if converted.program_type().is_pointer() {
+            value.retain_checked_pointer(converted)
+        } else {
+            converted.into()
+        }
     };
 
     let lvalue_access_designation = lvalue.designation.as_deref().map(|root| {
@@ -3101,9 +3106,12 @@ fn execute_program_return_expression_paths(
             obligations,
         } = expression_path;
         match outcome {
-            ExpressionOutcome::Value(ExecutionValue::Native(ProgramValue::Pointer(pointer)))
-                if state.memory.heap.pending_allocations.contains_key(&pointer) =>
+            ExpressionOutcome::Value(value)
+                if value.pointer().is_some_and(|pointer| {
+                    state.memory.heap.pending_allocations.contains_key(pointer)
+                }) =>
             {
+                let pointer = value.pointer().expect("pending pointer result").clone();
                 for truthiness_path in pending_allocation_outcome_paths(
                     pointer.pointer().clone(),
                     facts,

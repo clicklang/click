@@ -18,13 +18,8 @@ pub(crate) struct ContractClosingContext {
     resource_keys: Arc<BTreeSet<FunctionContractClaimKey>>,
     complete_boundary: bool,
     effect_claims: Vec<FunctionContractClaim>,
-    entry: OnceLock<Result<ClosingEntry, String>>,
-}
-
-struct ClosingEntry {
-    state: ExecutionState,
-    resources: Option<Arc<[CheckedResourceFact]>>,
-    projection: FunctionMemoryEffectProjection,
+    retained_entry: Option<Arc<PreparedContractEntryCases>>,
+    entry: OnceLock<Result<RetainedClosingFootprint, String>>,
 }
 
 impl ContractClosingContext {
@@ -74,6 +69,10 @@ impl ContractClosingContext {
             resource_claims,
             resource_keys,
             complete_boundary: resource_prefix >= execution.function.resource_ensures().len(),
+            retained_entry: execution
+                .entry_authority
+                .as_ref()
+                .map(|authority| authority.cases().clone()),
             entry: OnceLock::new(),
         })
     }
@@ -93,7 +92,13 @@ impl ContractClosingContext {
         }
     }
 
-    fn entry(&self) -> Result<&ClosingEntry, ContractClosingRefusal> {
+    fn entry(&self) -> Result<&RetainedClosingFootprint, ContractClosingRefusal> {
+        if let Some(entry) = &self.retained_entry {
+            return Ok(entry
+                .closing_footprint
+                .get()
+                .expect("opening the entry prepared its footprint"));
+        }
         self.entry
             .get_or_init(|| {
                 let state = match &self.checked_entry {
@@ -131,10 +136,11 @@ impl ContractClosingContext {
                     &mut budget,
                 )
                 .map_err(|limit| limit.describe().to_string())??;
-                Ok(ClosingEntry {
+                Ok(RetainedClosingFootprint {
                     state,
                     resources,
-                    projection,
+                    entry_assumptions: self.entry_assumptions.clone(),
+                    projection: OnceLock::from(Ok(projection)),
                 })
             })
             .as_ref()
@@ -470,8 +476,13 @@ impl ContractExitObligations {
             return Ok(Vec::new());
         }
         let independent_cases;
-        let cases = if deferred {
-            if let Some(entry) = &execution.prepared_entry_cases {
+        let retained_cases = execution
+            .entry_authority
+            .as_ref()
+            .map(|authority| authority.cases());
+        let cases = if deferred || retained_cases.is_some() && !context.effect_claims.is_empty() {
+            if let Some(authority) = &execution.entry_authority {
+                let entry = authority.cases();
                 &entry.guard_cases
             } else {
                 // The independent conditional execution API has no opened
@@ -518,7 +529,7 @@ impl ContractExitObligations {
             }
         }
         let mut effect_paths = Vec::new();
-        for case in cases {
+        for (case_index, case) in cases.iter().enumerate() {
             let mut path = path.clone();
             path.assumptions = assumptions_with_propositions(&path.assumptions, case);
             let post = assumptions_with_propositions(facts.assumptions(), case);
@@ -526,22 +537,47 @@ impl ContractExitObligations {
                 continue;
             }
             path.post_assumptions = Some(post);
-            let prepared = prepare_function_claim_path(
-                &context.function,
-                &path,
-                checked_claims.clone(),
-                false,
-                deferred,
-                execution
-                    .deferred_contract_exit_errors
-                    .get(self.path_index)
-                    .cloned()
-                    .flatten(),
-                returned.clone(),
-                false,
-                execution.boundary_transfer.as_deref(),
-                Some(&checked_outcome),
-            )
+            let prepared = if let Some(entry) = retained_cases {
+                let selected = if deferred || !context.effect_claims.is_empty() {
+                    &entry.cases[case_index].closing_entry
+                } else {
+                    &entry.closing_entry
+                };
+                prepare_closing_path(
+                    &context.function,
+                    &path,
+                    selected,
+                    &checked_outcome,
+                    checked_claims.clone(),
+                    false,
+                    deferred,
+                    execution
+                        .deferred_contract_exit_errors
+                        .get(self.path_index)
+                        .cloned()
+                        .flatten(),
+                    returned.clone(),
+                    false,
+                    execution.boundary_transfer.as_deref(),
+                )
+            } else {
+                prepare_function_claim_path(
+                    &context.function,
+                    &path,
+                    checked_claims.clone(),
+                    false,
+                    deferred,
+                    execution
+                        .deferred_contract_exit_errors
+                        .get(self.path_index)
+                        .cloned()
+                        .flatten(),
+                    returned.clone(),
+                    false,
+                    execution.boundary_transfer.as_deref(),
+                    Some(&checked_outcome),
+                )
+            }
             .map_err(|failure| ContractClosingRefusal::Resource(failure.reason))?;
             match &prepared.outcome {
                 FunctionOutcome::RuntimeError(error) => {
@@ -663,7 +699,11 @@ impl ContractExitObligations {
                     effects,
                     assumptions,
                     entry.resources.as_deref(),
-                    Some(&entry.projection),
+                    Some(
+                        entry
+                            .projection(function)
+                            .map_err(ContractClosingRefusal::Resource)?,
+                    ),
                 )
                 .map_err(|limit| ContractClosingRefusal::Resource(limit.describe().to_string()))?
                 {

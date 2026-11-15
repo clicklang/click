@@ -3270,11 +3270,32 @@ pub(super) fn raise_kernel_term(
                 }],
             }
         }
-        Node::PointerRead { value, .. } => {
+        Node::PointerCall { call, .. } => recurse(call)?,
+        Node::ArrayReference {
+            memory, pointer, ..
+        } => {
+            if *memory == crate::kernel::intern_memory_ref(state.memory()) {
+                recurse(pointer)?
+            } else {
+                let entry = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())?;
+                if *memory != crate::kernel::intern_memory_ref(entry.memory()) {
+                    return None;
+                }
+                SurfaceTerm::Old(Box::new(raise_kernel_term(
+                    pointer,
+                    parameter_binding,
+                    &entry,
+                    bound_variables,
+                )?))
+            }
+        }
+        Node::PointerRead { value, .. }
+        | Node::PointerArithmetic { value, .. }
+        | Node::PointerValue(value) => {
             if let Some(name) = pointer_names::shared_name(value) {
                 SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name))
             } else {
-                synthesize_surface_value(term.pointer_read_native()?, parameter_binding, state)?
+                synthesize_surface_value(term.pointer_native()?, parameter_binding, state)?
             }
         }
         Node::Legacy(legacy) => match legacy.value() {
@@ -3330,6 +3351,19 @@ pub(super) fn raise_kernel_term(
             }
         }
         Node::MachineUnary { operand, .. } => SurfaceTerm::BitwiseNot(Box::new(recurse(operand)?)),
+        Node::PointerAddress { .. } => {
+            let expression = synthesize_surface_bitvector(
+                term.machine_conversion_leaf()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            if term.ty() == &crate::kernel::KernelType::Program(ProgramType::Int64) {
+                synthesize_observation_operand(expression, ProgramType::Int64)?
+            } else {
+                expression
+            }
+        }
         Node::MemoryLoad { .. } => synthesize_surface_bitvector(
             term.machine_read_leaf()?,
             parameter_binding,

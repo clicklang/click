@@ -3172,6 +3172,9 @@ impl CheckedFunctionEntry {
                 })??,
             )
         };
+        if let (Some(cases), Some(transfer)) = (&cases, &boundary_transfer) {
+            cases.retain_closing_footprint(transfer, &assumptions);
+        }
         let entry = Self {
             cases,
             caller_state: caller_state.clone(),
@@ -3227,9 +3230,23 @@ impl CheckedFunctionEntry {
     }
 }
 
+/// Authority retained only by an execution composed under its opened entry's
+/// own premises. Separate clause proofs share this generative entry identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ContractEntryAuthority {
+    cases: Arc<crate::kernel::PreparedContractEntryCases>,
+}
+
+impl ContractEntryAuthority {
+    pub(crate) fn cases(&self) -> &Arc<crate::kernel::PreparedContractEntryCases> {
+        &self.cases
+    }
+}
+
 /// The contract entry opened before a body proof. The producer selects its
 /// premises and constructs the state and resource transfer together; retaining
 /// it never asks the body proof to reconstruct or authorize its own inputs.
+#[derive(Clone)]
 pub(crate) struct OpenedContractEntry {
     entry: Arc<CheckedFunctionEntry>,
     facts: ProofFacts,
@@ -3317,6 +3334,10 @@ impl OpenedContractEntry {
             source_origins,
             cases,
         })
+    }
+
+    pub(crate) fn caller_state(&self) -> &ExecutionState {
+        self.entry.caller_state()
     }
 
     pub(crate) fn prepared_cases(&self) -> &Arc<crate::kernel::PreparedContractEntryCases> {
@@ -11427,6 +11448,14 @@ impl ExecutionProofCore {
                  function but was certified without its recursion anchor",
             );
         }
+        // An opened contract owns its premises. Caller-proposed facts cannot
+        // strengthen that root judgment; derived and case facts must travel
+        // through the checked trace instead.
+        let contract_entry = self
+            .function_entry
+            .as_ref()
+            .filter(|entry| entry.cases.is_some());
+        let assumptions = contract_entry.map_or(assumptions, |entry| entry.assumptions.clone());
         let (paths, has_checked_entry, deferred_contract_exits, deferred_contract_exit_errors) =
             self.checked_execution_paths(
                 candidates,
@@ -11437,10 +11466,11 @@ impl ExecutionProofCore {
             )?;
         let path_count = paths.len();
         Ok(crate::kernel::CheckedFunctionExecution {
-            prepared_entry_cases: self
-                .function_entry
-                .as_ref()
-                .and_then(|entry| entry.cases.clone()),
+            entry_authority: has_checked_entry
+                .then_some(contract_entry)
+                .flatten()
+                .and_then(|entry| entry.cases.clone())
+                .map(|cases| ContractEntryAuthority { cases }),
             closed_exit_obligations: vec![None; path_count],
             proof_candidates: Some(candidates.clone()),
             state: candidates.state().clone(),
@@ -11573,11 +11603,13 @@ impl ExecutionProofCore {
         {
             return Err("a proof-case partition is not exhausted by the retained traces");
         }
-        if !crate::kernel::api::proof_evidence_function_refines_same_source(
-            candidates.function(),
-            checked_function,
-        ) {
-            return Err("the checked function does not refine the published function's source");
+        if !candidates
+            .function()
+            .has_same_entry_and_source(checked_function)
+        {
+            return Err(
+                "the checked function does not preserve the published function's entry and source",
+            );
         }
         let function = checked_function;
         let range = match selected {

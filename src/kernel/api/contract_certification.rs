@@ -24,6 +24,8 @@ pub(crate) struct PreparedContractEntryCases {
     pub(super) arguments: Vec<ProgramExpression>,
     pub(super) byte_order: Proposition,
     pub(super) raw_entry_state: ExecutionState,
+    pub(super) closing_entry: Arc<RetainedClosingEntry>,
+    closing_footprint: std::sync::OnceLock<RetainedClosingFootprint>,
     pub(super) cases: Vec<PreparedContractEntryCase>,
 }
 
@@ -31,6 +33,7 @@ pub(crate) struct PreparedContractEntryCases {
 pub(super) struct PreparedContractEntryCase {
     pub(super) assumptions: PureFactContext,
     pub(super) entry_state: ExecutionState,
+    pub(super) closing_entry: Arc<RetainedClosingEntry>,
 }
 
 impl std::fmt::Debug for PreparedContractEntryCases {
@@ -58,6 +61,106 @@ impl PreparedContractEntryCases {
     pub(crate) fn caller_state(&self) -> &ExecutionState {
         &self.state
     }
+
+    pub(crate) fn closing_entry(&self) -> &RetainedClosingEntry {
+        &self.closing_entry
+    }
+
+    pub(crate) fn retain_closing_footprint(
+        &self,
+        transfer: &crate::kernel::functions::CheckedBoundaryResourceTransfer,
+        assumptions: &PureFactContext,
+    ) {
+        let footprint = RetainedClosingFootprint::from_transfer(transfer, assumptions);
+        let _ = self.closing_footprint.set(footprint);
+    }
+}
+
+/// Consume executions produced by this opened entry. Their root premises and
+/// entry representation were fixed by the producer; no premise authorization,
+/// resource rebasing, or execution-metadata reconstruction occurs here.
+fn execution_from_owned_contract_entry(
+    entry: &Arc<PreparedContractEntryCases>,
+    artifacts: &[CheckedFunctionExecution],
+) -> FunctionContractExecution {
+    let selected = artifacts
+        .iter()
+        .filter(|artifact| {
+            crate::instrumentation::record_deterministic_work(1);
+            artifact
+                .entry_authority
+                .as_ref()
+                .is_some_and(|authority| Arc::ptr_eq(authority.cases(), entry))
+        })
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return FunctionContractExecution::failed(
+            "the contract has no execution produced by its opened entry".into(),
+        );
+    }
+    let cases = entry
+        .cases
+        .iter()
+        .map(|_| {
+            selected
+                .iter()
+                .map(|checked| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    ContractPathSet {
+                        closed_exit_obligations: checked.closed_exit_obligations.clone(),
+                        boundary_transfers: vec![
+                            checked.boundary_transfer().cloned();
+                            checked.execution.paths.len()
+                        ],
+                        paths: checked.execution.paths.clone(),
+                        checked_resource_claims: checked.checked_resource_claims.clone(),
+                        checked_resource_transitions: checked.checked_resource_transitions.clone(),
+                        deferred_contract_exits: checked.deferred_contract_exits.clone(),
+                        deferred_contract_exit_errors: checked
+                            .deferred_contract_exit_errors
+                            .clone(),
+                        checked_returned_resources: checked.checked_returned_resources.clone(),
+                        completion_origin_state: Some(checked.state.clone()),
+                        completion_path_origins: checked
+                            .execution
+                            .paths
+                            .iter()
+                            .map(|path| path.theorem.clone())
+                            .collect(),
+                    }
+                })
+                .collect()
+        })
+        .collect::<Vec<_>>();
+    let mut checked_call_events = crate::kernel::proof::CheckedCallEvents::default();
+    let mut applied_tactics = BTreeSet::new();
+    for artifact in &selected {
+        checked_call_events.extend(&artifact.checked_call_events);
+        applied_tactics.extend(artifact.applied_tactics.iter().cloned());
+    }
+    FunctionContractExecution {
+        pointer_result: super::super::object_types::execution_pointer_result(&cases),
+        cases,
+        reuse_diagnostic: None,
+        reuse_unauthorized_premise: None,
+        reuse_entry_resources: vec![],
+        reuse_context_facts: vec![],
+        checked_call_events,
+        loop_semantics: if selected
+            .iter()
+            .all(|artifact| artifact.execution_semantics.loops == LoopSemantics::ApplyVerifiedRules)
+        {
+            LoopSemantics::ApplyVerifiedRules
+        } else {
+            LoopSemantics::Verify
+        },
+        applied_tactics,
+        checked_callees: super::super::termination::merge_checked_callees(
+            selected
+                .iter()
+                .map(|artifact| artifact.checked_callees.as_ref()),
+        ),
+    }
 }
 
 pub(crate) fn prepare_function_contract_entry_cases(
@@ -67,12 +170,36 @@ pub(crate) fn prepare_function_contract_entry_cases(
     let ContractEntry {
         subject,
         assumptions,
+        facts,
+        resources,
         ..
     } = entry;
     let state = &subject.state;
     let function = &subject.function;
     let arguments = &subject.arguments;
     let base_assumptions = assumptions.assume_proposition(byte_order.clone());
+    let closing_facts = facts
+        .iter()
+        .filter(|fact| {
+            matches!(
+                fact.origin(),
+                ContractEntryFactOrigin::CompositeDefinition
+                    | ContractEntryFactOrigin::PopulationFact
+                    | ContractEntryFactOrigin::Observable
+            )
+        })
+        .map(|fact| fact.proposition().clone())
+        .collect();
+    let closing_entry = Arc::new(RetainedClosingEntry::from_producer(
+        state.clone(),
+        function,
+        arguments.to_vec(),
+        resources.state,
+        resources.required,
+        resources.checked,
+        base_assumptions.clone(),
+        closing_facts,
+    ));
     let resource_condition_cases = contract_resource_condition_cases(
         state,
         function,
@@ -103,9 +230,12 @@ pub(crate) fn prepare_function_contract_entry_cases(
             .ok_or("could not expand the composite resources of the contract entry state")?;
             raw_entry_state.clone().with_resource_context(resources)
         };
+        let closing_case =
+            Arc::new(closing_entry.for_case(function, entry_state.clone(), assumptions.clone()));
         cases.push(PreparedContractEntryCase {
             assumptions,
             entry_state,
+            closing_entry: closing_case,
         });
     }
     Ok(PreparedContractEntryCases {
@@ -116,6 +246,8 @@ pub(crate) fn prepare_function_contract_entry_cases(
         arguments: arguments.to_vec(),
         byte_order,
         raw_entry_state,
+        closing_entry,
+        closing_footprint: std::sync::OnceLock::new(),
         cases,
     })
 }
@@ -1306,7 +1438,14 @@ pub struct ContractEntry {
     /// The propositions of `facts`, for membership.
     stated: BTreeSet<Proposition>,
     /// The entry state holding the contract's expanded entry resources.
-    resource_state: ExecutionState,
+    resources: ContractEntryResources,
+}
+
+#[derive(Clone, Debug)]
+struct ContractEntryResources {
+    state: ExecutionState,
+    required: ResourceContext,
+    checked: Arc<[crate::kernel::functions::CheckedResourceFact]>,
 }
 
 impl ContractEntry {
@@ -1337,8 +1476,8 @@ impl ContractEntry {
     fn resources_supply(&self, proposition: &Proposition) -> bool {
         matches!(proposition, Proposition::MemoryLoadable { .. })
             && resources_certify_loadability(
-                &self.resource_state,
-                self.resource_state.resources(),
+                &self.resources.state,
+                self.resources.state.resources(),
                 proposition,
                 &self.assumptions,
             )
@@ -1352,7 +1491,7 @@ pub fn program_function_contract_entry(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
 ) -> Result<ContractEntry, String> {
-    let (assumptions, facts, resource_state) =
+    let (assumptions, facts, resources) =
         program_function_contract_entry_facts(caller_state, function, arguments)?;
     let predicate_bodies = function
         .contract_requires()
@@ -1421,7 +1560,7 @@ pub fn program_function_contract_entry(
         assumptions,
         facts: entry_facts.0,
         stated,
-        resource_state,
+        resources,
     })
 }
 
@@ -1433,7 +1572,14 @@ fn program_function_contract_entry_facts(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-) -> Result<(PureFactContext, Vec<ContractEntryFact>, ExecutionState), String> {
+) -> Result<
+    (
+        PureFactContext,
+        Vec<ContractEntryFact>,
+        ContractEntryResources,
+    ),
+    String,
+> {
     let mut assumptions = PureFactContext::new();
     let mut entry_facts = ContractEntryFactLog(Vec::new());
     if let Some(message) =
@@ -2191,7 +2337,15 @@ fn program_function_contract_entry_facts(
             proposition,
         );
     }
-    Ok((assumptions, entry_facts.0, entry_state))
+    Ok((
+        assumptions,
+        entry_facts.0,
+        ContractEntryResources {
+            state: entry_state,
+            required: required_resources,
+            checked: required_entry_clauses.into(),
+        },
+    ))
 }
 
 pub(super) fn instantiate_contract_predicate_unfolding(
@@ -3592,7 +3746,7 @@ mod scaling_tests {
 mod prepared_entry_cases_tests {
     use super::*;
 
-    fn fixture(
+    pub(super) fn fixture(
         guards: usize,
         unrelated: usize,
     ) -> (ExecutionState, ProgramFunction, Vec<ProgramExpression>) {
@@ -3746,5 +3900,163 @@ mod prepared_entry_cases_tests {
 
     mod scaling_tests {
         include!("../../scaling_tests/kernel/api/contract_certification/prepared_entry_cases.rs");
+    }
+}
+
+#[cfg(test)]
+mod entry_authority_tests {
+    use super::*;
+    use crate::kernel::proof::OpenedContractEntry;
+
+    fn checked_execution(
+        unrelated: usize,
+        extra_premise: Option<Proposition>,
+    ) -> Result<(Arc<PreparedContractEntryCases>, CheckedFunctionExecution), &'static str> {
+        checked_execution_with_subject(unrelated, extra_premise, false)
+    }
+
+    fn checked_execution_with_subject(
+        unrelated: usize,
+        extra_premise: Option<Proposition>,
+        replace_entry_status: bool,
+    ) -> Result<(Arc<PreparedContractEntryCases>, CheckedFunctionExecution), &'static str> {
+        let function = program_function(
+            ProgramType::Void,
+            "entry_authority",
+            vec![],
+            ProgramStatement::Skip,
+        )
+        .with_contract(
+            (0..unrelated)
+                .map(|i| SpecProposition::Predicate {
+                    name: format!("requirement_{i}"),
+                    arguments: vec![],
+                    resource_state_dependent: false,
+                })
+                .collect(),
+            vec![],
+            vec![],
+            vec![FunctionContractClaim::body_safety()],
+            true,
+        );
+        let caller = ExecutionState::new();
+        let environment = ExecutionEnvironment::new();
+        let opened = OpenedContractEntry::open(
+            &caller,
+            &function,
+            &[],
+            &Vec::<Proposition>::new(),
+            &environment,
+        )
+        .unwrap();
+        let entry = opened.prepared_cases().clone();
+        let state = opened.entry_state().clone();
+        let mut assumptions = opened.facts().assumptions().clone();
+        let theorem = Proposition::ProgramStatementVerifies {
+            state: Box::new(state.clone()),
+            statement: Box::new(ProgramStatement::Skip),
+            outcome: StatementOutcome::Normal(Box::new(state.clone())),
+        };
+        let mut core = opened.into_execution_core();
+        core.record_statement_transition(
+            &function,
+            &[],
+            Theorem::new(theorem),
+            assumptions.clone(),
+            &[],
+            &[],
+        )
+        .map_err(|refusal| refusal.reason)?;
+        let (outcome, obligations) = program_function_outcome_from_statement_outcome(
+            &caller,
+            &function,
+            StatementOutcome::Return {
+                value: ProgramValue::Void.into(),
+                state: Box::new(state),
+            },
+            vec![],
+            &assumptions,
+        );
+        let candidates = program_function_execution_candidates_from_outcomes(
+            caller,
+            function.clone(),
+            vec![],
+            vec![(outcome, vec![], obligations)],
+        );
+        if let Some(premise) = extra_premise {
+            assumptions = assumptions.assume_proposition(premise);
+        }
+        let subject = if replace_entry_status {
+            function.clone().with_program_entry()
+        } else {
+            function.clone()
+        };
+        let checked = core.checked_function_execution(
+            &candidates,
+            &subject,
+            assumptions,
+            environment,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
+            FunctionContractExecutionMode::VerifyLoops,
+        )?;
+        Ok((entry, checked))
+    }
+
+    #[test]
+    fn execution_cannot_substitute_program_entry_metadata() {
+        assert!(
+            matches!(checked_execution_with_subject(0, None, true), Err(reason) if reason.contains("entry and source"))
+        );
+    }
+
+    #[test]
+    fn owned_admission_requires_the_producer_entry_identity() {
+        let (entry, checked) = checked_execution(0, None).unwrap();
+        let (foreign, _) = checked_execution(0, None).unwrap();
+        assert_eq!(entry.function, foreign.function);
+        assert_ne!(entry, foreign);
+        let admitted = execution_from_owned_contract_entry(&entry, std::slice::from_ref(&checked));
+        assert_eq!(admitted.cases.len(), 1);
+        assert_eq!(admitted.cases[0][0].paths.len(), 1);
+        assert!(
+            execution_from_owned_contract_entry(&foreign, &[checked])
+                .cases
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn caller_proposed_premises_do_not_become_opened_contract_assumptions() {
+        let extra = Proposition::Predicate {
+            name: "not_a_requirement".into(),
+            arguments: vec![],
+        };
+        let (_, checked) = checked_execution(0, Some(extra.clone())).unwrap();
+        assert!(!checked.assumptions.proves_exact(&extra));
+        assert!(checked.entry_authority.is_some());
+    }
+
+    #[test]
+    fn an_independent_execution_cannot_claim_opened_entry_authority() {
+        let (entry, checked) = checked_execution(0, None).unwrap();
+        let independent = prove_checked_program_function_execution_with_environment(
+            checked.state.clone(),
+            checked.function.clone(),
+            checked.arguments.clone(),
+            checked.assumptions.clone(),
+            checked.environment.clone(),
+            checked.execution_semantics,
+            checked.mode,
+        );
+        assert!(independent.entry_authority.is_none());
+        assert!(
+            execution_from_owned_contract_entry(&entry, &[independent])
+                .cases
+                .is_empty()
+        );
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/api/contract_certification/entry_authority.rs");
     }
 }

@@ -4576,3 +4576,100 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
         );
     }
 }
+
+#[test]
+fn common_pointer_calls_round_trip_nested_source_calls() {
+    use crate::kernel::{
+        KernelTerm, KernelTermImport, PointerBlock, PointerValue, PureFunctionArgument,
+        SharedPointerValue,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let declarations = "function select(p: int32*) -> int32* { p }";
+    let file = parser::parse(declarations).unwrap();
+    let input = ProgramValue::Pointer(PointerValue::new(
+        Pointer::symbolic(Variable(1025900)),
+        ProgramType::Int32Pointer,
+    ));
+    let state = ExecutionState::new().with_local("p", input.clone());
+    let values = BTreeMap::from([("p".to_string(), input)]);
+    let lower = |expression: &SurfaceTerm| {
+        let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+            expression,
+            BTreeMap::new(),
+            &state,
+            values.clone(),
+            values.clone(),
+            None,
+            &RecordedSnapshots::new(),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(file.click_function_definitions()),
+            ),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &spec,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap()
+        .0
+    };
+    for text in ["select(p)", "select(select(p))"] {
+        let source = parser::parse(&format!(
+            "{declarations} function probe(p: int32*) -> int32* {{ {text} }}"
+        ))
+        .unwrap();
+        let expression = source
+            .click_function_definitions()
+            .last()
+            .unwrap()
+            .body()
+            .unwrap();
+        let expected = lower(expression);
+        let ProgramValue::Pointer(pointer) = &expected else {
+            panic!("pointer")
+        };
+        // Reconstruct the same nested common roots that the producer test
+        // checks, keeping inner calls as children rather than exporting them.
+        fn common(pointer: &PointerValue) -> KernelTerm {
+            let value = SharedPointerValue::import(pointer);
+            let PointerBlock::PureFunctionApplication(application) = &pointer.block else {
+                return KernelTerm::shared_pointer_value(value);
+            };
+            let arguments = application
+                .arguments()
+                .iter()
+                .map(|argument| match argument {
+                    PureFunctionArgument::Value(ProgramValue::Pointer(pointer)) => {
+                        Some(common(pointer))
+                    }
+                    PureFunctionArgument::ArrayRef {
+                        memory,
+                        pointer: ProgramValue::Pointer(pointer),
+                        element_type,
+                    } => Some(KernelTerm::shared_array_reference(
+                        crate::kernel::intern_memory_ref(memory),
+                        common(pointer),
+                        *element_type,
+                    )),
+                    _ => None,
+                })
+                .collect();
+            KernelTermImport::default().pointer_call(application, arguments, value)
+        }
+        let root = common(pointer);
+        let names = values
+            .iter()
+            .map(|(name, value)| (value.clone(), name.clone()))
+            .collect();
+        let raised = with_proof_local_value_names(names, || {
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
+        })
+        .unwrap_or_else(|| panic!("could not raise {text}"));
+        assert_eq!(lower(&raised), expected, "{raised:?}");
+    }
+}

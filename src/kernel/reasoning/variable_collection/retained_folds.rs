@@ -131,12 +131,36 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
-            KernelTermNode::PointerRead { value, .. } => {
+            KernelTermNode::ArrayReference { .. } => {
+                collect_argument(
+                    term.pointer_argument_native().expect("array descriptor"),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                );
+            }
+            KernelTermNode::PointerRead { value, .. }
+            | KernelTermNode::PointerArithmetic { value, .. }
+            | KernelTermNode::PointerCall { value, .. }
+            | KernelTermNode::PointerValue(value) => {
                 super::retained_pointers::collect_pointer_variables(
                     value,
                     mode,
                     &mut leaf_variables,
                 );
+            }
+            KernelTermNode::PointerAddress { address, .. } => {
+                if !matches!(
+                    mode,
+                    FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders
+                ) {
+                    super::retained_pointers::collect_address_variables_with_summaries(
+                        address,
+                        mode,
+                        &mut leaf_variables,
+                        summaries,
+                    );
+                }
             }
             KernelTermNode::MemoryLoad { address, .. } => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {

@@ -947,7 +947,15 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
         .expect("typed pointer match");
         assert_eq!(paths.len(), usize::from(valid));
         if valid {
+            assert!(paths[0].value.shared().is_some());
             assert_eq!(paths[0].value.clone().into_native(), payload);
+            let ProgramValue::Pointer(expected) = &payload else {
+                unreachable!()
+            };
+            assert_eq!(
+                paths[0].value.pointer().unwrap().object_origin_evidence(),
+                expected.object_origin_evidence()
+            );
         }
         let model_match = SpecAlgebraicExpression {
             algebraic_type: ty.clone(),

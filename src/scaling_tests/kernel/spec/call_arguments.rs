@@ -29,6 +29,7 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 scope,
                 &argument,
                 &PureFactContext::new(),
+                false,
                 &mut SpecEvaluation::logical(&mut execution),
             )
             .unwrap()
@@ -95,7 +96,11 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
             .unwrap()
         });
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].value, SpecValue::Native(null));
+        assert!(matches!(
+            results[0].value.shared().unwrap().node(),
+            KernelTermNode::PointerValue(_)
+        ));
+        assert_eq!(results[0].value.clone().into_native(), null);
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(work < 128, "selected origin at depth {depth}: {work} work");
     }

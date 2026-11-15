@@ -104,7 +104,7 @@ pub(super) fn load_free(root: V<'_>) -> bool {
                 }
                 N::MachineIf { arguments } => pending.extend(arguments[1..].iter().map(V::Shared)),
                 N::Fold(fold) => pending.extend(fold.arguments.iter().map(V::Shared)),
-                N::Legacy(_) => match root.machine_conversion_leaf() {
+                N::Legacy(_) | N::PointerAddress { .. } => match root.machine_conversion_leaf() {
                     Some(value) => pending.push(V::Legacy(value)),
                     None => return false,
                 },

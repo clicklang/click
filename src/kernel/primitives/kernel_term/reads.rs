@@ -63,19 +63,6 @@ impl KernelTerm {
         )
     }
 
-    /// Explicit compatibility view for native execution consumers. The common
-    /// result retains the complete payload and definition independently of it.
-    pub(crate) fn pointer_read_native(&self) -> Option<&ProgramValue> {
-        let KernelTermNode::PointerRead { value, .. } = self.node() else {
-            return None;
-        };
-        Some(self.0.pointer_leaf.get_or_init(|| {
-            Box::new(ProgramValue::Pointer(
-                value.export().expect("retained pointer result"),
-            ))
-        }))
-    }
-
     /// Selected native read leaf for consumers still using the native atom
     /// interface. Never expands a surrounding shared arithmetic expression.
     pub(crate) fn machine_read_leaf(&self) -> Option<&MachineTerm> {
@@ -234,7 +221,7 @@ mod tests {
         assert_eq!(snapshot.arena_id(), intern_memory(memory).arena_id());
         assert_eq!(cell, &SharedPointerAddress::import(&address));
         assert!(matches!(
-            root.pointer_read_native(),
+            root.pointer_native(),
             Some(ProgramValue::Pointer(_))
         ));
     }

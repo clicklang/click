@@ -710,3 +710,235 @@ fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
         }
     }
 }
+
+#[test]
+fn formed_pointer_roots_keep_prepared_displacement_dags() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|n| {
+                KernelTerm::shared_pointer_value(SharedPointerValue::import(&PointerValue::new(
+                    Pointer::symbolic(Variable(1022100 + n)),
+                    ProgramType::Int32Pointer,
+                )))
+            })
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+            for _ in 0..size {
+                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                    .into_shared()
+                    .unwrap();
+            }
+            let source = SharedPointerValue::import(&PointerValue::new(
+                Pointer::symbolic(Variable(1022700)),
+                ProgramType::Int32Pointer,
+            ));
+            let mut payload = source.node().clone();
+            payload.address =
+                SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+            payload.designation = payload.address.clone();
+            let payload = SharedPointerValue::new(payload);
+            let exports = KernelTermExport::machine_export_count();
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let root = KernelTerm::shared_pointer_value(payload.clone());
+                assert_eq!(root, KernelTerm::shared_pointer_value(payload.clone()));
+                let mut value = crate::kernel::ExecutionValue::from(root.clone());
+                for _ in 0..32 {
+                    value = value.clone();
+                }
+                assert_eq!(value.shared(), Some(&root));
+                root
+            });
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 32, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}
+
+#[test]
+fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = SharedPointerValue::import(&PointerValue::new(
+        Pointer::symbolic(Variable(1023100)),
+        ProgramType::Int32Pointer,
+    ));
+    let base_root = KernelTerm::shared_pointer_value(base.clone());
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|n| {
+                KernelTerm::variable(
+                    KernelType::Program(ProgramType::Int32),
+                    Variable(1023101 + n),
+                )
+            })
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut index =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1023700));
+            for _ in 0..size {
+                index = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [index.clone(), index],
+                );
+            }
+            let mut payload = base.node().clone();
+            payload.address = SharedPointerAddress::new(
+                payload.address.node().block.clone(),
+                KernelPointerOffset::Int32Scaled {
+                    value: index.clone(),
+                    byte_width: 4,
+                }
+                .into_shared()
+                .unwrap(),
+            );
+            let payload = SharedPointerValue::new(payload);
+            let exports = KernelTermExport::machine_export_count();
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let operands = [base_root.clone(), index.clone()];
+                let root = KernelTerm::shared_pointer_arithmetic(
+                    MachineBinaryOp::Add,
+                    4,
+                    operands.clone(),
+                    payload.clone(),
+                );
+                assert_eq!(
+                    root,
+                    KernelTerm::shared_pointer_arithmetic(
+                        MachineBinaryOp::Add,
+                        4,
+                        operands,
+                        payload.clone()
+                    )
+                );
+                let mut value = crate::kernel::ExecutionValue::from(root.clone());
+                for _ in 0..32 {
+                    value = value.clone();
+                }
+                assert_eq!(value.shared(), Some(&root));
+                root
+            });
+            let KernelTermNode::PointerArithmetic { operands, .. } = root.node() else {
+                panic!("arithmetic");
+            };
+            assert_eq!(operands[1], index);
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 32, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}
+
+#[test]
+fn pointer_numeric_observations_retain_prepared_dags_without_export() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = SharedPointerValue::import(&PointerValue::new(
+        Pointer::symbolic(Variable(1024200)),
+        ProgramType::Int32Pointer,
+    ));
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|n| {
+                KernelTerm::variable(
+                    KernelType::Program(ProgramType::Int32),
+                    Variable(1024201 + n),
+                )
+            })
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut index =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1024800));
+            for _ in 0..size {
+                index = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [index.clone(), index],
+                );
+            }
+            let address = SharedPointerAddress::new(
+                pointer.node().address.node().block.clone(),
+                KernelPointerOffset::Int32Scaled {
+                    value: index,
+                    byte_width: 4,
+                }
+                .into_shared()
+                .unwrap(),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (numeric, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::shared_pointer_address_observation(
+                    MachineIntegerType::UInt64,
+                    address.clone(),
+                    AddressObjectClass::NONE,
+                )
+            });
+            assert!(
+                matches!(numeric.node(), KernelTermNode::PointerAddress { address: a, .. } if a == &address)
+            );
+            assert!(numeric.0.machine_leaf.0.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 48, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}
+
+#[test]
+fn pointer_call_handoffs_retain_prepared_argument_dags() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let value = SharedPointerValue::import(&PointerValue::new(
+        Pointer::symbolic(Variable(1025200)),
+        ProgramType::Int32Pointer,
+    ));
+    let memory = intern_memory(Memory::new());
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|n| KernelTerm::variable(KernelType::Integer, Variable(1025201 + n)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut argument =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1025800));
+            for _ in 0..size {
+                argument = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [argument.clone(), argument],
+                );
+            }
+            let exports = KernelTermExport::machine_export_count();
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let call = KernelTerm::checked_call(
+                    KernelType::Program(ProgramType::Int32Pointer),
+                    "pointer_select".into(),
+                    vec![argument.clone()],
+                );
+                KernelTerm::shared_pointer_call(call, value.clone())
+            });
+            let KernelTermNode::PointerCall { call, .. } = root.node() else {
+                panic!("pointer call")
+            };
+            let KernelTermNode::Call { arguments, .. } = call.node() else {
+                panic!("call")
+            };
+            assert_eq!(arguments[0], argument);
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 48, "size={size} unrelated={unrelated} work={work}");
+            let (reference, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::shared_array_reference(memory.clone(), root.clone(), ProgramType::Int32)
+            });
+            let KernelTermNode::ArrayReference { pointer, .. } = reference.node() else {
+                panic!("array argument")
+            };
+            assert_eq!(pointer, &root);
+            assert!(reference.0.pointer_leaf.get().is_none());
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(
+                work <= 16,
+                "size={size} unrelated={unrelated} array work={work}"
+            );
+        }
+    }
+}

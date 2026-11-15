@@ -433,11 +433,37 @@ execution strategies. Persistent candidate owners retain independent progress.
 empty. Registration consumes its already constructed rule and performs no
 additional clause-coverage or function-packaging check.
 
-Artifact admission still uses the existing premise-authorization and entry
-representation adaptation algorithm while the owner remains open. Retaining
-those relationships directly remains migration work, as does return-path
-reconstruction before whole-contract completion. Independent conditional
-execution artifacts retain their separate validation and rule-packaging APIs.
+The opened entry is shared across a function's separate clause proofs. Checked
+execution uses the entry's retained root premises; caller-proposed assumptions
+cannot strengthen them. Derived facts and case assumptions travel through the
+checked execution trace. Only that producer can issue `ContractEntryAuthority`,
+which binds the resulting execution to the entry's generative identity.
+Whole-contract admission consumes matching authorities without reauthorizing
+premises, comparing execution environments or rebasing resource representations.
+The declaration is retained by the owner rather than supplied again at
+admission. The primary bound execution retains proof-only body annotations,
+including the normalized natural loops that termination rules name. Other
+clause proofs remain independent execution alternatives. Loop semantics and
+call dependencies come from the selected executions.
+
+Entry opening also retains the contract's evaluated required resources,
+checked clause metadata and derived resource facts in `RetainedClosingEntry`.
+Each prepared guard case owns its corresponding entry view while sharing the
+checked clause metadata. The checked entry transfer prepares the static-storage
+footprint input before body tactics. Range projection runs only when the open
+footprint goal needs it; it never reevaluates entry clauses. The closing-goal checks consume these inputs instead of binding the
+arguments, reevaluating entry clauses or projecting entry resources again.
+Normal and exceptional postcondition goals use the retained entry and the
+current outcome. Resource/effect closing likewise reads the proof-owned result
+and state directly. Resource changes prepare a new exit view while preserving
+the immutable entry input. Conditional resource exits remain work of the open
+returned-resource goal; conditional effect cases consume their prepared entry
+views and projections without sharing case-local facts with siblings.
+
+Batch receipt association, including the legacy per-path specification
+wrappers, remains migration work for direct updates to the whole-contract
+owner. Independent conditional execution artifacts have no opened-entry
+authority and retain their separate entry preparation and rule-packaging APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using

@@ -843,6 +843,7 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Legacy(_)
+                | KernelTermNode::PointerAddress { .. }
                 | KernelTermNode::Fold(_)
                 | KernelTermNode::Match(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),

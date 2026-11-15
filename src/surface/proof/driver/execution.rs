@@ -5376,7 +5376,6 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                     condition: condition.clone(),
                     value,
                     fact: Some(kernel_fact.clone()),
-                    at_function_entry: false,
                     match_arm: None,
                 });
             return Ok(Some(Some(kernel_fact)));
@@ -5391,12 +5390,10 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                 condition: condition.clone(),
                 value,
                 fact: None,
-                at_function_entry: false,
                 match_arm: None,
             });
         return Ok(Some(None));
     }
-    let at_function_entry = execution.core.frontier.is_at_function_entry();
     let proposition = lower_fixed_state_proposition(
         lowering_condition,
         available,
@@ -5445,7 +5442,6 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             condition: condition.clone(),
             value,
             fact: Some(kernel_fact.clone()),
-            at_function_entry,
             match_arm: None,
         });
     Ok(Some(Some(kernel_fact)))

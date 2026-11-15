@@ -307,6 +307,55 @@ existing checks. Surface naming preserves complete metadata. Ordinary pointer
 formation and arithmetic, calls and storage handoffs remain in their subsequent
 slices.
 
+7m admits completed null/object/function address formation, array/aggregate
+decay, field-address projections and pointer casts into complete common pointer
+roots. Native formation and cast operations retain their existing checks,
+qualifier policies and obligations; shared readers and Surface naming consume
+the prepared result. The pending-allocation return check accepts that carrier
+without changing allocation resolution. Arithmetic and other producer families
+remain separate slices.
+
+7n retains pointer addition, subtraction and byte-displacement results with
+their original common operand roots, selected stride and complete pointer
+payload. Native formation checking still supplies the existing guards, path
+facts and refusals through an explicit compatibility boundary. Result
+construction and handoffs preserve operand DAGs without exporting them;
+Surface spelling and dependency readers retain their prior payload policies.
+
+7o retains numeric pointer address observations with their exact object-class
+annotations. Explicit numeric projection of a complete pointer-to-integer value
+produces a common observation; its provenance record remains execution metadata.
+Numeric observation identity still ignores annotations, while complete-value
+transport preserves them. Pointer differences keep the existing same-object/stride
+checker and common numeric result admission. Native index admission is unchanged;
+Surface observations use the existing pointer cast spelling.
+
+7p retains pointer-valued specification calls as a generic call root with original
+common argument handles and the complete result payload. Typed pointer arguments
+retain their selected memory snapshot and pointer child; existing nominal
+object-type refinement preserves that structure. Explicit native call
+argument descriptors preserve object-origin evidence and existing null/projection
+reductions. Surface raises the retained generic call with the existing call syntax;
+scoped readers keep the native result payload's dependency policy.
+
+7q retains pointer roots through C conditional paths, supported specification
+conditionals and selected constructor-match arms. Equal pointer arms keep the
+existing complete left payload, including when one input is still native.
+Branch facts, guarded obligations and unsupported pointer-match refusals are unchanged.
+
+7r retains complete pointer roots in local storage, assignment, lookup and
+ordinary execution-call argument paths. Stored equality/hash/order keep native
+pointer identity; declaration qualifiers and entry metadata retain their existing
+rules. Callee bindings retain the selected producer after native conversion and
+object checks. Builtin/thread argument descriptors remain explicit native adapters;
+aggregate copy binding is unchanged. Return conversion and physical memory cells
+remain the next two boundaries.
+
+7s retains complete pointers through return coercion, scalar contract-result
+bindings and caller result assignment. Modular pointer results enter the common
+carrier at their final handoff. Existing const-drop refusals, declared qualifiers,
+object-type metadata and aggregate-return ABI/copy behavior remain unchanged.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface

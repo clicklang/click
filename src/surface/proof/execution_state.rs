@@ -52,7 +52,6 @@ pub(super) struct CaseAssumption {
     pub(super) condition: ClickProposition,
     pub(super) value: bool,
     pub(super) fact: Option<Proposition>,
-    pub(super) at_function_entry: bool,
     /// Set when this case is one arm of a proof `match` rather than one
     /// polarity of a condition.
     pub(super) match_arm: Option<ProofMatchArmCase>,

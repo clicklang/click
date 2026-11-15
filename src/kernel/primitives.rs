@@ -14810,16 +14810,15 @@ pub struct FunctionContractExecution {
 }
 
 /// A kernel-created record of one exact whole-function execution judgment.
-///
-/// Callers may retain and present this artifact, but cannot manufacture or
-/// alter its execution metadata. Before reusing its checked frontier,
-/// contract certification checks that the contract entry states each of this
-/// artifact's assumptions: the proof started from that entry, so the check
-/// is a lookup, and what it can refuse is an entry case the proof assumed
-/// without covering the others.
+/// Opened-contract executions retain their producer's entry authority;
+/// whole-contract admission consumes it without rechecking premises or entry
+/// representations. Independent conditional executions have no such authority
+/// and retain their separate validation route.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedFunctionExecution {
-    pub(super) prepared_entry_cases: Option<Arc<super::PreparedContractEntryCases>>,
+    /// Issued by the opened entry's execution producer, never by an
+    /// independent conditional execution or a caller-supplied premise list.
+    pub(super) entry_authority: Option<super::proof::ContractEntryAuthority>,
     pub(super) closed_exit_obligations: Vec<Option<super::ClosedContractExit>>,
     /// The immutable outcome publication this proof completed. Return-path
     /// completion uses this same input and preserves its checked path object.
@@ -15370,8 +15369,8 @@ impl FunctionPath {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ArgumentsPath {
-    pub(super) values: Vec<ProgramValue>,
+pub(super) struct ArgumentsPath<V = ProgramValue> {
+    pub(super) values: Vec<V>,
     pub(super) outcome: Option<FunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,

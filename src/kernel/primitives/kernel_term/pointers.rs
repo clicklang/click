@@ -10,7 +10,7 @@ pub(crate) struct KernelSubobjectExtent {
     pub(crate) start: SharedPointerAddress,
     pub(crate) width: KernelTerm,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct KernelPointerQualifiers {
     pub(crate) volatile: bool,
     pub(crate) constant: bool,
@@ -58,6 +58,30 @@ impl SharedPointerValue {
     }
     pub(crate) fn node(&self) -> &KernelPointerValue {
         &self.0
+    }
+    /// Rebind only the declaration's type and cv qualifiers. Expression
+    /// children and evidence remain shared, including default qualifier shape.
+    pub(crate) fn with_binding_type_and_qualifiers(
+        &self,
+        program_type: ProgramType,
+        volatile: bool,
+        constant: bool,
+    ) -> Self {
+        let old = self.node();
+        let old_volatile = old.qualifiers.as_ref().is_some_and(|q| q.volatile);
+        let old_constant = old.qualifiers.as_ref().is_some_and(|q| q.constant);
+        if old.program_type == program_type && old_volatile == volatile && old_constant == constant
+        {
+            return self.clone();
+        }
+        let mut value = old.clone();
+        value.program_type = program_type;
+        if old_volatile != volatile || old_constant != constant {
+            let qualifiers = Arc::make_mut(value.qualifiers.get_or_insert_with(Default::default));
+            qualifiers.volatile = volatile;
+            qualifiers.constant = constant;
+        }
+        Self::new(value)
     }
     /// Whether an existing source binding retains this complete payload.
     /// This is deliberately separate from pointer equality: no address aliases,
@@ -120,20 +144,26 @@ impl SharedPointerValue {
             )
     }
     pub(crate) fn import(value: &PointerValue) -> Self {
+        Self::import_addresses(value, SharedPointerAddress::import)
+    }
+    pub(crate) fn import_produced(value: &PointerValue) -> Self {
+        Self::import_addresses(value, SharedPointerAddress::import_produced)
+    }
+    fn import_addresses(
+        value: &PointerValue,
+        address: fn(&Pointer) -> SharedPointerAddress,
+    ) -> Self {
         Self::new(KernelPointerValue {
-            address: SharedPointerAddress::import(&value.pointer),
-            designation: SharedPointerAddress::import(&value.designation),
-            opaque_extent: value
-                .opaque_extent
-                .as_ref()
-                .map(|address| SharedPointerAddress::import(address)),
+            address: address(&value.pointer),
+            designation: address(&value.designation),
+            opaque_extent: value.opaque_extent.as_ref().map(|pointer| address(pointer)),
             program_type: value.program_type,
             qualifiers: value.qualifiers.as_ref().map(|q| {
                 Arc::new(KernelPointerQualifiers {
                     volatile: q.volatile,
                     constant: q.constant,
                     extent: q.extent.as_ref().map(|extent| KernelSubobjectExtent {
-                        start: SharedPointerAddress::import(&extent.start),
+                        start: address(&extent.start),
                         width: KernelTerm::retained_machine_operand(
                             MachineIntegerType::Int32,
                             MachineOperandView::Legacy(&extent.width),
@@ -183,6 +213,143 @@ impl SharedPointerValue {
                 })
                 .transpose()?,
         })
+    }
+}
+
+impl KernelTerm {
+    pub(crate) fn shared_pointer_value(value: SharedPointerValue) -> Self {
+        Self::intern(
+            KernelType::Program(value.node().program_type),
+            KernelTermNode::PointerValue(value),
+        )
+    }
+
+    pub(crate) fn shared_pointer_call(call: KernelTerm, value: SharedPointerValue) -> Self {
+        Self::intern(
+            KernelType::Program(value.node().program_type),
+            KernelTermNode::PointerCall { call, value },
+        )
+    }
+
+    pub(crate) fn shared_pointer_arithmetic(
+        operation: MachineBinaryOp,
+        byte_width: u32,
+        operands: [KernelTerm; 2],
+        value: SharedPointerValue,
+    ) -> Self {
+        Self::intern(
+            KernelType::Program(value.node().program_type),
+            KernelTermNode::PointerArithmetic {
+                operation,
+                byte_width,
+                operands,
+                value,
+            },
+        )
+    }
+
+    pub(crate) fn pointer_payload(&self) -> Option<&SharedPointerValue> {
+        match self.node() {
+            KernelTermNode::PointerValue(value)
+            | KernelTermNode::PointerRead { value, .. }
+            | KernelTermNode::PointerArithmetic { value, .. }
+            | KernelTermNode::PointerCall { value, .. } => Some(value),
+            _ => None,
+        }
+    }
+
+    /// Explicit native compatibility view; common handoffs retain only the root.
+    pub(crate) fn pointer_native(&self) -> Option<&ProgramValue> {
+        let PureFunctionArgument::Value(value) = self.pointer_argument_native()? else {
+            return None;
+        };
+        Some(value)
+    }
+
+    pub(crate) fn pointer_argument_native(&self) -> Option<&PureFunctionArgument> {
+        if let KernelTermNode::ArrayReference {
+            memory,
+            pointer,
+            element_type,
+        } = self.node()
+        {
+            return Some(self.0.pointer_leaf.get_or_init(|| {
+                Box::new(PureFunctionArgument::ArrayRef {
+                    memory: memory.memory().clone(),
+                    pointer: pointer.pointer_native().expect("array pointer").clone(),
+                    element_type: *element_type,
+                })
+            }));
+        }
+        let value = self.pointer_payload()?;
+        Some(self.0.pointer_leaf.get_or_init(|| {
+            Box::new(PureFunctionArgument::Value(ProgramValue::Pointer(
+                value.export().expect("retained pointer result"),
+            )))
+        }))
+    }
+
+    pub(crate) fn shared_array_reference(
+        memory: SharedMemory,
+        pointer: KernelTerm,
+        element_type: ProgramType,
+    ) -> Self {
+        Self::intern(
+            KernelType::ArrayRef(element_type),
+            KernelTermNode::ArrayReference {
+                memory,
+                pointer,
+                element_type,
+            },
+        )
+    }
+
+    /// Keep the producer structure when existing object-argument checking
+    /// refines only its complete pointer payload.
+    pub(crate) fn refined_pointer_argument(&self, pointer: &PointerValue) -> Self {
+        if let KernelTermNode::ArrayReference {
+            memory,
+            pointer: source,
+            element_type,
+        } = self.node()
+        {
+            return Self::shared_array_reference(
+                memory.clone(),
+                source.refined_pointer_argument(pointer),
+                *element_type,
+            );
+        }
+        self.with_pointer_payload(SharedPointerValue::import_produced(pointer))
+    }
+
+    pub(crate) fn with_pointer_payload(&self, value: SharedPointerValue) -> Self {
+        if let Some(old) = self.pointer_payload() {
+            if old.same_source_payload(&value) {
+                return self.clone();
+            }
+            // A changed address or type is a newly formed value, not the
+            // original call/read/arithmetic expression with another result.
+            if old.node().address != value.node().address
+                || old.node().program_type != value.node().program_type
+            {
+                return Self::shared_pointer_value(value);
+            }
+        }
+        match self.node() {
+            KernelTermNode::PointerCall { call, .. } => {
+                Self::shared_pointer_call(call.clone(), value)
+            }
+            KernelTermNode::PointerRead {
+                memory, address, ..
+            } => Self::shared_pointer_read(value, memory.clone(), address.clone()),
+            KernelTermNode::PointerArithmetic {
+                operation,
+                byte_width,
+                operands,
+                ..
+            } => Self::shared_pointer_arithmetic(*operation, *byte_width, operands.clone(), value),
+            _ => Self::shared_pointer_value(value),
+        }
     }
 }
 
@@ -297,4 +464,46 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/kernel_term/pointers.rs");
+}
+
+impl KernelTermImport {
+    pub(crate) fn pointer_call(
+        &mut self,
+        application: &SharedPureApplication,
+        retained: Vec<Option<KernelTerm>>,
+        value: SharedPointerValue,
+    ) -> KernelTerm {
+        let arguments = application
+            .arguments()
+            .iter()
+            .zip(retained)
+            .enumerate()
+            .map(|(index, (argument, retained))| {
+                retained.unwrap_or_else(|| match argument {
+                    PureFunctionArgument::Value(ProgramValue::Pointer(pointer)) => {
+                        KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(
+                            pointer,
+                        ))
+                    }
+                    PureFunctionArgument::Integer(_)
+                    | PureFunctionArgument::SharedMachine(_)
+                    | PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(argument),
+                    _ => KernelTerm::legacy_at(
+                        argument.clone(),
+                        LegacyIdentity::ExactApplicationArgument {
+                            application: application.clone(),
+                            payload: application.payload_id(),
+                            index,
+                        },
+                    ),
+                })
+            })
+            .collect();
+        let call = KernelTerm::checked_call(
+            KernelType::Program(value.node().program_type),
+            application.name().into(),
+            arguments,
+        );
+        KernelTerm::shared_pointer_call(call, value)
+    }
 }

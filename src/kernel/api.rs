@@ -5279,7 +5279,7 @@ pub fn prove_checked_program_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CheckedFunctionExecution {
-        prepared_entry_cases: None,
+        entry_authority: None,
         closed_exit_obligations: vec![None; path_count],
         proof_candidates: None,
         state,
@@ -5397,32 +5397,6 @@ fn loan_authority_states_match(left: &ExecutionState, right: &ExecutionState) ->
         && left.loan_view_bindings() == right.loan_view_bindings()
         && left.loan_bindings_are_consistent()
         && right.loan_bindings_are_consistent()
-}
-
-pub(in crate::kernel) fn proof_evidence_function_refines_same_source(
-    original: &ProgramFunction,
-    checked: &ProgramFunction,
-) -> bool {
-    original.return_type() == checked.return_type()
-        && original.name() == checked.name()
-        && original.parameters() == checked.parameters()
-        && original.exceptional_signature() == checked.exceptional_signature()
-        && original.source_body() == checked.source_body()
-        && original.resource_requires() == checked.resource_requires()
-        && original.resource_ensures() == checked.resource_ensures()
-        && original.resource_constructors() == checked.resource_constructors()
-        && original.contract_requires() == checked.contract_requires()
-        && original.contract_ensures() == checked.contract_ensures()
-        && original.exceptional_ensures() == checked.exceptional_ensures()
-        && original.contract_mutable() == checked.contract_mutable()
-        && original.resource_derived_mutable_frame() == checked.resource_derived_mutable_frame()
-        && original.contract_interface().resource_derived_frame_mixed
-            == checked.contract_interface().resource_derived_frame_mixed
-        && original.contract_effect_claim_required() == checked.contract_effect_claim_required()
-        && original.contract_claims() == checked.contract_claims()
-        && original.opaque_contract_supported() == checked.opaque_contract_supported()
-        && original.composite_resource_definitions() == checked.composite_resource_definitions()
-        && original.predicate_unfoldings() == checked.predicate_unfoldings()
 }
 
 pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
