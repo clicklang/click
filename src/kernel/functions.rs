@@ -20,7 +20,9 @@ mod aggregate_return_tests;
 mod construction_return;
 #[cfg(test)]
 mod literal_objects;
+mod mixed_return_resources;
 mod produced_argument_supply;
+use mixed_return_resources::EvaluatedReturnResources;
 #[cfg(test)]
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
@@ -189,7 +191,8 @@ fn record_resource_clause_attempt() {
     RESOURCE_CLAUSE_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
 }
 /// Resource descriptions can be checked before their transfer is proved.
-/// Only entry borrows retain the ownership partition established at call entry.
+/// Checked call application restores entry borrows per emitted occurrence;
+/// every other output still passes through description admission.
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition {
     RestoreEntryBorrows,
@@ -3821,14 +3824,7 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface,
             &prepared_outputs,
-            if interface.resource_ensures().iter().all(|resource| {
-                resource.role() == ResourceTransferRole::Borrow
-                    && resource.state_source() == ResourceStateSource::Entry
-            }) {
-                ReturnResourceComposition::RestoreEntryBorrows
-            } else {
-                ReturnResourceComposition::ValidateDescriptions
-            },
+            ReturnResourceComposition::RestoreEntryBorrows,
             &effective_assumptions,
             budget,
         )? {
@@ -12365,6 +12361,7 @@ pub(super) fn evaluate_function_return_resource_context(
         assumptions,
         budget,
     )
+    .map(|result| result.map(|evaluated| evaluated.resources))
 }
 
 type BorrowedResourceKey = (
@@ -12402,7 +12399,7 @@ fn evaluate_contract_return_resource_context(
     prepared_outputs: &[Option<ResourceFact>],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ResourceContext, RuntimeError>> {
+) -> ExecutionResult<Result<EvaluatedReturnResources, RuntimeError>> {
     let mut context = ResourceContext::new_with_equalities(assumptions);
     // `owns` requirements that are returned as entry-state borrows carry
     // caller identity in the checked transition. Re-evaluating an address
@@ -12771,6 +12768,7 @@ fn evaluate_contract_return_resource_context(
     // just as it does not decide what it requires.
     let mut deferred: Vec<(usize, &ResourceSpec, RuntimeError)> = Vec::new();
     let mut returned: Vec<ResourceFact> = Vec::new();
+    let mut returned_entry_borrows = Vec::new();
     for (clause_index, resource) in interface.resource_ensures().iter().take(count).enumerate() {
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
@@ -12796,6 +12794,7 @@ fn evaluate_contract_return_resource_context(
         .then(|| borrowed_resource_key(resource))
         .and_then(|key| entry_borrows.get_mut(&key))
         .and_then(VecDeque::pop_front);
+        let return_entry_borrow = entry_borrow.is_some();
         let resource = if let Some(entry_borrow) = entry_borrow {
             entry_borrow
         } else {
@@ -12825,6 +12824,7 @@ fn evaluate_contract_return_resource_context(
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
         returned.push(resource);
+        returned_entry_borrows.push(return_entry_borrow);
     }
     // Each retry pass returns at least one waiting clause or stops, so the
     // passes are bounded by the number of clauses that waited.
@@ -12848,6 +12848,9 @@ fn evaluate_contract_return_resource_context(
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
                     returned.push(fact);
+                    // A checked entry borrow is returned immediately above;
+                    // a deferred description has no retained entry occurrence.
+                    returned_entry_borrows.push(false);
                 }
                 Err(retry_error) if resource_clause_failure_awaits_supply(&retry_error) => {
                     waiting.push((clause_index, resource, error));
@@ -12862,7 +12865,10 @@ fn evaluate_contract_return_resource_context(
         }
         deferred = waiting;
     }
-    Ok(Ok(context))
+    Ok(Ok(EvaluatedReturnResources {
+        resources: context,
+        entry_borrows: returned_entry_borrows,
+    }))
 }
 
 /// The memory a context's owned composites hold, opened through their
@@ -12970,7 +12976,7 @@ fn evaluate_contract_return_resources(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ContractReturnResources, RuntimeError>> {
-    let ensured_resources = match crate::instrumentation::measure_operation(
+    let evaluated = match crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource lowering",
@@ -12992,6 +12998,24 @@ fn evaluate_contract_return_resources(
         Ok(resources) => resources,
         Err(error) => return Ok(Err(error)),
     };
+    let ensured_resources = &evaluated.resources;
+    // Entry borrows rejoin their selected frame before newly described
+    // ownership is checked, including the bodies of produced composites.
+    let prepared = match crate::instrumentation::measure_operation(
+        interface_name,
+        "contract resource transition",
+        "entry borrow restoration",
+        || {
+            evaluated.restore_entry_borrows(
+                caller_resources_after_requirements.clone(),
+                composition,
+                assumptions,
+            )
+        },
+    ) {
+        Ok(prepared) => prepared,
+        Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+    };
     // A composite arrives folded, so composing its head says nothing about
     // what its body covers. Check the body against the destination before the
     // head enters it, or a contract that produces a composite over bytes the
@@ -13001,17 +13025,35 @@ fn evaluate_contract_return_resources(
         "contract resource transition",
         "ensured composite frontier check",
         || {
+            // Borrowed composite arguments retain their entry identity, but
+            // their bodies can read post-call memory. Preserve the existing
+            // check against the retained frame, before adding their heads.
+            if !prepared.entry_borrow_outputs.facts().is_empty() {
+                let retained = caller_resources_after_requirements
+                    .clone()
+                    .unchecked_with_facts(escrowed_owners.iter().cloned());
+                if let Some(error) = produced_composite_frontier_conflict(
+                    &retained,
+                    &prepared.entry_borrow_outputs,
+                    interface.composite_resource_definitions(),
+                    post_state.memory(),
+                    assumptions,
+                ) {
+                    return Some(error);
+                }
+            }
             // A lend empties the escrowed owner out of the residual, and
             // recovery composes it straight back. The destination for this
             // check is what the caller holds across the call, so the escrow
             // belongs in it; without it the stable-view transition would
             // admit exactly the overlap the definitional residual catches.
-            let destination = caller_resources_after_requirements
+            let destination = prepared
+                .frame
                 .clone()
                 .unchecked_with_facts(escrowed_owners.iter().cloned());
             produced_composite_frontier_conflict(
                 &destination,
-                &ensured_resources,
+                &prepared.pending,
                 interface.composite_resource_definitions(),
                 post_state.memory(),
                 assumptions,
@@ -13040,25 +13082,7 @@ fn evaluate_contract_return_resources(
             interface_name,
             "contract resource transition",
             "ensured resource composition",
-            || {
-                let frame = caller_resources_after_requirements.clone();
-                match composition {
-                    ReturnResourceComposition::RestoreEntryBorrows => {
-                        ResourceContext::restore_call_borrows(
-                            ReturnedCallBorrows {
-                                frame,
-                                outputs: ensured_resources.clone(),
-                            },
-                            assumptions,
-                        )
-                    }
-                    ReturnResourceComposition::ValidateDescriptions => frame
-                        .try_compose_with_legacy_discovery_and_occurrences(
-                            ensured_resources.facts().iter().cloned(),
-                            assumptions,
-                        ),
-                }
-            },
+            || prepared.finish(assumptions),
         ) {
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
@@ -13115,7 +13139,7 @@ fn evaluate_contract_return_resources(
     ) else {
         return Ok(Err(RuntimeError::FunctionContract(format!(
             "could not expand ensured composite resources after call ({})",
-            bounded_contract_resource_frontier(&ensured_resources)
+            bounded_contract_resource_frontier(ensured_resources)
         ))));
     };
     // The callee has already certified every ensured composite and its
@@ -13209,7 +13233,7 @@ fn evaluate_contract_return_resources(
             );
     }
     Ok(Ok(ContractReturnResources {
-        output_resources: ensured_resources,
+        output_resources: evaluated.resources,
         return_resources,
         ensured_views,
         produced_borrowing_pieces,
