@@ -404,10 +404,23 @@ pub(in crate::kernel) fn boolean_operands_equal_with_load_atoms(
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
     use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
+    // Native conditions accept exact equality before asking load authority.
+    // Reuse the immutable machine syntax memo so repeated growing guards do
+    // not rewalk their shared arithmetic prefixes for this preliminary check.
+    let exact = left.syntax_equal_by(right, |a, b| match (a, b) {
+        (
+            crate::kernel::MachineOperandView::Shared(a),
+            crate::kernel::MachineOperandView::Shared(b),
+        ) => crate::kernel::shared_machine_syntax_equal(a, b),
+        _ => crate::kernel::machine_operand_syntax_cmp(a, b).is_eq(),
+    });
+    if exact {
+        return true;
+    }
     // Composite guards permit exact equality only. Do not recursively apply
     // permissive load authority to their children.
     if left.is_bool_value_form() || right.is_bool_value_form() {
-        return left.syntax_equal(right);
+        return false;
     }
     if let (Some(left), Some(right)) = (
         structural_boolean_comparison_view(left),
@@ -13085,6 +13098,44 @@ mod shared_load_atom_comparison_tests {
         let (right, b) = load("shared-right");
         assert_ne!(a, b);
         (left, right, a, b)
+    }
+
+    #[test]
+    fn common_guard_exact_equality_precedes_load_authority() {
+        use crate::kernel::{BooleanOperandView as B, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        let (read, _, _, _) = load_pair(MachineIntegerType::Int32);
+        let comparison = |format| ConditionTerm::Compare {
+            format,
+            relation: CompareRelation::Equal,
+            left: Box::new(read.clone()),
+            right: Box::new(MachineTerm::constant(0)),
+        };
+        let signed = comparison(MachineIntegerType::Int32);
+        let unsigned = comparison(MachineIntegerType::UInt32);
+        let a = KernelTermImport::default().condition(&signed);
+        let b = KernelTermImport::default().condition(&unsigned);
+        let no_authority = |_: &MachineTerm, _: &MachineTerm| false;
+        assert!(conditions_equal_with_load_atoms(
+            &signed,
+            &unsigned,
+            &no_authority
+        ));
+        assert!(boolean_operands_equal_with_load_atoms(
+            B::Shared(&a),
+            B::Shared(&a),
+            &no_authority
+        ));
+        assert!(boolean_operands_equal_with_load_atoms(
+            B::Shared(&a),
+            B::Shared(&b),
+            &no_authority
+        ));
+        assert!(boolean_operands_equal_with_load_atoms(
+            B::Native(&signed),
+            B::Shared(&b),
+            &no_authority
+        ));
     }
 
     #[test]
