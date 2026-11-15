@@ -1147,6 +1147,7 @@ pub(super) fn theorem_application_bindings(
                 actual: &crate::kernel::AlgebraicValueType,
             ) -> bool {
                 match (expected, actual) {
+                    (ClickType::Integer, crate::kernel::AlgebraicValueType::Integer) => true,
                     (
                         ClickType::Algebraic(expected),
                         crate::kernel::AlgebraicValueType::Parameter(name),

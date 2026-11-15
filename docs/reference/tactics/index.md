@@ -1471,6 +1471,39 @@ identity, such as `to_integer(x + 1) == to_integer(x) + 1`. Expansion writes
 the range proofs and an `integer_operation_identity` certificate. An
 unsigned operation is used this way only when those bounds prove it does not wrap.
 
+Available verified theorems are reasoning rules, not extra hypotheses. If the
+existing strategies miss, restricted solve searches for one theorem application
+whose conclusion structurally matches the goal. Every value argument must be
+determined by that conclusion; generic type arguments are inferred by ordinary
+application checking. The instantiated requirements and argument guards must
+be supplied by the listed facts under the existing `apply ... using` rules.
+An unconditional theorem can therefore close `solve() using {}`.
+
+This first slice supports binder-free structural matching of comparisons,
+predicate calls, definedness, and proposition expressions, including ordinary
+arithmetic and function-call operands. It does not invent arguments absent
+from the conclusion, match modulo arbitrary equality, or chain applications.
+Discovery uses an index of conclusion shapes and function/predicate symbols,
+runs under the normal solve work budget, and expands to explicit
+`apply(theorem(args)) using { ... }`. Direct existing proofs remain preferred.
+
+<!-- verified-example: mdtests/solve_using_discovers_one_theorem.md -->
+```click
+function shifted(x: Integer) -> Integer { x + 7 }
+
+theorem shifted_bound(x: Integer) {
+    requires 0 <= x;
+    ensures 7 <= shifted(x) by { unfold(shifted(x)); solve(); }
+}
+
+theorem use_bound(value: Integer) {
+    requires 0 <= value;
+    ensures 7 <= shifted(value) by {
+        solve() using { 0 <= value; };
+    }
+}
+```
+
 **Failure, checking, and tools:**
 
 A missing fact or missing simple rule fails. Click uses the generated explicit
