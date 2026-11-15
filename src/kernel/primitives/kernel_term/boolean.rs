@@ -107,6 +107,16 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
+            match (left.pointer_offsets(), right.pointer_offsets()) {
+                (Some(a), Some(b)) => {
+                    if !a.iter().zip(&b).all(|(a, b)| a.syntax_equal(b)) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
             if left.identity_leaf() != right.identity_leaf() {
                 return false;
             }
@@ -173,6 +183,21 @@ impl<'a> BooleanOperandView<'a> {
             unreachable!()
         };
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
+    }
+
+    pub(crate) fn pointer_offsets(self) -> Option<[SharedPointerOffset; 2]> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::PointerOffsetEqual { arguments } = root.node()
+        {
+            return Some(arguments.clone());
+        }
+        let ConditionTerm::PointerOffsetEqual(a, b) = self.native_leaf()? else {
+            return None;
+        };
+        Some([
+            KernelPointerOffset::import(a),
+            KernelPointerOffset::import(b),
+        ])
     }
 
     pub(crate) fn constant(self) -> Option<bool> {
@@ -371,6 +396,12 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
+            Old::PointerOffsetEqual(a, b) => Node::PointerOffsetEqual {
+                arguments: [
+                    KernelPointerOffset::import(a),
+                    KernelPointerOffset::import(b),
+                ],
+            },
             Old::Constant(value) => Node::BoolLiteral(*value),
             Old::Variable(variable) => Node::Variable(*variable),
             Old::Compare {
@@ -463,6 +494,10 @@ impl KernelTermExport {
         }
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::PointerOffsetEqual { arguments: [a, b] } => Old::PointerOffsetEqual(
+                Box::new(KernelPointerOffset::export(a)?),
+                Box::new(KernelPointerOffset::export(b)?),
+            ),
             Node::BoolLiteral(value) => Old::Constant(*value),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::BoolCompare {

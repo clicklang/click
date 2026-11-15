@@ -476,6 +476,12 @@ fn snapshot_blind_boolean_operand_key(
             right,
         );
     }
+    if let Some([a, b]) = condition.pointer_offsets() {
+        return SnapshotBlindConditionKey::PointerOffsetEqual(
+            pointer_keys::snapshot_offset(&a),
+            pointer_keys::snapshot_offset(&b),
+        );
+    }
     snapshot_blind_condition_key(&condition.native())
 }
 
@@ -5066,3 +5072,36 @@ mod machine_quantifier_identity_tests {
 
 #[cfg(test)]
 mod pointer_index_tests;
+
+#[cfg(test)]
+mod offset_condition_tests {
+    use super::*;
+    #[test]
+    fn common_offset_condition_keys_match_native_and_retain_scale_and_signedness() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut keys = Vec::new();
+        for width in [1, 8] {
+            for unsigned in [false, true] {
+                let source = ConditionTerm::PointerOffsetEqual(
+                    Box::new(PointerOffsetTerm::Add(
+                        Box::new(PointerOffsetTerm::Constant(0)),
+                        Box::new(PointerOffsetTerm::scaled_int64_node(
+                            MachineTerm::Variable(Variable(998600)),
+                            width,
+                            unsigned,
+                        )),
+                    )),
+                    Box::new(PointerOffsetTerm::Constant(0)),
+                );
+                let root = crate::kernel::KernelTermImport::default().condition(&source);
+                let expected = snapshot_blind_condition_key(&source);
+                let actual = snapshot_blind_boolean_operand_key(
+                    crate::kernel::BooleanOperandView::Shared(&root),
+                );
+                assert_eq!(actual, expected);
+                assert!(!keys.contains(&actual));
+                keys.push(actual);
+            }
+        }
+    }
+}

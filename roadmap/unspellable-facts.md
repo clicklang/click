@@ -304,7 +304,7 @@ read snapshots, and shared connective/overlapping arithmetic-prefix scaling.
 All 1,741 selected tests passed, including every scaling test and the substitution
 selections, with pinned importer tools. The CI-quality check passed.
 
-8e connects shared pointer-index transport to a common Boolean guard boundary.
+8e (merged [PR #2811](https://github.com/clicklang/click/pull/2811)) connects shared pointer-index transport to a common Boolean guard boundary.
 Common constants, variables, connectives and calls retain the existing refusal
 without exporting the guard DAG; Boolean loads retain their native refusal.
 Primitive comparisons transport shared operands through the existing frame
@@ -321,6 +321,30 @@ equivalences, does not need permission to match its own read. That preliminary
 check reuses the existing immutable machine syntax memo. All 1,679 selected tests
 passed, including every scaling test, memory provenance and shared load-atom
 comparison selections, with exit status 0. The CI-quality check passed.
+
+8g replaces the whole-condition pointer-offset equality fallback with a typed
+pair of shared offsets. Imports and explicit exports preserve the written Add
+shape, scales, index carrier types and signedness. Boolean identity, load-atom
+matching, variable/capture/binder readers, memory/resource dependencies and
+snapshot selectors read the retained operands directly. Native exact equality
+still precedes load authority; only the existing narrow-index path admits
+load-atom matching, while wide indices retain exact identity.
+
+Substitution preserves unchanged offset spelling and each existing raw/smart
+reconstruction policy. Frame transport reuses the package-7 pointer transporter
+with one context for both operands. Its offset-add implementation is shared with
+substitution; immutable constant metadata avoids rescanning prefixes. The
+existing residue classifier keeps its 64-occurrence, stride and constant limits.
+Numeric observation normalization retains its producer/observation distinction
+and shares offset-prefix work. No search, authority or budget rules change.
+The explicit Surface output boundary still uses the existing address-context
+offset spelling; the general raise/lower boundary remains package 9.
+
+The initial broad selection passed all 1,673 tests, including every scaling test,
+constructor/substitution/transport parity, annotation identity, dependency widths,
+snapshot keys and doubled/growing offset DAGs without numeric exports. Integration
+validation against the subsequent pointer-read/snapshot-control changes is recorded
+with the PR. Boolean execution handoffs and the other package-8 families remain open.
 
 ### 8a inventory
 

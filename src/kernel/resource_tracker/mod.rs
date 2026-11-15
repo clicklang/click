@@ -1407,6 +1407,12 @@ fn collect_condition_operand_reads(
             for operand in operands {
                 collect_operand_reads(operand, reads);
             }
+        } else if let Some(offsets) = leaf.pointer_offsets() {
+            crate::kernel::SharedPointerOffset::visit_pair(&offsets, |node| {
+                if let Some(index) = node.index() {
+                    collect_operand_reads(crate::kernel::MachineOperandView::Shared(index), reads);
+                }
+            });
         } else {
             // Integer comparison leaves retain their existing integer reader;
             // calls and opaque conditions retain the native admission rules.

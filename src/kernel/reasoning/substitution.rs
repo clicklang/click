@@ -5312,6 +5312,27 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
     to: &MachineTerm,
 ) -> Option<KernelTerm> {
     let mut machine_results = std::collections::HashMap::new();
+    let mut map_machine = |argument: &KernelTerm, format: MachineIntegerType| {
+        let operand = crate::kernel::MachineOperandView::Shared(argument).retain(format);
+        crate::kernel::memory_provenance::map_shared_machine_substitution_with_cache(
+            &operand,
+            |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
+            crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+            |_| true,
+            |root| {
+                let source = MachineTerm::Variable(from);
+                let mut rewrite =
+                    crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
+                rewrite.enable_registered_load_resolution();
+                let result = rewrite.shared_machine_operand(root);
+                result
+                    .filter(|_| rewrite.refusal().is_none())
+                    .map(Some)
+                    .ok_or(())
+            },
+            &mut machine_results,
+        )
+    };
     condition
         .map_boolean_leaves::<()>(|leaf| {
             if let crate::kernel::KernelTermNode::BoolCompare {
@@ -5320,31 +5341,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 arguments,
             } = leaf.node()
             {
-                let arguments = arguments.each_ref().map(|argument| {
-                    let operand =
-                        crate::kernel::MachineOperandView::Shared(argument).retain(*format);
-                    crate::kernel::memory_provenance::map_shared_machine_substitution_with_cache(
-                        &operand,
-                        |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
-                        crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
-                        |_| true,
-                        |root| {
-                            let source = MachineTerm::Variable(from);
-                            let mut rewrite =
-                                crate::kernel::proof::term_rewrite::TermRewrite::for_bits(
-                                    &source, to,
-                                );
-                            rewrite.enable_registered_load_resolution();
-                            let result = rewrite.shared_machine_operand(root);
-                            result
-                                .filter(|_| rewrite.refusal().is_none())
-                                .map(Some)
-                                .ok_or(())
-                        },
-                        &mut machine_results,
-                    )
-                    .and_then(|value| value.shared_operand().cloned())
-                });
+                let arguments = arguments.each_ref().map(|argument| map_machine(argument, *format).and_then(|value| value.shared_operand().cloned()));
                 let [Some(left), Some(right)] = arguments else {
                     return Err(());
                 };
@@ -5356,6 +5353,31 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                         KernelTerm::boolean_comparison(*format, *relation, arguments)
                     },
                 );
+            }
+            if let crate::kernel::KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
+                use crate::kernel::{KernelPointerOffset as O, SharedPointerOffset as S};
+                let offsets = S::try_map_pair(arguments, |original, node| {
+                    let (value, width, wide) = match node {
+                        O::Add([a, b]) => {
+                            return Ok::<_, ()>(if matches!(original.node(), O::Add(old) if old == &[a.clone(), b.clone()]) {
+                                original.clone()
+                            } else { S::add(a, b) });
+                        }
+                        O::Int32Scaled { value, byte_width } => (value, byte_width, None),
+                        O::Int64Scaled { value, byte_width, unsigned } => (value, byte_width, Some(unsigned)),
+                        _ => return Ok(original.clone()),
+                    };
+                    let index = S::exact_index(&value);
+                    // The native offset substitution preserves the old index
+                    // on an unsupported rewrite and preserves unchanged spelling.
+                    let mapped = map_machine(&value, index.ty())
+                        .unwrap_or_else(|| index.clone());
+                    if crate::kernel::memory_provenance::pointer_index_syntax_equal(&index, &mapped) {
+                        return Ok(original.clone());
+                    }
+                    Ok(O::import(&crate::kernel::memory_provenance::rebuild_scaled_pointer_index(mapped, width, wide)))
+                })?;
+                return Ok(KernelTerm::pointer_offset_equal(offsets));
             }
             let native = crate::kernel::BooleanOperandView::Shared(leaf).identity_leaf();
             Ok(crate::kernel::KernelTermImport::default().condition(
@@ -5375,6 +5397,12 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
         return crate::kernel::proof::term_rewrite::substitute_pointer_boolean_value(
             condition, from, to,
         );
+    }
+    if matches!(
+        condition.node(),
+        crate::kernel::KernelTermNode::PointerOffsetEqual { .. }
+    ) {
+        return Some(condition.clone());
     }
     if crate::kernel::BooleanOperandView::Shared(condition)
         .comparison()

@@ -171,6 +171,14 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
+            KernelTermNode::PointerOffsetEqual { arguments } => {
+                super::retained_pointers::collect_offset_variables_with_summaries(
+                    arguments,
+                    mode,
+                    &mut leaf_variables,
+                    summaries,
+                );
+            }
             KernelTermNode::ArrayReference { .. } => {
                 collect_argument(
                     term.pointer_argument_native().expect("array descriptor"),
@@ -418,6 +426,23 @@ mod tests {
             IntegerTerm::Variable(Variable(970_002)).into(),
         );
         for source in [
+            ConditionTerm::PointerOffsetEqual(
+                Box::new(PointerOffsetTerm::Add(
+                    Box::new(PointerOffsetTerm::Variable(Variable(970_005))),
+                    Box::new(PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::IntegerToMachine {
+                            value: IntegerTerm::Variable(Variable(970_006)).into(),
+                            destination: MachineIntegerType::Int32,
+                        },
+                        4,
+                    )),
+                )),
+                Box::new(PointerOffsetTerm::scaled_int64_node(
+                    MachineTerm::Variable(Variable(970_007)),
+                    8,
+                    true,
+                )),
+            ),
             comparison.clone(),
             ConditionTerm::BoolIf {
                 condition: Box::new(ConditionTerm::Variable(Variable(970_003))),

@@ -14,6 +14,26 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
             for operand in operands {
                 collect_machine_operand_carriers(operand, &mut variables);
             }
+        } else if let Some(offsets) = leaf.pointer_offsets() {
+            crate::kernel::SharedPointerOffset::visit_pair(&offsets, |node| {
+                if !variables.visit() {
+                    return;
+                }
+                match node {
+                    crate::kernel::KernelPointerOffset::Variable(variable) => {
+                        variables.program_values.insert(*variable);
+                        collect_registered_load_carriers(*variable, &mut variables);
+                    }
+                    node => {
+                        if let Some(value) = node.index() {
+                            collect_machine_operand_carriers(
+                                MachineOperandView::Shared(value),
+                                &mut variables,
+                            );
+                        }
+                    }
+                }
+            });
         } else {
             collect_condition_carriers(&leaf.identity_leaf(), &mut variables);
         }
@@ -37,6 +57,22 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 }
             }
             return Ok(KernelTerm::boolean_comparison_raw(*format, *relation, arguments));
+        }
+        if let KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
+            use crate::kernel::{KernelPointerOffset as O, SharedPointerOffset as S};
+            let offsets = S::try_map_pair(arguments, |_, node| {
+                // This entry point is pointer-variable substitution only:
+                // offsets retain their raw shape; registered loads stay closed.
+                let node = match node {
+                    O::Int32Scaled { value, byte_width } => O::Int32Scaled {
+                        value: rewrite.shared_machine_operand(&value).ok_or(())?, byte_width },
+                    O::Int64Scaled { value, byte_width, unsigned } => O::Int64Scaled {
+                        value: rewrite.shared_machine_operand(&value).ok_or(())?, byte_width, unsigned },
+                    node => node,
+                };
+                node.into_shared().map_err(|_| ())
+            })?;
+            return Ok(KernelTerm::pointer_offset_equal_raw(offsets));
         }
         let native = B::Shared(leaf).identity_leaf();
         let result = rewrite.condition(&native);

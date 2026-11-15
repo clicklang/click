@@ -428,6 +428,15 @@ pub(in crate::kernel) fn boolean_operands_equal_with_load_atoms(
     ) {
         return comparison_views_equal_with_load_atoms(left, right, loads_match);
     }
+    match (left.pointer_offsets(), right.pointer_offsets()) {
+        (Some(a), Some(b)) => {
+            return a.iter().zip(&b).all(|(a, b)| {
+                pointer_checks::shared_offsets_equal_with_load_atoms(a, b, loads_match)
+            });
+        }
+        (None, None) => {}
+        _ => return false,
+    }
     conditions_equal_with_load_atoms(&left.native(), &right.native(), loads_match)
 }
 
