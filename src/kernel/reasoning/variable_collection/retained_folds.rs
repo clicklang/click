@@ -149,6 +149,23 @@ pub(super) fn algebraic_integer_variables(root: &KernelTerm, free: bool) -> Vari
         }
         crate::instrumentation::record_deterministic_work(1);
         match term.node() {
+            KernelTermNode::AlgebraicCall(call) => {
+                for argument in call.arguments.iter().rev() {
+                    if matches!(argument.ty(), KernelType::Algebraic(_)) {
+                        pending.push(argument);
+                    } else {
+                        result.extend(
+                            common_variables(
+                                argument,
+                                FoldVariableRead::IntegerFree,
+                                &mut summaries,
+                            )
+                            .iter()
+                            .copied(),
+                        );
+                    }
+                }
+            }
             KernelTermNode::Constructor(constructor) => {
                 pending.extend(constructor.fields.iter().rev())
             }
@@ -235,7 +252,10 @@ pub(super) fn common_variables(
             continue;
         }
         if mode == FoldVariableRead::IntegerFree
-            && matches!(term.node(), KernelTermNode::Constructor(_))
+            && matches!(
+                term.node(),
+                KernelTermNode::Constructor(_) | KernelTermNode::AlgebraicCall(_)
+            )
         {
             summaries.insert(term.id(), algebraic_integer_variables(term, false));
             continue;
@@ -625,6 +645,86 @@ mod tests {
         assert_eq!(actual, expected);
         assert!(!actual.contains(&Variable(999613)));
         assert!(algebraic_integer_variables(&root, false).contains(&Variable(999613)));
+    }
+
+    #[test]
+    fn algebraic_call_readers_preserve_argument_and_carrier_modes() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let fold = IntegerTerm::RangeFold {
+            index: IntegerRangeFoldIndex::Integer {
+                start: IntegerTerm::constant_i64(0).into(),
+                end: IntegerTerm::Variable(Variable(999711)).into(),
+            },
+            initial: IntegerTerm::Variable(Variable(999712)).into(),
+            accumulator: Variable(999713),
+            item: Variable(999714),
+            body: IntegerTerm::Variable(Variable(999713)).into(),
+        };
+        let mut nested = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
+        nested.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Integer(fold.clone())],
+        };
+        let native = AlgebraicTerm {
+            algebraic_type: nested.algebraic_type.clone(),
+            node: AlgebraicTermNode::PureFunctionApplication {
+                name: "algebraic_reader_modes".into(),
+                arguments: vec![
+                    PureFunctionArgument::Integer(fold.into()),
+                    PureFunctionArgument::Algebraic(nested),
+                    PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                        Variable(999715),
+                    ))),
+                    PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
+                        MachineIntegerType::Int32,
+                        MachineTerm::Variable(Variable(999716)),
+                    )),
+                ],
+            },
+        };
+        let root = KernelTermImport::default().algebraic(&native);
+        struct Restore(bool);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+            }
+        }
+        for connection in [false, true, false] {
+            let _restore = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::ExpressionFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let mut expected = BTreeSet::new();
+                collect_argument(
+                    &PureFunctionArgument::Algebraic(native.clone()),
+                    mode,
+                    &mut expected,
+                    &mut SeenTerms::default(),
+                );
+                let actual = common_variables(&root, mode, &mut Default::default())
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+            }
+            let mut expected = BTreeSet::new();
+            collect_algebraic_free_integer_variables(
+                &native,
+                &mut expected,
+                &mut SeenTerms::default(),
+            );
+            assert_eq!(
+                algebraic_integer_variables(&root, true)
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>(),
+                expected
+            );
+        }
     }
 
     #[test]

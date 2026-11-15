@@ -107,6 +107,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
                 KernelTermNode::Constructor(constructor) => constructor.fields.clone(),
+                KernelTermNode::AlgebraicCall(call) => call.arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
                 KernelTermNode::BoolCast { operand, .. }
                 | KernelTermNode::MachineObservation { operand, .. }
@@ -126,7 +127,10 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     for arm in &mut matched.arms {
                         arm.bindings = arm.bindings.iter().map(|child| get(child)).collect();
                     }
-                    matched.into_term().with_machine_observation_type(format)
+                    let root = matched.into_term();
+                    if matches!(term.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) {
+                        root.with_machine_observation_type(format)
+                    } else { root }
                 }
                 KernelTermNode::Fold(fold) => KernelFold {
                     index: fold.index,
@@ -150,6 +154,11 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
+                }
+                KernelTermNode::AlgebraicCall(call) => {
+                    let mut call = call.clone();
+                    call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();
+                    call.into_term()
                 }
                 KernelTermNode::Constructor(constructor) => {
                     let mut constructor = constructor.clone();

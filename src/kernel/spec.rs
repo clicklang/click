@@ -3799,10 +3799,134 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
+    budget.consume_expression_step()?;
+    // Keep recursive pure calls outside the larger constructor/match evaluator's
+    // stack frame. The same expression step and path rules apply to both routes.
+    if let SpecAlgebraicExpressionNode::PureFunctionApplication { name, arguments } =
+        &expression.node
+    {
+        evaluate_spec_algebraic_call_in(
+            scope,
+            &expression.algebraic_type,
+            name,
+            arguments,
+            assumptions,
+            budget,
+        )
+    } else {
+        evaluate_spec_algebraic_non_call_in(scope, expression, assumptions, budget)
+    }
+}
+
+fn evaluate_spec_algebraic_call_in(
+    scope: SpecScope<'_>,
+    algebraic_type: &AlgebraicType,
+    name: &str,
+    arguments: &[SpecPureFunctionArgument],
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
+    let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
+    for argument in arguments {
+        let mut next = Vec::new();
+        for (values, facts, obligations) in paths {
+            let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
+            let argument_paths = if let SpecPureFunctionArgument::Algebraic(expression) = argument {
+                evaluate_spec_algebraic_argument_paths_in(
+                    scope,
+                    expression,
+                    &path_assumptions,
+                    budget,
+                )?
+            } else {
+                evaluate_spec_pure_function_argument_paths_in(
+                    scope,
+                    argument,
+                    &path_assumptions,
+                    false,
+                    budget,
+                )?
+            };
+            let mut argument_paths = argument_paths.into_iter().peekable();
+            let mut prefix = Some(values);
+            while let Some(argument_path) = argument_paths.next() {
+                let Some((merged_facts, merged_obligations)) =
+                    merge_execution_pure_facts_and_obligations_under(
+                        &facts,
+                        &obligations,
+                        &argument_path.facts,
+                        &argument_path.obligations,
+                        assumptions,
+                        &path_assumptions,
+                    )
+                else {
+                    continue;
+                };
+                let mut values = if argument_paths.peek().is_none() {
+                    prefix.take().expect("last call path owns its prefix")
+                } else {
+                    prefix.as_ref().unwrap().clone()
+                };
+                values.push(argument_path.value);
+                next.push((values, merged_facts, merged_obligations));
+            }
+        }
+        paths = next;
+    }
+    Ok(paths
+        .into_iter()
+        .map(|(arguments, facts, mut obligations)| {
+            if name == "to_nat"
+                && let Some(SpecCallArgument::Native(PureFunctionArgument::Integer(value))) =
+                    arguments.first()
+            {
+                let nonnegative = ConditionTerm::integer_greater_equal(
+                    value.as_ref().clone(),
+                    crate::kernel::IntegerTerm::Constant(0.into()),
+                );
+                let required = Proposition::ConditionIs(nonnegative, true);
+                if super::check_nat_integer_law("click::nat::to_integer_nonnegative", &required)
+                    .is_none()
+                {
+                    retain_required_integer_obligation(&mut obligations, assumptions, required);
+                }
+            }
+            SpecAlgebraicPath {
+                value: if budget.machine_result_production_disabled {
+                    AlgebraicTerm {
+                        algebraic_type: algebraic_type.clone(),
+                        node: AlgebraicTermNode::PureFunctionApplication {
+                            name: name.to_owned(),
+                            arguments: call_arguments(arguments),
+                        },
+                    }
+                    .into()
+                } else {
+                    AlgebraicResult::Shared(KernelTerm::algebraic_call(
+                        algebraic_type.clone(),
+                        name.to_owned(),
+                        arguments
+                            .into_iter()
+                            .map(SpecCallArgument::into_algebraic_call_operand)
+                            .collect(),
+                    ))
+                },
+                facts,
+                obligations,
+            }
+        })
+        .collect())
+}
+
+fn evaluate_spec_algebraic_non_call_in(
+    scope: SpecScope<'_>,
+    expression: &SpecAlgebraicExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
     let algebraic_bindings = scope.algebraic_bindings;
-    budget.consume_expression_step()?;
     match &expression.node {
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
             let snapshot = if projection.at_entry {
@@ -4199,85 +4323,8 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             }
             Ok(paths)
         }
-        SpecAlgebraicExpressionNode::PureFunctionApplication { name, arguments } => {
-            let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
-            for argument in arguments {
-                let mut next = Vec::new();
-                for (values, facts, obligations) in paths {
-                    let path_assumptions =
-                        assumptions_with_path_context(assumptions, &facts, &obligations);
-                    let argument_paths = evaluate_spec_pure_function_argument_paths_in(
-                        scope,
-                        argument,
-                        &path_assumptions,
-                        false,
-                        budget,
-                    )?;
-                    let mut argument_paths = argument_paths.into_iter().peekable();
-                    let mut prefix = Some(values);
-                    while let Some(argument_path) = argument_paths.next() {
-                        let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations_under(
-                                &facts,
-                                &obligations,
-                                &argument_path.facts,
-                                &argument_path.obligations,
-                                assumptions,
-                                &path_assumptions,
-                            )
-                        else {
-                            continue;
-                        };
-                        let mut values = if argument_paths.peek().is_none() {
-                            prefix.take().expect("last call path owns its prefix")
-                        } else {
-                            prefix.as_ref().unwrap().clone()
-                        };
-                        values.push(argument_path.value);
-                        next.push((values, merged_facts, merged_obligations));
-                    }
-                }
-                paths = next;
-            }
-            Ok(paths
-                .into_iter()
-                .map(|(arguments, facts, mut obligations)| {
-                    let arguments = call_arguments(arguments);
-                    if name == "to_nat"
-                        && let Some(PureFunctionArgument::Integer(value)) = arguments.first()
-                    {
-                        let nonnegative = ConditionTerm::integer_greater_equal(
-                            value.as_ref().clone(),
-                            crate::kernel::IntegerTerm::Constant(0.into()),
-                        );
-                        let required = Proposition::ConditionIs(nonnegative, true);
-                        if super::check_nat_integer_law(
-                            "click::nat::to_integer_nonnegative",
-                            &required,
-                        )
-                        .is_none()
-                        {
-                            retain_required_integer_obligation(
-                                &mut obligations,
-                                assumptions,
-                                required,
-                            );
-                        }
-                    }
-                    SpecAlgebraicPath {
-                        value: (AlgebraicTerm {
-                            algebraic_type: expression.algebraic_type.clone(),
-                            node: AlgebraicTermNode::PureFunctionApplication {
-                                name: name.clone(),
-                                arguments,
-                            },
-                        })
-                        .into(),
-                        facts,
-                        obligations,
-                    }
-                })
-                .collect())
+        SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => {
+            unreachable!("call dispatched before the general evaluator")
         }
     }
 }
@@ -8075,6 +8122,29 @@ fn refine_object_pointer_argument_with_null(
     false
 }
 
+fn evaluate_spec_algebraic_argument_paths_in(
+    scope: SpecScope<'_>,
+    expression: &SpecAlgebraicExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecPureFunctionArgumentPath>> {
+    Ok(
+        evaluate_spec_algebraic_at_state_with_bindings_in(scope, expression, assumptions, budget)?
+            .into_iter()
+            .map(|path| SpecPureFunctionArgumentPath {
+                value: match path.value {
+                    AlgebraicResult::Native(value) => {
+                        SpecCallArgument::Native(PureFunctionArgument::Algebraic(value))
+                    }
+                    AlgebraicResult::Shared(root) => SpecCallArgument::Shared(root),
+                },
+                facts: path.facts,
+                obligations: path.obligations,
+            })
+            .collect(),
+    )
+}
+
 fn evaluate_spec_pure_function_argument_paths_in(
     scope: SpecScope<'_>,
     argument: &SpecPureFunctionArgument,
@@ -8190,21 +8260,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 .collect())
         }
         SpecPureFunctionArgument::Algebraic(expression) => {
-            Ok(evaluate_spec_algebraic_at_state_with_bindings_in(
-                scope,
-                expression,
-                assumptions,
-                budget,
-            )?
-            .into_iter()
-            .map(|path| SpecPureFunctionArgumentPath {
-                value: SpecCallArgument::Native(PureFunctionArgument::Algebraic(
-                    path.value.into_native_compat(),
-                )),
-                facts: path.facts,
-                obligations: path.obligations,
-            })
-            .collect())
+            evaluate_spec_algebraic_argument_paths_in(scope, expression, assumptions, budget)
         }
         SpecPureFunctionArgument::ArrayRef {
             memory,

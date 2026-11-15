@@ -28,7 +28,9 @@ impl KernelTerm {
                 return root;
             };
             match value.node {
-                AlgebraicTermNode::Variable(_) | AlgebraicTermNode::Constructor { .. } => {
+                AlgebraicTermNode::Variable(_)
+                | AlgebraicTermNode::Constructor { .. }
+                | AlgebraicTermNode::PureFunctionApplication { .. } => {
                     KernelTermImport::default().algebraic(value)
                 }
                 AlgebraicTermNode::Match { .. } => {
@@ -88,6 +90,13 @@ impl KernelTerm {
                 (KernelTermNode::Variable(a), KernelTermNode::Variable(b)) if a == b => {}
                 (KernelTermNode::IntegerLiteral(a), KernelTermNode::IntegerLiteral(b))
                     if a == b => {}
+                (KernelTermNode::AlgebraicCall(a), KernelTermNode::AlgebraicCall(b))
+                    if a.name == b.name
+                        && a.shared_machine_arguments == b.shared_machine_arguments
+                        && a.arguments.len() == b.arguments.len() =>
+                {
+                    pending.extend(a.arguments.iter().cloned().zip(b.arguments.iter().cloned()));
+                }
                 (KernelTermNode::Constructor(a), KernelTermNode::Constructor(b))
                     if a.variant == b.variant && a.fields.len() == b.fields.len() =>
                 {

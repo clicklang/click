@@ -522,7 +522,8 @@ Validation: five focused tests and 2,040 broader tests passed, including all
 scaling tests, algebraic/match checks, Surface synthesis, Rust lowering and full
 ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
 
-8r retains both algebraic equality operands in a typed common condition node.
+8r ([#2837](https://github.com/clicklang/click/pull/2837), merged) retains both
+algebraic equality operands in a typed common condition node.
 Constructor/variable syntax comparisons traverse shared fields and match children,
 with native field equality preserving type, variant, order and pointer-metadata
 semantics. Exact producer payloads remain distinct. Constructor source matching
@@ -540,6 +541,25 @@ upstream call/destination-write retirement, 3,045 tests passed, including every
 scaling test, algebraic/Boolean checks, rewrites/readers, Surface synthesis, call
 and statement checks, language lowering and full ordinary example projects.
 `scripts/check.sh --ci-quality` exited 0 on the integrated tree.
+
+8s retains algebraic pure-call arguments and results as common roots, preserving
+native `Value(machine)` versus `SharedMachine` argument forms. Explicit output
+reconstructs those forms and exact pointer metadata. Syntax comparison, dependency
+readers, observation normalization and existing Surface call spelling understand
+the retained call. Mixed-family descriptor adapters remain assigned to 8ac.
+
+Native algebraic matches now import iteratively so retained match arguments have
+the same observation keys as native inputs. Normalization follows opaque fields
+through algebraic matches while preserving their result type. Recursive call
+evaluation uses smaller helper frames with unchanged expression-step accounting,
+path facts and obligations, including `to_nat` definedness. No search or resource
+limits changed. Five focused regressions passed, covering exact argument forms,
+retained-match keys, reader modes and linear nested-call/match-import work.
+Validation: the broader run passed 2,788 tests, including all other scaling
+checks and full ordinary examples. Its sole failure was a fixture assuming a
+zero-argument algebraic call remained opaque; after giving it an opaque pointer
+argument, that regression and the five focused checks all passed. The quality
+gate exited 0. No production behavior or test limits changed for that adjustment.
 
 ### 8a inventory
 
