@@ -79,6 +79,8 @@ pub(super) fn assign_call_result(
         && matches!(
             program_type,
             ProgramType::Bool
+                | ProgramType::Float32
+                | ProgramType::Float64
                 | ProgramType::Parameter(_)
                 | ProgramType::Int8
                 | ProgramType::UInt8

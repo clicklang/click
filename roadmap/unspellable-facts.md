@@ -759,6 +759,18 @@ native intrinsic calls remain explicit legacy boundaries for 8ad. Execution
 and memory handoffs remain 8aa–8ab. The 101 focused float, fixture and deep
 integer-synthesis checks passed, with zero float fact-stability differences.
 
+8aa retains float roots through local bindings, same-format argument and return
+coercions, caller results, temporary step results and specification value
+handoffs. Stored local values preserve exact native equality/order/hash keys;
+root-preserving handoffs do not materialize float expression prefixes. Equal
+float conditional arms retain their root, while unequal arms keep the existing
+refusal. Native arithmetic and changed-format coercion remain explicit producer
+bridges; memory-cell storage is the separate 8ab slice. Deterministic tests
+cover growing shared prefixes through local, temporary and return handoffs.
+All 2,209 handoff/scaling checks passed; after integrating upstream, 147
+float/loop/fixture checks passed with zero float fact-stability differences.
+Quality checks passed.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes

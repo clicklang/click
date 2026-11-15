@@ -298,3 +298,24 @@ mod tests {
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/kernel_term/float.rs");
 }
+
+impl KernelTerm {
+    /// Selected compatibility reading for native value keys and APIs. Ordinary
+    /// execution handoffs retain the root without requesting this view.
+    pub(crate) fn float_native_value(&self) -> Option<&ProgramValue> {
+        FloatOperandView::from_shared(self)?;
+        let PureFunctionArgument::Value(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Value(
+                    KernelTermExport::float(self).expect("float value output"),
+                ))
+            })
+            .as_ref()
+        else {
+            unreachable!("float value descriptor");
+        };
+        Some(value)
+    }
+}

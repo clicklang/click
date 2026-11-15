@@ -3053,7 +3053,9 @@ fn retained_value_accepted(ty: ProgramType, value: &ExecutionValue) -> bool {
     if value.shared().is_some()
         && matches!(
             value.program_type(),
-            ProgramType::Int8
+            ProgramType::Float32
+                | ProgramType::Float64
+                | ProgramType::Int8
                 | ProgramType::Int16
                 | ProgramType::Int32
                 | ProgramType::Int64
