@@ -1,6 +1,9 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+mod publication;
+pub(crate) use publication::PublishedFunctionOutcome;
+
 mod completion;
 pub(crate) use completion::{ContractCompletionGoal, ContractProofProgress, WholeContractProof};
 
@@ -16,6 +19,7 @@ pub(crate) use closing::{
 
 /// A specification made from this path's own entry premises. Generic
 /// specifications can add arbitrary premises and carry no such authority.
+#[cfg(test)]
 pub(crate) struct CheckedPathSpecification {
     function: ProgramFunction,
     specification: FunctionSpecification,
@@ -23,6 +27,7 @@ pub(crate) struct CheckedPathSpecification {
     path_origin: Theorem,
 }
 
+#[cfg(test)]
 impl CheckedPathSpecification {
     pub(crate) fn new(function: &ProgramFunction, path: &SymbolicExecutionPath) -> Option<Self> {
         let mut conclusion = path.theorem.proposition();
@@ -63,9 +68,6 @@ impl CheckedPathSpecification {
     pub(crate) fn specification(&self) -> &FunctionSpecification {
         &self.specification
     }
-    pub(crate) fn theorem(&self) -> &Theorem {
-        &self.theorem
-    }
 
     pub(crate) fn complete(
         &self,
@@ -87,6 +89,7 @@ impl CheckedPathSpecification {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn program_checked_function_proposition_with_reason(
     function: &ProgramFunction,
     specification: &FunctionSpecification,
@@ -313,6 +316,7 @@ mod cached_read_completion_tests {
                         (),
                         Arc::new(OutcomeProofState::new(
                             OutcomeProofCore {
+                                publication: None,
                                 identity: OutcomeIdentity::fresh(),
                                 result: Arc::new(int32(0)),
                                 state: ExecutionState::new().with_memory(memory).into(),
@@ -4202,6 +4206,7 @@ mod claim_requirement_tests {
             };
             let outcome = Arc::new(OutcomeProofState::new(
                 OutcomeProofCore {
+                    publication: None,
                     identity: OutcomeIdentity::fresh(),
                     result: Arc::new(int32(0)),
                     state: ExecutionState::new().into(),

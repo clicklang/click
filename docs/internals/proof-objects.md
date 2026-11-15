@@ -472,10 +472,20 @@ and proof forks retain independent progress. Completed obligations transfer
 directly to the whole-contract owner during admission; registration does not
 scan proposition or exit receipts to infer coverage.
 
-Legacy per-path specification wrappers still package the source theorems;
-they do not supply whole-contract completion authority. Independent conditional
-execution artifacts have no opened-entry authority and retain their separate
-entry preparation and rule-packaging APIs.
+The checked execution producer constructs `PublishedFunctionOutcome` alongside
+each path, retaining its specification, theorem, and raw result/state together.
+Opening an ordinary outcome allocates a fresh proof identity and retains that
+producer publication. Completing a clause publishes the evidence held by that
+exact goal through its retained publication; it does not accept a separately
+supplied receipt or reconstruct and compare specifications, results, memory,
+or locals. Reopening the same execution keeps proof owners distinct.
+
+Checked return-resource rewrites advance the same producer's publication before
+closing, and publication updates use a persistent path index. The return-rewrite
+operation still revisits its retained execution evidence; removing that replay
+and the later return/exit receipt-installation guards remains separate work.
+Independent conditional execution artifacts have no opened-entry authority and
+retain their separate entry preparation and rule-packaging APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using

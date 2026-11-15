@@ -194,11 +194,11 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
                 let mut closing = original.clone();
                 for kind in ContractClosingGoal::ORDER {
                     closing = closing
-                        .prove_goal(
+                        .prove_goal_for_specification(
                             kind,
                             &execution,
                             path,
-                            &specification,
+                            specification.specification(),
                             &core,
                             &claims,
                             facts,
