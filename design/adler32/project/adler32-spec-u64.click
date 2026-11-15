@@ -219,7 +219,7 @@ theorem adler_residue_add_u64(n: Integer, m: Integer) {
    0 <= truncating_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521);
    truncating_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521) <= 65520;
   };
-  assumption();
+  known();
  }
 }
 
@@ -236,7 +236,7 @@ theorem adler_spec_a_canonical_u64(bytes: uint8[], n: uint64, a0: Integer) {
   apply(integer::positive_divisor_remainder_upper(a0 + adler_byte_sum_u64(bytes, n), 65521)) using { 65521 != 0; 0 < 65521; };
   have truncating_remainder(a0 + adler_byte_sum_u64(bytes, n), 65521) <= 65520 by { solve() using { truncating_remainder(a0 + adler_byte_sum_u64(bytes, n), 65521) <= 65521 - 1; }; }
   unfold(adler_spec_a_u64(bytes, n, a0));
-  both { assumption(); } and { assumption(); }
+  both { known(); } and { known(); }
  }
 }
 
@@ -263,7 +263,7 @@ theorem adler_spec_b_canonical_u64(bytes: uint8[], n: uint64, a0: Integer, b0: I
   apply(integer::positive_divisor_remainder_upper(b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)), 65521)) using { 65521 != 0; 0 < 65521; };
   have truncating_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)), 65521) <= 65520 by { solve() using { truncating_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)), 65521) <= 65521 - 1; }; }
   unfold(adler_spec_b_u64(bytes, n, a0, b0));
-  both { assumption(); } and { assumption(); }
+  both { known(); } and { known(); }
  }
 }
 
@@ -324,19 +324,19 @@ theorem adler_sum_append_four_u64(bytes: uint8[], n: uint64) {
   apply(adler_sum_append_u64(bytes, n + 2u64)) using { to_integer(0u64) < to_integer(n + 2u64); };
   have to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64) by { solve() using { to_integer((n + 2u64) - 1u64) == to_integer(n + 1u64); }; }
   apply(adler_byte_observation_same_index_u64(bytes, n + 1u64, (n + 2u64) - 1u64)) using { to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64); };
-  have adler_byte_sum_u64(bytes, n + 2u64) == adler_byte_sum_u64(bytes, n + 1u64) + to_integer(bytes[n + 1u64]) by { rewrite(to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64)); assumption(); }
+  have adler_byte_sum_u64(bytes, n + 2u64) == adler_byte_sum_u64(bytes, n + 1u64) + to_integer(bytes[n + 1u64]) by { rewrite(to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64)); known(); }
   have to_integer(0u64) < to_integer(n + 3u64) by { solve() using { n <= 18446744073709551611u64; }; }
   have to_integer((n + 3u64) - 1u64) == to_integer(n + 2u64) by { solve() using { n <= 18446744073709551611u64; }; }
   apply(adler_sum_append_u64(bytes, n + 3u64)) using { to_integer(0u64) < to_integer(n + 3u64); };
   have to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64) by { solve() using { to_integer((n + 3u64) - 1u64) == to_integer(n + 2u64); }; }
   apply(adler_byte_observation_same_index_u64(bytes, n + 2u64, (n + 3u64) - 1u64)) using { to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64); };
-  have adler_byte_sum_u64(bytes, n + 3u64) == adler_byte_sum_u64(bytes, n + 2u64) + to_integer(bytes[n + 2u64]) by { rewrite(to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64)); assumption(); }
+  have adler_byte_sum_u64(bytes, n + 3u64) == adler_byte_sum_u64(bytes, n + 2u64) + to_integer(bytes[n + 2u64]) by { rewrite(to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64)); known(); }
   have to_integer(0u64) < to_integer(n + 4u64) by { solve() using { n <= 18446744073709551611u64; }; }
   have to_integer((n + 4u64) - 1u64) == to_integer(n + 3u64) by { solve() using { n <= 18446744073709551611u64; }; }
   apply(adler_sum_append_u64(bytes, n + 4u64)) using { to_integer(0u64) < to_integer(n + 4u64); };
   have to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64) by { solve() using { to_integer((n + 4u64) - 1u64) == to_integer(n + 3u64); }; }
   apply(adler_byte_observation_same_index_u64(bytes, n + 3u64, (n + 4u64) - 1u64)) using { to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64); };
-  have adler_byte_sum_u64(bytes, n + 4u64) == adler_byte_sum_u64(bytes, n + 3u64) + to_integer(bytes[n + 3u64]) by { rewrite(to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64)); assumption(); }
+  have adler_byte_sum_u64(bytes, n + 4u64) == adler_byte_sum_u64(bytes, n + 3u64) + to_integer(bytes[n + 3u64]) by { rewrite(to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64)); known(); }
   rewrite(adler_byte_sum_u64(bytes, n + 4u64) == adler_byte_sum_u64(bytes, n + 3u64) + to_integer(bytes[n + 3u64]));
   rewrite(adler_byte_sum_u64(bytes, n + 3u64) == adler_byte_sum_u64(bytes, n + 2u64) + to_integer(bytes[n + 2u64]));
   rewrite(adler_byte_sum_u64(bytes, n + 2u64) == adler_byte_sum_u64(bytes, n + 1u64) + to_integer(bytes[n + 1u64]));
@@ -357,27 +357,27 @@ theorem adler_weighted_append_four_u64(bytes: uint8[], n: uint64) {
   apply(adler_sum_append_u64(bytes, n + 2u64)) using { to_integer(0u64) < to_integer(n + 2u64); };
   have to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64) by { solve() using { to_integer((n + 2u64) - 1u64) == to_integer(n + 1u64); }; }
   apply(adler_byte_observation_same_index_u64(bytes, n + 1u64, (n + 2u64) - 1u64)) using { to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64); };
-  have adler_byte_sum_u64(bytes, n + 2u64) == adler_byte_sum_u64(bytes, n + 1u64) + to_integer(bytes[n + 1u64]) by { rewrite(to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64)); assumption(); }
+  have adler_byte_sum_u64(bytes, n + 2u64) == adler_byte_sum_u64(bytes, n + 1u64) + to_integer(bytes[n + 1u64]) by { rewrite(to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64)); known(); }
   have to_integer(0u64) < to_integer(n + 3u64) by { solve() using { n <= 18446744073709551611u64; }; }
   have to_integer((n + 3u64) - 1u64) == to_integer(n + 2u64) by { solve() using { n <= 18446744073709551611u64; }; }
   apply(adler_sum_append_u64(bytes, n + 3u64)) using { to_integer(0u64) < to_integer(n + 3u64); };
   have to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64) by { solve() using { to_integer((n + 3u64) - 1u64) == to_integer(n + 2u64); }; }
   apply(adler_byte_observation_same_index_u64(bytes, n + 2u64, (n + 3u64) - 1u64)) using { to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64); };
-  have adler_byte_sum_u64(bytes, n + 3u64) == adler_byte_sum_u64(bytes, n + 2u64) + to_integer(bytes[n + 2u64]) by { rewrite(to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64)); assumption(); }
+  have adler_byte_sum_u64(bytes, n + 3u64) == adler_byte_sum_u64(bytes, n + 2u64) + to_integer(bytes[n + 2u64]) by { rewrite(to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64)); known(); }
   have to_integer(0u64) < to_integer(n + 4u64) by { solve() using { n <= 18446744073709551611u64; }; }
   have to_integer((n + 4u64) - 1u64) == to_integer(n + 3u64) by { solve() using { n <= 18446744073709551611u64; }; }
   apply(adler_sum_append_u64(bytes, n + 4u64)) using { to_integer(0u64) < to_integer(n + 4u64); };
   have to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64) by { solve() using { to_integer((n + 4u64) - 1u64) == to_integer(n + 3u64); }; }
   apply(adler_byte_observation_same_index_u64(bytes, n + 3u64, (n + 4u64) - 1u64)) using { to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64); };
-  have adler_byte_sum_u64(bytes, n + 4u64) == adler_byte_sum_u64(bytes, n + 3u64) + to_integer(bytes[n + 3u64]) by { rewrite(to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64)); assumption(); }
+  have adler_byte_sum_u64(bytes, n + 4u64) == adler_byte_sum_u64(bytes, n + 3u64) + to_integer(bytes[n + 3u64]) by { rewrite(to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64)); known(); }
   apply(adler_weighted_prefix_step_u64(bytes, n + 1u64)) using { to_integer(0u64) < to_integer(n + 1u64); };
   have adler_weighted_sum_u64(bytes, n + 1u64, to_integer(n + 1u64)) == adler_weighted_sum_u64(bytes, n, to_integer(n)) + adler_byte_sum_u64(bytes, n + 1u64) by { solve() using { adler_weighted_sum_u64(bytes, n + 1u64, to_integer(n + 1u64)) == adler_weighted_sum_u64(bytes, (n + 1u64) - 1u64, to_integer((n + 1u64) - 1u64)) + adler_byte_sum_u64(bytes, n + 1u64); to_integer((n + 1u64) - 1u64) == to_integer(n); }; }
   apply(adler_weighted_prefix_step_u64(bytes, n + 2u64)) using { to_integer(0u64) < to_integer(n + 2u64); };
-  have adler_weighted_sum_u64(bytes, n + 2u64, to_integer(n + 2u64)) == adler_weighted_sum_u64(bytes, n + 1u64, to_integer(n + 1u64)) + adler_byte_sum_u64(bytes, n + 2u64) by { rewrite(to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64)); assumption(); }
+  have adler_weighted_sum_u64(bytes, n + 2u64, to_integer(n + 2u64)) == adler_weighted_sum_u64(bytes, n + 1u64, to_integer(n + 1u64)) + adler_byte_sum_u64(bytes, n + 2u64) by { rewrite(to_integer(n + 1u64) == to_integer((n + 2u64) - 1u64)); known(); }
   apply(adler_weighted_prefix_step_u64(bytes, n + 3u64)) using { to_integer(0u64) < to_integer(n + 3u64); };
-  have adler_weighted_sum_u64(bytes, n + 3u64, to_integer(n + 3u64)) == adler_weighted_sum_u64(bytes, n + 2u64, to_integer(n + 2u64)) + adler_byte_sum_u64(bytes, n + 3u64) by { rewrite(to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64)); assumption(); }
+  have adler_weighted_sum_u64(bytes, n + 3u64, to_integer(n + 3u64)) == adler_weighted_sum_u64(bytes, n + 2u64, to_integer(n + 2u64)) + adler_byte_sum_u64(bytes, n + 3u64) by { rewrite(to_integer(n + 2u64) == to_integer((n + 3u64) - 1u64)); known(); }
   apply(adler_weighted_prefix_step_u64(bytes, n + 4u64)) using { to_integer(0u64) < to_integer(n + 4u64); };
-  have adler_weighted_sum_u64(bytes, n + 4u64, to_integer(n + 4u64)) == adler_weighted_sum_u64(bytes, n + 3u64, to_integer(n + 3u64)) + adler_byte_sum_u64(bytes, n + 4u64) by { rewrite(to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64)); assumption(); }
+  have adler_weighted_sum_u64(bytes, n + 4u64, to_integer(n + 4u64)) == adler_weighted_sum_u64(bytes, n + 3u64, to_integer(n + 3u64)) + adler_byte_sum_u64(bytes, n + 4u64) by { rewrite(to_integer(n + 3u64) == to_integer((n + 4u64) - 1u64)); known(); }
   rewrite(adler_weighted_sum_u64(bytes, n + 4u64, to_integer(n + 4u64)) == adler_weighted_sum_u64(bytes, n + 3u64, to_integer(n + 3u64)) + adler_byte_sum_u64(bytes, n + 4u64));
   rewrite(adler_weighted_sum_u64(bytes, n + 3u64, to_integer(n + 3u64)) == adler_weighted_sum_u64(bytes, n + 2u64, to_integer(n + 2u64)) + adler_byte_sum_u64(bytes, n + 3u64));
   rewrite(adler_weighted_sum_u64(bytes, n + 2u64, to_integer(n + 2u64)) == adler_weighted_sum_u64(bytes, n + 1u64, to_integer(n + 1u64)) + adler_byte_sum_u64(bytes, n + 2u64));
@@ -408,7 +408,7 @@ theorem adler_residue_congruent_u64(n: Integer, m: Integer, q: Integer) {
    0 <= truncating_remainder(m, 65521);
    truncating_remainder(m, 65521) <= 65520;
   };
-  assumption();
+  known();
  }
 }
 
@@ -450,7 +450,7 @@ theorem adler_sum_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64) {
    have suffix == 0u64 by solve() using { suffix <= 0u64; };
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix == 0u64); normalize(); }
    apply(adler_sum_empty_u64(bytes + prefix, 0));
-   have adler_byte_sum_u64(bytes + prefix, suffix) == 0 by { rewrite(suffix == 0u64); assumption(); }
+   have adler_byte_sum_u64(bytes + prefix, suffix) == 0 by { rewrite(suffix == 0u64); known(); }
    rewrite(to_integer(prefix + suffix) == to_integer(prefix));
    rewrite(adler_byte_sum_u64(bytes + prefix, suffix) == 0); solve();
   } else {
@@ -470,7 +470,7 @@ theorem adler_sum_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64) {
     0 <= to_integer(prefix);
     to_integer(1u64) <= to_integer(suffix);
    };
-   have to_integer(0u64) < to_integer(prefix + suffix) by assumption();
+   have to_integer(0u64) < to_integer(prefix + suffix) by known();
    have to_integer(1u64) <= to_integer(prefix + suffix) by solve() using {
     to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
     0 <= to_integer(prefix);
@@ -483,12 +483,12 @@ theorem adler_sum_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64) {
     to_integer((prefix + suffix) - 1u64) == to_integer(prefix + suffix) - to_integer(1u64);
     to_integer(suffix - 1u64) == to_integer(suffix) - to_integer(1u64);
    };
-   have to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64)) by assumption();
+   have to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64)) by known();
    apply(adler_sum_append_u64(bytes, prefix + suffix)) using { to_integer(0u64) < to_integer(prefix + suffix); };
    apply(adler_sum_append_u64(bytes + prefix, suffix)) using { 0u64 < suffix; };
    apply(adler_byte_offset_association_u64(bytes, prefix, suffix - 1u64)) using { to_integer(prefix) + to_integer(suffix - 1u64) <= 18446744073709551615; };
    have adler_byte_sum_u64(bytes, (prefix + suffix) - 1u64) == adler_byte_sum_u64(bytes, prefix) + adler_byte_sum_u64(bytes + prefix, suffix - 1u64) by {
-    rewrite(to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64))); assumption();
+    rewrite(to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64))); known();
    }
    have to_integer(bytes[(prefix + suffix) - 1u64]) == to_integer((bytes + prefix)[suffix - 1u64]) by {
     rewrite(to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64))); rewrite(to_integer((bytes + prefix)[suffix - 1u64]) == to_integer(bytes[prefix + (suffix - 1u64)])); solve();
@@ -511,7 +511,7 @@ theorem adler_weighted_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64
    have suffix == 0u64 by solve() using { suffix <= 0u64; };
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix == 0u64); normalize(); }
    apply(adler_sum_empty_u64(bytes + prefix, weight_end - to_integer(prefix)));
-   have adler_weighted_sum_u64(bytes + prefix, suffix, weight_end - to_integer(prefix)) == 0 by { rewrite(suffix == 0u64); assumption(); }
+   have adler_weighted_sum_u64(bytes + prefix, suffix, weight_end - to_integer(prefix)) == 0 by { rewrite(suffix == 0u64); known(); }
    rewrite(to_integer(prefix + suffix) == to_integer(prefix));
    rewrite(adler_weighted_sum_u64(bytes + prefix, suffix, weight_end - to_integer(prefix)) == 0); solve();
   } else {
@@ -531,7 +531,7 @@ theorem adler_weighted_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64
     0 <= to_integer(prefix);
     to_integer(1u64) <= to_integer(suffix);
    };
-   have to_integer(0u64) < to_integer(prefix + suffix) by assumption();
+   have to_integer(0u64) < to_integer(prefix + suffix) by known();
    have to_integer(1u64) <= to_integer(prefix + suffix) by solve() using {
     to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
     0 <= to_integer(prefix);
@@ -544,12 +544,12 @@ theorem adler_weighted_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64
     to_integer((prefix + suffix) - 1u64) == to_integer(prefix + suffix) - to_integer(1u64);
     to_integer(suffix - 1u64) == to_integer(suffix) - to_integer(1u64);
    };
-   have to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64)) by assumption();
+   have to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64)) by known();
    apply(adler_weighted_append_u64(bytes, prefix + suffix, weight_end)) using { to_integer(0u64) < to_integer(prefix + suffix); };
    apply(adler_weighted_append_u64(bytes + prefix, suffix, weight_end - to_integer(prefix))) using { 0u64 < suffix; };
    apply(adler_byte_offset_association_u64(bytes, prefix, suffix - 1u64)) using { to_integer(prefix) + to_integer(suffix - 1u64) <= 18446744073709551615; };
    have adler_weighted_sum_u64(bytes, (prefix + suffix) - 1u64, weight_end) == adler_weighted_sum_u64(bytes, prefix, weight_end) + adler_weighted_sum_u64(bytes + prefix, suffix - 1u64, weight_end - to_integer(prefix)) by {
-    rewrite(to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64))); assumption();
+    rewrite(to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64))); known();
    }
    have to_integer(bytes[(prefix + suffix) - 1u64]) == to_integer((bytes + prefix)[suffix - 1u64]) by {
     rewrite(to_integer((prefix + suffix) - 1u64) == to_integer(prefix + (suffix - 1u64))); rewrite(to_integer((bytes + prefix)[suffix - 1u64]) == to_integer(bytes[prefix + (suffix - 1u64)])); solve();
@@ -583,7 +583,7 @@ theorem adler_residue_add_left_u64(n: Integer, m: Integer) {
   have 0 <= truncating_remainder(n, 65521) + m by { solve() using { 0 <= truncating_remainder(n, 65521); 0 <= m; }; }
   have n + m == (truncating_remainder(n, 65521) + m) + 65521 * truncating_quotient(n, 65521) by { solve() using { n == truncating_quotient(n, 65521) * 65521 + truncating_remainder(n, 65521); }; }
   apply(adler_residue_congruent_u64(n + m, truncating_remainder(n, 65521) + m, truncating_quotient(n, 65521)));
-  assumption();
+  known();
  }
 }
 
@@ -602,7 +602,7 @@ theorem adler_spec_a_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64, 
   rewrite(adler_byte_sum_u64(bytes, prefix + suffix) == adler_byte_sum_u64(bytes, prefix) + adler_byte_sum_u64(bytes + prefix, suffix));
   have a0 + (adler_byte_sum_u64(bytes, prefix) + adler_byte_sum_u64(bytes + prefix, suffix)) == (a0 + adler_byte_sum_u64(bytes, prefix)) + adler_byte_sum_u64(bytes + prefix, suffix) by { solve() using {}; }
   rewrite(a0 + (adler_byte_sum_u64(bytes, prefix) + adler_byte_sum_u64(bytes + prefix, suffix)) == (a0 + adler_byte_sum_u64(bytes, prefix)) + adler_byte_sum_u64(bytes + prefix, suffix));
-  assumption();
+  known();
  }
 }
 
@@ -686,7 +686,7 @@ theorem adler_residue_seed_update_u64(x: Integer, y: Integer, k: Integer, z: Int
   } }
   apply(adler_seed_polynomial_u64(x, y, k, z, truncating_quotient(x, 65521), truncating_remainder(x, 65521), truncating_quotient(y, 65521), truncating_remainder(y, 65521)));
   apply(adler_residue_congruent_u64(y + k * x + z, truncating_remainder(y, 65521) + k * truncating_remainder(x, 65521) + z, truncating_quotient(y, 65521) + k * truncating_quotient(x, 65521)));
-  assumption();
+  known();
  }
 }
 
@@ -703,7 +703,7 @@ theorem adler_concat_index_partition_u64(prefix: uint64, suffix: uint64) {
    to_integer((prefix + suffix) - prefix) == to_integer(prefix + suffix) - to_integer(prefix);
    to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
   };
-  both { normalize(); } and { assumption(); }
+  both { normalize(); } and { known(); }
  }
 }
 
@@ -717,12 +717,12 @@ theorem adler_weighted_prefix_concat_u64(bytes: uint8[], prefix: uint64, suffix:
   apply(adler_weighted_concat_u64(bytes, prefix, suffix, to_integer(prefix + suffix))) using { to_integer(prefix) + to_integer(suffix) <= 18446744073709551615; };
   have adler_weighted_sum_u64(bytes, prefix + suffix, to_integer(prefix + suffix)) == adler_weighted_sum_u64(bytes, prefix, to_integer(prefix + suffix)) + adler_weighted_sum_u64(bytes + prefix, suffix, to_integer(suffix)) by {
    rewrite(to_integer(suffix) == to_integer(prefix + suffix) - to_integer(prefix));
-   assumption();
+   known();
   }
   apply(adler_weight_shift_u64(bytes, prefix, to_integer(prefix), to_integer(prefix + suffix)));
   have adler_weighted_sum_u64(bytes, prefix, to_integer(prefix + suffix)) - adler_weighted_sum_u64(bytes, prefix, to_integer(prefix)) == to_integer(suffix) * adler_byte_sum_u64(bytes, prefix) by {
    rewrite(to_integer(suffix) == to_integer(prefix + suffix) - to_integer(prefix));
-   assumption();
+   known();
   }
   solve() using {
    adler_weighted_sum_u64(bytes, prefix + suffix, to_integer(prefix + suffix)) == adler_weighted_sum_u64(bytes, prefix, to_integer(prefix + suffix)) + adler_weighted_sum_u64(bytes + prefix, suffix, to_integer(suffix));
@@ -786,7 +786,7 @@ theorem adler_spec_b_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64, 
   rewrite(adler_weighted_sum_u64(bytes, prefix + suffix, to_integer(prefix + suffix)) == adler_weighted_sum_u64(bytes, prefix, to_integer(prefix)) + to_integer(suffix) * adler_byte_sum_u64(bytes, prefix) + adler_weighted_sum_u64(bytes + prefix, suffix, to_integer(suffix)));
   rewrite(to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix));
   rewrite(b0 + (to_integer(prefix) + to_integer(suffix)) * a0 + (adler_weighted_sum_u64(bytes, prefix, to_integer(prefix)) + to_integer(suffix) * adler_byte_sum_u64(bytes, prefix) + adler_weighted_sum_u64(bytes + prefix, suffix, to_integer(suffix))) == (b0 + to_integer(prefix) * a0 + adler_weighted_sum_u64(bytes, prefix, to_integer(prefix))) + to_integer(suffix) * (a0 + adler_byte_sum_u64(bytes, prefix)) + adler_weighted_sum_u64(bytes + prefix, suffix, to_integer(suffix)));
-  assumption();
+  known();
  }
 }
 

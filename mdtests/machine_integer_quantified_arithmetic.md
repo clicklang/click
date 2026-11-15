@@ -9,7 +9,7 @@ theorem wide_successor(n: int64) {
         have defined(n + 1i64);
         witness { x: n + 1i64 };
         have to_integer(n + 1i64) == to_integer(n) + to_integer(1i64);
-        assumption();
+        known();
     }
 }
 

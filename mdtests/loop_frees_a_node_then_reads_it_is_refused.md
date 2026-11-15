@@ -85,7 +85,7 @@ void release(struct node* p) {
                     let { rest: r } = unfold(x);
                     have 0 <= links_len(r.model) by {
                         rewrite(r.model == rest_model);
-                        assumption();
+                        known();
                     }
                     step();
                     step();

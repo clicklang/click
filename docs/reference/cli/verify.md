@@ -250,7 +250,7 @@ ordinary proof goals; they are pending obligations, not established facts.
 Return-fold certification refusals print the exact rejected path fact using
 that same format. Their traces retain the available checked prefix and label
 it as a certification failure, rather than an accepted path.
-Call requirements use the same direct AND/OR rule as `assumption()`: every
+Call requirements use the same direct AND/OR rule as `known()`: every
 conjunct must hold, and one known disjunct suffices. Atomic equalities use the
 scoped equality graph. This checks the goal's structure and indexed evidence;
 it does not unfold definitions or search for implication premises. An unknown
@@ -261,7 +261,7 @@ allowed by that resource body. These facts use the shared proposition printer
 and the report's memory legend. Up to twelve allowed facts are displayed;
 any further entries are explicitly counted. This comparison is diagnostic
 only and does not turn the rejected proposition into an assumption.
-An `assumption()` failure on an existential goal suggests the
+An `known()` failure on an existential goal suggests the
 `witness { name: value }` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using
 Click spelling where it represents the checked fact. It follows only the

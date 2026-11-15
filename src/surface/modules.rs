@@ -804,7 +804,7 @@ void f(int32* p) {
             r#"
 import "../models/tree.click";
 theorem local_conditional(x: int32) {
-    ensures x == x + 1 by { apply(imported_false(x)); assumption(); }
+    ensures x == x + 1 by { apply(imported_false(x)); known(); }
 }
 "#,
         );
@@ -871,7 +871,7 @@ int32 identity(int32 x) {
     ensures result == x + 1 by {
         step_until(function.exit);
         apply(false_step(result));
-        assumption();
+        known();
     }
 }
 "#,
@@ -919,7 +919,7 @@ void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); s
             project_selected_proof_names(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap(),
             ["function:caller", "function:user"]
         );
-        let verified = verify_c_project(&project, &c).expect("imported interfaces are assumptions");
+        let verified = verify_c_project(&project, &c).expect("imported interfaces are knowns");
         let selection = verified[0].selection.as_ref().unwrap();
         assert_eq!(
             selection.selected_proofs,
@@ -1412,8 +1412,8 @@ theorem sibling_bad() { ensures 0 == 1 by solve(); }
             [ClickModuleSource::new(
                 "cycle.click",
                 r#"
-theorem a() { ensures 0 == 0 by { apply(b()); assumption(); } }
-theorem b() { ensures 0 == 0 by { apply(a()); assumption(); } }
+theorem a() { ensures 0 == 0 by { apply(b()); known(); } }
+theorem b() { ensures 0 == 0 by { apply(a()); known(); } }
 "#,
                 [],
             )],
@@ -1429,7 +1429,7 @@ theorem b() { ensures 0 == 0 by { apply(a()); assumption(); } }
             "self.click",
             [ClickModuleSource::new(
                 "self.click",
-                "theorem self_cycle() { ensures 0 == 0 by { apply(self_cycle()); assumption(); } }",
+                "theorem self_cycle() { ensures 0 == 0 by { apply(self_cycle()); known(); } }",
                 [],
             )],
         );

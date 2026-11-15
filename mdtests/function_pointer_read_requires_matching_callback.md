@@ -25,7 +25,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
     views cb->call;
     ensures true;
 } by {
-    have cb == &table by { assumption(); }
+    have cb == &table by { known(); }
     apply(target_has_contract());
     step(Invoke);
     step_until(function.exit); solve();

@@ -97,7 +97,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 if format.is_signed() {
                     // Definedness already is the pair of ordinary bounds.
-                    // Cite each bound with the ordinary conjunction/assumption
+                    // Cite each bound with the ordinary conjunction/known
                     // rule before checking the mathematical observation.
                     let bounded =
                         [&lower, &upper]
@@ -105,7 +105,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .try_fold(proof.clone(), |proof, bound| {
                                 proof
                                     .driver()
-                                    .apply_step(have(bound.clone(), vec![ProofStep::Assumption]))
+                                    .apply_step(have(bound.clone(), vec![ProofStep::Known]))
                                     .ok()
                             });
                     if let Some(observed) = bounded.as_ref().and_then(observe) {
@@ -182,7 +182,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 if let Ok(next) = proof
                     .driver()
-                    .apply_step(have(guard.clone(), vec![ProofStep::Assumption]))
+                    .apply_step(have(guard.clone(), vec![ProofStep::Known]))
                 {
                     return unsigned(&next);
                 }
@@ -307,8 +307,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             // An order that is itself a fact is not among the premises the
-            // arithmetic selects; `assumption` states it.
-            let closed = match scope.driver().apply_step(ProofStep::Assumption) {
+            // arithmetic selects; `known` states it.
+            let closed = match scope.driver().apply_step(ProofStep::Known) {
                 Ok(closed) => closed,
                 Err(_) => {
                     let Some(closed) = (scope).driver().try_selected_arithmetic()? else {
@@ -625,7 +625,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // A goal that is one of the identities needs no bounds.
                 Some(identities) => {
                     if let Some(closed) = attempt::candidate_outcome(
-                        identities.driver().apply_step(ProofStep::Assumption),
+                        identities.driver().apply_step(ProofStep::Known),
                     )? {
                         return Ok(Some(closed));
                     }
@@ -661,7 +661,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// A goal that restates an available fact through one connected
     /// equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
-    /// `t == Node(..)`: one `rewrite` and `assumption`. `solve` tries it
+    /// `t == Node(..)`: one `rewrite` and `known`. `solve` tries it
     /// before the connected-equality chain, which would prove it too, at
     /// greater cost. At most `SINGLE_REWRITES` rewrites.
     pub(in crate::surface::proof) fn try_single_rewrite_closure(
@@ -719,7 +719,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 else {
                     continue;
                 };
-                if let Ok(closed) = rewritten.driver().apply_step(ProofStep::Assumption)
+                if let Ok(closed) = rewritten.driver().apply_step(ProofStep::Known)
                     && (closed.focused_discharged() || closed.is_complete())
                 {
                     return Ok(Some(closed));
@@ -730,7 +730,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Rewrite the goal by the equality facts connected to it until
-    /// `assumption`, `normalize` or another direct closer finishes it: the
+    /// `known`, `normalize` or another direct closer finishes it: the
     /// congruence step `solve` takes only once its decider has selected the
     /// premises, here offered every connected equality, algebraic `==` facts
     /// included. Each rewrite is an ordinary checked step.
@@ -980,7 +980,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Where every way through the definition's `if`s that does not take
     /// the goal's `then` arm ends in a constant other than `k`, the fact
     /// forces the goal. The proof is the one written by hand: `if` the goal
-    /// holds, `assumption`; otherwise split on each condition met before the
+    /// holds, `known`; otherwise split on each condition met before the
     /// goal's, and at each end `have f(args) != k` by `unfold` and
     /// `normalize` using the conditions taken, then `contradiction`.
     pub(in crate::surface::proof) fn try_definition_condition_closure(
@@ -1130,7 +1130,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         restated_call
                     },
                 };
-                rewrites.push(ProofStep::Assumption);
+                rewrites.push(ProofStep::Known);
                 readings.push((restated, restated_fact, Some(rewrites)));
             }
             for (arguments, fact, restatement) in readings {
@@ -1237,7 +1237,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let marker = split_proof.checkpoint();
         let Some(then_done) = split_proof
             .focus_branch(ids[0])
-            .and_then(|branch| branch.driver().apply_step(ProofStep::Assumption))
+            .and_then(|branch| branch.driver().apply_step(ProofStep::Known))
             .ok()
             .filter(Proof::focused_discharged)
         else {
@@ -1485,7 +1485,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// A bounded depth-first search over rewrite sequences: every applicable
     /// equality in either direction, each used at most once, closing after
-    /// every step by `assumption`, `normalize` or the direct logical closer.
+    /// every step by `known`, `normalize` or the direct logical closer.
     /// An orientation whose left side does not occur in the goal costs no
     /// checked step. A goal already reached with at least as many rewrites
     /// left is not explored again, and the whole search tries at most
@@ -1638,7 +1638,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     });
             return Ok(closed.filter(closes));
         }
-        if let Ok(closed) = search_input.driver().apply_step(ProofStep::Assumption)
+        if let Ok(closed) = search_input.driver().apply_step(ProofStep::Known)
             && closes(&closed)
         {
             return Ok(Some(closed));
@@ -1955,7 +1955,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let carry = match relation {
                 // A comparison of exact observations is the native
                 // comparison itself, a fact already.
-                Relation::Less | Relation::LessEqual => vec![ProofStep::Assumption],
+                Relation::Less | Relation::LessEqual => vec![ProofStep::Known],
                 // Equal values have equal observations: rewriting by the
                 // fact, stated the way round it is written, leaves an
                 // identity.

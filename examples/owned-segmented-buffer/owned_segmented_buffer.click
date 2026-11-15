@@ -91,14 +91,14 @@ int32 owned_segmented_buffer_init(
     fold(owned_segmented_buffer(owner));
     have 0 < owner->first_len;
     have 0 < owner->second_len;
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
 }
 
 int32 owned_segmented_buffer_get_first(
@@ -113,7 +113,7 @@ int32 owned_segmented_buffer_get_first(
 } by {
     observe(owned_segmented_buffer(owner));
     step();
-    assumption();
+    known();
 }
 
 int32 owned_segmented_buffer_set_first(
@@ -273,39 +273,39 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
     step();
     step();
     have 1 <= owner->first_len by {
-        assumption();
+        known();
     }
     have 1 <= owner->second_len by {
-        assumption();
+        known();
     }
     have owner->first_data == old(owner->second_data);
     have owner->first_len == old(owner->second_len);
     have separate(memory(*owner), memory(owner->first_data[0..owner->first_len])) by {
         rewrite(owner->first_data == old(owner->second_data));
         rewrite(owner->first_len == old(owner->second_len));
-        assumption();
+        known();
     }
     have owner->second_data == old(owner->first_data);
     have owner->second_len == old(owner->first_len);
     have separate(memory(*owner), memory(owner->second_data[0..owner->second_len])) by {
         rewrite(owner->second_data == old(owner->first_data));
         rewrite(owner->second_len == old(owner->first_len));
-        assumption();
+        known();
     }
     fold(owned_segmented_buffer(owner));
     have 0 < owner->first_len by {
         have 0 < owner->first_len;
-        assumption();
+        known();
     }
     have 0 < owner->second_len by {
         have 0 < owner->second_len;
-        assumption();
+        known();
     }
-    assumption();
+    known();
     normalize();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }
 
 int32 owned_segmented_buffer_pipeline(
@@ -343,38 +343,38 @@ int32 owned_segmented_buffer_pipeline(
         rewrite(at(statement(4).entry, owner->first_data) == at(statement(4).entry, first_data));
         normalize();
     }
-    have first_data[0] == first_value by { assumption(); }
+    have first_data[0] == first_value by { known(); }
     step();
     step();
-    have owner->first_len == first_len by { assumption(); }
-    have owner->second_len == second_len by { assumption(); }
-    have 0 < owner->first_len by { assumption(); }
-    have 0 < owner->second_len by { assumption(); }
-    have first_data[0] == first_value by { assumption(); }
-    have owner->first_data == first_data by { assumption(); }
-    have owner->second_data == second_data by { assumption(); }
+    have owner->first_len == first_len by { known(); }
+    have owner->second_len == second_len by { known(); }
+    have 0 < owner->first_len by { known(); }
+    have 0 < owner->second_len by { known(); }
+    have first_data[0] == first_value by { known(); }
+    have owner->first_data == first_data by { known(); }
+    have owner->second_data == second_data by { known(); }
     have at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value) by {
         rewrite(at(statement(5).entry, second_value) == at(statement(5).entry, owner->second_data[0]));
         rewrite(at(statement(5).entry, owner->second_data) == at(statement(5).entry, second_data));
         normalize();
     }
-    have second_data[0] == second_value by { assumption(); }
+    have second_data[0] == second_value by { known(); }
     fold(owned_segmented_buffer(owner));
     step();
     step();
-    have first_data[0] == first_value by { assumption(); }
+    have first_data[0] == first_value by { known(); }
     apply(int32_equality_transitive(c(result), first_data[0], first_value)) using {
         c(result) == first_data[0];
         *first_data == first_value;
     };
     step();
     have owner->first_data == first_data;
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
 }

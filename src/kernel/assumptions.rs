@@ -286,12 +286,11 @@ fn operands_equal_with_load_atoms(
             .is_some_and(|pairs| {
                 pairs.values().all(|(a, b)| {
                     if a.ty() == &crate::kernel::KernelType::Bool {
-                        return crate::kernel::KernelTermExport::condition(a)
-                            .ok()
-                            .zip(crate::kernel::KernelTermExport::condition(b).ok())
-                            .is_some_and(|(a, b)| {
-                                conditions_equal_with_load_atoms(&a, &b, loads_match)
-                            });
+                        return boolean_operands_equal_with_load_atoms(
+                            crate::kernel::BooleanOperandView::Shared(a),
+                            crate::kernel::BooleanOperandView::Shared(b),
+                            loads_match,
+                        );
                     }
                     terms_equal_with_load_atoms(
                         &operand_load_leaf(V::Shared(a)).expect("selected leaf"),
@@ -327,9 +326,9 @@ fn operands_equal_with_load_atoms(
             continue;
         }
         if let (Some((a, [al, ar])), Some((b, [bl, br]))) =
-            (left.conditional(), right.conditional())
+            (left.conditional_view(), right.conditional_view())
         {
-            if !conditions_equal_with_load_atoms(&a, &b, loads_match) {
+            if !boolean_operands_equal_with_load_atoms(a, b, loads_match) {
                 return false;
             }
             pending.extend([(format, al, bl), (format, ar, br)]);
@@ -359,6 +358,97 @@ fn operands_equal_with_load_atoms(
     true
 }
 
+fn comparison_views_equal_with_load_atoms(
+    left: crate::kernel::machine_integer::comparison::StructuralComparisonView<'_>,
+    right: crate::kernel::machine_integer::comparison::StructuralComparisonView<'_>,
+    loads_match: LoadAtomsMatch<'_>,
+) -> bool {
+    use crate::kernel::machine_integer::comparison::{FactOperand, fact_operand_identity};
+    if left.relation != right.relation || left.negated != right.negated {
+        return false;
+    }
+    let (lf, [ll, lr]) = fact_operand_identity(
+        left.format,
+        left.relation,
+        left.operands.each_ref().map(|v| v.operand_view()),
+    );
+    let (rf, [rl, rr]) = fact_operand_identity(
+        right.format,
+        right.relation,
+        right.operands.each_ref().map(|v| v.operand_view()),
+    );
+    if lf != rf {
+        return false;
+    }
+    let same = |a, b| match (a, b) {
+        (FactOperand::Term(a), FactOperand::Term(b)) => {
+            operands_equal_with_load_atoms(lf, a, b, loads_match)
+        }
+        (FactOperand::Value(a), FactOperand::Value(b)) => a == b,
+        (FactOperand::Value(value), FactOperand::Term(term))
+        | (FactOperand::Term(term), FactOperand::Value(value)) => {
+            term.literal()
+                .and_then(|term| lf.constant_from_term(&term))
+                .and_then(|constant| constant.to_i128())
+                == Some(value)
+        }
+    };
+    same(ll, rl) && same(lr, rr)
+}
+
+/// Common comparison operands retain their DAGs. Composite and opaque guards
+/// keep the native reader's exact equality/refusal policy.
+pub(in crate::kernel) fn boolean_operands_equal_with_load_atoms(
+    left: crate::kernel::BooleanOperandView<'_>,
+    right: crate::kernel::BooleanOperandView<'_>,
+    loads_match: LoadAtomsMatch<'_>,
+) -> bool {
+    use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
+    // Native conditions accept exact equality before asking load authority.
+    // Reuse the immutable machine syntax memo so repeated growing guards do
+    // not rewalk their shared arithmetic prefixes for this preliminary check.
+    let exact = left.syntax_equal_by(right, |a, b| match (a, b) {
+        (
+            crate::kernel::MachineOperandView::Shared(a),
+            crate::kernel::MachineOperandView::Shared(b),
+        ) => crate::kernel::shared_machine_syntax_equal(a, b),
+        _ => crate::kernel::machine_operand_syntax_cmp(a, b).is_eq(),
+    });
+    if exact {
+        return true;
+    }
+    // Composite guards permit exact equality only. Do not recursively apply
+    // permissive load authority to their children.
+    if left.is_bool_value_form() || right.is_bool_value_form() {
+        return false;
+    }
+    if let (Some(left), Some(right)) = (
+        structural_boolean_comparison_view(left),
+        structural_boolean_comparison_view(right),
+    ) {
+        return comparison_views_equal_with_load_atoms(left, right, loads_match);
+    }
+    match (left.pointer_offsets(), right.pointer_offsets()) {
+        (Some(a), Some(b)) => {
+            return a.iter().zip(&b).all(|(a, b)| {
+                pointer_checks::shared_offsets_equal_with_load_atoms(a, b, loads_match)
+            });
+        }
+        (None, None) => {}
+        _ => return false,
+    }
+    match (left.pointer_addresses(), right.pointer_addresses()) {
+        (Some(a), Some(b)) => {
+            return a.iter().zip(&b).all(|(a, b)| {
+                pointer_checks::shared_addresses_equal_with_load_atoms(a, b, loads_match)
+            });
+        }
+        (None, None) => {}
+        _ => return false,
+    }
+    conditions_equal_with_load_atoms(&left.native(), &right.native(), loads_match)
+}
+
 /// Exact structural condition equality with load atoms compared by
 /// `loads_match`. Only matching constructors recurse and everything else
 /// falls back to `==`, so two structurally different conditions never match
@@ -371,43 +461,12 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
     if left == right {
         return true;
     }
-    use crate::kernel::machine_integer::comparison::{
-        FactOperand, fact_operand_identity, structural_comparison_view,
-    };
+    use crate::kernel::machine_integer::comparison::structural_comparison_view;
     if let (Some(left), Some(right)) = (
         structural_comparison_view(left),
         structural_comparison_view(right),
     ) {
-        if left.relation != right.relation || left.negated != right.negated {
-            return false;
-        }
-        let (lf, [ll, lr]) = fact_operand_identity(
-            left.format,
-            left.relation,
-            left.operands.each_ref().map(|v| v.operand_view()),
-        );
-        let (rf, [rl, rr]) = fact_operand_identity(
-            right.format,
-            right.relation,
-            right.operands.each_ref().map(|v| v.operand_view()),
-        );
-        if lf != rf {
-            return false;
-        }
-        let same = |a, b| match (a, b) {
-            (FactOperand::Term(a), FactOperand::Term(b)) => {
-                operands_equal_with_load_atoms(lf, a, b, loads_match)
-            }
-            (FactOperand::Value(a), FactOperand::Value(b)) => a == b,
-            (FactOperand::Value(value), FactOperand::Term(term))
-            | (FactOperand::Term(term), FactOperand::Value(value)) => {
-                term.literal()
-                    .and_then(|term| lf.constant_from_term(&term))
-                    .and_then(|constant| constant.to_i128())
-                    == Some(value)
-            }
-        };
-        return same(ll, rl) && same(lr, rr);
+        return comparison_views_equal_with_load_atoms(left, right, loads_match);
     }
     let terms = |ll, rl, lr, rr| {
         terms_equal_with_load_atoms(ll, rl, loads_match)
@@ -13057,6 +13116,91 @@ mod shared_load_atom_comparison_tests {
         let (right, b) = load("shared-right");
         assert_ne!(a, b);
         (left, right, a, b)
+    }
+
+    #[test]
+    fn common_guard_exact_equality_precedes_load_authority() {
+        use crate::kernel::{BooleanOperandView as B, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        let (read, _, _, _) = load_pair(MachineIntegerType::Int32);
+        let comparison = |format| ConditionTerm::Compare {
+            format,
+            relation: CompareRelation::Equal,
+            left: Box::new(read.clone()),
+            right: Box::new(MachineTerm::constant(0)),
+        };
+        let signed = comparison(MachineIntegerType::Int32);
+        let unsigned = comparison(MachineIntegerType::UInt32);
+        let a = KernelTermImport::default().condition(&signed);
+        let b = KernelTermImport::default().condition(&unsigned);
+        let no_authority = |_: &MachineTerm, _: &MachineTerm| false;
+        assert!(conditions_equal_with_load_atoms(
+            &signed,
+            &unsigned,
+            &no_authority
+        ));
+        assert!(boolean_operands_equal_with_load_atoms(
+            B::Shared(&a),
+            B::Shared(&a),
+            &no_authority
+        ));
+        assert!(boolean_operands_equal_with_load_atoms(
+            B::Shared(&a),
+            B::Shared(&b),
+            &no_authority
+        ));
+        assert!(boolean_operands_equal_with_load_atoms(
+            B::Native(&signed),
+            B::Shared(&b),
+            &no_authority
+        ));
+    }
+
+    #[test]
+    fn common_composite_guards_do_not_inherit_load_matching_authority() {
+        use crate::kernel::{BooleanOperandView as B, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        let (a, b, _, _) = load_pair(MachineIntegerType::Int32);
+        let atom = |value| ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(value),
+            right: Box::new(MachineTerm::constant(0)),
+        };
+        let a = atom(a);
+        let b = atom(b);
+        for (a, b) in [
+            (
+                ConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(a.clone())),
+                ConditionTerm::BoolEqual(Box::new(b.clone()), Box::new(b.clone())),
+            ),
+            (
+                ConditionTerm::BoolIf {
+                    condition: Box::new(a),
+                    then_condition: Box::new(ConditionTerm::Constant(true)),
+                    else_condition: Box::new(ConditionTerm::Constant(false)),
+                },
+                ConditionTerm::BoolIf {
+                    condition: Box::new(b),
+                    then_condition: Box::new(ConditionTerm::Constant(true)),
+                    else_condition: Box::new(ConditionTerm::Constant(false)),
+                },
+            ),
+        ] {
+            let ar = KernelTermImport::default().condition(&a);
+            let br = KernelTermImport::default().condition(&b);
+            assert!(!conditions_equal_with_load_atoms(&a, &b, &|_, _| true));
+            assert!(!boolean_operands_equal_with_load_atoms(
+                B::Shared(&ar),
+                B::Shared(&br),
+                &|_, _| true
+            ));
+            assert!(!boolean_operands_equal_with_load_atoms(
+                B::Native(&a),
+                B::Shared(&br),
+                &|_, _| true
+            ));
+        }
     }
 
     #[test]

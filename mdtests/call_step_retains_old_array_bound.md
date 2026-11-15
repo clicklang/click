@@ -48,11 +48,11 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
     observe(bounded(left, n));
     have 0 <= left[cur] and left[cur] < n by {
         instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= left[k] and left[k] < n }, cur);
-        assumption();
+        known();
     }
     have 0 <= old(left[cur]) by {
         instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= old(left[k]) and old(left[k]) < n }, cur);
-        assumption();
+        known();
     }
     let { result: value } = step(use, {});
     step(); solve();

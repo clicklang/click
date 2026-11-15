@@ -42,7 +42,7 @@ tactic restore_sized_flip_state(root: struct rb_root*) {
             }
             have sized_context_parent(path.model, 0) == parent by {
                 rewrite(path.model == old(state.context));
-                assumption();
+                known();
             }
             have sized_parent_is(focus.model, sized_context_parent(path.model, 0)) == 1 by {
                 rewrite(focus.model == old(state.model));

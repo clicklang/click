@@ -170,7 +170,7 @@ fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
             unfold(filled(p));
             have p[0] == 7;
             step();
-            assumption();
+            known();
         }
     "#;
     let sources = [(
@@ -215,7 +215,7 @@ fn cases_obligation_expands_before_execution_arms() {
             "=> { step_until(function.exit); solve(); }",
             "=> { solve(); }",
         );
-    let explicit = after.replace("            cases {", "            have x == 0 or x == 1 by { extract(x == 0 or x == 1); assumption(); }\n            cases {");
+    let explicit = after.replace("            cases {", "            have x == 0 or x == 1 by { extract(x == 0 or x == 1); known(); }\n            cases {");
     let result_cases = after
         .replace("x == 0 =>", "result == 0 =>")
         .replace("x == 1 =>", "result == 1 =>");
@@ -312,7 +312,7 @@ fn signed_division_ordinary_domains_expand_without_implicit_solving() {
 fn loop_guard_call_results_expand_with_source_region_names() {
     let c = "int poll(int x) { return x; } int spin(int x) { while (poll(x) == 0) { } return 1; }";
     let source = r#"verifying "poll.c";
-        int32 poll(int32 x) { ensures result == x; } by { step(); solve(); assumption(); assumption(); assumption(); }
+        int32 poll(int32 x) { ensures result == x; } by { step(); solve(); known(); known(); known(); }
         int32 spin(int32 x) diverges { ensures result == 1; } by {
             loop diverges { }
             step();
@@ -953,7 +953,7 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
 fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
     let source = format!(
-        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ solve() using {{}}; }} assumption(); }} }}"
+        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ solve() using {{}}; }} known(); }} }}"
     );
     verify_click_theorems(&source).unwrap();
     let position = expansion::position_at_offset(&source, source.find("solve() using").unwrap());
@@ -1494,11 +1494,7 @@ int32 caller(int32 x, int32 y) {
         planning_transitions, 0,
         "a simple call must not invoke planning"
     );
-    assert!(
-        error.message().contains("assumption"),
-        "{}",
-        error.message()
-    );
+    assert!(error.message().contains("known"), "{}", error.message());
 }
 
 #[test]
@@ -1725,9 +1721,9 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
 
 /// A postcondition `result == 1 implies forall (k: int32) { ... }` closed by
 /// `solve()` after execution expands to a `have` of the claim and
-/// `assumption()`. The `have` and the claim lower the guarded quantifier with
+/// `known()`. The `have` and the claim lower the guarded quantifier with
 /// independent fresh binders; the rewrite re-verifies only because
-/// `assumption` matches that guarded quantifier up to its binders.
+/// `known` matches that guarded quantifier up to its binders.
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn guarded_quantified_postcondition_expands_and_reverifies() {
@@ -1839,7 +1835,7 @@ fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("solve()"), "{expanded}");
         assert!(
-            claim.contains(expected) || claim.contains("assumption();"),
+            claim.contains(expected) || claim.contains("known();"),
             "{expanded}"
         );
         if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -2092,7 +2088,7 @@ fn solve_in_a_nested_post_execution_match_arm_expands_and_reverifies() {
 
 /// A ranked loop with no invariant has nothing to initialize. Its expansion
 /// used to print that phase as `initialize by { }`, which is not Click; the
-/// phase keeps `assumption();` and the rewrite re-verifies.
+/// phase keeps `known();` and the rewrite re-verifies.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_11")]
 fn ranked_loops_with_no_invariant_expand_and_reverify() {
@@ -2102,7 +2098,7 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
     ] {
         let expanded = expand_mdtest_site_and_reverify(fixture, "loop {", 0);
         assert!(
-            expanded.contains("initialize by {\n            assumption();\n        }"),
+            expanded.contains("initialize by {\n            known();\n        }"),
             "{expanded}"
         );
         assert!(expanded.contains("preserve by {"), "{expanded}");
@@ -2150,7 +2146,7 @@ fn multidimensional_local_array_field_expands_with_every_subscript() {
     );
     // Equality closure can finish without printing an interior read at all.
     assert!(
-        expanded.contains("copy->values[1][2]") || expanded.contains("assumption();"),
+        expanded.contains("copy->values[1][2]") || expanded.contains("known();"),
         "{expanded}"
     );
     assert!(!expanded.contains("values[5]"), "{expanded}");
@@ -2383,7 +2379,7 @@ fn targeted_termination_assumes_unselected_callees() {
 /// A `solve()` after `step_until(function.exit); intro(); intro();` closes a claim proof the
 /// `intro`s opened, and expands to only the steps it adds there. It used to
 /// expand to the whole claim's certificate, `have <claim> by { ... };
-/// assumption();`, and a deferred `normalize()` or `assumption()` ignored
+/// known();`, and a deferred `normalize()` or `known()` ignored
 /// the opened proof, so neither form re-verified.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
@@ -2492,11 +2488,7 @@ fn symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm() {
     assert_ne!(stronger, expanded);
     let error = verify_c_sources(&stronger, &c_sources)
         .expect_err("a positive value alone does not establish the stronger call requirement");
-    assert!(
-        error.message().contains("assumption"),
-        "{}",
-        error.message()
-    );
+    assert!(error.message().contains("known"), "{}", error.message());
 }
 
 #[test]
@@ -2551,7 +2543,7 @@ theorem integer_exists_choose() {
     ensures chosen: exists (k: Integer) { k == k } by {
         obtain (candidate: Integer) { candidate == candidate };
         witness { k: candidate };
-        assumption();
+        known();
     }
 }
 "#;
@@ -2608,7 +2600,7 @@ theorem guarded_integer_exists(value: int32) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
         };
         witness { k: candidate };
-        assumption();
+        known();
     }
 }
 "#;
@@ -2626,9 +2618,9 @@ theorem fixed_integer_witness(value: int32) {
         witness { z: 0 };
         both {
             both {
-                assumption();
+                known();
             } and {
-                assumption();
+                known();
             }
         } and {
             both {
@@ -3251,7 +3243,7 @@ theorem reflexive_implication(x: int32) {
     let position = expansion::position_at_offset(source, offset);
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(expanded.contains("intro();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[])
         .expect("expanded implication introduction should independently recheck");
@@ -3337,7 +3329,7 @@ fn expansion_reads_a_one_tactic_proof_as_its_block() {
     let source = r#"
 theorem helper(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x by assumption();
+    ensures 0 <= x by known();
 }
 
 theorem one_tactic_proofs(x: int32) {
@@ -3382,7 +3374,7 @@ theorem one_tactic_proofs(x: int32) {
     let position = expansion::position_at_offset(source, offset);
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(
-        expanded.contains("ensures 0 <= x by {\n        have 0 <= x by {\n            assumption();\n        }\n        apply(helper(x)) using {"),
+        expanded.contains("ensures 0 <= x by {\n        have 0 <= x by {\n            known();\n        }\n        apply(helper(x)) using {"),
         "{expanded}"
     );
     assert!(
@@ -3399,7 +3391,7 @@ fn smart_site_inventory_is_the_same_for_a_one_tactic_proof_and_its_block() {
     let without = r#"
 theorem helper(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x by assumption();
+    ensures 0 <= x by known();
 }
 
 theorem one_tactic_proofs(x: int32) {
@@ -3413,7 +3405,7 @@ theorem one_tactic_proofs(x: int32) {
 }
 "#;
     let with = without
-        .replace("by assumption();", "by { assumption(); }")
+        .replace("by known();", "by { known(); }")
         .replace("by solve();", "by { solve(); }")
         .replace("by apply(helper(x));", "by { apply(helper(x)); }");
     assert_ne!(with, without);
@@ -3435,7 +3427,7 @@ fn smart_site_inventory_includes_nested_have_bodies_without_container_aliases() 
     let source = r#"
 theorem helper(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x by { assumption(); }
+    ensures 0 <= x by { known(); }
 }
 theorem nested_sites(x: int32) {
     requires 0 <= x;
@@ -3444,9 +3436,9 @@ theorem nested_sites(x: int32) {
         have 0 <= x by {
             have 0 <= x by { apply(helper(x)); }
             apply(helper(x));
-            assumption();
+            known();
         }
-        assumption();
+        known();
     }
     ensures 0 <= x and x == x by {
         have 0 <= x and x == x by { solve(); }
@@ -3491,7 +3483,7 @@ theorem nested_sites(x: int32) {
 }
 
 /// A user tactic's proof is checked with an ending the checker supplies: one
-/// step over the empty procedure's `return` and an `assumption` per claim.
+/// step over the empty procedure's `return` and an `known` per claim.
 /// That ending cannot be written in a tactic's proof, so whole-claim
 /// expansion must leave it out; with it, the expanded proof is refused for
 /// using `step`.
@@ -3879,8 +3871,8 @@ fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_19")]
 fn context_free_disjunction_solve_expands_choice_and_rechecks() {
     for (goal, choice) in [
-        ("1 == 1 or 2 == 3", "assumption();"),
-        ("2 == 3 or 1 == 1", "assumption();"),
+        ("1 == 1 or 2 == 3", "known();"),
+        ("2 == 3 or 1 == 1", "known();"),
     ] {
         let source = format!(
             r#"
@@ -4663,7 +4655,7 @@ fn selected_post_execution_solve_waits_for_its_surface_closer() {
             .expect("selected post-execution solve should expand after finalization");
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
-        expanded.contains("assumption();") || expanded.contains("normalize();"),
+        expanded.contains("known();") || expanded.contains("normalize();"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("identity.c", c_source)])
@@ -5057,7 +5049,7 @@ fn post_execution_transport_observes_a_preceding_have() {
                 transport(result == x, result == x) using {
                     result == x;
                 }
-                assumption();
+                known();
             }
         "#;
 
@@ -5084,7 +5076,7 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
                     normalize();
                 }
                 transport(result == x, result == x);
-                assumption();
+                known();
             }
         "#;
     let verified = verify_c_sources(click_source, &[("identity.c", c_source)]);
@@ -5109,7 +5101,7 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution transport should expand after finalization");
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("post-execution transport certificate should check");
 }
@@ -5135,7 +5127,7 @@ fn grouped_post_execution_unfold_retains_its_checked_proof_step() {
         } by {
             step_until(function.exit);
             unfold(selected);
-            assumption();
+            known();
         }
     "#;
 
@@ -5160,7 +5152,7 @@ fn grouped_post_execution_closers_use_independent_checked_proofs() {
             ensures reflexive: result == result;
         } by {
             step_until(function.exit);
-            assumption();
+            known();
             normalize();
         }
     "#;
@@ -5232,7 +5224,7 @@ fn grouped_post_execution_solve_publishes_checked_obligations_through_proof() {
     // The first `solve` acts on the first open goal; the second keeps its own.
     assert_eq!(expanded.matches("have result == result by {").count(), 1);
     assert!(expanded.contains("normalize();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized grouped obligation scopes should verify independently");
 }
@@ -5299,7 +5291,7 @@ fn grouped_post_execution_solve_applies_planned_steps_once_through_proof() {
         position.column,
     )
     .expect("the planner-selected grouped certificate should expand");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the retained planner-selected steps should verify independently");
 }
@@ -5411,7 +5403,7 @@ fn outcome_arithmetic_normalization_retains_selected_equality_paths() {
         ContractProofClaim::Ensure(0),
     )
     .expect("the retained equality paths should expand");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &c_sources)
         .expect("the expanded equality paths should check independently");
 }
@@ -5548,7 +5540,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
         } by {
             step_until(function.exit);
             have 0 <= x and 0 <= y by solve();
-            assumption();
+            known();
         }
     "#;
 
@@ -5840,7 +5832,7 @@ fn smart_apply_preserves_statement_snapshots_in_explicit_premises() {
                 requires before == 1;
                 requires after == 0;
                 ensures after == 0 by {
-                    assumption();
+                    known();
                 }
             }
 
@@ -6020,7 +6012,7 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
         expanded.contains("have owner->value == 11 by {"),
         "{expanded}"
     );
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the expanded marked transport should check");
 
     let corrupted = expanded.replacen(
@@ -6104,7 +6096,7 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the store transport should expand from its recorded equation");
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the expanded store transport certificate should check from a fresh parse");
 }
@@ -6127,7 +6119,7 @@ fn statement_snapshots_support_complete_loadability_propositions() {
             } by {
                 step();
                 have at(region(0).entry, viewable(p[0..2])) by {
-                    assumption();
+                    known();
                 }
                 transport(
                     at(region(0).entry, viewable(p[0..2])),
@@ -6169,7 +6161,7 @@ fn statement_snapshots_preserve_declared_resource_argument_types() {
                     region(0).entry,
                     contains(owner_cell(owner), memory(owner[0..1]))
                 ) by {
-                    assumption();
+                    known();
                 }
                 fold(owner_cell(owner));
                 solve();
@@ -6459,7 +6451,7 @@ fn source_expander_lowers_smart_solve_inside_have() {
         ..expanded
             .find("step_until(function.exit)")
             .expect("expanded proof should retain its suffix")];
-    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
+    assert!(expanded_have.contains("known();"), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded smart have should check");
@@ -6792,9 +6784,9 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
         \x20   have x <= x by {\n\
         \x20       have x > 0 or not (x > 0) by {\n\
         \x20           if x > 0 {\n\
-        \x20               assumption();\n\
+        \x20               known();\n\
         \x20           } else {\n\
-        \x20               assumption();\n\
+        \x20               known();\n\
         \x20           }\n\
         \x20       }\n\
         \x20       cases {\n\
@@ -7342,7 +7334,7 @@ fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic_certificate() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("strict-to-nonstrict solve should have an explicit certificate");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict-order proof should check");
@@ -8033,7 +8025,7 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let expanded = expanded.expect("post-execution predicate goal should expand");
     assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     let reverified = { verify_c_sources(&expanded, &[("compare_swap2.c", c_source)]) };
     reverified.expect("expanded predicate-goal proof should independently reverify");
@@ -8114,7 +8106,7 @@ fn restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate() {
         .expect("increment upper-bound solve should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8152,7 +8144,7 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate() {
         .expect("positive-to-nonnegative solve should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8190,7 +8182,7 @@ fn restricted_solve_expands_positive_predecessor_to_arithmetic_certificate() {
         .expect("positive-predecessor solve should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8228,7 +8220,7 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certific
         .expect("positive-predecessor decrease solve should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8258,7 +8250,7 @@ fn restricted_solve_expands_predecessor_upper_bound_to_arithmetic_certificate() 
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 <= value;"), "{expanded}");
     assert!(expanded.contains("value <= bound;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded predecessor theorem should check");
@@ -8472,7 +8464,7 @@ fn restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate() {
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8517,7 +8509,7 @@ fn restricted_solve_expands_increment_order_to_arithmetic_certificate() {
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8688,7 +8680,7 @@ fn restricted_solve_expands_adjacent_order_to_arithmetic_certificate() {
         .expect("adjacent order solve should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("2 <= value;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8771,7 +8763,7 @@ fn smart_solve_transcribes_a_three_edge_bitvector_equality_path() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained three-edge equality path should expand");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the transcribed equality path should check");
 }
 
@@ -8868,7 +8860,7 @@ fn outcome_solve_consumes_its_recorded_bitvector_equality_path() {
     )
     .expect("the retained outcome equality path should expand");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("choose_first.c", c_source)])
         .expect("the transcribed outcome equality path should check");
 }
@@ -8945,7 +8937,7 @@ fn restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate()
         .expect("constant order weakening solve should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("3 <= value;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8972,7 +8964,7 @@ fn restricted_solve_expands_constant_strict_upper_bound_to_arithmetic_certificat
         .expect("constant strict upper-bound solve should expand");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
-    assert!(!expanded.contains("assumption();"), "{expanded}");
+    assert!(!expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict upper-bound proof should check");
 }
@@ -9552,7 +9544,7 @@ fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
                     apply(equality_symmetric(first, second));
                 }
                 step();
-                assumption();
+                known();
             }
         "#;
     let verified = verify_c_sources(click_source, &[("choose.c", c_source)]);
@@ -9688,7 +9680,7 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
             } by {
                 apply(integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor));
                 step();
-                assumption();
+                known();
             }
         "#;
 
@@ -9701,7 +9693,7 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
         expanded.as_slice(),
         [ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }, ..]
             if application.name == "click::integer::uint32_less_than_divisor_implies_remainder_is_value" && premises.len() == 1
-                && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
+                && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
@@ -9789,7 +9781,7 @@ fn execution_resource_unfold_is_recorded_once_and_checks() {
         } by {
             unfold(marker(x));
             step_until(function.exit);
-            assumption();
+            known();
         }
     "#;
 
@@ -9839,7 +9831,7 @@ fn execution_resource_observe_is_recorded_once_and_checks() {
         } by {
             observe(marker(x));
             step_until(function.exit);
-            assumption();
+            known();
         }
     "#;
 
@@ -10122,7 +10114,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
         } by {
             step_until(function.exit);
             apply(int32_sign_split(result)) using {}
-            assumption();
+            known();
         }
 
         int32 rewrite_write(int32 p[]) {
@@ -10582,7 +10574,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
                     ] if application.name == "ordered_is_less_equal" && premises.len() == 1
-                        && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
+                        && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
                 )
         ),
         "{tactics:#?}"
@@ -10600,7 +10592,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn linear_open_expands_known_transport_to_assumption() {
+fn linear_open_expands_known_transport_to_known() {
     let c_source = r#"
         int32 set_second_return_first(int32 p[2]) {
             p[1] = 9;
@@ -10643,7 +10635,7 @@ fn linear_open_expands_known_transport_to_assumption() {
                         ProofTactic::Step,
                         ProofTactic::Have(have),
                         ProofTactic::Step,
-                    ] if matches!(&have.proof, SourceProof::Script(steps) if matches!(steps.as_slice(), [ProofTactic::Assumption]))
+                    ] if matches!(&have.proof, SourceProof::Script(steps) if matches!(steps.as_slice(), [ProofTactic::Known]))
                 )
         ),
         "{tactics:#?}"
@@ -10697,14 +10689,14 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
                     step();
                     have value == old(p[0]) or value == 0 by {
                         have value == old(p[0]) by { normalize(); }
-                        assumption();
+                        known();
                     }
                 }
             } else {
                 step();
                 have value == old(p[0]) or value == 0 by {
                     have value == 0 by { normalize(); }
-                    assumption();
+                    known();
                 }
             }
             step();
@@ -10800,14 +10792,14 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
                             step();
                             have value == old(p[0]) or value == 0 by {
                                 have value == old(p[0]) by { normalize(); }
-                                assumption();
+                                known();
                             }
                         }
                     } else {
                         step();
                         have value == old(p[0]) or value == 0 by {
                             have value == 0 by { normalize(); }
-                            assumption();
+                            known();
                         }
                     }
                 }
@@ -11247,12 +11239,12 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                     branch.then_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
-                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
                 ) && matches!(
                     branch.else_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
-                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
                 )
         ),
         "{tactics:#?}"
@@ -11497,11 +11489,11 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                 && matches!(
                     body.as_slice(),
                     // The theorem concludes `0 <= selected`; the mirrored
-                    // `selected >= 0` closes by `assumption`.
+                    // `selected >= 0` closes by `known`.
                     [
                         ProofTactic::Have(premise),
                         ProofTactic::ApplyTheoremUsing { application, premises },
-                        ProofTactic::Assumption,
+                        ProofTactic::Known,
                     ] if application.name == "positive_is_nonnegative"
                             && premises.len() == 1
                             && premise.proposition == premises[0]
@@ -12637,7 +12629,7 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
             } by {
                 have value >= 0 by solve();
                 step();
-                assumption();
+                known();
             }
         "#;
     let verified = verify_c_sources(click_source, &[("identity.c", c_source)]);
@@ -12698,10 +12690,10 @@ fn explicit_linear_fixed_state_have_uses_the_checked_proof_path() {
                 ensures result >= 0;
             } by {
                 have value >= 0 by {
-                    assumption();
+                    known();
                 }
                 step();
-                assumption();
+                known();
             }
         "#;
 
@@ -12715,7 +12707,7 @@ fn explicit_linear_fixed_state_have_uses_the_checked_proof_path() {
     )
     .expect("explicit checked fixed-state have should remain expandable");
     assert!(expanded.contains("have value >= 0 by {"));
-    assert!(expanded.matches("assumption();").count() >= 2);
+    assert!(expanded.matches("known();").count() >= 2);
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("expanded explicit fixed-state have should independently check");
 }
@@ -12737,9 +12729,9 @@ fn explicit_post_execution_have_uses_the_checked_outcome_proof_path() {
             } by {
                 step_until(function.exit);
                 have result >= 0 by {
-                    assumption();
+                    known();
                 }
-                assumption();
+                known();
             }
         "#;
 
@@ -12754,7 +12746,7 @@ fn explicit_post_execution_have_uses_the_checked_outcome_proof_path() {
     )
     .expect("explicit checked outcome have should remain expandable");
     assert!(expanded.contains("have result >= 0 by {"), "{expanded}");
-    assert!(expanded.matches("assumption();").count() >= 2, "{expanded}");
+    assert!(expanded.matches("known();").count() >= 2, "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("expanded explicit outcome have should independently check");
 }
@@ -13463,7 +13455,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "linked-list",
         "linked_list.click",
         "list_roundtrip",
-        "have node->next == tail by {\n        assumption();\n    }",
+        "have node->next == tail by {\n        known();\n    }",
     ),
     (
         "input-cursor",
@@ -14196,7 +14188,7 @@ fn outcome_solve_materializes_selected_composite_separation_on_the_checked_proof
         ContractProofClaim::Ensure(0),
     )
     .expect("the retained resource separation should expand");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the selected resource separation should check independently");
 }
@@ -14512,7 +14504,7 @@ fn source_expander_preserves_pointer_field_form_inside_smart_have() {
         expanded.contains("have owner->data == data by {"),
         "{expanded}"
     );
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("holder.c", c_source)])
         .expect("the expanded pointer-valued have should check");
 }
@@ -14624,14 +14616,14 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
 
     let expanded =
         expand_c_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
-            .expect("the transported current-state fact should expand as an assumption");
+            .expect("the transported current-state fact should expand as a `known` step");
     let expanded_have = &expanded[expanded
         .find("have p[0] == 7")
         .expect("expanded proof should retain the selected have")
         ..expanded
             .find("step();\n                solve();")
             .expect("expanded proof should retain its suffix")];
-    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
+    assert!(expanded_have.contains("known();"), "{expanded_have}");
     assert!(!expanded_have.contains("transport("), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("transport.c", c_source)])
@@ -14703,7 +14695,7 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
     ];
     let expanded = expand_c_tactic_source_at(click_source, &c_sources, line, column)
         .expect("the snapshot have should expand");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &c_sources).expect("the expanded snapshot have should check");
 }
 
@@ -15352,7 +15344,7 @@ fn grouped_residual_normalization_expansion_checks_original_claims() {
         verify_c_sources(source, &sources).unwrap();
         let expanded = expand_function_proof_source(source, &sources, "current").unwrap();
         assert!(expanded.contains("    normalize();"));
-        assert!(expanded.contains("    assumption();"));
+        assert!(expanded.contains("    known();"));
         verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
         for proof in [source, expanded.as_str()] {
@@ -15467,7 +15459,7 @@ fn pure_pointer_add_zero_solve_expands_to_a_checked_certificate() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the pointer-offset identity solve should have an explicit certificate");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded pointer identity proof should check");
 }
@@ -15501,8 +15493,8 @@ fn pure_branching_disjunction_solve_expands_to_left_right() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the branching disjunction proof should have an explicit certificate");
-    assert!(expanded.contains("assumption();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded branching disjunction proof should check");
 }
@@ -15586,7 +15578,7 @@ fn unfolded_conjunction_have_solve_expands_and_rechecks() {
         position.column,
     )
     .expect("the unfolded conjunction have solve should expand to exact child scopes");
-    // Named store equations can close the whole conjunction by assumption.
+    // Named store equations can close the whole conjunction by `known()`.
     // Both that certificate and a split certificate must expand and recheck.
     assert!(!expanded.contains("have 0 <= pair->low"), "{expanded}");
     assert!(
@@ -15630,7 +15622,7 @@ fn outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate() {
             } by {
                 unfold(ordered_pair);
                 step_until(function.exit);
-                assumption();
+                known();
                 solve();
             }
         "#;
@@ -15732,9 +15724,9 @@ fn loop_preservation_case_after_step_expands_in_place() {
                 preserve by {
                     step();
                     if flag == i {
-                        have flag == i by { assumption(); }
+                        have flag == i by { known(); }
                     } else {
-                        have not (flag == i) by { assumption(); }
+                        have not (flag == i) by { known(); }
                     }
                 }
             }
@@ -15790,9 +15782,9 @@ fn loop_preservation_case_before_step_expands_in_place() {
                 initialize by solve();
                 preserve by {
                     if flag == i {
-                        have flag == i by { assumption(); }
+                        have flag == i by { known(); }
                     } else {
-                        have not (flag == i) by { assumption(); }
+                        have not (flag == i) by { known(); }
                     }
                     step();
                 }
@@ -16120,10 +16112,10 @@ void object_retain_many(struct object* obj, int32 amount) {
 fn grouped_closer_with_a_produced_resource_claim_expands_and_reverifies() {
     // Reduced from `pool_transfer` in `examples/bounded-pool` and
     // `object_retain_many` in `examples/refcount`. The closer's certificate
-    // spells a produced resource claim's closure `assumption`, which reads
+    // spells a produced resource claim's closure `known`, which reads
     // the outcome through the contract's checked resource transition exactly
     // as the `solve` it replaces does. Without that reading the expansion
-    // failed with `assumption did not match any current proposition goal`.
+    // failed because the available-fact closer did not match the current goal.
     let sources = [("object_retain_many.c", PRODUCED_RESOURCE_C)];
     verify_c_sources(PRODUCED_RESOURCE_CLICK, &sources)
         .expect("the produced-resource proof should verify");
@@ -16140,7 +16132,7 @@ fn grouped_closer_with_a_produced_resource_claim_expands_and_reverifies() {
     )
     .expect("the grouped closer should expand");
     assert!(
-        expanded.contains("assumption();"),
+        expanded.contains("known();"),
         "the closer's claim closures should be retained: {expanded}"
     );
     verify_c_sources(&expanded, &sources)
@@ -16335,7 +16327,7 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     step_until(function.exit);
     fold(packed(node));
-    assumption();
+    known();
     solve() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
@@ -16463,7 +16455,7 @@ int spin(int n) {
         initialize by {
             have i >= 0 by solve();
             have i <= n by solve();
-            assumption();
+            known();
         }
         preserve by solve();
     }
@@ -16675,11 +16667,11 @@ fn a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold() {
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the closing solve should expand");
-    // Shared model closure can now close this equality by assumption. If
+    // Shared model closure can now close this equality by `known()`. If
     // a rewrite is emitted, it must still use the readable entry snapshot.
     assert!(!expanded.contains("rewrite(t.model =="), "{expanded}");
     assert!(
-        expanded.contains("assumption();")
+        expanded.contains("known();")
             || expanded.contains("rewrite(old(t.model) == Tree::Node(id, color, left_model));"),
         "the model equality needs checked closure: {expanded}"
     );
@@ -17375,9 +17367,9 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
     let mut accepted_closers = Vec::new();
     for (produced, closer) in [
         ("cell", "solve();"),
-        ("cell", "assumption(); assumption();"),
+        ("cell", "known(); known();"),
         ("other_cell", "solve();"),
-        ("other_cell", "assumption(); assumption();"),
+        ("other_cell", "known(); known();"),
     ] {
         let source = format!(
             "resource cell(p: int32*) {{ owns p[0..1]; }}\n\
@@ -17516,7 +17508,7 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
 } by {
     have defined(p[i]) by {
         instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, i);
-        assumption();
+        known();
     }
     fold(tag(q[i]));
     step_until(function.exit);
@@ -17620,7 +17612,7 @@ void put(int32* p, int32* q, int32 i, int32 n) {
 
 /// A loop with no invariant has nothing to initialize, so a `solve` that is
 /// its `initialize` block's only tactic contributes no step. A `by { ... }`
-/// block must hold a tactic, so the expansion keeps `assumption();` there
+/// block must hold a tactic, so the expansion keeps `known();` there
 /// rather than emptying the block, and the rewritten proof verifies.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_74")]
@@ -17652,7 +17644,7 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         let expanded = expand_c_tactic_source_at(&source, &c_sources, 7, column)
             .expect("the initialize call expands");
         assert!(
-            expanded.contains("initialize by { assumption(); }"),
+            expanded.contains("initialize by { known(); }"),
             "{expanded}"
         );
         verify_c_sources(&expanded, &c_sources).expect("the expanded proof verifies");
@@ -17667,7 +17659,7 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
             )],
         )
         .expect("the initialize call expands in a batch");
-        assert!(batch.source.contains("assumption();"));
+        assert!(batch.source.contains("known();"));
         verify_c_sources(&batch.source, &c_sources).expect("the batch expansion verifies");
     }
 }
@@ -19048,13 +19040,13 @@ int32 caller(int32 a, int32 b) {
                 have is_positive(a) == 1 by {
                     unfold(is_positive(a)); normalize() using { a > 0; }
                 }
-                assumption();
+                known();
             }
             requires is_positive(b) == 1 or is_positive(a) == 1 by {
                 have is_positive(a) == 1 by {
                     unfold(is_positive(a)); normalize() using { a > 0; }
                 }
-                assumption();
+                known();
             }
         }
         step();
@@ -19948,11 +19940,11 @@ fn void_pointer_helper_selected_view_expands_and_checks() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
 fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
     let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
-    let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        assumption();\n    }\n    have r == s by {\n        normalize();\n    }\n    assumption();\n    assumption();\n    assumption();\n    assumption();\n}\n";
+    let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        known();\n    }\n    have r == s by {\n        normalize();\n    }\n    known();\n    known();\n    known();\n    known();\n}\n";
     assert_eq!(
         tidy_expansion_closers(original, expanded).as_deref(),
         Some(
-            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        assumption();\n    }\n    assumption();\n    normalize();\n    assumption();\n    normalize();\n}\n"
+            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        known();\n    }\n    known();\n    normalize();\n    known();\n    normalize();\n}\n"
         )
     );
 }
@@ -19962,12 +19954,12 @@ fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
 fn tidied_expansion_closers_leave_other_closers_alone() {
     let original = "f by {\n    step();\n}\n";
     // Fewer closers than claims.
-    let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    assumption();\n}\n";
+    let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    known();\n}\n";
     // A closer run that does not end its block.
     let continued =
-        "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n    step();\n}\n";
+        "f by {\n    have a by {\n        normalize();\n    }\n    known();\n    step();\n}\n";
     // No claim proved by `normalize();` alone.
-    let simplified = "f by {\n    have a by {\n        solve();\n    }\n    assumption();\n}\n";
+    let simplified = "f by {\n    have a by {\n        solve();\n    }\n    known();\n}\n";
     for expanded in [short, continued, simplified] {
         assert_eq!(
             tidy_expansion_closers(original, expanded),
@@ -19976,7 +19968,7 @@ fn tidied_expansion_closers_leave_other_closers_alone() {
         );
     }
     // Text the expansion left as it was is never rewritten.
-    let written = "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n}\n";
+    let written = "f by {\n    have a by {\n        normalize();\n    }\n    known();\n}\n";
     assert_eq!(tidy_expansion_closers(written, written), None);
 }
 
@@ -21017,12 +21009,12 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
                     have a == 0 by {
                         rewrite(a == b); rewrite(b == 0); normalize();
                     }
-                    assumption();
+                    known();
                 } and {
                     intro();
-                    have a == 0 by { assumption(); }
+                    have a == 0 by { known(); }
                     have a + 1 == 1 by { rewrite(a == 0); normalize(); }
-                    assumption();
+                    known();
                 }
             }
         }
@@ -21050,7 +21042,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} both {{ assumption(); }} and {{ intro(); assumption(); }}
+            {} both {{ known(); }} and {{ intro(); known(); }}
             }}
         }}
     "#,
@@ -21214,7 +21206,7 @@ void set(int32* p, int32* q, int32 x) {
         .expect("nested closing obligations retain explicit proofs");
     let invalid = source.replace(
         "open(cell(q)) { step(); }",
-        "open(cell(q)) { step(); } by { assumption(); }",
+        "open(cell(q)) { step(); } by { known(); }",
     );
     assert!(
         verify_c_sources(&invalid, &sources).is_err(),
@@ -21224,13 +21216,13 @@ void set(int32* p, int32* q, int32 x) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_88")]
-fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
+fn solve_exact_goal_expands_to_known_in_pure_and_outcome_scopes() {
     for goal in ["x < 3", "x < 3 and -3 < x"] {
         let pure = format!(
             "theorem known(x: int32) {{ requires x < 2; requires {goal}; ensures {goal} by {{ solve(); }} }}"
         );
         let expanded = expand_c_claim_source_by_label(&pure, &[], "known.ensures_0").unwrap();
-        assert!(expanded.contains("assumption();"), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(
             !expanded.contains("normalize()")
                 && !expanded.contains("have ")
@@ -21249,7 +21241,7 @@ fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
         let sources = [("known.c", "void known(int32 x) {}")];
         let expanded =
             expand_c_claim_source_by_label(&source, &sources, "known.ensures_0").unwrap();
-        assert!(expanded.contains("assumption();"), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(
             !expanded.contains("normalize()")
                 && !expanded.contains("arithmetic_certificate")
@@ -21257,10 +21249,10 @@ fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
             "{expanded}"
         );
         // Outcome expansion opens the contract claim with `have`; the
-        // selected proof inside that existing wrapper is one assumption.
+        // selected proof inside that existing wrapper is one `known` step.
         let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            compact.contains(&format!("have {goal} by {{ assumption(); }}")),
+            compact.contains(&format!("have {goal} by {{ known(); }}")),
             "{expanded}"
         );
         assert_eq!(expanded.matches("have ").count(), 1, "{expanded}");
@@ -21280,22 +21272,22 @@ verifying "known.c";
 resource positive(x: int32) { fact x > 0; }
 void needs(int32 x) { requires x > 0; ensures x > 0; }
 void caller(int32 x) { requires x > 0; ensures x > 0; } by {
-    step() by { assumption(); }
+    step() by { known(); }
     step_until(function.exit);
     solve();
 }
 void make(int32 x) { requires x > 0; produces positive(x); } by {
-    fold(positive(x)) by { assumption(); }
+    fold(positive(x)) by { known(); }
     step_until(function.exit);
     solve();
 }
 "#;
     verify_c_sources(source, &sources).expect("known requirements still accept written proofs");
     for (name, written, bare) in [
-        ("caller", "step() by { assumption(); }", "step();"),
+        ("caller", "step() by { known(); }", "step();"),
         (
             "make",
-            "fold(positive(x)) by { assumption(); }",
+            "fold(positive(x)) by { known(); }",
             "fold(positive(x));",
         ),
     ] {
@@ -21309,7 +21301,7 @@ void make(int32 x) { requires x > 0; produces positive(x); } by {
         );
     }
     for name in ["caller", "make"] {
-        let implicit = source.replace(" by { assumption(); }", ";");
+        let implicit = source.replace(" by { known(); }", ";");
         let expanded = expand_function_proof_source(&implicit, &sources, name).unwrap();
         let operation = if name != "make" {
             "step() by {"
@@ -21332,7 +21324,7 @@ fn a_named_fold_generates_its_known_body_fact_obligation() {
 verifying "named.c";
 resource positive(x: int32) { field value: int32; fact value > 0; }
 void make(int32 x) { requires x > 0; produces p: positive(x); } by {
-    let p = fold(positive(x), { value: x }) by { assumption(); }
+    let p = fold(positive(x), { value: x }) by { known(); }
     step_until(function.exit);
     solve();
 }
@@ -21349,7 +21341,7 @@ void make(int32 x) { requires x > 0; produces p: positive(x); } by {
                 "    solve();",
             ),
     ] {
-        for source in [source.clone(), source.replace(" by { assumption(); }", ";")] {
+        for source in [source.clone(), source.replace(" by { known(); }", ";")] {
             verify_c_sources(&source, &sources).expect("a named fold exposes its body fact too");
             assert!(
                 verify_c_sources(&source.replace("requires x > 0;", ""), &sources).is_err(),
@@ -21897,7 +21889,7 @@ test_batches! {
         explicit_and_implicit_existential_requirements_expand_without_search,
     ],
     expansion_batch_88: [
-        solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes,
+        solve_exact_goal_expands_to_known_in_pure_and_outcome_scopes,
         known_step_and_fold_requirements_still_have_explicit_obligation_proofs,
         a_named_fold_generates_its_known_body_fact_obligation,
     ],
@@ -22190,7 +22182,7 @@ fn write_loan_obligations_expand_and_replay() {
 #[test]
 fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
     let (source, sources) = mdtest_sources("mdtests/unsigned_division_exposes_its_domain.md");
-    let implicit = source.replace("step() by { assumption(); }", "step();");
+    let implicit = source.replace("step() by { known(); }", "step();");
     assert_ne!(implicit, source);
     let sources = sources
         .iter()

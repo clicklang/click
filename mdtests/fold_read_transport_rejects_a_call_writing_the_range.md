@@ -36,7 +36,7 @@ void caller(int32 *v, int32 i, int32 n) {
     step();
     have zeros(at(entry, v), 0, i) == zeros(v, 0, i) by {
         solve();
-        assumption();
+        known();
     }
 }
 ```

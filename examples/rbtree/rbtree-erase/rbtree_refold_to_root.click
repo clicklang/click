@@ -36,7 +36,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
                 }
                 rewrite(rb_parent_consistent(plug(c.model, t.model), 0)
                 == rb_tree_parent_consistent(plug(c.model, t.model)));
-                assumption();
+                known();
             }
             apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model, 0)) using {
                 rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
@@ -52,7 +52,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             apply(ctx_depth_is_nonnegative(up_model));
             have 0 <= ctx_depth(u.model) by {
                 rewrite(u.model == up_model);
-                assumption();
+                known();
             }
             have ctx_depth(old(c.model)) == ctx_depth(up_model) + 1 by {
                 rewrite(old(c.model) == Context::Left(identity, grandparent, color, sibling_model, up_model));

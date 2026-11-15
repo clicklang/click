@@ -15,10 +15,10 @@ int32 caller(int32 *p) { owns *p; ensures result == 7; } by {
     step();
     step();
     have result == 7 by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }
 ```
 

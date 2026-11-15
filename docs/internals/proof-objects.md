@@ -107,7 +107,7 @@ for the same C loop identity while preserving the current proof-local scope.
 Wide generated invariant bundles use balanced conjunctions, keeping all members
 in declaration order while bounding certificate nesting logarithmically. Short
 bundles retain their established grouping. Wide source conjunctions can instead
-expand to sequential checked `have` leaves followed by `assumption`; every
+expand to sequential checked `have` leaves followed by `known`; every
 reified leaf must lower to the exact kernel proposition. Neither representation
 raises the parser depth limit or skips an invariant obligation.
 
@@ -375,7 +375,7 @@ and imports only the completed conclusions. It imports the path's execution
 facts and resource observations once, then checks persistent fact deltas for
 successive proofs. Resource folds recompute their semantic facts; they never
 replace the path context with a proof's ambient assumptions. Explicit
-resource `assumption` closers and `solve` retain the same checked claim
+resource `known` closers and `solve` retain the same checked claim
 receipts, and certification checks their joint availability independently of
 how the certificate was printed.
 
@@ -480,18 +480,26 @@ exact goal through its retained publication; it does not accept a separately
 supplied receipt or reconstruct and compare specifications, results, memory,
 or locals. Reopening the same execution keeps proof owners distinct.
 
-Checked return-resource rewrites advance the same producer's publication before
-closing, and publication updates use a persistent path index. The return-rewrite
-operation still revisits its retained execution evidence; removing that replay
-and the later return/exit receipt-installation guards remains separate work.
+The checked body producer retains the completing statement and exit inputs in
+`CheckedReturnSeed`. Opening an ordinary outcome forks a `ReturnRewriteProducer`;
+completed propositions and resource exchanges advance that producer using only
+the new facts and selected exchange. Preparing contract closing uses its retained
+completion, without replaying C execution history.
+
+`ContractExecutionOwner` owns one execution strategy and its opened outcome
+identities. Ordinary completion directly installs the outcome's current producer
+publication, path and completed exit, and retires its whole-contract cells.
+Refutation discharges the selected outcome without fabricating exit evidence.
+The completed ordinary proof hands back this execution directly; there is no
+later return/exit receipt installation or progress filter.
 Independent conditional execution artifacts have no opened-entry authority and
 retain their separate entry preparation and rule-packaging APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
-updates. An explicit `assumption()` discharges the selected closing goal using
+updates. An explicit `known()` discharges the selected closing goal using
 its retained outcome, receipts and body effects. Written `solve()` selects the
 same operation; the implicit solver schedules it for each omitted closing proof.
-Expansion records one `assumption()` per completed goal, so rechecking requires
+Expansion records one `known()` per completed goal, so rechecking requires
 no implicit proof of these obligations. A checked resource transition retains
 resource/lifetime evidence without silently closing either goal. Explicit
 resource changes reopen the affected goals. Packaging an exit completion reads
@@ -724,7 +732,7 @@ Three standing rules keep the boundary where the 2026-09 cleanup left it.
   emits the proposition as an obligation. One that must choose among
   candidates the kernel itself enumerates lowers the choice as a finite
   disjunction so the proof proves one disjunct, closes it with
-  `assumption()`, and expansion prints it; open
+  `known()`, and expansion prints it; open
   choices use the existing `instantiate`, `witness`, `obtain`, `rewrite`,
   and `transport` spellings.
 - **Retained evidence names premises, never a context.** A derivation leaf

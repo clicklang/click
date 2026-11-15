@@ -1505,7 +1505,7 @@ click verify examples
 A bare sidecar path verifies the proof units owned by that file. A
 `:LINE:COLUMN` suffix verifies only the proof unit containing that one-based
 source location. Imported theorem statements and unselected called-function
-contracts are assumptions, not recursively selected proofs. This is the same
+contracts are knowns, not recursively selected proofs. This is the same
 location scheme `click profile`, `click expand`, and `click audit` use, and the
 targeted entry point the audit's cold reverification runs.
 
@@ -1626,8 +1626,9 @@ that class to prescribe the next action:
   no successful proof; normally decompose the proof, or write the argument a
   search miss of an elided form names. An interrupted search is a tooling bug
   only when it ignores or badly overshoots its enforced bound. A smart site is
-  one of the four smart tactics, or a simple tactic written with an elided
-  argument (see [`click profile`](../reference/cli/profile.md#report-interpretation)).
+  a written `solve` or `step_until`, the implicit tail or closer, or a
+  simple tactic written with an elided argument (see
+  [`click profile`](../reference/cli/profile.md#report-interpretation)).
 - `SIMPLE` steps are deterministic checked operations. Do not expand them;
   reduce and fix the verifier bottleneck first.
 - `CONTROL` steps are proof containers. Inspect their nested smart and simple

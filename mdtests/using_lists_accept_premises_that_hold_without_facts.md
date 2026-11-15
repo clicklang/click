@@ -59,7 +59,7 @@ theorem last_cell(a: int32[], n: int32) {
             0 <= n;
             n <= n;
         };
-        assumption();
+        known();
     }
 }
 

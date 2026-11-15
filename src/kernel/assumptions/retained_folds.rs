@@ -136,6 +136,15 @@ pub(super) fn collect_common_memory_loads(
                         .map(|child| (child, Some(format.carrier_bytes()))),
                 );
             }
+            KernelTermNode::PointerOffsetEqual { arguments } => {
+                push_offset_memory_loads(arguments.iter(), &mut pending)?;
+            }
+            KernelTermNode::PointerEqual { arguments } => {
+                push_offset_memory_loads(
+                    arguments.iter().map(|address| &address.node().offset),
+                    &mut pending,
+                )?;
+            }
             KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => {
                 pending.extend(arguments.iter().rev().map(|child| (child, None)));
@@ -187,6 +196,38 @@ pub(super) fn collect_common_memory_loads(
             _ => pending.extend(term.children().iter().rev().map(|child| (child, width))),
         }
     }
+    Ok(())
+}
+
+fn push_offset_memory_loads<'a>(
+    roots: impl IntoIterator<Item = &'a crate::kernel::SharedPointerOffset>,
+    pending: &mut Vec<(&'a KernelTerm, Option<u32>)>,
+) -> Result<(), String> {
+    let mut offsets: Vec<_> = roots.into_iter().collect();
+    offsets.reverse();
+    let mut seen_offsets = std::collections::HashSet::new();
+    let mut indices = Vec::new();
+    while let Some(offset) = offsets.pop() {
+        if !seen_offsets.insert(offset) {
+            continue;
+        }
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return Err("memory-load collection exceeded its checking budget".into());
+        }
+        match offset.node() {
+            crate::kernel::KernelPointerOffset::Add(children) => {
+                offsets.extend(children.iter().rev())
+            }
+            crate::kernel::KernelPointerOffset::Int32Scaled { value, .. } => {
+                indices.push((value, Some(4)))
+            }
+            crate::kernel::KernelPointerOffset::Int64Scaled { value, .. } => {
+                indices.push((value, Some(8)))
+            }
+            _ => {}
+        }
+    }
+    pending.extend(indices.into_iter().rev());
     Ok(())
 }
 
@@ -317,4 +358,49 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/assumptions/retained_folds.rs");
+}
+
+#[cfg(test)]
+mod offset_condition_tests {
+    use super::*;
+    #[test]
+    fn offset_condition_dependencies_preserve_widths() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let current = Memory::new();
+        let read = |id, kind| {
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_memory_ref(&current),
+                Box::new(Pointer::symbolic(Variable(id))),
+                kind,
+            )
+        };
+        let source = ConditionTerm::PointerOffsetEqual(
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                read(998500, LoadKind::Int32),
+                4,
+            )),
+            Box::new(PointerOffsetTerm::scaled_int64_node(
+                read(998501, LoadKind::Bits64),
+                8,
+                false,
+            )),
+        );
+        let root = crate::kernel::KernelTermImport::default().condition(&source);
+        let mut expected = Vec::new();
+        let mut actual = Vec::new();
+        collect_condition_memory_loads(&source, &current, &mut expected, &mut BTreeSet::new())
+            .unwrap();
+        collect_common_memory_loads(
+            vec![(&root, None)],
+            &current,
+            &mut actual,
+            &mut BTreeSet::new(),
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(
+            actual.iter().map(|(_, width)| *width).collect::<Vec<_>>(),
+            [4, 8]
+        );
+    }
 }

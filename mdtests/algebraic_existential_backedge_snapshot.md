@@ -49,7 +49,7 @@ void traverse(int32 *next, int32 *visited) diverges {
         preserve by {
             have separate(memory(visited[cur]), memory(next[0])) by {
                 rewrite(cur == 0);
-                assumption();
+                known();
             }
             mark before_visit;
             step();

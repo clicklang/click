@@ -29,7 +29,7 @@ void mark_other(int32 *a, int32 *b, int32 *c, int32 n) {
     step();
     have zeros(at(entry, a), 0, n) == zeros(b, 0, n) by {
         solve();
-        assumption();
+        known();
     }
 }
 ```

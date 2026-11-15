@@ -281,15 +281,15 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
             return Ok(None);
         };
         // An exact indexed premise needs no alternative derivation: its
-        // assumption step replays directly. Retain the existing preference for
-        // spelled derivations only for broader assumption routes at outcomes
+        // `known` step replays directly. Retain the existing preference for
+        // spelled derivations only for broader `known` routes at outcomes
         // and in pure proofs.
         let mid_execution = matches!(
             driver_proof.body.context.as_ref(),
             ProofContext::Execution(_)
         ) && driver_proof.body.focused_outcome_data().is_none();
         if body.node.depth == 1
-            && matches!(body.node.step.as_deref(), Some(ProofStep::Assumption))
+            && matches!(body.node.step.as_deref(), Some(ProofStep::Known))
             && !mid_execution
             && driver_proof.loop_entry_goal.is_none()
             && !driver_proof

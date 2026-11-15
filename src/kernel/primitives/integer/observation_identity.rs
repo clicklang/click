@@ -1,12 +1,15 @@
 //! Numeric identity of retained machine observations. Exact producer payloads
 //! remain untouched; opaque leaves use the existing native observation key.
 use super::*;
+use crate::kernel::{KernelPointerOffset, SharedPointerOffset};
 
 thread_local! {
+    static OFFSET_ROOTS: std::cell::RefCell<HashMap<SharedPointerOffset, SharedPointerOffset>> = Default::default();
     static ROOTS: std::cell::RefCell<crate::id_hash::U64Map<KernelTerm>> = Default::default();
 }
 pub(super) fn clear() {
     ROOTS.with(|roots| roots.borrow_mut().clear());
+    OFFSET_ROOTS.with(|roots| roots.borrow_mut().clear());
 }
 
 // Boolean guard imports can contain exact generic machine payloads. They
@@ -143,6 +146,17 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
+                }
+                KernelTermNode::PointerEqual { arguments } => {
+                    KernelTerm::pointer_equal_raw(arguments.each_ref().map(|address| {
+                        crate::kernel::SharedPointerAddress::new(
+                            address.node().block.observation(),
+                            normalize_offset(&address.node().offset),
+                        )
+                    }))
+                }
+                KernelTermNode::PointerOffsetEqual { arguments } => {
+                    KernelTerm::pointer_offset_equal_raw(arguments.each_ref().map(normalize_offset))
                 }
                 KernelTermNode::LegacyBool(_) => {
                     let condition = KernelTermExport::condition(&term).expect("retained guard");
@@ -387,4 +401,50 @@ mod recursive_call_tests {
             SharedMachineIntegerTerm::intern(format, different_argument_sort)
         );
     }
+}
+
+// The same immutable observation normalization memo extends to address
+// components. Do not rewalk an old offset prefix for every new guard root.
+// As with ROOTS, end each borrow before normalizing a nested numeric child.
+fn normalize_offset(root: &SharedPointerOffset) -> SharedPointerOffset {
+    OFFSET_ROOTS.with(|roots| {
+        let get = |root: &SharedPointerOffset| roots.borrow()[root].clone();
+        let mut pending = vec![(root, false)];
+        while let Some((offset, finish)) = pending.pop() {
+            if roots.borrow().contains_key(offset) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let node = match offset.node() {
+                KernelPointerOffset::Add([a, b]) => {
+                    if !finish {
+                        pending.extend([(offset, true), (b, false), (a, false)]);
+                        continue;
+                    }
+                    KernelPointerOffset::Add([get(a), get(b)])
+                }
+                KernelPointerOffset::Int32Scaled { value, byte_width } => {
+                    KernelPointerOffset::Int32Scaled {
+                        value: normalize(value),
+                        byte_width: *byte_width,
+                    }
+                }
+                KernelPointerOffset::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => KernelPointerOffset::Int64Scaled {
+                    value: normalize(value),
+                    byte_width: *byte_width,
+                    unsigned: *unsigned,
+                },
+                node => node.clone(),
+            };
+            roots.borrow_mut().insert(
+                offset.clone(),
+                node.into_shared().expect("normalized offset types"),
+            );
+        }
+        get(root)
+    })
 }

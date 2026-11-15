@@ -24,7 +24,7 @@ void keep(struct node *p) {
         apply(node_identity(p)) using { p == 0; };
     }
     step_until(function.exit);
-    assumption();
+    known();
 }
 ```
 

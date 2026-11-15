@@ -4,7 +4,7 @@ The proof of
 [`const_pointer_parameter_fact_survives_a_step.md`](const_pointer_parameter_fact_survives_a_step.md)
 with a second `const` parameter `q`. The instance at `p` publishes
 `same(p, p) == 1`. Leaving constness out of a pointer's identity leaves the
-address in it, so that fact is not a fact about `q`, and `assumption` does
+address in it, so that fact is not a fact about `q`, and `known` does
 not find `same(q, q) == 1`.
 
 The logical pointer annotations below use `void*` for address identities;
@@ -38,7 +38,7 @@ int32 peek(const struct node* p, const struct node* q) {
 } by {
     unfold(x);
     step();
-    have same(q, q) == 1 by assumption();
+    have same(q, q) == 1 by known();
     let x = fold(here(p), { tag: 0 });
     step();
     step();
@@ -47,5 +47,5 @@ int32 peek(const struct node* p, const struct node* q) {
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

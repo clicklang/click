@@ -30,7 +30,7 @@ void inspect(struct item* p, uint64 i, uint64 j) {
     }
     step_until(function.exit);
     normalize();
-    assumption(); assumption(); assumption();
+    known(); known(); known();
 }
 ```
 

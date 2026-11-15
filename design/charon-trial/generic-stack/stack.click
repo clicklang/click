@@ -602,8 +602,8 @@ impl<T> generic_stack::Stack<T> {
                         conclusion 1;
                     }
                 }
-                have at(region(91).exit, self.head) == old(self.head.next) by { assumption(); }
-                have self.head == old(self.head.next) by { assumption(); }
+                have at(region(91).exit, self.head) == old(self.head.next) by { known(); }
+                have self.head == old(self.head.next) by { known(); }
                 have result == Option::Some(v) by {
                     transport(old(self.head.value) == v, result == Option::Some(v)) using {
                         at(before_pop, separate(memory(*self.head), memory(self.head)));
@@ -631,7 +631,7 @@ impl<T> generic_stack::Stack<T> {
                         }
                         have self.head.next == old(self.head.next).next by {
                             rewrite(self.head == old(self.head.next));
-                            assumption();
+                            known();
                         }
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });
                         have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);

@@ -18,7 +18,7 @@ int read(int* p) {
         Tri::Zero => { solve(); },
         Tri::One => { solve(); },
         Tri::Other(payload) => {
-            have old(c.model) == Tri::Other(payload) by { assumption(); }
+            have old(c.model) == Tri::Other(payload) by { known(); }
             cases {
                 payload == 0 => { solve(); }
                 payload != 0 => { solve(); }

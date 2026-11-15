@@ -456,10 +456,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
         let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
             (scope).driver().try_solve_closure().unwrap().unwrap()
         });
-        assert_eq!(
-            checked.body().certificate().steps(),
-            &[ProofStep::Assumption]
-        );
+        assert_eq!(checked.body().certificate().steps(), &[ProofStep::Known]);
         let completion = checked.completed_loop_entry_goal().unwrap();
         assert_eq!(completion.proposition(), &goal);
         assert!(
@@ -490,7 +487,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
         let missing = missing
             .begin_loop_entry_goal(surface.clone(), &obligation)
             .unwrap();
-        assert!(missing.driver().apply_step(ProofStep::Assumption).is_err());
+        assert!(missing.driver().apply_step(ProofStep::Known).is_err());
         assert!(missing.join().is_err());
     }
 }
@@ -951,7 +948,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     let click_file = crate::surface::parse(
         r#"
             int32 branch_load_scaling(int32 x, int32 p[1]) {
-                ensures returns_any: result == result by { assumption(); }
+                ensures returns_any: result == result by { known(); }
             }
         "#,
     )
@@ -1485,10 +1482,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             &closed.certificate().steps()[0],
             ProofStep::Rewrite(_)
         ));
-        assert!(matches!(
-            &closed.certificate().steps()[1],
-            ProofStep::Assumption
-        ));
+        assert!(matches!(&closed.certificate().steps()[1], ProofStep::Known));
         costs.push(work);
     }
     assert!(
@@ -1583,7 +1577,7 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
                 .begin_loop_entry_goal(surface.clone(), &obligation)
                 .unwrap();
             let before = scope.body().clone();
-            let completed = before.driver().apply_step(ProofStep::Assumption).unwrap();
+            let completed = before.driver().apply_step(ProofStep::Known).unwrap();
             let retained = before.retain_completed_goal(&completed, &[]).unwrap();
             assert!(retained.facts().contains(&goal));
         });
@@ -1653,7 +1647,7 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
                 .unwrap(),
             old_goal
         );
-        let completed = root.driver().apply_step(ProofStep::Assumption).unwrap();
+        let completed = root.driver().apply_step(ProofStep::Known).unwrap();
         let (retained, units) = crate::instrumentation::measure_deterministic_work(|| {
             root.retain_completed_goal(&completed, &[]).unwrap()
         });
@@ -1676,7 +1670,7 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
             &[],
             &[],
         );
-        let completed = wrong.driver().apply_step(ProofStep::Assumption).unwrap();
+        let completed = wrong.driver().apply_step(ProofStep::Known).unwrap();
         assert!(wrong.retain_completed_goal(&completed, &[]).is_err());
     }
     assert!(
@@ -2677,7 +2671,7 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
 }
 
 #[test]
-fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
+fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
@@ -2735,10 +2729,7 @@ fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
             let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
                 scope.driver().try_solve_closure().unwrap().unwrap()
             });
-            assert_eq!(
-                closed.body().certificate().steps(),
-                &[ProofStep::Assumption]
-            );
+            assert_eq!(closed.body().certificate().steps(), &[ProofStep::Known]);
             assert!(root.certificate().steps().is_empty());
             if let Some(previous) = previous {
                 assert!(
@@ -2754,7 +2745,7 @@ fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
 #[test]
 fn fixed_state_application_proves_premises_and_replays_explicitly() {
     let file = crate::surface::parse(
-        "theorem nonnegative(n: int32) { requires n >= 0; ensures n >= 0 by assumption(); }",
+        "theorem nonnegative(n: int32) { requires n >= 0; ensures n >= 0 by known(); }",
     )
     .unwrap();
     let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
@@ -2867,7 +2858,7 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
     let mut previous_proof_work = 0;
     for size in [4, 16, 64] {
         let source = format!(
-            "theorem identity<T>(x: T) {{ requires x == x; ensures x == x by {{ {} assumption(); }} }}",
+            "theorem identity<T>(x: T) {{ requires x == x; ensures x == x by {{ {} known(); }} }}",
             "have x == x by solve(); ".repeat(size)
         );
         // Verification is declaration work; measure only the application below.

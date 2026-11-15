@@ -114,16 +114,16 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have defined(s + index + 1);
     have defined(region->start + index + 1) by {
         rewrite(region->start == s);
-        assumption();
+        known();
     }
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start == s);
-        assumption();
+        known();
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(region->start == s);
         have 0 <= to_integer(s + index) by { solve(); }
-        assumption();
+        known();
     }
     have region->arena->capacity == c by {
         solve();
@@ -151,19 +151,19 @@ void arena_write(struct region* region, int32 index, int32 value) {
         rewrite(region->arena->data == old(region->arena->data));
         rewrite(region->arena->occupied == old(region->arena->occupied));
         rewrite(region->arena->capacity == old(region->arena->capacity));
-        assumption();
+        known();
     }
     have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by {
         rewrite(region->arena->data == old(region->arena->data));
         rewrite(region->arena->capacity == old(region->arena->capacity));
         rewrite(region->arena == old(region->arena));
-        assumption();
+        known();
     }
     have separate(memory(*region->arena), memory(region->arena->occupied[0..region->arena->capacity])) by {
         rewrite(region->arena->occupied == old(region->arena->occupied));
         rewrite(region->arena->capacity == old(region->arena->capacity));
         rewrite(region->arena == old(region->arena));
-        assumption();
+        known();
     }
     let st = fold(arena_state(region->arena), { live: n, capacity: c });
     solve();

@@ -187,9 +187,11 @@ impl ClosedContractExit {
         self.complete_boundary
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn path_index(&self) -> usize {
         self.path_index
     }
+    #[cfg(test)]
     pub(in crate::kernel) fn matches_path(&self, path: &SymbolicExecutionPath) -> bool {
         Arc::ptr_eq(&self.origin.proposition, &path.theorem.proposition)
     }
@@ -230,6 +232,7 @@ pub(crate) enum ContractClosingRefusal {
     Write(Pointer),
     Range(MemoryRange),
     Storage(Vec<crate::kernel::functions::StorageWriteOutsideFootprint>),
+    #[cfg(test)]
     Pending(ContractClosingGoal),
 }
 
@@ -464,7 +467,25 @@ impl ContractExitObligations {
         Ok(proved)
     }
 
-    /// Consume completed goal evidence; no semantic checker runs here.
+    pub(crate) fn completes_boundary(&self) -> bool {
+        self.context.complete_boundary
+    }
+
+    /// The ordinary outcome operation has already closed every goal.
+    pub(in crate::kernel) fn completed_exit(
+        &self,
+        path: &SymbolicExecutionPath,
+    ) -> ClosedContractExit {
+        ClosedContractExit {
+            path_index: self.path_index,
+            origin: path.theorem.clone(),
+            resources: self.context.resource_keys.clone(),
+            complete_boundary: self.context.complete_boundary,
+        }
+    }
+
+    /// Compatibility helper for independent checked-execution fixtures.
+    #[cfg(test)]
     pub(crate) fn completion(
         &self,
         path: &SymbolicExecutionPath,

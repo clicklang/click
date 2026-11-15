@@ -12,7 +12,7 @@ theorem solver_chains_bounds(i: Integer, n: Integer, total: Integer) {
     requires total <= 255 * i;
     ensures total <= 255000 by {
         have total <= 255000;
-        assumption();
+        known();
     }
 }
 ```

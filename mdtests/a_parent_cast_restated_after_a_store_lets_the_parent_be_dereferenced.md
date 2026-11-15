@@ -107,11 +107,11 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                         rewrite(Node::Inner(gid, gp) == n.model);
                         rewrite(xid == up_identity(Up::Frame(xid, xc)));
                         rewrite(Up::Frame(xid, xc) == u.model);
-                        assumption();
+                        known();
                     }
                     unfold(n);
                     unfold(u);
-                    have separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)) by { assumption(); }
+                    have separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)) by { known(); }
                     mark before_store;
                     step();
                     have separate(statement(0).footprint, memory(g->__rb_parent_color)) by {
@@ -125,7 +125,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                             conclusion 1;
                         }
                     }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { assumption(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
                     mark before_local;
                     step();
                     have separate(statement(1).region(0).footprint, memory(g->__rb_parent_color)) by {
@@ -139,10 +139,10 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                             conclusion 1;
                         }
                     }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { assumption(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
                     step();
                     step();
-                    have p == xid by { assumption(); }
+                    have p == xid by { known(); }
                     step();
                     solve();
                 },

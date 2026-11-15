@@ -72,7 +72,7 @@ void inspect(struct node* parent) {
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm) => {
-                    have parent == parent_identity(Parent::At(pid, sm)) by { rewrite(Parent::At(pid, sm) == tree_context.model); assumption(); }
+                    have parent == parent_identity(Parent::At(pid, sm)) by { rewrite(Parent::At(pid, sm) == tree_context.model); known(); }
                     have parent == pid by { unfold(parent_identity(Parent::At(pid, sm))); solve(); }
                     let { c: c } = unfold(tree_context);
                     have parent->tag == address(pid) + (parent->tag & 1);
@@ -84,15 +84,15 @@ void inspect(struct node* parent) {
                     step();
                     have sibling == model;
                     have parent->tag == at(tag_inputs, parent->tag);
-                    have parent->tag == address(pid) + (parent->tag & 1) by { rewrite(parent->tag == at(tag_inputs, parent->tag)); assumption(); }
-                    have (parent->tag & 1) == 1 by { rewrite(parent->tag == at(tag_inputs, parent->tag)); assumption(); }
+                    have parent->tag == address(pid) + (parent->tag & 1) by { rewrite(parent->tag == at(tag_inputs, parent->tag)); known(); }
+                    have (parent->tag & 1) == 1 by { rewrite(parent->tag == at(tag_inputs, parent->tag)); known(); }
                     mark rotation;
                     step(copy_tag, {});
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
-                    have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); assumption(); }
-                    have model->tag == address(pid) + (model->tag & 1) by { rewrite(model->tag == at(rotation, parent->tag)); assumption(); }
-                    have (model->tag & 1) == 1 by { rewrite(model->tag == at(rotation, parent->tag)); assumption(); }
+                    have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); known(); }
+                    have model->tag == address(pid) + (model->tag & 1) by { rewrite(model->tag == at(rotation, parent->tag)); known(); }
+                    have (model->tag & 1) == 1 by { rewrite(model->tag == at(rotation, parent->tag)); known(); }
                     let packed = fold(tagged_at(model), {model: Tagged::At(model, pid)});
                     step(); step();
                 },

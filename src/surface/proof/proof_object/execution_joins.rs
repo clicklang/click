@@ -4115,7 +4115,7 @@ mod progress_tests {
             int32 identity(int32 x) {
                 ensures result == x;
             } by {
-                assumption();
+                known();
             }
         "#,
         )

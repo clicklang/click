@@ -132,7 +132,7 @@ checks each one, in one of two ways; the gate runs it
   `integer_cast_identity`, which reads `to_integer(to_T(z))` as `z` under
   `T`'s range at every format), and the Rust names of three product
   lemmas (`u32::multiply_to_integer`), each with a pinned proof of explicit
-  steps (`assumption()`, `normalize()`, `arithmetic_certificate`, and
+  steps (`known()`, `normalize()`, `arithmetic_certificate`, and
   `apply` of earlier library theorems).
 - **36 are kernel standard theorems.** They have no proof. The check is
   only that the declaration's parameters, premises and conclusion match the
@@ -224,7 +224,7 @@ Some trust comes from the sidecar itself:
   them.
 - A `diverges` contract drops the claim that the function returns, so the
   result is partial correctness.
-- Requirements are assumptions about callers. A claim about a function says
+- Requirements are knowns about callers. A claim about a function says
   nothing about a caller that does not establish them.
 - `--allow-sorry` admits proof units whose body is `sorry();` without checking
   them. It is a development switch: its admissions are reported, never recorded

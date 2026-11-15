@@ -458,6 +458,39 @@ fn snapshot_observation_key(
     ))
 }
 
+fn snapshot_blind_boolean_operand_key(
+    condition: crate::kernel::BooleanOperandView<'_>,
+) -> SnapshotBlindConditionKey {
+    use crate::kernel::machine_integer::comparison::{FactOperand, fact_operand_identity};
+    if let Some((format, relation, operands)) = condition.comparison() {
+        let (format, operands) = fact_operand_identity(format, relation, operands);
+        let [left, right] = operands.map(|operand| match operand {
+            FactOperand::Term(term) => snapshot_operands::operand(term),
+            FactOperand::Value(value) => snapshot_blind_bitvector_key(
+                &crate::kernel::ComparisonSide::Value(value).term(format),
+            ),
+        });
+        return SnapshotBlindConditionKey::Comparison(
+            BitvectorComparisonOp::Compare(format, relation),
+            left,
+            right,
+        );
+    }
+    if let Some([a, b]) = condition.pointer_offsets() {
+        return SnapshotBlindConditionKey::PointerOffsetEqual(
+            pointer_keys::snapshot_offset(&a),
+            pointer_keys::snapshot_offset(&b),
+        );
+    }
+    if let Some([a, b]) = condition.pointer_addresses() {
+        return SnapshotBlindConditionKey::PointerEqual(
+            pointer_keys::snapshot_address(&a),
+            pointer_keys::snapshot_address(&b),
+        );
+    }
+    snapshot_blind_condition_key(&condition.native())
+}
+
 fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindConditionKey {
     // Keyed at the fact identity: a native 8- or 16-bit comparison and the
     // `int32` comparison of its widenings are one fact.
@@ -3787,7 +3820,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
 /// implication chain whose final consequent is quantified. Guarded
 /// quantifiers such as `result == 1 implies forall (k) { ... }` are
 /// independently lowered with fresh binders by a `have` and by the claim it
-/// discharges; indexing the whole chain lets an explicit `assumption` find
+/// discharges; indexing the whole chain lets an explicit `known` find
 /// the alpha-equivalent fact without a derivation search.
 pub(crate) fn quantified_equivalence_index_key(
     proposition: &Proposition,
@@ -5045,3 +5078,70 @@ mod machine_quantifier_identity_tests {
 
 #[cfg(test)]
 mod pointer_index_tests;
+
+#[cfg(test)]
+mod offset_condition_tests {
+    use super::*;
+    #[test]
+    fn common_offset_condition_keys_match_native_and_retain_scale_and_signedness() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut keys = Vec::new();
+        for width in [1, 8] {
+            for unsigned in [false, true] {
+                let source = ConditionTerm::PointerOffsetEqual(
+                    Box::new(PointerOffsetTerm::Add(
+                        Box::new(PointerOffsetTerm::Constant(0)),
+                        Box::new(PointerOffsetTerm::scaled_int64_node(
+                            MachineTerm::Variable(Variable(998600)),
+                            width,
+                            unsigned,
+                        )),
+                    )),
+                    Box::new(PointerOffsetTerm::Constant(0)),
+                );
+                let root = crate::kernel::KernelTermImport::default().condition(&source);
+                let expected = snapshot_blind_condition_key(&source);
+                let actual = snapshot_blind_boolean_operand_key(
+                    crate::kernel::BooleanOperandView::Shared(&root),
+                );
+                assert_eq!(actual, expected);
+                assert!(!keys.contains(&actual));
+                keys.push(actual);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod raw_pointer_condition_tests {
+    use super::*;
+    #[test]
+    fn raw_pointer_condition_keys_match_native_and_keep_block_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut keys = Vec::new();
+        for block in [
+            PointerBlock::Symbolic(Variable(998610)),
+            PointerBlock::ExternalObject(Variable(998610)),
+            PointerBlock::FunctionSymbolic(Variable(998610)),
+        ] {
+            let source = ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block,
+                    offset: PointerOffsetTerm::scaled_int64_node(
+                        MachineTerm::Variable(Variable(998611)),
+                        8,
+                        true,
+                    ),
+                }),
+                Box::new(Pointer::null()),
+            );
+            let root = crate::kernel::KernelTermImport::default().condition(&source);
+            let actual = snapshot_blind_boolean_operand_key(
+                crate::kernel::BooleanOperandView::Shared(&root),
+            );
+            assert_eq!(actual, snapshot_blind_condition_key(&source));
+            assert!(!keys.contains(&actual));
+            keys.push(actual);
+        }
+    }
+}

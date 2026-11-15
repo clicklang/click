@@ -58,7 +58,7 @@ impl adler2::Adler32 {
      have (((loop(2).iter.len() * 4u64) as uint32) as int32) == 4;
      have adler_lane_vectors_consumed(4, (((loop(2).iter.len() * 4u64) as uint32) as int32)) == 0 by {
       rewrite((((loop(2).iter.len() * 4u64) as uint32) as int32) == 4);
-      apply(adler_lane_iterator_initial(4)); assumption();
+      apply(adler_lane_iterator_initial(4)); known();
      }
      have viewable(bytes[0..4]) by {
       transport(at(function.entry, viewable(bytes[0..4])), viewable(bytes[0..4])) using { at(function.entry, viewable(bytes[0..4])); };
@@ -623,28 +623,28 @@ impl adler2::Adler32 {
          rewrite((((iter.len() * 4u64) as uint32) as int32) == at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4); solve() using {};
         }
         have a_vec.0[0] == at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0]);
-        have b_vec.0[0] == at(vector_b, b_vec.0[0]) + at(vector_b, a_vec.0[0]) by assumption();
+        have b_vec.0[0] == at(vector_b, b_vec.0[0]) + at(vector_b, a_vec.0[0]) by known();
         have b_vec.0[0] == at(vector_a, b_vec.0[0]) + (at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0])) by solve() using { b_vec.0[0] == at(vector_b, b_vec.0[0]) + at(vector_b, a_vec.0[0]); at(vector_b, b_vec.0[0]) == at(vector_a, b_vec.0[0]); at(vector_b, a_vec.0[0]) == at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0]); };
         have to_integer(a_vec.0[0]) == to_integer(at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0])) by solve() using { a_vec.0[0] == at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0]); };
         have to_integer(a_vec.0[0]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by solve() using { to_integer(a_vec.0[0]) == to_integer(at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); to_integer(at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); };
         have to_integer(b_vec.0[0]) == to_integer(at(vector_a, b_vec.0[0]) + (at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0]))) by solve() using { b_vec.0[0] == at(vector_a, b_vec.0[0]) + (at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0])); };
         have to_integer(b_vec.0[0]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by solve() using { to_integer(b_vec.0[0]) == to_integer(at(vector_a, b_vec.0[0]) + (at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0]))); adler_lane_b_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); to_integer(at(vector_a, b_vec.0[0]) + (at(vector_a, a_vec.0[0]) + at(vector_a, __rust_mir_68.0[0]))) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); };
         have a_vec.0[1] == at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1]);
-        have b_vec.0[1] == at(vector_b, b_vec.0[1]) + at(vector_b, a_vec.0[1]) by assumption();
+        have b_vec.0[1] == at(vector_b, b_vec.0[1]) + at(vector_b, a_vec.0[1]) by known();
         have b_vec.0[1] == at(vector_a, b_vec.0[1]) + (at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1])) by solve() using { b_vec.0[1] == at(vector_b, b_vec.0[1]) + at(vector_b, a_vec.0[1]); at(vector_b, b_vec.0[1]) == at(vector_a, b_vec.0[1]); at(vector_b, a_vec.0[1]) == at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1]); };
         have to_integer(a_vec.0[1]) == to_integer(at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1])) by solve() using { a_vec.0[1] == at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1]); };
         have to_integer(a_vec.0[1]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by solve() using { to_integer(a_vec.0[1]) == to_integer(at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); to_integer(at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); };
         have to_integer(b_vec.0[1]) == to_integer(at(vector_a, b_vec.0[1]) + (at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1]))) by solve() using { b_vec.0[1] == at(vector_a, b_vec.0[1]) + (at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1])); };
         have to_integer(b_vec.0[1]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by solve() using { to_integer(b_vec.0[1]) == to_integer(at(vector_a, b_vec.0[1]) + (at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1]))); adler_lane_b_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); to_integer(at(vector_a, b_vec.0[1]) + (at(vector_a, a_vec.0[1]) + at(vector_a, __rust_mir_68.0[1]))) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); };
         have a_vec.0[2] == at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2]);
-        have b_vec.0[2] == at(vector_b, b_vec.0[2]) + at(vector_b, a_vec.0[2]) by assumption();
+        have b_vec.0[2] == at(vector_b, b_vec.0[2]) + at(vector_b, a_vec.0[2]) by known();
         have b_vec.0[2] == at(vector_a, b_vec.0[2]) + (at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2])) by solve() using { b_vec.0[2] == at(vector_b, b_vec.0[2]) + at(vector_b, a_vec.0[2]); at(vector_b, b_vec.0[2]) == at(vector_a, b_vec.0[2]); at(vector_b, a_vec.0[2]) == at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2]); };
         have to_integer(a_vec.0[2]) == to_integer(at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2])) by solve() using { a_vec.0[2] == at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2]); };
         have to_integer(a_vec.0[2]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by solve() using { to_integer(a_vec.0[2]) == to_integer(at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); to_integer(at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); };
         have to_integer(b_vec.0[2]) == to_integer(at(vector_a, b_vec.0[2]) + (at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2]))) by solve() using { b_vec.0[2] == at(vector_a, b_vec.0[2]) + (at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2])); };
         have to_integer(b_vec.0[2]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by solve() using { to_integer(b_vec.0[2]) == to_integer(at(vector_a, b_vec.0[2]) + (at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2]))); adler_lane_b_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); to_integer(at(vector_a, b_vec.0[2]) + (at(vector_a, a_vec.0[2]) + at(vector_a, __rust_mir_68.0[2]))) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); };
         have a_vec.0[3] == at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3]);
-        have b_vec.0[3] == at(vector_b, b_vec.0[3]) + at(vector_b, a_vec.0[3]) by assumption();
+        have b_vec.0[3] == at(vector_b, b_vec.0[3]) + at(vector_b, a_vec.0[3]) by known();
         have b_vec.0[3] == at(vector_a, b_vec.0[3]) + (at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3])) by solve() using { b_vec.0[3] == at(vector_b, b_vec.0[3]) + at(vector_b, a_vec.0[3]); at(vector_b, b_vec.0[3]) == at(vector_a, b_vec.0[3]); at(vector_b, a_vec.0[3]) == at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3]); };
         have to_integer(a_vec.0[3]) == to_integer(at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3])) by solve() using { a_vec.0[3] == at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3]); };
         have to_integer(a_vec.0[3]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by solve() using { to_integer(a_vec.0[3]) == to_integer(at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); to_integer(at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4)); };
@@ -660,26 +660,26 @@ impl adler2::Adler32 {
         have a_vec.0[3] == old((bytes[3] as u32)) by solve() using { a_vec.0[3] == old(bytes[3]); };
         have b_vec.0[3] == old((bytes[3] as u32)) by solve() using { b_vec.0[3] == old(bytes[3]); };
         have viewable(bytes[0..4]) by solve() using { viewable(bytes[0..4]); };
-        have bytes == old(bytes) by assumption();
+        have bytes == old(bytes) by known();
         have remainder_chunk == old(bytes);
         have 0 <= (((iter.len() * 4u64) as uint32) as int32) and (((iter.len() * 4u64) as uint32) as int32) <= 4 by { both { solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; } and { solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; } }
         have (((iter.len() * 4u64) as uint32) as int32) % 4 == 0 by { rewrite((((iter.len() * 4u64) as uint32) as int32) == 0); normalize(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies a_vec.0[0] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[0] == old((bytes[0] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[0] == old((bytes[0] as u32)) by { intro(); known(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies b_vec.0[0] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[0] == old((bytes[0] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[0] == old((bytes[0] as u32)) by { intro(); known(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies a_vec.0[1] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[1] == old((bytes[1] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[1] == old((bytes[1] as u32)) by { intro(); known(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies b_vec.0[1] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[1] == old((bytes[1] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[1] == old((bytes[1] as u32)) by { intro(); known(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies a_vec.0[2] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[2] == old((bytes[2] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[2] == old((bytes[2] as u32)) by { intro(); known(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies b_vec.0[2] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[2] == old((bytes[2] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[2] == old((bytes[2] as u32)) by { intro(); known(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies a_vec.0[3] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[3] == old((bytes[3] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[3] == old((bytes[3] as u32)) by { intro(); known(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies b_vec.0[3] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
-        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[3] == old((bytes[3] as u32)) by { intro(); assumption(); }
+        have (((iter.len() * 4u64) as uint32) as int32) == 0 implies b_vec.0[3] == old((bytes[3] as u32)) by { intro(); known(); }
         have 0 <= (((iter.len() * 4u64) as uint32) as int32) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; };
         have (((iter.len() * 4u64) as uint32) as int32) < at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) by { rewrite((((iter.len() * 4u64) as uint32) as int32) == 0); rewrite(at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) == 4); solve() using {}; }
         have a_vec.0[0] <= 255u32 by solve() using { a_vec.0[0] == old(bytes[0]); at(vector_b, a_vec.0[0]) == old(bytes[0]); at(vector_b, a_vec.0[0]) <= 255u32; };
@@ -770,22 +770,22 @@ impl adler2::Adler32 {
      have a_vec.0[0] == old((bytes[0] as u32));
      have at(vector_mod, a_vec.0[0]) == old(bytes[0]) by solve() using { a_vec.0[0] == old((bytes[0] as u32)); old((bytes[0] as u32)) == old(bytes[0]); };
      have a_vec.0[0] == old((bytes[0] as u32));
-     have a_vec.0[0] <= 255u32 by assumption();
+     have a_vec.0[0] <= 255u32 by known();
      have at(vector_mod, a_vec.0[0]) <= 255u32 by solve() using { a_vec.0[0] <= 255u32; };
      have at(vector_mod, a_vec.0[0]) < 65521u32 by solve() using { at(vector_mod, a_vec.0[0]) <= 255u32; };
      have at(vector_mod, a_vec.0[1]) == old(bytes[1]) by solve() using { a_vec.0[1] == old(bytes[1]); };
      have a_vec.0[1] == old((bytes[1] as u32));
-     have a_vec.0[1] <= 255u32 by assumption();
+     have a_vec.0[1] <= 255u32 by known();
      have at(vector_mod, a_vec.0[1]) <= 255u32 by solve() using { a_vec.0[1] <= 255u32; };
      have at(vector_mod, a_vec.0[1]) < 65521u32 by solve() using { at(vector_mod, a_vec.0[1]) <= 255u32; };
      have at(vector_mod, a_vec.0[2]) == old(bytes[2]) by solve() using { a_vec.0[2] == old(bytes[2]); };
      have a_vec.0[2] == old((bytes[2] as u32));
-     have a_vec.0[2] <= 255u32 by assumption();
+     have a_vec.0[2] <= 255u32 by known();
      have at(vector_mod, a_vec.0[2]) <= 255u32 by solve() using { a_vec.0[2] <= 255u32; };
      have at(vector_mod, a_vec.0[2]) < 65521u32 by solve() using { at(vector_mod, a_vec.0[2]) <= 255u32; };
      have at(vector_mod, a_vec.0[3]) == old(bytes[3]) by solve() using { a_vec.0[3] == old(bytes[3]); };
      have a_vec.0[3] == old((bytes[3] as u32));
-     have a_vec.0[3] <= 255u32 by assumption();
+     have a_vec.0[3] <= 255u32 by known();
      have at(vector_mod, a_vec.0[3]) <= 255u32 by solve() using { a_vec.0[3] <= 255u32; };
      have at(vector_mod, a_vec.0[3]) < 65521u32 by solve() using { at(vector_mod, a_vec.0[3]) <= 255u32; };
      have at(vector_mod, b_vec.0[0]) == old(bytes[0]) by solve() using { b_vec.0[0] == old(bytes[0]); };
@@ -793,7 +793,7 @@ impl adler2::Adler32 {
      rewrite(b_vec.0[0] == 0u32 + old((bytes[0] as u32)));
      rewrite(0u32 == 0u32); solve() using {};
      }
-     have b_vec.0[0] <= 255u32 by assumption();
+     have b_vec.0[0] <= 255u32 by known();
      have at(vector_mod, b_vec.0[0]) <= 255u32 by solve() using { b_vec.0[0] <= 255u32; };
      have at(vector_mod, b_vec.0[0]) < 65521u32 by solve() using { at(vector_mod, b_vec.0[0]) <= 255u32; };
      have at(vector_mod, b_vec.0[1]) == old(bytes[1]) by solve() using { b_vec.0[1] == old(bytes[1]); };
@@ -801,7 +801,7 @@ impl adler2::Adler32 {
      rewrite(b_vec.0[1] == 0u32 + old((bytes[1] as u32)));
      rewrite(0u32 == 0u32); solve() using {};
      }
-     have b_vec.0[1] <= 255u32 by assumption();
+     have b_vec.0[1] <= 255u32 by known();
      have at(vector_mod, b_vec.0[1]) <= 255u32 by solve() using { b_vec.0[1] <= 255u32; };
      have at(vector_mod, b_vec.0[1]) < 65521u32 by solve() using { at(vector_mod, b_vec.0[1]) <= 255u32; };
      have at(vector_mod, b_vec.0[2]) == old(bytes[2]) by solve() using { b_vec.0[2] == old(bytes[2]); };
@@ -809,7 +809,7 @@ impl adler2::Adler32 {
      rewrite(b_vec.0[2] == 0u32 + old((bytes[2] as u32)));
      rewrite(0u32 == 0u32); solve() using {};
      }
-     have b_vec.0[2] <= 255u32 by assumption();
+     have b_vec.0[2] <= 255u32 by known();
      have at(vector_mod, b_vec.0[2]) <= 255u32 by solve() using { b_vec.0[2] <= 255u32; };
      have at(vector_mod, b_vec.0[2]) < 65521u32 by solve() using { at(vector_mod, b_vec.0[2]) <= 255u32; };
      have at(vector_mod, b_vec.0[3]) == old(bytes[3]) by solve() using { b_vec.0[3] == old(bytes[3]); };
@@ -817,7 +817,7 @@ impl adler2::Adler32 {
      rewrite(b_vec.0[3] == 0u32 + old((bytes[3] as u32)));
      rewrite(0u32 == 0u32); solve() using {};
      }
-     have b_vec.0[3] <= 255u32 by assumption();
+     have b_vec.0[3] <= 255u32 by known();
      have at(vector_mod, b_vec.0[3]) <= 255u32 by solve() using { b_vec.0[3] <= 255u32; };
      have at(vector_mod, b_vec.0[3]) < 65521u32 by solve() using { at(vector_mod, b_vec.0[3]) <= 255u32; };
      step_until(assignment(__rust_mir_84, 0));
@@ -940,7 +940,7 @@ impl adler2::Adler32 {
      have __rust_checked_45 <= __rust_checked_43 by solve() using { __rust_checked_45 <= 255u32; __rust_checked_43 == 65521u32; };
      apply(integer::uint32_subtract_to_integer(__rust_checked_43, __rust_checked_45));
      have __rust_mir_89 == __rust_checked_43 - __rust_checked_45;
-     have __rust_checked_45 <= __rust_checked_43 by { have __rust_checked_45 <= __rust_checked_43; assumption(); }
+     have __rust_checked_45 <= __rust_checked_43 by { have __rust_checked_45 <= __rust_checked_43; known(); }
      have to_integer(__rust_checked_43 - __rust_checked_45) == to_integer(__rust_checked_43) - to_integer(__rust_checked_45);
      have 0 <= to_integer(__rust_checked_45);
      have to_integer(__rust_checked_45) <= 4294967295;
@@ -1000,7 +1000,7 @@ impl adler2::Adler32 {
      have at(multiply_lane_2, __rust_mir_96) == 65521u32 - old((bytes[2] as u32)) by solve() using { __rust_mir_96 == 65521u32 - old((bytes[2] as u32)); };
      have to_integer(at(multiply_lane_2, __rust_mir_96)) <= 65521 by solve() using { to_integer(__rust_mir_96) <= 65521; };
      have at(multiply_lane_2, __rust_mir_96) <= 4294967295u32 / 2u32 by solve() using { __rust_mir_96 <= 4294967295u32 / 2u32; };
-     have 2u32 == 0u32 or at(multiply_lane_2, __rust_mir_96) <= 4294967295u32 / 2u32 by assumption();
+     have 2u32 == 0u32 or at(multiply_lane_2, __rust_mir_96) <= 4294967295u32 / 2u32 by known();
      step();
      have __rust_mir_100 == at(multiply_lane_2, __rust_mir_96) * 2u32;
      have to_integer((at(multiply_lane_2, __rust_mir_96)) * 2u32) == to_integer((at(multiply_lane_2, __rust_mir_96))) * to_integer(2u32);
@@ -1052,7 +1052,7 @@ impl adler2::Adler32 {
      have at(multiply_lane_3, __rust_mir_104) == 65521u32 - old((bytes[3] as u32)) by solve() using { __rust_mir_104 == 65521u32 - old((bytes[3] as u32)); };
      have to_integer(at(multiply_lane_3, __rust_mir_104)) <= 65521 by solve() using { to_integer(__rust_mir_104) <= 65521; };
      have at(multiply_lane_3, __rust_mir_104) <= 4294967295u32 / 3u32 by solve() using { __rust_mir_104 <= 4294967295u32 / 3u32; };
-     have 3u32 == 0u32 or at(multiply_lane_3, __rust_mir_104) <= 4294967295u32 / 3u32 by assumption();
+     have 3u32 == 0u32 or at(multiply_lane_3, __rust_mir_104) <= 4294967295u32 / 3u32 by known();
      step();
      have __rust_mir_108 == at(multiply_lane_3, __rust_mir_104) * 3u32;
      have to_integer((at(multiply_lane_3, __rust_mir_104)) * 3u32) == to_integer((at(multiply_lane_3, __rust_mir_104))) * to_integer(3u32);
@@ -1385,17 +1385,17 @@ impl adler2::Adler32 {
       rewrite(to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)));
       rewrite(at(reduced_a, __rust_mir_149) == (((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32); normalize();
      }
-     have to_integer((((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32) == old(adler_spec_a(bytes, 4, 1)) by assumption();
+     have to_integer((((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32) == old(adler_spec_a(bytes, 4, 1)) by known();
      have to_integer(self.a) == old(adler_spec_a(bytes, 4, 1)) by {
-      rewrite(to_integer(self.a) == to_integer((((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32)); assumption();
+      rewrite(to_integer(self.a) == to_integer((((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32)); known();
      }
      have to_integer(self.b) == to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32) by {
       rewrite(to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)));
       rewrite(at(reduced_b, __rust_mir_151) == (((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32); normalize();
      }
-     have to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32) == old(adler_spec_b(bytes, 4, 1, 0)) by assumption();
+     have to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32) == old(adler_spec_b(bytes, 4, 1, 0)) by known();
      have to_integer(self.b) == old(adler_spec_b(bytes, 4, 1, 0)) by {
-      rewrite(to_integer(self.b) == to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32)); assumption();
+      rewrite(to_integer(self.b) == to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32)); known();
      }
      solve() using { to_integer(self.a) == old(adler_spec_a(bytes, 4, 1)); to_integer(self.b) == old(adler_spec_b(bytes, 4, 1, 0)); bytes[0] == old(bytes[0]); bytes[1] == old(bytes[1]); bytes[2] == old(bytes[2]); bytes[3] == old(bytes[3]); to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)); at(reduced_a, __rust_mir_149) == (((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32; to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)); at(reduced_b, __rust_mir_151) == (((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32; };
     }

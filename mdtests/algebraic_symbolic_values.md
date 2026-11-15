@@ -122,7 +122,7 @@ theorem algebraic_predicate_parameter(m: Maybe<int32>) {
 theorem algebraic_identity_is_stable(left: Maybe<int32>, right: Maybe<int32>) {
     requires left == right;
     ensures left == right by {
-        assumption();
+        known();
     }
 }
 

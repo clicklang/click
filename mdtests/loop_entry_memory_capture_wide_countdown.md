@@ -25,9 +25,9 @@ uint64 inspect(const uint8* p, uint64 n) {
   invariant to_integer(n) <= 15;
   initialize by { have to_integer(n) <= to_integer(15u64); solve(); }
   preserve by {
-   have n > 0u64 by assumption();
+   have n > 0u64 by known();
    have 0u64 < n by {
-    if 0u64 < n { assumption(); } else {
+    if 0u64 < n { known(); } else {
      have 0u64 <= n by normalize();
      have 0u64 == n;
      have n == 0u64 by { rewrite(0u64 == n); normalize(); }
@@ -43,13 +43,13 @@ uint64 inspect(const uint8* p, uint64 n) {
    have to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
    mark before_decrement;
    step();
-   have to_integer(n) == at(before_decrement, to_integer(n)) - 1 by assumption();
+   have to_integer(n) == at(before_decrement, to_integer(n)) - 1 by known();
    have to_integer(n) <= 15 by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; at(before_decrement, to_integer(n)) <= 15; };
    have 0 <= to_integer(n) by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(n)); };
    have to_integer(n) < at(before_decrement, to_integer(n)) by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; };
   }
  }
- have n <= 0u64 by assumption();
+ have n <= 0u64 by known();
  have not (n < 0u64) by normalize();
  have n == 0u64;
 }

@@ -5,7 +5,9 @@ mod publication;
 pub(crate) use publication::PublishedFunctionOutcome;
 
 mod completion;
-pub(crate) use completion::{ContractCompletionGoal, ContractProofProgress, WholeContractProof};
+pub(crate) use completion::{
+    ContractCompletionGoal, ContractExecutionOwner, ContractProofProgress, WholeContractProof,
+};
 
 mod retained_context;
 pub(crate) use retained_context::{RetainedClosingEntry, RetainedClosingFootprint};
@@ -335,7 +337,7 @@ mod cached_read_completion_tests {
                 ),
             );
         let closed = proof
-            .apply_assumption(PropositionAssumptionContext::Exact)
+            .apply_known(PropositionKnownContext::Exact)
             .unwrap_or_else(|_| panic!("the stated proposition must close"));
         let completion = closed.completed_proposition().unwrap();
         let checked = program_checked_function_proposition_with_reason(
@@ -4158,7 +4160,7 @@ mod claim_requirement_tests {
     use crate::kernel::proof::{
         FunctionOutcomeObligation, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
         PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts, ProofObject,
-        ProofObligation as BranchObligation, PropositionAssumptionContext,
+        ProofObligation as BranchObligation, PropositionKnownContext,
     };
 
     type ClaimProof = ProofObject<(), BranchObligation<(), Arc<OutcomeProofState<()>>>, ()>;
@@ -4233,7 +4235,7 @@ mod claim_requirement_tests {
             let checked = root(established.clone(), &outcome)
                 .focus_contract_claim(&goal, ())
                 .expect("the ordinary proof context establishes the domain")
-                .apply_assumption(PropositionAssumptionContext::Exact)
+                .apply_known(PropositionKnownContext::Exact)
                 .unwrap_or_else(|_| panic!("the stated claim must close"));
             let completion = checked.completed_proposition().unwrap();
             assert_eq!(completion.claim(), Some(goal.target()));

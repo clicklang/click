@@ -134,7 +134,15 @@ pub(super) fn shared_addresses_equal_with_load_atoms(
     if a != b && !pointer_blocks_equal_with_load_atoms(a.native_atom(), b.native_atom(), loads) {
         return false;
     }
-    let mut pending = vec![(&left.node().offset, &right.node().offset)];
+    shared_offsets_equal_with_load_atoms(&left.node().offset, &right.node().offset, loads)
+}
+
+pub(super) fn shared_offsets_equal_with_load_atoms(
+    left: &SharedPointerOffset,
+    right: &SharedPointerOffset,
+    loads: LoadAtomsMatch<'_>,
+) -> bool {
+    let mut pending = vec![(left, right)];
     let mut seen: HashSet<(SharedPointerOffset, SharedPointerOffset)> = HashSet::new();
     let mut numeric = HashSet::new();
     let mut exact_indices = HashMap::new();

@@ -48,7 +48,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             }
             have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                 rewrite(identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color));
-                assumption();
+                known();
             }
             let after = fold(ctx_at(new, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
@@ -83,7 +83,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     }
                     have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                         rewrite(identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color));
-                        assumption();
+                        known();
                     }
 
                     let sibling = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
@@ -121,7 +121,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     }
                     have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
                         rewrite(identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color));
-                        assumption();
+                        known();
                     }
 
                     let after = fold(ctx_at(new, root), {

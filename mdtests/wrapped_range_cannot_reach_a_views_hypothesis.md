@@ -28,7 +28,7 @@ theorem a_cell_from_a_wrapped_views_hypothesis(v: int32[], n: int32) {
             1073741824 < n;
             viewable(v[0..1073741824]);
         };
-        assumption();
+        known();
     }
 }
 ```

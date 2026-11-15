@@ -102,17 +102,17 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             }
             step(); step(); step(); step();
             unfold(n_left); unfold(n_right);
-            have node->rb_left == 0 by { assumption(); }
-            have node->rb_right == 0 by { assumption(); }
+            have node->rb_left == 0 by { known(); }
+            have node->rb_right == 0 by { known(); }
             let n_left = fold(sized_at(node->rb_left), { model: SizedTree::Empty });
             let n_right = fold(sized_at(node->rb_right), { model: SizedTree::Empty });
             let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: n_size, left: n_left, right: n_right });
-            have p->rb_left == node by { assumption(); }
+            have p->rb_left == node by { known(); }
             have p->rb_left != p by {
-                assumption();
+                known();
             }
             have p->rb_right != p by {
-                assumption();
+                known();
             }
             let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty) }, { metadata: p_size, left: focus, right: p_right });
             let tree = fold(sized_at(g), { model: old(state.model) }, { metadata: g_size, left: parent_tree, right: g_right });
@@ -154,11 +154,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(color_bit(Color::Black) == 1); normalize();
                     }
                     step(); step(); step(); step(); step(); step(); step();
-                    have gparent == g by { assumption(); }
-                    have parent == p by { assumption(); }
+                    have gparent == g by { known(); }
+                    have parent == p by { known(); }
                     step(); step(); step();
-                    have tmp == 0 by { assumption(); }
-                    have node != 0 by { assumption(); }
+                    have tmp == 0 by { known(); }
+                    have node != 0 by { known(); }
                     have separate(memory(gparent->rb_right), memory(gparent->rb_left));
                     have separate(memory(gparent->rb_right), memory(parent->rb_right));
                     have separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
@@ -169,10 +169,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have separate(memory(parent->rb_left), memory(gparent->__rb_parent_color));
                     have separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
                     have separate(memory(parent->rb_left), memory(root->rb_node));
-                    have gparent->rb_left == parent by { assumption(); }
+                    have gparent->rb_left == parent by { known(); }
                     mark before_link_writes;
                     step(); step(); step();
-                    have gparent->rb_left == 0 by { assumption(); }
+                    have gparent->rb_left == 0 by { known(); }
                     have separate(memory(gparent->rb_left), memory(parent->rb_right));
                     mark after_left_write;
                     step(); step(); step();
@@ -181,7 +181,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(gparent->rb_left), memory(parent->rb_right));
                     };
                     have gparent->__rb_parent_color == 1 by { solve(); }
-                    have gparent->rb_left == 0 by { assumption(); }
+                    have gparent->rb_left == 0 by { known(); }
                     have separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
                     have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
                     have separate(memory(gparent->rb_left), memory(root->rb_node));
@@ -193,7 +193,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
                         separate(memory(gparent->rb_left), memory(root->rb_node));
                     };
-                    have g->rb_left == 0 by { assumption(); }
+                    have g->rb_left == 0 by { known(); }
                     let p_right = fold(sized_at(0), { model: SizedTree::Empty });
                     transport(at(before_link_writes, gparent->rb_right == 0), gparent->rb_right == 0) using {
                         at(before_link_writes, gparent->rb_right == 0);
@@ -203,7 +203,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
                         separate(memory(gparent->rb_right), memory(root->rb_node));
                     };
-                    have g->rb_right == 0 by { assumption(); }
+                    have g->rb_right == 0 by { known(); }
                     let g_right = fold(sized_at(0), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
@@ -221,9 +221,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->rb_right == g by {
                         rewrite(p == parent);
                         rewrite(g == gparent);
-                        assumption();
+                        known();
                     }
-                    have parent == p by { assumption(); }
+                    have parent == p by { known(); }
                     have parent->__rb_parent_color == at(region(37).exit, gparent->__rb_parent_color) by { solve(); }
                     have parent->__rb_parent_color == 1 by { solve(); }
                     transport(parent->__rb_parent_color == 1, p->__rb_parent_color == 1);
@@ -302,7 +302,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     step();
                 }
             }
-            have node == old(node) by { assumption(); }
+            have node == old(node) by { known(); }
             step_until(function.exit);
         },
     }

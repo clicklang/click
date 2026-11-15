@@ -20,7 +20,7 @@ theorem known_zero_instance(s: uint64) {
     ensures 1 == 1 by {
         have s >= 64u64 or (1u64 << s) == 2u64 by {
             have s >= 64u64;
-            assumption();
+            known();
         }
         apply(guarded(s));
     }

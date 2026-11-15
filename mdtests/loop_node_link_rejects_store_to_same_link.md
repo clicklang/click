@@ -80,7 +80,7 @@ void rotate(struct node* parent) {
                                     have tmp2 == iid;
                                     mark inner_inputs;
                                     step(); step(); step(); // The three link stores.
-                                    have sid->right == at(inner_inputs, sid->right) by assumption();
+                                    have sid->right == at(inner_inputs, sid->right) by known();
                                 },
                             }
                         },
@@ -93,5 +93,5 @@ void rotate(struct node* parent) {
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

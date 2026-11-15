@@ -50,9 +50,9 @@ theorem adler_weight_shift(bytes: uint8[], n: int32, w0: int32, w1: int32) {
    peel(adler_weighted_sum(bytes, n, w1)) using { n <= 0; };
    peel(adler_weighted_sum(bytes, n, w0)) using { n <= 0; };
    peel(adler_byte_sum(bytes, n)) using { n <= 0; };
-   have adler_weighted_sum(bytes, n, w1) == 0 by { assumption(); }
-   have adler_weighted_sum(bytes, n, w0) == 0 by { assumption(); }
-   have adler_byte_sum(bytes, n) == 0 by { assumption(); }
+   have adler_weighted_sum(bytes, n, w1) == 0 by { known(); }
+   have adler_weighted_sum(bytes, n, w0) == 0 by { known(); }
+   have adler_byte_sum(bytes, n) == 0 by { known(); }
    solve() using { adler_weighted_sum(bytes, n, w1) == 0; adler_weighted_sum(bytes, n, w0) == 0; adler_byte_sum(bytes, n) == 0; };
   } else {
    have 0 < n by { solve(); }
@@ -109,11 +109,11 @@ theorem adler_weighted_prefix_step(bytes: uint8[], n: int32) {
 theorem adler_byte_bounds(value: uint8) {
  ensures 0 <= to_integer(value as int32) by {
   have 0 <= value as int32 by { solve(); }
-  assumption();
+  known();
  }
  ensures to_integer(value as int32) <= 255 by {
   have value as int32 <= 255 by { solve(); }
-  assumption();
+  known();
  }
 }
 
@@ -207,7 +207,7 @@ theorem adler_residue_add(n: Integer, m: Integer) {
    0 <= truncating_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521);
    truncating_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521) <= 65520;
   };
-  assumption();
+  known();
  }
 }
 
@@ -225,7 +225,7 @@ theorem adler_spec_a_canonical(bytes: uint8[], n: int32, a0: Integer) {
   apply(integer::positive_divisor_remainder_upper(a0 + adler_byte_sum(bytes, n), 65521)) using { 65521 != 0; 0 < 65521; };
   have truncating_remainder(a0 + adler_byte_sum(bytes, n), 65521) <= 65520 by { solve() using { truncating_remainder(a0 + adler_byte_sum(bytes, n), 65521) <= 65521 - 1; }; }
   unfold(adler_spec_a(bytes, n, a0));
-  both { assumption(); } and { assumption(); }
+  both { known(); } and { known(); }
  }
 }
 
@@ -253,7 +253,7 @@ theorem adler_spec_b_canonical(bytes: uint8[], n: int32, a0: Integer, b0: Intege
   apply(integer::positive_divisor_remainder_upper(b0 + to_integer(n) * a0 + adler_weighted_sum(bytes, n, n), 65521)) using { 65521 != 0; 0 < 65521; };
   have truncating_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum(bytes, n, n), 65521) <= 65520 by { solve() using { truncating_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum(bytes, n, n), 65521) <= 65521 - 1; }; }
   unfold(adler_spec_b(bytes, n, a0, b0));
-  both { assumption(); } and { assumption(); }
+  both { known(); } and { known(); }
  }
 }
 
@@ -295,7 +295,7 @@ theorem adler_spec_empty(bytes: uint8[], a0: Integer, b0: Integer) {
   rewrite(adler_weighted_sum(bytes, 0, 0) == 0);
   have b0 + 0 * a0 + 0 == b0 by { normalize(); }
   rewrite(b0 + 0 * a0 + 0 == b0);
-  assumption();
+  known();
  }
 }
 
@@ -318,19 +318,19 @@ theorem adler_sum_append_four(bytes: uint8[], n: int32) {
   have defined(n + 2) by { solve() using { 0 <= n; n <= 2147483643; }; }
   apply(adler_sum_append(bytes, n + 2)) using { defined(n + 2); 0 < to_integer(n + 2); };
   have to_integer(n + 1) == to_integer((n + 2) - 1) by { solve() using { to_integer((n + 2) - 1) == to_integer(n + 1); }; }
-  have adler_byte_sum(bytes, n + 2) == adler_byte_sum(bytes, n + 1) + to_integer(bytes[n + 1] as int32) by { rewrite(to_integer(n + 1) == to_integer((n + 2) - 1)); assumption(); }
+  have adler_byte_sum(bytes, n + 2) == adler_byte_sum(bytes, n + 1) + to_integer(bytes[n + 1] as int32) by { rewrite(to_integer(n + 1) == to_integer((n + 2) - 1)); known(); }
   have 0 < to_integer(n + 3) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have to_integer((n + 3) - 1) == to_integer(n + 2) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have defined(n + 3) by { solve() using { 0 <= n; n <= 2147483643; }; }
   apply(adler_sum_append(bytes, n + 3)) using { defined(n + 3); 0 < to_integer(n + 3); };
   have to_integer(n + 2) == to_integer((n + 3) - 1) by { solve() using { to_integer((n + 3) - 1) == to_integer(n + 2); }; }
-  have adler_byte_sum(bytes, n + 3) == adler_byte_sum(bytes, n + 2) + to_integer(bytes[n + 2] as int32) by { rewrite(to_integer(n + 2) == to_integer((n + 3) - 1)); assumption(); }
+  have adler_byte_sum(bytes, n + 3) == adler_byte_sum(bytes, n + 2) + to_integer(bytes[n + 2] as int32) by { rewrite(to_integer(n + 2) == to_integer((n + 3) - 1)); known(); }
   have 0 < to_integer(n + 4) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have to_integer((n + 4) - 1) == to_integer(n + 3) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have defined(n + 4) by { solve() using { 0 <= n; n <= 2147483643; }; }
   apply(adler_sum_append(bytes, n + 4)) using { defined(n + 4); 0 < to_integer(n + 4); };
   have to_integer(n + 3) == to_integer((n + 4) - 1) by { solve() using { to_integer((n + 4) - 1) == to_integer(n + 3); }; }
-  have adler_byte_sum(bytes, n + 4) == adler_byte_sum(bytes, n + 3) + to_integer(bytes[n + 3] as int32) by { rewrite(to_integer(n + 3) == to_integer((n + 4) - 1)); assumption(); }
+  have adler_byte_sum(bytes, n + 4) == adler_byte_sum(bytes, n + 3) + to_integer(bytes[n + 3] as int32) by { rewrite(to_integer(n + 3) == to_integer((n + 4) - 1)); known(); }
   rewrite(adler_byte_sum(bytes, n + 4) == adler_byte_sum(bytes, n + 3) + to_integer(bytes[n + 3] as int32));
   rewrite(adler_byte_sum(bytes, n + 3) == adler_byte_sum(bytes, n + 2) + to_integer(bytes[n + 2] as int32));
   rewrite(adler_byte_sum(bytes, n + 2) == adler_byte_sum(bytes, n + 1) + to_integer(bytes[n + 1] as int32));
@@ -353,27 +353,27 @@ theorem adler_weighted_append_four(bytes: uint8[], n: int32) {
   have defined(n + 2) by { solve() using { 0 <= n; n <= 2147483643; }; }
   apply(adler_sum_append(bytes, n + 2)) using { defined(n + 2); 0 < to_integer(n + 2); };
   have to_integer(n + 1) == to_integer((n + 2) - 1) by { solve() using { to_integer((n + 2) - 1) == to_integer(n + 1); }; }
-  have adler_byte_sum(bytes, n + 2) == adler_byte_sum(bytes, n + 1) + to_integer(bytes[n + 1] as int32) by { rewrite(to_integer(n + 1) == to_integer((n + 2) - 1)); assumption(); }
+  have adler_byte_sum(bytes, n + 2) == adler_byte_sum(bytes, n + 1) + to_integer(bytes[n + 1] as int32) by { rewrite(to_integer(n + 1) == to_integer((n + 2) - 1)); known(); }
   have 0 < to_integer(n + 3) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have to_integer((n + 3) - 1) == to_integer(n + 2) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have defined(n + 3) by { solve() using { 0 <= n; n <= 2147483643; }; }
   apply(adler_sum_append(bytes, n + 3)) using { defined(n + 3); 0 < to_integer(n + 3); };
   have to_integer(n + 2) == to_integer((n + 3) - 1) by { solve() using { to_integer((n + 3) - 1) == to_integer(n + 2); }; }
-  have adler_byte_sum(bytes, n + 3) == adler_byte_sum(bytes, n + 2) + to_integer(bytes[n + 2] as int32) by { rewrite(to_integer(n + 2) == to_integer((n + 3) - 1)); assumption(); }
+  have adler_byte_sum(bytes, n + 3) == adler_byte_sum(bytes, n + 2) + to_integer(bytes[n + 2] as int32) by { rewrite(to_integer(n + 2) == to_integer((n + 3) - 1)); known(); }
   have 0 < to_integer(n + 4) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have to_integer((n + 4) - 1) == to_integer(n + 3) by { solve() using { 0 <= n; n <= 2147483643; }; }
   have defined(n + 4) by { solve() using { 0 <= n; n <= 2147483643; }; }
   apply(adler_sum_append(bytes, n + 4)) using { defined(n + 4); 0 < to_integer(n + 4); };
   have to_integer(n + 3) == to_integer((n + 4) - 1) by { solve() using { to_integer((n + 4) - 1) == to_integer(n + 3); }; }
-  have adler_byte_sum(bytes, n + 4) == adler_byte_sum(bytes, n + 3) + to_integer(bytes[n + 3] as int32) by { rewrite(to_integer(n + 3) == to_integer((n + 4) - 1)); assumption(); }
+  have adler_byte_sum(bytes, n + 4) == adler_byte_sum(bytes, n + 3) + to_integer(bytes[n + 3] as int32) by { rewrite(to_integer(n + 3) == to_integer((n + 4) - 1)); known(); }
   apply(adler_weighted_prefix_step(bytes, n + 1)) using { defined(n + 1); 0 < to_integer(n + 1); };
   have adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1) by { solve() using { adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, (n + 1) - 1, (n + 1) - 1) + adler_byte_sum(bytes, n + 1); to_integer((n + 1) - 1) == to_integer(n); }; }
   apply(adler_weighted_prefix_step(bytes, n + 2)) using { defined(n + 2); 0 < to_integer(n + 2); };
-  have adler_weighted_sum(bytes, n + 2, n + 2) == adler_weighted_sum(bytes, n + 1, n + 1) + adler_byte_sum(bytes, n + 2) by { rewrite(to_integer(n + 1) == to_integer((n + 2) - 1)); assumption(); }
+  have adler_weighted_sum(bytes, n + 2, n + 2) == adler_weighted_sum(bytes, n + 1, n + 1) + adler_byte_sum(bytes, n + 2) by { rewrite(to_integer(n + 1) == to_integer((n + 2) - 1)); known(); }
   apply(adler_weighted_prefix_step(bytes, n + 3)) using { defined(n + 3); 0 < to_integer(n + 3); };
-  have adler_weighted_sum(bytes, n + 3, n + 3) == adler_weighted_sum(bytes, n + 2, n + 2) + adler_byte_sum(bytes, n + 3) by { rewrite(to_integer(n + 2) == to_integer((n + 3) - 1)); assumption(); }
+  have adler_weighted_sum(bytes, n + 3, n + 3) == adler_weighted_sum(bytes, n + 2, n + 2) + adler_byte_sum(bytes, n + 3) by { rewrite(to_integer(n + 2) == to_integer((n + 3) - 1)); known(); }
   apply(adler_weighted_prefix_step(bytes, n + 4)) using { defined(n + 4); 0 < to_integer(n + 4); };
-  have adler_weighted_sum(bytes, n + 4, n + 4) == adler_weighted_sum(bytes, n + 3, n + 3) + adler_byte_sum(bytes, n + 4) by { rewrite(to_integer(n + 3) == to_integer((n + 4) - 1)); assumption(); }
+  have adler_weighted_sum(bytes, n + 4, n + 4) == adler_weighted_sum(bytes, n + 3, n + 3) + adler_byte_sum(bytes, n + 4) by { rewrite(to_integer(n + 3) == to_integer((n + 4) - 1)); known(); }
   rewrite(adler_weighted_sum(bytes, n + 4, n + 4) == adler_weighted_sum(bytes, n + 3, n + 3) + adler_byte_sum(bytes, n + 4));
   rewrite(adler_weighted_sum(bytes, n + 3, n + 3) == adler_weighted_sum(bytes, n + 2, n + 2) + adler_byte_sum(bytes, n + 3));
   rewrite(adler_weighted_sum(bytes, n + 2, n + 2) == adler_weighted_sum(bytes, n + 1, n + 1) + adler_byte_sum(bytes, n + 2));
@@ -406,7 +406,7 @@ theorem adler_residue_congruent(n: Integer, m: Integer, q: Integer) {
    0 <= truncating_remainder(m, 65521);
    truncating_remainder(m, 65521) <= 65520;
   };
-  assumption();
+  known();
  }
 }
 
@@ -452,7 +452,7 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
    have suffix == 0 by { solve() using { 0 <= suffix; suffix <= 0; }; }
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix == 0); normalize(); }
    apply(adler_sum_empty(bytes + prefix, 0));
-   have adler_byte_sum(bytes + prefix, suffix) == 0 by { rewrite(suffix == 0); assumption(); }
+   have adler_byte_sum(bytes + prefix, suffix) == 0 by { rewrite(suffix == 0); known(); }
    rewrite(to_integer(prefix + suffix) == to_integer(prefix));
    solve() using { adler_byte_sum(bytes + prefix, suffix) == 0; };
   } else {
@@ -461,13 +461,13 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
    have to_integer(suffix - 1) < to_integer(suffix) by { solve() using { 0 < suffix; }; }
    have 1 <= suffix by { solve() using { 0 < suffix; }; }
    have defined(suffix - 1);
-   have defined(suffix - 1) by { assumption(); }
+   have defined(suffix - 1) by { known(); }
    have suffix <= 2147483647 by { solve(); }
    have to_integer(suffix - 1) <= 2147483647 by { solve(); }
    have defined(2147483647 - suffix);
    have defined(2147483647 - (suffix - 1));
-   have defined(2147483647 - suffix) by { assumption(); }
-   have defined(2147483647 - (suffix - 1)) by { assumption(); }
+   have defined(2147483647 - suffix) by { known(); }
+   have defined(2147483647 - (suffix - 1)) by { known(); }
    have to_integer(2147483647 - suffix) == to_integer(2147483647) - to_integer(suffix);
    have to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
    have to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
@@ -477,14 +477,14 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
     to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { assumption(); }
+   have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { known(); }
    have defined(prefix + (suffix - 1));
-   have defined(prefix + (suffix - 1)) by { assumption(); }
+   have defined(prefix + (suffix - 1)) by { known(); }
    apply(ih(suffix - 1)) using { 0 <= prefix; 0 <= to_integer(suffix - 1); to_integer(suffix - 1) < to_integer(suffix); to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)); defined(prefix + (suffix - 1)); };
    have 0 < to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(suffix - 1); 0 <= to_integer(suffix - 1); defined(2147483647 - suffix); defined(2147483647 - (suffix - 1)); }; }
    have 1 <= to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(2147483647 - suffix); }; }
    have defined((prefix + suffix) - 1);
-   have defined((prefix + suffix) - 1) by { assumption(); }
+   have defined((prefix + suffix) - 1) by { known(); }
    have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
    have to_integer(prefix + (suffix - 1)) == to_integer(prefix) + to_integer(suffix - 1);
    have to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
@@ -494,12 +494,12 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
     to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { assumption(); }
+   have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { known(); }
    apply(adler_sum_append(bytes, prefix + suffix));
    apply(adler_sum_append(bytes + prefix, suffix));
    apply(adler_byte_offset_association(bytes, prefix, suffix - 1)) using { defined(prefix + (suffix - 1)); };
    have adler_byte_sum(bytes, (prefix + suffix) - 1) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix - 1) by {
-    rewrite(to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1))); assumption();
+    rewrite(to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1))); known();
    }
    have to_integer(bytes[(prefix + suffix) - 1] as int32) == to_integer((bytes + prefix)[suffix - 1] as int32) by {
     rewrite(to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1))); rewrite(to_integer((bytes + prefix)[suffix - 1] as int32) == to_integer(bytes[prefix + (suffix - 1)] as int32)); solve();
@@ -527,7 +527,7 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
    have suffix == 0 by { solve() using { 0 <= suffix; suffix <= 0; }; }
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix == 0); normalize(); }
    apply(adler_sum_empty(bytes + prefix, weight_end - prefix));
-   have adler_weighted_sum(bytes + prefix, suffix, weight_end - prefix) == 0 by { rewrite(suffix == 0); assumption(); }
+   have adler_weighted_sum(bytes + prefix, suffix, weight_end - prefix) == 0 by { rewrite(suffix == 0); known(); }
    rewrite(to_integer(prefix + suffix) == to_integer(prefix));
    solve() using { adler_weighted_sum(bytes + prefix, suffix, weight_end - prefix) == 0; };
   } else {
@@ -536,13 +536,13 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
    have to_integer(suffix - 1) < to_integer(suffix) by { solve() using { 0 < suffix; }; }
    have 1 <= suffix by { solve() using { 0 < suffix; }; }
    have defined(suffix - 1);
-   have defined(suffix - 1) by { assumption(); }
+   have defined(suffix - 1) by { known(); }
    have suffix <= 2147483647 by { solve(); }
    have to_integer(suffix - 1) <= 2147483647 by { solve(); }
    have defined(2147483647 - suffix);
    have defined(2147483647 - (suffix - 1));
-   have defined(2147483647 - suffix) by { assumption(); }
-   have defined(2147483647 - (suffix - 1)) by { assumption(); }
+   have defined(2147483647 - suffix) by { known(); }
+   have defined(2147483647 - (suffix - 1)) by { known(); }
    have to_integer(2147483647 - suffix) == to_integer(2147483647) - to_integer(suffix);
    have to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
    have to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
@@ -552,14 +552,14 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
     to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { assumption(); }
+   have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { known(); }
    have defined(prefix + (suffix - 1));
-   have defined(prefix + (suffix - 1)) by { assumption(); }
+   have defined(prefix + (suffix - 1)) by { known(); }
    apply(ih(suffix - 1)) using { 0 <= prefix; 0 <= to_integer(suffix - 1); to_integer(suffix - 1) < to_integer(suffix); defined(weight_end - prefix); to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)); defined(prefix + (suffix - 1)); };
    have 0 < to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(suffix - 1); 0 <= to_integer(suffix - 1); defined(2147483647 - suffix); defined(2147483647 - (suffix - 1)); }; }
    have 1 <= to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(2147483647 - suffix); }; }
    have defined((prefix + suffix) - 1);
-   have defined((prefix + suffix) - 1) by { assumption(); }
+   have defined((prefix + suffix) - 1) by { known(); }
    have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
    have to_integer(prefix + (suffix - 1)) == to_integer(prefix) + to_integer(suffix - 1);
    have to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
@@ -569,12 +569,12 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
     to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { assumption(); }
+   have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { known(); }
    apply(adler_weighted_append(bytes, prefix + suffix, weight_end));
    apply(adler_weighted_append(bytes + prefix, suffix, weight_end - prefix));
    apply(adler_byte_offset_association(bytes, prefix, suffix - 1)) using { defined(prefix + (suffix - 1)); };
    have adler_weighted_sum(bytes, (prefix + suffix) - 1, weight_end) == adler_weighted_sum(bytes, prefix, weight_end) + adler_weighted_sum(bytes + prefix, suffix - 1, weight_end - prefix) by {
-    rewrite(to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1))); assumption();
+    rewrite(to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1))); known();
    }
    have to_integer(bytes[(prefix + suffix) - 1] as int32) == to_integer((bytes + prefix)[suffix - 1] as int32) by {
     rewrite(to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1))); rewrite(to_integer((bytes + prefix)[suffix - 1] as int32) == to_integer(bytes[prefix + (suffix - 1)] as int32)); solve();
@@ -612,7 +612,7 @@ theorem adler_residue_add_left(n: Integer, m: Integer) {
   have 0 <= truncating_remainder(n, 65521) + m by { solve() using { 0 <= truncating_remainder(n, 65521); 0 <= m; }; }
   have n + m == (truncating_remainder(n, 65521) + m) + 65521 * truncating_quotient(n, 65521) by { solve() using { n == truncating_quotient(n, 65521) * 65521 + truncating_remainder(n, 65521); }; }
   apply(adler_residue_congruent(n + m, truncating_remainder(n, 65521) + m, truncating_quotient(n, 65521)));
-  assumption();
+  known();
  }
 }
 
@@ -634,7 +634,7 @@ theorem adler_spec_a_concat(bytes: uint8[], prefix: int32, suffix: int32, a0: In
   rewrite(adler_byte_sum(bytes, prefix + suffix) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix));
   have a0 + (adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix)) == (a0 + adler_byte_sum(bytes, prefix)) + adler_byte_sum(bytes + prefix, suffix) by { solve() using {}; }
   rewrite(a0 + (adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix)) == (a0 + adler_byte_sum(bytes, prefix)) + adler_byte_sum(bytes + prefix, suffix));
-  assumption();
+  known();
  }
 }
 
@@ -722,7 +722,7 @@ theorem adler_residue_seed_update(x: Integer, y: Integer, k: Integer, z: Integer
   } }
   apply(adler_seed_polynomial(x, y, k, z, truncating_quotient(x, 65521), truncating_remainder(x, 65521), truncating_quotient(y, 65521), truncating_remainder(y, 65521)));
   apply(adler_residue_congruent(y + k * x + z, truncating_remainder(y, 65521) + k * truncating_remainder(x, 65521) + z, truncating_quotient(y, 65521) + k * truncating_quotient(x, 65521)));
-  assumption();
+  known();
  }
 }
 
@@ -739,9 +739,9 @@ theorem adler_concat_index_partition_defined(prefix: int32, suffix: int32) {
    to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
    to_integer(0) <= to_integer(suffix);
   }; }
-  have to_integer(prefix) <= to_integer(prefix + suffix) by { assumption(); }
+  have to_integer(prefix) <= to_integer(prefix + suffix) by { known(); }
   have defined((prefix + suffix) - prefix);
-  assumption();
+  known();
  }
 }
 
@@ -751,7 +751,7 @@ theorem adler_concat_index_partition(prefix: int32, suffix: int32) {
  requires to_integer(prefix) <= to_integer(2147483647 - suffix);
  requires defined(prefix + suffix);
  requires defined((prefix + suffix) - prefix);
- ensures defined((prefix + suffix) - prefix) by { assumption(); }
+ ensures defined((prefix + suffix) - prefix) by { known(); }
  ensures to_integer((prefix + suffix) - prefix) == to_integer(suffix) by {
   have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
   have to_integer((prefix + suffix) - prefix) == to_integer(prefix + suffix) - to_integer(prefix);
@@ -769,15 +769,15 @@ theorem adler_weighted_prefix_concat(bytes: uint8[], prefix: int32, suffix: int3
  requires defined(prefix + suffix);
  ensures adler_weighted_sum(bytes, prefix + suffix, prefix + suffix) == adler_weighted_sum(bytes, prefix, prefix) + to_integer(suffix) * adler_byte_sum(bytes, prefix) + adler_weighted_sum(bytes + prefix, suffix, suffix) by {
   apply(adler_concat_index_partition_defined(prefix, suffix)); apply(adler_concat_index_partition(prefix, suffix));
-  have defined((prefix + suffix) - prefix) by { assumption(); }
-  have to_integer((prefix + suffix) - prefix) == to_integer(suffix) by { assumption(); }
+  have defined((prefix + suffix) - prefix) by { known(); }
+  have to_integer((prefix + suffix) - prefix) == to_integer(suffix) by { known(); }
   apply(adler_weighted_concat(bytes, prefix, suffix, prefix + suffix)) using {
    0 <= prefix; 0 <= suffix; to_integer(prefix) <= to_integer(2147483647 - suffix);
    defined(prefix + suffix); defined((prefix + suffix) - prefix);
   };
   have adler_weighted_sum(bytes, prefix + suffix, prefix + suffix) == adler_weighted_sum(bytes, prefix, prefix + suffix) + adler_weighted_sum(bytes + prefix, suffix, suffix) by {
    rewrite(to_integer(suffix) == to_integer((prefix + suffix) - prefix));
-   assumption();
+   known();
   }
   apply(adler_weight_shift(bytes, prefix, prefix, prefix + suffix));
   have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
@@ -786,7 +786,7 @@ theorem adler_weighted_prefix_concat(bytes: uint8[], prefix: int32, suffix: int3
   }; }
   have adler_weighted_sum(bytes, prefix, prefix + suffix) - adler_weighted_sum(bytes, prefix, prefix) == to_integer(suffix) * adler_byte_sum(bytes, prefix) by {
    rewrite(to_integer(suffix) == to_integer(prefix + suffix) - to_integer(prefix));
-   assumption();
+   known();
   }
   solve() using {
    adler_weighted_sum(bytes, prefix + suffix, prefix + suffix) == adler_weighted_sum(bytes, prefix, prefix + suffix) + adler_weighted_sum(bytes + prefix, suffix, suffix);
@@ -859,7 +859,7 @@ theorem adler_spec_b_concat(bytes: uint8[], prefix: int32, suffix: int32, a0: In
   rewrite(adler_weighted_sum(bytes, prefix + suffix, prefix + suffix) == adler_weighted_sum(bytes, prefix, prefix) + to_integer(suffix) * adler_byte_sum(bytes, prefix) + adler_weighted_sum(bytes + prefix, suffix, suffix));
   rewrite(to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix));
   rewrite(b0 + (to_integer(prefix) + to_integer(suffix)) * a0 + (adler_weighted_sum(bytes, prefix, prefix) + to_integer(suffix) * adler_byte_sum(bytes, prefix) + adler_weighted_sum(bytes + prefix, suffix, suffix)) == (b0 + to_integer(prefix) * a0 + adler_weighted_sum(bytes, prefix, prefix)) + to_integer(suffix) * (a0 + adler_byte_sum(bytes, prefix)) + adler_weighted_sum(bytes + prefix, suffix, suffix));
-  assumption();
+  known();
  }
 }
 

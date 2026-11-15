@@ -37,10 +37,10 @@ theorem parameter_not_is_false(flag: Bool) {
 theorem range(x: int32) {
     ensures positive(x) == true or positive(x) == false by {
         if positive(x) {
-            assumption();
+            known();
         } else {
             have positive(x) == false by solve();
-            assumption();
+            known();
         }
     }
 }

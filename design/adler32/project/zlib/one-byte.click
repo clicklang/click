@@ -28,7 +28,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  apply(integer::uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  step_until(assignment(sum2, 1)); step();
  have sum2 == adler by { solve(); }
- have sum2 <= 256u64 by { rewrite(sum2 == adler); assumption(); }
+ have sum2 <= 256u64 by { rewrite(sum2 == adler); known(); }
  have sum2 < 65521u64 by { solve() using { sum2 <= 256u64; }; }
  apply(integer::uint64_less_than_implies_not_greater_equal(sum2, 65521u64));
  have adler <= 65535u64 by { solve() using { adler <= 256u64; }; }
@@ -53,12 +53,12 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   rewrite(to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2));
   rewrite(sum2 == adler);
   rewrite(to_integer(adler) == 1 + to_integer(buf[0] as int32));
-  assumption();
+  known();
  }
  have to_integer(1) == to_integer(1u64) by normalize();
  apply(adler_spec_checksum_bridge(buf, 1, 1u64, 1, 0)) using { to_integer(1) == to_integer(1u64); };
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum_u64(buf, 1u64, 1, 0) by {
   rewrite(adler_spec_checksum_u64(buf, 1u64, 1, 0) == adler_spec_checksum(buf, 1, 1, 0));
-  assumption();
+  known();
  }
 }

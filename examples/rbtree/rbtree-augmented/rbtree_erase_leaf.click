@@ -25,14 +25,14 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     let { hole: hole, remaining: deficit } = step(__rb_erase_augmented, { tree: tree, up: up });
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1 by {
-        unfold(rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty))); assumption();
+        unfold(rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty))); known();
     }
     if rebalance != 0 {
         have deficit.model != Context::Top;
         have ctx_node_is(deficit.model, rebalance) == 1;
         have ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1;
         have ctx_rb(deficit.model, Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1 by {
-            unfold(black_height(RbTree::Empty)); assumption();
+            unfold(black_height(RbTree::Empty)); known();
         }
         have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(deficit.model, RbTree::Empty);
         unfold(hole);
@@ -50,7 +50,7 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         have rebalance == 0;
         have is_rb_root(plug(deficit.model, RbTree::Empty)) == 1;
         have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(deficit.model, RbTree::Empty);
-        have rb_tree_parent_consistent(plug(deficit.model, hole.model)) == 1 by { rewrite(hole.model == RbTree::Empty); assumption(); }
+        have rb_tree_parent_consistent(plug(deficit.model, hole.model)) == 1 by { rewrite(hole.model == RbTree::Empty); known(); }
         mark balanced;
         let { whole: whole } = refold_to_root(0, root, { c: deficit, t: hole });
         have whole.model == plug(old(up.model), RbTree::Empty) by {
@@ -65,11 +65,11 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         }
         have is_rb_root(whole.model) == 1 by {
             rewrite(whole.model == plug(old(up.model), RbTree::Empty));
-            rewrite(old(up.model) == at(balanced, deficit.model)); assumption();
+            rewrite(old(up.model) == at(balanced, deficit.model)); known();
         }
         have rb_tree_parent_consistent(whole.model) == 1 by {
             rewrite(whole.model == plug(old(up.model), RbTree::Empty));
-            rewrite(old(up.model) == at(balanced, deficit.model)); assumption();
+            rewrite(old(up.model) == at(balanced, deficit.model)); known();
         }
         step_until(function.exit);
     }

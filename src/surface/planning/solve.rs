@@ -8,7 +8,7 @@ use crate::surface::*;
 /// construction path. Both the fixed-state proof `solve() using` chain and the
 /// post-execution outcome planner must call through here, so a named simple
 /// rule available to one is available to the other. `is_available` is the
-/// caller's judgment of when the current goal closes by `assumption`.
+/// caller's judgment of when the current goal closes by `known`.
 pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
     goal: &Proposition,
     premises: &[(Proposition, ClickProposition)],
@@ -117,7 +117,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
             return false;
         }
         if is_available(&current) {
-            tactics.push(ProofTactic::Assumption);
+            tactics.push(ProofTactic::Known);
             return true;
         }
         if normalizes_context_free(&current) {
@@ -128,7 +128,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
             tactics.extend(suffix);
             return true;
         }
-        // A disjunction closes the way `assumption` closes it: one
+        // A disjunction closes the way `known` closes it: one
         // disjunct must be the same total boolean condition as an
         // available fact up to polarity (`x > 0` from `not (x <= 0)`).
         // Construction mirrors exactly that rule, and commits only
@@ -140,7 +140,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                     .iter()
                     .any(|fact| condition_polarity_equivalent(fact, child))
                 {
-                    tactics.push(ProofTactic::Assumption);
+                    tactics.push(ProofTactic::Known);
                     return true;
                 }
             }

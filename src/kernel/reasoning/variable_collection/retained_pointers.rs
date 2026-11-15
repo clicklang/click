@@ -41,6 +41,33 @@ fn visit_components<'a>(
     }
 }
 
+pub(super) fn collect_offset_variables_with_summaries(
+    offsets: &[SharedPointerOffset; 2],
+    mode: FoldVariableRead,
+    variables: &mut BTreeSet<Variable>,
+    summaries: &mut std::collections::HashMap<u64, crate::persistent::PersistentSet<Variable>>,
+) {
+    SharedPointerOffset::visit_pair(offsets, |node| {
+        if checked_collection_checkpoint() {
+            return;
+        }
+        match node {
+            KernelPointerOffset::Variable(variable)
+                if mode == FoldVariableRead::ExpressionFree
+                    && (collecting_connection_variables()
+                        || COORDINATE_VARIABLES.with(std::cell::Cell::get)) =>
+            {
+                variables.insert(*variable);
+            }
+            node => {
+                if let Some(root) = node.index() {
+                    variables.extend(common_variables(root, mode, summaries).iter().copied());
+                }
+            }
+        }
+    });
+}
+
 pub(crate) fn collect_address_variables(
     address: &SharedPointerAddress,
     mode: FoldVariableRead,

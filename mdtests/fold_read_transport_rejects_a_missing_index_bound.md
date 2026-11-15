@@ -30,7 +30,7 @@ void mark_somewhere(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     step();
     have zeros(at(entry, v), lo, hi) == zeros(v, lo, hi) by {
         solve();
-        assumption();
+        known();
     }
 }
 ```

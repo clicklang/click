@@ -33,7 +33,7 @@ void push(struct buffer* owner, int32 value) {
     ensures owner->data == old(owner->data);
     ensures owner->data[old(owner->len)] == value;
 } by {
-    have separate(memory(owner->data[owner->len]), memory(owner->data)) by { assumption(); }
+    have separate(memory(owner->data[owner->len]), memory(owner->data)) by { known(); }
     step();
 }
 ```

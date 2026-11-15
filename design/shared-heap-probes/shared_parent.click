@@ -225,12 +225,12 @@ int32 run_first_destroyed(int32 payload) {
     }
     mark detaching;
     step(parent_detach, { link: first_link });
-    have at(detaching, first->kid) == kid by assumption();
+    have at(detaching, first->kid) == kid by known();
     have at(detaching, first->kid)->payload == at(detaching, first->kid->payload) by {
         extract(at(detaching, first->kid)->payload == at(detaching, first->kid->payload));
-        assumption();
+        known();
     }
-    have at(detaching, first->kid->payload) == payload by assumption();
+    have at(detaching, first->kid->payload) == payload by known();
     have at(detaching, first->kid)->payload == payload by {
         solve() using {
             at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
@@ -240,14 +240,14 @@ int32 run_first_destroyed(int32 payload) {
     have kid->payload == payload by {
         have kid == at(detaching, first->kid) by { solve() using { at(detaching, first->kid) == kid; }; }
         rewrite(kid == at(detaching, first->kid));
-        assumption();
+        known();
     }
     step();
     have second->kid == kid;
     have second->kid->payload == payload by { rewrite(second->kid == kid); solve(); }
     mark reading;
     step(parent_read_payload, { link: second_link });
-    have at(reading, second->kid->payload) == payload by assumption();
+    have at(reading, second->kid->payload) == payload by known();
     have out == at(reading, second->kid->payload);
     have out == payload;
     have second->kid == kid;
@@ -303,12 +303,12 @@ int32 run_second_destroyed(int32 payload) {
     }
     mark detaching;
     step(parent_detach, { link: second_link });
-    have at(detaching, second->kid) == kid by assumption();
+    have at(detaching, second->kid) == kid by known();
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload) by {
         extract(at(detaching, second->kid)->payload == at(detaching, second->kid->payload));
-        assumption();
+        known();
     }
-    have at(detaching, second->kid->payload) == payload by assumption();
+    have at(detaching, second->kid->payload) == payload by known();
     have at(detaching, second->kid)->payload == payload by {
         solve() using {
             at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
@@ -318,14 +318,14 @@ int32 run_second_destroyed(int32 payload) {
     have kid->payload == payload by {
         have kid == at(detaching, second->kid) by { solve() using { at(detaching, second->kid) == kid; }; }
         rewrite(kid == at(detaching, second->kid));
-        assumption();
+        known();
     }
     step();
     have first->kid == kid;
     have first->kid->payload == payload by { rewrite(first->kid == kid); solve(); }
     mark reading;
     step(parent_read_payload, { link: first_link });
-    have at(reading, first->kid->payload) == payload by assumption();
+    have at(reading, first->kid->payload) == payload by known();
     have out == at(reading, first->kid->payload);
     have out == payload;
     have first->kid == kid;

@@ -502,7 +502,7 @@ mod certificate_tests {
 
     #[test]
     fn generated_certificate_steps_retain_one_owning_source_occurrence() {
-        let tactics = [ProofTactic::Step, ProofTactic::Assumption];
+        let tactics = [ProofTactic::Step, ProofTactic::Known];
         let source = build_internal_proof(&tactics, "source").expect("source proof should build");
         let generated = build_generated_certificate_proof(&tactics, "generated", 7)
             .expect("generated certificate should build");
@@ -584,7 +584,7 @@ mod certificate_tests {
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
-            proof: SourceProof::Script(vec![ProofTactic::Assumption]),
+            proof: SourceProof::Script(vec![ProofTactic::Known]),
         });
 
         assert_eq!(source_site_kind(&have), SourceSiteKind::SimpleOperation);
@@ -624,7 +624,7 @@ mod certificate_tests {
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
-            proof: SourceProof::Script(vec![ProofTactic::Assumption]),
+            proof: SourceProof::Script(vec![ProofTactic::Known]),
         });
 
         assert_eq!(post_execution_tactic_timing(&have), ("have", "control"));
@@ -672,14 +672,10 @@ mod certificate_tests {
         );
         let error = root
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .err()
             .expect("a rejected candidate must not be reported as success");
-        assert!(
-            error.message().contains("assumption"),
-            "{}",
-            error.message()
-        );
+        assert!(error.message().contains("known"), "{}", error.message());
         assert!(root.certificate().steps().is_empty());
         let completed = root
             .driver()
@@ -722,7 +718,7 @@ mod certificate_tests {
                 theorem implication(x: int32) {
                     ensures (x >= 0) implies (x >= 0) by {
                         intro();
-                        assumption();
+                        known();
                     }
                 }
 
@@ -763,7 +759,7 @@ mod certificate_tests {
         let verified = verified.expect("direct checked pure proofs should verify");
         assert_eq!(
             verified[0].proof_tactics().as_deref(),
-            Some([ProofTactic::Assumption].as_slice())
+            Some([ProofTactic::Known].as_slice())
         );
         assert_eq!(
             verified[1].proof_tactics().as_deref(),
@@ -778,20 +774,20 @@ mod certificate_tests {
             Some([
                 ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
                 ProofTactic::ApplyTheoremUsing { application, premises },
-                ProofTactic::Assumption,
-            ]) if matches!(body.as_slice(), [ProofTactic::Assumption]) && application.name == "required" && premises.len() == 1
+                ProofTactic::Known,
+            ]) if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "required" && premises.len() == 1
         ));
         assert_eq!(
             verified[4].proof_tactics().as_deref(),
-            Some([ProofTactic::Intro, ProofTactic::Assumption].as_slice())
+            Some([ProofTactic::Intro, ProofTactic::Known].as_slice())
         );
         assert_eq!(
             verified[5].proof_tactics().as_deref(),
-            Some([ProofTactic::Assumption].as_slice())
+            Some([ProofTactic::Known].as_slice())
         );
         assert_eq!(
             verified[6].proof_tactics().as_deref(),
-            Some([ProofTactic::Assumption].as_slice())
+            Some([ProofTactic::Known].as_slice())
         );
         assert!(matches!(
             verified[7].proof_tactics().as_deref(),
@@ -808,8 +804,8 @@ mod certificate_tests {
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
-        let assumption = ProofCertificate::from_proof_tactics(&[ProofTactic::Assumption])
-            .expect("assumption is a certificate");
+        let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
+            .expect("known is a certificate");
         let normalize = ProofCertificate::from_proof_tactics(&[ProofTactic::Normalize])
             .expect("normalize is a certificate");
 
@@ -823,7 +819,7 @@ mod certificate_tests {
                         match_arm: None,
                     }],
                     case_offsets: None,
-                    certificate: assumption,
+                    certificate: known,
                 },
                 PathCertificate {
                     case_path: vec![ProofCaseChoice {
@@ -850,7 +846,7 @@ mod certificate_tests {
             panic!("different path certificates should produce one proof branch");
         };
         assert_eq!(merged_condition, &condition);
-        assert_eq!(then_proof.to_proof_tactics(), vec![ProofTactic::Assumption]);
+        assert_eq!(then_proof.to_proof_tactics(), vec![ProofTactic::Known]);
         assert_eq!(else_proof.to_proof_tactics(), vec![ProofTactic::Normalize]);
     }
 
@@ -870,8 +866,8 @@ mod certificate_tests {
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
-        let assumption = ProofCertificate::from_proof_tactics(&[ProofTactic::Assumption])
-            .expect("assumption is a certificate");
+        let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
+            .expect("known is a certificate");
         let normalize = ProofCertificate::from_proof_tactics(&[ProofTactic::Normalize])
             .expect("normalize is a certificate");
 
@@ -885,7 +881,7 @@ mod certificate_tests {
                         match_arm: None,
                     }],
                     case_offsets: None,
-                    certificate: assumption,
+                    certificate: known,
                 },
                 PathCertificate {
                     case_path: vec![ProofCaseChoice {

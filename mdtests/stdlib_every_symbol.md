@@ -429,19 +429,19 @@ theorem list_laws(xs: List<int32>, ys: List<int32>, zs: List<int32>, value: int3
     }
     ensures list::append(List<int32>::Nil, xs) == xs by {
         apply(list::append_left_identity(xs));
-        assumption();
+        known();
     }
     ensures list::append(xs, List<int32>::Nil) == xs by {
         apply(list::append_right_identity(xs));
-        assumption();
+        known();
     }
     ensures list::append(list::append(xs, ys), zs) == list::append(xs, list::append(ys, zs)) by {
         apply(list::append_associative(xs, ys, zs));
-        assumption();
+        known();
     }
     ensures list::contains(List<int32>::Nil, value) == false by {
         apply(list::contains_nil(value));
-        assumption();
+        known();
     }
     ensures list::contains(List<int32>::Cons(value, xs), value) by {
         apply(list::contains_cons(value, xs, value));
@@ -452,14 +452,14 @@ theorem list_laws(xs: List<int32>, ys: List<int32>, zs: List<int32>, value: int3
 theorem pointer_lists(xs: List<int32*>, ys: List<int32*>, zs: List<int32*>, value: int32*) {
     ensures list::append(list::append(xs, ys), zs) == list::append(xs, list::append(ys, zs)) by {
         apply(list::append_associative(xs, ys, zs));
-        assumption();
+        known();
     }
 }
 
 theorem nested_lists(xs: List<List<int32>>) {
     ensures list::append(xs, List<List<int32>>::Nil) == xs by {
         apply(list::append_right_identity(xs));
-        assumption();
+        known();
     }
 }
 theorem append_constructor(head: int32, tail: List<int32>, ys: List<int32>) {

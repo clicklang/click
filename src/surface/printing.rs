@@ -1063,7 +1063,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &format!("obtain ({bindings}) {{ {body} }}"),
             );
         }
-        ProofTactic::Assumption => line(output, &prefix, "assumption();"),
+        ProofTactic::Known => line(output, &prefix, "known();"),
         ProofTactic::Extract(proposition) => line(
             output,
             &prefix,
@@ -2023,9 +2023,9 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
     if tactics.is_empty() {
         // A `by` block must hold a tactic. A generated proof with no step,
         // such as the `initialize` phase of a loop with no invariant, keeps
-        // `assumption();`, the step a phase with nothing to prove is
+        // `known();`, the step a phase with nothing to prove is
         // checked by.
-        line(output, &"    ".repeat(indent + 1), "assumption();");
+        line(output, &"    ".repeat(indent + 1), "known();");
     }
     write_tactics(output, tactics, indent + 1);
     output.push_str(&"    ".repeat(indent));

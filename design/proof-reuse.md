@@ -1,5 +1,12 @@
 # Proof reuse and case structure
 
+> Historical design record. Tactic names and proof snippets below describe
+> the recorded baseline, not the current interface. `auto`, `simp`,
+> `arithmetic`, `execute` and `execute_until` are no longer public tactic
+> spellings. Use `solve()` for goal search, `solve() using { ... }` for
+> selected premises, and `step_until(target)` or the implicit tail for
+> execution. See the [current tactic reference](../docs/reference/tactics/index.md).
+
 Design for the launch design review's item P5 ("copy-paste across case
 files and sidecars"), now closed: R2 and R3 are done, R4 is done for
 ordinary resources, and the rest of R4 and R5 are not pursued (maintainer,
@@ -85,7 +92,7 @@ The 1,377 lines of the `Context::Right` arm:
 | Kind | Lines | Example |
 |---|---|---|
 | `have` | 617 | |
-| … of which one rewrite then `assumption`/`normalize` | 222 | `have sm == Node(...) by { rewrite(sm == ...); normalize(); }` |
+| … of which one rewrite then `known`/`normalize` | 222 | `have sm == Node(...) by { rewrite(sm == ...); normalize(); }` |
 | unfolds of recursive spec functions | about 70 | `color_bit`, `rb_reparent`, `plug`, `rb_tree_parent_consistent` |
 | resource `fold`/`unfold` | about 100 | `fold(rb_at(...))` 36, `ctx_at` 11, `rb_child_links` 22 |
 | `step` | 106 | |

@@ -17,7 +17,7 @@ theorem pure_apply_mirrored(x: int32, y: int32) {
     requires x == y;
     ensures x == y by {
         apply(value_symmetric(y, x)) using { y == x; };
-        assumption();
+        known();
     }
 }
 
@@ -26,7 +26,7 @@ theorem instantiate_mirrored(x: int32, y: int32) {
     requires forall (k: int32) { k == x implies 0 <= 0 };
     ensures 0 <= 0 by {
         instantiate(forall (k: int32) { k == x implies 0 <= 0 }, y) using { y == x; };
-        assumption();
+        known();
     }
 }
 ```

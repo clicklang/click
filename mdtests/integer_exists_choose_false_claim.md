@@ -6,11 +6,11 @@ theorem integer_exists_choose_false_claim() {
     ensures exists (k: Integer) { k != k } by {
         obtain (candidate: Integer) { candidate == candidate }
         witness { k: candidate };
-        assumption();
+        known();
     }
 }
 ```
 
 ```expect
-fail: assumption
+fail: known
 ```

@@ -75,14 +75,14 @@ int32 ring_buffer_push_wrap(
     mark filled;
     step();
     have data[0] == value by {
-        assumption();
+        known();
     }
     have owner->data == data by {
-        assumption();
+        known();
     }
     have owner->data[0] == value by {
         rewrite(owner->data == data);
-        assumption();
+        known();
     }
     step(); solve();
 }
@@ -140,15 +140,15 @@ int32 ring_buffer_pipeline(
         normalize();
     }
     have owner->tail == 4 by {
-        assumption();
+        known();
     }
     have owner->data[0] == replacement by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
+    known();
+    known();
     normalize();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }

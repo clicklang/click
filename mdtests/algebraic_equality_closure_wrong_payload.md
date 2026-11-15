@@ -40,11 +40,11 @@ void user(int32* p) {
     let { y: y } = identity(p, { x: x });
     match y.model {
         Model::Empty => { have old(x.model) == Model::Empty by { solve(); } step_until(function.exit); solve(); },
-        Model::Node(v) => { have old(x.model) == Model::Node(0) by { assumption(); } step_until(function.exit); solve(); },
+        Model::Node(v) => { have old(x.model) == Model::Node(0) by { known(); } step_until(function.exit); solve(); },
     }
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

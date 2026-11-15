@@ -41,12 +41,12 @@ theorem decrement_is_decrease() {
         unfold(Decrease);
         intro();
         both {
-            assumption();
+            known();
         } and {
             intro();
             extract(*cell == (old(*cell) - 1));
             both {
-                assumption();
+                known();
             } and {
                 solve();
             }

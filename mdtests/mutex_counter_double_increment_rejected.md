@@ -117,7 +117,7 @@ void* increment_counter(void* argument) {
     fold(contribution(counter));
     step();
     let restored = fold(counter_control(counter), { done: done + 1, slack: slack - 1 }) {
-        requires to_integer(counter->value) == to_integer(done + 1) by assumption();
+        requires to_integer(counter->value) == to_integer(done + 1) by known();
     }
     step(pthread_mutex_unlock, {
         access: access, guard: guard, state: restored

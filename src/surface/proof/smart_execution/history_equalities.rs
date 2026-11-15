@@ -66,12 +66,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let scope = proof
                     .driver()
                     .open_have_with_goal_observations(equality, true)?;
-                scope.driver().apply_step(ProofStep::Assumption)?.join()
+                scope.driver().apply_step(ProofStep::Known)?.join()
             })();
             if let Some(unchanged) = attempt::candidate_outcome(candidate)? {
                 proof = unchanged;
             }
         }
-        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
     }
 }

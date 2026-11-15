@@ -68,7 +68,7 @@ void countdown(int32 n) {
                     apply(nat::to_integer_succ(chain_nat(rest_model)));
                     have to_integer(chain_nat(c.model)) == to_integer(chain_nat(rest_model)) + 1 by {
                         rewrite(chain_nat(c.model) == Nat::Succ(chain_nat(rest_model)));
-                        assumption();
+                        known();
                     }
                     have to_integer(chain_nat(rest_model)) < to_integer(chain_nat(c.model)) by {
                         solve() using {

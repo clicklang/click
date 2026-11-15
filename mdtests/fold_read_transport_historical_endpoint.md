@@ -30,7 +30,7 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
         if hi <= lo {
             peel(zeros(p, lo, hi)) using { hi <= lo; };
             peel(zeros(q, lo, hi)) using { hi <= lo; };
-            assumption();
+            known();
         } else {
             have lo < hi;
             have 0 <= to_integer(hi - 1) by { solve(); }
@@ -56,7 +56,7 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             peel(zeros(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             peel(zeros(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             rewrite(p[hi - 1] == q[hi - 1]);
-            assumption();
+            known();
         }
     }
 }
@@ -72,14 +72,14 @@ void mark_at(int32 *v, int32 *m, int32 n) {
     mark entry;
     have exists (end: int32) { end == at(entry, m[0]) } by {
         witness { end: at(entry, m[0]) };
-        assumption();
+        known();
     }
     obtain (end: int32) { end == at(entry, m[0]) };
     have zeros(at(entry, v), 0, end) == zeros(at(entry, v), 0, end) by normalize();
     have 0 <= 0 by { normalize(); }
-    have 0 <= end by { assumption(); }
+    have 0 <= end by { known(); }
     have end <= n by { solve(); }
-    have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); known(); }
     have contains(memory(v[0..n]), memory(v[0..end])) by {
         apply(click::separation::contains_subrange(v, 0, n, 0, end)) using { 0 <= 0; 0 <= end; end <= n; };
     }
@@ -106,7 +106,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
             contains(memory(m[0..1]), memory(m[0..1]));
         };
     }
-    step() by { assumption(); }
+    step() by { known(); }
     have zeros(at(entry, v), 0, end) == zeros(v, 0, end) by {
         have forall (k: int32) { 0 <= k and k < end implies v[k] == at(entry, v[k]) } by {
             intro(); intro();
@@ -118,7 +118,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
             }
             preserve(separate(statement(0).footprint, memory(v[k])));
         }
-        have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+        have viewable(v[0..n]) by { observe(v[0..n]); known(); }
         have viewable(v[0..end]) by {
             apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..end]))) using {
                 viewable(v[0..n]); contains(memory(v[0..n]), memory(v[0..end]));
@@ -130,7 +130,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
             viewable(v[0..end]); at(entry, viewable(v[0..end]));
             forall (k: int32) { 0 <= k and k < end implies v[k] == at(entry, v[k]) };
         };
-        assumption();
+        known();
     }
 }
 ```

@@ -53,14 +53,14 @@ theorem rewrite_by_the_applied_lemma(xs: IntList, ys: IntList) {
     ensures ys == xs by {
         apply(append_nil(xs));
         have ys == xs;
-        assumption();
+        known();
     }
 }
 theorem reversed(xs: IntList) {
     ensures xs == append(xs, IntList::Nil) by {
         apply(append_nil(xs));
         have xs == append(xs, IntList::Nil);
-        assumption();
+        known();
     }
 }
 
@@ -72,12 +72,12 @@ theorem reversed_in_an_induction_arm(flag: Flag, xs: IntList) {
             Flag::On => {
                 apply(append_nil(xs));
                 have xs == append(xs, IntList::Nil);
-                assumption();
+                known();
             }
             Flag::Off => {
                 apply(append_nil(xs));
                 have xs == append(xs, IntList::Nil);
-                assumption();
+                known();
             }
         }
     }

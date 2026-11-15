@@ -21,10 +21,10 @@ int32 f(int32 n) {
 } by {
     step_until(function.exit);
     if n < 5 {
-        have n <= 10 by assumption();
+        have n <= 10 by known();
         solve();
     } else {
-        have n <= 10 by assumption();
+        have n <= 10 by known();
         solve();
     }
 }

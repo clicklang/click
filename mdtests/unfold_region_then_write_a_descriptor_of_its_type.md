@@ -63,7 +63,7 @@ int32 peek(struct slot* s, struct slot* other) {
     step_until(function.exit);
     have s->pool == old(s->pool) by { solve(); }
     have at(statement(1).entry, s->pool->data) == old(s->pool->data) by { solve(); }
-    have separate(memory(*other), memory(s->pool->data)) by { assumption(); }
+    have separate(memory(*other), memory(s->pool->data)) by { known(); }
     have separate(memory(other->at), memory(s->pool->data)) by { solve(); }
     have separate(statement(1).footprint, memory(s->pool->data)) by {
         normalize() using { separate(memory(other->at), memory(s->pool->data)); };

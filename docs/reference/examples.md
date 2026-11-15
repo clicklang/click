@@ -352,7 +352,7 @@ sequence:
 - `mdtests/token_resource_rejects_call_duplicate.md`: a call cannot satisfy
   two resource parameters with the same token.
 - `mdtests/callback_contract_uses_checked_pointer_equality.md` and
-  `mdtests/callback_call_uses_checked_pointer_equality.md`: predicate assumption
+  `mdtests/callback_call_uses_checked_pointer_equality.md`: predicate closure with `known()`
   and callback dispatch through checked equality to a constant callback table.
 - `mdtests/callback_contract_rejects_unproved_pointer_equality.md`: a callback
   witness cannot be substituted without checked pointer equality.

@@ -54,7 +54,7 @@ void *worker(void *argument) {
         }
     }
     have separate(statement(1).footprint, memory((argument as (struct job *))->value)) by { normalize() using { at(write, separate(memory((argument as (struct job *))->output[0]), memory((argument as (struct job *))->value))); }; }
-    have (argument as (struct job *))->value == at(statement(1).entry, (argument as (struct job *))->value) by { assumption(); }
+    have (argument as (struct job *))->value == at(statement(1).entry, (argument as (struct job *))->value) by { known(); }
     step_until(function.exit);
     solve();
 }

@@ -24,13 +24,13 @@ void clear(int32 *a) {
     mark entry;
     have at(entry, forall (k: int32) {
         0 <= k and k < 1 implies 0 <= a[k]
-    }) by { assumption(); }
+    }) by { known(); }
     step();
     have forall (k: int32) {
         0 <= k and k < 1 implies 0 <= a[k]
     } by {
         intro(); intro(); solve();
-        assumption();
+        known();
     }
 }
 ```

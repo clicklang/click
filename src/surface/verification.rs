@@ -962,7 +962,7 @@ fn parse_click_file_with_program_sources(
 /// termination checks every C function has, and the packaged rule is what an
 /// application of the tactic applies. The tactic's own script runs first;
 /// then the one `return` is stepped, and every claim is closed by
-/// `assumption`, so the script must already have established each produced
+/// `known`, so the script must already have established each produced
 /// instance and each `ensures` as an available fact.
 fn with_tactic_procedures(
     mut file: ClickFile,
@@ -1005,7 +1005,7 @@ fn with_tactic_procedures(
         }
         let mut suffix = vec![ProofTactic::Synthetic(Box::new(ProofTactic::Step))];
         suffix.extend(std::iter::repeat_n(
-            ProofTactic::Synthetic(Box::new(ProofTactic::Assumption)),
+            ProofTactic::Synthetic(Box::new(ProofTactic::Known)),
             block.ensures.len(),
         ));
         append_on_every_path(&mut script, &suffix);
@@ -7936,7 +7936,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
             | ProofTactic::Have(_)
-            | ProofTactic::Assumption
+            | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
             | ProofTactic::Rewrite(_)

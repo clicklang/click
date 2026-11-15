@@ -97,7 +97,7 @@ int32 walk_even(struct node* p) {
             apply(links_len_is_nonnegative(rest_model));
             have 0 <= links_len(r.model) by {
                 rewrite(r.model == rest_model);
-                assumption();
+                known();
             }
             have links_len(old(x.model)) == links_len(rest_model) + 1 by {
                 rewrite(old(x.model) == Links::Cons(rest_model));

@@ -46,7 +46,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     branch {
         have r != 0 implies exists (path: Path) {
             pick(at(before_call, a[i]), path) == r
-        } by { assumption(); }
+        } by { known(); }
         have exists (path: Path) {
             pick(at(before_call, a[i]), path) == r
         } by { solve(); }

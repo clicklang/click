@@ -36,7 +36,7 @@ requirement in `mdtests/explicit_solve_proves_an_existential_call_requirement.md
 and `mdtests/implicit_solve_proves_an_existential_call_requirement.md`.
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
-any tactic written as a call, as in `have 0 <= x by assumption();`. `click
+any tactic written as a call, as in `have 0 <= x by known();`. `click
 expand`, `profile` and `audit` read it as that block, and an expansion that
 needs the braces writes them. Tactic calls always require parentheses,
 including `solve()`.
@@ -110,8 +110,8 @@ proof `if`.
 `solve() using { ... }` is still smart: the listed facts restrict its search,
 it tries arithmetic over them last, and expansion replaces it with named
 simple rules. A miss adds arithmetic's reason. Common simple proposition
-tactics are `assumption()`, `normalize()`, `rewrite(...)`, `intro()`, and
-`contradiction(...)`. `assumption()` also closes a conjunction whose sides
+tactics are `known()`, `normalize()`, `rewrite(...)`, `intro()`, and
+`contradiction(...)`. `known()` also closes a conjunction whose sides
 are facts and a disjunction with one side a fact. A successful
 expansion contains only those explicit rules, arithmetic certificates, and named
 theorem applications.

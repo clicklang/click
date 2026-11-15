@@ -1,7 +1,7 @@
 # A call's postcondition is available right after the call
 
 `put` ensures that `old`'s parent word, masked and cast to a pointer, is
-`new`. Right after `put(g, p)` that fact is exactly what `assumption` should
+`new`. Right after `put(g, p)` that fact is exactly what `known` should
 find. Here `p` is the result of a contracted call, and the caller holds `p`'s
 word under another spelling, `n->rb_left`.
 
@@ -37,7 +37,7 @@ void use(struct rb_node* n, struct rb_node* g) {
     requires aligned(n->rb_left, 8);
 } by {
     step(); step(); step(); step();
-    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
     step_until(function.exit);
 }
 ```

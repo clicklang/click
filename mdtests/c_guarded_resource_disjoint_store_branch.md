@@ -43,7 +43,7 @@ int32 f(struct cell* root) {
                         at(before_store, ((root->base.left as (void *)) as (struct cell *))->value);
                 };
             }
-            assumption();
+            known();
         }
         fold(child); solve();
     } else {

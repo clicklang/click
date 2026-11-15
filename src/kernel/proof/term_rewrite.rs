@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
 mod algebraic_match_tests;
+mod common_boolean;
 #[cfg(test)]
 mod graph_condition_tests;
 #[cfg(test)]
@@ -29,6 +30,10 @@ mod retained_folds;
 #[allow(dead_code)]
 mod retained_matches;
 mod shared_comparison;
+pub(in crate::kernel) use common_boolean::{
+    substitute_application_address_bits, substitute_application_address_pointer,
+    substitute_pointer_boolean_value,
+};
 #[cfg(test)]
 mod shared_source_tests;
 mod shared_wide_syntax;
@@ -835,7 +840,15 @@ fn collect_pointer_carriers(pointer: &Pointer, variables: &mut CarrierVariables)
     {
         pointers.push(pointer.clone());
     }
-    match &pointer.block {
+    collect_pointer_block_carriers(&pointer.block, variables);
+    if variables.exhausted() {
+        return;
+    }
+    collect_pointer_offset_carriers(&pointer.offset, variables);
+}
+
+fn collect_pointer_block_carriers(block: &PointerBlock, variables: &mut CarrierVariables) {
+    match block {
         PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
             variables.program_values.insert(*variable);
         }
@@ -862,7 +875,6 @@ fn collect_pointer_carriers(pointer: &Pointer, variables: &mut CarrierVariables)
         }
         _ => {}
     }
-    collect_pointer_offset_carriers(&pointer.offset, variables);
 }
 
 fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut CarrierVariables) {

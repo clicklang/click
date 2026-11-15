@@ -86,3 +86,81 @@ fn shared_offset_dag_construction_does_not_rewalk_prefixes() {
         );
     }
 }
+
+#[test]
+fn offset_condition_rewrites_preserve_shared_offset_dags() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut offset = KernelPointerOffset::Int32Scaled {
+            value: KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998200)),
+            byte_width: 4,
+        }
+        .into_shared()
+        .unwrap();
+        for _ in 0..size {
+            offset = KernelPointerOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        let source = KernelTerm::pointer_offset_equal_raw([offset.clone(), offset]);
+        let exports = KernelTermExport::machine_export_count();
+        let ((rewritten, transported), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                let rewritten =
+                    crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
+                        &source,
+                        Variable(998201),
+                        &MachineTerm::constant(1),
+                    )
+                    .unwrap();
+                let transported =
+                    crate::kernel::memory_provenance::transport_framed_common_condition(
+                        &source,
+                        &crate::kernel::Memory::new(),
+                        None,
+                    )
+                    .unwrap();
+                (rewritten, transported)
+            });
+        assert_eq!(source, rewritten);
+        assert_eq!(source, transported);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work < 45 * size + 500, "size={size}, work={work}");
+    }
+}
+
+#[test]
+fn growing_offset_guards_reuse_observation_normalization() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut offset = KernelPointerOffset::Int32Scaled {
+            value: KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998300)),
+            byte_width: 4,
+        }
+        .into_shared()
+        .unwrap();
+        let zero = KernelPointerOffset::Constant(0).into_shared().unwrap();
+        let word = KernelTermImport::default()
+            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+        let exports = KernelTermExport::machine_export_count();
+        let mut retained = Vec::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                offset = KernelPointerOffset::Add([offset.clone(), offset.clone()])
+                    .into_shared()
+                    .unwrap();
+                let guard = KernelTerm::pointer_offset_equal_raw([offset.clone(), zero.clone()]);
+                let value = KernelTerm::machine_if_shared(
+                    MachineIntegerType::Int32,
+                    [guard, word.clone(), word.clone()],
+                );
+                retained.push(
+                    SharedMachineIntegerTerm::observe_shared(MachineIntegerType::Int32, value)
+                        .unwrap(),
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= 55 * size + 100, "size={size}, work={work}");
+    }
+}

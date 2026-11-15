@@ -7,7 +7,7 @@ theorem integer_exists_choose_after_intro() {
         intro();
         obtain (candidate: Integer) { candidate == candidate }
         witness { k: candidate };
-        assumption();
+        known();
     }
 }
 ```

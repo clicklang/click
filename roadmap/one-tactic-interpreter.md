@@ -18,7 +18,7 @@ maintainability, not a known wrong verdict.
   `preserve` body apply written frontier tactics through one function,
   `apply_frontier_source_tactic`
   (`src/surface/proof/checked_drivers/proof_execution.rs`). A written
-  `transport` and `smart execute` mean the same thing in each.
+  `transport` and `step_until` mean the same thing in each.
 - What each context admits as a leaf is declared once, in
   `SourceContext` (`src/surface/proof/source_context.rs`), and
   `SourceContext::leaf_step` is the one leaf converter.
@@ -29,16 +29,16 @@ maintainability, not a known wrong verdict.
 - After execution, claims are goals on the outcome `Proof`
   (`OutcomeClaimGoals`), and an opened claim proof is refreshed from it
   before each closer.
-- `assumption` and the normalizing closers (`normalize`, `normalize using`,
-  `arithmetic using`, an arithmetic certificate, `both`) close the main claim
-  through one arm of `finish_ordered_proof`, and `solve`, `solve() using` and
-  `auto` through `close_post_execution_claims_with_solve`
-  (`src/surface/proof/claim_proofs.rs`). `finish_ordered_proof` is about
+- `known` and the normalizing closers (`normalize`, `normalize using`,
+  an arithmetic certificate, `both`) close the main claim
+  through one arm of `finish_ordered_proof`, and `solve` and `solve() using`
+  through `close_post_execution_claims_with_solve`
+  (`src/surface/proof/driver/claims.rs`). `finish_ordered_proof` is about
   2,800 lines, down from 3,900.
 - Expansion records the `certificate_since` delta of each checked step
   after execution. The records that keep a written spelling have no checked
   step to print:
-  - an `assumption` that closes a resource claim is an exact resource check;
+  - an `known` that closes a resource claim is an exact resource check;
   - a closer on a divergent path closes its claims vacuously;
   - `apply using` keeps its written spelling;
   - an `open` scope's deferred close proof is rebuilt from that close's
@@ -70,7 +70,7 @@ These still interpret written tactics on their own:
 `solve` in an execution arm is refused before the function exit, while a
 `preserve` body has its own `solve` handler.
 
-The largest remaining piece is the grouped `solve` and `auto` closer in
+The largest remaining piece is the grouped `solve` closer in
 `close_post_execution_claims_with_solve`. It focuses a grouped proof's claims
 together on each outcome path, closes ownership claims by exact resource
 checks, falls back to each claim on its own, and keeps the bookkeeping that
@@ -112,7 +112,7 @@ existing expansion round-trip regression.
   `SourceContext`.
 - `PostExecutionTactic` is removed, or each remaining variant is justified
   in this file.
-- The grouped `solve`/`auto` closer focuses claims through the same claim
+- The grouped `solve` closer focuses claims through the same claim
   path as the single-step closers, and `finish_ordered_proof` shrinks to the
   context-specific setup and teardown.
 - `docs/reference/tactics/index.md` states any remaining context-specific

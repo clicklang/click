@@ -27,7 +27,7 @@ int32 planned(int32 u) {
 } by {
     have defined(old(g[0])) by {
         instantiate(forall (k: int32) { 0 <= k and k < 4 implies defined(old(g[k])) }, 0);
-        assumption();
+        known();
     }
     step();
     step();

@@ -17,7 +17,7 @@ fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
             let source = format!(
                 "theorem compatibility(x: {interface_type}{extra}) {{
                     requires x == {expression};
-                    ensures x == {expression} by {{ assumption(); }}
+                    ensures x == {expression} by {{ known(); }}
                 }}"
             );
             verify_click_theorems(&source)
@@ -41,7 +41,7 @@ fn integer_constant_aliases_stay_shared_before_a_tactic_starts() {
             ));
         }
         source.push_str(&format!(
-            "requires a{depth} == a{depth}; ensures a{depth} == a{depth} by {{ assumption(); }} }}"
+            "requires a{depth} == a{depth}; ensures a{depth} == a{depth} by {{ known(); }} }}"
         ));
         let limits = crate::instrumentation::TacticWorkLimits {
             simple: 1000,
@@ -732,7 +732,7 @@ fn parser_preserves_mixed_grouped_proposition_and_contract_expression_syntax() {
     let source = r#"
         theorem mixed_parentheses(x: int32, y: int32) {
             requires (x < y) and ((x + 1) == y);
-            ensures x == x by { assumption(); }
+            ensures x == x by { known(); }
         }
     "#;
     parser::parse_file_items(source)
@@ -1114,7 +1114,7 @@ fn parses_and_prints_pure_induction_tactics() {
             },
             premises: Vec::new(),
         },
-        ProofTactic::Assumption,
+        ProofTactic::Known,
     ];
     let printed = super::printing::format_partial_tactic_sequence(&printable);
     let reparsed = parse(&format!(
@@ -1130,7 +1130,7 @@ fn parses_and_prints_pure_induction_tactics() {
         ProofTactic::ApplyTheoremUsing { application, premises }
             if application.name == "ih" && premises.is_empty()
     ));
-    assert!(matches!(&reparsed[2], ProofTactic::Assumption));
+    assert!(matches!(&reparsed[2], ProofTactic::Known));
 }
 
 #[test]
@@ -1146,11 +1146,11 @@ fn parses_and_prints_structural_induction_arms() {
             ensures xs == xs by {
                 induct(xs) as ih {
                     TestList::Nil => {
-                        assumption();
+                        known();
                     }
                     TestList::Cons(head, tail) => {
                         apply(ih(tail));
-                        assumption();
+                        known();
                     }
                 }
             }
@@ -2279,7 +2279,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     assert!(matches!(
         verified[1].proof_tactics().as_deref(),
         Some([ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }), ProofTactic::ApplyTheoremUsing { application, premises }])
-            if matches!(body.as_slice(), [ProofTactic::Assumption]) && application.name == "equality_symmetric" && premises.len() == 1
+            if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "equality_symmetric" && premises.len() == 1
     ));
     assert!(matches!(
         verified[2].proof_tactics().as_deref(),
@@ -2287,7 +2287,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
             ProofTactic::Extract(_),
             ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
             ProofTactic::ApplyTheoremUsing { application, premises },
-        ]) if matches!(body.as_slice(), [ProofTactic::Assumption]) && application.name == "equality_symmetric"
+        ]) if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "equality_symmetric"
             && matches!(premises.as_slice(), [ClickProposition::Comparison { .. }])
     ));
 
@@ -2351,7 +2351,7 @@ fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
     assert!(
         tactics
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Assumption))
+            .any(|tactic| matches!(tactic, ProofTactic::Known))
     );
 }
 
@@ -2388,35 +2388,35 @@ fn verifies_explicit_structural_logic_tactics() {
         theorem conjunction_rule(x: int32) {
             requires x == x;
             ensures x == x and x == x by {
-                assumption();
+                known();
             }
         }
 
         theorem left_rule(x: int32) {
             requires x == x;
             ensures x == x or x != x by {
-                assumption();
+                known();
             }
         }
 
         theorem right_rule(x: int32) {
             requires x == x;
             ensures x != x or x == x by {
-                assumption();
+                known();
             }
         }
 
         theorem left_condition_polarity_rule(x: int32, y: int32) {
             requires not (x < y);
             ensures x >= y or x == y by {
-                assumption();
+                known();
             }
         }
 
         theorem right_condition_polarity_rule(x: int32, y: int32) {
             requires not (x < y);
             ensures x == y or x >= y by {
-                assumption();
+                known();
             }
         }
 
@@ -2431,7 +2431,7 @@ fn verifies_explicit_structural_logic_tactics() {
         theorem intro_implication_rule(x: int32) {
             ensures x == x implies x == x by {
                 intro();
-                assumption();
+                known();
             }
         }
 
@@ -2809,7 +2809,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
     );
     let source = super::printing::format_partial_tactic_sequence(&[ProofTactic::Have(ProofHave {
         proposition,
-        proof: SourceProof::Script(vec![ProofTactic::Assumption]),
+        proof: SourceProof::Script(vec![ProofTactic::Known]),
     })]);
 
     assert!(
@@ -2831,7 +2831,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
     };
     let source = super::printing::format_partial_tactic_sequence(&[ProofTactic::Have(ProofHave {
         proposition: quantified,
-        proof: SourceProof::Script(vec![ProofTactic::Assumption]),
+        proof: SourceProof::Script(vec![ProofTactic::Known]),
     })]);
 
     assert!(
@@ -2851,7 +2851,7 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
             .collect::<Vec<_>>()
             .join(" + ");
         let source = format!(
-            "theorem sum(a: Integer) {{ ensures a == a by {{ have {sum} == {size} * a by {{ solve() using {{}}; }} assumption(); }} }}"
+            "theorem sum(a: Integer) {{ ensures a == a by {{ have {sum} == {size} * a by {{ solve() using {{}}; }} known(); }} }}"
         );
         let file = parse(&source).unwrap();
         let proof = file.theorem_definitions()[0].ensures()[0].proof();
@@ -2871,7 +2871,7 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
     }
     // C addition may overflow at an intermediate result. In particular the
     // right-associated operand must not be folded into the left spine.
-    let source = "int32 sum(int32 a, int32 b, int32 c) { ensures result == a; } by { have to_integer(a + (b + c)) == to_integer((a + b) + c) by { assumption(); } }";
+    let source = "int32 sum(int32 a, int32 b, int32 c) { ensures result == a; } by { have to_integer(a + (b + c)) == to_integer((a + b) + c) by { known(); } }";
     let file = parse(source).unwrap();
     let proof = file.function_blocks()[0].grouped_proof().unwrap();
     let SourceProof::Script(tactics) = proof else {
@@ -2974,7 +2974,7 @@ theorem reflexive_choice() {
 theorem reflexive_choice() {
     ensures 1 == 1 or 2 == 3 by {
         have 1 == 1 by { normalize(); }
-        assumption();
+        known();
     }
 }
 "#;
@@ -2984,7 +2984,7 @@ theorem reflexive_choice() {
 theorem reflexive_choice() {
     ensures 2 == 3 or 1 == 1 by {
         have 1 == 1 by { normalize(); }
-        assumption();
+        known();
     }
 }
 "#;
@@ -3024,7 +3024,7 @@ theorem choose_right() {
         [ProofTactic::Have(ProofHave {
             proof: SourceProof::Script(proof),
             ..
-        }), ProofTactic::Assumption] if matches!(proof.as_slice(), [ProofTactic::Normalize])
+        }), ProofTactic::Known] if matches!(proof.as_slice(), [ProofTactic::Normalize])
     ));
 
     let right = verified[1]
@@ -3035,7 +3035,7 @@ theorem choose_right() {
         [ProofTactic::Have(ProofHave {
             proof: SourceProof::Script(proof),
             ..
-        }), ProofTactic::Assumption] if matches!(proof.as_slice(), [ProofTactic::Normalize])
+        }), ProofTactic::Known] if matches!(proof.as_slice(), [ProofTactic::Normalize])
     ));
 }
 
@@ -3055,7 +3055,7 @@ theorem reflexive_implication(x: int32) {
 theorem reflexive_implication(x: int32) {
     ensures x == 0 implies x == 0 by {
         intro();
-        assumption();
+        known();
     }
 }
 "#;
@@ -3103,7 +3103,7 @@ theorem false_guard(x: int32) {
         verified[0]
             .proof_tactics()
             .expect("expected reflexive implication certificate"),
-        &[ProofTactic::Intro, ProofTactic::Assumption]
+        &[ProofTactic::Intro, ProofTactic::Known]
     );
     assert_eq!(
         verified[1]
@@ -3116,14 +3116,14 @@ theorem false_guard(x: int32) {
             .proof_tactics()
             .expect("expected nested disjunction certificate")
             .as_slice(),
-        [ProofTactic::Intro, ProofTactic::Assumption]
+        [ProofTactic::Intro, ProofTactic::Known]
     ));
     assert!(matches!(
         verified[3]
             .proof_tactics()
             .expect("expected conjunctive-guard certificate")
             .as_slice(),
-        [ProofTactic::Intro, ProofTactic::Assumption]
+        [ProofTactic::Intro, ProofTactic::Known]
     ));
     assert!(matches!(
         verified[4]
@@ -3489,7 +3489,7 @@ fn transport_using_retains_declared_resource_argument_types() {
                 ) using {
                     contains(wrapper(owner), memory(owner[0..1]));
                 }
-                assumption();
+                known();
             }
         }
     "#;
@@ -3672,7 +3672,7 @@ fn parses_chained_struct_fields_with_imported_pointee_types() {
         int32 read_nested(struct node* root) {
             ensures result == root->child->value;
         } by {
-            assumption();
+            known();
         }
     "#;
     let file = parse_click_file_with_c_sources(click_source, &[("read_nested.c", c_source)])
@@ -5937,7 +5937,7 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
         };
         let printed = printing::source_click_proposition(&premise);
         let source = format!(
-            "theorem retained(hi: {ty}) {{ requires 0 < hi; requires hi < 100; requires {authored}; ensures {printed} by {{ assumption(); }} }}"
+            "theorem retained(hi: {ty}) {{ requires 0 < hi; requires hi < 100; requires {authored}; ensures {printed} by {{ known(); }} }}"
         );
         verify_click_theorems(&source).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
     }

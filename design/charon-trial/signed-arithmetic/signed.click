@@ -21,7 +21,7 @@ fn quotient8(x: i8, y: i8) -> i8 {
     ensures result == x / y;
 } by {
     step_until(function.exit);
-    have to_integer(y as i32) > 0 by { assumption(); }
+    have to_integer(y as i32) > 0 by { known(); }
     have to_integer(y as i32) != -1 by {
         intro();
         solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == -1; };
@@ -31,7 +31,7 @@ fn quotient8(x: i8, y: i8) -> i8 {
         solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == 0; };
     }
     have (y as i32) != 0i32 and ((x as i32) != -2147483648i32 or (y as i32) != -1i32) by {
-        assumption();
+        known();
     }
 
 }
@@ -41,7 +41,7 @@ fn remainder16(x: i16, y: i16) -> i16 {
     ensures result == x % y;
 } by {
     step_until(function.exit);
-    have to_integer(y as i32) > 0 by { assumption(); }
+    have to_integer(y as i32) > 0 by { known(); }
     have to_integer(y as i32) != -1 by {
         intro();
         solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == -1; };
@@ -51,7 +51,7 @@ fn remainder16(x: i16, y: i16) -> i16 {
         solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == 0; };
     }
     have (y as i32) != 0i32 and ((x as i32) != -2147483648i32 or (y as i32) != -1i32) by {
-        assumption();
+        known();
     }
 
 }

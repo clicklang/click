@@ -234,11 +234,11 @@ changes before implementing them.
 | 8ac | Mixed-family argument adapters | Migrated Boolean/algebraic/float/pointer/numeric expressions no longer receive generic wrappers in calls. |
 | 8ad | Closure | Remove superseded adapters; validate nested combinations, Surface round trips, fact stability and scaling; account for every remaining legacy arm. |
 
-8a records the baseline inventory and authorized sequence in
+8a records the baseline inventory and authorized sequence in merged
 [PR #2801](https://github.com/clicklang/click/pull/2801). The docs-only gate
 passed all 44 documentation tests.
 
-8b adds borrowed Boolean operands and a borrowed machine-conditional view.
+8b (merged [PR #2805](https://github.com/clicklang/click/pull/2805)) adds borrowed Boolean operands and a borrowed machine-conditional view.
 Shape and branch-only readers in decision dispatch, interval checks, snapshot
 keys, syntax ordering and equality-graph admission no longer export the guard.
 Consumers that actually require native conditions keep an explicitly named
@@ -249,6 +249,123 @@ multi-size regression checks that inspecting growing guards does no export work
 beside unrelated arena terms. All 1,753 selected tests passed, including every
 scaling test and the Boolean, condition-reasoning, snapshot-key and equality-graph
 selections.
+
+8c (merged [PR #2806](https://github.com/clicklang/click/pull/2806)) gives standalone Boolean roots the existing five scoped variable-reader
+modes and walks shared Boolean connectives once for resource-read and snapshot
+dependencies. Comparison operands use the existing shared machine readers;
+Boolean calls stay opaque to these memory readers. Resource operand stacks
+preserve the native reader's first-occurrence order. Selected Integer-comparison
+leaves still use the existing native structural classifier, preserving its
+restricted admission rather than broadening memory discovery. This is an
+explicit selected-leaf compatibility boundary, not an export of the surrounding
+Boolean DAG. All 1,693 selected tests passed, including all scaling tests,
+resource tracking and variable collection. New regressions pin mode agreement,
+read/snapshot order, opaque-call behavior and shared-connective traversal work.
+After integrating upstream through `7a681179b` (including #2802 and #2804),
+all 1,729 integration selections passed, including every scaling test and the
+contract-claim tests.
+
+8f (merged [PR #2808](https://github.com/clicklang/click/pull/2808)) prepares identity and fact-key consumers before completing 8d/8e. Primitive
+Boolean comparison matching reads retained machine operands through the existing
+comparison-format identity. Exact Boolean identity walks common connectives
+once and preserves native comparison-format equivalences; numeric call arguments
+remain typed handles for application identity. Composite guards retain their
+exact-equality-only load policy. Snapshot keys inspect guard shape without
+exporting it and key eligible primitive comparisons through shared operands;
+Integer comparisons and Boolean value forms keep their existing exact enclosing
+operand keys. Selected Integer comparison atoms retain the existing structural
+classifier, and opaque leaves retain their native family identity. Explicit
+native syntax ordering remains a compatibility boundary.
+
+Validation: 1,635 selected tests passed, including every scaling test, Boolean
+view/identity tests, snapshot operand keys and shared load-atom comparisons.
+Regressions cover native/shared format agreement, composite load-authority
+refusal, linear shared-connective identity and growing arithmetic comparison
+prefixes without machine exports. No proof rules, search indexes or budgets
+changed. The following 8d/8e slices reuse this identity support.
+
+8d (merged [PR #2810](https://github.com/clicklang/click/pull/2810)) prepares common Boolean bitvector/pointer substitution for the producer and
+handoff slices. Bitvector substitution preserves raw Boolean connectives and
+uses the existing shared arithmetic normalization mapper; one local memo shares
+numeric work across comparison atoms. Pointer substitution preserves its distinct
+native Boolean folding policy, scoped carrier reservation and read snapshots.
+Comparison reconstruction preserves written formats, width-specific reductions,
+address/zero and alignment rules. In particular, unsigned 32-bit equality keeps
+its written format, and bitvector substitution keeps signed 64-bit equality raw.
+Typed call arguments retain shared machine operands through their existing
+substitution route; selected Integer and opaque atoms keep their native family
+routines. Refused common operand rewrites propagate failure. General native
+proposition/certificate boundaries remain in package 9; producer activation stays
+in the later Boolean slices.
+
+Validation covers native/common constructor and substitution parity across all
+integer widths, address and mask rules, fold capture, pointer connective folding,
+read snapshots, and shared connective/overlapping arithmetic-prefix scaling.
+All 1,741 selected tests passed, including every scaling test and the substitution
+selections, with pinned importer tools. The CI-quality check passed.
+
+8e (merged [PR #2811](https://github.com/clicklang/click/pull/2811)) connects shared pointer-index transport to a common Boolean guard boundary.
+Common constants, variables, connectives and calls retain the existing refusal
+without exporting the guard DAG; Boolean loads retain their native refusal.
+Primitive comparisons transport shared operands through the existing frame
+reader and the shared equivalent of native comparison constructors. Unchanged
+guards retain their original roots through native-equivalent Boolean identity.
+Selected Integer and opaque condition families keep their existing compatibility
+readers. Other index mappers keep their explicit native guard adapter; the
+numeric Boolean-cast compatibility boundary remains assigned to 8m.
+Native/common transport agreement, snapshots, comparison-constructor behavior,
+constant-work refusal and accepted shared arithmetic transport without exports
+are covered. The shared Boolean matcher also restores the native exact-equality
+precedence before load authority: an identical guard, including comparison-format
+equivalences, does not need permission to match its own read. That preliminary
+check reuses the existing immutable machine syntax memo. All 1,679 selected tests
+passed, including every scaling test, memory provenance and shared load-atom
+comparison selections, with exit status 0. The CI-quality check passed.
+
+8g (merged [PR #2813](https://github.com/clicklang/click/pull/2813)) replaces the whole-condition pointer-offset equality fallback with a typed
+pair of shared offsets. Imports and explicit exports preserve the written Add
+shape, scales, index carrier types and signedness. Boolean identity, load-atom
+matching, variable/capture/binder readers, memory/resource dependencies and
+snapshot selectors read the retained operands directly. Native exact equality
+still precedes load authority; only the existing narrow-index path admits
+load-atom matching, while wide indices retain exact identity.
+
+Substitution preserves unchanged offset spelling and each existing raw/smart
+reconstruction policy. Frame transport reuses the package-7 pointer transporter
+with one context for both operands. Its offset-add implementation is shared with
+substitution; immutable constant metadata avoids rescanning prefixes. The
+existing residue classifier keeps its 64-occurrence, stride and constant limits.
+Numeric observation normalization retains its producer/observation distinction
+and shares offset-prefix work. No search, authority or budget rules change.
+The explicit Surface output boundary still uses the existing address-context
+offset spelling; the general raise/lower boundary remains package 9.
+
+The initial broad selection passed all 1,673 tests, including every scaling test,
+constructor/substitution/transport parity, annotation identity, dependency widths,
+snapshot keys and doubled/growing offset DAGs without numeric exports. Integration
+validation against the subsequent pointer-read/snapshot-control changes is recorded
+with the PR. Boolean execution handoffs and the other package-8 families remain open.
+
+8h retains raw pointer equality as a typed pair of shared addresses. Block
+identity, shared displacement, exact producer metadata and semantic observation
+identity remain separate. Dependency readers preserve native admission and
+ordering, including loaded-pointer defining reads and right-first resource
+displacement traversal. Snapshot selectors and load matching reuse the existing
+shared-address readers; narrow and wide indices retain their existing authority
+rules. Frame transport uses one context for both addresses.
+
+Substitution preserves the distinct native rules for top-level pointer conditions,
+nested Boolean values and pure-call pointer blocks. Numeric indices keep their
+existing raw or smart reconstruction policy, and replacement offsets retain their
+written structure. Opaque block rewriting stays at its existing compatibility
+boundary; no search, budgets or pointer semantics change. Explicit Surface output
+continues through the existing address-context adapter. Complete-pointer equality
+is the separate 8i slice.
+
+Validation: all 1,716 selected tests passed, including every scaling test,
+raw-pointer constructor/substitution parity, block and snapshot identity,
+load authority, read ordering, dependency modes and frame transport. The
+CI-quality check passed.
 
 ### 8a inventory
 

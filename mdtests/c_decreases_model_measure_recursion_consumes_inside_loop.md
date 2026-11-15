@@ -117,19 +117,19 @@ void destroy(struct tree* t) {
                     let { child: c, sibling: s } = unfold(x);
                     have 0 <= tree_size(c.model) by {
                         rewrite(c.model == child_model);
-                        assumption();
+                        known();
                     }
                     have tree_size(c.model) < tree_size(old(x.model)) by {
                         rewrite(c.model == child_model);
-                        assumption();
+                        known();
                     }
                     have tree_size(s.model) <= tree_size(old(x.model)) by {
                         rewrite(s.model == sibling_model);
-                        assumption();
+                        known();
                     }
                     have 0 <= tree_size(s.model) by {
                         rewrite(s.model == sibling_model);
-                        assumption();
+                        known();
                     }
                     step();
                     step();

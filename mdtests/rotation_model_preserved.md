@@ -95,7 +95,7 @@ struct tree_node* rotate_left(struct tree_node* root) {
             }
             have right_model != HeapTree::Empty by {
                 rewrite(right_model == heap_right(t.model));
-                assumption();
+                known();
             }
             match right_model {
                 HeapTree::Empty => { contradiction(right_model == HeapTree::Empty); },

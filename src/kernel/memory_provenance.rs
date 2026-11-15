@@ -6273,6 +6273,63 @@ pub(crate) fn program_condition_fact_memories(fact: &Proposition) -> Vec<Memory>
         .collect()
 }
 
+fn collect_condition_operand_memories(
+    condition: crate::kernel::BooleanOperandView<'_>,
+    memories: &mut Vec<SharedMemory>,
+) {
+    condition.for_each_dependency_leaf(|leaf| {
+        if let crate::kernel::BooleanOperandView::Shared(root) = leaf
+            && matches!(
+                root.node(),
+                crate::kernel::KernelTermNode::BoolLiteral(_)
+                    | crate::kernel::KernelTermNode::Variable(_)
+                    | crate::kernel::KernelTermNode::Call { .. }
+            )
+        {
+            return;
+        }
+
+        if let Some((_, _, operands)) = leaf.comparison() {
+            let mut seen = BTreeSet::new();
+            for operand in operands {
+                collect_operand_memories(operand, memories, &mut seen);
+            }
+        } else if let Some(addresses) = leaf.pointer_addresses() {
+            for address in addresses {
+                collect_equality_pointer_block_memories(
+                    address.node().block.native_atom(),
+                    memories,
+                );
+                let mut seen = BTreeSet::new();
+                address.node().offset.visit_root_in_order(false, |node| {
+                    if let Some(index) = node.index() {
+                        collect_operand_memories(
+                            crate::kernel::MachineOperandView::Shared(index),
+                            memories,
+                            &mut seen,
+                        );
+                    }
+                });
+            }
+        } else if let Some(offsets) = leaf.pointer_offsets() {
+            let mut seen = BTreeSet::new();
+            crate::kernel::SharedPointerOffset::visit_pair(&offsets, |node| {
+                if let Some(index) = node.index() {
+                    collect_operand_memories(
+                        crate::kernel::MachineOperandView::Shared(index),
+                        memories,
+                        &mut seen,
+                    );
+                }
+            });
+        } else {
+            // In particular preserve the structural classifier's restricted
+            // Integer-comparison admission; do not turn this into a new rule.
+            collect_condition_memories(&leaf.native(), memories);
+        }
+    });
+}
+
 fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<SharedMemory>) {
     let mut collect_binary = |left: &MachineTerm, right: &MachineTerm| {
         collect_bitvector_memories(left, memories);
@@ -6310,18 +6367,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         }
         ConditionTerm::PointerEqual(left, right) => {
             for pointer in [left, right] {
-                if let PointerBlock::PureFunctionApplication(application) = &pointer.block
-                    && let Some(bits) = application.integer_address_bits()
-                {
-                    collect_bitvector_memories(bits, memories);
-                }
-                if let PointerBlock::Symbolic(variable) = &pointer.block
-                    && let Some((origin, _)) =
-                        crate::kernel::eval::registered_load_origin_for_variable(variable)
-                    && !memories.contains(&origin)
-                {
-                    memories.push(origin);
-                }
+                collect_equality_pointer_block_memories(&pointer.block, memories);
                 collect_pointer_offset_memories(&pointer.offset, memories);
             }
         }
@@ -6357,6 +6403,21 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             }
             collect_pointer_offset_memories(&pointer.offset, memories);
         }
+    }
+}
+
+fn collect_equality_pointer_block_memories(block: &PointerBlock, memories: &mut Vec<SharedMemory>) {
+    if let PointerBlock::PureFunctionApplication(application) = block
+        && let Some(bits) = application.integer_address_bits()
+    {
+        collect_bitvector_memories(bits, memories);
+    }
+    if let PointerBlock::Symbolic(variable) = block
+        && let Some((origin, _)) =
+            crate::kernel::eval::registered_load_origin_for_variable(variable)
+        && !memories.contains(&origin)
+    {
+        memories.push(origin);
     }
 }
 
@@ -6399,8 +6460,8 @@ fn collect_operand_memories(
                 if !memories.contains(memory) {
                     memories.push(memory.clone());
                 }
-            } else if let Some((condition, [left, right])) = operand.conditional() {
-                collect_condition_memories(&condition, memories);
+            } else if let Some((condition, [left, right])) = operand.conditional_view() {
+                collect_condition_operand_memories(condition, memories);
                 pending.push(right);
                 pending.push(left);
             } else if let Some((_, _, [left, right])) = operand.binary() {
@@ -6468,6 +6529,76 @@ fn collect_bitvector_memories(term: &MachineTerm, memories: &mut Vec<SharedMemor
                     .expect("every other term is binary or unary");
                 collect_bitvector_memories(value, memories);
             }
+        }
+    }
+}
+
+/// Retained Boolean transport preserves the native authority and refusal rules.
+/// Ineligible common roots are declined before any expression export. Selected
+/// primitive comparisons retain their operands and use the shared equivalent
+/// of native constructors. Other admitted families keep their selected native
+/// compatibility reader.
+pub(in crate::kernel) fn transport_framed_common_condition(
+    condition: &crate::kernel::KernelTerm,
+    after: &Memory,
+    assumptions: Option<(&PureFactContext, bool)>,
+) -> Option<crate::kernel::KernelTerm> {
+    use crate::kernel::KernelTermNode as Node;
+    if crate::kernel::assumptions::reasoning_interrupted() {
+        return None;
+    }
+    match condition.node() {
+        Node::BoolLiteral(_)
+        | Node::Variable(_)
+        | Node::BoolIf { .. }
+        | Node::BoolEqual { .. }
+        | Node::Call { .. } => None,
+        Node::PointerEqual { arguments } => Some(crate::kernel::KernelTerm::pointer_equal(
+            shared_pointer_transport::transport_addresses(arguments, after, assumptions)?,
+        )),
+        Node::PointerOffsetEqual { arguments } => {
+            Some(crate::kernel::KernelTerm::pointer_offset_equal(
+                shared_pointer_transport::transport_offsets(arguments, after, assumptions)?,
+            ))
+        }
+        Node::BoolCompare {
+            format,
+            relation,
+            arguments,
+        } => {
+            let mut mapped = Vec::with_capacity(2);
+            for argument in arguments {
+                let value = crate::kernel::MachineOperandView::Shared(argument).retain(*format);
+                let value = transport_framed_index(&value, after, assumptions)?;
+                mapped.push(crate::kernel::KernelTerm::retained_machine_operand(
+                    *format,
+                    value.operand_view(),
+                ));
+            }
+            let mapped = crate::kernel::KernelTerm::boolean_comparison(
+                *format,
+                *relation,
+                [mapped[0].clone(), mapped[1].clone()],
+            );
+            Some(
+                if crate::kernel::BooleanOperandView::Shared(condition)
+                    .syntax_equal(crate::kernel::BooleanOperandView::Shared(&mapped))
+                {
+                    condition.clone()
+                } else {
+                    mapped
+                },
+            )
+        }
+        _ => {
+            let native = crate::kernel::BooleanOperandView::Shared(condition).native();
+            let mapped = transport_framed_atomic_condition(&native, after, assumptions)?;
+            Some(if mapped == *native {
+                // Match the existing index mapper's unchanged-guard rule.
+                condition.clone()
+            } else {
+                crate::kernel::KernelTermImport::default().condition(&mapped)
+            })
         }
     }
 }
@@ -6658,6 +6789,7 @@ pub(in crate::kernel) use shared_index_transport::{
     index_syntax_equal as pointer_index_syntax_equal, map_index as map_shared_pointer_index,
     map_index_with_descent as map_shared_pointer_index_with_descent,
     map_index_with_fold as map_shared_pointer_index_with_fold,
+    map_index_with_fold_and_cache as map_shared_machine_substitution_with_cache,
     transported_scaled_index as rebuild_scaled_pointer_index,
 };
 use shared_index_transport::{
@@ -8805,7 +8937,7 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
 /// a later typed read of the same cell does not revisit a context that already
 /// holds the equation. A read at an index equal to the stored one then missed
 /// in that context, but not in one rebuilt from the same facts, so expanding
-/// `arena_write` replayed `assumption()` against a context that knew less.
+/// `arena_write` replayed `known()` against a context that knew less.
 #[test]
 fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() {
     use crate::kernel::{ExecutionFacts, ExecutionPureFact, PureFactContext};
@@ -8979,5 +9111,142 @@ mod retained_offset_evidence_tests {
     mod scaling_tests {
         use super::*;
         include!("../scaling_tests/kernel/memory_provenance/retained_offset_evidence_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod retained_boolean_dependency_tests {
+    use super::*;
+
+    #[test]
+    fn common_boolean_memories_keep_snapshot_order_and_call_opacity() {
+        use crate::kernel::{BooleanOperandView, KernelTermImport, SharedPureApplication};
+        let first = crate::kernel::intern_memory(Memory::new());
+        let second = crate::kernel::intern_memory(
+            Memory::new().with_block(PointerBlock::Concrete("boolean_memory".into()), 8),
+        );
+        let read = |memory| {
+            MachineTerm::MemoryLoad(
+                memory,
+                Box::new(Pointer::symbolic(Variable(970_010))),
+                LoadKind::Int32,
+            )
+        };
+        let source = ConditionTerm::BoolEqual(
+            Box::new(ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(read(first.clone())),
+                right: Box::new(read(second.clone())),
+            }),
+            Box::new(ConditionTerm::BoolApplication(
+                SharedPureApplication::intern(
+                    "opaque_memory_dependency".into(),
+                    vec![PureFunctionArgument::Value(ProgramValue::Int32(read(
+                        second.clone(),
+                    )))],
+                ),
+            )),
+        );
+        let root = KernelTermImport::default().condition(&source);
+        let mut native = Vec::new();
+        let mut common = Vec::new();
+        collect_condition_memories(&source, &mut native);
+        collect_condition_operand_memories(BooleanOperandView::Shared(&root), &mut common);
+        assert_eq!(native, vec![first, second]);
+        assert_eq!(common, native);
+    }
+}
+
+#[cfg(test)]
+mod common_boolean_transport_tests {
+    use super::*;
+    use crate::kernel::{KernelTermExport, KernelTermImport};
+
+    #[test]
+    fn common_boolean_transport_matches_native_snapshots_and_constructors() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = Memory::new()
+            .with_block("bool-transport", 8)
+            .with_block("other-transport", 4);
+        let memory = crate::kernel::intern_memory(before.clone());
+        let address = Memory::global_pointer("bool-transport");
+        let after = before.store(
+            Memory::global_pointer("other-transport"),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
+        for source in [
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block: PointerBlock::Symbolic(Variable(972_003)),
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::MemoryLoad(
+                            memory.clone(),
+                            Box::new(address.clone()),
+                            LoadKind::Int32,
+                        ),
+                        4,
+                    ),
+                }),
+                Box::new(Pointer::null()),
+            ),
+            ConditionTerm::PointerOffsetEqual(
+                Box::new(PointerOffsetTerm::Add(
+                    Box::new(PointerOffsetTerm::Constant(0)),
+                    Box::new(PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::MemoryLoad(
+                            memory.clone(),
+                            Box::new(address.clone()),
+                            LoadKind::Int32,
+                        ),
+                        4,
+                    )),
+                )),
+                Box::new(PointerOffsetTerm::scaled_int64_node(
+                    MachineTerm::Variable(Variable(972_002)),
+                    8,
+                    true,
+                )),
+            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::MemoryLoad(
+                    memory.clone(),
+                    Box::new(address),
+                    LoadKind::Int32,
+                )),
+                right: Box::new(MachineTerm::constant(0)),
+            },
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::Variable(Variable(972_001))),
+                right: Box::new(MachineTerm::Variable(Variable(972_001))),
+            },
+        ] {
+            let root = KernelTermImport::default().condition(&source);
+            let expected = transport_framed_atomic_condition(&source, &after, None).unwrap();
+            let actual = transport_framed_common_condition(&root, &after, None).unwrap();
+            assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn common_boolean_transport_keeps_composite_and_load_refusals() {
+        let memory = crate::kernel::intern_memory(Memory::new());
+        for source in [
+            ConditionTerm::Constant(true),
+            ConditionTerm::Variable(Variable(972_002)),
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Constant(true)),
+                Box::new(ConditionTerm::Constant(false)),
+            ),
+            ConditionTerm::BoolLoad(memory, Box::new(Pointer::symbolic(Variable(972_003)))),
+        ] {
+            assert!(transport_framed_atomic_condition(&source, &Memory::new(), None).is_none());
+            let root = KernelTermImport::default().condition(&source);
+            assert!(transport_framed_common_condition(&root, &Memory::new(), None).is_none());
+        }
     }
 }

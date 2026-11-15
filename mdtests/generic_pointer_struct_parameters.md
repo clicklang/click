@@ -46,7 +46,7 @@ void inspect(struct item *p, struct other *q, struct item **pp) {
     }
     step_until(function.exit);
     normalize();
-    assumption(); assumption(); assumption();
+    known(); known(); known();
 }
 ```
 

@@ -256,7 +256,7 @@ loop {
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
 script may use exactly `unfold(predicate)`, `apply(theorem(args))`, `have`,
-`assumption()`, `normalize()`, `rewrite(...)`, `solve()`, `both`, `cases`, and
+`known()`, `normalize()`, `rewrite(...)`, `solve()`, `both`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
 `<tactic>` ``. `preserve` assumes all invariants and the loop condition,
@@ -306,7 +306,7 @@ read as three parts, in this order:
 - one `have` per declared invariant, in declaration order, naming the
   invariant exactly as the `loop` head spells it. Such a `have` is that
   invariant's own proof, and no other invariant reads it.
-- an optional trailing `assumption()` or `solve()`.
+- an optional trailing `known()` or `solve()`.
 
 A script that does not name the invariants individually — `initialize by
 solve();`, or a helper prefix followed by `solve()` — is one shared proof: every
@@ -382,7 +382,7 @@ have p[0] == 0 by {
             contradiction(a == 0);
         }
         p[0] == 0 => {
-            assumption();
+            known();
         }
     }
 }

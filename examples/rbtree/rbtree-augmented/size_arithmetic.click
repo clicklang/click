@@ -25,7 +25,7 @@ theorem size_sum_defined(left: int32, right: int32) {
             };
         }
         have defined((1 + left) + right);
-        assumption();
+        known();
     }
 }
 
@@ -47,18 +47,18 @@ theorem size_children_fit(left: int32, right: int32) {
     requires 0 <= to_integer(right);
     requires 1 + to_integer(left) + to_integer(right) <= 2147483647;
     ensures 0 <= left by {
-        have 0 <= left; assumption();
+        have 0 <= left; known();
     }
     ensures 0 <= right by {
-        have 0 <= right; assumption();
+        have 0 <= right; known();
     }
     ensures right <= 2147483646 by {
-        have right <= 2147483646; assumption();
+        have right <= 2147483646; known();
     }
     ensures left <= 2147483646 - right by {
         have 0 <= right;
         have right <= 2147483646;
         have to_integer(2147483646 - right) == to_integer(2147483646) - to_integer(right);
-        have left <= (2147483646 - right); assumption();
+        have left <= (2147483646 - right); known();
     }
 }

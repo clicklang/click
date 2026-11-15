@@ -175,7 +175,7 @@ void *fill_range(void *argument) {
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->value))) by { normalize() using {
                 at(iteration, separate(memory(job->output[index]), memory(job->value)));
             }; }
-            have job->value == at(iteration, job->value) by { assumption(); }
+            have job->value == at(iteration, job->value) by { known(); }
             have forall (k: int32) {
                 job->begin <= k and k <= index implies job->output[k] == job->value
             } by {
@@ -261,16 +261,16 @@ int fill_parallel(int output[4]) {
         } by {
             intro() as k;
             intro();
-            have 0 <= k by { rewrite(0 == first_job.begin); assumption(); }
-            have k < 2 by { rewrite(2 == first_job.end); assumption(); }
+            have 0 <= k by { rewrite(0 == first_job.begin); known(); }
+            have k < 2 by { rewrite(2 == first_job.end); known(); }
             instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
                 0 <= k; k < 2;
             };
             rewrite(first_job.output == output);
             rewrite(first_job.value == 11);
-            assumption();
+            known();
         }
-        have range_filled(&first_job) by { unfold(range_filled); assumption(); }
+        have range_filled(&first_job) by { unfold(range_filled); known(); }
         have first_job.output[0] == first_job.value;
         have first_job.output[1] == first_job.value;
         have output[0] == 11;
@@ -290,16 +290,16 @@ int fill_parallel(int output[4]) {
     } by {
         intro() as k;
         intro();
-        have 0 <= k by { rewrite(0 == first_job.begin); assumption(); }
-        have k < 2 by { rewrite(2 == first_job.end); assumption(); }
+        have 0 <= k by { rewrite(0 == first_job.begin); known(); }
+        have k < 2 by { rewrite(2 == first_job.end); known(); }
         instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
             0 <= k; k < 2;
         };
         rewrite(first_job.output == output);
         rewrite(first_job.value == 11);
-        assumption();
+        known();
     }
-    have range_filled(&first_job) by { unfold(range_filled); assumption(); }
+    have range_filled(&first_job) by { unfold(range_filled); known(); }
     have first_job.output[0] == first_job.value;
     have first_job.output[1] == first_job.value;
     have output[0] == 11;
@@ -309,7 +309,7 @@ int fill_parallel(int output[4]) {
     have range_filled(&second_job);
     have forall (k: int32) {
         second_job.begin <= k and k < second_job.end implies second_job.output[k] == second_job.value
-    } by { unfold(range_filled); assumption(); }
+    } by { unfold(range_filled); known(); }
     have second_job.output[2] == second_job.value;
     have second_job.output[3] == second_job.value;
     have output[2] == 22;

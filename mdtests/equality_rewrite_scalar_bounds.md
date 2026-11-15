@@ -14,18 +14,18 @@ theorem reduced_bound(value: uint32, divisor: uint32) {
  requires divisor == 65521u32;
  ensures value < 65521u32 by {
   rewrite(65521u32 == divisor);
-  assumption();
+  known();
  }
 }
 theorem wide_unsigned(x: uint64, y: uint64) {
  requires x == y;
  requires y > 4294967295u64;
- ensures x > 4294967295u64 by { rewrite(x == y); assumption(); }
+ ensures x > 4294967295u64 by { rewrite(x == y); known(); }
 }
 theorem wide_signed(x: int64, y: int64) {
  requires x == y;
  requires y < -2147483648i64;
- ensures x < -2147483648i64 by { rewrite(x == y); assumption(); }
+ ensures x < -2147483648i64 by { rewrite(x == y); known(); }
 }
 theorem observed_bound(x: uint32, y: uint32) {
  requires x == 0u32;

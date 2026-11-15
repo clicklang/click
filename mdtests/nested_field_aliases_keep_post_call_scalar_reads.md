@@ -35,13 +35,13 @@ void cleanup(int32* value) {
     ensures *value == 42;
 } by {
     step_until(statement(7));
-    have *second.slot == at(statement(6).entry, second.saved) by assumption();
-    have at(statement(6).entry, second.saved) == 42 by assumption();
-    have address(second.slot) == address(&first.saved) by assumption();
-    have *second.slot == 42 by assumption();
-    have first.saved == 42 by assumption();
+    have *second.slot == at(statement(6).entry, second.saved) by known();
+    have at(statement(6).entry, second.saved) == 42 by known();
+    have address(second.slot) == address(&first.saved) by known();
+    have *second.slot == 42 by known();
+    have first.saved == 42 by known();
     step_until(function.exit);
-    have *value == 42 by assumption();
+    have *value == 42 by known();
 }
 ```
 

@@ -47,7 +47,7 @@ only by the tests that read them.
 - `owns p` for a pointer is the pointer's own slot. `owns *p` is what it
   points at.
 - A separate tactic for conjunction and disjunction goals was dropped;
-  `assumption()` closes them.
+  `known()` closes them.
 - `requires`, `ensures`, `fact` and `invariant` stay four words: each says
   where its proposition holds.
 - `requires` takes no label. Requirement labels were removed on 2026-09-23
@@ -98,8 +98,8 @@ only by the tests that read them.
   covers a whole struct; a cell a contract only views needs no frame.
 - Program points stay named by source position (`region(N)`, `read(N)`,
   `loop(N)`). Closed 2026-10-14: neither source-named points nor a
-  `click migrate` renumbering tool is planned; `execute()` and `step()`
-  already avoid positions in most proofs.
+  `click migrate` renumbering tool is planned; the implicit tail and `step()`
+  avoid positions in most proofs.
 - The repository root keeps `design/`, `roadmap/` and `bugs/` beside the
   product. Closed 2026-10-14: the maintainer judged the mix not a real
   problem.

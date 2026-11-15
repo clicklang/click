@@ -25,11 +25,11 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
     let { result: product } = step(FeeFrac::Mul, { });
     have @PRODUCT_BOUND_1@ by {
         rewrite(to_integer(product) == to_integer(this->fee) * to_integer(at_size));
-        assumption();
+        known();
     }
     have @PRODUCT_BOUND_2@ by {
         rewrite(to_integer(product) == to_integer(this->fee) * to_integer(at_size));
-        assumption();
+        known();
     }
     step();
     let { result: rounded } = step(FeeFrac::Div, { });
@@ -43,13 +43,13 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
         rewrite(to_integer(result) == to_integer(rounded));
         rewrite(to_integer(this->size) == to_integer(denominator));
         rewrite(to_integer(this->fee) * to_integer(at_size) == to_integer(product));
-        assumption();
+        known();
     }
     have @CALLER_BOUND_2@ by {
         rewrite(to_integer(result) == to_integer(rounded));
         rewrite(to_integer(this->size) == to_integer(denominator));
         rewrite(to_integer(this->fee) * to_integer(at_size) == to_integer(product));
-        assumption();
+        known();
     }
     solve();
 }

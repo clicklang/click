@@ -41,7 +41,7 @@ uint8 set_pointer(struct bytes* p, uint8 value) {
             contains(memory(p->data[1..2]), memory(p->data[1..2]));
         };
     }
-    step() by { assumption(); }
+    step() by { known(); }
     step_until(function.exit);
 }
 ```

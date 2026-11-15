@@ -2,7 +2,7 @@
 
 A call can retain carrier ancestry separately from the address used to spell a
 resource body. Restating its separation fact uses the same physical ranges;
-`assumption` must find that fact without searching other facts or read history.
+`known` must find that fact without searching other facts or read history.
 
 ```c filename=probe.c
 struct arena { int *data; int *occupied; int capacity; };
@@ -24,10 +24,10 @@ void idle(struct arena* arena) { owns st: state(arena); }
 void probe(struct arena* arena) { owns st: state(arena); } by {
     step(idle, { st: st });
     let { capacity: cap } = unfold(st);
-    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by { assumption(); }
+    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by { known(); }
     let st = fold(state(arena), { capacity: cap });
     step();
-    assumption();
+    known();
 }
 ```
 

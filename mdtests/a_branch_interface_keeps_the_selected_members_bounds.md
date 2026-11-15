@@ -21,8 +21,8 @@ int32 probe(struct Pair* left, struct Pair* right, int32 choose) {
  branch ensuring {
   fact selected == left or selected == right;
   views selected->second;
- } then { step(); have selected == left or selected == right by { have selected == left by normalize(); assumption(); } }
- else { step(); have selected == left or selected == right by { have selected == right by normalize(); assumption(); } }
+ } then { step(); have selected == left or selected == right by { have selected == left by normalize(); known(); } }
+ else { step(); have selected == left or selected == right by { have selected == right by normalize(); known(); } }
  step(); solve();
  }
 }

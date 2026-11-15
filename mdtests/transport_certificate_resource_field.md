@@ -25,8 +25,8 @@ void keep(int *p) {
         }
     }
     step();
-    assumption(); assumption();
-    assumption(); assumption(); assumption();
+    known(); known();
+    known(); known(); known();
 }
 ```
 

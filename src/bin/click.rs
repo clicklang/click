@@ -786,49 +786,49 @@ mod tests {
                 "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n        }}\n    }}\n    step();\n    solve();\n}}\n"
             )
         };
-        // Each case's `assumption()` must fail. A goal that is a mirrored
+        // Each case's `known()` must fail. A goal that is a mirrored
         // spelling of a fact (`0 <= n` beside `requires n >= 0`, or `i <= n`
-        // with `i == 0`) is closed by `assumption`, so the loop cases ask for
+        // with `i == 0`) is closed by `known`, so the loop cases ask for
         // `-1 < n`, which is true but no spelling of any fact.
         let cases = [
             (
                 "if_arm",
                 identity(
-                    "        have x == x by solve();\n        if x > 0 {\n            solve();\n        } else {\n            assumption();\n        }\n",
+                    "        have x == x by solve();\n        if x > 0 {\n            solve();\n        } else {\n            known();\n        }\n",
                 ),
                 10,
             ),
             (
                 "cases_arm",
                 identity(
-                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                assumption();\n            } else {\n                assumption();\n            }\n        }\n        cases { x > 0 => {\n            solve();\n        } not (x > 0) => {\n            assumption();\n        } }\n",
+                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                known();\n            } else {\n                known();\n            }\n        }\n        cases { x > 0 => {\n            solve();\n        } not (x > 0) => {\n            known();\n        } }\n",
                 ),
                 16,
             ),
             (
                 "if_continuation",
                 identity(
-                    "        if x > 0 {\n            have x == x by solve();\n            have x == x by solve();\n        } else {\n            have x == x by solve();\n        }\n        assumption();\n",
+                    "        if x > 0 {\n            have x == x by solve();\n            have x == x by solve();\n        } else {\n            have x == x by solve();\n        }\n        known();\n",
                 ),
                 12,
             ),
             (
                 "initialize_helper",
                 count_up(
-                    "            have -1 < n by {\n                have n == n by solve();\n                assumption();\n            }\n            solve();\n",
+                    "            have -1 < n by {\n                have n == n by solve();\n                known();\n            }\n            solve();\n",
                 ),
                 15,
             ),
             (
                 "initialize_invariant_body",
                 count_up(
-                    "            have i >= 0 by solve();\n            have -1 < n by {\n                have n == n by solve();\n                assumption();\n            }\n",
+                    "            have i >= 0 by solve();\n            have -1 < n by {\n                have n == n by solve();\n                known();\n            }\n",
                 ),
                 16,
             ),
             (
                 "initialize_shared_script",
-                count_up("            have n == n by solve();\n            assumption();\n"),
+                count_up("            have n == n by solve();\n            known();\n"),
                 14,
             ),
         ];
@@ -838,11 +838,11 @@ mod tests {
             let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
             assert_eq!(
                 source.lines().nth(line - 1).map(str::trim),
-                Some("assumption();"),
+                Some("known();"),
                 "{name}"
             );
             assert!(
-                error.contains(&format!("\n\ntactic@{line}:\n  assumption();")),
+                error.contains(&format!("\n\ntactic@{line}:\n  known();")),
                 "{name}: {error}"
             );
         }
@@ -1186,7 +1186,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     have defined(a[cur]) by { solve(); }
     have exists (z: int32) { z == a[cur] } by {
         extract(exists (z: int32) { z == a[cur] });
-        assumption();
+        known();
     }
     step(); solve();
 }
@@ -1246,7 +1246,7 @@ theorem bad(p: int32*, q: int32*) {
     requires p == q;
     ensures tag(p) == 1 by {
         rewrite(p == q);
-        assumption();
+        known();
     }
 }
 "#,
@@ -1322,7 +1322,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])
     } by {
-        assumption();
+        known();
     }
     step(); solve();
 }
@@ -1457,7 +1457,7 @@ theorem good(x: int32, y: int32) {
     requires x == y;
     ensures y == x by {
         have y == x by { solve(); }
-        assumption();
+        known();
     }
 }
 theorem bad(x: int32, y: int32) {
@@ -1465,15 +1465,15 @@ theorem bad(x: int32, y: int32) {
     ensures x == 0 by {
         have y == x by { solve(); }
         have x == 0 by { normalize(); }
-        assumption();
+        known();
     }
 }
 theorem arms(x: int32) {
     ensures x == x by {
         if x == 0 {
-            have x == 0 by { assumption(); }
+            have x == 0 by { known(); }
         } else {
-            have x != 0 by { assumption(); }
+            have x != 0 by { known(); }
         }
         normalize();
     }

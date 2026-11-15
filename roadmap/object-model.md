@@ -1,168 +1,127 @@
-# P2: Stabilize and deliver the shared object model
+# P2: Close object-model gaps in supported C++
 
 Priority: P2.
 
-Soundness: soundness-adjacent. This work changes the evidence used to justify
-object access, pointer designation, initialization and modular transfer across
-C, C++ and Rust. No new false acceptance is known. Reproduced soundness defects
-keep their own P1 bugs and must be repaired or refused before affected support
-is claimed.
+Soundness: soundness-adjacent. Supported access must preserve object type,
+initialization, pointer designation and lifetime independently of permission.
+The current-master audit below is bounded, not a proof of every admitted path;
+no new false acceptance was reproduced. Confirmed false acceptances remain P1
+under the repository's soundness policy.
 
-## Goal
+## Goal and current evidence
 
-Land the accepted bounded object model on upstream master as independently
-reviewable, green slices, built on current master when C++ feature work
-resumes. New C++ feature admission stays frozen until this foundation lands.
-Done means a checked model with demonstrated language boundaries and preserved
-existing behavior.
+Make the operations Click already admits compose across calls and resources,
+without regressing existing C or Rust. Work from current master, not from the
+retired implementation of [PR #646](https://github.com/clicklang/click/pull/646).
+The [current-master audit](../design/object-model-current-audit.md) records
+source paths, executable witnesses, limits and remaining checks.
 
-- Laws and operation audit: [C++ object model and shared memory semantics](../design/cpp-object-model.md).
-- Construction/return protocol: [aggregate construction](../design/aggregate-construction.md).
-- Subobject pointers: [subobject extents](../design/pointer-subobject-extents.md).
-- Later C++ coverage belongs to [cpp-support.md](cpp-support.md).
+Already implemented: pointer subobject bounds and designation, complete pointer
+read names, exact construction destinations, initialized/unwritten storage,
+initialized output-resource transfer, and the bounded typed/byte representation
+rules. These are mechanisms to preserve, not unfinished implementation groups.
+Constructed-view getters preserve external backing references through cleanup,
+with the original read/write and hostile-contract witnesses checked. The audit
+distinguishes checked witnesses from broader claims still needing coverage.
 
-## Where it stands
+## Remaining work
 
-- The archived implementation of [PR #646](https://github.com/clicklang/click/pull/646)
-  is retired: it diverged from master by thousands of commits and is not a
-  source for further slices. Its accepted design is in
-  [cpp-object-model.md](../design/cpp-object-model.md).
-- Upstream has landed the independent extractions recorded in the audit. These
-  include pointer-read naming: every pointer read is named by the read itself,
-  and its value and designation are compared under one rule
-  ([#1806](https://github.com/clicklang/click/pull/1806)).
-- Pointer-designation changes upstream (#1245) broke rbtree proofs that
-  verified before. They run in the nightly examples, not the gate. See
-  [below](#rbtree-regressions-on-master).
+### 1. Repair pointer-field resource folding and preserve compatibility
 
-## What's left
+The audit also reproduces
+[`rb_produces_through_the_root_cell.md`](../mdtests/rb_produces_through_the_root_cell.md)
+failing in `rb_set_root.contract` at tactic 4: folding the produced tree needs
+a generated equality for `root->rb_node` that has no Surface spelling.
 
-### Shared foundation
+- [ ] Restore that original fixture, retaining a spellable pointer-field
+  equality through the store and resource fold. Keep the same C and contract;
+  verify the resulting proof across the supported proof modes.
+- [ ] Check the affected existing descriptor/resource, pointer-field,
+  constructor and cleanup witnesses when delivering a remaining slice.
+  Pointer identity, extent and the relevant frame must survive calls, resource
+  unfold/refold, branches and loops; unrelated writes must not destroy them.
+- [ ] Keep ordinary verification, expansion, cold and retained checking in
+  agreement. Use existing deterministic multi-size controls for changed hot
+  paths, and the required CI/merge-queue checks for delivery. Do not raise
+  budgets or weaken contracts to obtain a pass.
 
-These are groups of work to account for, not one PR each. The audit's
-dependency inventory decides which parts land independently and which must
-land together. Credit mechanisms that already landed when they satisfy a law.
+Current rbtree refusals have their own
+[launch work](rbtree-example.md) and existing bug reports. Reproduce their
+current frontier there before attributing one to the object model. In
+particular, the pointer-cell representation repair is implemented but its
+[original sidecars still need end-to-end closure](../bugs/pointer-field-cells-are-cached-as-words-a-pointer-read-cannot-use.md).
+Historical failure counts are not a current defect list for this item.
 
-- [ ] **Operation and evidence audit:** storage, layout/type, domain,
-  lifecycle, initialization and authority evidence for every admitted
-  operation: declarations, construction, copying, moves, typed/byte reads and
-  writes, casts, havoc, branch joins, cleanup and lifetime end.
-- [ ] **Object/storage and construction:** coherent layout/subobject evidence,
-  destination binding, construction completion and retirement. Preserve C
-  aggregate returns and Rust construction; keep bounded C++ copy-equivalence
-  admission and exact destination checks.
-- [ ] **Initialization and observations:** preserve unknown initialized values,
-  compressed initialized ranges and explicit output effects. The uint32
-  typed/byte bridge describes one value at one snapshot; partial writes update
-  only their bytes; a no-op writer establishes no new output.
-- [ ] **Pointer designation and transport:** pointer reads are done (#1806).
-  Remaining: retain complete pointer evidence through arithmetic, casts, calls,
-  resources and substitutions; reject cross-subobject access, unjustified array
-  traversal, one-past dereference and expired objects.
-- [ ] **Entry, resources and modular calls:** assume explicit input promises at
-  symbolic entry and check them at actual calls and resource creation. Preserve
-  aggregate/pointer values, conditional bodies, mutable descriptor bindings,
-  returned initialization and the caller's frame.
-- [ ] **Frontend activation:** enable each language/profile only after its
-  dependencies and positive/negative call controls pass. Unsupported cases get
-  bounded, specific refusals. C sources must not acquire C++ requirements.
-- [ ] **Proof and performance parity:** recheck ordinary, expanded, rewritten
-  and retained proofs. Protect local operations with deterministic multi-size
-  scaling tests; no global scans per step and no raised limits.
+### 2. Finish the native-interface evidence matrix
 
-If pointer representation, equality, transport and access checks depend on one
-another for soundness, land that closure together rather than exposing an
-intermediate model.
+For the supported profiles, record what justifies each access at symbolic body
+entry and what the actual caller must establish. Cover scalar and record
+references/receivers, raw pointers, by-value records, embedded construction,
+and pointer/reference results. Use current importer, lowering and shared-kernel
+rules; historical archive metadata is not evidence of upstream support.
 
-### rbtree regressions on master
+- [ ] Pair each entry promise with an actual-call positive and rejection
+  witness, including subobject bounds, initialized versus unwritten input,
+  constness, layout/type and backing lifetime. Credit the existing witnesses
+  in the audit before adding tests.
+- [ ] Resolve uncovered paths with a checked rule or a specific refusal.
+  Establish a concrete admitted source case before changing semantics. A
+  signature, byte owner or equal address cannot by itself supply all the
+  evidence for access.
+- [ ] Publish the resulting supported boundary and assumptions. A separate
+  `valid_place` API or the archive's representation is not an acceptance
+  requirement; the semantic guarantees are.
 
-- [ ] rbtree-augmented: 25 of 64 sidecars fail on master. The sized resources
-  now state the parent pointer fact
-  ([bug](../bugs/rbtree-augmented-sized-resources-lack-the-parent-pointer-fact.md)),
-  so the remaining failures need classifying afresh.
-- [ ] [rbtree_insert Top arm](../bugs/rbtree-insert-top-arm-contradiction-refused.md).
-- [ ] [rbtree-erase `flips_red_all`](../bugs/rbtree-erase-flips-red-all-loop-refused.md).
-- [ ] [Pointer field cells cached as words](../bugs/pointer-field-cells-are-cached-as-words-a-pointer-read-cannot-use.md):
-  `rbtree_erase_augmented` regressed with pointer-read naming (#1806).
-- [ ] Move one fast rbtree-augmented sidecar into the gate so a kernel change
-  cannot break the directory unseen.
+### 3. Check modular byte-output composition
 
-### Acceptance
+The shared `consumes uninitialized(...)` / `produces ...` contract already
+expresses body-checked output initialization. Do not rebuild this mechanism.
+The selected C++ byte tests separately cover ordinary modular byte writes and
+four stores initializing a declared uint32. What remains is their composition:
 
-- [ ] Every compatibility group has a classification and every regression
-  from a delivered slice is resolved:
+- [ ] Check a pinned C++ `std::byte*` helper that consumes four unwritten bytes
+  and produces them initialized, called with a declared uint32's byte view.
+  Prove the exact little-endian word after the modular call.
+- [ ] Reject an unwritten byte, missing write permission, a stale observation,
+  and a forged byte declaration. Check expansion, cold rewritten verification
+  and retained checking for the positive witness.
 
-  | Group | Reproduction |
-  | --- | --- |
-  | Pointer-field frames and stored values | owned-vector and owned-string projects |
-  | Nullable allocated resource bodies | [conditional allocated record](../mdtests/conditional_allocated_record_output.md); allocated-linked-list, heap-object |
-  | Borrowed/owned buffer and cursor transfer | arena, detachable-buffer, owned-segmented-buffer, owned-split-buffer, input-cursor, binary-tree, concurrency-fork-join, multifile-registry, ring-buffer |
-  | Other C proofs | refcount, rbtree-augmented |
-  | Rust availability/ranges and proof cost | rust-chunks-exact, rust-byte-sum |
-  | Importer and proof scaling | record-inventory multi-size work, growing-place graph test, decoder audits |
+This small composition is the foundation acceptance case. Bitcoin
+`ser_readdata32`, cursor exceptions, broader writable spans and owning containers
+belong to [C++ coverage](cpp-support.md); they are not prerequisites for closing
+this item.
 
-- [ ] The [bounded acceptance matrix](../design/cpp-object-model.md#stabilization-work-and-exit-criteria)
-  has named evidence for representation, modular transfer, destination/copy,
-  aliasing/frames, lifetime/availability, typed access, proof modes and scaling.
-- [ ] The unchanged pinned Bitcoin `ser_readdata32` verifies with exact word
-  value, initialization, span bounds and backing lifetime, in modular,
-  expanded and retained checks.
-- [ ] The [entry-count cell fixture](../mdtests/resource_uint64_entry_cell_fold.md)
-  and its [wrong-index counterpart](../mdtests/resource_uint64_entry_cell_fold_wrong_index.md)
-  keep passing and failing, and a view-only counterpart rejects the write.
-- [ ] The design docs' implementation claims match upstream, and the next C++
-  work moves back to `cpp-support.md`.
+## Small intended regression
 
-## Accepted design
+The modular byte-output witness above must read the exact uint32 after the
+helper returns, with no initialization assumed merely from ownership or the
+value postcondition. Preserve the original source and contract when reducing
+a failure. The existing
+[C++ scalar initializer](../mdtests/cpp_initializer_produces_written_memory.md)
+and [unwritten-output rejection](../mdtests/produces_refuses_memory_the_function_did_not_write.md)
+exercise the shared output-transfer prerequisite.
 
-Retain typed cells, allocation identities, immutable snapshots and indexed
-resource ranges. Execution, logical observation and modular proofs share
-operations and checked evidence. Frontends supply explicit language rules and
-authenticated source metadata; source spelling or matching numeric addresses
-cannot manufacture semantic evidence.
+## Acceptance and scope
 
-| Component | Meaning | Does not imply |
-| --- | --- | --- |
-| Storage | Allocation identity/generation, live extent and alignment | An object of the requested type |
-| Object and place | Admitted type, containing object, subobject or array domain, lifecycle phase | Initialization or access authority |
-| Pointer value | Address plus designation, position and lifetime evidence | Permission to read or write its referent |
-| Representation | Typed values and byte observations of one object at one snapshot | Legality of every access type |
-| Initialization and value | Initialized bytes, available value, language value validity | Ownership or a particular value |
-| Authority | Checked ownership, view or loan for the footprint | Object creation, initialization or pointer origin |
+Close this item when the reproduced pointer-field resource-fold failure is
+resolved, the interface matrix has named evidence or explicit refusals, the modular
+byte-output composition passes its positive and hostile checks, and affected existing C/C++/Rust behavior and proof modes remain checked.
+Record any confirmed residual defect at its current reproduction; a missing
+coverage check is not itself a demonstrated semantic bug.
 
-- Unknown-initialized and uninitialized contents stay distinct. Forgetting a
-  value keeps initialization and object identity; joins keep only justified
-  common guarantees.
-- Address equality supports alias and frame reasoning; it is not pointer
-  identity or typed-place validity.
-- `valid_place(p)` and `valid_place(p[0..n])` state typed-place validity and
-  grant neither ownership nor initialization. A view alone does not assert
-  that storage holds an object of a requested type.
-- Initialization effects are explicit, body-checked postconditions.
-  Mentioning an output read in a proposition does not initialize it.
-- Construction uses the exact caller-selected destination. Allocation,
-  construction completion, copying and lifetime end are distinct operations;
-  construction implies neither freshness nor separation.
+Retain typed cells, allocation identities/generations, immutable snapshots and
+indexed resource ranges. Keep storage, object/type validity, initialization,
+values and access authority distinct. Address equality supports aliasing but
+does not manufacture designation. Construction binds the actual destination;
+copying does not rebase self-pointers; lifetime end invalidates access to the
+backing object. Apply each language's own rules at its frontend boundary.
 
-Language boundaries:
+There is no blanket C++ feature freeze: each new slice must preserve these
+invariants and supply its own admission, call and refusal evidence. Broader
+lifetime/replacement semantics, union overlap, general inheritance, additional
+targets and integer-carried pointer origins are separate coverage work.
 
-- **C:** keep the explicit allocated-storage/effective-access rules and the
-  ordinary C verification boundary. C++ object requirements do not activate
-  because the C frontend knows a struct layout.
-- **C++:** native references, declarations and checked importer identities
-  supply place evidence. A native signature's promise is checked at actual
-  calls as well as assumed at body entry. The profile is pinned Clang 19.1.7,
-  C++20, `x86_64-unknown-linux-gnu`, LP64, little-endian; the uint32
-  representation guarantee is the named assumption
-  `clang19_1_7_lp64_le_declared_uint32_bytes_v1`.
-- **Rust:** reuse shared storage, initialization, representation and transfer,
-  keeping move availability, drop and borrowing explicit.
-
-## Out of scope
-
-Placement construction and storage reuse, overlapping unions, general
-inheritance and virtual dispatch, broader exceptional construction, arbitrary
-owning containers, concurrency, additional target profiles, and full contracts
-for integer-carried pointer origins. Ask for a design decision only when a
-concrete case would change an accepted source-language promise, choose a new
-compiler guarantee or contract surface, or enlarge the bounded profile.
+The [design record](../design/cpp-object-model.md) preserves the accepted laws
+and historical implementation rationale. Recovering the old branch, assigning
+all its regressions, reproducing its helper API, or reaching a historical
+example count is not a deliverable. History is linked from the current audit.

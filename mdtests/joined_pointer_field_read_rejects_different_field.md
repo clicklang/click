@@ -73,13 +73,13 @@ void inspect(struct node* parent) {
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm, fm) => {
-                    have parent == parent_identity(Parent::At(pid, sm, fm)) by { rewrite(Parent::At(pid, sm, fm) == tree_context.model); assumption(); }
+                    have parent == parent_identity(Parent::At(pid, sm, fm)) by { rewrite(Parent::At(pid, sm, fm) == tree_context.model); known(); }
                     have parent == pid by { unfold(parent_identity(Parent::At(pid, sm, fm))); solve(); }
                     let { c: c, f: f } = unfold(tree_context);
             match c.model {
                 Pair::At(model, lm) => {
                     let { l: l } = unfold(c);
-                    have parent->left == model by { assumption(); }
+                    have parent->left == model by { known(); }
                     have defined(parent->right) by { rewrite(parent == pid); normalize(); }
                     mark before_sibling;
                     have defined(at(before_sibling, pid->right)) by { normalize(); }
@@ -114,7 +114,7 @@ void inspect(struct node* parent) {
                             conclusion 1;
                         }
                     }
-                    have sibling == model by { assumption(); }
+                    have sibling == model by { known(); }
                     mark split;
                     match f.model ensuring {
                         owns f: focus_at(parent->right);
@@ -129,17 +129,17 @@ void inspect(struct node* parent) {
                             have f.model == at(split, f.model);
                         },
                     }
-                    have sibling->left == at(before_sibling, parent->left->left) by { assumption(); }
+                    have sibling->left == at(before_sibling, parent->left->left) by { known(); }
                     mark before_child;
                     step();
-                    have child == at(before_child, sibling->left) by { assumption(); }
+                    have child == at(before_child, sibling->left) by { known(); }
                     match lm {
                         Identity::At(leaf) => {
                             unfold(l);
                             have sibling == model;
-                            have at(before_sibling, parent->left->left) == leaf by { assumption(); }
-                            have at(before_child, sibling->left) == at(before_sibling, parent->left->left) by { assumption(); }
-                            have child == leaf by { assumption(); }
+                            have at(before_sibling, parent->left->left) == leaf by { known(); }
+                            have at(before_child, sibling->left) == at(before_sibling, parent->left->left) by { known(); }
+                            have child == leaf by { known(); }
                             have sibling->left == child;
                             have model->right == leaf by {
                                 normalize() using { sibling == model; sibling->left == child; child == leaf; };

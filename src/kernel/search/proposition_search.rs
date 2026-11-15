@@ -330,7 +330,7 @@ impl super::ProofSearch<PureFactContext> {
     /// Selects an independent derivation without taking the goal's own exact
     /// ambient fact as a premise. Keep the ambient graph intact: dropping a
     /// fact from it would rebuild its equality closure just to avoid the
-    /// circular `assumption()` candidate.
+    /// circular `known()` candidate.
     pub(crate) fn derive_solve_proposition_without_exact_goal(
         context: &PureFactContext,
         proposition: &Proposition,

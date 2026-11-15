@@ -341,7 +341,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
         have to_integer(a as int64 + byte as int64) <= 4294967295;
-        assumption();
+        known();
     }
     ensures to_integer(a + byte) == to_integer(a) + to_integer(byte) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
@@ -350,7 +350,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
         have to_integer(a + byte) == to_integer(a) + to_integer(byte);
-        assumption();
+        known();
     }
     ensures to_integer(a + byte) <= adler_lane_a_ceiling(n + 1) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
@@ -411,7 +411,7 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
         have to_integer(b as int64 + (a + byte) as int64) <= 4294967295;
-        assumption();
+        known();
     }
     ensures to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte)) using {
@@ -421,7 +421,7 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
         have to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte);
-        assumption();
+        known();
     }
     ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(n + 1) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte)) using {

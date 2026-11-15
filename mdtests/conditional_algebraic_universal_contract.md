@@ -22,13 +22,13 @@ int32 report(int32 *v) {
         forall (choice: Choice) { pick(v, choice) == 0 } by {
         intro(); intro();
         instantiate(forall (k: int32) { v[k] == 0 }, 0);
-        unfold(pick(v, choice)); assumption();
+        unfold(pick(v, choice)); known();
     }
     step();
     have result == 0 implies
         (forall (k: int32) { v[k] == 0 }) implies
         forall (choice: Choice) { pick(v, choice) == 0 } by {
-        intro(); assumption();
+        intro(); known();
     }
     solve();
 }

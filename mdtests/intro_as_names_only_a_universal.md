@@ -7,7 +7,7 @@ names in Click, so `intro() as name` is refused there with the form to write.
 theorem intro_as_on_implication(n: int32) {
     ensures 0 <= n implies 0 <= n by {
         intro() as h;
-        assumption();
+        known();
     }
 }
 ```

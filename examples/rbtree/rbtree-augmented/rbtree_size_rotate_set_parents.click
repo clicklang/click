@@ -40,7 +40,7 @@ theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_nod
                     unfold(sized_context_parent(SizedContext::Left(a, ancestor, color, count, sibling, up), 0)); normalize();
                 }
                 have word == address(a) + 1 by {
-                    rewrite(a == parent); assumption();
+                    rewrite(a == parent); known();
                 }
                 rewrite(ctx == SizedContext::Left(a, ancestor, color, count, sibling, up));
                 unfold(sized_context_parent_word(SizedContext::Left(a, ancestor, color, count, sibling, up), word));
@@ -53,7 +53,7 @@ theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_nod
                     unfold(sized_context_parent(SizedContext::Right(a, ancestor, color, count, sibling, up), 0)); normalize();
                 }
                 have word == address(a) + 1 by {
-                    rewrite(a == parent); assumption();
+                    rewrite(a == parent); known();
                 }
                 rewrite(ctx == SizedContext::Right(a, ancestor, color, count, sibling, up));
                 unfold(sized_context_parent_word(SizedContext::Right(a, ancestor, color, count, sibling, up), word));
@@ -88,7 +88,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     sized_link_replacement_distinct(old, new, root,
         (old as (void *) as (struct sized_node *))->size, { link: c });
     have sized_context_parent(old(c.model), 0) == 0 or new != sized_context_parent(old(c.model), 0) by {
-        rewrite(old(c.model) == c.model); assumption();
+        rewrite(old(c.model) == c.model); known();
     }
     match c.model {
         SizedContext::Top => {
@@ -96,13 +96,13 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             unfold(frames);
             let frames = fold(sized_context_at(old, root->rb_node, 0, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Top });
             let d = fold(sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Top }, { frames: frames });
-            have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Top); rewrite(SizedContext::Top == old(c.model)); assumption(); }
+            have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Top); rewrite(SizedContext::Top == old(c.model)); known(); }
             have (old->__rb_parent_color & ~3) == 0 by {
                 if old->__rb_parent_color == 0 {
                     rewrite(old->__rb_parent_color == 0); normalize();
                 } else {
                     have old->__rb_parent_color == 1 by {
-                        if old->__rb_parent_color == 1 { assumption(); } else {
+                        if old->__rb_parent_color == 1 { known(); } else {
                             have sized_context_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model == SizedContext::Top); unfold(sized_context_parent_word(SizedContext::Top, old->__rb_parent_color));
                                 normalize() using { not(old->__rb_parent_color == 0); not(old->__rb_parent_color == 1); };
@@ -135,21 +135,21 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             }
             have parent == 0 or new != parent by {
                 rewrite(parent == sized_context_parent(d.model, 0));
-                rewrite(d.model == old(c.model)); assumption();
+                rewrite(d.model == old(c.model)); known();
             }
-            have separate(d, memory(new->__rb_parent_color)) by { assumption(); }
-            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by { assumption(); }
-            have separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)) by { assumption(); }
+            have separate(d, memory(new->__rb_parent_color)) by { known(); }
+            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by { known(); }
+            have separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)) by { known(); }
             mark words;
-            have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by assumption();
-            have at(words, old->__rb_parent_color) == address(new) + color by assumption();
+            have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by known();
+            have at(words, old->__rb_parent_color) == address(new) + color by known();
             let { after: after } = step(insert::__rb_change_child, { before: d });
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
-                rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
+                rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); known();
             }
             have new->__rb_parent_color == old(old->__rb_parent_color) by {
-                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { assumption(); }
+                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { known(); }
                 apply(separation::separate_star(at(words, d), memory(old->__rb_parent_color), memory(new->__rb_parent_color))) using {
                     at(words, separate(d, memory(new->__rb_parent_color)));
                     at(words, separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)));
@@ -171,7 +171,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                         conclusion 1;
                     }
                 }
-                rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); assumption();
+                rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); known();
             }
             step_until(function.exit);
         },
@@ -187,13 +187,13 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             let { metadata: metadata, sibling: s, up: u } = unfold(frames);
             let frames = fold(sized_context_at(old, root->rb_node, 0, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Left(id, above, pc, count, sibling, up) }, { metadata: metadata, sibling: s, up: u });
             let d = fold(sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Left(id, above, pc, count, sibling, up) }, { frames: frames });
-            have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Left(id, above, pc, count, sibling, up)); rewrite(SizedContext::Left(id, above, pc, count, sibling, up) == old(c.model)); assumption(); }
+            have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Left(id, above, pc, count, sibling, up)); rewrite(SizedContext::Left(id, above, pc, count, sibling, up) == old(c.model)); known(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
                     solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
-                        if old->__rb_parent_color == address(id) + 1 { assumption(); } else {
+                        if old->__rb_parent_color == address(id) + 1 { known(); } else {
                             have sized_context_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model == SizedContext::Left(id, above, pc, count, sibling, up)); unfold(sized_context_parent_word(SizedContext::Left(id, above, pc, count, sibling, up), old->__rb_parent_color));
                                 normalize() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
@@ -226,21 +226,21 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             }
             have parent == 0 or new != parent by {
                 rewrite(parent == sized_context_parent(d.model, 0));
-                rewrite(d.model == old(c.model)); assumption();
+                rewrite(d.model == old(c.model)); known();
             }
-            have separate(d, memory(new->__rb_parent_color)) by { assumption(); }
-            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by { assumption(); }
-            have separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)) by { assumption(); }
+            have separate(d, memory(new->__rb_parent_color)) by { known(); }
+            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by { known(); }
+            have separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)) by { known(); }
             mark words;
-            have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by assumption();
-            have at(words, old->__rb_parent_color) == address(new) + color by assumption();
+            have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by known();
+            have at(words, old->__rb_parent_color) == address(new) + color by known();
             let { after: after } = step(insert::__rb_change_child, { before: d });
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
-                rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
+                rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); known();
             }
             have new->__rb_parent_color == old(old->__rb_parent_color) by {
-                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { assumption(); }
+                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { known(); }
                 apply(separation::separate_star(at(words, d), memory(old->__rb_parent_color), memory(new->__rb_parent_color))) using {
                     at(words, separate(d, memory(new->__rb_parent_color)));
                     at(words, separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)));
@@ -262,7 +262,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                         conclusion 1;
                     }
                 }
-                rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); assumption();
+                rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); known();
             }
             step_until(function.exit);
         },
@@ -278,13 +278,13 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             let { metadata: metadata, sibling: s, up: u } = unfold(frames);
             let frames = fold(sized_context_at(old, root->rb_node, 0, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(id, above, pc, count, sibling, up) }, { metadata: metadata, sibling: s, up: u });
             let d = fold(sized_link_at(old, root, (old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(id, above, pc, count, sibling, up) }, { frames: frames });
-            have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Right(id, above, pc, count, sibling, up)); rewrite(SizedContext::Right(id, above, pc, count, sibling, up) == old(c.model)); assumption(); }
+            have sized_context_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model == SizedContext::Right(id, above, pc, count, sibling, up)); rewrite(SizedContext::Right(id, above, pc, count, sibling, up) == old(c.model)); known(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
                     solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
-                        if old->__rb_parent_color == address(id) + 1 { assumption(); } else {
+                        if old->__rb_parent_color == address(id) + 1 { known(); } else {
                             have sized_context_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model == SizedContext::Right(id, above, pc, count, sibling, up)); unfold(sized_context_parent_word(SizedContext::Right(id, above, pc, count, sibling, up), old->__rb_parent_color));
                                 normalize() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
@@ -317,21 +317,21 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             }
             have parent == 0 or new != parent by {
                 rewrite(parent == sized_context_parent(d.model, 0));
-                rewrite(d.model == old(c.model)); assumption();
+                rewrite(d.model == old(c.model)); known();
             }
-            have separate(d, memory(new->__rb_parent_color)) by { assumption(); }
-            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by { assumption(); }
-            have separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)) by { assumption(); }
+            have separate(d, memory(new->__rb_parent_color)) by { known(); }
+            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by { known(); }
+            have separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)) by { known(); }
             mark words;
-            have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by assumption();
-            have at(words, old->__rb_parent_color) == address(new) + color by assumption();
+            have at(words, new->__rb_parent_color) == old(old->__rb_parent_color) by known();
+            have at(words, old->__rb_parent_color) == address(new) + color by known();
             let { after: after } = step(insert::__rb_change_child, { before: d });
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
-                rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
+                rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); known();
             }
             have new->__rb_parent_color == old(old->__rb_parent_color) by {
-                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { assumption(); }
+                have contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint) by { known(); }
                 apply(separation::separate_star(at(words, d), memory(old->__rb_parent_color), memory(new->__rb_parent_color))) using {
                     at(words, separate(d, memory(new->__rb_parent_color)));
                     at(words, separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)));
@@ -353,7 +353,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                         conclusion 1;
                     }
                 }
-                rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); assumption();
+                rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); known();
             }
             step_until(function.exit);
         },

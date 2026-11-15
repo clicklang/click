@@ -88,12 +88,12 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      solve() using { to_integer(sum2) == to_integer(zlib_prefix_count(old(len), len)) + adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len)); zlib_prefix_count(old(len), len) == old(len as uint32 as int32); };
     }
     step(); step(); step(); step();
-    have __click_call_result1 == 0u64 by assumption();
+    have __click_call_result1 == 0u64 by known();
     step();
    } else {
     have 0u64 <= len by normalize();
     have 0u64 < len by {
-     if 0u64 < len { assumption(); } else {
+     if 0u64 < len { known(); } else {
       have 0u64 == len;
       have len == 0u64 by { rewrite(0u64 == len); normalize(); }
       contradiction(len == 0u64);
@@ -102,14 +102,14 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(1u64) <= to_integer(len) by solve() using { to_integer(0u64) < to_integer(len); };
    have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64);
    step(); step();
-   have 0u64 < len by assumption();
+   have 0u64 < len by known();
    have 0u64 <= len by normalize();
    have 0u64 <= len - 0u64 by normalize();
    have viewable(buf[0u64..1u64]) by solve();
    have viewable(buf[0u64..len]) by solve();
    mark before_decrement;
    step(); step(); step();
-   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by assumption();
+   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by known();
    have to_integer(len) <= 15 by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; at(before_decrement, to_integer(len)) <= 15; };
    have 0 <= to_integer(len) by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(len)); };
    have to_integer(len) < at(before_decrement, to_integer(len)) by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
@@ -119,7 +119,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     solve() using { __click_call_result0 == at(before_decrement, buf); at(before_decrement, viewable(buf[0u64..1u64])); };
    }
    have __click_call_result0 == old(buf) + (old(len) - at(before_decrement, len)) by solve();
-   have at(before_decrement, len) <= old(len) by assumption();
+   have at(before_decrement, len) <= old(len) by known();
    have to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - to_integer(at(before_decrement, len));
    have to_integer(old(len) - at(before_decrement, len)) < to_integer(old(len)) by solve() using {
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));

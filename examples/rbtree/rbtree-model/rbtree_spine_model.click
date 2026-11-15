@@ -56,7 +56,7 @@ theorem erase_parent_consistent_parent_is(t: RbTree, p: struct rb_node*) {
                 apply(rb_parent_is_node_is(node, parent, color, left, right, p));
                 rewrite(rb_parent_is(RbTree::Node(node, parent, color, left, right), p)
                     == rb_node_is(parent, p));
-                assumption();
+                known();
             }
         }
     }
@@ -78,7 +78,7 @@ theorem erase_spine_minimum(spine: EraseSpine, tree: RbTree) {
                 unfold(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree));
                 rewrite(rb_minimum(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)))
                     == rb_minimum(RbTree::Node(identity, parent, color, tree, sibling)));
-                assumption();
+                known();
             }
         }
     }
@@ -129,14 +129,14 @@ theorem erase_spine_focus_parent_consistent(spine: EraseSpine, tree: RbTree, anc
                 have plug(erase_context(EraseSpine::Top), tree) == tree by {
                     unfold(erase_context(EraseSpine::Top)); unfold(plug(Context::Top, tree)); normalize();
                 }
-                rewrite(tree == plug(erase_context(EraseSpine::Top), tree)); assumption();
+                rewrite(tree == plug(erase_context(EraseSpine::Top), tree)); known();
             },
             EraseSpine::Left(identity, parent, color, sibling, up) => {
                 have erase_context(EraseSpine::Left(identity, parent, color, sibling, up)) == Context::Left(identity, parent, color, sibling, erase_context(up));
                 have rb_parent_consistent(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree), anchor) == 1;
                 apply(plug_parent_consistent_ctx(Context::Left(identity, parent, color, sibling, erase_context(up)), tree, anchor));
                 apply(ctx_consistent_left_focus(identity, parent, color, sibling, erase_context(up), tree, anchor));
-                unfold(erase_spine_parent(EraseSpine::Left(identity, parent, color, sibling, up), anchor)); assumption();
+                unfold(erase_spine_parent(EraseSpine::Left(identity, parent, color, sibling, up), anchor)); known();
             },
         }
     }
@@ -181,7 +181,7 @@ theorem erase_spine_min_parent(spine: EraseSpine, tree: RbTree) {
                 unfold(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree));
                 rewrite(rb_min_parent(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)))
                     == rb_min_parent(RbTree::Node(identity, parent, color, tree, sibling)));
-                assumption();
+                known();
             }
         }
     }
@@ -207,7 +207,7 @@ theorem erase_spine_min_context(spine: EraseSpine, tree: RbTree, outer: Context)
                 unfold(ctx_concat(Context::Left(identity, parent, color, sibling, erase_context(up)), outer));
                 rewrite(rb_min_context(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)), outer)
                     == rb_min_context(RbTree::Node(identity, parent, color, tree, sibling), ctx_concat(erase_context(up), outer)));
-                assumption();
+                known();
             }
         }
     }
@@ -363,6 +363,6 @@ theorem erase_context_parent(ctx: Context, node: struct rb_node*, parent: struct
         have parent == parent;
         apply(rb_node_is_equal(parent, parent));
         apply(rb_parent_consistent_node(node, parent, color, left, right, parent));
-        assumption();
+        known();
     }
 }

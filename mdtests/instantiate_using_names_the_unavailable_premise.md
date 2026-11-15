@@ -25,7 +25,7 @@ int32 pick(int32 a[], int32 n, int32 k) {
             0 <= k;
             k < 7;
         };
-        assumption();
+        known();
     }
 }
 ```

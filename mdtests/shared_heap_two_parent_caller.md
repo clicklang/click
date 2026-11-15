@@ -196,13 +196,13 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     have observed == second->kid->payload by { rewrite(second->kid == kid); solve(); }
     mark detaching;
     let { out: second_out } = step(parent_detach, { link: second_link });
-    have at(detaching, second->kid) == kid by assumption();
+    have at(detaching, second->kid) == kid by known();
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
-    have observed == at(detaching, second->kid->payload) by assumption();
+    have observed == at(detaching, second->kid->payload) by known();
     have kid == at(detaching, second->kid) by { solve() using { at(detaching, second->kid) == kid; }; }
     have kid->payload == at(detaching, second->kid->payload) by {
         rewrite(kid == at(detaching, second->kid));
-        assumption();
+        known();
     }
     step();
     solve();

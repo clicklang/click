@@ -86,8 +86,8 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
             (
                 crate::kernel::PureFactContext::settles_exactly(&facts, &goal),
                 crate::kernel::PureFactContext::settles_exactly(&facts, &missing),
-                proof_facts.pure_assumption_available(&goal),
-                proof_facts.pure_assumption_available(&missing),
+                proof_facts.pure_known_available(&goal),
+                proof_facts.pure_known_available(&missing),
             )
         });
         assert_eq!(verdicts, (true, false, true, false));

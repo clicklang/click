@@ -1,5 +1,12 @@
 # SMT auto, stage 1: in-house arithmetic and equality
 
+> Historical design record. Tactic names and proof snippets below describe
+> the recorded baseline, not the current interface. `auto`, `simp`,
+> `arithmetic`, `execute` and `execute_until` are no longer public tactic
+> spellings. Use `solve()` for goal search, `solve() using { ... }` for
+> selected premises, and `step_until(target)` or the implicit tail for
+> execution. See the [current tactic reference](../docs/reference/tactics/index.md).
+
 Design for stage 1 of the SMT-backed `auto`, which has landed; the results
 are at the end. Click gets its own
 SMT-style decision procedure for linear integer arithmetic, machine-integer
@@ -311,7 +318,7 @@ Each milestone is one PR, green and useful on its own.
    one arm of `rbtree_erase_color_flips_red_all.click` and record its size
    and time. The first step, landed, is a bounded search for a chain of
    checked `rewrite` steps over the connected equalities, closed by
-   `assumption`, `normalize` or a budgeted `solve`; the numbers are under
+   `known`, `normalize` or a budgeted `solve`; the numbers are under
    Results. Congruence closure, injectivity and
    disjointness, and the combination with the simplex remain.
 5. **`auto` integration.** Make the solver the first closer in `auto`.

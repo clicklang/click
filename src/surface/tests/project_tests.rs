@@ -512,7 +512,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     have owner->value == 0 by solve();
     step();
     have owner->data[at(region(3).entry, owner->value)] == value by {
-        assumption();
+        known();
     }
     have owner->data[0] == value by solve();
     step();
@@ -1045,7 +1045,7 @@ int32 identity(int32 x) throws int32 {
 "#;
     let rewritten = source.replace(
         "\n}\n",
-        "\n} by { step(); have result == x by { normalize(); } assumption(); }\n",
+        "\n} by { step(); have result == x by { normalize(); } known(); }\n",
     );
     let position = expansion::position_at_offset(&rewritten, rewritten.find("step();").unwrap());
     let (session, _) = ProgramVerificationSession::new(
@@ -1144,7 +1144,7 @@ int32 caller(int32 x) {
             .all(|theorem| theorem.function_block.signature().name() == "caller")
     );
 
-    let broken_target = expanded.replacen("assumption();", "enumerate();", 1);
+    let broken_target = expanded.replacen("known();", "enumerate();", 1);
     session
         .verify_at(
             &broken_target,

@@ -69,10 +69,10 @@ int32 read_literal() {
     step(); step();
     let { result: r } = step(literal_source, {});
     step();
-    have r[1] == 'k' by { assumption(); }
+    have r[1] == 'k' by { known(); }
     have message == r by { normalize(); }
     have message[1] == 'k' by { normalize() using { message == r; r[1] == 'k'; }; }
-    have separate(memory(guard), memory(message[1])) by { assumption(); }
+    have separate(memory(guard), memory(message[1])) by { known(); }
     mark before;
     step();
     have separate(statement(3).footprint, memory(message[1])) by {

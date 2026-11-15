@@ -35,9 +35,9 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
     ensures left == right by {
         have left < right or not (left < right) by {
             if left < right {
-                assumption();
+                known();
             } else {
-                assumption();
+                known();
             }
         }
         cases {
@@ -49,9 +49,9 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
             not (left < right) => {
                 have right < left or not (right < left) by {
                     if right < left {
-                        assumption();
+                        known();
                     } else {
-                        assumption();
+                        known();
                     }
                 }
                 cases {

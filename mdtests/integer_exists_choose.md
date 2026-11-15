@@ -6,7 +6,7 @@ theorem integer_exists_choose() {
     ensures exists (k: Integer) { k == k } by {
         obtain (candidate: Integer) { candidate == candidate }
         witness { k: candidate };
-        assumption();
+        known();
     }
 }
 
@@ -18,7 +18,7 @@ theorem integer_exists_from_have() {
         }
         obtain (candidate: Integer) { candidate == 0 }
         witness { z: candidate };
-        assumption();
+        known();
     }
 }
 
@@ -28,7 +28,7 @@ theorem integer_exists_multiple_bindings() {
         obtain (left: Integer, right: Integer) { left == right }
         witness { a: left };
         witness { b: right };
-        assumption();
+        known();
     }
 }
 ```

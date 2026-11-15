@@ -1,12 +1,12 @@
-# `assumption()` closes a `viewable` goal from the identical established fact
+# `known()` closes a `viewable` goal from the identical established fact
 
 A narrowing established by the separation restriction axioms is an ordinary available fact,
-and `assumption()` closes the identical `viewable` goal from it through the
+and `known()` closes the identical `viewable` goal from it through the
 same exact indexed lookup it uses for any other goal. The DFS proofs once
 reported
 
 ```text
-`assumption` requires the current goal as an available semantic fact: current
+`known` requires the current goal as an available semantic fact: current
 goal is a memory-viewability fact
 ```
 
@@ -16,17 +16,17 @@ and under a universal after `intro`.
 
 The rule is exact, not a narrowing: a different range or a different snapshot
 does not close the goal
-(`mdtests/assumption_does_not_close_a_viewable_goal_at_another_range.md`,
-`mdtests/assumption_does_not_close_a_viewable_goal_at_another_snapshot.md`).
+(`mdtests/known_does_not_close_a_viewable_goal_at_another_range.md`,
+`mdtests/known_does_not_close_a_viewable_goal_at_another_snapshot.md`).
 
-```c filename=assumption_closes_an_established_viewable_fact.c
+```c filename=known_closes_an_established_viewable_fact.c
 int32 probe(int32 a[], int32 n, int32 k) {
     return 0;
 }
 ```
 
 ```click
-verifying "assumption_closes_an_established_viewable_fact.c";
+verifying "known_closes_an_established_viewable_fact.c";
 
 int32 probe(int32 a[], int32 n, int32 k) {
     requires 0 <= k;
@@ -49,7 +49,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
         };
     }
     have viewable(a[0..k]) and 0 <= k by {
-        both { assumption(); } and { solve(); }
+        both { known(); } and { solve(); }
     }
     have forall (j: int32) { 0 <= j and j <= k implies viewable(a[0..j]) } by {
         intro(); intro();
@@ -62,7 +62,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
                 viewable(a[0..n]); contains(memory(a[0..n]), memory(a[0..j]));
             };
         }
-        assumption();
+        known();
     }
     solve();
 }

@@ -70,7 +70,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
                 }, j) using {
                     0 <= i and 0 <= j and 0 <= i and i < j and j < 3;
                 };
-                assumption();
+                known();
             }
         }
         preserve by {

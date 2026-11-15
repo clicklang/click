@@ -42,10 +42,10 @@ void user(int32* p) {
         Model::Empty => { have old(x.model) == Model::Empty by { solve(); } step_until(function.exit); solve(); },
         Model::Node(v) => { have old(x.model) == Model::Node(v) by { solve(); } step_until(function.exit); solve(); },
     }
-    have old(x.model) == Model::Empty by { assumption(); }
+    have old(x.model) == Model::Empty by { known(); }
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

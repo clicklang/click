@@ -6,11 +6,11 @@ theorem integer_quantifier_shadow(z: Integer) {
     ensures forall (z: Integer) { z == 0 } by {
         intro();
         have z == z by normalize();
-        assumption();
+        known();
     }
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal
+fail: `known` requires the current goal
 ```

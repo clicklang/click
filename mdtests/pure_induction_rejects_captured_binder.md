@@ -14,13 +14,13 @@ theorem capture(n: int32) {
         intro();
         have forall (z: int32) { z == 5 } by {
             intro();
-            assumption();
+            known();
         }
-        assumption();
+        known();
     }
 }
 ```
 
 ```expect
-fail: assumption
+fail: known
 ```

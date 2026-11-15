@@ -172,13 +172,13 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                         unfold(plug(Context::Left(identity, value, right_model, ctx.model),
                             left_model));
                         rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
-                        assumption();
+                        known();
                     }
                     let { left: l, right: rt } = unfold(t);
                     have plug(Context::Left(root, value, right_model, ctx.model), left_model)
                         == old(t.model) by {
                         rewrite(root == identity);
-                        assumption();
+                        known();
                     }
                     let frame = fold(ctx_at(root->left), {
                         model: Context::Left(root, value, right_model, ctx.model)
@@ -197,7 +197,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
             have plug(ctx.model, HeapTree::Node(identity, value, left_model, right_model))
                 == old(t.model) by {
                 rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
-                assumption();
+                known();
             }
             let { left: l, right: rt } = unfold(t);
             have heap_left(HeapTree::Node(identity, value, left_model, right_model))
@@ -212,11 +212,11 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                 rewrite(sub.model == HeapTree::Node(identity, value, left_model, right_model));
                 rewrite(heap_left(HeapTree::Node(identity, value, left_model, right_model))
                     == left_model);
-                assumption();
+                known();
             }
             have plug(ctx.model, sub.model) == old(t.model) by {
                 rewrite(sub.model == HeapTree::Node(identity, value, left_model, right_model));
-                assumption();
+                known();
             }
             step();
             solve();

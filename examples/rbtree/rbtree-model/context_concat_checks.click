@@ -5,7 +5,7 @@ theorem red_boundary_fragment() {
     ensures ctx_rb_between(Context::Top, Nat::Zero, Color::Red,
         Nat::Zero, Color::Red) == 1 by {
         apply(ctx_rb_between_top(Nat::Zero, Color::Red));
-        assumption();
+        known();
     }
 
     ensures ctx_rb(Context::Top, Nat::Zero, Color::Red) == 0 by {
@@ -50,7 +50,7 @@ theorem red_boundary_under_black_parent(id: struct rb_node*, parent: struct rb_n
         apply(ctx_rb_concat(Context::Top,
             Context::Left(id, parent, Color::Black, RbTree::Empty, Context::Top),
             Nat::Zero, Color::Red, Nat::Zero, Color::Red));
-        assumption();
+        known();
     }
 }
 
@@ -93,6 +93,6 @@ theorem red_spine_under_black_parent(id: struct rb_node*, parent: struct rb_node
             Context::Left(id, parent, Color::Red, RbTree::Empty, Context::Top),
             Context::Right(parent, above, Color::Black, RbTree::Empty, Context::Top),
             Nat::Zero, Color::Black, Nat::Zero, Color::Red));
-        assumption();
+        known();
     }
 }

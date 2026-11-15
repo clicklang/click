@@ -121,7 +121,7 @@ int32 owned_string_init(
         unfold(terminated_at);
         rewrite(owner->data == data);
         rewrite(owner->len == 0);
-        assumption();
+        known();
     }
     have 0 <= owner->len;
     have owner->len < owner->cap;
@@ -136,9 +136,9 @@ int32 owned_string_init(
         };
     }
     fold(owned_string(owner));
-    assumption();
+    known();
     normalize();
-    assumption();
+    known();
 }
 
 int32 owned_string_len(struct owned_string* owner) {
@@ -146,7 +146,7 @@ int32 owned_string_len(struct owned_string* owner) {
 
     ensures result == owner->len by {
         step();
-        assumption();
+        known();
     }
 }
 
@@ -157,7 +157,7 @@ int32 owned_string_get(struct owned_string* owner, int32 index) {
 
     ensures result == owner->data[index] by {
         step();
-        assumption();
+        known();
     }
 }
 
@@ -187,9 +187,9 @@ int32 owned_string_set(
     }
     fold(owned_string(owner));
     step();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }
 
 int32 owned_string_push(struct owned_string* owner, int32 value) {
@@ -229,15 +229,15 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     fold(owned_string(owner));
     have owner->len == (old(owner->len) + 1) by {
         rewrite(owner->len == at(region(3).entry, (index + 1)));
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
 }
 
 int32 owned_string_push_preserves_first(
@@ -257,9 +257,9 @@ int32 owned_string_push_preserves_first(
     step();
     step();
     step();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }
 
 int32 owned_string_pop(struct owned_string* owner) {
@@ -303,9 +303,9 @@ int32 owned_string_pop_preserves_first(struct owned_string* owner) {
     step();
     step();
     step();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }
 
 int32 owned_string_clear(struct owned_string* owner) {
@@ -327,10 +327,10 @@ int32 owned_string_clear(struct owned_string* owner) {
         solve();
     }
     fold(owned_string(owner));
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
 }
 
 int32 owned_string_pipeline(
@@ -350,13 +350,13 @@ int32 owned_string_pipeline(
     step();
     step();
     have ignored == 0 by {
-        assumption();
+        known();
     }
     have owner->len == 0 by {
-        assumption();
+        known();
     }
     have owner->cap == capacity by {
-        assumption();
+        known();
     }
     have (owner->len + 1) < owner->cap by {
         rewrite(owner->cap == capacity);
@@ -376,7 +376,7 @@ int32 owned_string_pipeline(
         normalize();
     }
     have owner->data[at(statement(3).entry, owner->len)] == first by {
-        assumption();
+        known();
     }
     have owner->data[0] == first by {
         rewrite(first == owner->data[at(statement(3).entry, owner->len)]);
@@ -391,38 +391,38 @@ int32 owned_string_pipeline(
     }
     have observed == first by {
         rewrite(first == owner->data[0]);
-        assumption();
+        known();
     }
     step();
     step();
     have owner->len == at(statement(5).entry, owner->len) - 1 by {
-        assumption();
+        known();
     }
     have at(statement(5).entry, owner->len) == 1 by {
-        assumption();
+        known();
     }
     apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len)) using {
         at(statement(5).entry, owner->len) == 1;
         owner->len == (at(statement(5).entry, owner->len) - 1);
     };
     have owner->len == 0 by {
-        assumption();
+        known();
     }
     unfold(owned_string(owner));
     fold(empty_owned_string(owner));
     have observed == first by {
-        assumption();
+        known();
     }
     step();
     have result == at(statement(6).entry, observed) by {
         normalize();
     }
     have at(statement(6).entry, observed) == first by {
-        assumption();
+        known();
     }
     have result == first by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }

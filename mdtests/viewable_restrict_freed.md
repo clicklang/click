@@ -12,11 +12,11 @@ void dispose(int32 *p) {
     ensures viewable(memory(p[0..1])) by {
         step();
         step();
-        assumption();
+        known();
     }
 }
 ```
 
 ```expect
-fail: assumption
+fail: known
 ```

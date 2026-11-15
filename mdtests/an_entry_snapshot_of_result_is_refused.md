@@ -15,7 +15,7 @@ int h(int x) {
 } by {
     step_until(function.exit);
     have at(function.entry, result == 5) by { solve(); }
-    assumption();
+    known();
 }
 ```
 

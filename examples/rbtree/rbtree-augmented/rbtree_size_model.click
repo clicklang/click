@@ -98,11 +98,11 @@ theorem sized_child_descent(identity: struct rb_node*, parent: struct rb_node*, 
                            value: int32, left: SizedTree, right: SizedTree) {
     ensures 0 <= rb_subtree_size(sized_shape(left)) by {
         apply(rb_subtree_size_nonnegative(sized_shape(left)));
-        assumption();
+        known();
     }
     ensures 0 <= rb_subtree_size(sized_shape(right)) by {
         apply(rb_subtree_size_nonnegative(sized_shape(right)));
-        assumption();
+        known();
     }
     ensures rb_subtree_size(sized_shape(left)) < rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, value, left, right))) by {
         apply(rb_subtree_size_nonnegative(sized_shape(right)));
@@ -155,31 +155,31 @@ tactic certify_size(p: struct rb_node*) {
             }
             have 0 <= rb_subtree_size(sized_shape(left.model)) by {
                 rewrite(left.model == left_model);
-                assumption();
+                known();
             }
             have rb_subtree_size(sized_shape(left.model)) < rb_subtree_size(sized_shape(old(tree.model))) by {
                 rewrite(left.model == left_model);
                 rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
-                assumption();
+                known();
             }
             let { checked: left } = certify_size(p->rb_left, { tree: left });
             have 0 <= rb_subtree_size(sized_shape(right.model)) by {
                 rewrite(right.model == right_model);
-                assumption();
+                known();
             }
             have rb_subtree_size(sized_shape(right.model)) < rb_subtree_size(sized_shape(old(tree.model))) by {
                 rewrite(right.model == right_model);
                 rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
-                assumption();
+                known();
             }
             let { checked: right } = certify_size(p->rb_right, { tree: right });
             have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by {
                 rewrite(left_model == left.model);
-                assumption();
+                known();
             }
             have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by {
                 rewrite(right_model == right.model);
-                assumption();
+                known();
             }
             have to_integer(value) == rb_subtree_size(sized_shape(old(tree.model))) by {
                 solve() using {
@@ -189,8 +189,8 @@ tactic certify_size(p: struct rb_node*) {
                     rb_subtree_size(sized_shape(old(tree.model))) == rb_subtree_size(sized_shape(left_model)) + rb_subtree_size(sized_shape(right_model)) + 1;
                 };
             }
-            have sized_counts_valid(left_model) == 1 by { rewrite(left_model == left.model); assumption(); }
-            have sized_counts_valid(right_model) == 1 by { rewrite(right_model == right.model); assumption(); }
+            have sized_counts_valid(left_model) == 1 by { rewrite(left_model == left.model); known(); }
+            have sized_counts_valid(right_model) == 1 by { rewrite(right_model == right.model); known(); }
             let checked = fold(sized_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model) }, { metadata: metadata, left: left, right: right });
             have checked.model == old(tree.model);
             have sized_counts_valid(checked.model) == 1 by {
@@ -206,7 +206,7 @@ tactic certify_size(p: struct rb_node*) {
                 rewrite(checked.model == SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model) == old(tree.model));
-                assumption();
+                known();
             }
         },
     }

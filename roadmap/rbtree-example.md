@@ -473,7 +473,8 @@ lowers through checked statements. The assignment result has the target's
 scalar type, its right operand is evaluated exactly once, the second conjunct
 remains short-circuited, and a loop guard reruns the assignment after every
 iteration and `continue`. The retained `mdtests/rb_next_conjunctive_guard.md`
-now reaches its next bounded proof frontier: `execute()` needs a view of
+reached its next bounded proof frontier: execution (then spelled `execute()`)
+needs a view of
 `node->rb_right` while the entry `rb_at(node)` remains folded. C4b still owns
 the complete descent/ascent proof; this support does not claim traversal
 verification.
@@ -748,7 +749,7 @@ the acyclicity check across definitions all apply unchanged. Mutual
 resource-definition cycles remain rejected.
 
 **D9. No new resource algebra and no automatic unfolding.** No ghost state,
-fractions, magic wands, or `auto` fold search. Every layer a proof needs is
+fractions, magic wands, or automatic fold search. Every layer a proof needs is
 named. Reasoning and certificates stay output-sensitive in the explicitly
 exposed model terms; each rebalancing case is an explicit sequence of
 unfold, C steps, fold, and `have`. Symmetric cases are written out; proof
@@ -1678,7 +1679,7 @@ callback and whole-context restoration.
 the outer parent from separated owned words in either ancestor orientation,
 while preserving the incoming-link model. The sized parent-update helper now
 calls it internally and no longer requires callers to supply this disequality.
-C comparisons and `assumption()` share the indexed nonempty separation rule;
+C comparisons and `known()` share the indexed nonempty separation rule;
 full non-root insertion still needs callback composition and context restoration.
 
 
@@ -1729,7 +1730,7 @@ and context-depth termination are preserved without changing the Linux C.
 Both sidecars now also accept an arbitrary owned other child of the parent and
 arbitrary owned children of the red uncle. Parent and grandparent cache values
 remain symbolic. The three count obligations in each orientation close with
-`assumption()` through the shared Integer/model equality classes, without
+`known()` through the shared Integer/model equality classes, without
 explicit alias rewrites. Each sidecar verifies all three insertion claims.
 Repeated color-flip propagation through a red outer ancestor and writable erase
 integration remain unfinished.

@@ -43,14 +43,14 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         preserve by {
             have rb == old(rb) by {
                 cases {
-                    rb == old(rb) => { assumption(); }
+                    rb == old(rb) => { known(); }
                     rb == stop => {
                         have address(rb) == address(stop) by { rewrite(rb == stop); solve(); }
                         contradiction(address(rb) == address(stop));
                     }
                 }
             }
-            have address(rb) != address(stop) by { rewrite(rb == old(rb)); assumption(); }
+            have address(rb) != address(stop) by { rewrite(rb == old(rb)); known(); }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
                 normalize() using { address(rb) != address(stop); };
@@ -96,13 +96,13 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 step();
                 step();
                 step();
-                have rb == stop by { assumption(); }
+                have rb == stop by { known(); }
                 have propagate_remaining(rb, stop) == 0 by {
                     unfold(propagate_remaining(rb, stop));
                     normalize() using { rb == stop; };
                 }
-                have metadata.value == 1 by { assumption(); }
-                have metadata.value == 1 or rb == old(rb) by { assumption(); }
+                have metadata.value == 1 by { known(); }
+                have metadata.value == 1 or rb == old(rb) by { known(); }
             }
         }
     }

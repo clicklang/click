@@ -108,7 +108,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             // A disjunct that closes directly needs no search through the
             // other side's connected facts. Retain its ordinary `have` proof
-            // and inject it with `assumption`, just as the general structural
+            // and inject it with `known`, just as the general structural
             // search does. Recursion only visits smaller goal disjuncts; a
             // miss never invokes general solve.
             if matches!(proof.goal(), Some(Proposition::Or(_, _)))
@@ -128,9 +128,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let Some(joined) = attempt::candidate_outcome(closed.join())? else {
                         continue;
                     };
-                    if let Some(closed) = attempt::candidate_outcome(
-                        joined.driver().apply_step(ProofStep::Assumption),
-                    )? {
+                    if let Some(closed) =
+                        attempt::candidate_outcome(joined.driver().apply_step(ProofStep::Known))?
+                    {
                         scope.succeed();
                         return Ok(Some(closed));
                     }
@@ -223,7 +223,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// indexed consequent lookup that the checked `extract` rule performs
     /// decides it. For an order comparison, search also tries its mirrored
     /// spelling with one additional probe. Expansion prints the selected
-    /// `extract` and, if needed, `assumption`.
+    /// `extract` and, if needed, `known`.
     pub(in crate::surface::proof) fn try_discharged_consequent_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
@@ -238,7 +238,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             // Implication extraction deliberately requires the consequent as
             // written. Select its mirrored order spelling in search, then
-            // let the checked extraction and ordinary assumption close it.
+            // let the checked extraction and ordinary `known` close it.
             if let ClickProposition::Comparison {
                 left,
                 operator,
@@ -273,7 +273,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             return Ok(Some(extracted));
                         }
                         return Ok(attempt::candidate_outcome(
-                            extracted.driver().apply_step(ProofStep::Assumption),
+                            extracted.driver().apply_step(ProofStep::Known),
                         )?
                         .filter(Proof::focused_discharged));
                     }
@@ -371,7 +371,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// a universal goal no such fact concludes costs one lookup and no
     /// unrelated fact is visited. The proof is the explicit sequence
     /// `intro()` for the binder and each guard, `instantiate(F, k)` at the
-    /// introduced binder, and `assumption()`; each step is checked as written
+    /// introduced binder, and `known()`; each step is checked as written
     /// and expansion prints it.
     pub(in crate::surface::proof) fn try_quantified_conjunct_projection_closure(
         search_input: &Proof<'a>,
@@ -427,7 +427,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if !proof.focused_discharged() {
             let Some(closed) =
-                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))?
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
             else {
                 return Ok(None);
             };
@@ -560,7 +560,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 proof = closed.join()?;
             }
-            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption));
+            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
         if matches!(search_input.goal(), Some(Proposition::And(_, _))) {
             let Some((split_proof, split, ids)) =
@@ -997,7 +997,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             if let Some(closed) =
-                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))?
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
             {
                 return Ok(Some(closed));
             }
@@ -1032,7 +1032,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &written,
             None,
         )? {
-            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption));
+            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
         Ok(None)
     }
@@ -1686,7 +1686,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             proof = closed.join()?;
         }
-        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
     }
 
     /// Try the explicit zero witness for a machine-integer existential.
@@ -1937,7 +1937,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            if proof.facts().pure_assumption_available(&lowered) {
+            if proof.facts().pure_known_available(&lowered) {
                 continue;
             }
             let Some(carried) =
@@ -2021,7 +2021,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .goal()
             .is_some_and(|goal| search_input.facts().contains(goal))
         {
-            let proof = search_input.driver().apply_step(ProofStep::Assumption)?;
+            let proof = search_input.driver().apply_step(ProofStep::Known)?;
             scope.succeed();
             return Ok(Some(proof));
         }
@@ -2121,7 +2121,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// `((m - 1) as int32) != 0` from the Integer fact `m - 1 != 0` where the
     /// facts keep `m - 1` in range, or the converse. Arithmetic reads no
     /// disequality premise, so the proof is by cases on `a == b`: that arm
-    /// states `p == q`, which `solve` proves from `a == b`, and `assumption`
+    /// states `p == q`, which `solve` proves from `a == b`, and `known`
     /// closes it on the contradictory pair; the other arm holds the goal. The
     /// certificate is an ordinary proof `if`.
     ///
@@ -2253,13 +2253,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let Some(equal_done) =
-                attempt::candidate_outcome(refuted.driver().apply_step(ProofStep::Assumption))?
+                attempt::candidate_outcome(refuted.driver().apply_step(ProofStep::Known))?
             else {
                 continue;
             };
             let other_arm = equal_done.focus_branch(ids[1])?;
             let Some(other_done) =
-                attempt::candidate_outcome(other_arm.driver().apply_step(ProofStep::Assumption))?
+                attempt::candidate_outcome(other_arm.driver().apply_step(ProofStep::Known))?
             else {
                 return Ok(None);
             };
@@ -2366,7 +2366,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// A goal that reads stored cells, proved over the values stored there:
     /// `have` the goal's read-over-write form (`kernel::comparison_form`)
-    /// by `solve`, then close the goal by `assumption`, which matches a read
+    /// by `solve`, then close the goal by `known`, which matches a read
     /// through the value its cell holds. The stored-value form is the goal
     /// `solve` would have seen had the reads been folded, so this recovers
     /// what its rules prove about the stored values. One level: the inner
@@ -2407,12 +2407,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(proof) = attempt::candidate_outcome(closed.join())? else {
             return Ok(None);
         };
-        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
     }
 
     /// `solve`'s strategy over the facts connected to the goal: read
     /// the goal out of a function fact's definition; rewrite the goal by a
-    /// connected equality once and then `assumption`, then as a bounded
+    /// connected equality once and then `known`, then as a bounded
     /// chain whose rewritten goals the cheap closers and a nested `solve`
     /// try; and join two constructor equations of one value. A nested
     /// `solve` inside these does not start them again.
@@ -2584,7 +2584,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .goal()
             .is_some_and(|goal| search_input.facts().contains(goal))
         {
-            let proof = search_input.driver().apply_step(ProofStep::Assumption)?;
+            let proof = search_input.driver().apply_step(ProofStep::Known)?;
             scope.succeed();
             return Ok(Some(proof));
         }
@@ -3403,7 +3403,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// exit, at a statement frontier, or inside a loop phase, so solve reads a
     /// variable's bounds the same way wherever it runs. A bound can also be
     /// the negation of a branch condition. A goal that is itself an available
-    /// fact is left to `assumption`. Pre-return signed orders and population
+    /// fact is left to `known`. Pre-return signed orders and population
     /// bounds run before broad premise spelling, preferring named rules on
     /// the selected premises; other goals retain the final fallback.
     pub(in crate::surface::proof) fn try_execution_signed_arithmetic(
@@ -4696,7 +4696,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// predecessor. The latter is the assignment boundary that can connect a
     /// named return local to the increment expression. The two propositions
     /// come only from the atomic derivation's selected requirements; the
-    /// ordinary theorem, nested-`have`, and assumption checkers decide whether
+    /// ordinary theorem, nested-`have`, and `known` checkers decide whether
     /// either constant-size historical application establishes the current
     /// result-aware goal.
     pub(in crate::surface::proof) fn try_outcome_anchored_increment_order(
@@ -6002,7 +6002,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let Some(joined) = attempt::candidate_outcome(scope.join())? else {
                     return Ok(None);
                 };
-                attempt::candidate_outcome(joined.driver().apply_step(ProofStep::Assumption))
+                attempt::candidate_outcome(joined.driver().apply_step(ProofStep::Known))
             })();
             if let Some(selected) = selected? {
                 return Ok(Some(selected));
@@ -6336,7 +6336,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         &data.surface_propositions,
                         // Entry-anchored premises can add a check-equivalent
                         // outcome fact without discharging the exact goal
-                        // form. Keep the ordinary trailing assumption so
+                        // form. Keep the ordinary trailing `known` so
                         // the checked successor decides whether it is needed.
                         false,
                         data.premise_anchor.as_ref(),
@@ -7618,7 +7618,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return search_input
                 .driver()
-                .apply_step(ProofStep::Assumption)
+                .apply_step(ProofStep::Known)
                 .ok()
                 .filter(Proof::is_complete);
         }
@@ -8322,7 +8322,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .ok()
                             .flatten()?;
                         let joined = closed.join().ok()?;
-                        joined.driver().apply_step(ProofStep::Assumption).ok()
+                        joined.driver().apply_step(ProofStep::Known).ok()
                     });
                 let Some(selected) = selected else {
                     complete = false;
@@ -8402,7 +8402,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut proof = search_input.clone();
         for (index, tactic) in tactics.iter().enumerate() {
             if proof.focused_discharged() {
-                if index + 1 == tactics.len() && matches!(tactic, ProofTactic::Assumption) {
+                if index + 1 == tactics.len() && matches!(tactic, ProofTactic::Known) {
                     continue;
                 }
                 return None;
@@ -8410,7 +8410,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let ProofTactic::TransportUsing { source, .. } = tactic {
                 // Instantiation may already close the goal through ordinary
                 // equality reasoning. Do not plan arithmetic for that case.
-                if let Ok(closed) = proof.driver().apply_step(ProofStep::Assumption) {
+                if let Ok(closed) = proof.driver().apply_step(ProofStep::Known) {
                     proof = closed;
                     continue;
                 }
@@ -8423,7 +8423,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     other => other,
                 };
                 if let Ok(scope) = proof.driver().open_have(current_source.clone())
-                    && let Ok(scope) = scope.driver().apply_step(ProofStep::Assumption)
+                    && let Ok(scope) = scope.driver().apply_step(ProofStep::Known)
                     && let Ok(current) = scope.join()
                     && let Ok(Some(closed)) = Self::try_arithmetic_with_selected_premises(&current)
                 {
@@ -9330,14 +9330,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let prepared = (|| {
                 let scope = search_input.driver().open_have(source.clone())?;
-                let scope = scope
-                    .driver()
-                    .apply_step(ProofStep::Assumption)
-                    .or_else(|_| {
-                        scope.driver().apply_step(ProofStep::ObserveResource(
-                            ResourceClause::ViewMemory(segment),
-                        ))
-                    })?;
+                let scope = scope.driver().apply_step(ProofStep::Known).or_else(|_| {
+                    scope.driver().apply_step(ProofStep::ObserveResource(
+                        ResourceClause::ViewMemory(segment),
+                    ))
+                })?;
                 scope.join()
             })();
             let Ok(prepared) = prepared else {
@@ -9372,7 +9369,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     })();
                     candidate.ok()
                 })
-                .and_then(|proof| proof.driver().apply_step(ProofStep::Assumption).ok());
+                .and_then(|proof| proof.driver().apply_step(ProofStep::Known).ok());
             if let Some(proof) = candidate
                 && (proof.is_complete() || proof.focused_discharged())
             {
@@ -9422,7 +9419,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     ..
                                 }
                             ) {
-                                ProofStep::Assumption
+                                ProofStep::Known
                             } else {
                                 ProofStep::ArithmeticUsing(premises.clone())
                             };
@@ -9492,7 +9489,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             return proof
                 .driver()
-                .apply_step(ProofStep::Assumption)
+                .apply_step(ProofStep::Known)
                 .ok()
                 .filter(Proof::is_complete);
         }
@@ -9567,7 +9564,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if extracted.is_complete() {
                 return Some(extracted);
             }
-            if let Ok(closed) = extracted.driver().apply_step(ProofStep::Assumption)
+            if let Ok(closed) = extracted.driver().apply_step(ProofStep::Known)
                 && closed.is_complete()
             {
                 return Some(closed);
@@ -9711,7 +9708,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
             })
             // An exact selected premise or context-free normalization may
-            // close directly. An arbitrary ambient `assumption` must remain
+            // close directly. An arbitrary ambient `known` must remain
             // invisible through this explicitly restricted boundary.
             .or_else(|| {
                 crate::kernel::search::ProofSearch::try_typed_atomic_solve_from_selected_premises(
@@ -9922,7 +9919,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let mut tactics =
                     plan_explicit_nonnegative_add_within_max_is_defined(goal, &recorded)?;
                 // Outside an execution the theorem's conclusion is the exact
-                // goal and closes it; its trailing `assumption` is dropped.
+                // goal and closes it; its trailing `known` is dropped.
                 if !matches!(search_input.context.as_ref(), ProofContext::Execution(_)) {
                     tactics.pop();
                 }

@@ -19,7 +19,7 @@ theorem sized_double_context_counts(ctx: SizedContext, g: struct rb_node*, p: st
             normalize();
         }
         apply(sized_context_early_stop(ctx, sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle), gv));
-        assumption();
+        known();
     }
 }
 
@@ -34,7 +34,7 @@ theorem sized_double_context_inorder(ctx: SizedContext, g: struct rb_node*, p: s
         rewrite(sized_shape(sized_plug(ctx, sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle))) == plug(sized_context_shape(ctx), sized_shape(sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle))));
         rewrite(sized_shape(sized_plug(ctx, sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle))) == plug(sized_context_shape(ctx), sized_shape(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle))));
         apply(plug_inorder_transport(sized_context_shape(ctx), sized_shape(sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle)), sized_shape(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle))));
-        assumption();
+        known();
     }
 }
 
@@ -53,7 +53,7 @@ theorem sized_mirrored_double_context_counts(ctx: SizedContext, g: struct rb_nod
             normalize();
         }
         apply(sized_context_early_stop(ctx, sized_mirrored_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle), gv));
-        assumption();
+        known();
     }
 }
 
@@ -68,6 +68,6 @@ theorem sized_mirrored_double_context_inorder(ctx: SizedContext, g: struct rb_no
         rewrite(sized_shape(sized_plug(ctx, sized_mirrored_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle))) == plug(sized_context_shape(ctx), sized_shape(sized_mirrored_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle))));
         rewrite(sized_shape(sized_plug(ctx, sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle))) == plug(sized_context_shape(ctx), sized_shape(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle))));
         apply(plug_inorder_transport(sized_context_shape(ctx), sized_shape(sized_mirrored_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle)), sized_shape(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle))));
-        assumption();
+        known();
     }
 }

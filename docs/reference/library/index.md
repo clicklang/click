@@ -913,7 +913,7 @@ theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32)
                 conclusion 5;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -954,7 +954,7 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
                 conclusion 2;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -972,7 +972,7 @@ theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
     requires to_integer(left) + to_integer(right) >= -2147483648;
     requires to_integer(left) + to_integer(right) <= 2147483647;
     ensures defined(left + right) by {
-        assumption();
+        known();
     }
 }
 ```
@@ -999,7 +999,7 @@ theorem uint32_add_to_integer(left: uint32, right: uint32) {
             }
         }
         have to_integer(left) + to_integer(right) <= 4294967295 by {
-            assumption();
+            known();
         }
         have to_integer(left + right) == to_integer(left) + to_integer(right) by {
             arithmetic_certificate rules {
@@ -1009,7 +1009,7 @@ theorem uint32_add_to_integer(left: uint32, right: uint32) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1050,7 +1050,7 @@ theorem uint32_subtract_to_integer(left: uint32, right: uint32) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1150,7 +1150,7 @@ theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
                         contradiction(right == 0u32);
                     }
                     left <= 4294967295u32 / right => {
-                        assumption();
+                        known();
                     }
                 }
             }
@@ -1251,7 +1251,7 @@ theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) * to_integer(right) <= 4294967295;
     ensures right == 0u32 or left <= 4294967295u32 / right by {
         if right == 0u32 {
-            assumption();
+            known();
         } else {
             have right != 0u32 by {
                 normalize() using { not right == 0u32; };
@@ -1272,12 +1272,12 @@ theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
                 to_integer(right) != 0;
             };
             have to_integer(left) <= to_integer(4294967295u32 / right) by {
-                assumption();
+                known();
             }
             have left <= 4294967295u32 / right by {
                 normalize() using { to_integer(left) <= to_integer(4294967295u32 / right); };
             }
-            assumption();
+            known();
         }
     }
 }
@@ -1304,7 +1304,7 @@ theorem uint64_add_to_integer(left: uint64, right: uint64) {
             }
         }
         have to_integer(left) + to_integer(right) <= 18446744073709551615 by {
-            assumption();
+            known();
         }
         have to_integer(left + right) == to_integer(left) + to_integer(right) by {
             arithmetic_certificate rules {
@@ -1314,7 +1314,7 @@ theorem uint64_add_to_integer(left: uint64, right: uint64) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1454,7 +1454,7 @@ theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1496,7 +1496,7 @@ Unsigned remainder agrees with the truncating Integer remainder. Both native and
 ```click
 theorem uint64_to_integer_less_equal_implies_less_equal(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by assumption();
+    ensures left <= right by known();
 }
 ```
 
@@ -1607,7 +1607,7 @@ logical right shift.
 ```click
 theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) {
     requires left < right;
-    ensures not (left >= right) by assumption();
+    ensures not (left >= right) by known();
 }
 ```
 
@@ -1620,7 +1620,7 @@ A strict unsigned order excludes the opposite greater-or-equal branch.
 ```click
 theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by assumption();
+    ensures to_integer(left) <= to_integer(right) by known();
 }
 ```
 
@@ -1633,7 +1633,7 @@ Preserves native unsigned order in exact Integer observations, including values 
 ```click
 theorem uint32_to_integer_less_equal_implies_less_equal(left: uint32, right: uint32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by assumption();
+    ensures left <= right by known();
 }
 ```
 
@@ -1646,7 +1646,7 @@ Reflects exact Integer observation order into native unsigned order. The mathema
 ```click
 theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right by assumption();
+    ensures left == right by known();
 }
 ```
 
@@ -1789,7 +1789,7 @@ theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divis
                 conclusion 6;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1827,10 +1827,10 @@ theorem int32_add_to_integer(left: int32, right: int32) {
     requires defined(left + right);
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
         have -2147483648 <= to_integer(left) + to_integer(right) by {
-            assumption();
+            known();
         }
         have to_integer(left) + to_integer(right) <= 2147483647 by {
-            assumption();
+            known();
         }
         have to_integer(left + right) == to_integer(left) + to_integer(right) by {
             arithmetic_certificate rules {
@@ -1840,7 +1840,7 @@ theorem int32_add_to_integer(left: int32, right: int32) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1857,10 +1857,10 @@ theorem int64_subtract_to_integer(left: int64, right: int64) {
     requires defined(left - right);
     ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
         have -9223372036854775808 <= to_integer(left) - to_integer(right) by {
-            assumption();
+            known();
         }
         have to_integer(left) - to_integer(right) <= 9223372036854775807 by {
-            assumption();
+            known();
         }
         have to_integer(left - right) == to_integer(left) - to_integer(right) by {
             arithmetic_certificate rules {
@@ -1870,7 +1870,7 @@ theorem int64_subtract_to_integer(left: int64, right: int64) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1888,10 +1888,10 @@ theorem int32_subtract_to_integer(left: int32, right: int32) {
     requires defined(left - right);
     ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
         have -2147483648 <= to_integer(left) - to_integer(right) by {
-            assumption();
+            known();
         }
         have to_integer(left) - to_integer(right) <= 2147483647 by {
-            assumption();
+            known();
         }
         have to_integer(left - right) == to_integer(left) - to_integer(right) by {
             arithmetic_certificate rules {
@@ -1901,7 +1901,7 @@ theorem int32_subtract_to_integer(left: int32, right: int32) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```
@@ -1916,7 +1916,7 @@ The definedness premise excludes overflow; the equality is not unconditional.
 ```click
 theorem int32_less_equal_to_integer(left: int32, right: int32) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by assumption();
+    ensures to_integer(left) <= to_integer(right) by known();
 }
 ```
 
@@ -1931,7 +1931,7 @@ order between unrelated machine values.
 ```click
 theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by assumption();
+    ensures left <= right by known();
 }
 ```
 
@@ -1944,7 +1944,7 @@ A proved non-strict order between exact signed observations establishes the nati
 ```click
 theorem int64_to_integer_less_equal_implies_less_equal(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by assumption();
+    ensures left <= right by known();
 }
 ```
 
@@ -2011,7 +2011,7 @@ theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
 
     ensures to_integer(value - 1u32) < to_integer(value) by {
         have 0 < to_integer(value) by {
-            assumption();
+            known();
         }
         have 0 <= to_integer(value) - 1 by {
             arithmetic_certificate {
@@ -2060,7 +2060,7 @@ theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
 
     ensures to_integer(value + 1u32) <= to_integer(upper) by {
         have to_integer(value) < to_integer(upper) by {
-            assumption();
+            known();
         }
         have 0 <= to_integer(value) + 1 by {
             arithmetic_certificate {
@@ -2442,10 +2442,10 @@ theorem to_int8_round_trip(z: Integer) {
     requires z <= 127;
     ensures to_integer(to_int8(z)) == z by {
         have -128 <= z by {
-            assumption();
+            known();
         }
         have z <= 127 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: -128 <= z => -128 <= z;
@@ -2471,10 +2471,10 @@ theorem to_int16_round_trip(z: Integer) {
     requires z <= 32767;
     ensures to_integer(to_int16(z)) == z by {
         have -32768 <= z by {
-            assumption();
+            known();
         }
         have z <= 32767 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: -32768 <= z => -32768 <= z;
@@ -2499,10 +2499,10 @@ theorem to_int32_round_trip(z: Integer) {
     requires z <= 2147483647;
     ensures to_integer(to_int32(z)) == z by {
         have -2147483648 <= z by {
-            assumption();
+            known();
         }
         have z <= 2147483647 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: -2147483648 <= z => -2147483648 <= z;
@@ -2527,10 +2527,10 @@ theorem to_uint8_round_trip(z: Integer) {
     requires z <= 255;
     ensures to_integer(to_uint8(z)) == z by {
         have 0 <= z by {
-            assumption();
+            known();
         }
         have z <= 255 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: 0 <= z => 0 <= z;
@@ -2555,10 +2555,10 @@ theorem to_uint16_round_trip(z: Integer) {
     requires z <= 65535;
     ensures to_integer(to_uint16(z)) == z by {
         have 0 <= z by {
-            assumption();
+            known();
         }
         have z <= 65535 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: 0 <= z => 0 <= z;
@@ -2583,10 +2583,10 @@ theorem to_uint32_round_trip(z: Integer) {
     requires z <= 4294967295;
     ensures to_integer(to_uint32(z)) == z by {
         have 0 <= z by {
-            assumption();
+            known();
         }
         have z <= 4294967295 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: 0 <= z => 0 <= z;
@@ -2611,10 +2611,10 @@ theorem to_int64_round_trip(z: Integer) {
     requires z <= 9223372036854775807;
     ensures to_integer(to_int64(z)) == z by {
         have -9223372036854775808 <= z by {
-            assumption();
+            known();
         }
         have z <= 9223372036854775807 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: -9223372036854775808 <= z => -9223372036854775808 <= z;
@@ -2639,10 +2639,10 @@ theorem to_uint64_round_trip(z: Integer) {
     requires z <= 18446744073709551615;
     ensures to_integer(to_uint64(z)) == z by {
         have 0 <= z by {
-            assumption();
+            known();
         }
         have z <= 18446744073709551615 by {
-            assumption();
+            known();
         }
         arithmetic_certificate rules {
             premise 0: 0 <= z => 0 <= z;
@@ -2865,7 +2865,7 @@ theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: In
         have bound * d <= n by { solve() using { bound * d < n; }; }
         apply(integer::positive_divisor_quotient_lower(n, d, bound));
         if bound < truncating_quotient(n, d) {
-            assumption();
+            known();
         } else {
             have truncating_quotient(n, d) == bound by { solve() using {
                 bound <= truncating_quotient(n, d); not (bound < truncating_quotient(n, d));
@@ -2876,7 +2876,7 @@ theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: In
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
-                    assumption();
+                    known();
                 }
                 have not (bound * d < n) by { solve() using {
                     n == bound * d + truncating_remainder(n, d); truncating_remainder(n, d) <= 0;
@@ -2908,7 +2908,7 @@ theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: In
         have n <= bound * d by { solve() using { n < bound * d; }; }
         apply(integer::positive_divisor_quotient_upper(n, d, bound));
         if truncating_quotient(n, d) < bound {
-            assumption();
+            known();
         } else {
             have truncating_quotient(n, d) == bound by { solve() using {
                 truncating_quotient(n, d) <= bound; not (truncating_quotient(n, d) < bound);
@@ -2919,7 +2919,7 @@ theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: In
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
-                    assumption();
+                    known();
                 }
                 have not (n < bound * d) by { solve() using {
                     n == bound * d + truncating_remainder(n, d); 0 <= truncating_remainder(n, d);
@@ -2949,12 +2949,12 @@ theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, l
     requires r < 0;
     ensures lower + 1 <= q by {
         if lower + 1 <= q {
-            assumption();
+            known();
         } else {
             have q == lower by { solve() using { lower <= q; not (lower + 1 <= q); }; }
             have n == lower * d + r by {
                 rewrite(lower == q);
-                assumption();
+                known();
             }
             have not (r < 0) by { solve() using { lower * d <= n; n == lower * d + r; }; }
             contradiction(r < 0);
@@ -2974,12 +2974,12 @@ theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, u
     requires 0 < r;
     ensures q <= upper + -1 by {
         if q <= upper + -1 {
-            assumption();
+            known();
         } else {
             have q == upper by { solve() using { q <= upper; not (q <= upper + -1); }; }
             have n == upper * d + r by {
                 rewrite(upper == q);
-                assumption();
+                known();
             }
             have not (0 < r) by { solve() using { n <= upper * d; n == upper * d + r; }; }
             contradiction(0 < r);
@@ -3320,9 +3320,9 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
     ensures left == right by {
         have left < right or not (left < right) by {
             if left < right {
-                assumption();
+                known();
             } else {
-                assumption();
+                known();
             }
         }
         cases {
@@ -3334,9 +3334,9 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
             not (left < right) => {
                 have right < left or not (right < left) by {
                     if right < left {
-                        assumption();
+                        known();
                     } else {
-                        assumption();
+                        known();
                     }
                 }
                 cases {
@@ -4741,7 +4741,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
             unfold(format::decimal_digit(v, k));
             have 48u8 <= (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
             normalize() using { k < format::decimal_length(v); };
-            assumption();
+            known();
         } else {
             unfold(format::decimal_digit(v, k));
             normalize() using { not (k < format::decimal_length(v)); };

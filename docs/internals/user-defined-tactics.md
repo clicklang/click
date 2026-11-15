@@ -141,7 +141,7 @@ application.
   entry state, resource transfer, recursion hypotheses, termination, rule
   packaging (`program_verified_function_rule`), and the audit's targeted runs. The
   surface proves it with the tactic's script followed by the one `return`
-  step and one `assumption` per claim, so the script itself must leave each
+  step and one `known` per claim, so the script itself must leave each
   produced instance held and each `ensures` available on every live path.
   A terminal `contradiction` in a proof `match` arm instead refutes that
   path with a checked fact and its negation; no return or postcondition

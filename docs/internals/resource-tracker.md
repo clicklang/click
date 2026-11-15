@@ -16,10 +16,12 @@ proof fails with two terms that spell alike.
   cell, a memory block as a pure function reads it through an array argument,
   and one model field of a resource instance. A byte
   range, a struct extent and a local are the kinds that come next.
-- **program point** — a point on the current proof path (`entry`, a `mark`ed
-  label, "here"), identified by the memory snapshot the kernel had reached
-  there, or — for the two kinds whose version is a value rather than a point —
-  by the whole saved state.
+- **point** (or **program point**) — a point the current proof path has
+  reached (`function.entry`, a `mark`, "here"). The Rust type `ProgramPoint`
+  represents one by the memory the kernel had there, or — for the two kinds
+  whose version is a value rather than a point — by the whole saved state;
+  that memory is not something a proof names, and the type's name is due to
+  change.
 - **same** — the two points are known to hold one version of the resource.
 - **changed** — a step between them wrote the resource.
 

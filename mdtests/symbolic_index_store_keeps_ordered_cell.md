@@ -43,7 +43,7 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     step();
     have terminated_at(data, len) by {
         unfold(terminated_at);
-        assumption();
+        known();
     }
     step();
     fold(zero_terminated(data, len, cap));

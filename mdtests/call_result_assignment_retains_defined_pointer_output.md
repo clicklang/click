@@ -28,8 +28,8 @@ int32 caller(int32 **slot) {
 } by {
     step();
     step();
-    have at(statement(1).call(0).exit, defined(*slot)) by { assumption(); }
-    have separate(memory(ignored), memory(*slot)) by { assumption(); }
+    have at(statement(1).call(0).exit, defined(*slot)) by { known(); }
+    have separate(memory(ignored), memory(*slot)) by { known(); }
     step();
     have separate(statement(1).assignment(ignored, 0).footprint, memory(*slot)) by {
         normalize() using { separate(memory(ignored), memory(*slot)); };

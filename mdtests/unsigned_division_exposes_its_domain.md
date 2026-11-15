@@ -10,8 +10,8 @@ uint32 divide(uint32 x, uint32 y) {
     requires y != 0u32;
     ensures result == x / y;
 } by {
-    step() by { assumption(); }
-    assumption();
+    step() by { known(); }
+    known();
 }
 ```
 

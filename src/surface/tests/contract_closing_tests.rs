@@ -15,8 +15,8 @@ fn proof(steps: &str) -> String {
 }
 
 #[test]
-fn explicit_contract_closing_uses_ordinary_assumption_steps() {
-    let source = proof("normalize(); assumption(); assumption(); assumption();");
+fn explicit_contract_closing_uses_ordinary_known_steps() {
+    let source = proof("normalize(); known(); known(); known();");
     without_implicit_solve(|| verify_c_sources(&source, C))
         .unwrap_or_else(|error| panic!("{}", error.message()));
 }
@@ -48,13 +48,13 @@ fn omitted_closing_steps_leave_their_obligations_open() {
         (1, "allocation lifetime"),
         (2, "write footprint"),
     ] {
-        let source = proof(&format!("normalize(); {}", "assumption(); ".repeat(count)));
+        let source = proof(&format!("normalize(); {}", "known(); ".repeat(count)));
         let error = without_implicit_solve(|| verify_c_sources(&source, C))
-            .expect_err("packaging cannot supply an omitted proof");
+            .expect_err("ordinary completion cannot supply an omitted proof");
         assert!(
             error
                 .message()
-                .contains(&format!("unproved {goal} obligation")),
+                .contains(&format!("outcome still owes contract closing: {goal}")),
             "{error}"
         );
         verify_c_sources(&source, C)
@@ -69,7 +69,7 @@ fn written_solve_closes_only_one_selected_closing_goal() {
     assert!(
         error
             .message()
-            .contains("unproved allocation lifetime obligation"),
+            .contains("outcome still owes contract closing: allocation lifetime"),
         "{error}"
     );
 }
@@ -78,16 +78,16 @@ fn written_solve_closes_only_one_selected_closing_goal() {
 fn expansion_writes_each_closing_step_and_requires_them_when_cold() {
     let source = proof("normalize();");
     let expanded = expand_function_proof_source(&source, C, "value").unwrap();
-    assert_eq!(expanded.matches("assumption();").count(), 3, "{expanded}");
+    assert_eq!(expanded.matches("known();").count(), 3, "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, C)).unwrap();
-    let last = expanded.rfind("assumption();").unwrap();
+    let last = expanded.rfind("known();").unwrap();
     let mut missing = expanded.clone();
-    missing.replace_range(last..last + "assumption();".len(), "");
+    missing.replace_range(last..last + "known();".len(), "");
     let error = without_implicit_solve(|| verify_c_sources(&missing, C)).unwrap_err();
     assert!(
         error
             .message()
-            .contains("unproved write footprint obligation"),
+            .contains("outcome still owes contract closing: write footprint"),
         "{error}"
     );
 }
@@ -97,7 +97,7 @@ fn proposition_closers_name_the_pending_closing_goal() {
     for closer in [
         "normalize();",
         "solve() using {};",
-        "both { assumption(); } and { assumption(); }",
+        "both { known(); } and { known(); }",
     ] {
         let source = proof(&format!("normalize(); {closer}"));
         let error = verify_c_sources(&source, C).unwrap_err();
@@ -109,7 +109,7 @@ fn proposition_closers_name_the_pending_closing_goal() {
             error.message().contains("joint returned resources"),
             "{error}"
         );
-        assert!(error.message().contains("assumption()"), "{error}");
+        assert!(error.message().contains("known()"), "{error}");
     }
 }
 
@@ -125,7 +125,7 @@ fn footprint_refusal_names_the_goal_and_the_solver_that_failed() {
             "the implicit solver could not prove the write footprint obligation",
         ),
         (
-            "normalize(); assumption(); assumption(); assumption();",
+            "normalize(); known(); known(); known();",
             "this tactic could not prove the write footprint obligation",
         ),
     ] {

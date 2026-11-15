@@ -3544,6 +3544,49 @@ fn pointer_read_congruence_composes_materialization_and_forgetting_at_production
 }
 
 #[test]
+fn initialization_metadata_keeps_complete_pointer_identity_without_access_authority() {
+    let address = Pointer {
+        block: "local:initialized-descriptor".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = intern_memory(Memory::new().with_uninitialized_block(address.block.clone(), 8));
+    let after = intern_memory(
+        before
+            .memory()
+            .clone()
+            .with_initialized_object(&address, 8)
+            .with_block("local:unrelated-getter-temporary", 4),
+    );
+    assert_ne!(before, after);
+    assert!(!before.memory().has_initialized_bytes_at(&address, 8));
+    assert!(after.memory().has_initialized_bytes_at(&address, 8));
+
+    let read = |memory: &SharedMemory| {
+        PointerValue::from_read(
+            Pointer::loaded_value(memory, &address),
+            ProgramType::Int32Pointer,
+            memory,
+            &address,
+        )
+    };
+    let facts = PureFactContext::new();
+    let original = read(&before);
+    assert_eq!(original.designation(), read(&after).designation());
+    assert!(facts.pointer_designations_match(&original, &read(&after)));
+    assert!(facts.pointers_known_equal(original.pointer(), read(&after).pointer()));
+    assert!(!ResourceContext::new().permits_memory_read(&address, 8, &facts));
+
+    let overwritten = intern_memory(
+        after
+            .memory()
+            .clone()
+            .store(address.offset_by_bytes(4), crate::kernel::uint8(1u32)),
+    );
+    assert!(!facts.pointer_designations_match(&original, &read(&overwritten)));
+    assert!(!facts.pointers_known_equal(original.pointer(), read(&overwritten).pointer()));
+}
+
+#[test]
 fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() {
     let address = Pointer::symbolic(Variable(98_430));
     let original = intern_memory(Memory::new());

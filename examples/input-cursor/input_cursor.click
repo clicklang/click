@@ -197,7 +197,7 @@ int32 input_cursor_clone(
     have separate(memory(*target), memory(target->data[0..target->len])) by {
         rewrite(target->data == old(source->data));
         rewrite(target->len == old(source->len));
-        assumption();
+        known();
     }
     fold(input_cursor(target));
     solve();
@@ -240,7 +240,7 @@ int32 input_cursor_shared_pipeline(
     have left->data == data;
     step();
     step();
-    have left->pos < left->len by { assumption(); }
+    have left->pos < left->len by { known(); }
     have right->pos < right->len by {
         solve() using {
             1 <= length;
@@ -252,16 +252,16 @@ int32 input_cursor_shared_pipeline(
     have right->data == data;
     have left->data == data by {
 
-        assumption();
+        known();
     }
-    have left->len == length by { assumption(); }
+    have left->len == length by { known(); }
     step();
     step();
-    have right->len == length by { assumption(); }
-    have left->len == length by { assumption(); }
+    have right->len == length by { known(); }
+    have left->len == length by { known(); }
     have right->pos == 0 by {
 
-        assumption();
+        known();
     }
     have 0 < right->len by {
         solve() using {
@@ -276,7 +276,7 @@ int32 input_cursor_shared_pipeline(
     step();
     step();
     have right_value == right->data[right->pos] by {
-        assumption();
+        known();
     }
     have right->pos == 0;
     have right->data == data;

@@ -147,7 +147,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             unfold(sized_mirrored_flip_finish(SizedMirroredFlipPhase::After(x, y, z)));
                             have SizedMirroredFlipPhase::Done(x, y, z) == sized_mirrored_flip_finish(old(state.phase)) by {
                                 rewrite(SizedMirroredFlipPhase::Done(x, y, z) == sized_mirrored_flip_finish(SizedMirroredFlipPhase::After(x, y, z)));
-                                rewrite(SizedMirroredFlipPhase::After(x, y, z) == state.phase); assumption();
+                                rewrite(SizedMirroredFlipPhase::After(x, y, z) == state.phase); known();
                             }
                             let { focus: focus, path: path } = unfold(state);
                             let { metadata: g_size, right: p_tree, left: u_tree } = unfold(focus);
@@ -209,9 +209,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             }
                             step(); step(); step(); step(); step(); step(); step(); step();
                             step();
-                            have tmp == z by { assumption(); }
-                            have gparent == x by { assumption(); }
-                            have parent == y by { assumption(); }
+                            have tmp == z by { known(); }
+                            have gparent == x by { known(); }
+                            have parent == y by { known(); }
                             mark before_recolor;
                             step(); step();
                             transport(at(before_recolor, ((x->__rb_parent_color & ~3) as (struct rb_node *)) == 0),
@@ -224,10 +224,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             };
                             step();
                             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
-                                assumption();
+                                known();
                             }
                             step();
-                            have parent == 0 by { assumption(); }
+                            have parent == 0 by { known(); }
                             step();
                             transport(at(before_recolor, root->rb_node == x), root->rb_node == x) using {
                                 tmp == z;
@@ -337,7 +337,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(state.phase == SizedMirroredFlipPhase::After(x, y, z));
                                 unfold(sized_mirrored_flip_finish(SizedMirroredFlipPhase::After(x, y, z)));
                                 rewrite(SizedMirroredFlipPhase::Done(x, y, z) == sized_mirrored_flip_finish(SizedMirroredFlipPhase::Before(x, y, z)));
-                                rewrite(SizedMirroredFlipPhase::Before(x, y, z) == at(iteration,state.phase)); assumption();
+                                rewrite(SizedMirroredFlipPhase::Before(x, y, z) == at(iteration,state.phase)); known();
                             }
                             have sized_mirrored_flip_running(state.phase) == 1 by {
                                 rewrite(state.phase == SizedMirroredFlipPhase::After(x, y, z));

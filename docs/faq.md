@@ -80,7 +80,7 @@ configuration shared by C, C++, and Rust units.
 Verification is modular. A caller uses a callee's contract; checking that
 caller alone does not prove the callee's implementation. Imports also make
 declarations available without selecting all their proofs. External contracts
-are assumptions, and verification reports dependencies on external interfaces.
+are knowns, and verification reports dependencies on external interfaces.
 Check the intended set of proof units and read the reported assumptions. See
 [verification selection](reference/cli/verify.md#target-selection) and
 [your assumptions](concepts/trust.md#your-assumptions).

@@ -11,7 +11,7 @@ That fact is now provable, so the workaround is not needed. `induct(hi)` gives
 an induction hypothesis guarded by the theorem's own `requires` at the smaller
 endpoint; `have viewable(v[lo..hi - 1]);` narrows the theorem's
 own range to that endpoint, against the order facts proved just above it, and
-`assumption()` assembles the hypothesis premise the guard is written as. Every other
+`known()` assembles the hypothesis premise the guard is written as. Every other
 step is unchanged from the version with `n`.
 
 The theorem also carries `hi <= 1073741823`, which with `0 <= lo` bounds the
@@ -55,7 +55,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
                 solve() using { 0 <= lo; lo < hi; hi <= 1073741823; };
             }
             have viewable(v[lo..hi - 1]);
-            have to_integer(hi - 1) >= 0 and viewable(v[lo..hi - 1]) by assumption();
+            have to_integer(hi - 1) >= 0 and viewable(v[lo..hi - 1]) by known();
             have 0 <= to_integer(hi - 1 - lo) by {
                 solve() using { 0 <= lo; lo < hi; hi <= 1073741823; };
             }

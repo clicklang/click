@@ -178,7 +178,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
 /// asks whether the load's address is one of the kept ranges' bases. A
 /// load through a pointer read out of memory registers that read, and the
 /// reads its own address depends on, in the asking context's equality
-/// graph. Naming walks are assumption-free, so they ask in one empty
+/// graph. Naming walks are known-free, so they ask in one empty
 /// context per session: each read is registered once, and naming the
 /// load after each later call costs the same however deep the address's
 /// chain of reads is. A fresh context per walk paid for the whole chain

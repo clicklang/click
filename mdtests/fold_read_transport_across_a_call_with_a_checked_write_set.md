@@ -36,7 +36,7 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
         if hi <= lo {
             peel(zeros(p, lo, hi)) using { hi <= lo; };
             peel(zeros(q, lo, hi)) using { hi <= lo; };
-            assumption();
+            known();
         } else {
             have lo < hi;
             have 0 <= to_integer(hi - 1) by { solve(); }
@@ -62,7 +62,7 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             peel(zeros(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             peel(zeros(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             rewrite(p[hi - 1] == q[hi - 1]);
-            assumption();
+            known();
         }
     }
 }
@@ -83,7 +83,7 @@ void caller(int32 *v, int32 i, int32 n) {
     have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by normalize();
     have i <= n by { solve() using { i < n; }; }
     have 0 <= 0 by { normalize(); }
-    have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); known(); }
     have contains(memory(v[0..n]), memory(v[0..i])) by {
         apply(click::separation::contains_subrange(v, 0, n, 0, i)) using { 0 <= 0; 0 <= i; i <= n; };
     }
@@ -131,14 +131,14 @@ void caller(int32 *v, int32 i, int32 n) {
             }
             preserve(separate(statement(0).footprint, memory(v[k])));
         }
-        have viewable(v[0..i]) by { observe(v[0..i]); assumption(); }
+        have viewable(v[0..i]) by { observe(v[0..i]); known(); }
         have i <= 1073741823 by { solve(); }
         apply(same_zeros(v, at(entry, v), 0, i, i)) using {
             0 <= 0; 0 <= i; i <= i;
             viewable(v[0..i]); at(entry, viewable(v[0..i]));
             forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) };
         };
-        assumption();
+        known();
     }
 }
 ```

@@ -42,7 +42,7 @@ void fill(uint8* dst) {
         solve();
     }
     step();
-    assumption();
+    known();
 }
 ```
 

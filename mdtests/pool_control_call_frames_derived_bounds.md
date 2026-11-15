@@ -57,7 +57,7 @@ int32 forward(struct pool* pool) {
 } by {
     open(control(pool)) {
         have 0 <= pool->used;
-        have defined(pool->used + count(slot(pool))) by { assumption(); }
+        have defined(pool->used + count(slot(pool))) by { known(); }
     }
 }
 ```

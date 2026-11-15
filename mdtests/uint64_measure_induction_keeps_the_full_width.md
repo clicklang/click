@@ -9,7 +9,7 @@ theorem full_width_induction(n: uint64, limit: uint64) {
     ensures n <= limit by {
         induct(n) as ih;
         if n <= 0u64 {
-            assumption();
+            known();
         } else {
             have 0u64 < n by solve();
             have to_integer(n - 1u64) < to_integer(n) by solve() using { 0u64 < n; };
@@ -18,7 +18,7 @@ theorem full_width_induction(n: uint64, limit: uint64) {
                 to_integer(n - 1u64) < to_integer(n);
                 to_integer(n - 1u64) <= to_integer(limit);
             };
-            assumption();
+            known();
         }
     }
 }

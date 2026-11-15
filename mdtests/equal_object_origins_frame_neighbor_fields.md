@@ -162,26 +162,26 @@ void inner(struct rb_node* node) {
                 preserve by {
                     let { gs: gs, parent_tree: parent_tree, ns: ns } = unfold(state);
                     let { ps: ps } = unfold(parent_tree);
-                    have g->rb_left == p by { assumption(); }
+                    have g->rb_left == p by { known(); }
                     step();
-                    have gparent == g by { assumption(); }
+                    have gparent == g by { known(); }
                     step(); step(); step();
                     mark after_store;
-                    have at(after_store, parent->rb_right == 0) by { assumption(); }
+                    have at(after_store, parent->rb_right == 0) by { known(); }
                     step(); step();
-                    have separate(memory(parent->rb_right), memory(node->rb_left)) by { assumption(); }
-                    have separate(memory(parent->rb_right), memory(p->__rb_parent_color)) by { assumption(); }
+                    have separate(memory(parent->rb_right), memory(node->rb_left)) by { known(); }
+                    have separate(memory(parent->rb_right), memory(p->__rb_parent_color)) by { known(); }
                     transport(at(after_store, parent->rb_right == 0), parent->rb_right == 0) using {
                         at(after_store, parent->rb_right == 0);
                         parent == p;
                         separate(memory(parent->rb_right), memory(node->rb_left));
                         separate(memory(parent->rb_right), memory(p->__rb_parent_color));
                     };
-                    have p->rb_right == 0 by { assumption(); }
+                    have p->rb_right == 0 by { known(); }
                     let state = fold(inner_state(node), { phase: InnerPhase::After(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model) }, { gs: gs, ps: ps, ns: ns });
                     have state.phase == inner_finish(old(state.phase)) by {
                         rewrite(old(state.phase) == InnerPhase::Before(g, p));
-                        unfold(inner_finish(InnerPhase::Before(g, p))); assumption();
+                        unfold(inner_finish(InnerPhase::Before(g, p))); known();
                     }
                     step();
                 }

@@ -1208,14 +1208,25 @@ impl TermClasses {
                                 self.intern_node(Node::UInt64Read(memory.read_identity(), numeric));
                             let snapshot = memory.read_identity();
                             let origin = super::load_origin(term, &memory);
-                            self.pending_cell_reads.push(super::PendingCellRead {
+                            let source = WideReadSource {
                                 read,
-                                memory,
-                                origin,
-                                pointer,
-                                kind: super::CellRead::UInt64,
-                                only: None,
-                            });
+                                snapshot: memory.arena_id(),
+                                origin: origin.as_ref().map(|origin| origin.arena_id()),
+                                address,
+                            };
+                            crate::instrumentation::record_deterministic_work(1);
+                            if !self.registered_uint64_cell_reads.contains(&source) {
+                                self.registered_uint64_cell_reads =
+                                    self.registered_uint64_cell_reads.with_value(source);
+                                self.pending_cell_reads.push(super::PendingCellRead {
+                                    read,
+                                    memory,
+                                    origin,
+                                    pointer,
+                                    kind: super::CellRead::UInt64,
+                                    only: None,
+                                });
+                            }
                             Node::UInt64Read(snapshot, numeric)
                         } else if let Some(pointer) = term.address_pointer() {
                             values.push(self.numeric_address(pointer));

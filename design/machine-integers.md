@@ -235,7 +235,7 @@ a family of copies. The two ways to do that are:
    checked as today.
 
 Under Integer-default arithmetic most of the 110 width lemmas are bridges
-nothing needs: the rules above are kernel facts, and `auto` uses them
+nothing needs: the rules above are kernel facts, and `solve` uses them
 directly. What survives is decided family by family in
 `roadmap/standard-library.md`, then stated once, in one `click::integer`
 module: `click::machine_integer` merges into it (maintainer, 2026-10-22).
@@ -334,7 +334,7 @@ Done 2026-10-23. What changed:
 - `integer_cast_identity` accepts a widening of an 8- or 16-bit value into
   a containing format through the same word or its 32-to-64-bit
   extension, when the word is built as a canonical carrier or is a binder
-  whose stated `int32` range the certificate cites, and `auto` plans it by
+  whose stated `int32` range the certificate cites, and `solve` plans it by
   matching the word, so every C widening of a narrow value
   verifies with no premise (`mdtests/solve_widens_*`,
   `mdtests/integer_cast_identity_widens_a_narrow_value.md`).

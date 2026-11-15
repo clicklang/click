@@ -8,7 +8,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     ///
     /// Earlier checked descendants (notably `have` scopes) remain in the
     /// prefix. Each obligation is then independently selected and closed by
-    /// an ordinary `Assumption` step against the accumulated persistent fact
+    /// an ordinary `Known` step against the accumulated persistent fact
     /// context. Certificate composition is therefore an audited terminal
     /// operation of `Proof`, not caller-owned syntax assembly.
     #[cfg(test)]
@@ -92,7 +92,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     driver_proof
                         .driver()
                         .open_contract_claim(form, goal)
-                        .and_then(|focused| focused.driver().apply_step(ProofStep::Assumption))
+                        .and_then(|focused| focused.driver().apply_step(ProofStep::Known))
                         .ok()
                 })
             });
@@ -104,7 +104,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 None => driver_proof
                     .focus_fixed_state_surface_goal(goal)?
                     .driver()
-                    .apply_step(ProofStep::Assumption)?,
+                    .apply_step(ProofStep::Known)?,
             };
             checked_propositions.push(closer.completed_proposition()?);
             steps.extend_from_slice(closer.certificate().steps());

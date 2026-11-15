@@ -59,11 +59,11 @@ uint32 count_nodes(struct node* node) {
                 conclusion 1;
             }
         }
-        have ((node->word & ~1) as (struct node *)) == child by { assumption(); }
-        have separate(marked_list(child), memory(node->word)) by { assumption(); }
+        have ((node->word & ~1) as (struct node *)) == child by { known(); }
+        have separate(marked_list(child), memory(node->word)) by { known(); }
         mark before_call;
         step();
-        have contains(marked_list(child), statement(1).region(1).footprint) by { assumption(); }
+        have contains(marked_list(child), statement(1).region(1).footprint) by { known(); }
         apply(separation::contains_refl(memory(node->word))) using {};
         apply(separation::separate_restrict(marked_list(child), memory(node->word), statement(1).region(1).footprint, memory(node->word))) using {
             separate(marked_list(child), memory(node->word));
@@ -78,7 +78,7 @@ uint32 count_nodes(struct node* node) {
                 conclusion 1;
             }
         }
-        have ((node->word & ~1) as (struct node *)) == child by { assumption(); }
+        have ((node->word & ~1) as (struct node *)) == child by { known(); }
 
     }
 }

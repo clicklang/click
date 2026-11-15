@@ -1,7 +1,7 @@
 # Import C contracts and tactics
 
 C contracts and tactics use the same import syntax. The helper library is
-verified separately; its contracts are assumptions while checking this caller.
+verified separately; its contracts are knowns while checking this caller.
 
 ```c filename=specification_imports_helpers.c
 int imported_helper(int x) { return x; }

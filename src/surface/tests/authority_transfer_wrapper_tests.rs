@@ -263,7 +263,7 @@ fn separately_proved_resource_clauses_cannot_duplicate_a_borrowed_unit() {
         verifying "wrapper.c";
         int32 duplicate(int32 object) {
             owns Permit(object);
-            produces Permit(object) by { step_until(function.exit); assumption(); }
+            produces Permit(object) by { step_until(function.exit); known(); }
         }
     "#;
     let error = verify_c_project(

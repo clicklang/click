@@ -21,12 +21,12 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
         unfold(click::cstr::readable_len);
         step_until(region(1));
         have viewable(bytes[0..known_len + 1u64]) by {
-            assumption();
+            known();
         }
     }
 }
 ```
 
 ```expect
-fail: assumption` requires the current goal as an available semantic fact
+fail: known` requires the current goal as an available semantic fact
 ```

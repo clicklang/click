@@ -45,7 +45,7 @@ void walk(int32 *a, int32 *b, int32 n) {
     } by {
         intro();
         intro();
-        assumption();
+        known();
     }
     have forall (k: int32) {
         0 <= k and k < n implies viewable(a[k..k + 1])

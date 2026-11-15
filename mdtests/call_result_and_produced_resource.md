@@ -31,7 +31,7 @@ void caller(int32* p) {
     ensures checked.value == 1;
 } by {
     let { result: status, output: checked } = step(set, { input: input });
-    have status == 1 by { assumption(); }
+    have status == 1 by { known(); }
 }
 ```
 ```expect

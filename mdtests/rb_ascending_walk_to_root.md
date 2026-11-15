@@ -21,7 +21,7 @@ parent) == 1` says the frame's node is that local, and `c.model ==
 ctx_reroot(c.model, parent)` says the same thing as a model equation. Once
 `ctx_reroot` is unfolded at the matched frame, the equality closure joins
 `Left(identity, ...)` and `Left(parent, ...)` and constructor injectivity gives
-`identity == parent` to `assumption()` inside each framed arm.
+`identity == parent` to `known()` inside each framed arm.
 
 Three verifier rules meet here, and each was a gap.
 
@@ -294,7 +294,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                         sibling_model, up_model), parent));
                         normalize();
                     }
-                    have identity == parent by assumption();
+                    have identity == parent by known();
                     have plug(up_model,
                               RbTree::Node(identity, grandparent, color,
                                            t.model, sibling_model))
@@ -308,7 +308,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                   sibling_model, up_model), t.model));
                         rewrite(Context::Left(identity, grandparent, color,
                                               sibling_model, up_model) == c.model);
-                        assumption();
+                        known();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     step();
@@ -335,7 +335,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                          sibling_model, up_model), parent));
                         normalize();
                     }
-                    have identity == parent by assumption();
+                    have identity == parent by known();
                     have plug(up_model,
                               RbTree::Node(identity, grandparent, color,
                                            sibling_model, t.model))
@@ -349,7 +349,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                    sibling_model, up_model), t.model));
                         rewrite(Context::Right(identity, grandparent, color,
                                                sibling_model, up_model) == c.model);
-                        assumption();
+                        known();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     step();
@@ -377,14 +377,14 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         Context::Top => {},
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
             unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
-            have identity == parent by assumption();
+            have identity == parent by known();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
             have parent != 0 by solve();
             contradiction(parent == 0);
         },
         Context::Right(identity, grandparent, color, sibling_model, up_model) => {
             unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
-            have identity == parent by assumption();
+            have identity == parent by known();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
             have parent != 0 by solve();
             contradiction(parent == 0);
@@ -397,7 +397,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
     }
     have t.model == plug(old(c.model), old(t.model)) by {
         rewrite(t.model == plug(c.model, t.model));
-        assumption();
+        known();
     }
     unfold(c);
     let ctx = fold(ctx_at(node, root), { model: Context::Top });
@@ -408,7 +408,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                 == plug(old(c.model), old(t.model)) by {
                 rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model)
                     == t.model);
-                assumption();
+                known();
             }
             let { left: l, right: r } = unfold(t);
             let sub = fold(rb_at(node), {
@@ -417,7 +417,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
             have sub.model == plug(old(c.model), old(t.model)) by {
                 rewrite(sub.model
                     == RbTree::Node(identity, parent_model, color, left_model, right_model));
-                assumption();
+                known();
             }
             step();
             solve();

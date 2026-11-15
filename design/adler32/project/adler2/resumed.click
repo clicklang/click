@@ -18,8 +18,8 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  have to_integer((__rust_mir_8.b as u32)) == 0 by { rewrite(__rust_mir_8.b == 0); normalize(); }
  mark initial_seed;
  step_until(assignment(__rust_mir_13, 0));
- have to_integer(__rust_mir_8.a) == old(adler_spec_a_u64(bytes, split, 1)) by { rewrite(1 == at(initial_seed, to_integer((__rust_mir_8.a as u32)))); assumption(); }
- have to_integer(__rust_mir_8.b) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite(1 == at(initial_seed, to_integer((__rust_mir_8.a as u32)))); rewrite(0 == at(initial_seed, to_integer((__rust_mir_8.b as u32)))); assumption(); }
+ have to_integer(__rust_mir_8.a) == old(adler_spec_a_u64(bytes, split, 1)) by { rewrite(1 == at(initial_seed, to_integer((__rust_mir_8.a as u32)))); known(); }
+ have to_integer(__rust_mir_8.b) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite(1 == at(initial_seed, to_integer((__rust_mir_8.a as u32)))); rewrite(0 == at(initial_seed, to_integer((__rust_mir_8.b as u32)))); known(); }
  apply(adler_u16_observation(__rust_mir_8.a));
  apply(adler_u16_observation(__rust_mir_8.b));
  have to_integer((__rust_mir_8.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by solve() using { to_integer((__rust_mir_8.a as u32)) == to_integer(__rust_mir_8.a); to_integer(__rust_mir_8.a) == old(adler_spec_a_u64(bytes, split, 1)); };
@@ -32,21 +32,21 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  apply(integer::uint32_unpack_uint16_low((__rust_mir_8.a as u32), (__rust_mir_8.b as u32)));
  apply(integer::uint32_unpack_uint16_high((__rust_mir_8.a as u32), (__rust_mir_8.b as u32)));
  step_until(assignment(__rust_mir_17, 0));
- have saved == at(saved_state, ((__rust_mir_8.b as u32) << 16) | (__rust_mir_8.a as u32)) by assumption();
+ have saved == at(saved_state, ((__rust_mir_8.b as u32) << 16) | (__rust_mir_8.a as u32)) by known();
  have (__rust_mir_14.a as u32) == at(saved_state, (__rust_mir_8.a as u32)) by {
   rewrite((__rust_mir_14.a as u32) == (saved & 65535u32));
   rewrite(saved == at(saved_state, ((__rust_mir_8.b as u32) << 16) | (__rust_mir_8.a as u32)));
-  assumption();
+  known();
  }
  have (__rust_mir_14.b as u32) == at(saved_state, (__rust_mir_8.b as u32)) by {
   rewrite((__rust_mir_14.b as u32) == ((saved >> 16) & 65535u32));
   rewrite(saved == at(saved_state, ((__rust_mir_8.b as u32) << 16) | (__rust_mir_8.a as u32)));
-  assumption();
+  known();
  }
- have (__rust_mir_14.a as u32) <= 65520u32 by { rewrite((__rust_mir_14.a as u32) == at(saved_state, (__rust_mir_8.a as u32))); assumption(); }
- have (__rust_mir_14.b as u32) <= 65520u32 by { rewrite((__rust_mir_14.b as u32) == at(saved_state, (__rust_mir_8.b as u32))); assumption(); }
- have to_integer((__rust_mir_14.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by { rewrite((__rust_mir_14.a as u32) == at(saved_state, (__rust_mir_8.a as u32))); assumption(); }
- have to_integer((__rust_mir_14.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite((__rust_mir_14.b as u32) == at(saved_state, (__rust_mir_8.b as u32))); assumption(); }
+ have (__rust_mir_14.a as u32) <= 65520u32 by { rewrite((__rust_mir_14.a as u32) == at(saved_state, (__rust_mir_8.a as u32))); known(); }
+ have (__rust_mir_14.b as u32) <= 65520u32 by { rewrite((__rust_mir_14.b as u32) == at(saved_state, (__rust_mir_8.b as u32))); known(); }
+ have to_integer((__rust_mir_14.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by { rewrite((__rust_mir_14.a as u32) == at(saved_state, (__rust_mir_8.a as u32))); known(); }
+ have to_integer((__rust_mir_14.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite((__rust_mir_14.b as u32) == at(saved_state, (__rust_mir_8.b as u32))); known(); }
  mark prefix_done;
  have forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) } by {
   intro(); intro();
@@ -56,20 +56,20 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) };
  };
  step_until(assignment(__rust_mir_0, 0));
- have to_integer(__rust_mir_14.a) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)))) by assumption();
- have to_integer(__rust_mir_14.b) == at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))) by assumption();
- have at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)))) == old(adler_spec_a_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((__rust_mir_14.a as u32))))) by assumption();
- have at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))) == old(adler_spec_b_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((__rust_mir_14.a as u32))), at(prefix_done, to_integer((__rust_mir_14.b as u32))))) by assumption();
+ have to_integer(__rust_mir_14.a) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)))) by known();
+ have to_integer(__rust_mir_14.b) == at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))) by known();
+ have at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)))) == old(adler_spec_a_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((__rust_mir_14.a as u32))))) by known();
+ have at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))) == old(adler_spec_b_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((__rust_mir_14.a as u32))), at(prefix_done, to_integer((__rust_mir_14.b as u32))))) by known();
  have to_integer(__rust_mir_14.a) == old(adler_spec_a_u64(bytes + split, bytes.len() - split, old(adler_spec_a_u64(bytes, split, 1)))) by {
   rewrite(old(adler_spec_a_u64(bytes, split, 1)) == at(prefix_done, to_integer((__rust_mir_14.a as u32))));
   rewrite(old(adler_spec_a_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((__rust_mir_14.a as u32))))) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)))));
-  assumption();
+  known();
  }
  have to_integer(__rust_mir_14.b) == old(adler_spec_b_u64(bytes + split, bytes.len() - split, old(adler_spec_a_u64(bytes, split, 1)), old(adler_spec_b_u64(bytes, split, 1, 0)))) by {
   rewrite(old(adler_spec_a_u64(bytes, split, 1)) == at(prefix_done, to_integer((__rust_mir_14.a as u32))));
   rewrite(old(adler_spec_b_u64(bytes, split, 1, 0)) == at(prefix_done, to_integer((__rust_mir_14.b as u32))));
   rewrite(old(adler_spec_b_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((__rust_mir_14.a as u32))), at(prefix_done, to_integer((__rust_mir_14.b as u32))))) == at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))));
-  assumption();
+  known();
  }
  // Compose the two updates over the uint64 specification at the split.
  apply(integer::uint64_subtract_to_integer(bytes.len(), split)) using { to_integer(split) <= to_integer(bytes.len()); };
@@ -92,11 +92,11 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  }
  have to_integer(__rust_mir_14.a) == old(adler_spec_a_u64(bytes, bytes.len(), 1)) by {
   rewrite(adler_spec_a_u64(bytes, bytes.len(), 1) == adler_spec_a_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1)));
-  assumption();
+  known();
  }
  have to_integer(__rust_mir_14.b) == old(adler_spec_b_u64(bytes, bytes.len(), 1, 0)) by {
   rewrite(adler_spec_b_u64(bytes, bytes.len(), 1, 0) == adler_spec_b_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1), adler_spec_b_u64(bytes, split, 1, 0)));
-  assumption();
+  known();
  }
  have 65536 * to_integer(__rust_mir_14.b) + to_integer(__rust_mir_14.a) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) by {
   unfold(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));

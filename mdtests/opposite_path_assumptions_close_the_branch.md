@@ -9,7 +9,7 @@ theorem equality_then_inequality(x: int32, y: int32) {
     ensures x == y implies (x != y implies 0 == 1) by {
         intro();
         intro();
-        assumption();
+        known();
     }
 }
 
@@ -17,7 +17,7 @@ theorem inequality_then_equality(x: int32, y: int32) {
     ensures x != y implies (x == y implies 0 == 1) by {
         intro();
         intro();
-        assumption();
+        known();
     }
 }
 

@@ -667,7 +667,22 @@ mod tests {
             resources.symbolic_range_read_supported(&required, &empty, None),
             None
         );
-        let later = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
+        let declared = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
+        let declared_range = range(
+            &Pointer::loaded_value(&declared, &alias),
+            0u32.into(),
+            n.clone(),
+        );
+        assert_eq!(
+            resources.symbolic_range_read_supported(&declared_range, &facts, None),
+            Some(true)
+        );
+        let later = crate::kernel::intern_memory(
+            declared
+                .memory()
+                .clone()
+                .store(slot.offset_by_bytes(4), crate::kernel::uint8(1u32)),
+        );
         let required = range(&Pointer::loaded_value(&later, &alias), 0u32.into(), n);
         assert_eq!(
             resources.symbolic_range_read_supported(&required, &facts, None),

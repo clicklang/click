@@ -3,7 +3,7 @@
 ```click
 theorem nonnegative(n: Integer) {
     requires n >= 0;
-    ensures n >= 0 by assumption();
+    ensures n >= 0 by known();
 }
 theorem positive(n: Integer) {
     ensures n >= 0 by {

@@ -3,7 +3,7 @@
 `solve() using` proves a `uint64` or `int64` goal through its Integer
 observations, carrying each listed order to Integer by a bridge theorem that
 states it as `left < right` or `left <= right`. A premise written the other
-way round, `i > 0`, is restated that way round by `assumption` first, and a
+way round, `i > 0`, is restated that way round by `known` first, and a
 goal written the other way round, `i - 1 >= 0`, is proved as `0 <= i - 1` and
 closed from it. A difference's range is shown from the operands' own type
 ranges where no premise bounds them: `i - 1` is defined under `0 < i`

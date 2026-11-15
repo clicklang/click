@@ -71,7 +71,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have iter.len() <= bytes.len();
                 have iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len()) by {
                     rewrite((bytes.len() - iter.len()) == (bytes.len() - at(iteration, iter.len())) + 1u64);
-                    assumption();
+                    known();
                 }
                 have iter.len() < at(iteration, iter.len());
                 have 0 <= total;

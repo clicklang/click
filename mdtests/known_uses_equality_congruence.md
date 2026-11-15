@@ -1,6 +1,6 @@
 # Available facts use equality closure
 
-The application stays opaque: `assumption` neither unfolds it nor searches
+The application stays opaque: `known` neither unfolds it nor searches
 for a proof. Equal arguments and already admitted result facts suffice.
 The operand equality deliberately arrives after the application fact.
 
@@ -14,26 +14,26 @@ theorem rewritten_pointer_argument(p: int32*, q: int32*) {
     requires p == q;
     ensures tag(p) == 1 by {
         rewrite(p == q);
-        assumption();
+        known();
     }
 }
 
 theorem transported(x: int32, y: int32) {
     requires opaque(x) == 1;
     requires x == y;
-    ensures opaque(y) == 1 by assumption();
+    ensures opaque(y) == 1 by known();
 }
 
 theorem nested_application(x: int32, y: int32, z: int32) {
     requires nested(opaque(x)) == z;
     requires x == y;
-    ensures nested(opaque(y)) == z by assumption();
+    ensures nested(opaque(y)) == z by known();
 }
 
 theorem comparison(x: int32, y: int32, z: int32) {
     requires opaque(x) < z;
     requires x == y;
-    ensures opaque(y) < z by assumption();
+    ensures opaque(y) < z by known();
 }
 ```
 

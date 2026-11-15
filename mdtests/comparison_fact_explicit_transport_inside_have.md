@@ -20,10 +20,10 @@ void mark(int32 *next, int32 *visited) {
     ensures 0 <= next[0];
 } by {
     mark entry;
-    have at(entry, 0 <= next[0]) by assumption();
+    have at(entry, 0 <= next[0]) by known();
     step();
     have 0 <= next[0] by {
-        assumption();
+        known();
     }
 }
 ```

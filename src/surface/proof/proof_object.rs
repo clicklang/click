@@ -10,7 +10,7 @@ use crate::kernel::proof::{
     ProofBranchState, ProofExecutionState as KernelProofExecutionState, ProofFacts,
     ProofFocusError, ProofJoinError, ProofObject as KernelProofObject,
     ProofObligation as KernelBranchObligation, ProofState as KernelProofState,
-    PropositionAssumptionContext, PropositionCloseError, PropositionIntroduction,
+    PropositionCloseError, PropositionIntroduction, PropositionKnownContext,
     PropositionObligation as KernelPropositionObligation, PropositionSplitError, SplitId,
 };
 use crate::persistent::PersistentMap;
@@ -3670,7 +3670,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
     match step {
         ProofStep::Match { .. } => "match",
         ProofStep::Both { .. } => "both",
-        ProofStep::Assumption => "assumption()",
+        ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",

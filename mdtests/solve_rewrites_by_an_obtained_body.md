@@ -17,7 +17,7 @@ theorem black_through_an_obtained_body(v: Walk, rest: Walk) {
         obtain (d: Integer) { v == Walk::At(d, rest) }
         have black(v) == black(Walk::At(d, rest));
         witness { e: d };
-        assumption();
+        known();
     }
 }
 ```

@@ -1583,7 +1583,7 @@ mod proof_fact_store_tests {
         let mut steps = vec![ProofStep::Step];
         append_surface_tactics_by_leaf(
             &mut steps,
-            &[vec![ProofTactic::Normalize], vec![ProofTactic::Assumption]],
+            &[vec![ProofTactic::Normalize], vec![ProofTactic::Known]],
             Some(&[true, false]),
         )
         .unwrap();
@@ -1598,7 +1598,7 @@ mod proof_fact_store_tests {
             panic!("distinct call edges must retain a structured certificate");
         };
         assert_eq!(returned_proof.steps(), &[ProofStep::Normalize]);
-        assert_eq!(threw_proof.steps(), &[ProofStep::Assumption]);
+        assert_eq!(threw_proof.steps(), &[ProofStep::Known]);
     }
 
     #[test]

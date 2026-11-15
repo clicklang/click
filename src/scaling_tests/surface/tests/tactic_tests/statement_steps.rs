@@ -23,7 +23,7 @@ void write(struct job *job, int32 *dest) {
             click.push_str(&format!(
                 r#"
     mark before_{index};
-    step() by {{ assumption(); }}
+    step() by {{ known(); }}
     mark after_{index};
     have job->output == at(before_{index}, job->output) by {{
         transport_certificate {{
@@ -55,9 +55,7 @@ void write(struct job *job, int32 *dest) {
             }
         }
         c.push_str("}\n");
-        click.push_str(
-            "step();\nassumption(); assumption();\nassumption(); assumption(); assumption();\n}\n",
-        );
+        click.push_str("step();\nknown(); known();\nknown(); known(); known();\n}\n");
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::surface::without_implicit_solve(|| verify_c_sources(&click, &[("probe.c", &c)]))
         });
@@ -87,7 +85,7 @@ fn prepared_call_obligations_execute_once_as_contract_and_context_grow() {
             let ambient = (1..=size)
                 .map(|n| format!("requires unrelated != -{n};\n"))
                 .collect::<String>();
-            let body = "have positive(a) == 1 by { unfold(positive(a)); normalize() using { a > 0; }; } assumption();";
+            let body = "have positive(a) == 1 by { unfold(positive(a)); normalize() using { a > 0; }; } known();";
             let step = if mode == "bare" {
                 "step();".to_string()
             } else if mode == "by" {
@@ -110,7 +108,7 @@ int32 caller(int32 a, int32 unrelated) {{
     ensures result == a;
 }} by {{
     {step}
-    have positive(a) == 1 by assumption();
+    have positive(a) == 1 by known();
     step(); solve();
 }}
 "#
@@ -184,12 +182,12 @@ fn known_obligation_scaling(tactic: &str, related: bool) {
             .map(|i| format!("requires {variable} < {};", 100 + i))
             .collect::<String>();
         let (body, produces, operation) = if tactic == "step" {
-            ("needs(x);", "", "step() by { assumption(); }")
+            ("needs(x);", "", "step() by { known(); }")
         } else {
             (
                 "",
                 "produces positive(x);",
-                "fold(positive(x)) by { assumption(); }",
+                "fold(positive(x)) by { known(); }",
             )
         };
         let c = format!("void needs(int32 x) {{}} void check(int32 x, int32 y) {{{body}}}");
@@ -275,11 +273,7 @@ void pack(int32* p) {{
 #[test]
 #[ignore = "nightly: three fold preparation forms"]
 fn prepared_named_fold_constructs_once() {
-    for suffix in [
-        ";",
-        " by { assumption(); }",
-        " { requires x > 0 by assumption(); }",
-    ] {
+    for suffix in [";", " by { known(); }", " { requires x > 0 by known(); }"] {
         let source = format!(
             r#"
 verifying "fold.c";
@@ -325,9 +319,9 @@ void make(int32 x) {{ requires x > 0; produces p: positive_value(x); }} by {{
     {steps}
     let p = fold(positive_value(x), {{ value: x }}) by {{
         have positive(x) == 1 by {{ unfold(positive(x)); normalize() using {{ x > 0; }}; }}
-        assumption();
+        known();
     }}
-    have positive(x) == 1 by assumption();
+    have positive(x) == 1 by known();
     step(); solve();
 }}
 "#
@@ -367,7 +361,7 @@ resource positive(x: int32) {{ field value: int32; fact value > 0; }}
 void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
     step_until(function.exit);
     {facts}
-    let p = fold(positive(x), {{ value: x }}) by {{ assumption(); }}
+    let p = fold(positive(x), {{ value: x }}) by {{ known(); }}
 }}
 "#
         );
@@ -437,7 +431,7 @@ void make(int32* p, int32 x) {{
 }} by {{
     {before}
     {history}
-    let c = fold(control(p, x), {{ value: x }}) by {{ assumption(); }}
+    let c = fold(control(p, x), {{ value: x }}) by {{ known(); }}
     unfold(c);
     {after}
     solve();
@@ -495,7 +489,7 @@ void make(struct pool* pool) {{
                     for source in [
                         source.clone(),
                         source
-                            .replace(" by { assumption(); }", ";")
+                            .replace(" by { known(); }", ";")
                             .replace(" by { solve(); }", ";"),
                     ] {
                         let expanded =
@@ -546,7 +540,7 @@ resource positive(x: int32) {{ fact x > 0; }}
 void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
     step_until(function.exit);
     {history}
-    fold(positive(x)) by {{ assumption(); }}
+    fold(positive(x)) by {{ known(); }}
     solve();
 }}
 "#
@@ -554,7 +548,7 @@ void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
             let source = if opaque {
                 source.replace("resource positive", "predicate positive_value(x: int32) { x > 0 }\nresource positive")
                 .replace("fact x > 0;", "fact positive_value(x);")
-                .replace("by { assumption(); }", "by { have positive_value(x) by { unfold(positive_value); assumption(); } assumption(); }")
+                .replace("by { known(); }", "by { have positive_value(x) by { unfold(positive_value); known(); } known(); }")
             } else {
                 source
             };
@@ -608,7 +602,7 @@ int32 caller(int32 a, int32* p) {{
     ensures result == a;
 }} by {{
     {history}
-    step() by {{ assumption(); }}
+    step() by {{ known(); }}
     step(); solve();
 }}
 "#

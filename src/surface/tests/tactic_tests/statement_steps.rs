@@ -630,9 +630,9 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
             ProofTactic::Step,
             ProofTactic::Step,
             ProofTactic::Normalize,
-            ProofTactic::Assumption,
-            ProofTactic::Assumption,
-            ProofTactic::Assumption
+            ProofTactic::Known,
+            ProofTactic::Known,
+            ProofTactic::Known
         ]
     ));
 
@@ -689,9 +689,9 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
                 ProofTactic::Step,
                 ProofTactic::Step,
                 ProofTactic::Normalize,
-                ProofTactic::Assumption,
-                ProofTactic::Assumption,
-                ProofTactic::Assumption
+                ProofTactic::Known,
+                ProofTactic::Known,
+                ProofTactic::Known
             ]
         ),
         "{expanded:#?}"
@@ -736,7 +736,7 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
         .expect("the return proof should have a surface expansion");
     assert_eq!(expanded[0], ProofTactic::Step);
     assert!(matches!(expanded[1], ProofTactic::Have(_)));
-    assert_eq!(expanded[2], ProofTactic::Assumption);
+    assert_eq!(expanded[2], ProofTactic::Known);
 
     let execute_offset = click_source
         .find("step_until(function.exit)")
@@ -822,11 +822,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
         .expect("linear execute_until should retain an expansion");
     assert_eq!(
         &expanded[expanded.len() - 3..],
-        &[
-            ProofTactic::Assumption,
-            ProofTactic::Assumption,
-            ProofTactic::Assumption
-        ]
+        &[ProofTactic::Known, ProofTactic::Known, ProofTactic::Known]
     );
     let expanded = &expanded[..expanded.len() - 3];
     assert!(
@@ -859,7 +855,7 @@ fn execute_step_omits_materialization_only_transport() {
             } by {
                 unfold(first_is_seven);
                 have p[0] == 7 by {
-                    assumption();
+                    known();
                 }
                 step();
                 step();
@@ -1365,8 +1361,8 @@ void change(struct node *g, struct node *source, struct node *t) {
         },
     }
     mark before_tag;
-    have at(before_tag, g->right == p) by { assumption(); }
-    have separate(memory(g->right), memory(p->tag)) by { assumption(); }
+    have at(before_tag, g->right == p) by { known(); }
+    have separate(memory(g->right), memory(p->tag)) by { known(); }
     step();
     transport(at(before_tag, g->right == p), g->right == p) using {
         at(before_tag, g->right == p);
@@ -1429,8 +1425,8 @@ fn prepared_call_cannot_use_its_postcondition_to_prove_its_precondition() {
     let c = "int32 caller(int32 a) { return callee(a); }";
     for step in [
         "step();",
-        "step() by assumption();",
-        "step() { requires positive(a) == 1 by assumption(); }",
+        "step() by known();",
+        "step() { requires positive(a) == 1 by known(); }",
     ] {
         let source = format!(
             r#"

@@ -42,11 +42,11 @@ void poke(uint8* s, uint64 n) {
                 preserve(separate(statement(0).footprint, memory(s[k])));
             }
             rewrite(s[k] == old(s[k]));
-            assumption();
+            known();
         }
     }
     have s[n] == '\0' by {
-        assumption();
+        known();
     }
     have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(s[k]) } by {
         intro();

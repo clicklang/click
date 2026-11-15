@@ -10,7 +10,7 @@ theorem t(y: int32) {
     requires y == 7;
     ensures forall (y: int32) { y == y } by {
         intro();
-        have outer.y == 7 by { assumption(); }
+        have outer.y == 7 by { known(); }
         solve();
     }
 }

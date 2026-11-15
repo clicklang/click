@@ -48,6 +48,104 @@ pub(crate) struct CompletedContract {
     rule: Option<VerifiedFunctionRule>,
 }
 
+/// Affine owner of one strategy's execution and ordinary outcome completions.
+/// Successors are installed during completion, never by a later receipt pass.
+pub(crate) struct ContractExecutionOwner {
+    execution: CheckedFunctionExecution,
+    progress: Option<ContractProofProgress>,
+    open: PersistentMap<usize, crate::kernel::proof::OutcomeIdentity>,
+}
+
+impl ContractExecutionOwner {
+    pub(in crate::kernel) fn open(
+        execution: CheckedFunctionExecution,
+        whole: Option<&WholeContractProof>,
+        outcomes: Vec<(
+            usize,
+            crate::kernel::proof::OutcomeIdentity,
+            Arc<PublishedFunctionOutcome>,
+        )>,
+    ) -> Result<Self, String> {
+        for (index, _, publication) in &outcomes {
+            if !execution
+                .published_outcomes
+                .get(*index)
+                .is_some_and(|original| publication.belongs_to(original))
+            {
+                return Err("outcome opening belongs to another execution producer".into());
+            }
+        }
+        let progress = whole
+            .map(|whole| {
+                ContractProofProgress::open(
+                    whole,
+                    &execution,
+                    outcomes
+                        .iter()
+                        .map(|(index, identity, _)| (*index, identity.clone())),
+                )
+                .ok_or_else(|| {
+                    "execution opening belongs to another whole-contract entry".to_string()
+                })
+            })
+            .transpose()?;
+        Ok(Self {
+            execution,
+            progress,
+            open: outcomes
+                .into_iter()
+                .map(|(index, identity, _)| (index, identity))
+                .collect(),
+        })
+    }
+
+    pub(in crate::kernel) fn finish_outcome(
+        &mut self,
+        index: usize,
+        identity: &crate::kernel::proof::OutcomeIdentity,
+        claims: Option<&crate::kernel::proof::OutcomeClaimGoals>,
+        closing: Option<&ContractExitObligations>,
+        publication: Option<&Arc<PublishedFunctionOutcome>>,
+    ) -> Result<(), String> {
+        if !self
+            .open
+            .get(&index)
+            .is_some_and(|opened| opened.same_as(identity))
+        {
+            return Err(
+                "completion belongs to another execution outcome or was already consumed".into(),
+            );
+        }
+        let progress = self
+            .progress
+            .as_ref()
+            .map(|progress| progress.finish_outcome(index, identity, claims, closing))
+            .transpose()?;
+        if let (Some(closing), Some(publication)) = (closing, publication) {
+            let exit = closing.completed_exit(publication.path());
+            self.execution.execution.paths[index] = publication.path().clone();
+            self.execution.published_outcomes[index] = publication.clone();
+            if let Some((deferred, error)) = publication.return_status() {
+                self.execution.deferred_contract_exits[index] = *deferred;
+                self.execution.deferred_contract_exit_errors[index] = error.clone();
+            }
+            self.execution.checked_resource_transitions[index] = exit.completes_boundary();
+            self.execution.closed_exit_obligations[index] = Some(exit);
+        }
+        self.progress = progress;
+        self.open.remove(&index);
+        Ok(())
+    }
+
+    pub(in crate::kernel) fn finish(mut self) -> Result<CheckedFunctionExecution, String> {
+        if !self.open.is_empty() {
+            return Err("execution still owns unfinished outcome obligations".into());
+        }
+        self.execution.contract_completion = self.progress.map(Arc::new);
+        Ok(self.execution)
+    }
+}
+
 impl CompletedContract {
     pub(crate) fn into_rule(self) -> Option<VerifiedFunctionRule> {
         self.rule
@@ -175,6 +273,7 @@ impl AdmittedContractProof {
 #[derive(Clone)]
 pub(crate) struct ContractProofProgress {
     identity: Arc<()>,
+    #[cfg(test)]
     strategy: Option<FunctionExecutionCandidates>,
     owner: WholeContractProof,
     outcomes: PersistentMap<usize, (crate::kernel::proof::OutcomeIdentity, bool)>,
@@ -221,9 +320,11 @@ impl ContractProofProgress {
                 remaining_paths += 1;
             }
         }
+        let _strategy = execution.proof_candidates.as_ref()?;
         let mut progress = Self {
             identity: Arc::new(()),
-            strategy: Some(execution.proof_candidates.as_ref()?.clone()),
+            #[cfg(test)]
+            strategy: Some(_strategy.clone()),
             owner: owner.clone(),
             outcomes: outcomes
                 .filter_map(|(index, identity)| {
@@ -260,6 +361,7 @@ impl ContractProofProgress {
         Some(progress)
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn belongs_to(&self, execution: &CheckedFunctionExecution) -> bool {
         self.strategy
             .as_ref()
@@ -582,6 +684,78 @@ mod tests {
         assert!(finish(&mut progress, goal).is_err());
         assert!(progress.closed.is_empty());
         assert_eq!(owner.open.len(), 2);
+    }
+
+    #[test]
+    fn ordinary_completion_installs_its_producer_directly() {
+        let (entry, execution) =
+            super::super::super::entry_authority_tests::checked_execution(0, None).unwrap();
+        let whole = WholeContractProof::open(entry).unwrap();
+        let make_proof = || {
+            let core = execution.open_outcome(0).unwrap();
+            let mut closing = ContractClosingContext::new(&execution).open(0, &core);
+            for kind in [
+                ContractClosingGoal::ReturnedResources,
+                ContractClosingGoal::AllocationLifetime,
+                ContractClosingGoal::WriteFootprint,
+            ] {
+                closing = closing.fixture_close_goal(kind);
+            }
+            let mut goal = Goal::new(0, Arc::new(OutcomeProofState::new(core, ())));
+            goal.claims = Some(OutcomeClaimGoals::open([], false));
+            goal.closing = Some(closing);
+            root(goal)
+        };
+        let proof = make_proof();
+        let open = || {
+            proof
+                .open_contract_execution(
+                    execution.clone(),
+                    Some(&whole),
+                    std::iter::once(proof.focused_branch()),
+                )
+                .unwrap()
+        };
+        assert!(open().finish().is_err(), "an opened outcome must complete");
+        let (_, foreign) =
+            super::super::super::entry_authority_tests::checked_execution(0, None).unwrap();
+        assert!(
+            proof
+                .open_contract_execution(
+                    foreign,
+                    Some(&whole),
+                    std::iter::once(proof.focused_branch())
+                )
+                .is_err(),
+            "the producer is bound before any outcome proof runs"
+        );
+        let mut owner = open();
+        let sibling = make_proof();
+        assert!(
+            sibling
+                .complete_function_outcome_in_execution(&sibling, &mut owner)
+                .is_err(),
+            "another opening of the same producer has a different goal identity"
+        );
+        let completed = proof
+            .complete_function_outcome_in_execution(&proof, &mut owner)
+            .unwrap();
+        assert!(
+            proof
+                .complete_function_outcome_in_execution(&proof, &mut owner)
+                .is_err(),
+            "completion is consumed exactly once"
+        );
+        let execution = completed.finish_contract_execution(owner).unwrap();
+        assert!(execution.closed_exit_obligations[0].is_some());
+        assert!(
+            whole
+                .admit_executions(&[execution])
+                .complete()
+                .unwrap()
+                .into_rule()
+                .is_some()
+        );
     }
 
     #[test]

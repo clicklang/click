@@ -25,7 +25,7 @@ work expands into simple tactics:
 
 - `solve()` is the one written smart tactic. It closes the first open goal
   with the available facts and bounded rules and runs no C. It first checks
-  the indexed whole goal; an exact available fact expands to `assumption()`
+  the indexed whole goal; an exact available fact expands to `known()`
   without decomposition or a search for an alternative derivation.
   `solve() using { P; ... }` closes it from only the listed premises, trying
   arithmetic over them last; a miss adds arithmetic's reason.

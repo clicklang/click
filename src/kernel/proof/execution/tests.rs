@@ -1123,6 +1123,66 @@ fn return_composite_presentations_reject_other_execution_paths() {
     );
 }
 
+pub(super) fn bound_return_producer() -> (ExecutionProofCore, ProgramFunction, ProofFacts) {
+    let state = ExecutionState::new();
+    let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+        crate::kernel::ConditionTerm::Constant(true),
+        true,
+    )]);
+    let (function, events) = returned_proposition_trace(&state, &facts);
+    let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
+    let mut trace = ExecutionEvidence::default();
+    for event in events {
+        trace.push(event);
+    }
+    core.execution_evidence = vec![trace].into();
+    core.evidence_completed = true;
+    let candidates = crate::kernel::program_function_execution_candidates_from_outcomes(
+        state.clone(),
+        function.clone(),
+        vec![],
+        vec![(
+            FunctionOutcome::Return {
+                value: int32(0).into(),
+                state: Box::new(state),
+            },
+            vec![],
+            vec![],
+        )],
+    );
+    let execution = core
+        .checked_function_execution(
+            &candidates,
+            &function,
+            facts.assumptions().clone(),
+            crate::kernel::ExecutionEnvironment::new(),
+            crate::kernel::ExecutionSemantics::APPLY_VERIFIED_RULES,
+            crate::kernel::FunctionContractExecutionMode::VerifyLoops,
+        )
+        .unwrap();
+    core.open_return_outcome(0, &execution.open_outcome(0).unwrap(), &facts);
+    (core, function, facts)
+}
+
+#[test]
+fn return_producer_rejects_foreign_fact_lineage_at_the_operation() {
+    let (mut core, _, facts) = bound_return_producer();
+    let sibling = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+        crate::kernel::ConditionTerm::Constant(false),
+        true,
+    )]);
+    assert!(core.retain_return_facts(0, &sibling).is_err());
+    assert!(
+        core.retain_return_facts(0, &facts).is_ok(),
+        "a refused operation does not change the producer"
+    );
+    core.execution_evidence[0].events = Default::default();
+    assert!(
+        core.return_producers.get(&0).unwrap().finish().is_ok(),
+        "publication uses the checked completion, not the C event history"
+    );
+}
+
 #[test]
 fn return_resource_observations_construct_successors_and_reject_other_paths() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance};
@@ -1162,6 +1222,30 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     }
     core.execution_evidence = vec![trace].into();
     core.evidence_completed = true;
+    let candidates = crate::kernel::program_function_execution_candidates_from_outcomes(
+        before.clone(),
+        function.clone(),
+        vec![],
+        vec![(
+            FunctionOutcome::Return {
+                value: int32(0).into(),
+                state: Box::new(before.clone()),
+            },
+            vec![],
+            vec![],
+        )],
+    );
+    let execution = core
+        .checked_function_execution(
+            &candidates,
+            &function,
+            facts.assumptions().clone(),
+            crate::kernel::ExecutionEnvironment::new(),
+            crate::kernel::ExecutionSemantics::APPLY_VERIFIED_RULES,
+            crate::kernel::FunctionContractExecutionMode::VerifyLoops,
+        )
+        .unwrap();
+    core.open_return_outcome(0, &execution.open_outcome(0).unwrap(), &facts);
     core.return_proof_contexts = core
         .return_proof_contexts
         .with_inserted(0, returned_proposition_context(&before));
@@ -1173,6 +1257,13 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
         produced_facts.introduced_since(&facts).unwrap().len(),
         produced.semantic_facts.len()
     );
+    let mut without_history = core.clone();
+    without_history.execution_evidence[0].events = Default::default();
+    let returned = without_history
+        .checked_return_path(0)
+        .unwrap_or_else(|error| panic!("{}", error.reason));
+    assert!(matches!(returned.path().completion_origin.as_ref(),
+        Some(FunctionOutcome::Return { state, .. }) if state.resources() == produced.state.resources()));
     let retained = core.return_resource_rewrites.get(&0).unwrap().to_vec();
     let CheckedExecutionEvent::ResourceRewrite(constructed) = retained.last().unwrap() else {
         panic!("the constructor retains its exchange");
