@@ -110,7 +110,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 KernelTermNode::Constructor(constructor) => constructor.fields.clone(),
                 KernelTermNode::AlgebraicCall(call) => call.arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
-                KernelTermNode::FloatNegate { operand } | KernelTermNode::BoolCast { operand, .. }
+                KernelTermNode::FloatConvert { operand, .. } | KernelTermNode::FloatNegate { operand } | KernelTermNode::BoolCast { operand, .. }
                 | KernelTermNode::MachineObservation { operand, .. }
                 | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
@@ -177,6 +177,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 } => KernelTerm::bool_cast(*destination, get(operand))
                     .expect("Boolean conversion")
                     .with_machine_observation_type(format),
+                KernelTermNode::FloatConvert { source, operand } => {
+                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatConvert { source: *source, operand: get(operand) })
+                }
                 KernelTermNode::FloatNegate { operand } => {
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatNegate { operand: get(operand) })
                 }

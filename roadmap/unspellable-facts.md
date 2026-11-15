@@ -690,7 +690,7 @@ All 347 selected cast, parser, syntax and diagnostic checks passed; cast proof
 fixtures passed, and float fixtures had zero fact-stability differences.
 Quality checks passed.
 
-Before 8x, the approved conversion-normalization prerequisite shares the
+Before 8x, the approved conversion-normalization prerequisite ([PR #2876](https://github.com/clicklang/click/pull/2876)) shares the
 existing numeric float conversion rules between evaluation and native term
 rebuilders. Substitution of `1` into `x as float` now produces the same
 binary32 literal as directly lowering `1 as float`. Equality rewrites,
@@ -702,6 +702,15 @@ unchanged, and symbolic rebuilding does not walk operand prefixes.
 All 1,847 final selected checks passed, including the complete scaling suite;
 float proof fixtures had zero fact-stability differences. The representation
 migration itself remains 8x, followed by 8y–8ad.
+
+8x first slice retains integer-to-float and float-width conversion operands in
+`KernelTerm::FloatConvert`, including source and result types. Borrowed views,
+observation rebuilding, variable collection and Surface cast synthesis use the
+retained children. Structural import/export preserves raw conversion calls,
+including constant payloads; numerical normalization stays with native producers.
+All 1,851 selected checks passed, including the complete scaling suite and
+nested cast round trips. Float-to-integer conversions remain the second 8x
+slice; 8x and 8y–8ad are not closed by this change.
 
 ### 8a inventory
 

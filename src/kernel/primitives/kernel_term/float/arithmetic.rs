@@ -87,38 +87,60 @@ impl<'a> FloatOperandView<'a> {
 impl KernelTermImport {
     pub(crate) fn float(&mut self, format: KernelFloatType, source: &MachineTerm) -> KernelTerm {
         enum Task<'a> {
-            Enter(&'a MachineTerm),
-            Negate,
-            Binary(FloatBinaryOperator),
+            Enter(ProgramType, &'a MachineTerm),
+            Negate(KernelFloatType),
+            Binary(KernelFloatType, FloatBinaryOperator),
+            Convert(KernelFloatType, ProgramType),
         }
-        let mut pending = vec![Task::Enter(source)];
+        let mut pending = vec![Task::Enter(format.program_type(), source)];
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match task {
-                Task::Enter(term) => {
+                Task::Enter(ty, term) => {
+                    let Some(format) = KernelFloatType::from_program_type(ty) else {
+                        values.push(self.machine(
+                            MachineIntegerType::from_program_type(ty).expect("numeric source"),
+                            term,
+                        ));
+                        continue;
+                    };
                     let view = FloatOperandView::Native(format, term);
-                    if let Some(operand) = view.negate() {
-                        pending.push(Task::Negate);
+                    if let Some(operand) = view.conversion() {
+                        pending.push(Task::Convert(format, operand.source_type()));
                         pending.push(Task::Enter(
+                            operand.source_type(),
+                            operand.native().expect("native conversion"),
+                        ));
+                    } else if let Some(operand) = view.negate() {
+                        pending.push(Task::Negate(format));
+                        pending.push(Task::Enter(
+                            ty,
                             operand.native_compat().expect("native operand"),
                         ));
                     } else if let Some((operator, arguments)) = view.binary() {
-                        pending.push(Task::Binary(operator));
+                        pending.push(Task::Binary(format, operator));
                         pending.extend(arguments.into_iter().rev().map(|argument| {
-                            Task::Enter(argument.native_compat().expect("native operand"))
+                            Task::Enter(ty, argument.native_compat().expect("native operand"))
                         }));
                     } else {
                         values.push(self.float_atom(format, term));
                     }
                 }
-                Task::Negate => {
+                Task::Convert(format, source) => {
+                    let operand = values.pop().expect("conversion operand");
+                    values.push(
+                        KernelTerm::float_convert(format, source, operand)
+                            .expect("imported conversion"),
+                    );
+                }
+                Task::Negate(format) => {
                     let operand = values.pop().expect("negation operand");
                     values.push(
                         KernelTerm::float_negate(format, operand).expect("imported float width"),
                     );
                 }
-                Task::Binary(operator) => {
+                Task::Binary(format, operator) => {
                     let right = values.pop().expect("right operand");
                     let left = values.pop().expect("left operand");
                     values.push(
@@ -138,6 +160,7 @@ impl KernelTermExport {
             Enter(&'a KernelTerm),
             Negate(KernelFloatType),
             Binary(KernelFloatType, FloatBinaryOperator),
+            Convert(KernelFloatType, ProgramType),
         }
         let mut pending = vec![Task::Enter(source)];
         let mut values = Vec::new();
@@ -145,8 +168,15 @@ impl KernelTermExport {
             crate::instrumentation::record_deterministic_work(1);
             match task {
                 Task::Enter(root) => {
-                    let view = FloatOperandView::from_shared(root).ok_or("float operand type")?;
+                    let Some(view) = FloatOperandView::from_shared(root) else {
+                        values.push(Self::machine(root)?);
+                        continue;
+                    };
                     match root.node() {
+                        KernelTermNode::FloatConvert { source, operand } => {
+                            pending.push(Task::Convert(view.format(), *source));
+                            pending.push(Task::Enter(operand));
+                        }
                         KernelTermNode::FloatNegate { operand } => {
                             pending.push(Task::Negate(view.format()));
                             pending.push(Task::Enter(operand));
@@ -164,6 +194,13 @@ impl KernelTermExport {
                                 .clone(),
                         ),
                     }
+                }
+                Task::Convert(format, source) => {
+                    let operand = values.pop().expect("conversion operand");
+                    values.push(MachineTerm::PureFunctionApplication {
+                        name: super::conversion::float_conversion_name(source, format),
+                        arguments: vec![operand],
+                    });
                 }
                 Task::Negate(format) => {
                     let value = Box::new(values.pop().expect("negation operand"));

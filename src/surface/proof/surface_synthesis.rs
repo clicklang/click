@@ -3163,6 +3163,12 @@ fn raise_float_arithmetic(
     use crate::kernel::KernelTermNode as Node;
     let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
     Some(match term.node() {
+        Node::FloatConvert { operand, .. } => {
+            let crate::kernel::KernelType::Program(target) = term.ty() else {
+                return None;
+            };
+            synthesize_observation_operand(recurse(operand)?, *target)?
+        }
         Node::FloatNegate { operand } => SurfaceTerm::Negate(Box::new(recurse(operand)?)),
         Node::FloatBinary {
             operator,
@@ -3437,7 +3443,7 @@ pub(super) fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
-        Node::FloatNegate { .. } | Node::FloatBinary { .. } => {
+        Node::FloatConvert { .. } | Node::FloatNegate { .. } | Node::FloatBinary { .. } => {
             raise_float_arithmetic(term, parameter_binding, state, bound_variables)?
         }
         Node::FloatRead(_) => raise_float_read(term, parameter_binding, state, bound_variables)?,

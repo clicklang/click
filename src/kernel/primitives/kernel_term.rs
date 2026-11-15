@@ -124,6 +124,10 @@ pub enum KernelTermNode {
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    FloatConvert {
+        source: ProgramType,
+        operand: KernelTerm,
+    },
     FloatNegate {
         operand: KernelTerm,
     },
@@ -442,6 +446,7 @@ impl NodeKey {
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
@@ -792,6 +797,7 @@ impl KernelTerm {
             | KernelTermNode::IntegerIf { arguments }
             | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }

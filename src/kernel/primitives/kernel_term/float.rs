@@ -2,6 +2,7 @@
 //! conversion nor constant evaluation changes a written carrier or its bits.
 use super::*;
 mod arithmetic;
+mod conversion;
 mod read;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
