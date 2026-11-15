@@ -485,7 +485,8 @@ tests passed, including every scaling test, termination and contract completion,
 Integer conversion checks and ordinary example projects.
 The CI-quality check passed.
 
-8p represents algebraic variables and constructors directly in common roots,
+8p ([#2835](https://github.com/clicklang/click/pull/2835), merged) represents
+algebraic variables and constructors directly in common roots,
 reusing the prepared constructor payload. Imports retain typed Integer/numeric
 and nested algebraic fields; unmigrated field families retain exact native
 payloads rather than coalescing pointer annotations through value equality.
@@ -504,6 +505,21 @@ reads and execution handoffs retain their separately assigned slices.
 Validation: 2,128 selected tests passed, including every scaling test, algebraic
 and retained-match readers/rewrites, Surface synthesis, Rust lowering and the
 full ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
+
+8q selects common constructor variants directly during retained-match reduction.
+The existing schema/type refusals and typed field-replacement policy are retained;
+only the selected fields cross that remaining substitution adapter. Symbolic
+common roots decline reduction without materializing algebraic output.
+
+Pure-function projection now accepts common constructor arguments and returns the
+selected field root without exporting siblings or arithmetic prefixes. Native
+inputs retain their existing projection behavior. Algebraic call-argument and
+runtime enum-carrier activation remain with their assigned call/handoff slices.
+Focused regressions check variant/index/type refusals, exact pointer payloads,
+native/common field-checking parity, and constant selected-field projection work.
+Validation: five focused tests and 2,040 broader tests passed, including all
+scaling tests, algebraic/match checks, Surface synthesis, Rust lowering and full
+ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
 
 ### 8a inventory
 

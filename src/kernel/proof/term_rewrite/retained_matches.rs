@@ -79,28 +79,39 @@ impl TermRewrite<'_> {
     }
 
     pub(super) fn reduce_retained_match_in(&mut self, matched: &KernelMatch) -> Option<KernelTerm> {
-        // A retained symbolic match is not a constructor. Do not materialize
-        // its complete algebraic output merely to decline iota reduction.
-        if matches!(matched.arguments[0].node(), KernelTermNode::Match(_)) {
-            return None;
-        }
-        let PureFunctionArgument::Algebraic(scrutinee) = self
-            .fold_integer_bridge
-            .argument(&matched.arguments[0])
-            .ok()?
-        else {
-            return None;
-        };
-        let fields = scrutinee.checked_constructor_fields()?;
-        let AlgebraicTermNode::Constructor { variant, .. } = &scrutinee.node else {
-            return None;
+        let scrutinee = &matched.arguments[0];
+        // Inspect the selected common constructor before the compatibility
+        // boundary for typed replacement fields. Symbolic roots have no iota
+        // reduction and do not need a native expression tree to say so.
+        let native;
+        let common_fields;
+        let (algebraic_type, variant, fields) = match scrutinee.node() {
+            KernelTermNode::Constructor(constructor) => {
+                common_fields = constructor.checked_native_fields(&mut self.fold_integer_bridge)?;
+                (
+                    &constructor.algebraic_type,
+                    &constructor.variant,
+                    common_fields.as_slice(),
+                )
+            }
+            KernelTermNode::Legacy(value) => {
+                let PureFunctionArgument::Algebraic(value) = value.value() else {
+                    return None;
+                };
+                native = value;
+                let fields = native.checked_constructor_fields()?;
+                let AlgebraicTermNode::Constructor { variant, .. } = &native.node else {
+                    return None;
+                };
+                (&native.algebraic_type, variant, fields)
+            }
+            _ => return None,
         };
         let index = matched
             .arms
             .iter()
             .position(|arm| arm.variant == *variant)?;
-        let schema = scrutinee
-            .algebraic_type
+        let schema = algebraic_type
             .variants
             .iter()
             .find(|schema| schema.name == *variant)?;

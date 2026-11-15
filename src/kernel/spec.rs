@@ -7741,14 +7741,19 @@ fn evaluate_spec_pure_function_application_paths_in(
         // A field projection of a constructed value is that field, by the
         // function's definition: the term depends on the argument's own
         // shape and on no fact.
-        if let Some(value) =
-            projection.and_then(|projection| projected_field(projection, &arguments, result_type))
-        {
+        if let Some(value) = projection.and_then(|projection| {
+            projected_field(
+                projection,
+                &arguments,
+                result_type,
+                !budget.machine_result_production_disabled,
+            )
+        }) {
             results.push(SpecExpressionPath {
                 value: if result_type.is_pointer() && !budget.machine_result_production_disabled {
-                    SpecValue::retain_formed_pointer(value)
+                    value.retain_pointer_result()
                 } else {
-                    value.into()
+                    value
                 },
                 facts,
                 obligations,
@@ -7884,8 +7889,31 @@ fn projected_field(
     projection: &PureProjection,
     arguments: &[SpecCallArgument],
     result_type: ProgramType,
-) -> Option<ProgramValue> {
-    let term = match arguments.get(projection.argument)?.native_descriptor()? {
+    retain: bool,
+) -> Option<SpecValue> {
+    let argument = arguments.get(projection.argument)?;
+    if let SpecCallArgument::Shared(root) = argument
+        && let KernelTermNode::Constructor(constructor) = root.node()
+    {
+        let field = constructor.field(&projection.variant, projection.field)?;
+        if field.ty() != &KernelType::Program(result_type) {
+            return None;
+        }
+        if let KernelTermNode::Legacy(value) = field.node() {
+            return match value.value() {
+                PureFunctionArgument::Value(value) => Some(value.clone().into()),
+                _ => None,
+            };
+        }
+        if retain {
+            return Some(field.clone().into());
+        }
+        return match KernelTermExport::default().argument(field).ok()? {
+            PureFunctionArgument::Value(value) => Some(value.into()),
+            _ => None,
+        };
+    }
+    let term = match argument.native_descriptor()? {
         PureFunctionArgument::Algebraic(term) => term,
         PureFunctionArgument::Value(ProgramValue::Parameter(term)) => term.as_ref(),
         _ => return None,
@@ -7898,7 +7926,7 @@ fn projected_field(
     }
     match fields.get(projection.field)? {
         AlgebraicValue::Program(value) if value.program_type() == result_type => {
-            Some(value.clone())
+            Some(value.clone().into())
         }
         _ => None,
     }

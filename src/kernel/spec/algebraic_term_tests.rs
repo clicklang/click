@@ -1133,3 +1133,68 @@ fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
         );
     }
 }
+
+#[test]
+fn common_constructor_projection_preserves_fields_and_refusals() {
+    let pointer = PointerValue::new(
+        Pointer::symbolic(Variable(999650)),
+        ProgramType::Int32Pointer,
+    )
+    .with_pointee_constant(true);
+    let mut native = KernelMatch::test_scrutinee(vec![
+        AlgebraicValueType::Program(ProgramType::Int32),
+        AlgebraicValueType::Program(ProgramType::Int32Pointer),
+    ]);
+    native.node = AlgebraicTermNode::Constructor {
+        variant: "Arm".into(),
+        fields: vec![
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::add(
+                MachineTerm::Variable(Variable(999651)),
+                MachineTerm::constant(1),
+            ))),
+            AlgebraicValue::Program(ProgramValue::Pointer(pointer.clone())),
+        ],
+    };
+    let root = KernelTermImport::default().algebraic(&native);
+    let shared = [SpecCallArgument::Shared(root.clone())];
+    let native = [SpecCallArgument::Native(PureFunctionArgument::Algebraic(
+        native,
+    ))];
+    let exports = KernelTermExport::algebraic_export_count();
+    for (field, ty) in [(0, ProgramType::Int32), (1, ProgramType::Int32Pointer)] {
+        let projection = PureProjection {
+            argument: 0,
+            variant: "Arm".into(),
+            field,
+        };
+        let result = projected_field(&projection, &shared, ty, true).unwrap();
+        let expected = projected_field(&projection, &native, ty, true).unwrap();
+        assert_eq!(
+            format!("{:?}", result.into_native()),
+            format!("{:?}", expected.into_native())
+        );
+        assert_eq!(
+            projected_field(&projection, &shared, ty, false)
+                .unwrap()
+                .into_native(),
+            projected_field(&projection, &native, ty, false)
+                .unwrap()
+                .into_native()
+        );
+    }
+    for (argument, variant, field, ty) in [
+        (1, "Arm", 0, ProgramType::Int32),
+        (0, "Other", 0, ProgramType::Int32),
+        (0, "Arm", 2, ProgramType::Int32),
+        (0, "Arm", 0, ProgramType::UInt32),
+    ] {
+        let projection = PureProjection {
+            argument,
+            variant: variant.into(),
+            field,
+        };
+        assert!(projected_field(&projection, &shared, ty, true).is_none());
+        assert!(projected_field(&projection, &native, ty, true).is_none());
+    }
+    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+}
