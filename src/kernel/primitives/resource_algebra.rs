@@ -4177,7 +4177,9 @@ impl ResourceContext {
             // A seeded run is the stores it stands for, each judged as one.
             let seeded = derivation.seeded_stores();
             let stores: Vec<(&Pointer, &ProgramValue)> = match (&*derivation, &seeded) {
-                (MemoryDerivation::Store { pointer, value, .. }, _) => vec![(pointer, value)],
+                (MemoryDerivation::Store { pointer, value, .. }, _) => {
+                    vec![(pointer, value.native())]
+                }
                 (MemoryDerivation::CellsSeeded { .. }, Some(stores)) => stores
                     .iter()
                     .map(|(pointer, value)| (pointer, value))
@@ -4324,7 +4326,7 @@ impl ResourceContext {
             MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
                 let stores = match derivation {
                     MemoryDerivation::Store { pointer, value, .. } => {
-                        vec![(pointer.clone(), value.clone())]
+                        vec![(pointer.clone(), value.native().clone())]
                     }
                     _ => derivation.seeded_stores().expect("a CellsSeeded edge"),
                 };

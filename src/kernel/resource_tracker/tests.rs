@@ -1089,7 +1089,8 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         ))
     };
     assert_eq!(
-        cell_value_on_path(&after, &cell, 4, &index_is_zero(false)),
+        cell_value_on_path(&after, &cell, 4, &index_is_zero(false))
+            .map(crate::kernel::ExecutionValue::into_native),
         None,
         "source discovery does not cross the cache-forgetting and store edges"
     );
@@ -1142,7 +1143,8 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         "preservation cannot establish a different stored value"
     );
     assert_eq!(
-        cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
+        cell_value_on_path(&after, &cell, 4, &index_is_zero(true))
+            .map(crate::kernel::ExecutionValue::into_native),
         Some(ProgramValue::Int32(MachineTerm::constant(7)))
     );
     assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);

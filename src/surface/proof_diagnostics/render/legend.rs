@@ -395,7 +395,7 @@ impl SnapshotLabels {
         let operation = match edge.as_ref() {
             MemoryDerivation::Store { pointer, value, .. } => {
                 let address = self.pointer_value_name(pointer);
-                let value = self.legend_value(value);
+                let value = self.legend_value(value.native());
                 format!("store {value} at address {address}")
             }
             MemoryDerivation::BranchJoin { incoming, .. } => {

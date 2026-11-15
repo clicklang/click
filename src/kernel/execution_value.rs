@@ -246,6 +246,94 @@ impl From<ExpressionPath> for ExpressionPath<ExecutionValue> {
     }
 }
 
+/// A memory cell's common pointer carrier. Its key is exactly the previous
+/// ProgramValue key, including for native numeric cells. Native observations
+/// are explicit and borrow the selected pointer's cached compatibility view.
+#[derive(Clone)]
+pub struct StoredMemoryValue(ExecutionValue);
+impl std::fmt::Debug for StoredMemoryValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self.native(), f)
+    }
+}
+impl StoredMemoryValue {
+    pub fn native(&self) -> &ProgramValue {
+        self.0
+            .native_payload()
+            .expect("native cell or retained complete pointer")
+    }
+    pub(crate) fn value(&self) -> &ExecutionValue {
+        &self.0
+    }
+    pub(crate) fn with_native_value(&self, value: ProgramValue) -> Self {
+        if self.value().shared().is_some() {
+            self.value().retain_checked_pointer(value).into()
+        } else {
+            value.into()
+        }
+    }
+    pub(crate) fn into_value(self) -> ExecutionValue {
+        self.0
+    }
+    pub(crate) fn into_native(self) -> ProgramValue {
+        self.0.into_native()
+    }
+    pub(crate) fn program_type(&self) -> ProgramType {
+        self.0.program_type()
+    }
+    pub(crate) fn byte_width(&self) -> u32 {
+        self.0.byte_width()
+    }
+}
+impl From<ProgramValue> for StoredMemoryValue {
+    fn from(value: ProgramValue) -> Self {
+        Self(value.into())
+    }
+}
+impl From<ExecutionValue> for StoredMemoryValue {
+    fn from(value: ExecutionValue) -> Self {
+        if value
+            .shared()
+            .is_some_and(|root| root.pointer_payload().is_none())
+        {
+            Self(value.into_native().into())
+        } else {
+            Self(value)
+        }
+    }
+}
+impl PartialEq for StoredMemoryValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.native() == other.native()
+    }
+}
+impl Eq for StoredMemoryValue {}
+impl std::hash::Hash for StoredMemoryValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(self.native(), state)
+    }
+}
+impl PartialOrd for StoredMemoryValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredMemoryValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.native().cmp(other.native())
+    }
+}
+impl PartialEq<ProgramValue> for StoredMemoryValue {
+    fn eq(&self, other: &ProgramValue) -> bool {
+        self.native() == other
+    }
+}
+impl PartialEq<StoredMemoryValue> for ProgramValue {
+    fn eq(&self, other: &StoredMemoryValue) -> bool {
+        self == other.native()
+    }
+}
+
 /// A local or outcome value keeps its exact producer payload. Stored identity observes the
 /// same native machine key across native and retained storage representations;
 /// specification producer equality remains exact on ExecutionValue itself.
@@ -459,6 +547,107 @@ mod tests {
             retagged.shared().unwrap().node(),
             KernelTermNode::PointerValue { .. }
         ));
+    }
+
+    #[test]
+    fn pointer_memory_cells_keep_roots_and_the_previous_native_key() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1027500)),
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_constant(true);
+        let native = ProgramValue::Pointer(pointer.clone());
+        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let retained = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
+        let native_cell = StoredMemoryValue::from(native.clone());
+        assert_eq!(retained, native_cell);
+        assert_eq!(retained.cmp(&native_cell), std::cmp::Ordering::Equal);
+        fn hash(value: &impl std::hash::Hash) -> u64 {
+            use std::hash::Hasher;
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(value, &mut hash);
+            hash.finish()
+        }
+        assert_eq!(hash(&retained), hash(&native));
+        assert_eq!(hash(&native_cell), hash(&native));
+        assert_eq!(format!("{retained:?}"), format!("{native:?}"));
+        let address = Pointer::symbolic(Variable(1027501));
+        let mut cells = CellStore::new();
+        cells.insert_retained(address.clone(), retained);
+        assert_eq!(cells.get_retained(&address).unwrap().shared(), Some(&root));
+        assert_eq!(cells.get(&address), Some(native.clone()));
+        assert_eq!(cells.iter().next().unwrap().1, &native);
+        assert!(
+            cells
+                .get_retained(&address)
+                .unwrap()
+                .pointer()
+                .unwrap()
+                .pointee_constant()
+        );
+    }
+
+    #[test]
+    fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Memory::local_pointer("retained_pointer_cell");
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1027600)),
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_constant(true);
+        let root = KernelTerm::shared_pointer_call(
+            KernelTerm::checked_call(
+                KernelType::Program(ProgramType::Int32Pointer),
+                "stored_source".into(),
+                vec![],
+            ),
+            SharedPointerValue::import(&pointer),
+        );
+        let memory = Memory::new()
+            .with_block(address.block.clone(), C_POINTER_BYTE_WIDTH)
+            .store_retained(address.clone(), ExecutionValue::Shared(root.clone()));
+        assert_eq!(
+            memory.known_retained_value(&address).unwrap().shared(),
+            Some(&root)
+        );
+        let forgotten = memory.without_possible_aliasing_cells(
+            &address.offset_by_bytes(1),
+            1,
+            &PureFactContext::new(),
+        );
+        assert!(forgotten.known_value(&address).is_none());
+        for snapshot in [&memory, &forgotten] {
+            let origin =
+                Pointer::loaded_value(&crate::kernel::intern_memory_ref(snapshot), &address);
+            let recovered =
+                crate::kernel::memory_provenance::complete_pointer_carrier_read_retained_value(
+                    &origin,
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(recovered.shared(), Some(&root));
+            assert!(recovered.pointer().unwrap().pointee_constant());
+            let paths = crate::kernel::eval::evaluate_retained_memory_load_paths(
+                snapshot,
+                address.clone(),
+                ProgramType::Int32Pointer,
+                ExecutionFacts::new(),
+                vec![],
+                &PureFactContext::new(),
+                false,
+                false,
+                None,
+                None,
+            );
+            assert_eq!(paths.len(), 1);
+            let ExpressionOutcome::Value(loaded) = &paths[0].outcome else {
+                panic!("retained pointer load: {:?}", paths[0].outcome);
+            };
+            assert_eq!(loaded.shared(), Some(&root));
+            assert!(loaded.pointer().unwrap().pointee_constant());
+        }
     }
 
     #[test]

@@ -134,3 +134,87 @@ fn copying_a_never_written_union_member_stays_an_uninitialized_read() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");
 }
+
+#[test]
+fn aggregate_and_union_copies_keep_retained_pointer_producers() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Memory::local_pointer("retained_copy_source");
+    let target = Memory::local_pointer("retained_copy_target");
+    let pointer = PointerValue::new(
+        Pointer::symbolic(Variable(1027800)),
+        ProgramType::Int32Pointer,
+    )
+    .with_pointee_constant(true);
+    let root = KernelTerm::shared_pointer_call(
+        KernelTerm::checked_call(
+            KernelType::Program(ProgramType::Int32Pointer),
+            "copied".into(),
+            vec![],
+        ),
+        crate::kernel::SharedPointerValue::import(&pointer),
+    );
+    let memory = Memory::new()
+        .with_block(source.block.clone(), 8)
+        .with_block(target.block.clone(), 8)
+        .store_retained(source.clone(), root.clone().into());
+    let layout = AggregateLayout::new(
+        8,
+        8,
+        vec![AggregateField::new("pointer", 0, ProgramType::Int32Pointer)],
+    );
+    let copied = copy_aggregate_fields(memory.clone(), &source, &target, &layout);
+    assert_eq!(
+        copied.known_retained_value(&target).unwrap().shared(),
+        Some(&root)
+    );
+    let layout = AggregateLayout::with_unions(
+        8,
+        8,
+        vec![],
+        vec![AggregateUnion::new(
+            "u",
+            0,
+            8,
+            vec![AggregateUnionField::new(
+                "pointer",
+                0,
+                ProgramType::Int32Pointer,
+            )],
+        )],
+    );
+    let copied = copy_aggregate_fields(memory, &source, &target, &layout);
+    assert_eq!(
+        copied
+            .known_retained_union_value(&target, ProgramType::Int32Pointer)
+            .unwrap()
+            .shared(),
+        Some(&root)
+    );
+    let paths = crate::kernel::eval::evaluate_retained_memory_load_paths(
+        &copied,
+        target.clone(),
+        ProgramType::Int32Pointer,
+        ExecutionFacts::new(),
+        vec![],
+        &PureFactContext::new(),
+        false,
+        false,
+        None,
+        None,
+    );
+    assert_eq!(paths.len(), 1);
+    let ExpressionOutcome::Value(value) = &paths[0].outcome else {
+        panic!("union pointer load")
+    };
+    assert_eq!(value.shared(), Some(&root));
+    assert!(value.pointer().unwrap().pointee_constant());
+    let overwritten = copied.store(
+        target.clone(),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    );
+    assert!(
+        overwritten
+            .known_retained_union_value(&target, ProgramType::Int32Pointer)
+            .is_none()
+    );
+}

@@ -3661,7 +3661,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
-                let mut paths = evaluate_memory_load_paths(
+                let mut paths = evaluate_retained_memory_load_paths(
                     &state.memory,
                     pointer.clone(),
                     lvalue.value_type,
@@ -3680,11 +3680,14 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(pointee) = lvalue.access_class().and_then(|class| class.pointee()) {
                     for path in &mut paths {
                         if let ExpressionOutcome::Value(value) = &mut path.outcome
-                            && matches!(value, ProgramValue::Pointer(_))
+                            && value.pointer().is_some()
                         {
-                            *value = value
-                                .clone()
-                                .with_pointer_declared_object_class(Some(pointee.clone()));
+                            *value = value.retain_checked_pointer(
+                                value
+                                    .native()
+                                    .into_owned()
+                                    .with_pointer_declared_object_class(Some(pointee.clone())),
+                            );
                         }
                     }
                 }
@@ -3715,11 +3718,21 @@ fn read_retained_lvalue_paths_without_ranges(
                     }
                 }
                 if !lvalue.is_volatile() || SpecificationAccessScope::is_active() {
-                    return Ok(paths.into_iter().map(Into::into).collect());
+                    return Ok(paths
+                        .into_iter()
+                        .map(|path| {
+                            path.map_value(|value| match value {
+                                ExecutionValue::Native(value) => {
+                                    ExecutionValue::retain_formed_pointer(value)
+                                }
+                                value => value,
+                            })
+                        })
+                        .collect());
                 }
                 for path in &mut paths {
                     if let ExpressionOutcome::Value(value) = &path.outcome {
-                        let value = value.clone();
+                        let value = value.native().into_owned();
                         path.facts.push(volatile_access_fact(
                             budget,
                             false,
@@ -3729,7 +3742,17 @@ fn read_retained_lvalue_paths_without_ranges(
                         )?);
                     }
                 }
-                paths.into_iter().map(Into::into).collect()
+                paths
+                    .into_iter()
+                    .map(|path| {
+                        path.map_value(|value| match value {
+                            ExecutionValue::Native(value) => {
+                                ExecutionValue::retain_formed_pointer(value)
+                            }
+                            value => value,
+                        })
+                    })
+                    .collect()
             }
         },
         LValueOutcome::UndefinedBehavior(undefined_behavior) => vec![ExecutionValuePath {

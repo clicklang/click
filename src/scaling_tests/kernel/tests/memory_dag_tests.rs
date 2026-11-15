@@ -795,7 +795,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         let step = MemoryDerivation::Store {
             base: memory.clone(),
             pointer: write,
-            value: value.clone(),
+            value: value.clone().into(),
         };
         let result = affects(
             &step,
@@ -924,7 +924,8 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         value: ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(160_007)),
             ProgramType::Int32Pointer,
-        ),
+        )
+        .into(),
     };
     let mut samples = Vec::new();
     for count in [16u64, 64, 256, 1024] {

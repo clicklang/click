@@ -797,8 +797,8 @@ fn write_program_lvalue_paths_without_local_reference(
             )])
         }
         LValueStorage::Memory { pointer } => {
-            // Memory cells retain their explicit native storage boundary.
-            let value = value.into_native();
+            let retained_value = value;
+            let value = retained_value.native().into_owned();
             // The loan obligation names the evaluated source lvalue. Keep its
             // address before storage chooses an equivalent owner's coordinates.
             let source_pointer = pointer.clone();
@@ -1052,9 +1052,9 @@ fn write_program_lvalue_paths_without_local_reference(
                     }
                     None => effective_assumptions,
                 };
-            let next_memory = state.memory.clone().store_classed_with_context(
+            let next_memory = state.memory.clone().store_retained_classed_with_context(
                 written_pointer.clone(),
-                written_value.clone(),
+                retained_value.retain_checked_pointer(written_value.clone()),
                 &effective_assumptions,
                 lvalue_classes
                     .0
@@ -6049,7 +6049,7 @@ pub(in crate::kernel) fn sync_stack_local(
     }
 }
 
-/// Retain logical locals; memory-resident slots cross the current native cell boundary.
+/// Keep the same retained value in a local and its memory-resident slot.
 pub(in crate::kernel) fn sync_retained_stack_local(
     state: &mut ExecutionState,
     name: &str,
@@ -6059,12 +6059,7 @@ pub(in crate::kernel) fn sync_retained_stack_local(
         return;
     };
     if state.memory.has_block(&pointer.block) {
-        state.set_memory(
-            state
-                .memory
-                .clone()
-                .store(pointer, value.clone().into_native()),
-        );
+        state.set_memory(state.memory.clone().store_retained(pointer, value.clone()));
     }
 }
 

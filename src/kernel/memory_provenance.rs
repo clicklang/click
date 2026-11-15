@@ -1,11 +1,11 @@
 use super::primitives::*;
 use super::reasoning::*;
 use super::resource_tracker::cell_source::*;
-use crate::kernel::ExecutionFactSource;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{BitvectorUnaryOp, MachineCastSpelling, cast_term};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{ExecutionFactSource, ExecutionValue};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 use std::collections::BTreeSet;
 
@@ -675,7 +675,7 @@ fn canonical_memory_deep_uncached(memory: &Memory) -> Memory {
     let union_cells = std::mem::take(&mut canonical.union_cells);
     for ((pointer, program_type), value) in union_cells.iter() {
         let key = canonicalize_pointer_loads(pointer);
-        let value = match value {
+        let mapped = match value.native() {
             ProgramValue::PointerInteger(record) => {
                 ProgramValue::PointerInteger(PointerIntegerValue {
                     kind: record.kind.clone(),
@@ -711,7 +711,8 @@ fn canonical_memory_deep_uncached(memory: &Memory) -> Memory {
                     .with_pointee_constant(false),
             ),
         };
-        std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *program_type), value);
+        std::sync::Arc::make_mut(&mut canonical.union_cells)
+            .insert((key, *program_type), value.with_native_value(mapped));
     }
     canonical.record_diagnostic_transform(
         "canonicalize embedded reads",
@@ -3093,8 +3094,9 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
             return false;
         };
         let stores_read = |cell: &MemoryDagCell, read: &LoadedPointerView| {
-            matches!(cell, MemoryDagCell::Stored { value: ProgramValue::Pointer(value), .. }
-                if value.pointer() == &Pointer::loaded_value(&read.defining_memory, &read.defining_address))
+            matches!(cell, MemoryDagCell::Stored { value, .. }
+                if matches!(value.native(), ProgramValue::Pointer(value)
+                    if value.pointer() == &Pointer::loaded_value(&read.defining_memory, &read.defining_address)))
         };
         left.node() == right.node() || stores_read(&left, &b) || stores_read(&right, &a)
     })
@@ -3180,12 +3182,28 @@ pub(in crate::kernel) fn complete_pointer_read_value(
     Some(value)
 }
 
+pub(in crate::kernel) fn complete_pointer_read_retained_value(
+    origin: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<ExecutionValue> {
+    complete_pointer_carrier_read_retained_value(origin, assumptions)
+        .filter(|value| value.program_type().is_pointer())
+}
+
 /// Recover an actual complete pointer or pointer-carrying integer store.
 /// Numeric scalar bytes never manufacture a representation record.
 pub(in crate::kernel) fn complete_pointer_carrier_read_value(
     origin: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<ProgramValue> {
+    complete_pointer_carrier_read_retained_value(origin, assumptions)
+        .map(ExecutionValue::into_native)
+}
+
+pub(in crate::kernel) fn complete_pointer_carrier_read_retained_value(
+    origin: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<ExecutionValue> {
     let read = origin.as_loaded_value()?;
     // A copied value uses the same whole-byte frame premises as a read
     // retained in place. In particular, an explicit separation of the
@@ -3218,10 +3236,10 @@ pub(in crate::kernel) fn complete_pointer_carrier_read_value(
         }
     };
     matches!(
-        value,
+        value.native(),
         ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_)
     )
-    .then_some(value)
+    .then(|| value.into_value())
 }
 
 /// Explicit pointer read-value normalization follows at most 64 recorded
@@ -3344,7 +3362,7 @@ fn checked_pointer_read_endpoint_and_kind(
             return None;
         }
         match &cell {
-            MemoryDagCell::Stored { value, .. } => match kind.read_cell(value) {
+            MemoryDagCell::Stored { value, .. } => match kind.read_cell(value.native()) {
                 Some(ProgramValue::Pointer(stored)) => Some((stored.into_pointer(), true)),
                 _ => None,
             },
@@ -3439,12 +3457,12 @@ fn pointer_value_at_stopping_store(
     else {
         return None;
     };
-    let ProgramValue::Pointer(stored) = value else {
+    let ProgramValue::Pointer(stored) = value.native() else {
         return None;
     };
     (bytes == crate::kernel::C_POINTER_BYTE_WIDTH
         && value.byte_width() == bytes
-        && kind.reads_value(value)
+        && kind.reads_value(value.native())
         && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
             write,
             address,
@@ -3507,7 +3525,7 @@ fn stored_write_reaching(
             pointer: written,
             value,
             ..
-        } => Some((written.clone(), value.clone())),
+        } => Some((written.clone(), value.native().clone())),
         MemoryDerivation::CellsSeeded { .. } => {
             match crate::kernel::resource_tracker::step_effect::seeded_cell_effect(
                 derivation,
@@ -3614,7 +3632,7 @@ fn retained_cell_names_load(
         .cells
         .concrete()
         .get(pointer)
-        .and_then(|value| kind.read_cell(value))
+        .and_then(|value| kind.read_cell(value.native()))
     else {
         return false;
     };
@@ -5303,13 +5321,13 @@ fn wide_read_observations_have_value(
                 else {
                     return None;
                 };
-                (LoadKind::Bits64.reads_value(value)
+                (LoadKind::Bits64.reads_value(value.native())
                     && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         write,
                         pointer,
                         assumptions,
                     ))
-                .then(|| value.clone())
+                .then(|| value.native().clone())
             })
         });
         // Compare only a complete typed word in the current native-width graph.
@@ -7860,7 +7878,7 @@ mod opaque_pointer_frame_tests {
         let step = MemoryDerivation::Store {
             base: intern_memory(Memory::default()),
             pointer: write.clone(),
-            value: ProgramValue::Int32(MachineTerm::constant(7)),
+            value: ProgramValue::Int32(MachineTerm::constant(7)).into(),
         };
         let proof = typed_store_separated_ranges_evidence(&write, 4, &field, 8, &assumptions)
             .expect("one exact alias must select the stated range separation");
@@ -7872,7 +7890,7 @@ mod opaque_pointer_frame_tests {
         let wrong_step = MemoryDerivation::Store {
             base: intern_memory(Memory::default()),
             pointer: field.clone(),
-            value: ProgramValue::Int32(MachineTerm::constant(7)),
+            value: ProgramValue::Int32(MachineTerm::constant(7)).into(),
         };
         assert!(!proof.checks(&wrong_step, &field, 8, &assumptions));
     }
@@ -8384,7 +8402,7 @@ mod borrow_partition_tests {
         let step = MemoryDerivation::Store {
             base: intern_memory(Memory::new()),
             pointer: write.base().clone(),
-            value: ProgramValue::Int32(1u32.into()),
+            value: ProgramValue::Int32(1u32.into()).into(),
         };
         assert!(witness.checks(&step, read.base(), 4, &context));
         let missing = PureFactContext::new()

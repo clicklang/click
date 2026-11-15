@@ -197,3 +197,60 @@ fn pointer_local_bindings_preserve_prepared_dags_at_constant_work() {
         );
     }
 }
+
+#[test]
+fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut memory = Memory::new();
+        for n in 0..unrelated {
+            memory = memory.store(
+                Memory::local_pointer(&format!("unrelated_pointer_cell_{n}")),
+                ProgramValue::Int32(MachineTerm::constant(n)),
+            );
+        }
+        for size in [16, 64, 256] {
+            let mut argument =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1027700));
+            for _ in 0..size {
+                argument = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [argument.clone(), argument],
+                );
+            }
+            let pointer = PointerValue::new(
+                Pointer::symbolic(Variable(1027701 + size)),
+                ProgramType::Int32Pointer,
+            );
+            let root = KernelTerm::shared_pointer_call(
+                KernelTerm::checked_call(
+                    KernelType::Program(ProgramType::Int32Pointer),
+                    "stored".into(),
+                    vec![argument],
+                ),
+                SharedPointerValue::import(&pointer),
+            );
+            let address = Memory::local_pointer(&format!("selected_{size}"));
+            let exports = KernelTermExport::machine_export_count();
+            let (stored, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let stored = memory
+                    .clone()
+                    .store_retained(address.clone(), root.clone().into());
+                for _ in 0..16 {
+                    assert_eq!(
+                        stored.known_retained_value(&address).unwrap().shared(),
+                        Some(&root)
+                    );
+                }
+                stored
+            });
+            assert_eq!(
+                stored.known_retained_value(&address).unwrap().shared(),
+                Some(&root)
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 128, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}

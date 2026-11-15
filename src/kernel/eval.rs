@@ -116,7 +116,7 @@ pub(in crate::kernel) use memory_loads::{
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_logical_memory_load_paths, evaluate_memory_load_paths,
-    evaluate_spec_memory_load_paths, symbolic_load_value,
+    evaluate_retained_memory_load_paths, evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(crate) use memory_loads::{
     is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,
