@@ -106,7 +106,8 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
-                KernelTermNode::MachineObservation { operand, .. }
+                KernelTermNode::BoolCast { operand, .. }
+                | KernelTermNode::MachineObservation { operand, .. }
                 | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
                 _ => Vec::new(),
@@ -148,6 +149,12 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
                 }
+                KernelTermNode::BoolCast {
+                    destination,
+                    operand,
+                } => KernelTerm::bool_cast(*destination, get(operand))
+                    .expect("Boolean conversion")
+                    .with_machine_observation_type(format),
                 KernelTermNode::BoolRead(read) => {
                     let (_, address) = read.parts();
                     KernelTerm::intern(

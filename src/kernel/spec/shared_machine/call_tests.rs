@@ -678,3 +678,70 @@ fn actual_boolean_call_results_retain_roots_and_native_handoff_behavior() {
         );
     }
 }
+
+#[test]
+fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
+    let _session = VerificationSession::enter();
+    let condition = ConditionTerm::Variable(Variable(999440));
+    let native = ProgramValue::Bool(MachineTerm::bool_cast(
+        MachineIntegerType::UInt8,
+        condition.clone(),
+    ));
+    let left = SpecValue::Shared(KernelTermImport::default().condition(&condition));
+    let right_condition = ConditionTerm::Variable(Variable(999441));
+    let right = SpecValue::Shared(KernelTermImport::default().condition(&right_condition));
+    let guard = Proposition::ConditionIs(ConditionTerm::Variable(Variable(999442)), false);
+    let combined = SpecValue::conditional(&guard, &left, &right, true)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        combined.shared().unwrap().node(),
+        KernelTermNode::BoolIf { .. }
+    ));
+    assert_eq!(
+        combined.clone().into_native(),
+        conditional_spec_value(
+            &guard,
+            left.clone().into_native(),
+            right.clone().into_native()
+        )
+        .unwrap()
+    );
+    for target in FORMATS
+        .into_iter()
+        .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
+    {
+        let cast = cast(&combined, target.program_type()).unwrap();
+        assert!(matches!(cast.node(), KernelTermNode::BoolCast { .. }));
+        let expression = SpecExpression::Cast(
+            Box::new(SpecExpression::Value(native.clone())),
+            target.program_type(),
+        );
+        assert_eq!(
+            native_results(produced_paths(&expression, false)),
+            native_results(produced_paths(&expression, true))
+        );
+    }
+    for right in [
+        right,
+        SpecValue::Native(ProgramValue::Bool(MachineTerm::Variable(Variable(999443)))),
+        SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_cast(
+            MachineIntegerType::UInt8,
+            ConditionTerm::Constant(true),
+        ))),
+        SpecValue::Shared(KernelTermImport::default().condition(&ConditionTerm::Constant(false))),
+        SpecValue::Native(ProgramValue::Int32(MachineTerm::constant(1))),
+    ] {
+        for op in [
+            ComparisonOperator::Equal,
+            ComparisonOperator::NotEqual,
+            ComparisonOperator::LessThan,
+        ] {
+            assert_eq!(
+                left.comparison(op, &right),
+                SpecValue::Native(left.clone().into_native())
+                    .comparison(op, &SpecValue::Native(right.clone().into_native()))
+            );
+        }
+    }
+}

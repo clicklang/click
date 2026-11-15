@@ -424,6 +424,7 @@ impl NodeKey {
             KernelTermNode::MachineLiteral(_)
             | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
@@ -447,7 +448,7 @@ impl NodeKey {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
-            KernelTermNode::IntegerToMachine { .. } => true,
+            KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
                 LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
@@ -475,7 +476,9 @@ impl NodeKey {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
-            KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MachineCast { .. } => true,
+            KernelTermNode::IntegerToMachine { .. }
+            | KernelTermNode::MachineCast { .. }
+            | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::MachineBinary {
                 operator,
                 arguments,

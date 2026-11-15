@@ -4,6 +4,7 @@ use super::*;
 mod call;
 mod comparison;
 mod complete_pointer;
+mod composition;
 mod overflow;
 mod read;
 pub use complete_pointer::KernelPointerEquality;

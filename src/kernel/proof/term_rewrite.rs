@@ -6165,6 +6165,7 @@ impl<'a> TermRewrite<'a> {
                     pending.push((value, operand));
                 }
                 KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::PointerAddress { .. } => {

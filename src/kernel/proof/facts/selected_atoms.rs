@@ -38,6 +38,7 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                 // Native conversions are opaque. Fold children are collected
                 // below with one query-local seen set.
                 KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::PointerAddress { .. }
                 | KernelTermNode::Call { .. }
