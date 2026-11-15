@@ -1369,6 +1369,13 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                             next_binder,
                         )?
                     }
+                    V::Shared(root) if matches!(root.node(), N::FloatConvert { .. }) => {
+                        alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                            &crate::kernel::KernelTermExport::machine(root).ok()?,
+                            bindings,
+                            next_binder,
+                        )?
+                    }
                     V::Shared(root) if root.machine_read_leaf().is_some() => {
                         alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                             root.machine_read_leaf().expect("read leaf"),

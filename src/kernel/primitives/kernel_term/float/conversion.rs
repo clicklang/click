@@ -104,12 +104,14 @@ impl KernelTermImport {
             return None;
         };
         let (source, destination) = numeric_float_conversion_types(name)?;
-        if destination != target.program_type() {
-            return None;
-        }
+        MachineIntegerType::from_program_type(destination)?;
         let format = KernelFloatType::from_program_type(source)?;
         let operand = self.float(format, operand);
-        KernelTerm::numeric_float_convert(destination, source, operand).ok()
+        Some(
+            KernelTerm::numeric_float_convert(destination, source, operand)
+                .ok()?
+                .with_machine_observation_type(target),
+        )
     }
 }
 
@@ -195,7 +197,6 @@ mod tests {
     #[test]
     fn float_to_machine_import_preserves_unrecognized_signatures() {
         for (name, target) in [
-            ("c_float32_to_int32", MachineIntegerType::Int64),
             ("c_float64_to_int128", MachineIntegerType::Int128),
             ("c_int32_to_int64", MachineIntegerType::Int64),
         ] {

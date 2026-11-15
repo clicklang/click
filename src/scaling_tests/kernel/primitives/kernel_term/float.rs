@@ -213,3 +213,36 @@ fn float_to_machine_construction_retains_shared_float_prefixes() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn float_to_machine_observations_and_exact_matching_do_not_export_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut operand =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(999975));
+        for _ in 0..size {
+            operand = KernelTerm::float_binary(
+                KernelFloatType::Float32,
+                FloatBinaryOperator::Add,
+                [operand.clone(), operand],
+            )
+            .unwrap();
+        }
+        let root =
+            KernelTerm::numeric_float_convert(ProgramType::Int32, ProgramType::Float32, operand)
+                .unwrap();
+        let other = root.with_machine_observation_type(MachineIntegerType::UInt32);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let shared = crate::kernel::SharedMachineIntegerTerm::from_shared(
+                MachineIntegerType::Int32,
+                root.clone(),
+            )
+            .unwrap();
+            assert_eq!(shared.operand_view().root_width(), None);
+            assert!(crate::kernel::shared_machine_syntax_equal(&root, &other));
+        });
+        assert!(work <= 8, "size={size}, work={work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

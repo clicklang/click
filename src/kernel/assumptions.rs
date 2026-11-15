@@ -3249,6 +3249,9 @@ fn collect_shared_machine_memory_loads(
             )?;
             continue;
         }
+        if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
+            return Err("opaque pure function may hide a current memory load".into());
+        }
         // A conversion establishes its own destination width before visiting
         // the Integer payload, independently of surrounding arithmetic/casts.
         collect_bitvector_memory_loads_with_width(

@@ -703,7 +703,7 @@ All 1,847 final selected checks passed, including the complete scaling suite;
 float proof fixtures had zero fact-stability differences. The representation
 migration itself remains 8x, followed by 8y–8ad.
 
-8x first slice retains integer-to-float and float-width conversion operands in
+8x first slice ([PR #2879](https://github.com/clicklang/click/pull/2879)) retains integer-to-float and float-width conversion operands in
 `KernelTerm::FloatConvert`, including source and result types. Borrowed views,
 observation rebuilding, variable collection and Surface cast synthesis use the
 retained children. Structural import/export preserves raw conversion calls,
@@ -711,6 +711,17 @@ including constant payloads; numerical normalization stays with native producers
 All 1,851 selected checks passed, including the complete scaling suite and
 nested cast round trips. Float-to-integer conversions remain the second 8x
 slice; 8x and 8y–8ad are not closed by this change.
+
+8x second slice retains float-to-integer operands in the same conversion node.
+The written destination is distinct from a checker's integer observation type,
+so reinterpreting a result does not change the conversion on export. Integer
+carriers, equality registration, scoped variable readers and selected rewrites
+accept these roots; numeric normalization and definedness stay with existing
+producers. Memory-load collection preserves the existing opaque-call refusal.
+Ordinary observations and exact shared matching do not export float prefixes.
+Explicit selected adapters remain for native rewrite/capture/scope-summary,
+alpha-key and candidate-ordering readers; 8ad must account for those adapters.
+Float execution and storage handoffs remain 8aa–8ab.
 
 ### 8a inventory
 

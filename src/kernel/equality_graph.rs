@@ -1939,7 +1939,11 @@ impl EqualityGraph {
                         N::MachineLiteral(_) => {}
                         // Native pointer discovery treats conditionals, Boolean
                         // casts and folds as opaque; do not inspect their children.
-                        N::MachineIf { .. } | N::BoolCast { .. } | N::Fold(_) | N::Match(_) => {}
+                        N::MachineIf { .. }
+                        | N::BoolCast { .. }
+                        | N::Fold(_)
+                        | N::Match(_)
+                        | N::FloatConvert { .. } => {}
                         N::IntegerToMachine { .. }
                         | N::Legacy(_)
                         | N::Call { .. }

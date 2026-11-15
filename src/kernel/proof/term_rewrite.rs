@@ -84,6 +84,13 @@ fn collect_machine_operand_carriers(
                 }
                 continue;
             }
+            if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
+                collect_bitvector_carriers(
+                    &KernelTermExport::machine(leaf).expect("float conversion"),
+                    variables,
+                );
+                continue;
+            }
             collect_bitvector_carriers(
                 leaf.machine_conversion_leaf().expect("conversion leaf"),
                 variables,

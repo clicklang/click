@@ -492,6 +492,9 @@ impl KernelTermImport {
         {
             return self.scalar_read(result, term);
         }
+        if let Some(root) = self.float_to_machine(result, term) {
+            return Some(root);
+        }
         let node = match term {
             Old::AlgebraicMatch { .. } => {
                 return Some(KernelMatch::import_machine(self, result, term)?.into_term());
