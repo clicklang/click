@@ -18,6 +18,7 @@ impl SpecValue {
                     .clone()
                     .retain_pointer_result()
                     .retain_algebraic_result()
+                    .retain_float_result()
             } else {
                 then_value.clone()
             }));
@@ -55,6 +56,13 @@ impl SpecValue {
                 ])
                 .into(),
             ));
+        }
+        if let (Some(left), Some(right)) = (then_value.float(), else_value.float()) {
+            // Native float specification arms join only when their exact values
+            // agree. Retain that root without introducing float If semantics.
+            return Ok(left
+                .syntax_equal(right)
+                .then(|| then_value.clone().retain_float_result()));
         }
         if let (Some((left_format, left)), Some((right_format, right))) =
             (then_value.machine(), else_value.machine())

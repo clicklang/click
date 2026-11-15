@@ -6875,7 +6875,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 value: if budget.machine_result_production_disabled {
                     value.clone().into()
                 } else {
-                    SpecValue::from(value.clone()).retain_algebraic_result()
+                    SpecValue::from(value.clone())
+                        .retain_algebraic_result()
+                        .retain_float_result()
                 },
                 facts: vec![].into(),
                 obligations: vec![],
@@ -6885,7 +6887,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             value: if budget.machine_result_production_disabled {
                 value.clone().into()
             } else {
-                SpecValue::from(value.clone()).retain_algebraic_result()
+                SpecValue::from(value.clone())
+                    .retain_algebraic_result()
+                    .retain_float_result()
             },
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -7196,8 +7200,19 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         SpecExpression::ProgramExpression(expression) => {
             let _specification = crate::kernel::eval::SpecificationReadScope::enter();
             let native_state = scope.native_expression_state(expression);
-            spec_value_paths_in(
-                evaluate_program_expression_paths(&native_state, expression, assumptions, budget)?,
+            let paths =
+                evaluate_expression_value_paths(&native_state, expression, assumptions, budget)?;
+            let retain_floats = !budget.machine_result_production_disabled;
+            spec_execution_value_paths_in(
+                paths.into_iter().map(|path| {
+                    path.map_value(|value| {
+                        if retain_floats && value.float().is_some() {
+                            value
+                        } else {
+                            SpecValue::Native(value.into_native())
+                        }
+                    })
+                }),
                 budget,
             )
         }
@@ -7941,7 +7956,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 value: if result_type.is_pointer() && !budget.machine_result_production_disabled {
                     value.retain_pointer_result()
                 } else if !budget.machine_result_production_disabled {
-                    value.retain_algebraic_result()
+                    value.retain_algebraic_result().retain_float_result()
                 } else {
                     value
                 },
@@ -8751,6 +8766,18 @@ fn spec_value_paths_in(
     paths: Vec<ExpressionPath>,
     budget: &mut SpecEvaluation<'_>,
 ) -> Vec<SpecExpressionPath> {
+    spec_execution_value_paths_in(
+        paths
+            .into_iter()
+            .map(|path| path.map_value(SpecValue::Native)),
+        budget,
+    )
+}
+
+fn spec_execution_value_paths_in(
+    paths: impl IntoIterator<Item = ExpressionPath<SpecValue>>,
+    budget: &mut SpecEvaluation<'_>,
+) -> Vec<SpecExpressionPath> {
     let mut first_error = None;
     let mut values = Vec::new();
     for path in paths {
@@ -8761,9 +8788,9 @@ fn spec_value_paths_in(
         match path.outcome {
             ExpressionOutcome::Value(value) => values.push(SpecExpressionPath {
                 value: if budget.machine_result_production_disabled {
-                    value.into()
+                    value
                 } else {
-                    SpecValue::from(value).retain_algebraic_result()
+                    value.retain_algebraic_result().retain_float_result()
                 },
                 facts: path.facts,
                 obligations: path.obligations,
