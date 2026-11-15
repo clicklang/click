@@ -1131,6 +1131,10 @@ impl SourceExecutionLayout {
     }
 
     /// The number of the call inside an expression that `region` is.
+    pub(in crate::surface) fn is_aggregate_result(&self, region: usize) -> bool {
+        self.data.aggregate_results.contains_key(&region)
+    }
+
     pub(in crate::surface) fn aggregate_result_field(
         &self,
         region: usize,

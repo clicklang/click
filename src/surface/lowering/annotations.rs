@@ -6196,8 +6196,18 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
-        if let Some((region, accesses)) = region_result_read(expression) {
-            return self.lower_region_result_read(region, &accesses, environment);
+        if let Some((region, accesses)) = region_result_read(expression)
+            && let Some(snapshots) = self.snapshots
+        {
+            let index = snapshots.result_region_index(region)?;
+            // Ordinary pointer results retain their usual indexing and member reads.
+            if snapshots
+                .source_layout
+                .as_ref()
+                .is_some_and(|layout| layout.is_aggregate_result(index))
+            {
+                return self.lower_region_result_read(region, &accesses, environment);
+            }
         }
         if let Some((region, name, accesses)) = region_parameter_read(expression) {
             return self.lower_region_parameter_read(region, name, &accesses, environment);
