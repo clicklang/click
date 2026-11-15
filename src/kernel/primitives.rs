@@ -7,7 +7,7 @@ use super::reasoning::{
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };
-use super::{ExecutionFacts, StoredExecutionValue};
+use super::{ExecutionFacts, StoredExecutionValue, StoredMemoryValue};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -8304,7 +8304,7 @@ pub struct Memory {
     /// keyed by its address and type rather than placed in `cells`, because
     /// two members at one address must remain independently readable after a
     /// by-value aggregate copy.
-    pub(super) union_cells: std::sync::Arc<SnapshotMap<(Pointer, ProgramType), ProgramValue>>,
+    pub(super) union_cells: std::sync::Arc<SnapshotMap<(Pointer, ProgramType), StoredMemoryValue>>,
     pub(super) forgotten: std::sync::Arc<ForgottenKnowledge>,
     pub(super) heap: std::sync::Arc<HeapMemory>,
 }
@@ -9386,7 +9386,7 @@ pub enum MemoryDerivation {
     Store {
         base: SharedMemory,
         pointer: Pointer,
-        value: ProgramValue,
+        value: StoredMemoryValue,
     },
     /// `base` with one block declared; no cell changes, so every load reads
     /// exactly what it read in `base`. This fourth edge kind was added after

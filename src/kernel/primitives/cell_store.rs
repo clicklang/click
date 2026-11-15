@@ -62,11 +62,21 @@ use super::{
 };
 use crate::kernel::primitives::LoadKind;
 use crate::kernel::primitives::MachineTerm;
-use crate::kernel::{PureFactContext, Variable};
+use crate::kernel::{ExecutionValue, PureFactContext, StoredMemoryValue, Variable};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Bound;
 use std::sync::OnceLock;
+
+type NativeCellIter<'a> = std::iter::Map<
+    imbl::ordmap::Iter<'a, Pointer, StoredMemoryValue, imbl::shared_ptr::DefaultSharedPtr>,
+    fn((&'a Pointer, &'a StoredMemoryValue)) -> (&'a Pointer, &'a ProgramValue),
+>;
+fn native_cell<'a>(
+    (pointer, value): (&'a Pointer, &'a StoredMemoryValue),
+) -> (&'a Pointer, &'a ProgramValue) {
+    (pointer, value.native())
+}
 
 /// Disjoint, non-adjacent, ascending half-open index intervals.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -951,7 +961,7 @@ pub(crate) struct DroppedRunSlots {
 /// form, the runs indexed by [`RunKey`] (see the module comment).
 #[derive(Default)]
 pub(crate) struct CellStore {
-    concrete: SnapshotMap<Pointer, ProgramValue>,
+    concrete: SnapshotMap<Pointer, StoredMemoryValue>,
     runs: SnapshotMap<RunKey, CellRun>,
     /// The held runs, by the bytes from their first slot to their last on
     /// their line ([`CoverLine`]): each line's covered bytes cut into
@@ -965,7 +975,7 @@ pub(crate) struct CellStore {
     /// The logical cell map, built on first need when there are runs. A
     /// single-cell mutation updates it in place; any other resets it. A
     /// function of the two maps above.
-    logical: OnceLock<SnapshotMap<Pointer, ProgramValue>>,
+    logical: OnceLock<SnapshotMap<Pointer, StoredMemoryValue>>,
     ordered_index: std::sync::Mutex<Option<OrderedIndexCache>>,
     pointer_reachable_index: std::sync::Mutex<Option<PointerReachableIndex>>,
     parameter_partition_index: std::sync::Mutex<Option<ParameterPartitionIndex>>,
@@ -973,7 +983,7 @@ pub(crate) struct CellStore {
 
 #[derive(Clone)]
 struct ParameterPartitionIndex {
-    cells: SnapshotMap<Pointer, ProgramValue>,
+    cells: SnapshotMap<Pointer, StoredMemoryValue>,
     runs: SnapshotMap<RunKey, CellRun>,
     known_runs: crate::persistent::PersistentMap<Pointer, std::sync::Arc<Vec<RunKey>>>,
     unknown_runs: SnapshotMap<RunKey, ()>,
@@ -992,15 +1002,15 @@ struct ParameterPartitionIndex {
 /// rebuilds it.
 #[derive(Clone)]
 struct PointerReachableIndex {
-    cells: SnapshotMap<Pointer, ProgramValue>,
+    cells: SnapshotMap<Pointer, StoredMemoryValue>,
     generation: u64,
-    reachable: SnapshotMap<Pointer, ProgramValue>,
-    external: SnapshotMap<Pointer, ProgramValue>,
+    reachable: SnapshotMap<Pointer, StoredMemoryValue>,
+    external: SnapshotMap<Pointer, StoredMemoryValue>,
 }
 
 #[derive(Clone)]
 struct OrderedIndexCache {
-    cells: SnapshotMap<Pointer, ProgramValue>,
+    cells: SnapshotMap<Pointer, StoredMemoryValue>,
     chains: crate::kernel::assumptions::variable_chains::VariableChains,
     block: PointerBlock,
     base: PointerOffsetTerm,
@@ -1234,7 +1244,7 @@ impl CellStore {
             if let Some(base) = assumptions.parameter_partition_cell_base(
                 resources,
                 &key,
-                crate::kernel::reasoning::cell_access_byte_width(value),
+                crate::kernel::reasoning::cell_access_byte_width(value.native()),
             ) {
                 index.known.insert((base.clone(), key.clone()), ());
                 index.bases.insert(key, base);
@@ -1332,6 +1342,7 @@ impl CellStore {
             None => self
                 .concrete
                 .range(at(PointerOffsetTerm::Constant(low))..at(PointerOffsetTerm::Constant(high)))
+                .map(native_cell)
                 .collect(),
             Some(stem) => {
                 let shifted = |shift| {
@@ -1340,10 +1351,14 @@ impl CellStore {
                         Box::new(PointerOffsetTerm::Constant(shift)),
                     ))
                 };
-                let mut result: Vec<_> = self.concrete.range(shifted(low)..shifted(high)).collect();
+                let mut result: Vec<_> = self
+                    .concrete
+                    .range(shifted(low)..shifted(high))
+                    .map(native_cell)
+                    .collect();
                 if low <= 0 && 0 < high {
                     let key = at(stem.clone());
-                    result.extend(self.concrete.range(key.clone()..=key));
+                    result.extend(self.concrete.range(key.clone()..=key).map(native_cell));
                 }
                 result
             }
@@ -1375,7 +1390,7 @@ impl CellStore {
     /// lineage. Costs the cells changed since that lineage last asked.
     pub(in crate::kernel) fn caught_up_pointer_reachable(
         &self,
-    ) -> SnapshotMap<Pointer, ProgramValue> {
+    ) -> SnapshotMap<Pointer, StoredMemoryValue> {
         self.caught_up_load_reachable(false)
     }
 
@@ -1383,11 +1398,11 @@ impl CellStore {
     /// Maintain that projection beside the general reachable map by delta.
     pub(in crate::kernel) fn caught_up_external_reachable(
         &self,
-    ) -> SnapshotMap<Pointer, ProgramValue> {
+    ) -> SnapshotMap<Pointer, StoredMemoryValue> {
         self.caught_up_load_reachable(true)
     }
 
-    fn caught_up_load_reachable(&self, external: bool) -> SnapshotMap<Pointer, ProgramValue> {
+    fn caught_up_load_reachable(&self, external: bool) -> SnapshotMap<Pointer, StoredMemoryValue> {
         let generation = super::memory_state::never_address_taken_generation();
         let mut guard = self.pointer_reachable_index.lock().unwrap();
         let mut index = guard
@@ -1490,7 +1505,7 @@ impl CellStore {
             .chain(own_block)
             .filter(|(pointer, value)| {
                 visited += 1;
-                !keep(pointer, value)
+                !keep(pointer, value.native())
             })
             .map(|(pointer, _)| pointer.clone())
             .collect::<Vec<_>>();
@@ -1639,7 +1654,7 @@ impl CellStore {
             if self
                 .concrete
                 .get(key)
-                .is_some_and(|value| !keep(key, value))
+                .is_some_and(|value| !keep(key, value.native()))
             {
                 self.concrete.remove(key);
             }
@@ -1656,7 +1671,7 @@ impl CellStore {
 
     /// The concrete cells alone, without any run: what a caller that only
     /// ever asks about cells outside every run may read directly.
-    pub(crate) fn concrete(&self) -> &SnapshotMap<Pointer, ProgramValue> {
+    pub(crate) fn concrete(&self) -> &SnapshotMap<Pointer, StoredMemoryValue> {
         &self.concrete
     }
 
@@ -1980,7 +1995,7 @@ impl CellStore {
     /// The whole cell map, exactly as per-cell seeding would have stored it.
     /// O(1) without runs; with runs it is built once per store, at a cost of
     /// every live slot, and kept up to date through single-cell mutations.
-    pub(crate) fn logical(&self) -> &SnapshotMap<Pointer, ProgramValue> {
+    pub(crate) fn logical(&self) -> &SnapshotMap<Pointer, StoredMemoryValue> {
         if self.runs.is_empty() {
             return &self.concrete;
         }
@@ -1996,7 +2011,7 @@ impl CellStore {
             );
             for run in self.runs.values() {
                 for index in run.live_indexes() {
-                    map.insert(run.slot_pointer(index), run.value(index));
+                    map.insert(run.slot_pointer(index), run.value(index).into());
                 }
             }
             map
@@ -2013,7 +2028,7 @@ impl CellStore {
         &self,
         pointer: &Pointer,
     ) -> Option<&ProgramValue> {
-        self.concrete.get(pointer)
+        self.concrete.get(pointer).map(StoredMemoryValue::native)
     }
 
     /// Inspect a scalar atom without copying an unrelated symbolic expression.
@@ -2028,7 +2043,7 @@ impl CellStore {
             }
         }
         if let Some(value) = self.concrete.get(pointer) {
-            return variable(value);
+            return variable(value.native());
         }
         let slot = self.live_run_slot(pointer)?;
         if let RunValueMode::Constant(value) = &slot.run.mode {
@@ -2040,11 +2055,21 @@ impl CellStore {
     /// The cell at `pointer`, read from a run slot without building the
     /// logical map.
     pub(crate) fn get(&self, pointer: &Pointer) -> Option<ProgramValue> {
+        self.get_retained(pointer).map(ExecutionValue::into_native)
+    }
+
+    pub(crate) fn retained_iter(&self) -> impl Iterator<Item = (&Pointer, &ExecutionValue)> {
+        self.logical()
+            .iter()
+            .map(|(pointer, value)| (pointer, value.value()))
+    }
+
+    pub(crate) fn get_retained(&self, pointer: &Pointer) -> Option<ExecutionValue> {
         if let Some(value) = self.concrete.get(pointer) {
-            return Some(value.clone());
+            return Some(value.clone().into_value());
         }
         self.live_run_slot(pointer)
-            .map(|slot| slot.run.value(slot.index))
+            .map(|slot| slot.run.value(slot.index).into())
     }
 
     pub(crate) fn contains_key(&self, pointer: &Pointer) -> bool {
@@ -2152,12 +2177,12 @@ impl CellStore {
                 self.concrete
                     .get(pointer)
                     .cloned()
-                    .map(|value| (pointer.clone(), value))
+                    .map(|value| (pointer.clone(), value.into_native()))
             })),
             None => Box::new(
                 candidates
                     .entries(&self.concrete)
-                    .map(|(pointer, value)| (pointer.clone(), value.clone())),
+                    .map(|(pointer, value)| (pointer.clone(), value.native().clone())),
             ),
         };
         let mut sequences: Vec<Sequence<'a>> = vec![concrete];
@@ -2214,26 +2239,25 @@ impl CellStore {
         self.concrete.len() + usize::try_from(self.run_cells).unwrap_or(usize::MAX)
     }
 
-    pub(crate) fn iter(
-        &self,
-    ) -> imbl::ordmap::Iter<'_, Pointer, ProgramValue, imbl::shared_ptr::DefaultSharedPtr> {
-        self.logical().iter()
+    pub(crate) fn iter(&self) -> NativeCellIter<'_> {
+        self.logical().iter().map(native_cell)
     }
 
     pub(crate) fn keys(
         &self,
-    ) -> imbl::ordmap::Keys<'_, Pointer, ProgramValue, imbl::shared_ptr::DefaultSharedPtr> {
+    ) -> imbl::ordmap::Keys<'_, Pointer, StoredMemoryValue, imbl::shared_ptr::DefaultSharedPtr>
+    {
         self.logical().keys()
     }
 
     pub(crate) fn range<R>(
         &self,
         range: R,
-    ) -> imbl::ordmap::RangedIter<'_, Pointer, ProgramValue, imbl::shared_ptr::DefaultSharedPtr>
+    ) -> impl DoubleEndedIterator<Item = (&Pointer, &ProgramValue)>
     where
         R: std::ops::RangeBounds<Pointer>,
     {
-        self.logical().range(range)
+        self.logical().range(range).map(native_cell)
     }
 
     /// The entries on which the two stores differ; see [`SnapshotMap::diff`].
@@ -2263,13 +2287,14 @@ impl CellStore {
                 .concrete
                 .diff(&self.concrete)
                 .filter_map(|change| match change {
-                    SnapshotMapChange::Added(pointer) | SnapshotMapChange::Changed(pointer) => {
-                        self.concrete.get(pointer).map(|value| (pointer, value))
-                    }
+                    SnapshotMapChange::Added(pointer) | SnapshotMapChange::Changed(pointer) => self
+                        .concrete
+                        .get(pointer)
+                        .map(|value| (pointer, value.native())),
                     SnapshotMapChange::Removed(_) => None,
                 })
                 .collect(),
-            None => self.concrete.iter().collect(),
+            None => self.concrete.iter().map(native_cell).collect(),
         }
     }
 
@@ -2439,6 +2464,10 @@ impl CellStore {
 
     /// Stores `value` at `pointer`, in canonical form.
     pub(crate) fn insert(&mut self, pointer: Pointer, value: ProgramValue) {
+        self.insert_retained(pointer, value.into());
+    }
+
+    pub(crate) fn insert_retained(&mut self, pointer: Pointer, value: StoredMemoryValue) {
         if let Some(logical) = self.logical.get_mut() {
             logical.insert(pointer.clone(), value.clone());
         }
@@ -2485,7 +2514,9 @@ impl CellStore {
             self.set_run(&run.key(), Some(run));
             return Some(value);
         }
-        self.concrete.remove(pointer)
+        self.concrete
+            .remove(pointer)
+            .map(StoredMemoryValue::into_native)
     }
 
     /// Whether every cell and run on which the two stores differ lies in one
@@ -2563,7 +2594,7 @@ impl CellStore {
             let Some(value) = self.concrete.get(&pointer) else {
                 continue;
             };
-            if !keeps_cell(&pointer, value) {
+            if !keeps_cell(&pointer, value.native()) {
                 self.concrete.remove(&pointer);
                 blocks.insert(pointer.block.clone());
             }
@@ -2585,7 +2616,8 @@ impl CellStore {
     /// Keeps only the cells `keep` accepts, visiting every cell.
     pub(crate) fn retain(&mut self, mut keep: impl FnMut(&Pointer, &ProgramValue) -> bool) {
         self.reset();
-        self.concrete.retain(&mut keep);
+        self.concrete
+            .retain(|pointer, value| keep(pointer, value.native()));
         self.retain_run_slots(false, None, keep);
     }
 
@@ -2597,7 +2629,8 @@ impl CellStore {
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
         self.reset();
-        self.concrete.retain(&mut keep);
+        self.concrete
+            .retain(|pointer, value| keep(pointer, value.native()));
         self.retain_runs_by(None, keep, &mut run_rule)
     }
 
@@ -2617,7 +2650,9 @@ impl CellStore {
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> Vec<DroppedRunSlots> {
         self.reset();
-        candidates.retain_map_outside(&mut self.concrete, kept, &mut keep);
+        candidates.retain_map_outside(&mut self.concrete, kept, |pointer, value| {
+            keep(pointer, value.native())
+        });
         self.retain_runs_by(Some(candidates), keep, &mut run_rule)
     }
 
@@ -2700,7 +2735,7 @@ impl CellStore {
             .entries(&self.concrete)
             .filter(|(pointer, value)| {
                 visited += 1;
-                keep(pointer, value)
+                keep(pointer, value.native())
             })
             .map(|(pointer, value)| (pointer.clone(), value.clone()))
             .collect::<Vec<_>>();
@@ -2742,17 +2777,27 @@ impl CellStore {
     pub(crate) fn find_candidate_by(
         &self,
         candidates: &AliasCandidates,
+        found: impl FnMut(&Pointer, &ProgramValue) -> bool,
+        run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
+    ) -> (Option<ProgramValue>, usize) {
+        let (value, visited) = self.find_retained_candidate_by(candidates, found, run_rule);
+        (value.map(ExecutionValue::into_native), visited)
+    }
+
+    pub(crate) fn find_retained_candidate_by(
+        &self,
+        candidates: &AliasCandidates,
         mut found: impl FnMut(&Pointer, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) -> (Option<ProgramValue>, usize) {
+    ) -> (Option<ExecutionValue>, usize) {
         let mut visited = 0usize;
-        let mut best: Option<(Pointer, ProgramValue)> = candidates
+        let mut best: Option<(Pointer, ExecutionValue)> = candidates
             .entries(&self.concrete)
             .find(|(pointer, value)| {
                 visited += 1;
-                found(pointer, value)
+                found(pointer, value.native())
             })
-            .map(|(pointer, value)| (pointer.clone(), value.clone()));
+            .map(|(pointer, value)| (pointer.clone(), value.value().clone()));
         for run in self.candidate_runs(candidates) {
             visited += 1;
             let (decision, answer) = run_rule(run);
@@ -2770,7 +2815,7 @@ impl CellStore {
                 }
                 let value = run.value(index);
                 if found(&pointer, &value) {
-                    best = Some((pointer, value));
+                    best = Some((pointer, value.into()));
                 }
             }
         }
@@ -2895,8 +2940,13 @@ impl CellStore {
             }
         }
         for (pointer, value) in self.concrete.iter() {
-            let (pointer, value) = map(pointer, value);
-            result.insert(pointer, value);
+            let (pointer, mapped) = map(pointer, value.native());
+            let mapped = if value.value().shared().is_some() {
+                value.value().retain_checked_pointer(mapped).into()
+            } else {
+                StoredMemoryValue::from(mapped)
+            };
+            result.insert_retained(pointer, mapped);
         }
         for (pointer, value) in rewritten {
             result.insert(pointer, value);
@@ -3096,7 +3146,10 @@ impl FromIterator<(Pointer, ProgramValue)> for CellStore {
     /// cells, all concrete.
     fn from_iter<I: IntoIterator<Item = (Pointer, ProgramValue)>>(iter: I) -> Self {
         Self {
-            concrete: iter.into_iter().collect(),
+            concrete: iter
+                .into_iter()
+                .map(|(pointer, value)| (pointer, value.into()))
+                .collect(),
             ..Self::default()
         }
     }
@@ -3148,8 +3201,7 @@ impl Ord for CellStore {
 
 impl<'a> IntoIterator for &'a CellStore {
     type Item = (&'a Pointer, &'a ProgramValue);
-    type IntoIter =
-        imbl::ordmap::Iter<'a, Pointer, ProgramValue, imbl::shared_ptr::DefaultSharedPtr>;
+    type IntoIter = NativeCellIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -3262,7 +3314,7 @@ mod tests {
         store
             .logical()
             .iter()
-            .map(|(pointer, value)| (pointer.clone(), value.clone()))
+            .map(|(pointer, value)| (pointer.clone(), value.native().clone()))
             .collect()
     }
 
@@ -3455,7 +3507,7 @@ mod tests {
                     }
                 }
                 assert!(
-                    store.logical().iter().eq(model.iter()),
+                    store.iter().eq(model.iter()),
                     "seed {seed_value}: logical cells differ from the per-cell model"
                 );
                 assert_eq!(store.len(), model.len());

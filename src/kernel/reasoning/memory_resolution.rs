@@ -2125,7 +2125,7 @@ fn stored_value_at_equal_pointer(
                 .find_map(|(stored, value)| {
                     crate::instrumentation::record_deterministic_work(1);
                     pointers_proven_equal_for_memory_resolution(pointer, stored, assumptions)
-                        .then(|| value.clone())
+                        .then(|| value.native().clone())
                 })
                 .or_else(|| {
                     memory
@@ -2669,9 +2669,11 @@ pub(in crate::kernel) fn memories_proven_equal_for_memory_resolution(
                     left.union_cells.get(&(pointer.clone(), *value_type)),
                     right.union_cells.get(&(pointer.clone(), *value_type)),
                 ) {
-                    (Some(left), Some(right)) => {
-                        program_values_proven_equal_for_memory_resolution(left, right, assumptions)
-                    }
+                    (Some(left), Some(right)) => program_values_proven_equal_for_memory_resolution(
+                        left.native(),
+                        right.native(),
+                        assumptions,
+                    ),
                     (None, None) => true,
                     _ => false,
                 }
@@ -4025,8 +4027,12 @@ fn canonical_memory_for_pointer_load_uncached(memory: &Memory, pointer: &Pointer
     // Lazily: the collection below stops at the first cell that is not a
     // cached load, so an ordinary store costs one visit, not every cell.
     let observable: Box<dyn Iterator<Item = (&Pointer, &ProgramValue)>> = match &reachable {
-        Some(reachable) => Box::new(reachable.iter()),
-        None => Box::new(candidates.entries(memory.cells.concrete())),
+        Some(reachable) => Box::new(reachable.iter().map(|(p, v)| (p, v.native()))),
+        None => Box::new(
+            candidates
+                .entries(memory.cells.concrete())
+                .map(|(p, v)| (p, v.native())),
+        ),
     };
     let materialization_sources = observable
         .inspect(|_| visited += 1)
@@ -4131,7 +4137,11 @@ fn canonical_memory_for_pointer_load_uncached(memory: &Memory, pointer: &Pointer
         .inspect(|_| visited += 1)
         .filter(|((cell_pointer, _), value)| {
             cell_pointer.block.observable_by_load(&pointer.block)
-                && !cell_disjoint_from_load_by_constant_offset(cell_pointer, value, pointer)
+                && !cell_disjoint_from_load_by_constant_offset(
+                    cell_pointer,
+                    value.native(),
+                    pointer,
+                )
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<SnapshotMap<_, _>>();

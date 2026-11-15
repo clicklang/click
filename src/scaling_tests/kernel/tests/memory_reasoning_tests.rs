@@ -286,7 +286,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
             let store = MemoryDerivation::Store {
                 base: crate::kernel::intern_memory(Memory::new()),
                 pointer: write.clone(),
-                value: int32(7),
+                value: int32(7).into(),
             };
             assert!(hop.checks(&store, &read, 4, &assumptions));
             assert!(!hop.checks(&store, &read, 4, &without_alias));
@@ -306,7 +306,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
             let wider_store = MemoryDerivation::Store {
                 base: crate::kernel::intern_memory(Memory::new()),
                 pointer: write.clone(),
-                value: int64(7),
+                value: int64(7).into(),
             };
             assert!(!hop.checks(&wider_store, &read, 4, &assumptions));
             let equal = assumptions.assume_condition(

@@ -1223,10 +1223,10 @@ pub(crate) fn cell_value_on_path(
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<ProgramValue> {
+) -> Option<crate::kernel::ExecutionValue> {
     match cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)? {
-        cell_source::MemoryDagCell::Stored { value, .. } => Some(value),
-        cell_source::MemoryDagCell::Unwritten { node, .. } => node.known_value(pointer),
+        cell_source::MemoryDagCell::Stored { value, .. } => Some(value.into_value()),
+        cell_source::MemoryDagCell::Unwritten { node, .. } => node.known_retained_value(pointer),
     }
 }
 

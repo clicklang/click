@@ -3,6 +3,14 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
+fn retained_cell_conversion(source: &ExecutionValue, value: ProgramValue) -> ExecutionValue {
+    if source.shared().is_some() {
+        source.retain_checked_pointer(value)
+    } else {
+        value.into()
+    }
+}
+
 #[derive(Default)]
 struct MemoryLoadAliasCache {
     resolution_equal: BTreeMap<(u64, Pointer), bool>,
@@ -67,6 +75,36 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
 ) -> Vec<ExpressionPath> {
+    evaluate_retained_memory_load_paths(
+        memory,
+        pointer,
+        value_type,
+        facts,
+        obligations,
+        assumptions,
+        has_external_read_resource,
+        volatile,
+        source,
+        byte_order,
+    )
+    .into_iter()
+    .map(ExecutionValuePath::into_native)
+    .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
+    memory: &Memory,
+    pointer: Pointer,
+    value_type: ProgramType,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    has_external_read_resource: bool,
+    volatile: bool,
+    source: Option<&LoadSourceId>,
+    byte_order: Option<ByteOrder>,
+) -> Vec<ExecutionValuePath> {
     let _assumptions_id_scope = assumptions.enter_id_scope();
     if has_pending_reallocation_for_pointer(memory, &pointer) {
         return vec![ExpressionPath {
@@ -85,7 +123,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
     let word_storage = (!volatile
         && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64))
     .then(|| pointer.clone());
-    let mut paths = evaluate_memory_load_paths_with_alias_cache(
+    let mut paths = evaluate_retained_memory_load_paths_with_alias_cache(
         memory,
         pointer,
         value_type,
@@ -105,20 +143,31 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
     if let Some(address) = word_storage {
         for path in &mut paths {
             if let ExpressionOutcome::Value(value) = &mut path.outcome {
-                *value = complete_loaded_word(value.clone(), memory, &address);
+                *value = retained_cell_conversion(
+                    value,
+                    complete_loaded_word(value.native().into_owned(), memory, &address),
+                );
             }
         }
     }
     if !volatile && !SpecificationReadScope::is_active() {
         for path in &mut paths {
-            if let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &mut path.outcome {
-                *value = assumptions.pointer_value_at_entry(value);
+            if let ExpressionOutcome::Value(value) = &mut path.outcome
+                && let Some(pointer) = value.pointer()
+            {
+                *value = retained_cell_conversion(
+                    value,
+                    ProgramValue::Pointer(assumptions.pointer_value_at_entry(pointer)),
+                );
             }
         }
     }
     if let Some(observed) = observed {
         for path in &mut paths {
-            let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
+            let ExpressionOutcome::Value(value) = &path.outcome else {
+                continue;
+            };
+            let Some(value) = value.pointer() else {
                 continue;
             };
             // A checked, nonvolatile C read supplies its complete current-cell
@@ -554,8 +603,40 @@ fn evaluate_memory_load_paths_with_alias_cache(
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
 ) -> Vec<ExpressionPath> {
+    evaluate_retained_memory_load_paths_with_alias_cache(
+        memory,
+        pointer,
+        value_type,
+        facts,
+        obligations,
+        assumptions,
+        has_external_read_resource,
+        purpose,
+        alias_cache,
+        source,
+        byte_order,
+    )
+    .into_iter()
+    .map(ExecutionValuePath::into_native)
+    .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_retained_memory_load_paths_with_alias_cache(
+    memory: &Memory,
+    pointer: Pointer,
+    value_type: ProgramType,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    has_external_read_resource: bool,
+    purpose: LoadPurpose,
+    alias_cache: &mut MemoryLoadAliasCache,
+    source: Option<&LoadSourceId>,
+    byte_order: Option<ByteOrder>,
+) -> Vec<ExecutionValuePath> {
     let mut distinct_case = None;
-    let mut paths = evaluate_memory_load_case(
+    let mut paths = evaluate_retained_memory_load_case(
         memory,
         memory,
         pointer.clone(),
@@ -599,7 +680,7 @@ fn evaluate_memory_load_paths_with_alias_cache(
         // reached is the value every further case agrees on, so it stands for
         // them soundly while the pending limit fails the step.
         let splits = !crate::kernel::assumptions::reasoning_interrupted();
-        paths.extend(evaluate_memory_load_case(
+        paths.extend(evaluate_retained_memory_load_case(
             &memory,
             original_memory,
             pointer.clone(),
@@ -638,7 +719,7 @@ struct DistinctLoadCase {
 /// `written` for their symbolic result: reducing a cache must not change the
 /// program point named by an unresolved read.
 #[allow(clippy::too_many_arguments)]
-fn evaluate_memory_load_case(
+fn evaluate_retained_memory_load_case(
     memory: &Memory,
     written: &Memory,
     pointer: Pointer,
@@ -653,7 +734,7 @@ fn evaluate_memory_load_case(
     byte_order: Option<ByteOrder>,
     splits: bool,
     distinct_case: &mut Option<DistinctLoadCase>,
-) -> Vec<ExpressionPath> {
+) -> Vec<ExecutionValuePath> {
     let branches_on_unresolved_aliases =
         splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
     let mut facts = facts;
@@ -724,8 +805,8 @@ fn evaluate_memory_load_case(
     // load, including in provenance-sensitive symbolic-load mode. Selecting
     // the raw load first would reinterpret a copied pointer member as an
     // integer and discard its provenance.
-    if let Some(value) = memory.known_union_value(&pointer, value_type) {
-        if value_type.accepts(&value) {
+    if let Some(value) = memory.known_retained_union_value(&pointer, value_type) {
+        if value_type.accepts(&value.native()) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(value),
                 facts,
@@ -753,7 +834,7 @@ fn evaluate_memory_load_case(
         && assumptions.should_force_symbolic_external_loads()
         && !matches!(value_type, ProgramType::Parameter(_))
     {
-        let Some(value) = canonicalized_symbolic_load_value_with_identity(
+        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
             } else {
@@ -816,7 +897,7 @@ fn evaluate_memory_load_case(
         && let Some(cell) = containing_integer_cell(memory, &pointer, byte_order)
     {
         let outcome = match byte_view_load_value(&cell, value_type) {
-            Some(value) => ExpressionOutcome::Value(value),
+            Some(value) => ExpressionOutcome::Value(value.into()),
             None => ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                 pointer: pointer.clone(),
                 value_type,
@@ -837,19 +918,19 @@ fn evaluate_memory_load_case(
     // A value that does not name its version is the stored one, reached
     // through an address based on a pointer read as through the pointer
     // memory shows stored there.
-    let known = memory.known_value(&pointer).or_else(|| {
+    let known = memory.known_retained_value(&pointer).or_else(|| {
         (!names_version)
             .then(|| stored_pointer_address(&pointer))
             .flatten()
-            .and_then(|address| memory.known_value(&address))
+            .and_then(|address| memory.known_retained_value(&address))
     });
     if let Some(value) =
-        known.filter(|stored| !names_version || holds_its_own_read(stored, &pointer))
+        known.filter(|stored| !names_version || holds_its_own_read(&stored.native(), &pointer))
     {
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
             &pointer,
-            &value,
+            &value.native(),
             value_type,
             &mut facts,
             assumptions,
@@ -857,14 +938,14 @@ fn evaluate_memory_load_case(
             purpose,
         ) {
             return vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(value),
+                outcome: ExpressionOutcome::Value(value.into()),
                 facts,
                 obligations,
             }];
         }
-        if let Some(value) = value_type.read_cell(&value) {
+        if let Some(converted) = value_type.read_cell(&value.native()) {
             return vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(value),
+                outcome: ExpressionOutcome::Value(retained_cell_conversion(&value, converted)),
                 facts,
                 obligations,
             }];
@@ -873,14 +954,14 @@ fn evaluate_memory_load_case(
             && let Some(source) = abstract_value_source(memory, &pointer)
         {
             return vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(AlgebraicTermNode::parameter_load(
-                    source, pointer, parameter,
-                )),
+                outcome: ExpressionOutcome::Value(
+                    (AlgebraicTermNode::parameter_load(source, pointer, parameter)).into(),
+                ),
                 facts,
                 obligations,
             }];
         }
-        if !pointer_cell_defers_to_symbolic(&value) {
+        if !pointer_cell_defers_to_symbolic(&value.native()) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                     pointer: pointer.clone(),
@@ -901,7 +982,7 @@ fn evaluate_memory_load_case(
             // they are visited in the whole map's order.
             let candidates = AliasCandidates::of_block(&pointer.block);
             let normalized = std::cell::OnceCell::new();
-            let (found, visited) = memory.cells.find_candidate_by(
+            let (found, visited) = memory.cells.find_retained_candidate_by(
                 &candidates,
                 |stored_pointer, _| {
                     let equal = alias_cache.resolution_equal(&pointer, stored_pointer, assumptions);
@@ -929,7 +1010,7 @@ fn evaluate_memory_load_case(
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
             &pointer,
-            &value,
+            &value.native(),
             value_type,
             &mut facts,
             assumptions,
@@ -937,19 +1018,19 @@ fn evaluate_memory_load_case(
             purpose,
         ) {
             return vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(value),
+                outcome: ExpressionOutcome::Value(value.into()),
                 facts,
                 obligations,
             }];
         }
-        if let Some(value) = value_type.read_cell(&value) {
+        if let Some(converted) = value_type.read_cell(&value.native()) {
             return vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(value),
+                outcome: ExpressionOutcome::Value(retained_cell_conversion(&value, converted)),
                 facts,
                 obligations,
             }];
         }
-        if !pointer_cell_defers_to_symbolic(&value) {
+        if !pointer_cell_defers_to_symbolic(&value.native()) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                     pointer: pointer.clone(),
@@ -987,7 +1068,7 @@ fn evaluate_memory_load_case(
     }
 
     if allow_symbolic_external_load && assumptions.should_prefer_symbolic_external_loads() {
-        let Some(value) = canonicalized_symbolic_load_value_with_identity(
+        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
             } else {
@@ -1103,7 +1184,7 @@ fn evaluate_memory_load_case(
     }
 
     if pointer.has_symbolic_block() && allow_symbolic_external_load {
-        let Some(value) = canonicalized_symbolic_load_value_with_identity(
+        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
             } else {
@@ -1150,7 +1231,7 @@ fn evaluate_memory_load_case(
         purpose,
     ) {
         return vec![ExpressionPath {
-            outcome: ExpressionOutcome::Value(value),
+            outcome: ExpressionOutcome::Value(value.into()),
             facts,
             obligations,
         }];
@@ -1189,14 +1270,14 @@ fn evaluate_memory_load_case(
                     crate::instrumentation::record_deterministic_work(memory.cells.len());
                     memory
                         .cells
-                        .iter()
+                        .retained_iter()
                         .find_map(|(stored_pointer, stored_value)| {
                             (stored_pointer != &pointer
                                 && !in_symbolically_indexed_run(stored_pointer)
                                 && !entry_observation_of_other_storage(
                                     &pointer,
                                     stored_pointer,
-                                    stored_value,
+                                    &stored_value.native(),
                                 )
                                 && !alias_cache.resolution_distinct(
                                     &pointer,
@@ -1216,7 +1297,7 @@ fn evaluate_memory_load_case(
         .flatten();
     if let Some((stored_pointer, stored_value)) = unresolved {
         let mut paths = Vec::new();
-        let stored_bytes = cell_access_byte_width(&stored_value);
+        let stored_bytes = cell_access_byte_width(&stored_value.native());
         // General equality can resolve an indexed address that the narrower
         // memory resolver leaves open. A proven alias supplies this cell's
         // value; merely skipping its alias branch would lose an initialized
@@ -1238,16 +1319,16 @@ fn evaluate_memory_load_case(
             let equal_outcome = if let Some(value) = canonicalized_pointer_value_from_int_cell(
                 &memory,
                 &pointer,
-                &stored_value,
+                &stored_value.native(),
                 value_type,
                 &mut facts,
                 assumptions,
                 source,
                 purpose,
             ) {
-                ExpressionOutcome::Value(value)
-            } else if let Some(value) = value_type.read_cell(&stored_value) {
-                ExpressionOutcome::Value(value)
+                ExpressionOutcome::Value(value.into())
+            } else if let Some(value) = value_type.read_cell(&stored_value.native()) {
+                ExpressionOutcome::Value(retained_cell_conversion(&stored_value, value))
             } else {
                 ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                     pointer: pointer.clone(),
@@ -1311,7 +1392,7 @@ fn evaluate_memory_load_case(
                 // The cell may still hold some of the loaded bytes, so the
                 // load's value is its load over this snapshot, which keeps
                 // the cell, and no further case is split from it.
-                let outcome = match canonicalized_symbolic_load_value_with_identity(
+                let outcome = match canonicalized_retained_symbolic_load_value_with_identity(
                     if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                         written
                     } else {
@@ -1324,7 +1405,7 @@ fn evaluate_memory_load_case(
                     source,
                     purpose,
                 ) {
-                    Some(value) => ExpressionOutcome::Value(value),
+                    Some(value) => ExpressionOutcome::Value(value.into()),
                     None => ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                         pointer: pointer.clone(),
                         value_type,
@@ -1378,7 +1459,7 @@ fn evaluate_memory_load_case(
             }
         };
         return vec![ExpressionPath {
-            outcome: ExpressionOutcome::Value(value),
+            outcome: ExpressionOutcome::Value(value.into()),
             facts,
             obligations,
         }];
@@ -1404,7 +1485,7 @@ fn evaluate_memory_load_case(
                 obligations,
             }];
         }
-        let Some(value) = canonicalized_symbolic_load_value_with_identity(
+        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
             } else {
@@ -1511,7 +1592,7 @@ fn evaluate_memory_load_case(
         }];
     }
 
-    let Some(value) = canonicalized_symbolic_load_value_with_identity(
+    let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
         if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
             written
         } else {
@@ -1590,7 +1671,7 @@ fn cell_value_recorded_on_path(
     assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
-) -> Option<ProgramValue> {
+) -> Option<ExecutionValue> {
     if purpose != LoadPurpose::Program {
         return None;
     }
@@ -1609,7 +1690,7 @@ fn cell_value_recorded_on_path(
             value_type.byte_width(),
             assumptions,
         )?;
-        return canonicalized_symbolic_load_value_with_identity(
+        return canonicalized_retained_symbolic_load_value_with_identity(
             entry.memory(),
             pointer,
             value_type,
@@ -1622,16 +1703,18 @@ fn cell_value_recorded_on_path(
     if let Some(value) = canonicalized_pointer_value_from_int_cell(
         memory,
         pointer,
-        &value,
+        &value.native(),
         value_type,
         facts,
         assumptions,
         source,
         purpose,
     ) {
-        return Some(value);
+        return Some(value.into());
     }
-    value_type.read_cell(&value)
+    value_type
+        .read_cell(&value.native())
+        .map(|converted| retained_cell_conversion(&value, converted))
 }
 
 /// Reinterprets a cached scalar read as a pointer while retaining its selected
@@ -1928,6 +2011,28 @@ fn canonicalized_symbolic_load_value_with_identity(
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<ProgramValue> {
+    canonicalized_retained_symbolic_load_value_with_identity(
+        memory,
+        pointer,
+        value_type,
+        facts,
+        assumptions,
+        source,
+        purpose,
+    )
+    .map(ExecutionValue::into_native)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn canonicalized_retained_symbolic_load_value_with_identity(
+    memory: &Memory,
+    pointer: &Pointer,
+    value_type: ProgramType,
+    facts: &mut ExecutionFacts,
+    assumptions: &PureFactContext,
+    source: Option<&LoadSourceId>,
+    purpose: LoadPurpose,
+) -> Option<ExecutionValue> {
     // A logical read keeps the address it was written with: lowering is
     // fact-stable (`docs/internals/spellability.md`). The equality graph
     // relates it to a read of the same cell through another alias. A C read
@@ -1944,7 +2049,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     if let Some(value @ ProgramValue::PointerInteger(_)) = memory.known_value(&address)
         && value_type.accepts(&value)
     {
-        return Some(complete_loaded_word(value, memory, &address));
+        return Some((complete_loaded_word(value, memory, &address)).into());
     }
     if WordRepresentationScope::keeps_representation()
         && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64)
@@ -1955,7 +2060,7 @@ fn canonicalized_symbolic_load_value_with_identity(
             )
         && value_type.accepts(&value)
     {
-        return Some(complete_loaded_word(value, memory, &address));
+        return Some((complete_loaded_word(value, memory, &address)).into());
     }
     // A logical pointer read names the cell's version, whatever pointer the
     // cell holds (`docs/internals/spellability.md`).
@@ -1964,12 +2069,11 @@ fn canonicalized_symbolic_load_value_with_identity(
     // the original spelling did not name. Reuse its complete stored value;
     // manufacturing another read here would discard the selected designation.
     if !names_version
-        && let Some(value @ ProgramValue::Pointer(_)) = memory.known_value(&address)
-        && value_type.accepts(&value)
+        && let Some(value) = memory.known_retained_value(&address)
+        && value.pointer().is_some()
+        && value_type.accepts(&value.native())
     {
-        let ProgramValue::Pointer(stored) = &value else {
-            unreachable!()
-        };
+        let stored = value.pointer().expect("selected complete pointer cell");
         facts.push(ExecutionPureFact::logical_read_equation(
             stored.clone(),
             Pointer::loaded_value(&crate::kernel::intern_memory_ref(memory), &address),
@@ -1982,7 +2086,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     if let Some(value @ ProgramValue::Parameter(_)) = memory.known_value(&address)
         && value_type.accepts(&value)
     {
-        return Some(value);
+        return Some(value.into());
     }
     let value = if names_version {
         record_load_access_width(memory, &address, value_type.byte_width());
@@ -1996,56 +2100,52 @@ fn canonicalized_symbolic_load_value_with_identity(
         // byte's unsigned read).
         ProgramValue::Int8(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::Int8(read));
+            return Some((ProgramValue::Int8(read)).into());
         }
         ProgramValue::Int16(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::Int16(read));
+            return Some((ProgramValue::Int16(read)).into());
         }
         ProgramValue::Int32(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::Int32(read));
+            return Some((ProgramValue::Int32(read)).into());
         }
         ProgramValue::UInt8(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::UInt8(read));
+            return Some((ProgramValue::UInt8(read)).into());
         }
         ProgramValue::UInt16(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::UInt16(read));
+            return Some((ProgramValue::UInt16(read)).into());
         }
         ProgramValue::UInt32(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::UInt32(read));
+            return Some((ProgramValue::UInt32(read)).into());
         }
         ProgramValue::Int64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(complete_loaded_word(
-                ProgramValue::Int64(read),
-                memory,
-                &address,
-            ));
+            return Some(
+                (complete_loaded_word(ProgramValue::Int64(read), memory, &address)).into(),
+            );
         }
         ProgramValue::UInt64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(complete_loaded_word(
-                ProgramValue::UInt64(read),
-                memory,
-                &address,
-            ));
+            return Some(
+                (complete_loaded_word(ProgramValue::UInt64(read), memory, &address)).into(),
+            );
         }
         ProgramValue::Int128(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::Int128(read));
+            return Some((ProgramValue::Int128(read)).into());
         }
         ProgramValue::UInt128(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
-            return Some(ProgramValue::UInt128(read));
+            return Some((ProgramValue::UInt128(read)).into());
         }
         _ => {}
     }
     let ProgramValue::Pointer(pointer_value) = &value else {
-        return Some(complete_loaded_word(value, memory, &address));
+        return Some((complete_loaded_word(value, memory, &address)).into());
     };
     // The read keeps its version name. The equality graph relates it to the
     // pointer stored there whenever a query names the read and memory alone
@@ -2068,7 +2168,7 @@ fn canonicalized_symbolic_load_value_with_identity(
                 raw,
             ));
         }
-        return Some(value);
+        return Some(value.into());
     }
     // Losing a scalar cache does not lose a complete pointer stored in the
     // selected memory history. Return that whole value before minting another
@@ -2086,17 +2186,24 @@ fn canonicalized_symbolic_load_value_with_identity(
     if !names_version
         && !SpecificationReadScope::is_active()
         && !assumptions.should_force_symbolic_external_loads()
-        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_retained_value(
             complete_read.designation(),
             assumptions,
         )
     {
-        let stored = stored.with_type(value_type);
+        let pointer = stored
+            .pointer()
+            .expect("complete pointer recovery")
+            .clone()
+            .with_type(value_type);
         facts.push(ExecutionPureFact::logical_read_equation(
-            stored.clone(),
+            pointer.clone(),
             Pointer::loaded_value(&crate::kernel::intern_memory_ref(memory), &address),
         ));
-        return Some(ProgramValue::Pointer(stored));
+        return Some(retained_cell_conversion(
+            &stored,
+            ProgramValue::Pointer(pointer),
+        ));
     }
     // A volatile read may observe a value memory does not record, so it is
     // never named as the snapshot's read of the cell. It keeps an opaque
@@ -2114,14 +2221,17 @@ fn canonicalized_symbolic_load_value_with_identity(
         record_load_variable_defining_fact_with_source_and_pointer(
             fresh, load, facts, source, None,
         );
-        return Some(ProgramValue::Pointer(PointerValue::from_read(
-            Pointer::symbolic(fresh),
-            value_type,
-            &snapshot,
-            &address,
-        )));
+        return Some(
+            (ProgramValue::Pointer(PointerValue::from_read(
+                Pointer::symbolic(fresh),
+                value_type,
+                &snapshot,
+                &address,
+            )))
+            .into(),
+        );
     }
-    Some(value)
+    Some(value.into())
 }
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;
@@ -2633,10 +2743,13 @@ pub(crate) fn pointer_read_over_immediate_store(pointer: &Pointer) -> Option<Poi
         .derivation()?;
     let MemoryDerivation::Store {
         pointer: written,
-        value: ProgramValue::Pointer(value),
+        value,
         ..
     } = derivation.as_ref()
     else {
+        return None;
+    };
+    let ProgramValue::Pointer(value) = value.native() else {
         return None;
     };
     (written == &read.defining_address).then(|| value.pointer().clone())
@@ -2690,7 +2803,11 @@ thread_local! {
 /// as a union cell's pointer view.
 fn holds_pointer_cell(memory: &Memory, address: &Pointer) -> bool {
     matches!(
-        memory.cells.concrete().get(address),
+        memory
+            .cells
+            .concrete()
+            .get(address)
+            .map(StoredMemoryValue::native),
         Some(ProgramValue::Pointer(_))
     ) || memory.known_union_pointer(address).is_some()
 }

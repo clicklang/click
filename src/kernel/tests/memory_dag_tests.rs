@@ -4041,7 +4041,7 @@ fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
     let write = MemoryDerivation::Store {
         base: original,
         pointer: anchor,
-        value: int32(7),
+        value: int32(7).into(),
     };
     assert!(!witness.checks(&write, &other, 4, &assumptions));
 }

@@ -621,7 +621,7 @@ pub(crate) fn matching_recomputed_call_havoc_views(
                 value,
                 ..
             } if pointer.block.is_local_block()
-                || store_is_self_materialization(base, pointer, value) =>
+                || store_is_self_materialization(base, pointer, value.native()) =>
             {
                 Some(base)
             }
@@ -744,8 +744,8 @@ pub(crate) fn matching_recomputed_call_havoc_views(
                     right_pointer,
                     assumptions,
                 ) && program_values_proven_equal_for_memory_resolution(
-                    left_value,
-                    right_value,
+                    left_value.native(),
+                    right_value.native(),
                     assumptions,
                 ) && match_inner(left_base, right_base, assumptions, views)
             }
@@ -996,12 +996,17 @@ fn memory_cells_definitionally_contained(
             });
         let equal = if let Some((_, target_value)) = matching {
             program_values_proven_equal_for_memory_resolution(
-                source_value,
-                target_value,
+                source_value.native(),
+                target_value.native(),
                 assumptions,
             )
         } else {
-            materialized_load_is_unchanged(source_value, target, source_pointer, assumptions)
+            materialized_load_is_unchanged(
+                source_value.native(),
+                target,
+                source_pointer,
+                assumptions,
+            )
         };
         if !equal {
             return false;

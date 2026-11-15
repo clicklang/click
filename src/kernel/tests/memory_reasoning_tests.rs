@@ -4412,7 +4412,7 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
     let store = MemoryDerivation::Store {
         base: crate::kernel::intern_memory(Memory::new()),
         pointer: value.clone(),
-        value: crate::kernel::api::int32(1),
+        value: crate::kernel::api::int32(1).into(),
     };
     assert!(
         hop.checks(&store, &acquired, 4, &owners),

@@ -3141,7 +3141,7 @@ fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Vari
         #[cfg(test)]
         count_memory_bound_cell_visit();
         collect_pointer_bound_variables(pointer, variables);
-        collect_program_value_bound_variables(value, variables);
+        collect_program_value_bound_variables(value.native(), variables);
     }
     // A run's slots are named uniformly per spelling shape wherever
     // `run_shape_representatives` says so, and then mention the same bound
@@ -3193,7 +3193,7 @@ fn collect_memory_bound_variables_entering(
             #[cfg(test)]
             count_memory_bound_cell_visit();
             collect_pointer_bound_variables(pointer, variables);
-            collect_program_value_bound_variables(value, variables);
+            collect_program_value_bound_variables(value.native(), variables);
         }
     }
     for (_, after) in base.cells.run_diff(&memory.cells) {
@@ -6069,7 +6069,11 @@ fn substitute_bitvector_variable_in_memory_contents(
                             substitute_bitvector_variable_in_pointer(pointer, from, to),
                             *program_type,
                         ),
-                        substitute_bitvector_variable_in_program_value(value, from, to),
+                        value.with_native_value(substitute_bitvector_variable_in_program_value(
+                            value.native(),
+                            from,
+                            to,
+                        )),
                     )
                 })
                 .collect(),
@@ -6752,7 +6756,11 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                             substitute_pointer_variable_in_pointer(pointer, from, to),
                             *program_type,
                         ),
-                        substitute_pointer_variable_in_program_value(value, from, to),
+                        value.with_native_value(substitute_pointer_variable_in_program_value(
+                            value.native(),
+                            from,
+                            to,
+                        )),
                     )
                 })
                 .collect(),

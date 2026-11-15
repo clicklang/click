@@ -13,7 +13,7 @@ use crate::kernel::binary_node;
 use crate::kernel::memory_provenance::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{CompareRelation, MachineIntegerType, StoredMemoryValue};
 
 /// Where the memory DAG says the cell at a pointer came from: the
 /// select-over-store answer to "what does this cell hold after these
@@ -33,7 +33,7 @@ pub(crate) enum MemoryDagCell {
     /// its value into the bytes the read returns.
     Stored {
         node: SharedMemory,
-        value: ProgramValue,
+        value: StoredMemoryValue,
         path: Vec<MemoryDagHop>,
     },
     /// The walk reached `node` without crossing any edge that could have
@@ -844,7 +844,7 @@ impl MemoryDagHopJustification {
                             &MemoryDerivation::Store {
                                 base: derivation.base().clone(),
                                 pointer: write,
-                                value,
+                                value: value.into(),
                             },
                             pointer,
                             bytes,
@@ -991,7 +991,7 @@ impl MemoryDagCell {
         kind: LoadKind,
     ) -> Option<ProgramValue> {
         match self {
-            Self::Stored { value, .. } => kind.read_cell(value),
+            Self::Stored { value, .. } => kind.read_cell(value.native()),
             Self::Unwritten { node, .. } => kind.read_cell(&node.known_value(pointer)?),
         }
     }
@@ -1748,7 +1748,8 @@ fn memory_dag_cell_source_walk_inner(
             && let Some(derivation) = current.derivation()
             && let MemoryDerivation::CellsForgotten { base } = derivation.as_ref()
             && base.cells.concrete().get(pointer).is_some_and(|value| {
-                matches!(value, crate::kernel::integer32_c_value!(_)) && value.byte_width() == bytes
+                matches!(value.native(), crate::kernel::integer32_c_value!(_))
+                    && value.byte_width() == bytes
             })
         {
             crate::instrumentation::record_deterministic_work(1);
@@ -1807,7 +1808,7 @@ fn memory_dag_cell_source_walk_inner(
                     });
                 let written = match (seeded, derivation.as_ref()) {
                     (Some(super::step_effect::SeededCellEffect::Written(write, value)), _) => {
-                        Some((write, value))
+                        Some((write, StoredMemoryValue::from(value)))
                     }
                     (
                         None,
@@ -1820,7 +1821,7 @@ fn memory_dag_cell_source_walk_inner(
                     _ => None,
                 };
                 if let Some((write, value)) = written
-                    && write_supplies_read(&write, &value, pointer, bytes, assumptions)
+                    && write_supplies_read(&write, value.native(), pointer, bytes, assumptions)
                 {
                     return (
                         MemoryDagCell::Stored {

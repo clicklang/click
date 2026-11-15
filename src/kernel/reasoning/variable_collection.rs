@@ -6063,7 +6063,7 @@ fn variables_entering(base: &Memory, memory: &Memory) -> BTreeSet<Variable> {
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
         let pointer = change.key();
         if let Some(value) = memory.cells.concrete().get(pointer) {
-            variables.extend(cell_variables(pointer, value));
+            variables.extend(cell_variables(pointer, value.native()));
         }
     }
     for (_, after) in base.cells.run_diff(&memory.cells) {
@@ -6082,7 +6082,7 @@ fn variables_entering(base: &Memory, memory: &Memory) -> BTreeSet<Variable> {
     for change in base.union_cells.diff(&memory.union_cells) {
         let key = change.key();
         if let Some(value) = memory.union_cells.get(key) {
-            variables.extend(cell_variables(&key.0, value));
+            variables.extend(cell_variables(&key.0, value.native()));
         }
     }
     variables
@@ -6382,13 +6382,13 @@ fn counts_whole(memory: &Memory, whole: WholeCount) -> VariableCounts {
         add_counts(&mut counts, block_variables(block, contents), 1);
     }
     for (pointer, value) in memory.cells.concrete().iter() {
-        add_counts(&mut counts, cell_variables(pointer, value), 1);
+        add_counts(&mut counts, cell_variables(pointer, value.native()), 1);
     }
     for run in memory.cells.runs() {
         add_run_counts(&mut counts, run, 1);
     }
     for ((pointer, _), value) in memory.union_cells.iter() {
-        add_counts(&mut counts, cell_variables(pointer, value), 1);
+        add_counts(&mut counts, cell_variables(pointer, value.native()), 1);
     }
     counts
 }
@@ -6429,10 +6429,10 @@ fn counts_from_base(mut counts: VariableCounts, base: &Memory, memory: &Memory) 
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
         let pointer = change.key();
         if let Some(value) = base.cells.concrete().get(pointer) {
-            add_counts(&mut counts, cell_variables(pointer, value), -1);
+            add_counts(&mut counts, cell_variables(pointer, value.native()), -1);
         }
         if let Some(value) = memory.cells.concrete().get(pointer) {
-            add_counts(&mut counts, cell_variables(pointer, value), 1);
+            add_counts(&mut counts, cell_variables(pointer, value.native()), 1);
         }
     }
     for (before, after) in base.cells.run_diff(&memory.cells) {
@@ -6451,10 +6451,10 @@ fn counts_from_base(mut counts: VariableCounts, base: &Memory, memory: &Memory) 
     for change in base.union_cells.diff(&memory.union_cells) {
         let key = change.key();
         if let Some(value) = base.union_cells.get(key) {
-            add_counts(&mut counts, cell_variables(&key.0, value), -1);
+            add_counts(&mut counts, cell_variables(&key.0, value.native()), -1);
         }
         if let Some(value) = memory.union_cells.get(key) {
-            add_counts(&mut counts, cell_variables(&key.0, value), 1);
+            add_counts(&mut counts, cell_variables(&key.0, value.native()), 1);
         }
     }
     counts
@@ -6567,14 +6567,14 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
         #[cfg(test)]
         CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
         collect_pointer_bitvector_variables(pointer, variables);
-        collect_program_value_bitvector_variables(value, variables);
+        collect_program_value_bitvector_variables(value.native(), variables);
     }
     for run in memory.cells.runs() {
         collect_cell_run_bitvector_variables(run, variables);
     }
     for ((pointer, _), value) in memory.union_cells.iter() {
         collect_pointer_bitvector_variables(pointer, variables);
-        collect_program_value_bitvector_variables(value, variables);
+        collect_program_value_bitvector_variables(value.native(), variables);
     }
 }
 

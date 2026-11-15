@@ -6444,7 +6444,12 @@ pub(super) fn prepare_loop_top_state(
         .iter()
         .flat_map(|run| {
             run.live_indexes()
-                .map(|index| (run.slot_pointer(index), run.value(index)))
+                .map(|index| {
+                    (
+                        run.slot_pointer(index),
+                        StoredMemoryValue::from(run.value(index)),
+                    )
+                })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -6468,11 +6473,11 @@ pub(super) fn prepare_loop_top_state(
             assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
         }) || kept_by_function(
             pointer,
-            crate::kernel::reasoning::cell_access_byte_width(value),
+            crate::kernel::reasoning::cell_access_byte_width(value.native()),
         );
         if is_stable {
             std::sync::Arc::make_mut(&mut framed_memory.cells)
-                .insert(pointer.clone(), value.clone());
+                .insert_retained(pointer.clone(), value.clone());
         }
     }
     for ((pointer, program_type), value) in entry_state.memory().union_cells.iter() {
@@ -9298,7 +9303,7 @@ pub(super) fn address_escaped_scalar_locals(
         }
     }
     for value in state.memory.cells.concrete().values() {
-        record_pointer(value, &mut escaped);
+        record_pointer(value.native(), &mut escaped);
     }
     // A run's slots hold values of its element type, so only a run of
     // pointers holds a pointer to visit.
@@ -9311,7 +9316,7 @@ pub(super) fn address_escaped_scalar_locals(
         }
     }
     for value in state.memory.union_cells.values() {
-        record_pointer(value, &mut escaped);
+        record_pointer(value.native(), &mut escaped);
     }
     escaped
 }

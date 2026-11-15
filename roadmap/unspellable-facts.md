@@ -356,6 +356,14 @@ bindings and caller result assignment. Modular pointer results enter the common
 carrier at their final handoff. Existing const-drop refusals, declared qualifiers,
 object-type metadata and aggregate-return ABI/copy behavior remain unchanged.
 
+7t retains complete pointer producers in cached cells, typed union views and
+recorded stores. Executed load receipt, local-slot synchronization, aggregate
+field/union copies and selected history recovery carry the same root through
+existing conversions. Cell equality/hash/order and native diagnostic views keep
+the previous payload identity. Logical reads still name their snapshot version;
+alias rules, metadata, refusals and history limits are unchanged. Other cell
+families remain explicit native payloads.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
@@ -676,7 +684,8 @@ unsigned and Rust narrow-arithmetic paths through logical local updates,
 function return, caller assignment and readback retain their roots without
 prefix exports and scale across 16, 64 and 256 operations.
 
-Declared scalar locals still synchronize with native memory cells. Separate
+At completion of 5g, declared scalar locals still synchronized with native memory
+cells (7t subsequently migrates complete pointer cells). Separate
 end-to-end regressions keep those declared-local programs and verify that their
 returned/local carrier roots survive that compatibility boundary. This sequence
 does not migrate memory-cell payloads, unsupported operator/value families,

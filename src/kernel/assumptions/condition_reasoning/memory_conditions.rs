@@ -497,7 +497,7 @@ impl PureFactContext {
         }
         for (cell_pointer, value) in candidates.entries(memory.cells.concrete()) {
             crate::instrumentation::record_deterministic_work(1);
-            let met = consider(cell_pointer, value, &mut first_equal);
+            let met = consider(cell_pointer, value.native(), &mut first_equal);
             unresolved_alias |= met
                 && !first_equal
                     .as_ref()

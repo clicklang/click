@@ -325,7 +325,7 @@ fn cell_effect(
             pointer: write,
             value,
             ..
-        } => store_cell_effect(step, write, value, pointer, bytes, evidence),
+        } => store_cell_effect(step, write, value.native(), pointer, bytes, evidence),
         MemoryDerivation::CellsSeeded { .. } => {
             match seeded_cell_effect(step, pointer, bytes, evidence) {
                 SeededCellEffect::Written(..) => StepEffect::Affected,

@@ -1,10 +1,10 @@
 use super::*;
-use crate::kernel::CheckedPopulationAuthorityExchange;
 use crate::kernel::CheckedPopulationMemberExchange;
 use crate::kernel::ResourceDescription;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::population_authority::storage_creation::is_external_population_anchor;
+use crate::kernel::{CheckedPopulationAuthorityExchange, ExecutionValue};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
@@ -995,7 +995,7 @@ mod call_havoc_union_view_tests {
         let mut stale = after.clone();
         std::sync::Arc::make_mut(&mut stale.union_cells).insert(
             (written.clone(), ProgramType::Int32),
-            ProgramValue::Int32(MachineTerm::constant(3)),
+            ProgramValue::Int32(MachineTerm::constant(3)).into(),
         );
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
@@ -4027,7 +4027,7 @@ impl Memory {
                                 overlaps(
                                 cell_offset,
                                 crate::kernel::reasoning::memory_resolution::cell_access_byte_width(
-                                    value,
+                                    value.native(),
                                 ),
                             )
                             })
@@ -4681,7 +4681,12 @@ impl Memory {
                         .zip(&arm_overlays)
                         .all(|(memory, overlays)| {
                             !overlays.contains_key(pointer)
-                                && memory.cells.concrete().get(pointer) == Some(cell)
+                                && memory
+                                    .cells
+                                    .concrete()
+                                    .get(pointer)
+                                    .map(|value| value.native())
+                                    == Some(cell)
                         })
                 {
                     return CachedValueFate::Kept;
@@ -5254,7 +5259,14 @@ impl Memory {
         let mut dropped_union_cells = Vec::new();
         for (key, value) in candidates.entries(&before.union_cells) {
             visited += 1;
-            match call_havoc_keeps_cell(&key.0, value, mutable_ranges, assumptions, kept, true) {
+            match call_havoc_keeps_cell(
+                &key.0,
+                value.native(),
+                mutable_ranges,
+                assumptions,
+                kept,
+                true,
+            ) {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller => {
                     dropped_initialized.push((key.0.clone(), key.1.byte_width()));
@@ -5756,7 +5768,8 @@ impl Memory {
             );
         }
         for (index, value) in cells {
-            self = self.store_with_context(target_at(index), value, assumptions);
+            self =
+                self.store_retained_with_context(target_at(index), value.into_value(), assumptions);
         }
         Ok(self.with_initialized_object(base, bytes))
     }
@@ -6144,7 +6157,7 @@ impl Memory {
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value, context, None, false)
+        self.store_with_effective_type(pointer, value.into(), context, None, false)
     }
 
     /// [`Self::store_with_context`] for a C store through an lvalue of
@@ -6159,7 +6172,7 @@ impl Memory {
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        self.store_with_effective_type(pointer, value, context, Some(class), true)
+        self.store_with_effective_type(pointer, value.into(), context, Some(class), true)
     }
 
     /// Apply a program store and its cache invalidation as one transition.
@@ -6169,21 +6182,44 @@ impl Memory {
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value, context, None, true)
+        self.store_with_effective_type(pointer, value.into(), context, None, true)
+    }
+
+    pub(in crate::kernel) fn store_retained(self, pointer: Pointer, value: ExecutionValue) -> Self {
+        self.store_with_effective_type(pointer, value.into(), &PureFactContext::new(), None, false)
+    }
+
+    pub(in crate::kernel) fn store_retained_with_context(
+        self,
+        pointer: Pointer,
+        value: ExecutionValue,
+        context: &PureFactContext,
+    ) -> Self {
+        self.store_with_effective_type(pointer, value.into(), context, None, false)
+    }
+
+    pub(in crate::kernel) fn store_retained_classed_with_context(
+        self,
+        pointer: Pointer,
+        value: ExecutionValue,
+        context: &PureFactContext,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.store_with_effective_type(pointer, value.into(), context, Some(class), true)
     }
 
     fn store_with_effective_type(
         mut self,
         pointer: Pointer,
-        value: ProgramValue,
+        value: StoredMemoryValue,
         context: &PureFactContext,
         effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
         invalidate_aliases: bool,
     ) -> Self {
         crate::kernel::debug_assert_widths(
             "a stored value",
-            || crate::kernel::value_mismatch(&value),
-            &value,
+            || crate::kernel::value_mismatch(value.native()),
+            value.native(),
         );
         let base = intern_derivation_base(&mut self);
         // Cache invalidation is internal to this store, not a memory event.
@@ -6197,7 +6233,7 @@ impl Memory {
             }
             self = prepared;
         }
-        std::sync::Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
+        std::sync::Arc::make_mut(&mut self.cells).insert_retained(pointer.clone(), value.clone());
         if (self.is_live_heap_address(&pointer, context)
             || !self.heap.uninitialized_objects.is_empty())
             && !self.heap.initialized.covers(&pointer, value.byte_width())
@@ -6210,7 +6246,7 @@ impl Memory {
             && matches!(pointer.block, PointerBlock::Heap(_))
         {
             let mut record = self.heap.effective_types.clone();
-            if record.record(&pointer, value.byte_width(), class, &value) {
+            if record.record(&pointer, value.byte_width(), class, value.native()) {
                 std::sync::Arc::make_mut(&mut self.heap).effective_types = record;
             }
         }
@@ -6321,6 +6357,13 @@ impl Memory {
         pointers.into_iter().collect()
     }
 
+    pub(in crate::kernel) fn known_retained_value(
+        &self,
+        pointer: &Pointer,
+    ) -> Option<ExecutionValue> {
+        self.cells.get_retained(pointer)
+    }
+
     pub(in crate::kernel) fn known_value(&self, pointer: &Pointer) -> Option<ProgramValue> {
         self.cells.get(pointer)
     }
@@ -6366,6 +6409,7 @@ impl Memory {
         self.union_cells
             .range::<_, (Pointer, ProgramType)>((pointer.clone(), ProgramType::Void)..)
             .take_while(move |((cell_pointer, _), _)| cell_pointer == pointer)
+            .map(|(key, value)| (key, value.native()))
     }
 
     /// Drops every typed union view at exactly `pointer`.
@@ -6522,9 +6566,18 @@ impl Memory {
         pointer: &Pointer,
         value_type: ProgramType,
     ) -> Option<ProgramValue> {
+        self.known_retained_union_value(pointer, value_type)
+            .map(ExecutionValue::into_native)
+    }
+
+    pub(in crate::kernel) fn known_retained_union_value(
+        &self,
+        pointer: &Pointer,
+        value_type: ProgramType,
+    ) -> Option<ExecutionValue> {
         self.union_cells
             .get(&(pointer.clone(), value_type))
-            .cloned()
+            .map(|value| value.value().clone())
     }
 
     /// The pointer a typed union view records at exactly `pointer`, when one
@@ -6562,6 +6615,22 @@ impl Memory {
         written_bytes: u32,
         views: Vec<(Pointer, ProgramType, ProgramValue)>,
     ) -> Self {
+        self.store_retained_union_views(
+            written_pointer,
+            written_bytes,
+            views
+                .into_iter()
+                .map(|(pointer, ty, value)| (pointer, ty, value.into()))
+                .collect(),
+        )
+    }
+
+    pub(in crate::kernel) fn store_retained_union_views(
+        self,
+        written_pointer: Pointer,
+        written_bytes: u32,
+        views: Vec<(Pointer, ProgramType, ExecutionValue)>,
+    ) -> Self {
         let diagnostic_base = self.clone();
         let mut memory = self.without_possible_aliasing_cells(
             &written_pointer,
@@ -6571,7 +6640,7 @@ impl Memory {
         let mut initialized = Vec::new();
         for (pointer, value_type, value) in views {
             std::sync::Arc::make_mut(&mut memory.union_cells)
-                .insert((pointer.clone(), value_type), value);
+                .insert((pointer.clone(), value_type), value.into());
             if (memory.is_live_heap_address(&pointer, &PureFactContext::new())
                 || !memory.heap.uninitialized_objects.is_empty())
                 && !memory.has_initialized_bytes_at(&pointer, value_type.byte_width())
@@ -6798,21 +6867,22 @@ impl Memory {
             };
         }
         if !self.union_cells.is_empty() {
-            let mut keep_view = |(pointer, program_type): &(Pointer, ProgramType),
-                                 value: &ProgramValue| match fate(
-                pointer,
-                CachedValue::UnionView(*program_type, value),
-            ) {
-                CachedValueFate::Kept => true,
-                CachedValueFate::Overwritten | CachedValueFate::Retired => false,
-                CachedValueFate::Forgotten => {
-                    push_dropped_initialized(
-                        &mut forgotten_cells,
-                        (pointer.clone(), program_type.byte_width()),
-                    );
-                    false
-                }
-            };
+            let mut keep_view =
+                |(pointer, program_type): &(Pointer, ProgramType),
+                 value: &crate::kernel::StoredMemoryValue| match fate(
+                    pointer,
+                    CachedValue::UnionView(*program_type, value.native()),
+                ) {
+                    CachedValueFate::Kept => true,
+                    CachedValueFate::Overwritten | CachedValueFate::Retired => false,
+                    CachedValueFate::Forgotten => {
+                        push_dropped_initialized(
+                            &mut forgotten_cells,
+                            (pointer.clone(), program_type.byte_width()),
+                        );
+                        false
+                    }
+                };
             let union_cells = std::sync::Arc::make_mut(&mut self.union_cells);
             match scope {
                 ForgetScope::Everywhere => union_cells.retain(&mut keep_view),
@@ -9545,7 +9615,7 @@ impl ExecutionState {
             .concrete()
             .iter()
             .filter(|(pointer, _)| pointer.offset == PointerOffsetTerm::Constant(0))
-            .map(|(pointer, value)| (pointer.clone(), value.clone()))
+            .map(|(pointer, value)| (pointer.clone(), value.native().clone()))
             .chain(run_slots)
             .filter_map(|(pointer, value)| {
                 self.locals

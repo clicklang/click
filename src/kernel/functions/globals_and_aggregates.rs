@@ -1124,7 +1124,11 @@ pub(super) fn copy_aggregate_fields(
                 .expect("validated aggregate field offset");
             let source_field = source.offset_by_bytes(element_offset);
             let destination_field = destination.offset_by_bytes(element_offset);
-            let value = memory.known_value(&source_field).or_else(|| {
+            if let Some(value) = memory.known_retained_value(&source_field) {
+                memory = memory.store_retained(destination_field, value);
+                continue;
+            }
+            let value = (|| {
                 if memory.is_zeroed_heap_address(
                     &source_field,
                     element_type.byte_width(),
@@ -1256,7 +1260,7 @@ pub(super) fn copy_aggregate_fields(
                     }
                     _ => None,
                 }
-            });
+            })();
             if let Some(value) = value {
                 memory = memory.store(destination_field, value);
             }
@@ -1270,18 +1274,17 @@ pub(super) fn copy_aggregate_fields(
             .iter()
             .filter_map(|field| {
                 let source_field = source_union.offset_by_bytes(field.offset_bytes());
-                copy_aggregate_union_member(&memory, &source_field, field.program_type()).map(
-                    |value| {
+                copy_retained_aggregate_union_member(&memory, &source_field, field.program_type())
+                    .map(|value| {
                         (
                             destination_union.offset_by_bytes(field.offset_bytes()),
                             field.program_type(),
                             value,
                         )
-                    },
-                )
+                    })
             })
             .collect();
-        memory = memory.store_union_views(destination_union, union.size_bytes(), views);
+        memory = memory.store_retained_union_views(destination_union, union.size_bytes(), views);
     }
     memory
 }
@@ -1291,11 +1294,20 @@ pub(super) fn copy_aggregate_union_member(
     source_field: &Pointer,
     element_type: ProgramType,
 ) -> Option<ProgramValue> {
-    if let Some(value) = memory.known_union_value(source_field, element_type) {
+    copy_retained_aggregate_union_member(memory, source_field, element_type)
+        .map(ExecutionValue::into_native)
+}
+
+pub(super) fn copy_retained_aggregate_union_member(
+    memory: &Memory,
+    source_field: &Pointer,
+    element_type: ProgramType,
+) -> Option<ExecutionValue> {
+    if let Some(value) = memory.known_retained_union_value(source_field, element_type) {
         return Some(value);
     }
-    if let Some(value) = memory.known_value(source_field)
-        && element_type.accepts(&value)
+    if let Some(value) = memory.known_retained_value(source_field)
+        && element_type.accepts(&value.native())
     {
         return Some(value);
     }
@@ -1304,7 +1316,7 @@ pub(super) fn copy_aggregate_union_member(
         element_type.byte_width(),
         &PureFactContext::new(),
     ) {
-        return zero_union_member_value(element_type);
+        return zero_union_member_value(element_type).map(Into::into);
     }
     if aggregate_copy_source_holds_nothing(memory, source_field, element_type) {
         return None;
@@ -1317,41 +1329,45 @@ pub(super) fn copy_aggregate_union_member(
             source_field,
             element_type,
             true,
-        );
+        )
+        .map(Into::into);
     }
     let load = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_memory(memory.clone()),
         source_field.clone(),
         LoadKind::of_type(element_type)?,
     );
-    Some(match element_type {
-        ProgramType::Int32 => ProgramValue::Int32(load),
-        ProgramType::UInt8 => ProgramValue::UInt8(load),
-        ProgramType::Int32Pointer
-        | ProgramType::UInt8Pointer
-        | ProgramType::Int32PointerPointer
-        | ProgramType::UInt8PointerPointer
-        | ProgramType::FunctionPointer(_) => {
-            let pointer = if matches!(element_type, ProgramType::FunctionPointer(_)) {
-                match load {
-                    MachineTerm::Variable(variable) => Pointer::symbolic_function(variable),
-                    load => Pointer {
+    Some(
+        (match element_type {
+            ProgramType::Int32 => ProgramValue::Int32(load),
+            ProgramType::UInt8 => ProgramValue::UInt8(load),
+            ProgramType::Int32Pointer
+            | ProgramType::UInt8Pointer
+            | ProgramType::Int32PointerPointer
+            | ProgramType::UInt8PointerPointer
+            | ProgramType::FunctionPointer(_) => {
+                let pointer = if matches!(element_type, ProgramType::FunctionPointer(_)) {
+                    match load {
+                        MachineTerm::Variable(variable) => Pointer::symbolic_function(variable),
+                        load => Pointer {
+                            block: source_field.block.clone(),
+                            offset: PointerOffsetTerm::scale_int32(load, 1),
+                        },
+                    }
+                } else {
+                    let pointee_type = element_type.pointee_type()?;
+                    Pointer {
                         block: source_field.block.clone(),
-                        offset: PointerOffsetTerm::scale_int32(load, 1),
-                    },
-                }
-            } else {
-                let pointee_type = element_type.pointee_type()?;
-                Pointer {
-                    block: source_field.block.clone(),
-                    offset: PointerOffsetTerm::scale_int32(
-                        load,
-                        i64::from(pointee_type.byte_width()),
-                    ),
-                }
-            };
-            ProgramValue::typed_pointer(pointer, element_type)
-        }
-        _ => return None,
-    })
+                        offset: PointerOffsetTerm::scale_int32(
+                            load,
+                            i64::from(pointee_type.byte_width()),
+                        ),
+                    }
+                };
+                ProgramValue::typed_pointer(pointer, element_type)
+            }
+            _ => return None,
+        })
+        .into(),
+    )
 }
