@@ -192,7 +192,7 @@ int32 vector_copy(
                         normalize() using { separate(memory(dst[i]), memory(src[k])); };
                     }
                     have at(loop(0).statement(0).exit, src[k]) == at(loop(0).statement(0).entry, src[k]) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(src[k])));
+                        preserve(memory(src[k]), loop(0).statement(0));
                     }
                     known();
                 }
@@ -277,7 +277,7 @@ int32 vector_copy(
                         normalize() using { at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))); };
                     }
                     have at(loop(0).statement(0).exit, dst[k]) == at(loop(0).statement(0).entry, dst[k]) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(dst[k])));
+                        preserve(memory(dst[k]), loop(0).statement(0));
                     }
                     known();
                 } else {
@@ -590,19 +590,19 @@ int32 vector_grow(struct vector* owner) {
                 normalize() using { separate(memory(owner->data), memory(new_data[k])); };
             }
             have at(statement(11).exit, new_data[k]) == at(statement(11).entry, new_data[k]) by {
-                preserve(separate(statement(11).footprint, memory(new_data[k])));
+                preserve(memory(new_data[k]), statement(11));
             }
             have separate(statement(12).footprint, memory(new_data[k])) by {
                 normalize() using { separate(memory(owner->cap), memory(new_data[k])); };
             }
             have at(statement(12).exit, new_data[k]) == at(statement(12).entry, new_data[k]) by {
-                preserve(separate(statement(12).footprint, memory(new_data[k])));
+                preserve(memory(new_data[k]), statement(12));
             }
             have separate(statement(13).footprint, memory(new_data[k])) by {
                 normalize() using { separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)])); owner->data == new_data; };
             }
             have at(statement(13).exit, new_data[k]) == at(statement(13).entry, new_data[k]) by {
-                preserve(separate(statement(13).footprint, memory(new_data[k])));
+                preserve(memory(new_data[k]), statement(13));
             }
             have owner->data == new_data by { known(); }
             have new_data[k] == at(region(14).entry, new_data[k]) by { known(); }
@@ -792,7 +792,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
         }
         have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
-            preserve(separate(statement(4).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(4));
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
@@ -818,7 +818,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
         }
         have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
-            preserve(separate(statement(5).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(5));
         }
         known();
     }
@@ -1325,7 +1325,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
                 normalize() using { at(before_fill, separate(memory(owner->len), memory(owner->data[i]))); };
             }
             have owner->len == at(before_fill, owner->len) by {
-                preserve(separate(loop(0).statement(0).footprint, memory(owner->len)));
+                preserve(memory(owner->len), loop(0).statement(0));
             }
             have owner->len == old(owner->len) by { known(); }
             step();

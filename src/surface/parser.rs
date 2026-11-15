@@ -18142,93 +18142,6 @@ mod loop_name_tests {
 }
 
 #[cfg(test)]
-mod rewrite_syntax_tests {
-    use super::*;
-
-    #[test]
-    fn rewrite_endpoints_round_trip_with_nested_arguments_and_snapshots() {
-        for source in [
-            "rewrite(x, y);",
-            "rewrite(y, x);",
-            "rewrite(at(function.entry, x), old(y));",
-            "rewrite(f(x, y), if x == y { 1 } else { 2 });",
-        ] {
-            let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
-            let printed =
-                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
-            let reparsed = Parser::new(&printed)
-                .unwrap()
-                .parse_proof_clause_or_default()
-                .unwrap();
-            assert_eq!(
-                reparsed,
-                SourceProof::Script(vec![tactic]),
-                "{source} -> {printed}"
-            );
-        }
-    }
-
-    #[test]
-    fn rewrite_arguments_keep_specification_equality_arithmetic() {
-        for (source, equality) in [
-            ("rewrite(x + 1, y);", "x + 1 == y"),
-            ("rewrite(x - y, 0u64);", "x - y == 0u64"),
-            (
-                "rewrite(to_integer(x), to_integer(y));",
-                "to_integer(x) == to_integer(y)",
-            ),
-            (
-                "rewrite((x + y) as uint64, 0u64);",
-                "(x + y) as uint64 == 0u64",
-            ),
-        ] {
-            let ProofTactic::Rewrite(actual) =
-                Parser::new(source).unwrap().parse_proof_tactic().unwrap()
-            else {
-                panic!("expected rewrite");
-            };
-            let expected = Parser::new(equality).unwrap().parse_proposition().unwrap();
-            assert_eq!(actual, expected, "{source}");
-        }
-    }
-
-    #[test]
-    fn rewrite_refuses_the_old_equality_argument_and_wrong_arity() {
-        let error = Parser::new("rewrite(x == y);")
-            .unwrap()
-            .parse_proof_tactic()
-            .unwrap_err();
-        assert!(error.message().contains("write `rewrite(x, y)`"));
-        for source in ["rewrite(x);", "rewrite();", "rewrite(x, y, z);"] {
-            assert!(
-                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
-                "{source}"
-            );
-        }
-    }
-}
-
-#[cfg(test)]
-mod lambda_certificate_parser_tests {
-    use super::*;
-
-    #[test]
-    fn typed_lambda_applications_preserve_interval_operand_boundaries() {
-        for source in [
-            "(value) (-2147483648) (2147483646)",
-            "1 (-2147483648) (2147483646)",
-            "((|x: int32| -> int32 { x })(value)) (-2147483648) (2147483646)",
-        ] {
-            let mut parser = Parser::new(source).unwrap();
-            parser.parse_interval_certificate_term().unwrap();
-            assert_eq!(parser.expect_signed_i64("lower").unwrap(), -2147483648);
-            assert_eq!(parser.expect_signed_i64("upper").unwrap(), 2147483646);
-            assert!(parser.peek().is_none());
-        }
-    }
-}
-
-#[cfg(test)]
 mod preserve_syntax_tests {
     use super::*;
 
@@ -18385,6 +18298,93 @@ mod preserve_syntax_tests {
                 Parser::new(source).unwrap().parse_proof_tactic().is_err(),
                 "{source}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod rewrite_syntax_tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_endpoints_round_trip_with_nested_arguments_and_snapshots() {
+        for source in [
+            "rewrite(x, y);",
+            "rewrite(y, x);",
+            "rewrite(at(function.entry, x), old(y));",
+            "rewrite(f(x, y), if x == y { 1 } else { 2 });",
+        ] {
+            let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
+            let printed =
+                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+            let reparsed = Parser::new(&printed)
+                .unwrap()
+                .parse_proof_clause_or_default()
+                .unwrap();
+            assert_eq!(
+                reparsed,
+                SourceProof::Script(vec![tactic]),
+                "{source} -> {printed}"
+            );
+        }
+    }
+
+    #[test]
+    fn rewrite_arguments_keep_specification_equality_arithmetic() {
+        for (source, equality) in [
+            ("rewrite(x + 1, y);", "x + 1 == y"),
+            ("rewrite(x - y, 0u64);", "x - y == 0u64"),
+            (
+                "rewrite(to_integer(x), to_integer(y));",
+                "to_integer(x) == to_integer(y)",
+            ),
+            (
+                "rewrite((x + y) as uint64, 0u64);",
+                "(x + y) as uint64 == 0u64",
+            ),
+        ] {
+            let ProofTactic::Rewrite(actual) =
+                Parser::new(source).unwrap().parse_proof_tactic().unwrap()
+            else {
+                panic!("expected rewrite");
+            };
+            let expected = Parser::new(equality).unwrap().parse_proposition().unwrap();
+            assert_eq!(actual, expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn rewrite_refuses_the_old_equality_argument_and_wrong_arity() {
+        let error = Parser::new("rewrite(x == y);")
+            .unwrap()
+            .parse_proof_tactic()
+            .unwrap_err();
+        assert!(error.message().contains("write `rewrite(x, y)`"));
+        for source in ["rewrite(x);", "rewrite();", "rewrite(x, y, z);"] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod lambda_certificate_parser_tests {
+    use super::*;
+
+    #[test]
+    fn typed_lambda_applications_preserve_interval_operand_boundaries() {
+        for source in [
+            "(value) (-2147483648) (2147483646)",
+            "1 (-2147483648) (2147483646)",
+            "((|x: int32| -> int32 { x })(value)) (-2147483648) (2147483646)",
+        ] {
+            let mut parser = Parser::new(source).unwrap();
+            parser.parse_interval_certificate_term().unwrap();
+            assert_eq!(parser.expect_signed_i64("lower").unwrap(), -2147483648);
+            assert_eq!(parser.expect_signed_i64("upper").unwrap(), 2147483646);
+            assert!(parser.peek().is_none());
         }
     }
 }
