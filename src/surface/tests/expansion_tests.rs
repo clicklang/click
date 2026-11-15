@@ -994,9 +994,11 @@ fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let position = expansion::position_at_offset(&source, source.find("solve() using").unwrap());
     let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    let certificate = expanded.split("arithmetic_certificate {").nth(1).unwrap();
-    let body = certificate.split('}').next().unwrap();
-    assert!(body.lines().all(|line| line.len() <= 100), "{expanded}");
+    assert!(
+        expanded.contains("normalize();") || expanded.contains("known();"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_click_theorems(&expanded).unwrap();
 }
 

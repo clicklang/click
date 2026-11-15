@@ -91,6 +91,16 @@ fn normalization(claim: ClickProposition) -> ProofStep {
 }
 
 fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
+    if form.terms.is_empty() {
+        // A constant-only comparison otherwise defaults to machine arithmetic.
+        // Keep its type in source, including after expansion is parsed again.
+        return ContractExpression::Let {
+            name: "integer_constant".into(),
+            click_type: Some(ClickType::Integer),
+            value: Box::new(literal(&form.constant)),
+            body: Box::new(ContractExpression::Binding("integer_constant".into())),
+        };
+    }
     let mut result = None;
     for (key, coefficient) in &form.terms {
         let term = atoms[key].surface.clone();
@@ -787,6 +797,16 @@ mod tests {
         "requires x >= 3;",
         "2 * x >= 6"
     );
+
+    #[test]
+    #[ignore = "nightly: wide default expansion and replay"]
+    fn integer_composition_wide_constant_keeps_integer_context_after_expansion() {
+        let source = "theorem composition(z: Integer) { requires 0 <= z; requires z <= 4000; ensures z <= 18446744073709551615 by { solve(); } }";
+        let expanded =
+            expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    }
 
     #[test]
     #[ignore = "nightly: two composed branches and replay"]

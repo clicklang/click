@@ -79,12 +79,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        if integer_composition::parts(goal).is_none() {
+            return Ok(None);
+        }
+        let kernels = premises
+            .iter()
+            .map(|surface| {
+                search_input.lower_cited_surface_proposition(surface, "Integer composition premise")
+            })
+            .collect::<Result<Vec<_>, ClickError>>()?;
+        if kernels
+            .iter()
+            .any(|kernel| integer_composition::parts(kernel).is_none())
+        {
+            return Ok(None);
+        }
         let pairs = premises
             .iter()
             .enumerate()
             .map(|(index, surface)| {
-                let kernel = search_input
-                    .lower_cited_surface_proposition(surface, "Integer composition premise")?;
+                let kernel = kernels[index].clone();
                 if !search_input
                     .facts()
                     .listed_premise_available(&kernel, &[], false)

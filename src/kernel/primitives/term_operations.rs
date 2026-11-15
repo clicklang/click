@@ -6044,8 +6044,8 @@ mod integer_equality_citation_tests {
 
     #[test]
     fn integer_equality_mirroring_preserves_polarity_and_exact_operands() {
-        let left: SharedIntegerTerm = IntegerTerm::constant_i64(7).into();
-        let right: SharedIntegerTerm = IntegerTerm::constant_i64(9).into();
+        let left: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_011)).into();
+        let right: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_012)).into();
         for polarity in [true, false] {
             let source = Proposition::ConditionIs(
                 ConditionTerm::IntegerEqual(left.clone(), right.clone()),
