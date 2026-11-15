@@ -66,8 +66,8 @@ int32 walk(const uint8* p, int32 n) {
    have to_integer(old(n) - n) == to_integer((old(n) - at(before_pointer, n)) + 1) by solve() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
    have p == at(before_pointer, p) + 1 by solve();
    have p == old(p) + (old(n) - n) by {
-    rewrite(p == at(before_pointer, p) + 1);
-    rewrite(to_integer(old(n) - n) == to_integer((old(n) - at(before_pointer, n)) + 1));
+    rewrite(p, at(before_pointer, p) + 1);
+    rewrite(to_integer(old(n) - n), to_integer((old(n) - at(before_pointer, n)) + 1));
     arithmetic_certificate rules {
      premise 0: at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n)) => at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n));
      premise 1: 0 <= to_integer(old(n) - at(before_pointer, n)) => 0 <= to_integer(old(n) - at(before_pointer, n));

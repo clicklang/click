@@ -98,8 +98,8 @@ theorem zlib_batch_empty_components(bytes: uint8[]) {
   apply(adler_sum_empty(bytes, 0));
   unfold(adler_spec_a(bytes, 0, 1));
   unfold(adler_spec_b(bytes, 0, 1, 0));
-  rewrite(adler_byte_sum(bytes, 0) == 0);
-  rewrite(adler_weighted_sum(bytes, 0, 0) == 0); both { normalize(); } and { normalize(); }
+  rewrite(adler_byte_sum(bytes, 0), 0);
+  rewrite(adler_weighted_sum(bytes, 0, 0), 0); both { normalize(); } and { normalize(); }
  }
 }
 theorem zlib_batch_predecessor(n: uint32) {
@@ -278,7 +278,7 @@ theorem zlib_batch_reduced_components(bytes: uint8[], a: uint64, b: uint64) {
  ensures to_integer(a % 65521u64) == adler_spec_a(bytes, 5552, 1) by {
   apply(integer::uint64_remainder_to_integer(a, 65521u64));
   unfold(adler_spec_a(bytes, 5552, 1));
-  rewrite(1 + adler_byte_sum(bytes, 5552) == to_integer(a));
+  rewrite(1 + adler_byte_sum(bytes, 5552), to_integer(a));
   known();
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, 5552, 1, 0) by {
@@ -287,7 +287,7 @@ theorem zlib_batch_reduced_components(bytes: uint8[], a: uint64, b: uint64) {
   have 0 + to_integer(5552) * 1 + adler_weighted_sum(bytes, 5552, 5552) == to_integer(b) by solve() using {
    to_integer(b) == to_integer(5552) + adler_weighted_sum(bytes, 5552, 5552);
   };
-  rewrite(0 + to_integer(5552) * 1 + adler_weighted_sum(bytes, 5552, 5552) == to_integer(b));
+  rewrite(0 + to_integer(5552) * 1 + adler_weighted_sum(bytes, 5552, 5552), to_integer(b));
   known();
  }
 }

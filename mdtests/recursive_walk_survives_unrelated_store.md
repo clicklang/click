@@ -140,7 +140,7 @@ void mark(int32 *next, int32 *visited) {
         intro();
         have k == 0 by { solve() using { 0 <= k; k < 1; }; }
         have at(entry, next[k]) == 0 by {
-            rewrite(k == 0);
+            rewrite(k, 0);
             known();
         }
         have 0 <= at(entry, next[k]) by {

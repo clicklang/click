@@ -79,7 +79,7 @@ theorem zlib_block_lane(bytes: uint8[], total: uint64, remaining: uint64, lane: 
   apply(zlib_prefix_observation(total, remaining));
   apply(zlib_prefix_pointer(bytes, total, remaining));
   have bytes + (total - remaining) + lane == bytes + (zlib_prefix_count(total, remaining) + lane) by {
-   rewrite(bytes + (total - remaining) == bytes + zlib_prefix_count(total, remaining));
+   rewrite(bytes + (total - remaining), bytes + zlib_prefix_count(total, remaining));
    normalize() using { defined(zlib_prefix_count(total, remaining) + lane); };
   }
   solve() using { bytes + (total - remaining) + lane == bytes + (zlib_prefix_count(total, remaining) + lane); };

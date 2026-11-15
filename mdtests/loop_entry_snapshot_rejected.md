@@ -28,7 +28,7 @@ int32 c(int32 n) {
     have at(L.entry, x) == 0;
     have result - 1 <= at(L.entry, x);
     have result - 1 <= 0 by {
-        rewrite(at(L.entry, x) == 0);
+        rewrite(at(L.entry, x), 0);
         known();
     }
     have result <= 1 by { solve() using { result - 1 <= 0; }; }

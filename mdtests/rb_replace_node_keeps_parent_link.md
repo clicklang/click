@@ -193,8 +193,7 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
     }, { left: l2, right: r2 });
     let d = fold(ctx_at(victim, root), { model: old(c.model) }, {});
     have u.model == rb_substitute(old(t.model), new_node) by {
-        rewrite(old(t.model)
-            == RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
+        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
         unfold(rb_substitute(
             RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
             new_node));

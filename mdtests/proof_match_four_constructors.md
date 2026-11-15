@@ -43,7 +43,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Quad::Zero }, {});
             have quad_code(old(c.model)) == 0 by {
-                rewrite(old(c.model) == Quad::Zero);
+                rewrite(old(c.model), Quad::Zero);
                 unfold(quad_code(Quad::Zero));
                 normalize();
             }
@@ -54,7 +54,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Quad::One }, {});
             have quad_code(old(c.model)) == 1 by {
-                rewrite(old(c.model) == Quad::One);
+                rewrite(old(c.model), Quad::One);
                 unfold(quad_code(Quad::One));
                 normalize();
             }
@@ -65,7 +65,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Quad::Two }, {});
             have quad_code(old(c.model)) == 2 by {
-                rewrite(old(c.model) == Quad::Two);
+                rewrite(old(c.model), Quad::Two);
                 unfold(quad_code(Quad::Two));
                 normalize();
             }
@@ -76,7 +76,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Quad::Other(value) }, {});
             have quad_code(old(c.model)) == value by {
-                rewrite(old(c.model) == Quad::Other(value));
+                rewrite(old(c.model), Quad::Other(value));
                 unfold(quad_code(Quad::Other(value)));
                 normalize();
             }

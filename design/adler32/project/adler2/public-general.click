@@ -31,24 +31,24 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  step_until(assignment(__rust_mir_4, 0));
  have h.a == 1 by solve();
  have h.b == 0 by solve();
- have to_integer((h.a as u32)) == 1 by { rewrite(h.a == 1); normalize(); }
- have to_integer((h.b as u32)) == 0 by { rewrite(h.b == 0); normalize(); }
+ have to_integer((h.a as u32)) == 1 by { rewrite(h.a, 1); normalize(); }
+ have to_integer((h.b as u32)) == 0 by { rewrite(h.b, 0); normalize(); }
  mark canonical_seed;
  step_until(assignment(__rust_mir_0, 0));
  have forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) } by solve();
  have to_integer(h.a) == old(adler_spec_a_u64(data, data.len(), 1)) by {
-  rewrite(1 == at(canonical_seed, to_integer((h.a as u32))));
+  rewrite(1, at(canonical_seed, to_integer((h.a as u32))));
   known();
  }
  have to_integer(h.b) == old(adler_spec_b_u64(data, data.len(), 1, 0)) by {
-  rewrite(1 == at(canonical_seed, to_integer((h.a as u32))));
-  rewrite(0 == at(canonical_seed, to_integer((h.b as u32))));
+  rewrite(1, at(canonical_seed, to_integer((h.a as u32))));
+  rewrite(0, at(canonical_seed, to_integer((h.b as u32))));
   known();
  }
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, data.len(), 1, 0)) by {
   unfold(adler_spec_checksum_u64(data, data.len(), 1, 0));
-  rewrite(to_integer(h.a) == old(adler_spec_a_u64(data, data.len(), 1)));
-  rewrite(to_integer(h.b) == old(adler_spec_b_u64(data, data.len(), 1, 0)));
+  rewrite(to_integer(h.a), old(adler_spec_a_u64(data, data.len(), 1)));
+  rewrite(to_integer(h.b), old(adler_spec_b_u64(data, data.len(), 1, 0)));
   solve();
  }
  step();

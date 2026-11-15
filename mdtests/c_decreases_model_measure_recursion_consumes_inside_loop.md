@@ -91,7 +91,7 @@ void destroy(struct tree* t) {
                     apply(tree_size_is_nonnegative(child_model));
                     apply(tree_size_is_nonnegative(sibling_model));
                     have tree_size(x.model) == tree_size(child_model) + tree_size(sibling_model) + 1 by {
-                        rewrite(x.model == Tree::Node(child_model, sibling_model));
+                        rewrite(x.model, Tree::Node(child_model, sibling_model));
                         unfold(tree_size(Tree::Node(child_model, sibling_model)));
                         normalize();
                     }
@@ -116,19 +116,19 @@ void destroy(struct tree* t) {
                     }
                     let { child: c, sibling: s } = unfold(x);
                     have 0 <= tree_size(c.model) by {
-                        rewrite(c.model == child_model);
+                        rewrite(c.model, child_model);
                         known();
                     }
                     have tree_size(c.model) < tree_size(old(x.model)) by {
-                        rewrite(c.model == child_model);
+                        rewrite(c.model, child_model);
                         known();
                     }
                     have tree_size(s.model) <= tree_size(old(x.model)) by {
-                        rewrite(s.model == sibling_model);
+                        rewrite(s.model, sibling_model);
                         known();
                     }
                     have 0 <= tree_size(s.model) by {
-                        rewrite(s.model == sibling_model);
+                        rewrite(s.model, sibling_model);
                         known();
                     }
                     step();

@@ -15,7 +15,7 @@ theorem adler_u16_observation(value: uint16) {
    conclusion 0;
   }
   }
-  rewrite(to_integer(value) == to_integer(value as uint32));
+  rewrite(to_integer(value), to_integer(value as uint32));
   normalize();
  }
 }
@@ -57,7 +57,7 @@ theorem adler_canonical_observation(value: uint16) {
  requires to_integer(value) <= 65520;
  ensures value as uint32 <= 65520u32 by {
   apply(adler_u16_observation(value));
-  have to_integer(value as uint32) <= to_integer(65520u32) by { rewrite(to_integer(value as uint32) == to_integer(value)); known(); }
+  have to_integer(value as uint32) <= to_integer(65520u32) by { rewrite(to_integer(value as uint32), to_integer(value)); known(); }
   known();
  }
 }

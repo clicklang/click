@@ -7,7 +7,7 @@ The residual reports the actual unsigned value instead of a negative int32.
 theorem cast_shift(x: uint64, y: uint32) {
     requires x == 1753877967969059832u64;
     ensures (182457789u32 << ((0u32 - (x >> 59u64) as uint32) & 31u32)) == y by {
-        rewrite(x == 1753877967969059832u64);
+        rewrite(x, 1753877967969059832u64);
         normalize();
     }
 }

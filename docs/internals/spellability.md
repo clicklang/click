@@ -428,7 +428,7 @@ read, not to `5` (`logical_read_names_its_version` in
 `kernel::eval::memory_loads`). A read lowered to its stored value has no
 spelling of its own: no Click text lowers back to it there, so `lower(raise(x))
 == x` fails for terms that contain it, and a rewrite that moves the read
-(`rewrite(j == i)` on `a[j] == 5`) yields `true` instead of `a[i] == 5`
+(`rewrite(j, i)` on `a[j] == 5`) yields `true` instead of `a[i] == 5`
 (`mdtests/a_read_of_a_stored_cell_stays_a_read.md`). The one exception is a
 cell holding its own read (a materialization), which reads as that read. C
 evaluation still computes with stored values: a function's `result` is the

@@ -9,7 +9,7 @@ theorem wrong(b: Box, n: Integer) {
     requires b == Box::Box(n);
     ensures identity(b) == Box::Box(n + 1) by {
         unfold(identity(b));
-        rewrite(b == Box::Box(n));
+        rewrite(b, Box::Box(n));
         normalize();
     }
 }

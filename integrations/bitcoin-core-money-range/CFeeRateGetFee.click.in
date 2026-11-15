@@ -38,9 +38,9 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     step();
     let { result: rounded } = step(FeeFrac::EvaluateFeeUp, { });
     if rounded == 0i64 {
-        have to_integer(rounded) == 0 by { rewrite(rounded == 0i64); normalize(); }
-        have to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0 by { rewrite(to_integer(rounded) == 0); normalize(); }
-        have (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) == -to_integer(this->m_feerate.base.size) by { rewrite(to_integer(rounded) == 0); solve() using {}; }
+        have to_integer(rounded) == 0 by { rewrite(rounded, 0i64); normalize(); }
+        have to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0 by { rewrite(to_integer(rounded), 0); normalize(); }
+        have (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) == -to_integer(this->m_feerate.base.size) by { rewrite(to_integer(rounded), 0); solve() using {}; }
         have to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0 by { solve() using {
             to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= to_integer(rounded) * to_integer(this->m_feerate.base.size);
             to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0;

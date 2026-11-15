@@ -18,7 +18,7 @@ theorem selected(c: Color) {
     requires c == Color::Black;
     ensures choose(c) == Color::Red by {
         unfold(choose(c));
-        rewrite(c == Color::Black);
+        rewrite(c, Color::Black);
         normalize();
     }
 }
@@ -33,7 +33,7 @@ theorem payload(v: Payload, n: int32, p: struct node*, c: Color) {
     requires v == Payload::At(n, p, c);
     ensures repack(v) == Payload::At(n, p, c) by {
         unfold(repack(v));
-        rewrite(v == Payload::At(n, p, c));
+        rewrite(v, Payload::At(n, p, c));
         normalize();
     }
 }

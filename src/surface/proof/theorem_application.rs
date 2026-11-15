@@ -1688,7 +1688,7 @@ theorem nested_count(value: int32) {
         unfold(count(Count::At(value - 1)));
         have to_integer(value - 1) == to_integer(value) - 1;
         have to_integer(count(Count::At(value - 1))) == to_integer(value) - 1 by {
-            rewrite(count(Count::At(value - 1)) == value - 1); known();
+            rewrite(count(Count::At(value - 1)), value - 1); known();
         }
         apply(count_less(value, Count::At(value - 1)));
         known();

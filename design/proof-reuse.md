@@ -92,7 +92,7 @@ The 1,377 lines of the `Context::Right` arm:
 | Kind | Lines | Example |
 |---|---|---|
 | `have` | 617 | |
-| … of which one rewrite then `known`/`normalize` | 222 | `have sm == Node(...) by { rewrite(sm == ...); normalize(); }` |
+| … of which one rewrite then `known`/`normalize` | 222 | `have sm == Node(...) by { rewrite(sm, ...); normalize(); }` |
 | unfolds of recursive spec functions | about 70 | `color_bit`, `rb_reparent`, `plug`, `rb_tree_parent_consistent` |
 | resource `fold`/`unfold` | about 100 | `fold(rb_at(...))` 36, `ctx_at` 11, `rb_child_links` 22 |
 | `step` | 106 | |

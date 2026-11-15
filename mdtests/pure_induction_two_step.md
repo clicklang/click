@@ -19,7 +19,7 @@ theorem by_two_is_zero(n: int32) {
             have to_integer(n - 2) < to_integer(n);
             apply(ih(n - 2));
             unfold(by_two(n));
-            rewrite(by_two(n - 2) == 0);
+            rewrite(by_two(n - 2), 0);
             normalize();
         }
     }

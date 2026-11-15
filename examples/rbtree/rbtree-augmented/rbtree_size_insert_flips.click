@@ -35,18 +35,18 @@ tactic restore_sized_flip_state(root: struct rb_root*) {
             have focus.model == old(state.model) by normalize();
             have path.model == old(state.context) by normalize();
             have sized_value(focus.model) == value by {
-                rewrite(focus.model == old(state.model));
-                rewrite(old(state.model) == SizedTree::Node(node, parent, color, value, left, right));
+                rewrite(focus.model, old(state.model));
+                rewrite(old(state.model), SizedTree::Node(node, parent, color, value, left, right));
                 unfold(sized_value(SizedTree::Node(node, parent, color, value, left, right)));
                 normalize();
             }
             have sized_context_parent(path.model, 0) == parent by {
-                rewrite(path.model == old(state.context));
+                rewrite(path.model, old(state.context));
                 known();
             }
             have sized_parent_is(focus.model, sized_context_parent(path.model, 0)) == 1 by {
-                rewrite(focus.model == old(state.model));
-                rewrite(old(state.model) == SizedTree::Node(node, parent, color, value, left, right));
+                rewrite(focus.model, old(state.model));
+                rewrite(old(state.model), SizedTree::Node(node, parent, color, value, left, right));
                 unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, left, right), sized_context_parent(path.model, 0)));
                 normalize() using { sized_context_parent(path.model, 0) == parent; };
             }

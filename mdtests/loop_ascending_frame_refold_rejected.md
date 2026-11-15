@@ -141,11 +141,10 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                         unfold(plug(Context::Left(identity, grandparent, value,
                                                   sibling_model, up_model), t.model));
                         rewrite(plug(up_model,
-                                     HeapTree::Node(identity, value, t.model, sibling_model))
-                            == plug(Context::Left(identity, grandparent, value,
+                                     HeapTree::Node(identity, value, t.model, sibling_model)), plug(Context::Left(identity, grandparent, value,
                                                   sibling_model, up_model), t.model));
                         rewrite(Context::Left(identity, grandparent, value,
-                                              sibling_model, up_model) == c.model);
+                                              sibling_model, up_model), c.model);
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);
@@ -166,11 +165,10 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                         unfold(plug(Context::Right(identity, grandparent, value,
                                                    sibling_model, up_model), t.model));
                         rewrite(plug(up_model,
-                                     HeapTree::Node(identity, value, sibling_model, t.model))
-                            == plug(Context::Right(identity, grandparent, value,
+                                     HeapTree::Node(identity, value, sibling_model, t.model)), plug(Context::Right(identity, grandparent, value,
                                                    sibling_model, up_model), t.model));
                         rewrite(Context::Right(identity, grandparent, value,
-                                               sibling_model, up_model) == c.model);
+                                               sibling_model, up_model), c.model);
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);
@@ -184,12 +182,12 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
         }
     }
     have plug(c.model, t.model) == t.model by {
-        rewrite(c.model == Context::Top);
+        rewrite(c.model, Context::Top);
         unfold(plug(Context::Top, t.model));
         normalize();
     }
     have t.model == plug(old(c.model), old(t.model)) by {
-        rewrite(t.model == plug(c.model, t.model));
+        rewrite(t.model, plug(c.model, t.model));
         known();
     }
     unfold(c);
@@ -199,7 +197,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
         HeapTree::Node(identity, value, left_model, right_model) => {
             have HeapTree::Node(identity, value, left_model, right_model)
                 == plug(old(c.model), old(t.model)) by {
-                rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
+                rewrite(HeapTree::Node(identity, value, left_model, right_model), t.model);
                 known();
             }
             let { left: l, right: r } = unfold(t);
@@ -207,8 +205,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                 model: HeapTree::Node(identity, value, left_model, right_model)
             }, { left: l, right: r });
             have sub.model == plug(old(c.model), old(t.model)) by {
-                rewrite(sub.model
-                    == HeapTree::Node(identity, value, left_model, right_model));
+                rewrite(sub.model, HeapTree::Node(identity, value, left_model, right_model));
                 known();
             }
             step();

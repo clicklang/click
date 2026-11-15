@@ -70,7 +70,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             have start <= m by solve();
             have 0 <= m;
             have 0 <= i by {
-                rewrite(i == m);
+                rewrite(i, m);
                 known();
             }
             have i < capacity;
@@ -107,12 +107,12 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 } else {
                     have k <= at(opened, i);
                     have k == at(opened, i);
-                    rewrite(k == at(opened, i));
+                    rewrite(k, at(opened, i));
                     normalize();
                 }
             }
             have start <= at(opened, i) by {
-                rewrite(at(opened, i) == m);
+                rewrite(at(opened, i), m);
                 known();
             }
             have to_integer(start) <= to_integer(at(opened, i) + 1);
@@ -149,12 +149,12 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
     have n == i by solve();
     have n <= end by solve();
     have not (n < end) by {
-        rewrite(n == i);
+        rewrite(n, i);
         known();
     }
     have n == end;
     have start < n by {
-        rewrite(n == end);
+        rewrite(n, end);
         known();
     }
     have start <= start by normalize();
@@ -169,7 +169,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
     }
     have at(pre, occupied[start]) == 0 by solve();
     have occupied[start] == 0 by {
-        rewrite(occupied[start] == at(pre, occupied[start]));
+        rewrite(occupied[start], at(pre, occupied[start]));
         known();
     }
     have start < 0 by {

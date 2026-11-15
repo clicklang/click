@@ -50,8 +50,8 @@ void bump_n(struct cell* p, int32 n) {
         initialize by solve();
         preserve by {
             have c.count == i by {
-                rewrite(to_integer(c.count) == to_integer((old(c.count) + i)));
-                rewrite(old(c.count) == 0);
+                rewrite(to_integer(c.count), to_integer((old(c.count) + i)));
+                rewrite(old(c.count), 0);
                 normalize();
             }
             unfold(c);

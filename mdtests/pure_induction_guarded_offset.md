@@ -34,7 +34,7 @@ theorem guarded_count(base: int32, n: int32) {
             apply(ih(n - 1));
             both {
                 unfold(guarded_countdown(n));
-                rewrite(guarded_countdown(n - 1) == 0);
+                rewrite(guarded_countdown(n - 1), 0);
                 normalize() using { not(n <= 0); };
             } and { normalize(); }
         }
