@@ -450,21 +450,6 @@ impl<'a> Proof<'a> {
         self.state.published_contract_claim(key)
     }
 
-    /// Package completed evidence without discovering or checking obligations.
-    pub(in crate::surface::proof) fn contract_exit_completion(
-        &self,
-        path: &crate::kernel::SymbolicExecutionPath,
-    ) -> Result<crate::kernel::ClosedContractExit, ClickError> {
-        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
-            return Err(self.step_error("contract closing requires an outcome goal"));
-        };
-        goal.closing
-            .as_ref()
-            .ok_or_else(|| self.step_error("contract closing obligations were not generated"))?
-            .completion(path)
-            .map_err(|refusal| self.contract_closing_error(refusal))
-    }
-
     fn contract_closing_error(&self, refusal: crate::kernel::ContractClosingRefusal) -> ClickError {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return self.step_error("contract closing requires an execution proof");
@@ -495,6 +480,7 @@ impl<'a> Proof<'a> {
                     function_claim_label(context.function_block, &claim)
                 )
             }
+            #[cfg(test)]
             Refusal::Pending(kind) => format!(
                 "contract closing for `{label}` path {index}: unproved {} obligation; prove it explicitly with `assumption()` or supply the facts and resources needed by the implicit solver",
                 kind.description()
@@ -537,26 +523,46 @@ impl<'a> Proof<'a> {
             .map_err(|reason| self.step_error(reason))
     }
 
-    pub(in crate::surface::proof) fn start_contract_completion(
+    pub(in crate::surface::proof) fn open_contract_execution(
         &self,
-        owner: &crate::kernel::WholeContractProof,
-        execution: &CheckedFunctionExecution,
+        execution: CheckedFunctionExecution,
+        whole: Option<&crate::kernel::WholeContractProof>,
         branches: impl Iterator<Item = BranchId>,
-    ) -> Option<crate::kernel::ContractProofProgress> {
+    ) -> Result<crate::kernel::ContractExecutionOwner, ClickError> {
         self.state
-            .start_contract_completion(owner, execution, branches)
+            .open_contract_execution(execution, whole, branches)
+            .map_err(|reason| self.step_error(reason))
     }
 
     pub(in crate::surface::proof) fn complete_outcome_in(
         &self,
         owner: &Self,
-        progress: Option<&mut crate::kernel::ContractProofProgress>,
+        execution: &mut crate::kernel::ContractExecutionOwner,
     ) -> Result<Self, ClickError> {
         let state = self
             .state
-            .complete_function_outcome_with_contract_in(&owner.state, progress)
+            .complete_function_outcome_in_execution(&owner.state, execution)
             .map_err(|reason| self.step_error(reason))?;
         Ok(owner.with_kernel_state(state))
+    }
+
+    pub(in crate::surface::proof) fn finish_contract_execution(
+        &self,
+        execution: crate::kernel::ContractExecutionOwner,
+    ) -> Result<CheckedFunctionExecution, ClickError> {
+        self.state
+            .finish_contract_execution(execution)
+            .map_err(|reason| self.step_error(reason))
+    }
+
+    pub(in crate::surface::proof) fn contract_exit_completes_boundary(&self) -> bool {
+        match self.focused_obligation() {
+            Some(Obligation::FunctionOutcome(goal)) => goal
+                .closing
+                .as_ref()
+                .is_some_and(|closing| closing.completes_boundary()),
+            _ => false,
+        }
     }
 
     /// The focused outcome path's claim goals, once opened.
@@ -657,7 +663,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn prepare_outcome_cases(
         &self,
         owner: &mut Self,
-        progress: Option<&mut crate::kernel::ContractProofProgress>,
+        execution_owner: &mut crate::kernel::ContractExecutionOwner,
     ) -> Result<Option<Self>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome routing requires an execution proof"));
@@ -710,7 +716,7 @@ impl<'a> Proof<'a> {
                         )
                         .map_err(|_| self.step_error("outcome goal is no longer open"))?;
                     let state = state
-                        .refute_function_outcome_with_contract_in(&owner.state, &fact, progress)
+                        .refute_function_outcome_in_execution(&owner.state, &fact, execution_owner)
                         .map_err(|reason| self.step_error(reason))?;
                     *owner = owner.with_kernel_state(state);
                     return Ok(None);
@@ -1055,6 +1061,13 @@ impl<'a> Proof<'a> {
                 });
                 facts = facts.with_kernel_checked_fact(fact.proposition().clone());
             }
+            let outcome_execution = frontier_snapshot.as_ref().map(|snapshot| {
+                let mut opened = snapshot.as_ref().clone();
+                opened
+                    .core
+                    .open_return_outcome(path_index, &outcome_core, &facts);
+                Arc::new(opened)
+            });
             path_indices.push(path_index);
             goals.push(OpenBranch::function_outcome(
                 OutcomeObligation::new(
@@ -1095,7 +1108,7 @@ impl<'a> Proof<'a> {
                 BranchState {
                     facts,
                     unfolded_predicates: frontier_unfolds.clone(),
-                    execution: frontier_snapshot.clone(),
+                    execution: outcome_execution,
                 },
             ));
         }

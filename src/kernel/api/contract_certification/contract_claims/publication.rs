@@ -13,6 +13,9 @@ pub(crate) struct PublishedFunctionOutcome {
     specification: FunctionSpecification,
     theorem: Theorem,
     path_origin: Theorem,
+    path: SymbolicExecutionPath,
+    return_seed: Arc<crate::kernel::proof::CheckedReturnSeed>,
+    return_status: Option<(bool, Option<RuntimeError>)>,
     core: Option<OutcomeProofCore>,
 }
 
@@ -41,7 +44,8 @@ impl PublishedFunctionOutcome {
         obligations: &[ProofObligation],
         outcome: &FunctionOutcome,
         candidate: &FunctionExecutionCandidate,
-        origin: &Theorem,
+        path: &SymbolicExecutionPath,
+        return_seed: Arc<crate::kernel::proof::CheckedReturnSeed>,
     ) -> Arc<Self> {
         let identity = OutcomeIdentity::fresh();
         let specification = FunctionSpecification::new(
@@ -92,9 +96,62 @@ impl PublishedFunctionOutcome {
             function: function.clone(),
             specification,
             theorem,
-            path_origin: origin.clone(),
+            path_origin: path.theorem.clone(),
+            path: path.clone(),
+            return_seed,
+            return_status: None,
             core,
         })
+    }
+
+    pub(crate) fn path(&self) -> &SymbolicExecutionPath {
+        &self.path
+    }
+    pub(in crate::kernel) fn return_seed(&self) -> &Arc<crate::kernel::proof::CheckedReturnSeed> {
+        &self.return_seed
+    }
+
+    pub(in crate::kernel) fn with_return_path(
+        self: &Arc<Self>,
+        path: SymbolicExecutionPath,
+        outcome: FunctionOutcome,
+        deferred: bool,
+        error: Option<RuntimeError>,
+    ) -> Arc<Self> {
+        let mut next = self.as_ref().clone();
+        next.version = Arc::new(());
+        next.specification = FunctionSpecification::new(
+            self.specification.state().clone(),
+            self.specification.arguments().to_vec(),
+            self.specification.requires().to_vec(),
+            outcome,
+        );
+        let conclusion = Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+            function: Box::new(self.function.clone()),
+            specification: Box::new(next.specification.clone()),
+        };
+        let conclusion = next
+            .specification
+            .requires()
+            .iter()
+            .rev()
+            .fold(conclusion, |body, premise| {
+                Proposition::Implies(Box::new(premise.clone()), Box::new(body))
+            });
+        next.theorem = Theorem::new(crate::kernel::reasoning::wrap_proof_facts(
+            conclusion,
+            &path.assumptions,
+            &path.facts,
+            self.return_seed.obligations(),
+        ));
+        next.path_origin = path.theorem.clone();
+        next.path = path;
+        next.return_status = Some((deferred, error));
+        Arc::new(next)
+    }
+
+    pub(in crate::kernel) fn return_status(&self) -> Option<&(bool, Option<RuntimeError>)> {
+        self.return_status.as_ref()
     }
 
     pub(crate) fn specification(&self) -> &FunctionSpecification {
@@ -114,16 +171,6 @@ impl PublishedFunctionOutcome {
 
     pub(in crate::kernel) fn belongs_to(&self, original: &Self) -> bool {
         self.identity.same_as(&original.identity)
-    }
-
-    /// A checked return rewrite advances the publication of the same outcome.
-    pub(in crate::kernel) fn retain_identity(self: &Arc<Self>, original: &Self) -> Arc<Self> {
-        let mut next = self.as_ref().clone();
-        next.identity = original.identity.clone();
-        if let Some(core) = &mut next.core {
-            core.identity = original.identity.clone();
-        }
-        Arc::new(next)
     }
 
     /// The ordinary claim goal already bound and checked this completion.

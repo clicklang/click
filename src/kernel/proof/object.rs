@@ -651,8 +651,100 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Some(publication.publish_claim(completion))
     }
 
+    pub(crate) fn open_contract_execution(
+        &self,
+        execution: crate::kernel::CheckedFunctionExecution,
+        whole: Option<&crate::kernel::WholeContractProof>,
+        branches: impl Iterator<Item = BranchId>,
+    ) -> Result<crate::kernel::ContractExecutionOwner, String> {
+        let mut outcomes = Vec::new();
+        for id in branches {
+            let branch = self
+                .state
+                .open_branches
+                .get(id)
+                .ok_or("an outcome branch was not opened")?;
+            let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+                return Err("execution ownership requires function outcomes".into());
+            };
+            let publication = outcome
+                .data
+                .core
+                .publication
+                .as_ref()
+                .ok_or("execution outcome has no producer publication")?;
+            outcomes.push((
+                outcome.path_index,
+                outcome.data.core.identity.clone(),
+                publication.clone(),
+            ));
+        }
+        crate::kernel::ContractExecutionOwner::open(execution, whole, outcomes)
+    }
+
+    pub(crate) fn complete_function_outcome_in_execution(
+        &self,
+        owner: &Self,
+        execution: &mut crate::kernel::ContractExecutionOwner,
+    ) -> Result<Self, String> {
+        let identity = self.completed_outcome_identity()?;
+        let next = self.close_owned_outcome(owner, identity)?;
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .expect("the completed outcome is open");
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            unreachable!()
+        };
+        execution.finish_outcome(
+            outcome.path_index,
+            identity,
+            outcome.claims.as_ref(),
+            outcome.closing.as_ref(),
+            outcome.data.core.publication.as_ref(),
+        )?;
+        Ok(next)
+    }
+
+    pub(crate) fn refute_function_outcome_in_execution(
+        &self,
+        owner: &Self,
+        fact: &Proposition,
+        execution: &mut crate::kernel::ContractExecutionOwner,
+    ) -> Result<Self, String> {
+        let next = self.refute_function_outcome_with_contract_in(owner, fact, None)?;
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .expect("the refuted outcome is open");
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            unreachable!()
+        };
+        execution.finish_outcome(
+            outcome.path_index,
+            &outcome.data.core.identity,
+            None,
+            None,
+            None,
+        )?;
+        Ok(next)
+    }
+
+    pub(crate) fn finish_contract_execution(
+        &self,
+        execution: crate::kernel::ContractExecutionOwner,
+    ) -> Result<crate::kernel::CheckedFunctionExecution, String> {
+        if !self.is_complete() {
+            return Err("ordinary outcome proof still has open obligations".into());
+        }
+        execution.finish()
+    }
+
     /// Bind an execution strategy's whole-contract progress to the exact
     /// generative outcomes this ordinary proof owner just opened.
+    #[cfg(test)]
     pub(crate) fn start_contract_completion(
         &self,
         owner: &crate::kernel::WholeContractProof,
@@ -690,6 +782,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         self.complete_function_outcome_with_contract_in(owner, None)
     }
 
+    #[cfg(test)]
     pub(crate) fn complete_function_outcome_with_contract_in(
         &self,
         owner: &Self,

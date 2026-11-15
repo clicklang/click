@@ -480,10 +480,18 @@ exact goal through its retained publication; it does not accept a separately
 supplied receipt or reconstruct and compare specifications, results, memory,
 or locals. Reopening the same execution keeps proof owners distinct.
 
-Checked return-resource rewrites advance the same producer's publication before
-closing, and publication updates use a persistent path index. The return-rewrite
-operation still revisits its retained execution evidence; removing that replay
-and the later return/exit receipt-installation guards remains separate work.
+The checked body producer retains the completing statement and exit inputs in
+`CheckedReturnSeed`. Opening an ordinary outcome forks a `ReturnRewriteProducer`;
+completed propositions and resource exchanges advance that producer using only
+the new facts and selected exchange. Preparing contract closing uses its retained
+completion, without replaying C execution history.
+
+`ContractExecutionOwner` owns one execution strategy and its opened outcome
+identities. Ordinary completion directly installs the outcome's current producer
+publication, path and completed exit, and retires its whole-contract cells.
+Refutation discharges the selected outcome without fabricating exit evidence.
+The completed ordinary proof hands back this execution directly; there is no
+later return/exit receipt installation or progress filter.
 Independent conditional execution artifacts have no opened-entry authority and
 retain their separate entry preparation and rule-packaging APIs.
 

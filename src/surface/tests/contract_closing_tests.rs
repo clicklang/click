@@ -50,11 +50,11 @@ fn omitted_closing_steps_leave_their_obligations_open() {
     ] {
         let source = proof(&format!("normalize(); {}", "assumption(); ".repeat(count)));
         let error = without_implicit_solve(|| verify_c_sources(&source, C))
-            .expect_err("packaging cannot supply an omitted proof");
+            .expect_err("ordinary completion cannot supply an omitted proof");
         assert!(
             error
                 .message()
-                .contains(&format!("unproved {goal} obligation")),
+                .contains(&format!("outcome still owes contract closing: {goal}")),
             "{error}"
         );
         verify_c_sources(&source, C)
@@ -69,7 +69,7 @@ fn written_solve_closes_only_one_selected_closing_goal() {
     assert!(
         error
             .message()
-            .contains("unproved allocation lifetime obligation"),
+            .contains("outcome still owes contract closing: allocation lifetime"),
         "{error}"
     );
 }
@@ -87,7 +87,7 @@ fn expansion_writes_each_closing_step_and_requires_them_when_cold() {
     assert!(
         error
             .message()
-            .contains("unproved write footprint obligation"),
+            .contains("outcome still owes contract closing: write footprint"),
         "{error}"
     );
 }
