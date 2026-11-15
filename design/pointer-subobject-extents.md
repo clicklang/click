@@ -5,7 +5,7 @@ Status: implemented; decisions D1-D5 and E1-E3 approved. This closes the
 semantic conclusions from the archived object model (`design/cpp-object-model.md`
 at `e3d84a785`) with a narrower representation.
 
-## The hole, as it exists on master
+## Historical hole at `9ea01e78f`
 
 Master `9ea01e78f` accepts every one of these (in the scratch reproductions, each
 claim verifies):

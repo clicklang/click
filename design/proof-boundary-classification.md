@@ -90,7 +90,7 @@ other concerns need separate treatment: remaining orchestration adapters on
 operations and declaration validation that searches outside proof scripts.
 
 The known direct operation/search dependencies remain: this classification does
-not eliminate the six kernel bridges, their 21 caller records, or the 6
+not eliminate the four kernel bridges, their 17 caller records, or the 6
 Surface operation/search records. In particular, explicit premises are not an
 explicit derivation: `transport(...) using {...}` is classified Simple in
 `src/surface.rs`, but its application can still call `derive_atomic_proposition`.
@@ -232,7 +232,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 642 reference records, not 642 obligations to remove.
+The inventory contains 662 reference records, not 662 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

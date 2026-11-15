@@ -2,6 +2,67 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+#[test]
+fn full_and_concise_reports_keep_named_pointer_prerequisites() {
+    use crate::kernel::{Pointer, PointerValue, ProgramType, Variable};
+    use crate::surface::proof_diagnostics::{
+        ProofDiagnosticOrigin, ProofDiagnosticState, ProofFailureDiagnostic, render::SnapshotLabels,
+    };
+    use std::sync::Arc;
+
+    struct NamedPointers {
+        node: Pointer,
+        identity: Pointer,
+    }
+    impl ProofDiagnosticState for NamedPointers {
+        fn kernel_goal(&self) -> Option<&Proposition> {
+            None
+        }
+        fn premises(&self, _: usize) -> Vec<&Proposition> {
+            Vec::new()
+        }
+        fn premise_count(&self) -> usize {
+            0
+        }
+        fn register_names(&self, labels: &mut SnapshotLabels) {
+            labels.immutable_pointer_name(&self.node, "node");
+            labels.immutable_pointer_name(&self.identity, "identity");
+        }
+    }
+    let names = NamedPointers {
+        node: Pointer::symbolic(Variable(990_101)),
+        identity: Pointer::symbolic(Variable(990_102)),
+    };
+    let pointer = |p: &Pointer| PointerValue::new(p.clone(), ProgramType::Int32Pointer);
+    let requirement = Proposition::ConditionIs(
+        ConditionTerm::PointerValueEqual(
+            Box::new(pointer(&names.node)),
+            Box::new(pointer(&names.identity)),
+        ),
+        true,
+    );
+    let error = ClickError::with_diagnostic(
+        "a generated prerequisite has no Surface spelling",
+        ProofFailureDiagnostic {
+            failing_path: None,
+            checks: None,
+            origin: ProofDiagnosticOrigin {
+                stage: "proof step".into(),
+                location: "tactic 4".into(),
+                source_tactic_path: None,
+            },
+            claim_label: "link.contract".into(),
+            reason: "a generated prerequisite has no Surface spelling".into(),
+            state: Some(Arc::new(names)),
+        },
+    )
+    .with_unresolved_requirement(&ProofObligation::verification_condition(requirement));
+    for report in [error.concise_report(), error.report(), error.report()] {
+        assert!(report.contains("goal: node == identity"), "{report}");
+        assert!(!report.contains("<pointer"), "{report}");
+    }
+}
+
 fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, trace_goal: &str) {
     let ordinary = verify_c_sources(source, &[("access.c", c)])
         .unwrap_err()

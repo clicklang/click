@@ -20,7 +20,7 @@ rulings apply: narrowing a 64-bit index into a 32-bit range is a dead end, a
 64-bit index is never narrowed, and a range's kind does not depend on what a
 contract happens to prove.
 
-## 1. Current model
+## 1. Original model at `e01ca8136`
 
 - **Token.** `abstract resource allocation(base: int32*, bytes: int32);`
   (`library/primitives.click:7`); the surface injects the same types

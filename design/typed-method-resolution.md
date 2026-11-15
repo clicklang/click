@@ -6,7 +6,7 @@ one resolution in declaration expansion, and a library type's methods are
 its library functions, so `Vec` reads `v.len()` with no row of its own. The
 iterator model's methods arrive with its types.
 
-## Problem
+## Historical problem
 
 Click's own types have methods: a Rust sidecar writes Rust's methods on
 values, `s.len()`, `s.as_ptr()`, `s[i]`, `s[a..b]`, and a C or C++ sidecar
@@ -26,7 +26,7 @@ It does not know it for a value whose type comes from type inference:
   scrutinee's type;
 - a `let` binder, `let s = half(bytes); s.len()`, typed by its value.
 
-Both fail to parse today. The explicit library call, `slice::len(s)`, works
+Both failed before typed method resolution was implemented. The explicit library call, `slice::len(s)`, works
 on the same binder, because type validation knows `s` is a `Slice<u8>`.
 
 Every library type with Rust methods will hit the same wall: `Vec`
