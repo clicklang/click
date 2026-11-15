@@ -8,6 +8,7 @@ use std::sync::Mutex;
 pub(crate) struct WholeContractRoot {
     plan: WholeContractProof,
     state: Arc<Mutex<Option<RootState>>>,
+    program: Option<crate::kernel::termination::ProgramBodyOwner>,
 }
 
 struct RootState {
@@ -16,7 +17,8 @@ struct RootState {
     executions: PersistentVector<Arc<CheckedFunctionExecution>>,
     subject: ProgramFunction,
     preferred_subject: bool,
-    completed: Option<Arc<CompletedContract>>,
+    loop_rules: PersistentVector<VerifiedLoopRule>,
+    completed: Option<Arc<ContractBodyProof>>,
 }
 
 impl std::fmt::Debug for WholeContractRoot {
@@ -40,16 +42,27 @@ impl WholeContractRoot {
         Ok(Self::from_plan(plan.clone(), plan))
     }
 
+    pub(in crate::kernel) fn open_in_program(
+        entry: Arc<PreparedContractEntryCases>,
+        program: &crate::kernel::ProgramContractBodies,
+    ) -> Result<Self, String> {
+        let mut root = Self::open(entry)?;
+        root.program = Some(program.open_body(root.plan.entry.function.name().to_string()));
+        Ok(root)
+    }
+
     fn from_plan(plan: WholeContractProof, goal: WholeContractProof) -> Self {
         let subject = plan.entry.function.clone();
         Self {
             plan,
+            program: None,
             state: Arc::new(Mutex::new(Some(RootState {
                 goal,
                 subject,
                 closed: PersistentMap::default(),
                 executions: PersistentVector::default(),
                 preferred_subject: false,
+                loop_rules: PersistentVector::default(),
                 completed: None,
             }))),
         }
@@ -74,7 +87,12 @@ impl WholeContractRoot {
         }
     }
 
-    fn publish(&self, execution: Arc<CheckedFunctionExecution>, preferred: bool) {
+    fn publish(
+        &self,
+        execution: Arc<CheckedFunctionExecution>,
+        preferred: bool,
+        loop_rules: Arc<[VerifiedLoopRule]>,
+    ) {
         let mut state = self.state.lock().expect("contract root");
         let state = state.as_mut().expect("the strategy's script is still open");
         assert!(state.completed.is_none(), "the parent root is still open");
@@ -94,11 +112,15 @@ impl WholeContractRoot {
         }
         state.preferred_subject |= preferred;
         state.executions.push(execution);
+        for rule in loop_rules.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            state.loop_rules.push(rule.clone());
+        }
     }
 
-    /// Complete this ordinary root. The only refusal is an already open
+    /// Complete this ordinary body root. The only refusal is an already open
     /// declared goal; packaging the completed proof introduces no checks.
-    pub(crate) fn finish(&self) -> Result<Arc<CompletedContract>, ContractCompletionGoal> {
+    pub(crate) fn finish(&self) -> Result<Arc<ContractBodyProof>, ContractCompletionGoal> {
         let mut state = self.state.lock().expect("contract root");
         let state = state
             .as_mut()
@@ -135,14 +157,21 @@ impl WholeContractRoot {
             crate::instrumentation::record_deterministic_work(execution.applied_tactics.len() + 1);
             applied_tactics.extend(execution.applied_tactics.iter().cloned());
         }
-        let rule = (!state.subject.is_program_entry()).then(|| VerifiedFunctionRule {
+        let rule = VerifiedFunctionRule {
             pointer_result,
             function: state.subject.clone(),
             loop_semantics,
             checked_callees,
             applied_tactics,
+        };
+        let completed = Arc::new(ContractBodyProof {
+            rule,
+            modular: self.plan.modular,
+            loop_rules: state.loop_rules.iter().cloned().collect(),
         });
-        let completed = Arc::new(CompletedContract { rule });
+        if let Some(program) = &self.program {
+            program.publish(completed.clone());
+        }
         state.completed = Some(completed.clone());
         Ok(completed)
     }
@@ -171,6 +200,10 @@ impl ContractRootAttempt {
                 parent.closed.insert(goal.clone(), ());
             }
         }
+        for rule in child.loop_rules.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            parent.loop_rules.push(rule.clone());
+        }
         if !child.executions.is_empty() {
             if parent.executions.is_empty()
                 || (child.preferred_subject && !parent.preferred_subject)
@@ -190,6 +223,7 @@ impl ContractRootAttempt {
 pub(crate) struct CompletedContractExecution {
     execution: Arc<CheckedFunctionExecution>,
     root: Option<WholeContractRoot>,
+    loop_rules: Arc<[VerifiedLoopRule]>,
 }
 
 impl CompletedContractExecution {
@@ -200,7 +234,12 @@ impl CompletedContractExecution {
         Self {
             execution: Arc::new(execution),
             root,
+            loop_rules: Arc::from([]),
         }
+    }
+    pub(crate) fn with_loop_rules(mut self, rules: Arc<[VerifiedLoopRule]>) -> Self {
+        self.loop_rules = rules;
+        self
     }
     pub(crate) fn execution(&self) -> &Arc<CheckedFunctionExecution> {
         &self.execution
@@ -230,7 +269,7 @@ impl CompletedContractExecution {
     }
     pub(crate) fn publish(self, preferred: bool) {
         if let Some(root) = self.root {
-            root.publish(self.execution, preferred);
+            root.publish(self.execution, preferred, self.loop_rules);
         }
     }
     #[cfg(test)]
@@ -297,6 +336,81 @@ mod tests {
             .unwrap()
             .finish_contract_execution(owner)
             .unwrap()
+    }
+
+    fn finish_program(
+        program: crate::kernel::ProgramContractProof,
+        rule: VerifiedFunctionRule,
+    ) -> Result<
+        Vec<crate::kernel::VerifiedFunctionTerminationRule>,
+        crate::kernel::ProgramContractFailure,
+    > {
+        let rules = [rule];
+        program
+            .complete(crate::kernel::ProgramTerminationInputs {
+                partial_rules: &rules,
+                plans: &[],
+                inline_bodies: &[],
+                assumed_terminating: &BTreeSet::new(),
+                diverging_contracts: &BTreeSet::new(),
+                has_unselected_functions: false,
+            })
+            .map(|completed| completed.into_termination_rules())
+    }
+
+    #[test]
+    fn program_completion_waits_for_its_own_body_root() {
+        let (entry, execution) =
+            crate::kernel::api::contract_certification::entry_authority_tests::checked_execution(
+                0, None,
+            )
+            .unwrap();
+        let program = crate::kernel::ProgramContractProof::open(
+            BTreeSet::from([entry.function.name().to_string()]),
+            BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        let _pending =
+            WholeContractRoot::open_in_program(entry.clone(), &program.bodies()).unwrap();
+        let unrelated = WholeContractRoot::open(entry).unwrap();
+        prove_strategy(&unrelated, execution).publish(false);
+        let unrelated_body = unrelated.finish().unwrap();
+        assert!(
+            matches!(
+                finish_program(program, unrelated_body.into_rule().unwrap()),
+                Err(crate::kernel::ProgramContractFailure::UnfinishedBody(_))
+            ),
+            "another root's completed body cannot close the captured parent goal"
+        );
+    }
+
+    #[test]
+    fn ordinary_body_completion_publishes_directly_to_the_captured_program() {
+        let (entry, execution) =
+            crate::kernel::api::contract_certification::entry_authority_tests::checked_execution(
+                0, None,
+            )
+            .unwrap();
+        let program = crate::kernel::ProgramContractProof::open(
+            BTreeSet::from([entry.function.name().to_string()]),
+            BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        let root = WholeContractRoot::open_in_program(entry, &program.bodies()).unwrap();
+        let attempt = root.begin_attempt();
+        prove_strategy(attempt.root(), execution).publish(false);
+        attempt.commit();
+        let body = root.finish().unwrap();
+        assert!(
+            Arc::ptr_eq(&body, &root.finish().unwrap()),
+            "cached completion does not publish twice"
+        );
+        assert_eq!(
+            finish_program(program, body.into_rule().unwrap())
+                .unwrap_or_else(|_| panic!("both body and termination closed"))
+                .len(),
+            1
+        );
     }
 
     #[test]

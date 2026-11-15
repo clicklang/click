@@ -377,7 +377,7 @@ pub(super) fn verify_execution_theorem(
         Arc::new(function_source_registry.for_contract_proof()),
         tactics,
     )?;
-    let completed = finish_whole_contract_root(&block, &verified)?
+    let completed = finish_contract_body_root(&block, &verified)?
         .ok_or_else(|| error("the one-call proof did not open a whole-contract root"))?;
     let rule = completed
         .into_rule()

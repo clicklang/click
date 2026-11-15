@@ -74,7 +74,7 @@ pub(in crate::surface) use crate::kernel::proof::{
 };
 use claim_proofs::finish_ordered_proof;
 pub(super) use claim_proofs::{
-    finish_whole_contract_root, prove_claim_by_tactics, prove_claims_by_grouped_script,
+    finish_contract_body_root, prove_claim_by_tactics, prove_claims_by_grouped_script,
     prove_claims_by_implicit_tail,
 };
 pub(in crate::surface) use cursor_execution::surface_snapshot_selector;

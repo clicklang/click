@@ -98,3 +98,48 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         .expect_err("a call that passes the measure unchanged does not descend");
     assert!(error.message.contains("must pass"), "{error}");
 }
+
+#[test]
+fn independent_loop_measure_ownership_costs_its_explicit_strategy_outputs() {
+    let function = self_call_in_loop_rule("drain").function;
+    let template = loop_rule_for(&function, None);
+    for count in [16, 64, 256, 512] {
+        let rules = (0..count)
+            .map(|index| {
+                let mut rule = template.clone();
+                let ProgramStatement::While {
+                    ranking_measures, ..
+                } = &mut rule.loop_statement
+                else {
+                    unreachable!();
+                };
+                *ranking_measures = vec![RankingComponent::Pure {
+                    source: format!("level{index}(n)"),
+                    expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        "n".into(),
+                    )),
+                }];
+                rule
+            })
+            .collect::<Vec<_>>();
+        let ((ranked, unranked), work) = crate::instrumentation::measure_deterministic_work(|| {
+            verified_loop_ranking_measures("drain", &function.source_body, &rules).unwrap()
+        });
+        assert_eq!(ranked[&0].len(), count);
+        assert!(unranked.is_empty());
+        assert!(work <= 16 * count + 32, "{count} strategies: {work} work");
+        let last = ranked[&0].last().unwrap().clone();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            check_loops(
+                &function.source_body,
+                &BTreeMap::from([(0, last)]),
+                &ranked,
+                "drain",
+                &mut 0,
+                &mut Vec::new(),
+            )
+            .unwrap();
+        });
+        assert!(work <= count + 16, "{count} explicit measures: {work} work");
+    }
+}
