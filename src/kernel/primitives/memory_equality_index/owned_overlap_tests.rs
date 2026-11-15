@@ -100,16 +100,16 @@ fn a_query_read_definition_is_registered_in_the_paired_namespace() {
         field.clone(),
         ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
     );
-    let snapshot = crate::kernel::intern_memory_ref(&memory);
+    let retained_state = crate::kernel::intern_memory_ref(&memory);
     let variable = crate::kernel::load_variable_for_cell_with_origin(
-        &snapshot,
+        &retained_state,
         &field,
         LoadKind::Int32,
         C_POINTER_BYTE_WIDTH,
-        &snapshot,
+        &retained_state,
     );
     let read = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
-    facts.register_pointer_read(&read, &snapshot, &field);
+    facts.register_pointer_read(&read, &retained_state, &field);
     let _operation = crate::kernel::search::FastOperationScope::enter(
         "ownership through a newly registered read",
     );

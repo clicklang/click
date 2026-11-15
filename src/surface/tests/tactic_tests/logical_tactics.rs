@@ -3765,3 +3765,65 @@ fn local_predicate_unfold_preserves_proposition_values() {
     without_implicit_solve(|| verify_click_theorems(source))
         .expect("a proposition value retains the selected definition operation");
 }
+
+#[test]
+fn apply_fact_checks_source_and_selected_evidence() {
+    let source = r#"
+        theorem demo(x: int32, y: int32) {
+            requires x > 0;
+            requires x > 0 implies y > 0;
+            ensures y > 0 by {
+                apply(x > 0 implies y > 0) using { x > 0; };
+            }
+        }
+    "#;
+    verify_click_theorems(source).expect("explicit modus ponens");
+    for (invalid, reason) in [
+        (
+            source.replace("requires x > 0 implies y > 0;", ""),
+            "source implication",
+        ),
+        (
+            source.replace("requires x > 0;", ""),
+            "premise that is not available",
+        ),
+        (
+            source.replace("using { x > 0; }", "using { }"),
+            "antecedent",
+        ),
+        (
+            source.replace("apply(x > 0 implies y > 0)", "apply(x > 0)"),
+            "requires an implication",
+        ),
+        (source.replace("ensures y > 0", "ensures y < 0"), ""),
+    ] {
+        let error = verify_click_theorems(&invalid).expect_err("invalid application must fail");
+        assert!(error.message().contains(reason), "{reason}: {error}");
+    }
+}
+
+#[test]
+fn apply_fact_is_available_at_execution_frontiers_and_outcomes() {
+    let c = "int32 identity(int32 x) { return x; }";
+    let template = r#"
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            requires x > 1;
+            requires x > 0 implies x != 0;
+            ensures result != 0;
+        } by {
+            APPLICATION
+        }
+    "#;
+    for application in [
+        "apply(x > 0 implies x != 0); step();",
+        "have h: x > 0 implies x != 0 by known(); apply(h); step();",
+        "have x > 0; apply(x > 0 implies x != 0) using { x > 0; }; step();",
+        "step(); apply(x > 0 implies x != 0);",
+        "step(); have x > 0; apply(x > 0 implies x != 0) using { x > 0; };",
+    ] {
+        let source = template.replace("APPLICATION", application);
+        verify_c_sources(&source, &[("identity.c", c)])
+            .unwrap_or_else(|error| panic!("{application}: {error}"));
+    }
+}

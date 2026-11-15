@@ -2,7 +2,7 @@
 
 The proof selects a bounded element, restricts the separated resource range,
 and preserves the complete 64-bit read across the store. Instantiating the
-entry-snapshot fact then establishes its current value.
+entry-state fact then establishes its current value.
 
 ```c filename=probe.c
 void mark(unsigned long *values, int32 *visited, int32 n, int32 cur, unsigned long stamp) {

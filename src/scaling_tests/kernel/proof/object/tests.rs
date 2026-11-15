@@ -165,7 +165,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
     };
     type TestProof =
         ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ProofExecutionState<()>>;
-    // One entry state: every snapshot below must be the very same state,
+    // One entry state: every state below must be the very same state,
     // creation ledger included.
     let entry = ExecutionState::new().with_population_creation_tracking();
     let root = |facts: ProofFacts, core: ExecutionProofCore| -> TestProof {
@@ -213,7 +213,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         .with_fact(Proposition::Predicate {
             name: "invariant".into(),
             arguments: vec![Term::ExecutionState(Box::new(
-                entry.resource_state_snapshot(),
+                entry.resource_state_source(),
             ))],
         });
         let core = ExecutionProofCore::at_entry(
@@ -286,7 +286,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
                 .is_err()
         );
         let mut stale = core.clone();
-        // Even an equal-valued replacement snapshot is not the saved one.
+        // Even an equal-valued replacement state is not the saved one.
         stale.state = ExecutionState::new()
             .with_population_creation_tracking()
             .into();
@@ -609,4 +609,45 @@ fn known_computation_work_is_linear_in_shared_integer_terms() {
         costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
         "{costs:?}"
     );
+}
+
+#[test]
+fn apply_fact_uses_only_selected_implication_and_evidence() {
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let atom = |name: String| Proposition::Predicate { name, arguments: vec![] };
+    let antecedent = atom("selected_antecedent".into());
+    let conclusion = atom("selected_conclusion".into());
+    let implication = Proposition::Implies(Box::new(antecedent.clone()), Box::new(conclusion.clone()));
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut facts = vec![antecedent.clone(), implication.clone()];
+        for index in 0..size {
+            facts.push(atom(format!("unrelated_{index}")));
+            // Grow the exact same consequent bucket, so a hidden source
+            // search cannot pass by merely ignoring unrelated facts.
+            facts.push(Proposition::Implies(
+                Box::new(atom(format!("other_antecedent_{index}"))),
+                Box::new(conclusion.clone()),
+            ));
+        }
+        let root: TestProof = ProofObject::root((), ProofBranch::new(
+            ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
+            ProofBranchState { facts: ProofFacts::from_ordered(&facts), execution: None },
+        ));
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(root.apply_fact(&implication, std::slice::from_ref(&antecedent)).unwrap().is_complete());
+                assert!(root.apply_fact(&implication, &[]).is_err());
+                assert!(root.apply_fact(&implication, &[atom("missing".into())]).is_err());
+                let missing = Proposition::Implies(Box::new(atom("missing".into())), Box::new(conclusion.clone()));
+                assert!(root.apply_fact(&missing, std::slice::from_ref(&antecedent)).is_err());
+                assert!(!root.is_complete(), "application must leave the persistent input unchanged");
+            })
+        });
+        samples.push((work, maps));
+    }
+    assert!(samples.iter().all(|(work, _)| *work <= samples[0].0 * 3 + 16), "work: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 2 + 16, "persistent work: {samples:?}");
+    }
 }

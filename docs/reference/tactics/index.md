@@ -1117,6 +1117,8 @@ step is still checked.
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `instantiate(F, value) using { P; ... }` | simple | Expansion output | Instantiate using written premises. | [Reference](#instantiation-with-selected-premises) |
+| `apply(fact)` | smart | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
+| `apply(fact) using { P; ... }` | simple | Expansion output | Apply an implication using written evidence. | [Reference](#fact-application) |
 | `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
@@ -2724,6 +2726,36 @@ premises and result.
 
 **Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`instantiate_a_universal_over_uint64.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_a_universal_over_uint64.md), [`instantiate_using_names_the_unavailable_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_using_names_the_unavailable_premise.md)
 
+### Fact application
+
+**Forms:** `apply(fact)`; `apply(fact) using { P; ... }`
+
+Apply an available implication, written in full or cited by a `have` fact
+name. For `A implies B implies C`, the result is `C` after proving `A` and
+`B`. The source must already be available; application does not unfold it or
+search for an implication with that conclusion.
+
+The bare form proves each antecedent in an ordinary `have` scope with the
+implicit solver. Expansion retains those proofs and writes
+`apply(fact) using { A; B; }`, which checks without search. Every listed
+premise must be available, and the antecedents must follow from the listed
+premises by `known()`'s rules. Ambient facts do not fill missing evidence.
+Conjunctions and quantified conclusions are retained whole. Later written
+steps see the established conclusion, as after theorem application.
+
+```click
+have h: x > 0 implies y > 0 by known();
+apply(h) using { x > 0; };
+```
+
+A source that is unavailable or is not an implication fails. A missing
+antecedent in the bare form names the unproved proposition; an explicit list
+with unavailable or insufficient evidence fails without invoking search.
+Named fact scope and program-point selectors retain their ordinary meaning.
+Theorem calls keep their existing `apply(theorem(args))` spelling.
+
+**Checked examples:** [`apply_implication_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_implication_fact.md).
+
 ### Theorem application
 
 **Form:** `apply(theorem(args))`
@@ -3608,7 +3640,7 @@ explicit `at(...)`. Thus an old comparison of two reads can carry one read
 while the target explicitly keeps the other at its old point, but this route
 does not silently substitute the other's current value. The original source
 fact remains in the proof and is checked by `known()`.
-See `mdtests/snapshot_comparison_transport_expansion.md`.
+See `mdtests/state_comparison_transport_expansion.md`.
 
 When both operands are reads at earlier points, the comparison route can
 preserve both: `transport(at(statement(0).entry, *q == *r), *q == *r)`.

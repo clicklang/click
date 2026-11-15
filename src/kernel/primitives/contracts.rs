@@ -1118,7 +1118,7 @@ impl FunctionContractInterface {
     }
 
     /// Compare exactly the semantic interface, including normalized resource
-    /// role/snapshot metadata, while ignoring its nominal contract name.
+    /// role/state metadata, while ignoring its nominal contract name.
     pub(crate) fn exactly_matches(&self, other: &Self) -> bool {
         self.return_type == other.return_type
             && self.return_pointee_constant == other.return_pointee_constant
@@ -2128,12 +2128,12 @@ impl CompositeResourceDefinition {
                         )),
                         schema: ResourceFieldSchema::new(vec![]).expect("empty schema"),
                     }),
-                    snapshot: ResourceSnapshot::Current,
+                    state_source: ResourceStateSource::Current,
                 },
                 ResourceAccessMode::Own,
                 ResourceQuantity::One,
                 ResourceTransferRole::Consume,
-                ResourceSnapshot::Current,
+                ResourceStateSource::Current,
             )
             .expect("an owned authority is a valid resource clause"),
         );
@@ -3918,10 +3918,27 @@ impl ExecutionEnvironment {
         let Some(anchor) = self.recursion_anchor() else {
             return true;
         };
-        !crate::kernel::termination::statement_calls_function(
-            &rule.loop_statement,
-            anchor.function(),
-        ) || rule.recursion_anchor.as_deref() == Some(anchor)
+        if rule
+            .recursion_anchor
+            .as_ref()
+            .zip(self.recursion_anchor.as_ref())
+            .is_some_and(|(produced, current)| Arc::ptr_eq(produced, current))
+        {
+            return true;
+        }
+        let calls;
+        let calls = if let Some(evidence) = &rule.loop_evidence {
+            &*evidence.calls
+        } else {
+            // Independent raw summaries have no opened source inventory.
+            // Source-owned summaries always retain their call footprint.
+            calls = crate::kernel::termination::statement_callees(&rule.loop_statement);
+            &calls
+        };
+        !calls.iter().any(|callee| {
+            crate::kernel::termination::charge_termination_work(1);
+            callee.ends_with("#indirect") || anchor.ranks_call_to(callee)
+        }) || rule.recursion_anchor.as_deref() == Some(anchor)
     }
 
     /// Whether every verified loop rule here answers for the recursion this
@@ -3980,7 +3997,7 @@ impl ExecutionEnvironment {
                                 bytes,
                                 wide: false,
                             } => {
-                                memory_snapshots_proven_equal_at_pointer(
+                                memory_states_proven_equal_at_pointer(
                                     memory,
                                     state.memory(),
                                     base,

@@ -1043,7 +1043,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     PropositionKnownContext::Pure => facts.pure_known_available(proposition),
                     PropositionKnownContext::Materialized => {
                         // Alpha-equivalent quantified and Integer facts remain
-                        // materialized when their exact snapshot-aware keys match.
+                        // materialized when their exact state-aware keys match.
                         // This does not admit cross-effect transport.
                         facts.pure_known_available(proposition)
                     }
@@ -1646,6 +1646,72 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             })
     }
 
+    /// Modus ponens with an explicitly selected implication and evidence.
+    /// Only the written source and premises are visited; ambient facts are
+    /// queried by exact keys to establish their availability.
+    pub(crate) fn apply_fact(
+        &self,
+        fact: &Proposition,
+        premises: &[Proposition],
+    ) -> Result<Self, &'static str> {
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .ok_or("`apply(fact)` requires an open proof branch")?;
+        let facts = &branch.state.facts;
+        if !matches!(fact, Proposition::Implies(..)) {
+            return Err("`apply(fact)` requires an implication fact");
+        }
+        if !facts.contains(fact) {
+            return Err("`apply(fact)` source implication is not an available fact");
+        }
+        let mut selected = crate::kernel::PureFactContext::new();
+        for premise in premises {
+            if !facts.listed_premise_available(premise, &[], true) {
+                return Err("`apply(fact) using` lists a premise that is not available");
+            }
+            selected = selected.assume_proposition(premise.clone());
+        }
+        let mut conclusion = fact;
+        while let Proposition::Implies(antecedent, consequent) = conclusion {
+            if first_unavailable_connective_side(antecedent, &|side| {
+                selected.contains_known(side) || super::fact_reasoning::computes_leaf(side)
+            })
+            .is_some()
+            {
+                return Err(
+                    "`apply(fact) using` cannot prove an antecedent from the listed premises",
+                );
+            }
+            conclusion = consequent;
+        }
+        let added = (!facts.contains_top_level(conclusion))
+            .then(|| conclusion.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        let facts = facts.with_fact(conclusion.clone());
+        let complete = match &branch.obligation {
+            ProofObligation::Proposition(goal) => facts.contains(goal.proposition()),
+            _ => false,
+        };
+        Ok(Self::new(
+            ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
+                locals: self.state.locals.clone(),
+                open_branches: self.state.open_branches.discharged_if_at(
+                    self.focused_branch,
+                    complete,
+                    facts,
+                ),
+                checked_facts: Arc::new(added.clone()),
+                added_facts: Arc::new(added),
+            },
+            self.focused_branch,
+        ))
+    }
+
     pub(crate) fn apply_extract(
         &self,
         proposition: Proposition,
@@ -2185,7 +2251,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         let scope = InvariantBodyScope {
             root: root.clone(),
             binding: super::execution::CheckedLoopInvariantLowerings {
-                snapshot: execution.core.state.clone(),
+                retained_state: execution.core.state.clone(),
                 checks: checks.to_vec(),
                 ranking_measures: ranking_measures.to_vec(),
                 facts: branch.state.facts.clone(),
@@ -2233,7 +2299,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         }
         if !scope
             .binding
-            .snapshot
+            .retained_state
             .shares_storage_with(&execution.core.state)
             || !scope
                 .binding
@@ -2395,7 +2461,9 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
             .checked_invariant_lowerings
             .as_ref()
             .ok_or("invariant closure is missing prepared lowering evidence")?;
-        if !evidence.snapshot.shares_storage_with(&execution.core.state)
+        if !evidence
+            .retained_state
+            .shares_storage_with(&execution.core.state)
             || !evidence.facts.shares_premises_with(&branch.state.facts)
             || !evidence
                 .effects
@@ -2846,7 +2914,7 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
     }
 
     /// Retains the addressed goal under updated facts, preserving any
-    /// execution snapshot it already borrowed.
+    /// execution state it already borrowed.
     pub(crate) fn with_facts_at(&self, at: BranchId, facts: ProofFacts) -> Self {
         let Some(branch) = self.get(at) else {
             unreachable!("a fact successor requires the addressed open branch");
@@ -2860,7 +2928,7 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
         )
     }
 
-    /// Retains the addressed goal under an updated execution snapshot and
+    /// Retains the addressed goal under an updated execution state and
     /// facts. The successor preserves the goal's kind.
     pub(crate) fn replace_execution_at(
         &self,
@@ -3307,7 +3375,7 @@ mod tests {
     }
 
     #[test]
-    fn materialized_known_accepts_same_snapshot_alpha_facts_only() {
+    fn materialized_known_accepts_same_state_alpha_facts_only() {
         use crate::kernel::proof::{
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };

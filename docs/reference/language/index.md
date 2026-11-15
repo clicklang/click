@@ -617,7 +617,7 @@ not mention `old(...)` or `at(...)`. Such a component reads one fixed state
 twice, so its two values are equal and the back edge could never close;
 Click refuses it at the declaration and says so, rather than leaving a bundle
 member permanently open. See
-`mdtests/loop_decreases_rejects_a_snapshot_measure.md`. A pure component earns
+`mdtests/loop_decreases_rejects_a_state_measure.md`. A pure component earns
 no leniency about the descent itself: a measure the body does not move leaves
 the ranking member open exactly as a C one does, as in
 `mdtests/loop_decreases_pure_expression_must_decrease.md`.
@@ -3863,7 +3863,7 @@ the parameter's entry value.
 C locals exist only while they are in scope. After function exit, refer to a
 local through a recorded point:
 
-<!-- verified-example: mdtests/c_local_named_result_snapshot.md -->
+<!-- verified-example: mdtests/c_local_named_result_state.md -->
 ```click
 result == at(region(2).entry, c(result))
 ```
@@ -3913,7 +3913,7 @@ For a named instance, `at(point, name)` names the instance as it was held at
 that point. It is how a proof names an instance a call has since consumed,
 which the current state no longer holds.
 A point where the path did not hold `name` is refused with "resource instance `name`
-is not owned at this snapshot"
+is not owned at this state"
 (`mdtests/a_consumed_resource_instance_is_named_at_a_mark.md`,
 `mdtests/a_resource_instance_is_not_named_at_a_mark_where_it_is_not_held.md`).
 
@@ -4086,7 +4086,7 @@ selected point.
 The contract `result` exists only once the function returns, so `old(...)` and
 `at(...)` at any point but `function.exit` cannot name it; both are
 refused where they are written (`mdtests/old_of_result_is_refused.md`,
-`mdtests/an_entry_snapshot_of_result_is_refused.md`). A proof mark can name it,
+`mdtests/an_entry_point_cannot_name_result.md`). A proof mark can name it,
 since a proof may place the mark after the return. A C binding named `result`
 is still written `c(result)` inside `at(...)` or `old(...)`.
 
@@ -4097,7 +4097,7 @@ before the return. Each returned path has its own `result`, so
 `transport(at(function.exit, P), P) using { }` closes a `result` goal on a
 path whose own state proves it, and expansion writes that step on each such
 path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
-`mdtests/a_function_exit_snapshot_before_the_return_is_refused.md`,
+`mdtests/a_function_exit_point_before_the_return_is_refused.md`,
 `mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).
 
 `at(...)` reads locals as well as memory at the selected point. Inside
@@ -4155,7 +4155,10 @@ Supported expression features include parameters, literals, `+`, `-`, `*`,
 `/`, `%`, `<<`, `>>`, `int32` bitwise `&`, `|`, `^`, unary `~`, indexing,
 `let name [: type] = value; body`, `if proposition { then } else { else }`,
 range `.fold`, typed specification lambdas and their application, and calls
-to other Click functions. A fold accepts a lambda value as its step. `.all` and `.any` accept
+to other Click functions. Specification functions accept explicitly typed
+function parameters, and transparent `Prop` results support logical adapters;
+see [Function parameters](grammar.md#function-parameters-in-specification-functions).
+A fold accepts a lambda value as its step. `.all` and `.any` accept
 proposition-valued lambdas (`fn(Index) -> Prop`); see
 [Range predicates](grammar.md#range-predicates). See
 [Range folds](grammar.md#range-folds) for its signature and compatibility

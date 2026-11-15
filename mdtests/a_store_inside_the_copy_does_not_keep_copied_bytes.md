@@ -2,9 +2,9 @@
 
 The refusal beside `memcpy_then_terminator_keeps_copied_bytes.md`: the
 terminator is stored at `dst[n - 1]`, which the guard `k < n` does not keep
-apart from the read `dst[n - 1]`. The quantified frame finds no evidence for
-that read, so the copied-bytes fact is not carried past the store, with the
-frame evidence listed explicitly.
+apart from the read `dst[k]`. Explicit containment and separation establish
+that the store leaves the source array alone. Preservation of the destination
+cells is refused at the requested separation from the store's footprint.
 
 ```c filename=copy.c
 #include <string.h>
@@ -24,24 +24,38 @@ void copy_n(char* dst, const char* src, uint64 n) {
 } by {
     unfold(bytes::equal(dst, 0u64, src, 0u64, n));
     step();
+    have 0 <= to_integer(n - 1u64) by { solve(); }
+    have to_integer(n - 1u64) < to_integer(n + 1u64) by { solve(); }
+    have contains(memory(dst[0u64..n + 1u64]), memory(dst[n - 1u64])) by {
+        apply(click::separation::contains_element(dst, 0u64, n + 1u64, n - 1u64)) using {
+            0 <= to_integer(n - 1u64); to_integer(n - 1u64) < to_integer(n + 1u64);
+        };
+    }
+    have contains(memory(src[0u64..n]), memory(src[0u64..n])) by {
+        apply(click::separation::contains_refl(memory(src[0u64..n])));
+    }
+    have separate(memory(dst[n - 1u64]), memory(src[0u64..n])) by {
+        apply(click::separation::separate_restrict(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]), memory(dst[n - 1u64]), memory(src[0u64..n]))) using {
+            separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
+            contains(memory(dst[0u64..n + 1u64]), memory(dst[n - 1u64]));
+            contains(memory(src[0u64..n]), memory(src[0u64..n]));
+        };
+    }
     mark copied;
     step();
     have bytes::equal(dst, 0u64, src, 0u64, n) by {
-        transport(
-            at(copied, (0u64..n).all(|k| {
-                (dst as (uint8 *))[0u64 + k] == old((src as (uint8 *))[0u64 + k])
-            })),
-            (0u64..n).all(|k| { (dst as (uint8 *))[0u64 + k] == (src as (uint8 *))[0u64 + k] })
-        ) using {
-            at(copied, (0u64..n).all(|k| {
-                (dst as (uint8 *))[0u64 + k] == old((src as (uint8 *))[0u64 + k])
-            }));
-            separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
-        };
+        have forall (k: uint64) { k < n implies
+            (dst as (uint8 *))[k] == at(copied, (dst as (uint8 *))[k])
+        } by {
+            intro(); intro();
+            have separate(statement(1).footprint, memory((dst as (uint8 *))[k])) by { known(); }
+            preserve(separate(statement(1).footprint, memory((dst as (uint8 *))[k])));
+        }
+        known();
     }
 }
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact to the target's state
+fail: goal: separate(region(1).footprint, dst[…])
 ```

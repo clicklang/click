@@ -637,6 +637,8 @@ fn write_program_lvalue_paths_without_local_reference(
         && matches!(
             value.program_type(),
             ProgramType::Bool
+                | ProgramType::Float32
+                | ProgramType::Float64
                 | ProgramType::Parameter(_)
                 | ProgramType::Int8
                 | ProgramType::UInt8
@@ -804,7 +806,9 @@ fn write_program_lvalue_paths_without_local_reference(
             let retained_direct = value
                 .shared()
                 .filter(|root| {
-                    root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+                    root.ty() == &KernelType::Bool
+                        || matches!(root.ty(), KernelType::Algebraic(_))
+                        || FloatOperandView::from_shared(root).is_some()
                 })
                 .cloned();
             let retained_pointer = value
@@ -1069,8 +1073,8 @@ fn write_program_lvalue_paths_without_local_reference(
                 && ExecutionValue::Shared(root.clone()).program_type()
                     == written_value.program_type()
             {
-                // Byte assembly produces an integer. An unchanged Boolean or
-                // algebraic type keeps the original selected producer.
+                // Byte assembly produces an integer. An unchanged Boolean,
+                // algebraic or float type keeps the original selected producer.
                 ExecutionValue::Shared(root)
             } else {
                 match retained_pointer {
@@ -1125,7 +1129,7 @@ fn write_program_lvalue_paths_without_local_reference(
                 .source = store_source.clone();
             facts.push(store_fact);
             // The checked store establishes the complete pointer value at
-            // this exact snapshot. Retain its read equation so congruence
+            // this exact state. Retain its read equation so congruence
             // can use a different, proven-equal address spelling without
             // re-running store resolution at the subsequent read.
             if let ProgramValue::Pointer(stored) = &written_value {
@@ -4658,19 +4662,29 @@ fn execute_execution_statement_leaf_paths(
                 {
                     let outcome = match path.outcome {
                         ExpressionOutcome::Value(value) => {
-                            let retained_direct = value
-                                .shared()
-                                .filter(|root| {
-                                    root.ty() == &KernelType::Bool
-                                        || matches!(root.ty(), KernelType::Algebraic(_))
-                                })
-                                .cloned();
-                            let retained_pointer = value
-                                .shared()
-                                .filter(|root| root.pointer_payload().is_some())
-                                .cloned();
-                            let value = value.into_native();
-                            let value = match value_type {
+                            if value.shared().is_some()
+                                && value.float().is_some()
+                                && value_type.is_none_or(|ty| ty == value.program_type())
+                            {
+                                let mut next = state.clone();
+                                for step in steps {
+                                    next.set_retained_step_result(*step, value.clone());
+                                }
+                                StatementOutcome::Normal(Box::new(next))
+                            } else {
+                                let retained_direct = value
+                                    .shared()
+                                    .filter(|root| {
+                                        root.ty() == &KernelType::Bool
+                                            || matches!(root.ty(), KernelType::Algebraic(_))
+                                    })
+                                    .cloned();
+                                let retained_pointer = value
+                                    .shared()
+                                    .filter(|root| root.pointer_payload().is_some())
+                                    .cloned();
+                                let value = value.into_native();
+                                let value = match value_type {
                             Some(value_type) => {
                                 crate::kernel::functions::coerce_program_value_with_pointee_constant(
                                     value,
@@ -4682,29 +4696,32 @@ fn execute_execution_statement_leaf_paths(
                             }
                             None => Some(value),
                         };
-                            match value {
-                                Some(value) => {
-                                    let mut next = state.clone();
-                                    let value = if let Some(root) = retained_direct
-                                        && ExecutionValue::Shared(root.clone()).program_type()
-                                            == value.program_type()
-                                    {
-                                        ExecutionValue::Shared(root)
-                                    } else {
-                                        match retained_pointer {
-                                            Some(root) => ExecutionValue::Shared(root)
-                                                .retain_checked_pointer(value),
-                                            None => {
-                                                ExecutionValue::from(value).retain_pointer_result()
+                                match value {
+                                    Some(value) => {
+                                        let mut next = state.clone();
+                                        let value = if let Some(root) = retained_direct
+                                            && ExecutionValue::Shared(root.clone()).program_type()
+                                                == value.program_type()
+                                        {
+                                            ExecutionValue::Shared(root)
+                                        } else {
+                                            match retained_pointer {
+                                                Some(root) => ExecutionValue::Shared(root)
+                                                    .retain_checked_pointer(value),
+                                                None => ExecutionValue::from(value)
+                                                    .retain_pointer_result()
+                                                    .retain_float_result(),
                                             }
+                                        };
+                                        for step in steps {
+                                            next.set_retained_step_result(*step, value.clone());
                                         }
-                                    };
-                                    for step in steps {
-                                        next.set_retained_step_result(*step, value.clone());
+                                        StatementOutcome::Normal(Box::new(next))
                                     }
-                                    StatementOutcome::Normal(Box::new(next))
+                                    None => {
+                                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
+                                    }
                                 }
-                                None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                             }
                         }
                         ExpressionOutcome::UndefinedBehavior(error) => {

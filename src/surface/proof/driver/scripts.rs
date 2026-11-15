@@ -329,7 +329,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // closer, leaves the goal closed.
             let retain_application = matches!(
                 tactic,
-                ProofTactic::ApplyTheoremUsing { .. }
+                ProofTactic::ApplyFact(_)
+                    | ProofTactic::ApplyFactUsing { .. }
+                    | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::InstantiateUsing { .. }
@@ -357,6 +359,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         hypothesis,
                         arguments,
                     )?;
+                }
+                ProofTactic::ApplyFact(fact) => {
+                    proof = proof.driver().apply_fact_application(fact)?;
                 }
                 ProofTactic::ApplyTheorem(application) => {
                     proof = proof.driver().apply_theorem_application(application)?;
@@ -696,7 +701,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // the goal open after such a step.
             if matches!(
                 tactic,
-                ProofTactic::ApplyTheorem(_)
+                ProofTactic::ApplyFact(_)
+                    | ProofTactic::ApplyFactUsing { .. }
+                    | ProofTactic::ApplyTheorem(_)
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
@@ -719,6 +726,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     ProofTactic::ApplyTheorem(application)
                     | ProofTactic::ApplyTheoremUsing { application, .. } => {
                         before.theorem_application_surface_conclusions(application)
+                    }
+                    ProofTactic::ApplyFact(fact) | ProofTactic::ApplyFactUsing { fact, .. } => {
+                        vec![crate::surface::proof::driver::fact_application_parts(fact).1]
                     }
                     ProofTactic::Extract(proposition) => vec![proposition.clone()],
                     _ => Vec::new(),

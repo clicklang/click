@@ -13,119 +13,25 @@ impl TerminationObligations {
         let plans = &self.plans;
         let verified_loop_rules = &self.loop_rules;
         let recursive_callees = &self.function_goals[name].recursive_callees;
-        let mut refusal = None;
+        let mut refusal = self.function_goals[name].recursion.refusal.clone();
         let plan = plans.get(name);
         let requirements = &self.function_goals[name];
-        let recursive_measure = requirements.recursive_measure.clone();
-        // A recursion carried by a tactic application has no C call
-        // for a structural or parameter measure to read: the
-        // recursive edge lives in the certified proof, not the body.
-        // Only an expression measure answers for it, because its
-        // descent was owed, under the recursion anchor, at the very
-        // application that recursed.
-        if let Some(rule) = self
-            .ruled
-            .get(name.as_str())
-            .map(|index| &self.partial_rules[*index])
-            && rule
-                .applied_tactics
-                .iter()
-                .any(|tactic| recursive_callees.contains(tactic))
-            && !matches!(
-                recursive_measure,
-                None | Some(FunctionTerminationMeasure::Expression(_))
-            )
-        {
-            return Err(error(format!(
-                "`{name}` recurses through a tactic application, which only an expression \
-             `decreases` measure can rank: its descent is owed at each application. \
-             Rank `{name}` by an expression over its parameters or its binders' models"
-            )));
-        }
-        let mut parameter_indices = BTreeMap::new();
-        let mut structural_requirement = None;
-        // The function's address-taken locals, walked once for every
-        // measure checked below.
+        let recursion = &requirements.recursion;
         let addressed = std::cell::OnceCell::new();
-        if recursive_callees.is_empty() {
-            if recursive_measure.is_some() {
-                let mut refused = error(format!(
-                    "function-level `decreases` on nonrecursive function `{name}` has no recursive edge to rank"
-                ));
-                refused.superfluous_recursive_measure = true;
-                return Err(refused);
-            }
-        } else if let Some(unmeasured) = std::iter::once(name)
-            .chain(recursive_callees.iter())
-            .inspect(|_| charge_termination_work(1))
-            .find(|member| {
-                plans
-                    .get(*member)
-                    .and_then(|plan| plan.recursive_measure.as_ref())
-                    .is_none()
-            })
+        if let Some(expression) = &recursion.expression
+            && !self
+                .ruled
+                .get(name.as_str())
+                .is_some_and(|index| self.partial_rules[*index].descent_completion.is_some())
         {
-            if refusal.is_none() {
-                refusal = Some(TerminationRefusal::UnmeasuredRecursion {
-                    callee: if unmeasured == name {
-                        recursive_callees
-                            .first()
-                            .expect("a recursive function has a recursive callee")
-                            .clone()
-                    } else {
-                        unmeasured.clone()
-                    },
-                });
-            }
-        } else if let Some(FunctionTerminationMeasure::ResourceRequirement(index)) =
-            recursive_measure
-        {
-            // Every member of the component is ranked structurally,
-            // so each one's walk checks its own edges.
-            for member in recursive_callees {
-                charge_termination_work(1);
-                if !matches!(
-                    plans[member].recursive_measure,
-                    Some(FunctionTerminationMeasure::ResourceRequirement(_))
-                ) {
-                    return Err(error(
-                        "a recursive component cannot mix structural and other measures",
-                    ));
-                }
-            }
-            structural_requirement = Some(index);
-        } else if let Some(FunctionTerminationMeasure::Expression(source)) = &recursive_measure {
             check_expression_measure_recursion(
                 name,
-                source,
+                &expression.source,
+                &expression.declaration,
                 function,
                 recursive_callees,
-                plans,
                 verified_loop_rules.get(name).map_or(&[], Vec::as_slice),
             )?;
-        } else {
-            for member in std::iter::once(name).chain(recursive_callees.iter()) {
-                charge_termination_work(1);
-                let Some(FunctionTerminationMeasure::NumericParameter(index)) =
-                    plans[member].recursive_measure
-                else {
-                    return Err(error(
-                        "a recursive component cannot mix numeric and structural measures",
-                    ));
-                };
-                let parameter = functions[member].parameters().get(index).ok_or_else(|| {
-                    error(format!(
-                        "termination parameter index is invalid for `{member}`"
-                    ))
-                })?;
-                if parameter.program_type != ProgramType::Int32 {
-                    return Err(error(format!(
-                        "termination parameter `{}` in `{member}` must have type int32",
-                        parameter.name
-                    )));
-                }
-                parameter_indices.insert(member.clone(), index);
-            }
         }
 
         let empty = BTreeMap::new();
@@ -175,19 +81,14 @@ impl TerminationObligations {
             refusal = Some(TerminationRefusal::UnrankedLoop { index: *index });
         }
 
-        if let Some(requirement_index) = structural_requirement {
+        if let Some(requirement_index) = recursion.structural_requirement {
             let measure = structural_resource_children(function, requirement_index)?;
             let mut callees = BTreeMap::new();
-            for member in recursive_callees {
+            for (member, index) in &recursion.structural_callees {
                 charge_termination_work(1);
-                let Some(FunctionTerminationMeasure::ResourceRequirement(index)) =
-                    plans[member].recursive_measure
-                else {
-                    continue;
-                };
                 callees.insert(
                     member.clone(),
-                    structural_callee(&functions[member], index)?,
+                    structural_callee(&functions[member], *index)?,
                 );
             }
             // An arm the function's own requirements already select is
@@ -203,8 +104,7 @@ impl TerminationObligations {
                     conditions: Vec::new(),
                 }],
             )?;
-        } else if let Some(index) = parameter_indices.get(name) {
-            let measure = &function.parameters()[*index].name;
+        } else if let Some(measure) = &recursion.parameter {
             reject_address_escaped_measure(
                 name,
                 measure,
@@ -214,7 +114,7 @@ impl TerminationObligations {
                 &function.source_body,
                 measure,
                 recursive_callees,
-                &parameter_indices,
+                &recursion.parameter_indices,
                 vec![i64::MIN / 2],
             )?;
         }

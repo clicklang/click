@@ -90,6 +90,7 @@ pub(super) fn set_contract_result(
         root.is_shared_machine_operand()
             || root.ty() == &KernelType::Bool
             || matches!(root.ty(), KernelType::Algebraic(_))
+            || crate::kernel::FloatOperandView::from_shared(root).is_some()
     }) {
         state.locals.set_retained_typed_with_all_qualifiers(
             C_CONTRACT_RESULT_NAME,
@@ -111,7 +112,7 @@ pub(super) fn set_contract_result(
             state.set_memory(
                 // A returned-by-value temporary is fresh caller storage. Its
                 // declaration must remain in the memory history so copying
-                // its fields does not disconnect unrelated input snapshots.
+                // its fields does not disconnect unrelated input states.
                 // A symbolic pointer still supplies only a synthetic layout.
                 if matches!(pointer.block, PointerBlock::Symbolic(_)) {
                     state
@@ -344,6 +345,8 @@ pub(in crate::kernel) fn coerce_retained_function_return_value(
         && matches!(
             value.program_type(),
             ProgramType::Bool
+                | ProgramType::Float32
+                | ProgramType::Float64
                 | ProgramType::Parameter(_)
                 | ProgramType::Int8
                 | ProgramType::UInt8
@@ -910,7 +913,7 @@ fn bind_program_function_arguments_impl(
                 register_aggregate_argument_source(&slot.block, &source);
                 source
             };
-            // Preserve the caller's memory snapshot for symbolic source
+            // Preserve the caller's memory state for symbolic source
             // loads. Declaring the destination first would make an unknown
             // external field load depend on the callee's fresh block and
             // prevent entry facts from relating it to the caller's value.
@@ -1261,6 +1264,61 @@ mod pointer_argument_tests {
         )
         .unwrap();
         assert_eq!(caller.locals.get("received").unwrap().shared(), Some(&root));
+    }
+
+    #[test]
+    fn float_arguments_returns_and_caller_results_keep_roots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            crate::kernel::KernelFloatType::Float32,
+            crate::kernel::KernelFloatType::Float64,
+        ] {
+            let root = KernelTerm::float_call(format, "float_argument".into(), vec![]);
+            let source = ExecutionValue::Shared(root.clone());
+            let native = source.clone().into_native();
+            let function = program_function(
+                format.program_type(),
+                "identity",
+                vec![program_parameter("x", format.program_type())],
+                program_return(crate::kernel::program_expression::variable("x")),
+            );
+            let state = ExecutionState::new();
+            let callee = bind_program_function_arguments_retained(
+                &state,
+                &function,
+                &[native.clone()],
+                &[source.clone()],
+            )
+            .unwrap();
+            let bound = callee.locals.get("x").unwrap();
+            assert_eq!(bound.shared(), Some(&root));
+            let legacy =
+                bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+            assert_eq!(bound, legacy.locals.get("x").unwrap());
+            let returned = coerce_retained_function_return_value(
+                bound.clone(),
+                &function,
+                &mut vec![],
+                &PureFactContext::new(),
+            )
+            .unwrap();
+            assert_eq!(returned.shared(), Some(&root));
+            let mut caller = ExecutionState::new();
+            set_function_result(&mut caller, &function, returned.clone());
+            assert_eq!(
+                caller.locals.get(C_CONTRACT_RESULT_NAME).unwrap().shared(),
+                Some(&root)
+            );
+            crate::kernel::loops::assign_call_result(
+                &mut caller,
+                "received",
+                returned,
+                &mut vec![],
+                &PureFactContext::new(),
+            )
+            .unwrap();
+            assert_eq!(caller.locals.get("received").unwrap().shared(), Some(&root));
+        }
     }
 
     #[test]

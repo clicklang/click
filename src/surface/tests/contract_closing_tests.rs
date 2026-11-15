@@ -233,3 +233,38 @@ fn an_empty_loop_summary_does_not_publish_concrete_exit_evidence() {
         error.message()
     );
 }
+
+#[test]
+fn completed_descent_covers_a_concretely_avoided_recursive_loop() {
+    let c = [(
+        "retained_descent.c",
+        "int32 countdown(int32 n) { if (n > 0) return countdown(n - 1); while (0) { countdown(n); } return 0; }",
+    )];
+    let source = r#"verifying "retained_descent.c";
+        int32 countdown(int32 n) {
+            decreases (n, 0);
+            requires n >= 0;
+            ensures result == 0;
+        }
+    "#;
+    verify_c_sources(source, &c).unwrap();
+    let expanded = expand_function_proof_source(source, &c, "countdown").unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &c))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+fn retained_context_does_not_discharge_an_unproved_recursive_descent() {
+    let c = [(
+        "unproved_descent.c",
+        "int32 countdown(int32 n) { if (n > 0) return countdown(n); return 0; }",
+    )];
+    let source = r#"verifying "unproved_descent.c";
+        int32 countdown(int32 n) {
+            decreases (n, 0);
+            requires n >= 0;
+            ensures result == 0;
+        }
+    "#;
+    assert!(verify_c_sources(source, &c).is_err());
+}

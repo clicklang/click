@@ -2316,7 +2316,7 @@ fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_certificates() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
+fn wide_arithmetic_reads_listed_bounds_at_their_named_state() {
     for carrier in ["uint64", "int64"] {
         let c_source = format!("{carrier} advance({carrier} n) {{ n = n - 4; return n; }}");
         let source = format!(
@@ -2344,17 +2344,17 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
 }}"#
         );
         let sources = [("advance.c", c_source.as_str())];
-        verify_c_sources(&source, &sources).expect("snapshot bounds must verify");
+        verify_c_sources(&source, &sources).expect("state bounds must verify");
         let expanded = expand_c_claim_source_by_label(&source, &sources, "advance.ensures_0")
-            .expect("snapshot bridges must expand");
+            .expect("state bridges must expand");
         assert!(!expanded.contains("solve() using"), "{expanded}");
-        verify_c_sources(&expanded, &sources).expect("snapshot bridges must independently verify");
+        verify_c_sources(&expanded, &sources).expect("state bridges must independently verify");
         let missing_bound = source.replace("to_integer(at(before, n)) <= 16;", "");
         verify_c_sources(&missing_bound, &sources)
             .expect_err("a historical upper bound cannot be inferred from type bounds");
         let false_result = source.replace("result <= 12", "result <= 11");
         verify_c_sources(&false_result, &sources)
-            .expect_err("snapshot facts cannot prove a false bound");
+            .expect_err("state facts cannot prove a false bound");
     }
 }
 
@@ -4021,5 +4021,62 @@ fn string_literal_source_references_raise_expand_and_recheck() {
         let expanded = expand_c_claim_source_by_label(source, &sources, label).expect(label);
         assert!(!expanded.contains("__click_string_literal"), "{expanded}");
         verify_c_sources(&expanded, &sources).expect("literal source expansion");
+    }
+}
+
+#[test]
+fn apply_fact_expands_antecedent_proofs_without_extract_or_search() {
+    let source = r#"
+        theorem demo(x: int32, y: int32) {
+            requires x > 1;
+            requires x > 0 implies y > 0;
+            ensures y > 0 by {
+                have h: x > 0 implies y > 0 by known();
+                apply(h);
+            }
+        }
+    "#;
+    verify_click_theorems(source).expect("bare fact application proves its antecedent");
+    let expanded =
+        expand_pure_theorem_source(source, &[], "demo", 0).expect("fact application expands");
+    assert!(
+        expanded.contains("apply(x > 0 implies y > 0) using {"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("expanded fact application checks without search");
+    for invalid in [
+        expanded.replace("requires x > 1;", ""),
+        expanded.replace("requires x > 0 implies y > 0;", ""),
+    ] {
+        assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
+    }
+}
+
+#[test]
+fn apply_fact_c_frontier_and_outcome_expansion_rechecks_without_search() {
+    let c = "int32 identity(int32 x) { return x; }";
+    let template = r#"
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            requires x > 1;
+            requires x > 0 implies x != 0;
+            ensures result != 0;
+        } by { BODY }
+    "#;
+    for body in [
+        "apply(x > 0 implies x != 0); step();",
+        "step(); apply(x > 0 implies x != 0);",
+    ] {
+        let source = template.replace("BODY", body);
+        let sources = [("identity.c", c)];
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{body}: {error}"));
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "identity.contract")
+            .unwrap_or_else(|error| panic!("{body}: {error}"));
+        assert!(expanded.contains("apply("), "{expanded}");
+        assert!(expanded.contains("using {"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{body}: {error}\n{expanded}"));
     }
 }

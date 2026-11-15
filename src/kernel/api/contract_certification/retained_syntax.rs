@@ -4,6 +4,12 @@ use super::*;
 use crate::kernel::{KernelTermNode as N, PureFunctionArgument as A};
 use std::collections::HashSet;
 
+#[derive(Clone, Copy)]
+enum CallArgument<'a> {
+    Native(&'a A),
+    Shared(&'a KernelTerm),
+}
+
 #[derive(Default)]
 struct Comparison {
     seen: HashSet<(u64, u64)>,
@@ -122,6 +128,39 @@ impl Comparison {
                     return false;
                 }
                 pending.push((av, bv));
+                continue;
+            }
+            if matches!(left, Operand::Shared(root) if matches!(root.node(), N::FloatCall(_)))
+                || matches!(right, Operand::Shared(root) if matches!(root.node(), N::FloatCall(_)))
+            {
+                fn call(view: Operand<'_>) -> Option<(&str, Vec<CallArgument<'_>>)> {
+                    match view {
+                        Operand::Shared(root) => match root.node() {
+                            N::FloatCall(call) => Some((
+                                &call.name,
+                                call.arguments.iter().map(CallArgument::Shared).collect(),
+                            )),
+                            _ => None,
+                        },
+                        Operand::Legacy(MachineTerm::ClickFunctionApplication {
+                            name,
+                            arguments,
+                        }) => Some((name, arguments.iter().map(CallArgument::Native).collect())),
+                        _ => None,
+                    }
+                }
+                let (Some((an, aa)), Some((bn, ba))) = (call(left), call(right)) else {
+                    return false;
+                };
+                if an != bn
+                    || aa.len() != ba.len()
+                    || !aa
+                        .into_iter()
+                        .zip(ba)
+                        .all(|(a, b)| self.call_argument(a, b))
+                {
+                    return false;
+                }
                 continue;
             }
             // Float atoms have a bounded native reading. Compound float syntax
@@ -350,6 +389,85 @@ impl Comparison {
                     && self.machine(Operand::Legacy(&a.width), Operand::Legacy(&b.width))
             }
             (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn call_argument(&mut self, left: CallArgument<'_>, right: CallArgument<'_>) -> bool {
+        use CallArgument::{Native, Shared};
+        if let Shared(root) = left
+            && let N::Legacy(value) = root.node()
+        {
+            return self.call_argument(Native(value.value()), right);
+        }
+        if let Shared(root) = right
+            && let N::Legacy(value) = root.node()
+        {
+            return self.call_argument(left, Native(value.value()));
+        }
+        match (left, right) {
+            (Native(a), Native(b)) => self.argument(a, b),
+            (Shared(a), Shared(b)) if matches!(a.ty(), KernelType::Algebraic(_)) => {
+                self.common_algebraic(a, b)
+            }
+            (Shared(a), Native(A::Algebraic(b))) | (Native(A::Algebraic(b)), Shared(a)) => {
+                self.common_algebraic(a, &crate::kernel::KernelTermImport::default().algebraic(b))
+            }
+            (Shared(a), Shared(b))
+                if a.ty() == b.ty()
+                    && matches!(a.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some() || crate::kernel::KernelFloatType::from_program_type(*ty).is_some()) =>
+            {
+                self.machine(Operand::Shared(a), Operand::Shared(b))
+            }
+            (Shared(a), Native(A::SharedMachine(b))) | (Native(A::SharedMachine(b)), Shared(a)) => {
+                a.ty() == &KernelType::Program(b.ty().program_type())
+                    && self.machine(Operand::Shared(a), b.operand_view())
+            }
+            (Shared(a), Native(A::Value(b))) | (Native(A::Value(b)), Shared(a))
+                if a.ty() == &KernelType::Program(b.program_type()) =>
+            {
+                match b {
+                    crate::kernel::integer_c_value!(bits)
+                    | ProgramValue::Float32(bits)
+                    | ProgramValue::Float64(bits) => {
+                        self.machine(Operand::Shared(a), Operand::Legacy(bits))
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn common_algebraic(&mut self, a: &KernelTerm, b: &KernelTerm) -> bool {
+        if a.ty() != b.ty() {
+            return false;
+        }
+        if matches!(
+            (a.node(), b.node()),
+            (N::AlgebraicCall(_), N::AlgebraicCall(_))
+        ) && !self.seen.insert((a.id(), b.id()))
+        {
+            return true;
+        }
+        match (a.node(), b.node()) {
+            (N::Variable(a), N::Variable(b)) => a == b,
+            (N::AlgebraicCall(a), N::AlgebraicCall(b)) => {
+                a.name == b.name
+                    && a.arguments.len() == b.arguments.len()
+                    && a.arguments.iter().zip(&b.arguments).all(|(a, b)| {
+                        self.call_argument(CallArgument::Shared(a), CallArgument::Shared(b))
+                    })
+            }
+            (N::AlgebraicRead(a), N::AlgebraicRead(b)) => {
+                let (am, ap) = a.parts();
+                let (bm, bp) = b.parts();
+                am.arena_id() == bm.arena_id()
+                    && self.pointer(
+                        &ap.export().expect("read address"),
+                        &bp.export().expect("read address"),
+                    )
+            }
             _ => false,
         }
     }
@@ -615,7 +733,7 @@ mod tests {
         assert!(!conditions_equal(&left, &right));
     }
     #[test]
-    fn retained_syntax_keeps_snapshots_and_pointer_qualifiers_exact() {
+    fn retained_syntax_keeps_states_and_pointer_qualifiers_exact() {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::Memory::new();
         let changed = memory.clone().store(
@@ -705,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_syntax_preserves_captured_and_pointer_index_snapshots() {
+    fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
             LoadKind, Memory, Pointer, PointerOffsetTerm, PointerValue, ProgramType, Variable,
         };
@@ -715,7 +833,7 @@ mod tests {
             Pointer::null(),
             ProgramValue::Int32(MachineTerm::constant(5)),
         );
-        let pointer = |snapshot: &Memory| {
+        let pointer = |retained_state: &Memory| {
             PointerValue::new(
                 Pointer {
                     block: "indexed".into(),
@@ -723,7 +841,7 @@ mod tests {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             MachineTerm::MemoryLoad(
-                                crate::kernel::intern_memory_ref(snapshot),
+                                crate::kernel::intern_memory_ref(retained_state),
                                 Box::new(Pointer::symbolic(Variable(712))),
                                 LoadKind::Int32,
                             ),
@@ -734,8 +852,8 @@ mod tests {
                 ProgramType::Int32Pointer,
             )
         };
-        let captured = |snapshot: &Memory, address| A::ArrayRef {
-            memory: snapshot.clone(),
+        let captured = |retained_state: &Memory, address| A::ArrayRef {
+            memory: retained_state.clone(),
             pointer: ProgramValue::Pointer(address),
             element_type: ProgramType::Int32,
         };
@@ -780,5 +898,48 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../../scaling_tests/kernel/api/contract_certification/retained_syntax.rs");
+    }
+}
+
+#[cfg(test)]
+mod float_call_tests {
+    use super::*;
+    #[test]
+    fn float_calls_keep_native_certification_admission_without_exports() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for argument in [
+            A::Value(ProgramValue::Float32(MachineTerm::Variable(Variable(
+                1008210,
+            )))),
+            A::Integer(crate::kernel::IntegerTerm::Variable(Variable(1008211)).into()),
+            A::Value(ProgramValue::Float32(MachineTerm::Float32Negate(Box::new(
+                MachineTerm::Variable(Variable(1008212)),
+            )))),
+        ] {
+            let native = MachineTerm::opaque_conversion(
+                "c_float32_to_int32",
+                MachineTerm::ClickFunctionApplication {
+                    name: "float_certification".into(),
+                    arguments: vec![argument],
+                },
+            );
+            let root = crate::kernel::KernelTermImport::default()
+                .machine(MachineIntegerType::Int32, &native);
+            let expected =
+                Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native));
+            let exports = crate::kernel::KernelTermExport::float_export_count();
+            assert_eq!(
+                Comparison::default().machine(Operand::Shared(&root), Operand::Legacy(&native)),
+                expected
+            );
+            assert_eq!(
+                Comparison::default().machine(Operand::Legacy(&native), Operand::Shared(&root)),
+                expected
+            );
+            assert_eq!(
+                crate::kernel::KernelTermExport::float_export_count(),
+                exports
+            );
+        }
     }
 }

@@ -488,6 +488,7 @@ pub(super) fn parse_file_items_for_module(
     imported_resources: &[&ResourceDefinition],
     imported_declarations: &[(names::DeclarationKind, String)],
     imported_integer_functions: &BTreeSet<String>,
+    imported_proposition_functions: &BTreeSet<String>,
     imported_pointer_functions: &BTreeSet<String>,
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
@@ -509,6 +510,9 @@ pub(super) fn parse_file_items_for_module(
     parser
         .integer_function_names
         .extend(imported_integer_functions.iter().cloned());
+    parser
+        .proposition_function_names
+        .extend(imported_proposition_functions.iter().cloned());
     // An imported pointer result has only a C meaning, as a local one has.
     parser
         .pointer_result_functions
@@ -1031,6 +1035,7 @@ struct Parser {
     /// Pure functions declared `-> Integer`, whose calls are Integer
     /// operands.
     integer_function_names: BTreeSet<String>,
+    proposition_function_names: BTreeSet<String>,
     /// The pure functions whose declared result is a pointer: a call of one
     /// is a pointer operand, so arithmetic on it is pointer arithmetic and
     /// a comparison of it keeps its C meaning.
@@ -1744,6 +1749,7 @@ impl Parser {
             pure_function_slices: BTreeMap::new(),
             slice_result_functions: BTreeSet::new(),
             integer_function_names: BTreeSet::new(),
+            proposition_function_names: BTreeSet::new(),
             pointer_result_functions: BTreeSet::new(),
             integer_parameter_positions: BTreeMap::new(),
             let_operands: Default::default(),
@@ -1849,6 +1855,9 @@ impl Parser {
                     }
                     if self.declares_integer_result(parameters) {
                         self.integer_function_names.insert(name.clone());
+                    }
+                    if self.declares_named_result(parameters, "Prop") {
+                        self.proposition_function_names.insert(name.clone());
                     }
                     if self.declares_slice_result(parameters) {
                         self.slice_result_functions.insert(name.clone());
@@ -3130,7 +3139,9 @@ impl Parser {
         );
         self.expect(Token::LParen)?;
         self.pending_slice_params = Some(Vec::new());
-        let parsed_parameters = self.parse_click_parameters();
+        let parsed_parameters = self
+            .parse_parameters_with_resources_and_functions(false, true)
+            .map(|(parameters, _)| parameters);
         let slice_params = self.pending_slice_params.take().unwrap_or_default();
         let parsed_parameters = parsed_parameters?;
         self.expect(Token::RParen)?;
@@ -3141,10 +3152,7 @@ impl Parser {
         );
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
-        if matches!(
-            return_type,
-            ClickType::Proposition | ClickType::Function { .. }
-        ) {
+        if matches!(return_type, ClickType::Function { .. }) {
             return Err(
                 self.error("specification function declaration results are not supported yet")
             );
@@ -3215,7 +3223,21 @@ impl Parser {
             &mut self.spec_parameter_types,
             spec_parameter_types(&parsed_parameters.parameters),
         );
-        let body = self.parse_branch_value(return_type == ClickType::Program(InterfaceType::Bool));
+        let shadowed_callbacks = parsed_parameters
+            .parameters
+            .iter()
+            .filter(|parameter| matches!(parameter.click_type(), ClickType::Function { .. }))
+            .map(|parameter| {
+                self.bind_let_operand(parameter.name(), Some(parameter.click_type()), None)
+            })
+            .collect();
+        let body = if return_type == ClickType::Proposition {
+            self.parse_proposition()
+                .map(|body| ContractExpression::Proposition(Box::new(body)))
+        } else {
+            self.parse_branch_value(return_type == ClickType::Program(InterfaceType::Bool))
+        };
+        self.unbind_let_operands(shadowed_callbacks);
         self.spec_parameter_types = previous_spec_parameter_types;
         let body = body?;
         // A `-> Integer` body is read where its result is used.
@@ -3894,6 +3916,14 @@ impl Parser {
         &mut self,
         allow_resources: bool,
     ) -> Result<(ParsedParameters, Vec<ResourceClause>), ClickError> {
+        self.parse_parameters_with_resources_and_functions(allow_resources, false)
+    }
+
+    fn parse_parameters_with_resources_and_functions(
+        &mut self,
+        allow_resources: bool,
+        allow_functions: bool,
+    ) -> Result<(ParsedParameters, Vec<ResourceClause>), ClickError> {
         let mut resource_parameters = Vec::new();
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
@@ -3961,10 +3991,9 @@ impl Parser {
                     });
                 } else {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
-                    if matches!(
-                        click_type,
-                        ClickType::Proposition | ClickType::Function { .. }
-                    ) {
+                    if click_type == ClickType::Proposition
+                        || (!allow_functions && matches!(click_type, ClickType::Function { .. }))
+                    {
                         return Err(self.error(
                             "specification function declaration parameters are not supported yet",
                         ));
@@ -5451,12 +5480,19 @@ impl Parser {
         self.refuse_bool_literal_binder(&name)?;
         let mut click_type = if self.peek() == Some(&Token::Colon) {
             self.position += 1;
-            let (click_type, parsed_type) = self.parse_click_type()?;
+            let (mut click_type, parsed_type) = self.parse_click_type()?;
             if let Some(parsed_type) = parsed_type
-                && parsed_type.struct_name.is_some()
-                && !parsed_type.struct_pointer
+                && let Some(struct_name) = parsed_type.struct_name
             {
-                return Err(self.error("only pointer-to-struct types are supported"));
+                if !parsed_type.struct_pointer {
+                    return Err(self.error("only pointer-to-struct types are supported"));
+                }
+                click_type = ClickType::CObjectPointer {
+                    interface_type: click_type
+                        .interface_type()
+                        .expect("a parsed struct pointer has a C interface type"),
+                    struct_name,
+                };
             }
             Some(click_type)
         } else {
@@ -7037,19 +7073,20 @@ impl Parser {
             let subject = ResourceSubject::Instance {
                 name: name.to_string(),
                 identity: *identity,
+                at: None,
             };
             self.position += 1;
             return Ok(subject);
         }
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
-            let selector = self.parse_snapshot_selector()?;
+            let selector = self.parse_program_point_selector()?;
             self.expect(Token::Comma)?;
             let resource = self.parse_resource_subject()?;
             self.expect(Token::RParen)?;
             let mut names = BTreeSet::new();
             collect_current_resource_subject_variables(&resource, &mut names);
-            self.refuse_result_in_snapshot(Some(&selector), names.contains("result"))?;
+            self.refuse_result_in_program_point(Some(&selector), names.contains("result"))?;
             return Ok(ResourceSubject::At {
                 selector,
                 resource: Box::new(resource),
@@ -8437,9 +8474,9 @@ impl Parser {
 
         if self.peek_ident() == Some("changes_only") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
-            let before = self.parse_snapshot_selector()?;
+            let before = self.parse_program_point_selector()?;
             self.expect(Token::Comma)?;
-            let after = self.parse_snapshot_selector()?;
+            let after = self.parse_program_point_selector()?;
             let mut resources = Vec::new();
             while self.peek() == Some(&Token::Comma) {
                 self.position += 1;
@@ -8456,16 +8493,17 @@ impl Parser {
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
             let start = self.position;
             self.position += 2;
-            let proposition_at_snapshot = self.parse_snapshot_selector().and_then(|selector| {
-                self.expect(Token::Comma)?;
-                let proposition = self.parse_proposition()?;
-                self.expect(Token::RParen)?;
-                Ok(ClickProposition::At {
-                    selector,
-                    proposition: Box::new(proposition),
-                })
-            });
-            if proposition_at_snapshot.is_ok()
+            let proposition_at_program_point =
+                self.parse_program_point_selector().and_then(|selector| {
+                    self.expect(Token::Comma)?;
+                    let proposition = self.parse_proposition()?;
+                    self.expect(Token::RParen)?;
+                    Ok(ClickProposition::At {
+                        selector,
+                        proposition: Box::new(proposition),
+                    })
+                });
+            if proposition_at_program_point.is_ok()
                 && !matches!(
                     self.peek(),
                     Some(
@@ -8498,11 +8536,11 @@ impl Parser {
                 if let Ok(ClickProposition::At {
                     selector,
                     proposition,
-                }) = &proposition_at_snapshot
+                }) = &proposition_at_program_point
                 {
-                    self.refuse_result_in_snapshot_proposition(selector, proposition)?;
+                    self.refuse_result_in_program_point_proposition(selector, proposition)?;
                 }
-                return proposition_at_snapshot;
+                return proposition_at_program_point;
             }
             self.position = start;
         }
@@ -8654,6 +8692,12 @@ impl Parser {
                 ) => {
                     self.position = start;
                     return self.parse_proposition_comparison();
+                }
+                _ if self.proposition_function_names.contains(&name) => {
+                    return Ok(ClickProposition::Value(ContractExpression::Call {
+                        name,
+                        arguments,
+                    }));
                 }
                 _ if self.symbols.is_pure_function(&name) => {
                     return Ok(bool_truth(ContractExpression::Call { name, arguments }));
@@ -9059,6 +9103,7 @@ impl Parser {
                 _ => false,
             };
             if proposition_binding
+                || matches!(&left, ContractExpression::Call { name, .. } if self.proposition_function_names.contains(name))
                 || matches!(
                     left,
                     ContractExpression::Apply { .. }
@@ -9254,6 +9299,10 @@ impl Parser {
     }
 
     fn declares_integer_result(&self, start: usize) -> bool {
+        self.declares_named_result(start, "Integer")
+    }
+
+    fn declares_named_result(&self, start: usize, result: &str) -> bool {
         if self.tokens.get(start) != Some(&Token::LParen) {
             return false;
         }
@@ -9261,7 +9310,7 @@ impl Parser {
             return false;
         };
         self.tokens.get(close + 1) == Some(&Token::Arrow)
-            && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
+            && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == result)
     }
 
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must
@@ -10118,11 +10167,11 @@ impl Parser {
             NameKind::ProofBinder,
             bindings.iter().map(|(name, _)| name.clone()),
         );
-        // The snapshot is independent of the newly bound variables, so
+        // The state is independent of the newly bound variables, so
         // `exists x. at(S, P(x))` is stated at the source as
         // `at(S, exists x. P(x))`. This preserves the exact fact identity of
         // an existential recorded at a past program point.
-        let (snapshot, body) = match body {
+        let (program_point, body) = match body {
             ClickProposition::At {
                 selector,
                 proposition,
@@ -10138,7 +10187,7 @@ impl Parser {
                 written_name: None,
                 body: Box::new(body),
             });
-        let proposition = match snapshot {
+        let proposition = match program_point {
             Some(selector) => ClickProposition::At {
                 selector,
                 proposition: Box::new(proposition),
@@ -10904,7 +10953,35 @@ impl Parser {
             }
             "apply" => {
                 self.expect(Token::LParen)?;
-                let application = self.parse_theorem_application()?;
+                // A call remains a theorem application. Other propositions,
+                // including named facts and parenthesized implications, are facts.
+                let start = self.position;
+                let application = if self.peek_ident().is_some()
+                    && self.peek_next() == Some(&Token::LParen)
+                    && !matches!(self.peek_ident(), Some("at" | "old" | "forall" | "exists"))
+                {
+                    let application = self.parse_theorem_application()?;
+                    if self.peek() == Some(&Token::RParen) {
+                        Some(application)
+                    } else {
+                        self.position = start;
+                        None
+                    }
+                } else {
+                    None
+                };
+                if application.is_none() {
+                    let fact = self.parse_proposition()?;
+                    self.expect(Token::RParen)?;
+                    if self.peek_ident() == Some("using") {
+                        let premises = self.parse_exact_premises()?;
+                        self.skip_redundant_semicolon();
+                        return Ok(ProofTactic::ApplyFactUsing { fact, premises });
+                    }
+                    self.skip_redundant_semicolon();
+                    return Ok(ProofTactic::ApplyFact(fact));
+                }
+                let application = application.unwrap();
                 self.expect(Token::RParen)?;
                 if self.peek_ident() != Some("using") {
                     ProofTactic::ApplyTheorem(application)
@@ -12809,7 +12886,9 @@ impl Parser {
                 self.position += 1;
             } else if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
                 self.position += 2;
-                if self.parse_snapshot_selector().is_err() || self.expect(Token::Comma).is_err() {
+                if self.parse_program_point_selector().is_err()
+                    || self.expect(Token::Comma).is_err()
+                {
                     self.position = saved;
                     return false;
                 }
@@ -14164,7 +14243,7 @@ impl Parser {
 
     /// Finds the struct layout reached by a contract expression, retaining
     /// the layout through an entry-state or recorded-state wrapper. The
-    /// pointer value may come from another snapshot while a later field load
+    /// pointer value may come from another state while a later field load
     /// still reads the surrounding state.
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
         match expression {
@@ -15917,17 +15996,17 @@ impl Parser {
             self.position += 2;
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
-            self.refuse_result_in_snapshot_expression(None, &expression)?;
+            self.refuse_result_in_program_point_expression(None, &expression)?;
             return Ok(ContractExpression::Old(Box::new(expression)));
         }
 
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
-            let selector = self.parse_snapshot_selector()?;
+            let selector = self.parse_program_point_selector()?;
             self.expect(Token::Comma)?;
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
-            self.refuse_result_in_snapshot_expression(Some(&selector), &expression)?;
+            self.refuse_result_in_program_point_expression(Some(&selector), &expression)?;
             return Ok(ContractExpression::At {
                 selector,
                 expression: Box::new(expression),
@@ -16041,7 +16120,7 @@ impl Parser {
             }
             // The operand remains authoritative during spec lowering. A
             // historical pointer selects an address, while this load uses
-            // the surrounding clause's memory snapshot.
+            // the surrounding clause's memory state.
             let pointer = ProgramExpression::Value(int32(0));
             return Ok(ContractExpression::CUnary {
                 operand: Box::new(source_pointer),
@@ -16603,58 +16682,58 @@ impl Parser {
         })
     }
 
-    /// Refuses `result` in a snapshot that precedes the return; see
-    /// [`snapshot_can_name_result`]. Kept out of the recursive parser frame,
+    /// Refuses `result` in a state that precedes the return; see
+    /// [`program_point_can_name_result`]. Kept out of the recursive parser frame,
     /// like the other helpers here.
     #[inline(never)]
-    fn refuse_result_in_snapshot_expression(
+    fn refuse_result_in_program_point_expression(
         &self,
-        selector: Option<&SnapshotSelector>,
+        selector: Option<&ProgramPointSelector>,
         expression: &ContractExpression,
     ) -> Result<(), ClickError> {
         let mut names = BTreeSet::new();
         collect_current_contract_expression_variables(expression, &mut names);
-        self.refuse_result_in_snapshot(selector, names.contains("result"))
+        self.refuse_result_in_program_point(selector, names.contains("result"))
     }
 
     #[inline(never)]
-    fn refuse_result_in_snapshot_proposition(
+    fn refuse_result_in_program_point_proposition(
         &self,
-        selector: &SnapshotSelector,
+        selector: &ProgramPointSelector,
         proposition: &ClickProposition,
     ) -> Result<(), ClickError> {
-        self.refuse_result_in_snapshot(Some(selector), proposition_names_result(proposition))
+        self.refuse_result_in_program_point(Some(selector), proposition_names_result(proposition))
     }
 
-    fn refuse_result_in_snapshot(
+    fn refuse_result_in_program_point(
         &self,
-        selector: Option<&SnapshotSelector>,
+        selector: Option<&ProgramPointSelector>,
         names_result: bool,
     ) -> Result<(), ClickError> {
-        if !names_result || snapshot_can_name_result(selector) {
+        if !names_result || program_point_can_name_result(selector) {
             return Ok(());
         }
-        let snapshot = match selector {
+        let point_form = match selector {
             None => "old(...)".to_string(),
             Some(selector) => format!(
                 "at({}, ...)",
-                diagnostics::describe_snapshot_selector(selector)
+                diagnostics::describe_program_point_selector(selector)
             ),
         };
         Err(self.error(format!(
-            "`result` cannot be named inside `{snapshot}`: that snapshot precedes the \
+            "`result` cannot be named inside `{point_form}`: that program point precedes the \
              return, where `result` does not exist yet; state the claim about `result` \
-             outside the snapshot, or at `function.exit`"
+             outside that `at` or `old` expression, or at `function.exit`"
         )))
     }
 
-    fn parse_snapshot_selector(&mut self) -> Result<SnapshotSelector, ClickError> {
+    fn parse_program_point_selector(&mut self) -> Result<ProgramPointSelector, ClickError> {
         if let (Some(Token::Ident(name)), Some(Token::Comma)) = (self.peek(), self.peek_next()) {
             let name = name.clone();
             self.position += 1;
-            return Ok(SnapshotSelector::Mark(name));
+            return Ok(ProgramPointSelector::Mark(name));
         }
-        Ok(SnapshotSelector::ProgramPoint(
+        Ok(ProgramPointSelector::ProgramPoint(
             self.parse_program_point_ref()?,
         ))
     }
@@ -18123,20 +18202,19 @@ mod integer_quantifier_parser_tests {
     }
 
     #[test]
-    fn snapshot_of_pure_call_can_continue_into_comparison() {
+    fn state_of_pure_call_can_continue_into_comparison() {
         let source = r#"
             function identity(x: int32) -> int32 { x }
-            theorem snapshot_call(x: int32) {
+            theorem state_call(x: int32) {
                 ensures x == x by {
                     have at(saved, identity(x)) == at(saved, 1) by { known(); }
                     known();
                 }
             }
         "#;
-        Parser::new(source)
-            .unwrap()
-            .parse_file_items()
-            .expect("an expression snapshot must not parse as a proposition snapshot");
+        Parser::new(source).unwrap().parse_file_items().expect(
+            "an expression at a program point must not parse as a proposition at that point",
+        );
     }
 }
 
@@ -18217,6 +18295,11 @@ mod tactic_classification_tests {
         ),
         ("apply-induction", "apply(ih(m));"),
         ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
+        ("apply-fact", "apply(x > 0 implies y > 0);"),
+        (
+            "apply-fact-using",
+            "apply(x > 0 implies y > 0) using { x > 0; };",
+        ),
         ("apply-theorem", "apply(theorem(x));"),
         (
             "apply-theorem-using",
@@ -18634,7 +18717,7 @@ mod rewrite_syntax_tests {
     use super::*;
 
     #[test]
-    fn rewrite_endpoints_round_trip_with_nested_arguments_and_snapshots() {
+    fn rewrite_endpoints_round_trip_with_nested_arguments_and_states() {
         for source in [
             "rewrite(x, y);",
             "rewrite(y, x);",

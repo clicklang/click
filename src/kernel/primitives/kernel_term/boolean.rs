@@ -116,6 +116,27 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
+            match (left.float_comparison(), right.float_comparison()) {
+                (Some((af, ao, a)), Some((bf, bo, b))) => {
+                    if af != bf || ao != bo || !a.into_iter().zip(b).all(|(a, b)| a.syntax_equal(b))
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+            match (left.float_classification(), right.float_classification()) {
+                (Some((af, ac, a)), Some((bf, bc, b))) => {
+                    if af != bf || ac != bc || !a.syntax_equal(b) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
             match (left.algebraic_equality(), right.algebraic_equality()) {
                 (Some(a), Some(b)) => {
                     if !a.iter().zip(&b).all(|(a, b)| a.algebraic_syntax_equal(b)) {
@@ -615,6 +636,8 @@ impl KernelTermImport {
                     arguments: [self.integer(left), self.integer(right)],
                 }
             }
+            Old::Float32(value) => return self.float_condition(KernelFloatType::Float32, value),
+            Old::Float64(value) => return self.float_condition(KernelFloatType::Float64, value),
             Old::AlgebraicEqual(left, right) => Node::AlgebraicEqual {
                 arguments: [self.algebraic(left), self.algebraic(right)],
             },
@@ -633,20 +656,6 @@ impl KernelTermImport {
                 ],
             },
             Old::BoolApplication(application) => return self.boolean_call(application),
-            _ => {
-                // Keep the entire condition, including pointer metadata. Do not
-                // key this payload by ConditionTerm's semantic equality.
-                let leaf = KernelTerm::legacy(PureFunctionArgument::Value(ProgramValue::Bool(
-                    MachineTerm::BoolCast {
-                        to: MachineIntegerType::UInt8,
-                        value: Box::new(condition.clone()),
-                    },
-                )));
-                let Node::Legacy(payload) = leaf.node() else {
-                    unreachable!()
-                };
-                Node::LegacyBool(payload.clone())
-            }
         };
         KernelTerm::intern(KernelType::Bool, node)
     }
@@ -715,6 +724,7 @@ impl KernelTermExport {
                     Op::NotEqual => Old::IntegerNotEqual(left, right),
                 }
             }
+            Node::FloatCompare { .. } | Node::FloatClassify { .. } => Self::float_condition(term)?,
             Node::AlgebraicEqual { arguments } => Old::AlgebraicEqual(
                 Box::new(Self::default().algebraic(&arguments[0])?),
                 Box::new(Self::default().algebraic(&arguments[1])?),
@@ -914,7 +924,7 @@ mod tests {
     }
 
     #[test]
-    fn common_boolean_pointer_substitution_preserves_read_snapshot() {
+    fn common_boolean_pointer_substitution_preserves_read_state() {
         let from = Variable(971_010);
         let memory = crate::kernel::intern_memory(Memory::new());
         let source = ConditionTerm::BoolEqual(

@@ -42,24 +42,27 @@ pub(super) fn machine_conversion(
 }
 
 pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprintPolicy) -> u64 {
-    let key = |value: FloatOperandView<'_>| match value {
-        FloatOperandView::Shared(root) => (true, root.id(), value.format()),
-        FloatOperandView::Native(format, value) => {
-            (false, value as *const MachineTerm as usize as u64, format)
-        }
+    let key = |value: FloatOperandView<'_>, policy| match value {
+        FloatOperandView::Shared(root) => (policy, true, root.id(), value.format()),
+        FloatOperandView::Native(format, value) => (
+            policy,
+            false,
+            value as *const MachineTerm as usize as u64,
+            format,
+        ),
     };
     let mut values = std::collections::HashMap::new();
-    let mut pending = vec![(root, false)];
-    while let Some((value, finish)) = pending.pop() {
+    let mut pending = vec![(root, policy, false)];
+    while let Some((value, policy, finish)) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
-        if values.contains_key(&key(value)) {
+        if values.contains_key(&key(value, policy)) {
             continue;
         }
         if let FloatOperandView::Shared(root) = value
             && let Some(hash) =
                 OPERAND_FINGERPRINTS.with(|memo| memo.borrow().get(&(policy, root.id())).copied())
         {
-            values.insert(key(value), hash);
+            values.insert(key(value, policy), hash);
             continue;
         }
         let mut hash = std::collections::hash_map::DefaultHasher::new();
@@ -111,11 +114,67 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
         } else if let Some((operator, arguments)) = value.binary() {
             2u8.hash(&mut hash);
             // The existing memory-blind selector omits float operators;
-            // exact snapshot syntax keeps them. Preserve both candidate policies.
-            if matches!(policy, OperandFingerprintPolicy::Snapshot(_)) {
+            // exact state syntax keeps them. Preserve both candidate policies.
+            if matches!(policy, OperandFingerprintPolicy::MemoryState(_)) {
                 operator.hash(&mut hash);
             }
             arguments.to_vec()
+        } else if value.is_call() {
+            // Calls keep exact argument syntax even under the memory-blind
+            // selector. Child fingerprints are stable across sessions; root
+            // ids are only memo keys, never fingerprint values.
+            4u8.hash(&mut hash);
+            let mut children = Vec::new();
+            match value {
+                FloatOperandView::Native(
+                    _,
+                    MachineTerm::ClickFunctionApplication { name, arguments },
+                ) => {
+                    name.hash(&mut hash);
+                    arguments.len().hash(&mut hash);
+                    for argument in arguments {
+                        if let PureFunctionArgument::Value(value) = argument
+                            && let Some(view) = FloatOperandView::from_value(value)
+                        {
+                            1u8.hash(&mut hash);
+                            children.push(view);
+                        } else {
+                            0u8.hash(&mut hash);
+                            argument.hash(&mut hash);
+                        }
+                    }
+                }
+                FloatOperandView::Shared(root) => {
+                    let KernelTermNode::FloatCall(call) = root.node() else {
+                        unreachable!("float call");
+                    };
+                    call.name.hash(&mut hash);
+                    call.arguments.len().hash(&mut hash);
+                    for (argument, carrier) in
+                        call.arguments.iter().zip(&call.shared_machine_arguments)
+                    {
+                        if let Some(view) = FloatOperandView::from_shared(argument) {
+                            1u8.hash(&mut hash);
+                            children.push(view);
+                        } else {
+                            0u8.hash(&mut hash);
+                            if let Some(carrier) = carrier {
+                                PureFunctionArgument::SharedMachine(carrier.clone())
+                                    .hash(&mut hash);
+                            } else {
+                                // Selected mixed-family exact-payload adapter;
+                                // typed float children above never export.
+                                crate::kernel::KernelTermExport::default()
+                                    .argument(argument)
+                                    .expect("non-float call argument")
+                                    .hash(&mut hash);
+                            }
+                        }
+                    }
+                }
+                _ => unreachable!("float call"),
+            }
+            children
         } else {
             3u8.hash(&mut hash);
             let native = value.native_compat().expect("float atom");
@@ -123,25 +182,35 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                 OperandFingerprintPolicy::MemoryBlind => {
                     hash_memory_blind_bitvector(native, &mut hash)
                 }
-                OperandFingerprintPolicy::Snapshot(_) => native.hash(&mut hash),
+                OperandFingerprintPolicy::MemoryState(_) => native.hash(&mut hash),
             }
             Vec::new()
         };
+        let child_policy = if value.is_call() {
+            OperandFingerprintPolicy::MemoryState(false)
+        } else {
+            policy
+        };
         if !finish && !children.is_empty() {
-            pending.push((value, true));
-            pending.extend(children.into_iter().rev().map(|child| (child, false)));
+            pending.push((value, policy, true));
+            pending.extend(
+                children
+                    .into_iter()
+                    .rev()
+                    .map(|child| (child, child_policy, false)),
+            );
             continue;
         }
         for child in children {
-            values[&key(child)].hash(&mut hash);
+            values[&key(child, child_policy)].hash(&mut hash);
         }
         let hash = hash.finish();
-        values.insert(key(value), hash);
+        values.insert(key(value, policy), hash);
         if let FloatOperandView::Shared(root) = value {
             OPERAND_FINGERPRINTS.with(|memo| memo.borrow_mut().insert((policy, root.id()), hash));
         }
     }
-    values[&key(root)]
+    values[&key(root, policy)]
 }
 
 pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(PointerBlock, u64)>) {
@@ -174,6 +243,7 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(PointerB
             ),
             // These are opaque to the native memory-key walker too.
             KernelTermNode::Call { .. }
+            | KernelTermNode::FloatCall(_)
             | KernelTermNode::Match(_)
             | KernelTermNode::IntegerToMachine { .. } => {}
             KernelTermNode::Legacy(_) => {
@@ -238,7 +308,7 @@ mod tests {
                 ),
                 operand_fingerprint(
                     MachineOperandView::Shared(&root),
-                    OperandFingerprintPolicy::Snapshot(false),
+                    OperandFingerprintPolicy::MemoryState(false),
                 ),
             );
             assert_eq!(
@@ -252,7 +322,7 @@ mod tests {
                 pair.1,
                 operand_fingerprint(
                     MachineOperandView::Legacy(&native),
-                    OperandFingerprintPolicy::Snapshot(false)
+                    OperandFingerprintPolicy::MemoryState(false)
                 )
             );
             fingerprints.push(pair);
@@ -303,8 +373,8 @@ mod tests {
             let exports = crate::kernel::KernelTermExport::machine_export_count();
             for policy in [
                 OperandFingerprintPolicy::MemoryBlind,
-                OperandFingerprintPolicy::Snapshot(false),
-                OperandFingerprintPolicy::Snapshot(true),
+                OperandFingerprintPolicy::MemoryState(false),
+                OperandFingerprintPolicy::MemoryState(true),
             ] {
                 assert_eq!(
                     operand_fingerprint(MachineOperandView::Shared(&root), policy),
@@ -340,8 +410,8 @@ mod tests {
                 .machine(MachineIntegerType::Int32, &native);
             for policy in [
                 OperandFingerprintPolicy::MemoryBlind,
-                OperandFingerprintPolicy::Snapshot(false),
-                OperandFingerprintPolicy::Snapshot(true),
+                OperandFingerprintPolicy::MemoryState(false),
+                OperandFingerprintPolicy::MemoryState(true),
             ] {
                 assert_eq!(
                     operand_fingerprint(MachineOperandView::Shared(&root), policy),
@@ -355,7 +425,7 @@ mod tests {
                 ),
                 operand_fingerprint(
                     MachineOperandView::Shared(&root),
-                    OperandFingerprintPolicy::Snapshot(false),
+                    OperandFingerprintPolicy::MemoryState(false),
                 ),
             ));
             let mut expected = BTreeSet::new();
@@ -367,5 +437,96 @@ mod tests {
         }
         assert_eq!(policies[0].0, policies[1].0);
         assert_ne!(policies[0].1, policies[1].1);
+    }
+}
+
+#[cfg(test)]
+mod float_call_tests {
+    use super::*;
+    #[test]
+    fn float_call_index_fingerprints_and_load_policies_match_native() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::opaque_conversion(
+            "c_float32_to_int32",
+            MachineTerm::ClickFunctionApplication {
+                name: "float_index".into(),
+                arguments: vec![PureFunctionArgument::Value(ProgramValue::Float32(
+                    MachineTerm::Variable(Variable(1008209)),
+                ))],
+            },
+        );
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+        for policy in [
+            OperandFingerprintPolicy::MemoryBlind,
+            OperandFingerprintPolicy::MemoryState(false),
+            OperandFingerprintPolicy::MemoryState(true),
+        ] {
+            assert_eq!(
+                operand_fingerprint(MachineOperandView::Shared(&root), policy),
+                operand_fingerprint(MachineOperandView::Legacy(&native), policy)
+            );
+        }
+        let mut actual = BTreeSet::new();
+        collect_load_keys(&root, &mut actual);
+        let mut expected = BTreeSet::new();
+        collect_bitvector_memory_load_keys(&native, &mut expected);
+        assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(test)]
+mod float_call_identity_tests {
+    use super::*;
+    #[test]
+    fn float_call_fingerprints_are_session_independent_and_keep_argument_operators() {
+        let native = |operator| {
+            MachineTerm::opaque_conversion(
+                "c_float32_to_int32",
+                MachineTerm::ClickFunctionApplication {
+                    name: "float_identity".into(),
+                    arguments: vec![PureFunctionArgument::Value(ProgramValue::Float32(
+                        MachineTerm::Float32Binary {
+                            operator,
+                            left: Box::new(MachineTerm::Variable(Variable(1008213))),
+                            right: Box::new(MachineTerm::Variable(Variable(1008214))),
+                        },
+                    ))],
+                },
+            )
+        };
+        let mut sessions = Vec::new();
+        for _ in 0..2 {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut hashes = Vec::new();
+            for operator in [
+                crate::kernel::FloatBinaryOperator::Add,
+                crate::kernel::FloatBinaryOperator::Multiply,
+            ] {
+                let source = native(operator);
+                let root = crate::kernel::KernelTermImport::default()
+                    .machine(MachineIntegerType::Int32, &source);
+                let exports = crate::kernel::KernelTermExport::float_export_count();
+                for policy in [
+                    OperandFingerprintPolicy::MemoryBlind,
+                    OperandFingerprintPolicy::MemoryState(false),
+                ] {
+                    let hash = operand_fingerprint(MachineOperandView::Shared(&root), policy);
+                    assert_eq!(
+                        hash,
+                        operand_fingerprint(MachineOperandView::Legacy(&source), policy)
+                    );
+                    hashes.push(hash);
+                }
+                assert_eq!(
+                    crate::kernel::KernelTermExport::float_export_count(),
+                    exports
+                );
+            }
+            assert_ne!(hashes[0], hashes[2]);
+            assert_ne!(hashes[1], hashes[3]);
+            sessions.push(hashes);
+        }
+        assert_eq!(sessions[0], sessions[1]);
     }
 }

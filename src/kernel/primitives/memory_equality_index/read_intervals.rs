@@ -267,15 +267,15 @@ mod tests {
                 assert!(overlaps.contains(&entry));
             }
         }
-        let snapshot = intervals.clone();
+        let retained_state = intervals.clone();
         for (start, entry) in model.keys() {
             intervals.remove(coordinate(*start), *entry);
             validate(intervals.root.as_deref());
         }
         assert_eq!(intervals.len(), 0);
         assert!(intervals.root.is_none());
-        assert_eq!(snapshot.len(), model.len());
-        assert_eq!(snapshot.iter().count(), model.len());
+        assert_eq!(retained_state.len(), model.len());
+        assert_eq!(retained_state.iter().count(), model.len());
     }
 }
 

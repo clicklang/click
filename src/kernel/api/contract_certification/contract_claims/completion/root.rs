@@ -179,6 +179,8 @@ impl WholeContractRoot {
         let rule = VerifiedFunctionRule {
             pointer_result,
             function: state.subject.clone(),
+            descent_completion: self.plan.entry.function.contract_interface().has_call_ranked_recursion()
+                .then(crate::kernel::termination::descent_completion::DescentCompletion::from_completed_root),
             concrete_loop_exits: Some(
                 state
                     .concrete_loop_exits

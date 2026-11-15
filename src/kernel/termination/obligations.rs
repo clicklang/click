@@ -21,7 +21,7 @@ pub(super) enum TerminationCallObligation {
 #[derive(Debug)]
 pub(super) struct FunctionTerminationObligations {
     pub recursive_callees: BTreeSet<String>,
-    pub recursive_measure: Option<FunctionTerminationMeasure>,
+    pub recursion: super::recursion_authority::RecursionAuthority,
     pub loop_indices: Vec<usize>,
     pub calls: Vec<TerminationCallObligation>,
 }
@@ -61,6 +61,33 @@ impl TerminationObligations {
         diverging_contracts: &BTreeSet<String>,
         allow_unused_recursive_measure: bool,
     ) -> Result<Self, TerminationError> {
+        Self::generate_with_recursion(
+            partial_rules,
+            plan_entries,
+            loop_rules,
+            inline_bodies,
+            heights,
+            assumed_terminating,
+            declared_diverging,
+            diverging_contracts,
+            allow_unused_recursive_measure,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn generate_with_recursion(
+        partial_rules: &[VerifiedFunctionRule],
+        plan_entries: &[FunctionTerminationPlan],
+        loop_rules: &BTreeMap<String, Vec<VerifiedLoopRule>>,
+        inline_bodies: &[&ProgramFunction],
+        heights: &BTreeMap<String, usize>,
+        assumed_terminating: &BTreeSet<String>,
+        declared_diverging: &BTreeSet<String>,
+        diverging_contracts: &BTreeSet<String>,
+        allow_unused_recursive_measure: bool,
+        declarations: Option<&super::recursion_authority::RecursionDeclarations>,
+    ) -> Result<Self, TerminationError> {
         let (functions, calls) = termination_call_graph(partial_rules, inline_bodies);
         charge_termination_work(plan_entries.len());
         let mut plans = plan_entries
@@ -77,6 +104,17 @@ impl TerminationObligations {
                 ))
             })
         };
+        let opened;
+        let declarations = match declarations {
+            Some(declarations) => declarations,
+            None => {
+                opened = super::recursion_authority::RecursionDeclarations::open(
+                    &functions.values().copied().collect::<Vec<_>>(),
+                    plan_entries,
+                )?;
+                &opened
+            }
+        };
         let mut levels = BTreeMap::<usize, Vec<String>>::new();
         let retained_exits = partial_rules
             .iter()
@@ -85,6 +123,13 @@ impl TerminationObligations {
                 rule.concrete_loop_exits
                     .as_ref()
                     .map(|exits| (rule.function.name(), exits))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let applied_tactics = partial_rules
+            .iter()
+            .map(|rule| {
+                charge_termination_work(1);
+                (rule.function.name(), &rule.applied_tactics)
             })
             .collect::<BTreeMap<_, _>>();
         let mut function_goals = BTreeMap::new();
@@ -186,14 +231,27 @@ impl TerminationObligations {
                     }
                 }
             }
-            let recursive_measure = plans
-                .get(name)
-                .and_then(|plan| plan.recursive_measure.clone());
+            let recursion = declarations
+                .select(
+                    name,
+                    &recursive_callees,
+                    allow_unused_recursive_measure,
+                    applied_tactics.get(name.as_str()).is_some_and(|tactics| {
+                        tactics.iter().any(|tactic| {
+                            charge_termination_work(1);
+                            recursive_callees.contains(tactic)
+                        })
+                    }),
+                )
+                .map_err(|mut error| {
+                    error.function = Some(name.clone());
+                    error
+                })?;
             function_goals.insert(
                 name.clone(),
                 FunctionTerminationObligations {
                     recursive_callees,
-                    recursive_measure,
+                    recursion,
                     loop_indices,
                     calls: requirements,
                 },

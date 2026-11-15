@@ -4316,12 +4316,22 @@ void arena_free(struct region* region) {
             region->start <= k;
             k < region->end;
         };
-        transport(at(cleared, arena->occupied[k]) == at(cleared, 0), region->arena->occupied[k] == 0) using {
-            at(cleared, arena->occupied[k]) == at(cleared, 0);
-            separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
-            0 <= k;
-            k < arena->capacity;
-        };
+        have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
+        have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
+            apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k)) using {
+                separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
+                contains(memory(*arena), memory(arena->live_regions));
+                0 <= k; k < arena->capacity;
+            };
+        }
+        have separate(statement(5).footprint, memory(arena->occupied[k])) by {
+            normalize() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+        }
+        have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
+            preserve(separate(statement(5).footprint, memory(arena->occupied[k])));
+        }
+        rewrite(region->arena, arena);
+        known();
     }
     have forall (k: int32) { 0 <= k and k < region->start implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
         intro();
@@ -4361,12 +4371,22 @@ void arena_free(struct region* region) {
             0 <= k;
             k < region->start;
         };
-        transport(at(cleared, arena->occupied[k]) == old(region->arena->occupied[k]), region->arena->occupied[k] == old(region->arena->occupied[k])) using {
-            at(cleared, arena->occupied[k]) == old(region->arena->occupied[k]);
-            separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
-            0 <= k;
-            k < arena->capacity;
-        };
+        have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
+        have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
+            apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k)) using {
+                separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
+                contains(memory(*arena), memory(arena->live_regions));
+                0 <= k; k < arena->capacity;
+            };
+        }
+        have separate(statement(5).footprint, memory(arena->occupied[k])) by {
+            normalize() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+        }
+        have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
+            preserve(separate(statement(5).footprint, memory(arena->occupied[k])));
+        }
+        rewrite(region->arena, arena);
+        known();
     }
     have forall (k: int32) { region->end <= k and k < arena->capacity implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
         intro();
@@ -4389,12 +4409,22 @@ void arena_free(struct region* region) {
             region->end <= k;
             k < arena->capacity;
         };
-        transport(at(cleared, arena->occupied[k]) == old(region->arena->occupied[k]), region->arena->occupied[k] == old(region->arena->occupied[k])) using {
-            at(cleared, arena->occupied[k]) == old(region->arena->occupied[k]);
-            separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
-            0 <= k;
-            k < arena->capacity;
-        };
+        have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
+        have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
+            apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k)) using {
+                separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
+                contains(memory(*arena), memory(arena->live_regions));
+                0 <= k; k < arena->capacity;
+            };
+        }
+        have separate(statement(5).footprint, memory(arena->occupied[k])) by {
+            normalize() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+        }
+        have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
+            preserve(separate(statement(5).footprint, memory(arena->occupied[k])));
+        }
+        rewrite(region->arena, arena);
+        known();
     }
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
     have defined(n - 1) by { solve(); }

@@ -822,6 +822,23 @@ fn exact_alias_owner_neighbors_reject_supplier_scans() {
 }
 
 #[test]
+fn return_projection_rejects_fact_occurrence_censuses() {
+    for (method, accepted) in [
+        ("owned_occurrences_for_fact", false),
+        ("occurrences_for_fact", false),
+        ("owned_fact_for_occurrence", true),
+    ] {
+        let source = format!("fn project_return_resource_cores(c: C) {{ c.{method}(selected); }}");
+        assert_eq!(
+            boundary::check_source("src/kernel/functions/mixed_return_resources.rs", &source)
+                .is_ok(),
+            accepted,
+            "{source}",
+        );
+    }
+}
+
+#[test]
 fn ownership_validity_rejects_mixed_access_buckets() {
     for name in ["memory_by_base", "memory_by_block"] {
         let source = format!("fn owned_validity_candidates(c: C) {{ c.{name}.get(k); }}");
@@ -1457,6 +1474,30 @@ fn migrated_operations_cannot_drop_their_discovery_guard() {
                 .iter()
                 .any(|e| e.contains("must enter its no-discovery scope")),
             "{errors:?}"
+        );
+    }
+}
+
+#[test]
+fn ownership_admission_requires_its_guard_and_rejects_discovery() {
+    let path = "src/kernel/primitives/resource_algebra/ownership_admission.rs";
+    for (body, accepted) in [
+        ("", false),
+        (
+            "#[cfg(test)] let _fast = crate::kernel::search::FastOperationScope::enter(\"admit_without_discovery\");",
+            true,
+        ),
+        (
+            "#[cfg(test)] let _fast = crate::kernel::search::FastOperationScope::enter(\"admit_without_discovery\"); self.owned_validity_candidates();",
+            false,
+        ),
+    ] {
+        let source =
+            format!("impl ResourceContext {{ fn admit_without_discovery() {{ {body} }} }}");
+        assert_eq!(
+            proof_search_boundary::check(path, &syn::parse_file(&source).unwrap()).is_ok(),
+            accepted,
+            "{source}",
         );
     }
 }

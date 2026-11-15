@@ -1,5 +1,5 @@
 //! Scoped readers for common fold operands. Native leaves retain their
-//! existing registry, snapshot, call-connection and capture rules.
+//! existing registry, state, call-connection and capture rules.
 use super::*;
 use crate::kernel::{KernelFold, KernelTerm, KernelTermNode, KernelType};
 
@@ -457,7 +457,7 @@ pub(super) fn common_variables(
                 }
                 _ => {}
             },
-            KernelTermNode::Call { .. }
+            KernelTermNode::Call { .. } | KernelTermNode::FloatCall(_)
                 if term.ty() != &KernelType::Integer
                     && mode == FoldVariableRead::ExpressionFree
                     && !collecting_connection_variables() => {}
@@ -621,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn float_readers_preserve_snapshot_address_and_native_collection_modes() {
+    fn float_readers_preserve_state_address_and_native_collection_modes() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = intern_memory(Memory::new().with_block("float-read-history", 4).store(
             Memory::global_pointer("float-read-history"),
@@ -1420,4 +1420,59 @@ pub(super) fn collect_native_fold_variables(
         _ => unreachable!("migrated Integer scope"),
     }
     true
+}
+
+#[cfg(test)]
+mod float_call_tests {
+    use super::*;
+    #[test]
+    fn float_calls_keep_native_variable_reader_policies() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::ClickFunctionApplication {
+            name: "float_variables".into(),
+            arguments: vec![
+                PureFunctionArgument::Integer(IntegerTerm::Variable(Variable(1008205)).into()),
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
+                    1008206,
+                )))),
+                PureFunctionArgument::Value(ProgramValue::Float64(
+                    MachineTerm::ClickFunctionApplication {
+                        name: "inner".into(),
+                        arguments: vec![PureFunctionArgument::Value(ProgramValue::Float64(
+                            MachineTerm::Variable(Variable(1008207)),
+                        ))],
+                    },
+                )),
+                PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(
+                    1008208,
+                )))),
+            ],
+        };
+        let root = crate::kernel::KernelTermImport::default()
+            .float(crate::kernel::KernelFloatType::Float64, &native);
+        for connection in [false, true] {
+            struct Restore(bool);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+                }
+            }
+            let _connection = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::ExpressionFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let mut expected = BTreeSet::new();
+                collect_machine_leaf(&native, mode, &mut expected, &mut SeenTerms::default());
+                let actual = common_variables(&root, mode, &mut Default::default())
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+            }
+        }
+    }
 }

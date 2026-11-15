@@ -1,7 +1,7 @@
 # Explicit universal preservation inside a C proof's `have`
 
 One source is a bounded-value precondition, as in the DFS search. The other
-is a reflexive entry-snapshot fact whose target says every bounded cell of
+is a reflexive entry-state fact whose target says every bounded cell of
 `next` is unchanged by a store to separate `visited`. The proof introduces each index and applies preservation
 inside `have` proofs at the post-store frontier.
 

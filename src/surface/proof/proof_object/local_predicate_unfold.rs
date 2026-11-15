@@ -166,7 +166,7 @@ impl Proof<'_> {
         selected: &Proposition,
         predicates: &PredicateEnvironment,
         names: &[String],
-        scopes: &mut Vec<SnapshotSelector>,
+        scopes: &mut Vec<ProgramPointSelector>,
         bound: &mut BTreeSet<String>,
         changed: &mut bool,
         root: bool,

@@ -38,7 +38,8 @@ impl SourceContext {
         match self {
             Self::PureGoal => matches!(
                 tactic,
-                ProofTactic::ApplyTheoremUsing { .. }
+                ProofTactic::ApplyFactUsing { .. }
+                    | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::Induct { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::UnfoldProposition(_)
@@ -82,6 +83,7 @@ impl SourceContext {
                     | ProofTactic::FoldResource(_)
                     | ProofTactic::ObserveResource(_)
                     | ProofTactic::Iterated(_)
+                    | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
             ),
             Self::PostExecution => matches!(
@@ -92,6 +94,7 @@ impl SourceContext {
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::PeelFunction { .. }
+                    | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::Choose(_)
                     | ProofTactic::LetSatisfy(_)
@@ -138,6 +141,7 @@ impl SourceContext {
                         | ProofTactic::Choose(_)
                         | ProofTactic::LetSatisfy(_)
                         | ProofTactic::StepProved { .. }
+                        | ProofTactic::ApplyFact(_)
                         | ProofTactic::ApplyTheorem(_)
                         | ProofTactic::Transport { .. }
                         | ProofTactic::Have(_)

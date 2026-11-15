@@ -1332,7 +1332,7 @@ produce address-backed step results. They introduce no program local. A proof
 reads their fields as `statement(i).call(f, j).result.field` or
 `statement(i).ternary(j).result.field`; embedded fields and literal array
 indexes are supported, for example `.result.inner.value` and
-`.result.items[1]`. These reads use the producer's exit snapshot. Pointer fields
+`.result.items[1]`. These reads use the producer's exit state. Pointer fields
 are shallow values: their pointees retain their own storage and permissions.
 The anonymous result's storage ends with its full expression; copying a pointer
 into that storage does not extend its lifetime. A source `statement(i).exit` includes
@@ -1441,7 +1441,7 @@ A store changes the current qualified value without changing its entry value.
 These reads require permission for the pointer slot itself, such as
 `owns unit::slot`; owning its pointee alone does not authorize the slot read.
 Function-static pointers, named as `unit::function::slot`, behave likewise.
-<!-- verified-example: mdtests/qualified_pointer_global_store_keeps_old_snapshot.md -->
+<!-- verified-example: mdtests/qualified_pointer_global_store_keeps_old_state.md -->
 Global writes therefore participate in ordinary contract certification and are
 visible to later calls in the same verified execution.
 A summarized call write may span adjacent owned fields: its complete footprint
@@ -2030,7 +2030,7 @@ distinct, and the ordinary resource and owned-footprint checks still apply.
 <!-- verified-example: mdtests/c_named_contract_sequence_refinement_precondition.md -->
 <!-- verified-example: mdtests/c_named_contract_sequence_refinement_stronger_requirement.md -->
 <!-- verified-example: mdtests/c_named_contract_sequence_refinement_wrong_length.md -->
-<!-- verified-example: mdtests/c_named_contract_sequence_refinement_wrong_snapshot.md -->
+<!-- verified-example: mdtests/c_named_contract_sequence_refinement_wrong_state.md -->
 <!-- verified-example: mdtests/c_named_contract_sequence_refinement_wrong_permutation.md -->
 <!-- verified-example: mdtests/c_named_contract_sequence_refinement_extra_write.md -->
 

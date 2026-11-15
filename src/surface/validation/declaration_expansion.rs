@@ -668,6 +668,7 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &[],
         &BTreeSet::new(),
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         Default::default(),
     )
@@ -704,6 +705,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &callees,
             &resources,
             &[],
+            &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeMap::new(),
@@ -1600,6 +1602,8 @@ fn expand_declared_resource_tactic(
         }
         tactic @ (ProofTactic::ArithmeticUsing(_)
         | ProofTactic::Contradiction(_)
+        | ProofTactic::ApplyFact(_)
+        | ProofTactic::ApplyFactUsing { .. }
         | ProofTactic::Extract(_)
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
@@ -2326,6 +2330,16 @@ fn expand_declared_resource_tactic_with_propositions(
         ProofTactic::Contradiction(proposition) => Ok(ProofTactic::Contradiction(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
+        ProofTactic::ApplyFact(fact) => Ok(ProofTactic::ApplyFact(
+            expand_declared_resource_proposition(fact, resource_definitions)?,
+        )),
+        ProofTactic::ApplyFactUsing { fact, premises } => Ok(ProofTactic::ApplyFactUsing {
+            fact: expand_declared_resource_proposition(fact, resource_definitions)?,
+            premises: premises
+                .into_iter()
+                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        }),
         ProofTactic::Extract(proposition) => Ok(ProofTactic::Extract(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
@@ -3101,7 +3115,7 @@ fn expand_declared_resource_proposition(
 ) -> Result<ClickProposition, ClickError> {
     enum Frame {
         Visit(ClickProposition),
-        BuildAt(SnapshotSelector),
+        BuildAt(ProgramPointSelector),
         BuildAnd,
         BuildOr,
         BuildNot,
@@ -3262,7 +3276,7 @@ fn expand_declared_resource_proposition(
                 expanded.push(ClickProposition::Not(Box::new(body)));
             }
             Frame::BuildAt(selector) => {
-                let proposition = expanded.pop().expect("expanded snapshot proposition");
+                let proposition = expanded.pop().expect("expanded state proposition");
                 expanded.push(ClickProposition::At {
                     selector,
                     proposition: Box::new(proposition),

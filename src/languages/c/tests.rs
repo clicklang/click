@@ -11063,15 +11063,13 @@ fn c_syntax_targets_kernel_float_argument_conversion() {
     else {
         panic!("integer-to-double call argument should return a double");
     };
-    let crate::kernel::ProgramValue::Float64(value) = retained_result
-        .native_payload()
-        .expect("native Float64 payload")
-    else {
+    assert!(retained_result.shared().is_some(), "shared Float64 result");
+    let crate::kernel::ProgramValue::Float64(value) = retained_result.clone().into_native() else {
         panic!("expected Float64 result");
     };
     assert_eq!(
         value,
-        &crate::kernel::MachineTerm::uint64_constant(1.0f64.to_bits())
+        crate::kernel::MachineTerm::uint64_constant(1.0f64.to_bits())
     );
 }
 

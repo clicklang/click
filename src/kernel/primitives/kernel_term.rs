@@ -20,14 +20,14 @@ mod algebraic_equality;
 mod float;
 mod machine;
 pub(crate) use float::FloatOperandView;
-pub use float::KernelFloatType;
+pub use float::{KernelFloatCall, KernelFloatType};
 #[allow(dead_code)]
 mod matches;
 pub(crate) use matches::KernelMatchArm;
 pub(crate) use matches::{KernelConstructor, KernelMatch};
 mod pointer_observations;
 mod reads;
-pub use reads::KernelSnapshotRead;
+pub use reads::KernelMemoryRead;
 // Prepared pointer payloads; producer activation follows scoped consumers and spelling.
 #[allow(dead_code)]
 mod addresses;
@@ -69,13 +69,24 @@ pub enum KernelTermNode {
     Match(KernelMatch),
     Constructor(KernelConstructor),
     AlgebraicCall(KernelAlgebraicCall),
+    FloatCall(KernelFloatCall),
     AlgebraicIf {
         arguments: [KernelTerm; 3],
     },
     BoolLiteral(bool),
     BoolRead(KernelBooleanRead),
-    AlgebraicRead(KernelSnapshotRead),
-    FloatRead(KernelSnapshotRead),
+    AlgebraicRead(KernelMemoryRead),
+    FloatRead(KernelMemoryRead),
+    FloatCompare {
+        format: KernelFloatType,
+        operator: ComparisonOperator,
+        arguments: [KernelTerm; 2],
+    },
+    FloatClassify {
+        format: KernelFloatType,
+        classification: FloatClassification,
+        operand: KernelTerm,
+    },
     BoolCast {
         destination: MachineIntegerType,
         operand: KernelTerm,
@@ -144,7 +155,7 @@ pub enum KernelTermNode {
         destination: MachineIntegerType,
         operand: KernelTerm,
     },
-    /// Exact scalar read descriptor. The snapshot is an opaque shared value;
+    /// Exact scalar read descriptor. The state is an opaque shared value;
     /// observation origins and access evidence are not part of this node.
     /// Native addresses remain an explicit input boundary during migration.
     MemoryLoad {
@@ -154,7 +165,7 @@ pub enum KernelTermNode {
     },
     /// Complete formed pointer value with prepared address and metadata children.
     PointerValue(SharedPointerValue),
-    /// A pointer argument with its selected memory snapshot.
+    /// A pointer argument with its selected memory state.
     ArrayReference {
         memory: SharedMemory,
         pointer: KernelTerm,
@@ -339,7 +350,7 @@ impl PartialEq for NodeKey {
                             kind: l,
                         },
                     ) => {
-                        // The interner is process-wide; snapshots belong to arenas.
+                        // The interner is process-wide; states belong to arenas.
                         // Comparing their contents across arenas would walk unrelated
                         // memory while registering one selected read.
                         a.arena_id() == b.arena_id() && p == q && k == l
@@ -417,6 +428,10 @@ impl NodeKey {
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
+            KernelTermNode::FloatCall(call) => call
+                .arguments
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::AlgebraicCall(call) => call
                 .arguments
                 .iter()
@@ -427,6 +442,7 @@ impl NodeKey {
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::FloatBinary { arguments, .. }
+            | KernelTermNode::FloatCompare { arguments, .. }
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
@@ -441,7 +457,7 @@ impl NodeKey {
             }
             // Integer conditionals already had retained Integer identity before
             // becoming common nodes. Conversion consumers visit their branches
-            // with the source width and current snapshot; keep that boundary.
+            // with the source width and current state; keep that boundary.
             KernelTermNode::AlgebraicIf { arguments } => arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
@@ -449,6 +465,7 @@ impl NodeKey {
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
+            | KernelTermNode::FloatClassify { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
@@ -790,10 +807,12 @@ impl KernelTerm {
             KernelTermNode::Match(matched) => &matched.arguments,
             KernelTermNode::Constructor(constructor) => &constructor.fields,
             KernelTermNode::AlgebraicCall(call) => &call.arguments,
+            KernelTermNode::FloatCall(call) => &call.arguments,
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::FloatBinary { arguments, .. }
+            | KernelTermNode::FloatCompare { arguments, .. }
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
@@ -806,6 +825,7 @@ impl KernelTerm {
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
+            | KernelTermNode::FloatClassify { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
@@ -968,7 +988,7 @@ impl KernelTerm {
             .machine_arithmetic(format, value)
             .unwrap_or_else(|| {
                 // Native equality can ignore object-class evidence and
-                // snapshot authority. Preserve this exact producer payload;
+                // state authority. Preserve this exact producer payload;
                 // checking may relate it to another leaf separately.
                 use std::sync::atomic::{AtomicU64, Ordering};
                 static NEXT: AtomicU64 = AtomicU64::new(0);

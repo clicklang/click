@@ -383,7 +383,7 @@ fn transport_premise_holds(context: &PureFactContext, premise: &Proposition) -> 
 /// Certifies a stated condition target from one explicit condition source and
 /// deterministic memory-resolution evidence. Unlike whole-fact transport,
 /// this permits a target to retain an old load on one side while transporting
-/// the other side to a newer snapshot.
+/// the other side to a newer state.
 pub(crate) fn program_condition_fact_target_reaches_in_context(
     source: &Proposition,
     target: &Proposition,
@@ -1685,9 +1685,9 @@ fn abstract_execution_state_for_join_across_with_policy(
             .blocks
             .diff(&sibling.memory.blocks)
             .filter_map(|change| match change {
-                crate::kernel::primitives::SnapshotMapChange::Removed(_) => None,
-                crate::kernel::primitives::SnapshotMapChange::Added(block)
-                | crate::kernel::primitives::SnapshotMapChange::Changed(block) => {
+                crate::kernel::primitives::HashedOrdMapChange::Removed(_) => None,
+                crate::kernel::primitives::HashedOrdMapChange::Added(block)
+                | crate::kernel::primitives::HashedOrdMapChange::Changed(block) => {
                     block.is_havoc_block().then(|| block.clone())
                 }
             })
@@ -1896,7 +1896,7 @@ fn abstract_execution_state_for_join_across_with_policy(
 
     // The arms' memories are one memory when they differ only inside the
     // blocks the join preserves anyway. The differences are read off the
-    // structure the snapshots share, so equal memories cost nothing and
+    // structure the states share, so equal memories cost nothing and
     // unequal ones cost what differs.
     let common_memory = preserve_exact_common_memory
         && sibling_states
@@ -4697,6 +4697,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
+                descent_step: None,
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),
@@ -5001,6 +5002,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
+                descent_step: crate::kernel::DescentStep::under(environment),
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),
@@ -5244,6 +5246,7 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
             ));
             SymbolicExecutionPath {
                 call_parameters: None,
+                descent_step: None,
                 completion_origin: None,
                 call_result: None,
                 assumptions: assumptions.clone(),
@@ -5354,6 +5357,7 @@ pub fn prove_checked_program_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CheckedFunctionExecution {
+        retained_descent: false,
         published_outcomes: Default::default(),
         contract_completion: None,
         entry_authority: None,
@@ -6386,6 +6390,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
         };
         paths.push(SymbolicExecutionPath {
             call_parameters: None,
+            descent_step: path.descent_step.clone(),
             completion_origin: None,
             call_result: None,
             assumptions: path.assumptions.clone(),
@@ -7737,6 +7742,7 @@ pub fn substitute_integer_term_in_proposition(
 }
 
 /// The opaque application `f(args)` with the int32 or uint64 argument at `position`
+/// replaced by its predecessor, or an already specialized fold with its end
 /// replaced by its predecessor, for restating a range fold one endpoint
 /// lower. The subtraction is wrapping bitvector arithmetic, matching the
 /// endpoint `integer_range_fold_predecessor_index` builds, so the two agree
@@ -7745,6 +7751,23 @@ pub fn integer_range_fold_predecessor_application(
     whole: &IntegerTerm,
     position: usize,
 ) -> Option<IntegerTerm> {
+    if let IntegerTerm::RangeFold {
+        index,
+        initial,
+        accumulator,
+        item,
+        body,
+    } = whole
+    {
+        let (index, _) = integer_range_fold_predecessor_index(index)?;
+        return Some(IntegerTerm::range_fold(
+            index,
+            initial.as_ref().clone(),
+            *accumulator,
+            *item,
+            body.as_ref().clone(),
+        ));
+    }
     let IntegerTerm::PureFunctionApplication(applied) = whole else {
         return None;
     };

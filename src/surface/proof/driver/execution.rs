@@ -70,6 +70,8 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::PeelFunction { .. }
             | ProofTactic::ObserveResource(_)
+            | ProofTactic::ApplyFact(_)
+            | ProofTactic::ApplyFactUsing { .. }
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
             | ProofTactic::UserTactic(_)
@@ -402,7 +404,8 @@ fn checked_execution_arm_tactics_end(
             && !closes_loop_invariants(tactic)
             && !matches!(
                 tactic,
-                ProofTactic::ApplyTheorem(_)
+                ProofTactic::ApplyFact(_)
+                    | ProofTactic::ApplyTheorem(_)
                     | ProofTactic::Transport { .. }
                     | ProofTactic::Have(_)
                     | ProofTactic::Extract(_)
@@ -913,6 +916,10 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
         {
             Some(PostExecutionTactic::FoldProved(tactic.clone()))
         }
+        ProofTactic::ApplyFact(fact) => Some(PostExecutionTactic::Have(ProofHave {
+            proposition: crate::surface::proof::driver::fact_application_parts(fact).1,
+            proof: SourceProof::Script(vec![ProofTactic::ApplyFact(fact.clone())]),
+        })),
         ProofTactic::ApplyTheorem(application) => {
             Some(PostExecutionTactic::Apply(application.clone()))
         }
@@ -1171,6 +1178,8 @@ fn apply_frontier_source_tactic<'a>(
         proof
             .driver()
             .apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
+    } else if let ProofTactic::ApplyFact(fact) = &indexed.tactic {
+        proof.driver().apply_fact_application(fact)?
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
@@ -4966,6 +4975,25 @@ fn advance_linear_open_scope<'a>(
             })?;
             continue;
         }
+        if let ProofTactic::ApplyFact(fact) = &indexed.tactic {
+            let checkpoint = scope.checkpoint();
+            let Some(applied) = scope.driver().apply_fact_application(fact)? else {
+                return decline();
+            };
+            scope = applied;
+            if indexed.source_index != owning_source_index
+                && let Some(site) = proof_site
+            {
+                let certificate = scope.certificate_since(&checkpoint)?;
+                record_proof_site_tactic_expansion(
+                    expansion_capture.as_deref_mut(),
+                    site,
+                    indexed.source_index,
+                    &certificate.to_proof_tactics(),
+                );
+            }
+            continue;
+        }
         if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
             let Some(applied) = scope.driver().apply_theorem_application(application)? else {
@@ -5341,7 +5369,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                 proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
                 &execution.core.state,
                 None,
-                &execution.presentation.recorded_snapshots,
+                &execution.presentation.recorded_states,
             ),
             SpecDefinitions::new(predicate_environment, click_function_environment),
         ) {
@@ -5402,7 +5430,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
             &execution.core.state,
             None,
-            &execution.presentation.recorded_snapshots,
+            &execution.presentation.recorded_states,
         ),
         SpecDefinitions::new(predicate_environment, click_function_environment),
     )

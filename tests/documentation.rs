@@ -1386,6 +1386,8 @@ fn tactic_form_inventory_is_bidirectional() {
             "step" => surface == "`step()`",
             "apply-induction" => surface == "`apply(ih(m))`",
             "apply-induction-using" => surface == "`apply(ih(m)) using { P; ... }`",
+            "apply-fact" => surface == "`apply(fact)`",
+            "apply-fact-using" => surface == "`apply(fact) using { P; ... }`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
             "apply-theorem-using" => surface == "`apply(theorem(args)) using { P; ... }`",
             "arithmetic" => surface == "`solve() using {}`",
@@ -1753,8 +1755,8 @@ fn canonical_documentation_terms_have_no_retired_aliases() {
         "proof frontier",
         "raw load",
         "raw loads",
-        "snapshot bridge",
-        "snapshot bridging",
+        "state bridge",
+        "state bridging",
     ];
     let mut failures = Vec::new();
     for path in files {
