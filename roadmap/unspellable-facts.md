@@ -450,7 +450,7 @@ identity, local range-fact preservation, equality rewrites, dependencies and the
 modeled-binary-tree example. The C/C++/Rust integer-language examples and focused
 cast-dispatch regressions passed separately. The CI-quality check passed.
 
-8o retains Boolean roots in local/outcome storage, memory cells and statement
+8o (merged [PR #2832](https://github.com/clicklang/click/pull/2832)) retains Boolean roots in local/outcome storage, memory cells and statement
 results, preceding 8n because its local/call handoffs need this storage support.
 Storage identity still uses the original native equality, hash and order rules,
 including comparisons with other value families. The selected Boolean native
@@ -480,8 +480,9 @@ Regressions cover nested call/let argument identity and native output agreement,
 runtime argument and return handoffs, raw-word preservation, and nested-call
 scaling without numeric exports. Dependency-reader agreement covers Boolean
 arguments containing Integer comparisons and memory reads in every collection
-mode, with call-connection collection enabled and disabled. All 1,832 selected
-tests passed, including every scaling test and ordinary example projects.
+mode, with call-connection collection enabled and disabled. All 1,994 integration
+tests passed, including every scaling test, termination and contract completion,
+Integer conversion checks and ordinary example projects.
 The CI-quality check passed.
 
 ### 8a inventory
