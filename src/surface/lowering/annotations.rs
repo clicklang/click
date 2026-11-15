@@ -1918,9 +1918,7 @@ fn annotate_function(
     // ranks calls to, and a function without an expression measure ranks
     // none.
     let recursion_binder = match function_block.decreases() {
-        Some(FunctionDecrease::Binder(binder)) if !function_block.recursion_peers().is_empty() => {
-            Some(binder.clone())
-        }
+        Some(FunctionDecrease::Binder(binder)) => Some(binder.clone()),
         _ => None,
     };
     if !recursion_measure.is_empty() || recursion_binder.is_some() {
@@ -4056,32 +4054,7 @@ impl AnnotationLowerer<'_> {
         context: &SpecElaborationContext,
     ) -> Result<Vec<crate::kernel::RankingComponent>, ClickError> {
         let components = match function_block.decreases() {
-            Some(FunctionDecrease::Numeric(expression)) => {
-                // A bare name of a C int32 parameter is today's numeric
-                // measure, resolved against the parameter list by the
-                // termination plan, which is also what refuses a name that
-                // is no parameter of this function. Leave it there: a bare
-                // `decreases` name has always meant a parameter, and lowering
-                // it here would answer a misspelling with an evaluation
-                // failure. A parameter of another type has no body analysis,
-                // so it is lowered as the expression it is. Rust also uses
-                // the call-ranked form, where MIR temporary values are known.
-                if let ContractExpression::Binding(name)
-                | ContractExpression::CBinding(name)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
-                    expression
-                    && !function_block.call_ranked_numeric_recursion
-                    && function_block
-                        .signature()
-                        .parameters()
-                        .iter()
-                        .find(|parameter| parameter.name() == name)
-                        .is_none_or(|parameter| parameter.interface_type() == InterfaceType::Int32)
-                {
-                    return Ok(Vec::new());
-                }
-                std::slice::from_ref(expression)
-            }
+            Some(FunctionDecrease::Numeric(expression)) => std::slice::from_ref(expression),
             Some(FunctionDecrease::Lexicographic(components)) => components.as_slice(),
             _ => return Ok(Vec::new()),
         };

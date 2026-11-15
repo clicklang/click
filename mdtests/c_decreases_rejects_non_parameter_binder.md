@@ -1,9 +1,8 @@
 # `decreases` naming a non-parameter name is refused
 
-A `decreases` clause is one expression, classified after resolution (D6): a
-declared resource application, a contract resource binder, or an int32
-parameter. `m` here is a body local, so it is none of the three and the
-clause has nothing to rank.
+A numeric `decreases` clause is read once at function entry. `m` here is a
+body local that does not exist at that point, so no entry measure can be
+captured. This is an opening error, rather than a later body-analysis error.
 
 ```c filename=c_decreases_rejects_non_parameter_binder.c
 int32 countdown(int32 n) {
@@ -28,5 +27,5 @@ int32 countdown(int32 n) {
 ```
 
 ```expect
-fail: must name an int32 parameter
+fail: the `decreases` measure `m` of `countdown` could not be read at its own entry state
 ```
