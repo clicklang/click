@@ -615,6 +615,8 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         static_storage: function.static_storage.clone(),
         string_literals: function.string_literals.clone(),
         address_taken_locals: Default::default(),
+        loop_source_index: Default::default(),
+        natural_loop_source: function.natural_loop_source,
     }
 }
 

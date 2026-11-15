@@ -492,6 +492,13 @@ partial-correctness rules for modular calls and retain their own
 native loop-rule outputs; each loop strategy owns the measure checked by its
 back-edge proof. Strategies for the same source loop may use different measures.
 An unranked strategy still prevents a ranked sibling from covering the loop.
+Loop opening selects the source identity through the whole-contract owner,
+checks executable shape and measure eligibility, and retains the exact statement
+that its proof will execute. A successful producer carries that identity and
+eligible measure in its rule; a completed rule cannot be retagged. Termination
+consumes this authority without repeating source matching or escape checks.
+The flat source-loop shape index and address-taken set are built once at function
+setup; opening a selected loop reads its direct range and explicit body.
 No common measure is reconstructed from source annotations after body closure.
 
 Program closing has separate generation, proof execution, and completion APIs.

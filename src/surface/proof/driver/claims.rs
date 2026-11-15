@@ -683,9 +683,7 @@ fn prove_claims_by_checked_tactics(
     if source_layout.loop_body_entry(0).is_some() {
         source_layout.loop_region_count(|| count_loop_regions(parsed_function));
         source_layout.local_pointer_element_types(|| local_pointer_element_types(parsed_function));
-        source_layout.address_taken_locals(|| {
-            crate::kernel::program_address_taken_locals(function.source_body())
-        });
+        function.prepare_loop_proofs();
     }
     let constants = ExecutionProofConstants {
         proof_site,

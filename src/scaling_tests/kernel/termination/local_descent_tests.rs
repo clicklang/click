@@ -119,11 +119,15 @@ fn independent_loop_measure_ownership_costs_its_explicit_strategy_outputs() {
                         "n".into(),
                     )),
                 }];
+                rule.loop_evidence = function
+                    .open_loop_proof(0, rule.loop_statement.clone())
+                    .unwrap()
+                    .loop_evidence;
                 rule
             })
             .collect::<Vec<_>>();
         let ((ranked, unranked), work) = crate::instrumentation::measure_deterministic_work(|| {
-            verified_loop_ranking_measures("drain", &function.source_body, &rules).unwrap()
+            verified_loop_ranking_measures(&rules)
         });
         assert_eq!(ranked[&0].len(), count);
         assert!(unranked.is_empty());

@@ -473,7 +473,11 @@ holds on that rule's loop head; a loop with a nonnegative int32 quantity, or
 an unsigned machine quantity under unsigned order, that strictly descends on
 every back edge terminates whichever quantity it was.
 The plan only says which loop to point at, and a rule is bound to its source
-loop by index and executable shape, a comparison that ignores the measure.
+loop by index and executable shape at loop opening, before initialization or
+preservation executes. This comparison ignores the measure. Opening also checks
+measure eligibility and retains the statement together with its source authority;
+the successful loop producer publishes that authority directly. Termination
+consumption neither rematches source shape nor rechecks eligibility.
 Matching the measures on top of that turns a plan describing one measure and a
 certificate carrying another into a named refusal instead of a silent
 mismatch, so weakening it can cost a diagnostic and not a theorem. A

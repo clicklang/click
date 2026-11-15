@@ -224,7 +224,10 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
                 .map(|index| VerifiedLoopRule {
                     symbolic_entry_state: ExecutionState::default(),
                     loop_statement: ranked_loop(),
-                    loop_index: Some(index),
+                    loop_evidence: function
+                        .open_loop_proof(index, ranked_loop())
+                        .unwrap()
+                        .loop_evidence,
                     required_assumptions: PureFactContext::new(),
                     paths: Vec::new(),
                     composite_resource_definitions: Vec::new(),

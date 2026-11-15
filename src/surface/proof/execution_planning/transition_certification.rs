@@ -478,7 +478,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
 pub(in crate::surface) fn certified_statement_transitions(
     state: &ExecutionState,
     pure_facts: &PureFactList,
-    statement: &ProgramStatement,
+    input: impl Into<crate::kernel::StatementProofInput>,
     function_environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     execution_semantics: ExecutionSemantics,
@@ -488,6 +488,8 @@ pub(in crate::surface) fn certified_statement_transitions(
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
+    let input = input.into();
+    let statement = input.statement();
     // A statement executed in a proof context sees that context as the
     // kernel already keeps it: incrementally indexed, shared by clone. The
     // slice then carries only the statement-local delta bookkeeping.
@@ -510,7 +512,7 @@ pub(in crate::surface) fn certified_statement_transitions(
     let execute = || {
         prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
             state.clone(),
-            statement.clone(),
+            input.clone(),
             assumptions,
             function_environment.clone(),
             execution_semantics,
@@ -539,7 +541,7 @@ pub(in crate::surface) fn certified_statement_transitions(
 pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_phases(
     state: &ExecutionState,
     pure_facts: &PureFactList,
-    statement: &ProgramStatement,
+    input: impl Into<crate::kernel::StatementProofInput>,
     function_environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
@@ -551,6 +553,8 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
+    let input = input.into();
+    let statement = input.statement();
     let assumptions = assumptions_from_propositions(pure_facts);
     let executed_under = assumptions.clone();
     let mut budget = ExecutionBudget::continuing_from(*next_kernel_variable)
@@ -562,7 +566,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     );
     let (execution, loop_rule) = prove_symbolic_loop_exit_with_proven_phases_using_budget(
         state.clone(),
-        statement.clone(),
+        input.clone(),
         assumptions,
         function_environment.clone(),
         initialization_proven,

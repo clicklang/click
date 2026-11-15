@@ -1802,9 +1802,9 @@ fn annotate_function(
     } else {
         lowerer.lower_statement(parsed_function.body(), parsed_function.control_targets())?
     };
-    let natural_control_loop = parsed_function.natural_control_loop().is_some();
-    let body = if let Some((backedge_target, natural_exit_target, _)) =
-        parsed_function.natural_control_loop()
+    let natural_source = parsed_function.natural_control_loop();
+    let natural_control_loop = natural_source.is_some();
+    let body = if let Some((backedge_target, natural_exit_target, _)) = natural_source
         && function_block.structural_clauses().for_loop(0).is_some()
     {
         let invariant_checks = lowerer.loop_invariant_checks(0)?;
@@ -1852,6 +1852,7 @@ fn annotate_function(
     .with_return_pointee_constant(parsed_function.return_pointee_is_constant())
     .with_return_pointee_class(parsed_function.return_pointee_class())
     .with_source_body(source_body)
+    .with_natural_loop_source(natural_source.map(|(target, exit, _)| (target, exit)))
     .with_control_targets_from(&parsed_kernel_function);
     if parsed_kernel_function.is_program_entry() {
         function = function.with_program_entry();
