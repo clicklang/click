@@ -326,3 +326,35 @@ fn float_local_handoffs_retain_growing_shared_prefixes() {
         }
     }
 }
+
+#[test]
+fn float_memory_carriers_retain_growing_shared_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let mut root = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(1008400),
+            );
+            for _ in 0..size {
+                root = KernelTerm::float_binary(
+                    format,
+                    FloatBinaryOperator::Add,
+                    [root.clone(), root],
+                )
+                .unwrap();
+            }
+            let exports = KernelTermExport::float_export_count();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..32 {
+                    let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
+                    assert_eq!(cell.program_type(), format.program_type());
+                    assert_eq!(cell.clone().into_value().shared(), Some(&root));
+                    assert_eq!(cell.into_value().shared(), Some(&root));
+                }
+            });
+            assert_eq!(work, 0, "size={size}");
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+        }
+    }
+}
