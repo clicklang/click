@@ -58,3 +58,29 @@ fn boolean_calls_keep_shared_arguments_across_selected_native_readings() {
         assert!(work <= 200 * size + 2000, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn nested_boolean_argument_handoffs_retain_linear_shared_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::Bool, Variable(999550));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                let application = SharedPureApplication::intern(
+                    "nested_bool".into(),
+                    vec![root.boolean_argument_native().unwrap().clone()],
+                );
+                let next = KernelTermImport::default()
+                    .boolean_call_with_retained(&application, &[Some(root.clone())]);
+                let KernelTermNode::Call { arguments, .. } = next.node() else {
+                    panic!()
+                };
+                assert_eq!(arguments, &[root]);
+                root = next;
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= 100 * size + 100, "size={size}, work={work}");
+    }
+}

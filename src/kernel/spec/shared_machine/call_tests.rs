@@ -680,6 +680,39 @@ fn actual_boolean_call_results_retain_roots_and_native_handoff_behavior() {
 }
 
 #[test]
+fn boolean_call_handoffs_retain_nested_boolean_arguments() {
+    let _session = VerificationSession::enter();
+    let call = |arguments| SpecExpression::PureFunctionApplication {
+        name: "boolean_handoff".into(),
+        arguments,
+        result_type: ProgramType::Bool,
+        pointer_result: None,
+        result_object_class: None,
+        projection: None,
+    };
+    let inner = call(vec![]);
+    let inner_paths = produced_paths(&inner, false);
+    let expected = inner_paths[0].value.shared().unwrap().clone();
+    let expression = SpecExpression::Let {
+        name: "b".into(),
+        value: Box::new(inner),
+        body: Box::new(call(vec![SpecPureFunctionArgument::Value(
+            SpecExpression::ProgramExpression(ProgramExpression::Variable("b".into())),
+        )])),
+    };
+    let paths = produced_paths(&expression, false);
+    let root = paths[0].value.shared().unwrap();
+    let KernelTermNode::Call { arguments, .. } = root.node() else {
+        panic!()
+    };
+    assert_eq!(arguments, &[expected]);
+    assert_eq!(
+        native_results(paths),
+        native_results(produced_paths(&expression, true))
+    );
+}
+
+#[test]
 fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
     let _session = VerificationSession::enter();
     let condition = ConditionTerm::Variable(Variable(999440));

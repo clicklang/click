@@ -4,22 +4,37 @@ use super::*;
 
 impl KernelTermImport {
     pub(crate) fn boolean_call(&mut self, application: &SharedPureApplication) -> KernelTerm {
+        self.boolean_call_with_retained(application, &[])
+    }
+
+    pub(crate) fn boolean_call_with_retained(
+        &mut self,
+        application: &SharedPureApplication,
+        retained: &[Option<KernelTerm>],
+    ) -> KernelTerm {
         let arguments = application
             .arguments()
             .iter()
             .enumerate()
-            .map(|(index, argument)| match argument {
-                PureFunctionArgument::Integer(_)
-                | PureFunctionArgument::SharedMachine(_)
-                | PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(argument),
-                _ => KernelTerm::legacy_at(
-                    argument.clone(),
-                    LegacyIdentity::ExactApplicationArgument {
-                        application: application.clone(),
-                        payload: application.payload_id(),
-                        index,
-                    },
-                ),
+            .map(|(index, argument)| {
+                retained
+                    .get(index)
+                    .and_then(Clone::clone)
+                    .unwrap_or_else(|| match argument {
+                        PureFunctionArgument::Integer(_)
+                        | PureFunctionArgument::SharedMachine(_)
+                        | PureFunctionArgument::Value(integer_c_value!(_)) => {
+                            self.argument(argument)
+                        }
+                        _ => KernelTerm::legacy_at(
+                            argument.clone(),
+                            LegacyIdentity::ExactApplicationArgument {
+                                application: application.clone(),
+                                payload: application.payload_id(),
+                                index,
+                            },
+                        ),
+                    })
             })
             .collect();
         KernelTerm::checked_call(KernelType::Bool, application.name().into(), arguments)

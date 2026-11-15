@@ -468,6 +468,22 @@ temporary result receipts, byte-view cases and existing pointer handoffs.
 Growing-prefix storage and retrieval perform no operand traversal or numeric
 export. The ordinary example projects and CI-quality check passed.
 
+8n retains logical Boolean arguments through specification call assembly and
+nested Boolean call production. Native argument compatibility borrows the
+selected cached descriptor. Lexical bindings keep their common roots, and
+same-type runtime parameter binding, return conversion, contract-result binding
+and caller result assignment preserve those roots. Raw C Boolean words and
+changed-type conversions keep their original behavior; no refusal or authority
+rule changes. Numeric-result mixed-family call adapters remain assigned to 8ac.
+
+Regressions cover nested call/let argument identity and native output agreement,
+runtime argument and return handoffs, raw-word preservation, and nested-call
+scaling without numeric exports. Dependency-reader agreement covers Boolean
+arguments containing Integer comparisons and memory reads in every collection
+mode, with call-connection collection enabled and disabled. All 1,832 selected
+tests passed, including every scaling test and ordinary example projects.
+The CI-quality check passed.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes
