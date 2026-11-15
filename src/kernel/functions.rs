@@ -3461,7 +3461,7 @@ fn execute_verified_function_applications_with_suspension(
                             .into_certified(),
                         );
                     }
-                    post_state.memory = successor.memory.clone();
+                    post_state.set_memory_directly(successor.memory.clone());
                     post_state.mutex_ledger = successor.mutex_ledger.clone();
                     post_state.opaque_mutex_acquisitions =
                         successor.opaque_mutex_acquisitions.clone();
@@ -3862,7 +3862,7 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        post_state.memory = match produced_memory_initialization(
+        let produced = match produced_memory_initialization(
             &entry_resource_state,
             &output_resource_state,
             interface,
@@ -3881,6 +3881,7 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
         };
+        post_state.set_memory_directly(produced);
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,

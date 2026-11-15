@@ -9496,9 +9496,23 @@ impl ExecutionState {
     }
 
     /// The point this state's path has reached.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn reached_point(&self) -> &super::reached_point::ReachedPoint {
         &self.point
+    }
+
+    /// Replace memory without the resource invalidation of
+    /// [`Self::set_memory`], for a transition that has already accounted for
+    /// it. It is still a transition, so the state moves to a new point.
+    pub(crate) fn set_memory_directly(&mut self, memory: Memory) {
+        self.memory = memory;
+        self.point = self.point.after();
+    }
+
+    /// Keep `before`'s memory, and so stand where `before` stood: a state
+    /// rebuilt around unchanged memory has not moved.
+    pub(crate) fn keep_memory_of(&mut self, before: &Self) {
+        self.memory = before.memory.clone();
+        self.point = before.point.clone();
     }
 
     /// Stand this state at a new point reached from both arms of a join.

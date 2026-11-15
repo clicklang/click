@@ -2034,7 +2034,7 @@ impl MutexLedger {
             budget,
         )?;
         let mut next = state.clone();
-        next.memory = memory;
+        next.set_memory_directly(memory);
         next.mutex_ledger = Some(ledger.with_inserted(
             mutex.clone(),
             MutexEntry::Unlocked {
