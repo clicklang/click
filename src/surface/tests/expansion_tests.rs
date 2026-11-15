@@ -9865,7 +9865,8 @@ fn return_definedness_facts_expand_without_resource_rewrites() {
         .collect::<Vec<_>>();
     let verified = verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&source, &verified, "planned").unwrap();
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
 #[test]

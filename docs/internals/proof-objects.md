@@ -134,6 +134,13 @@ and result must agree. Outcome identity survives a claim scope's local branch ID
 Function-exit outcome fanout lets the kernel allocate one identity per checked
 returning path. A completed `have` scope publishes only its focused obligation,
 facts, and optional execution attachment through the kernel.
+Pure proofs retain each checked `have`'s written-to-kernel correspondence.
+An explicit citation can reuse that correspondence while its program state and
+referenced bindings are unchanged. Lookup requires a singleton source mapping
+and exact membership of the retained fact; it never scans historical mappings
+or grants authority to the spelling. Shadowed names, ambiguous mappings, and
+missing facts take the ordinary citation-lowering path. New goals and term
+construction keep their existing lowering rules.
 Structural loop-effect scopes may restore an already allocated retired cursor
 for provenance, but cannot invent a branch identity; the kernel also refuses
 to retire their frontier until its loop-effect goal is checked closed.

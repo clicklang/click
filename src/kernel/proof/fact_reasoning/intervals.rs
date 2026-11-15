@@ -318,7 +318,7 @@ mod tests {
         let (goal, _) = inputs(MachineBinaryOp::Add, 1);
         let x = observe(MachineTerm::Variable(Variable(987_701)));
         for (value, lower) in [(i128::MAX, true), (i128::MIN, false)] {
-            let endpoint: SharedIntegerTerm = IntegerTerm::Constant(BigInt::from(value)).into();
+            let endpoint: SharedIntegerTerm = IntegerTerm::Constant(value.into()).into();
             let (a, b) = if lower {
                 (endpoint, x.clone())
             } else {

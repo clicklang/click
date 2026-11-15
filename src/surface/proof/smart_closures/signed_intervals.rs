@@ -121,7 +121,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut identities = Vec::new();
         let mut pending_identities =
             Vec::<(ClickProposition, [ClickProposition; 2], ClickProposition)>::new();
-        for node in &certificate.nodes {
+        let last_interval = certificate.nodes.iter().rposition(|node| {
+            crate::instrumentation::record_deterministic_work(1);
+            matches!(
+                node,
+                SignedArithmeticStep::IntervalFromAffine { .. }
+                    | SignedArithmeticStep::IntervalFromAffineDirect { .. }
+                    | SignedArithmeticStep::IntervalAtom { .. }
+                    | SignedArithmeticStep::IntervalIntersect { .. }
+                    | SignedArithmeticStep::IntervalAdd { .. }
+                    | SignedArithmeticStep::IntervalSubtract { .. }
+                    | SignedArithmeticStep::IntervalMultiply { .. }
+                    | SignedArithmeticStep::IntervalAddBounded { .. }
+                    | SignedArithmeticStep::IntervalRemainder { .. }
+                    | SignedArithmeticStep::IntervalRemainderAdd { .. }
+                    | SignedArithmeticStep::IntervalShiftLeft { .. }
+                    | SignedArithmeticStep::IntervalArithmeticShiftRight { .. }
+                    | SignedArithmeticStep::IntervalBitwiseAnd { .. }
+                    | SignedArithmeticStep::IntervalNarrowedCast { .. }
+            )
+        });
+        for (node_index, node) in certificate.nodes.iter().enumerate() {
             crate::instrumentation::record_deterministic_work(1);
             let mut inputs = Vec::new();
             let mut refs = Vec::new();
@@ -504,6 +524,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         }
                     }
                     pending_identities.push((domain, bounds, eq(observed(&term), exact)));
+                }
+                // The final operation can close the original goal directly
+                // from its children's bounds. Avoid publishing an unused
+                // pair of native endpoints and then restating that same goal.
+                if last_interval == Some(node_index)
+                    && let Ok(closed) = proof
+                        .driver()
+                        .apply_step(ProofStep::NormalizeUsing(inputs.clone()))
+                    && closed.focused_discharged()
+                {
+                    return Ok(Some(closed));
                 }
                 let lower = le(number(lo), observed(&term));
                 let upper = le(observed(&term), number(hi));

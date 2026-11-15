@@ -154,7 +154,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     else {
                         return Ok(None);
                     };
-                    return Ok(observe(&next));
+                    // The complete native domain must be an explicit fact
+                    // before its observation becomes a theorem argument.
+                    let domain = ClickProposition::Defined {
+                        expression: operation.clone(),
+                    };
+                    let scope = next.driver().open_have(domain)?;
+                    let defined = scope.driver().apply_step(ProofStep::Known)?.join()?;
+                    return Ok(observe(&defined));
                 }
                 // An unsigned operation that does not wrap: a sum at most
                 // the type's maximum, a difference whose subtrahend is at
@@ -1732,7 +1739,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     base.lower_cited_surface_proposition(&defined, "signed read domain")?;
                 if matches!(kernel, Proposition::MemoryReadDefined { .. }) {
                     let scope = base.driver().open_have(defined)?;
-                    base = scope.driver().apply_step(ProofStep::Normalize)?.join()?;
+                    let closed = scope
+                        .driver()
+                        .apply_step(ProofStep::Known)
+                        .or_else(|_| scope.driver().apply_step(ProofStep::Normalize))?;
+                    base = closed.join()?;
                 }
             }
         }

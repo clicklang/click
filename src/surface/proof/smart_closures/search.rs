@@ -1725,6 +1725,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .map(|fact| (fact.clone(), bound.clone())),
                 );
             }
+            if machine.ty().is_signed()
+                && !conversion
+                && let Some(expression) = integer_composition::observed_argument(&spelled_observed)
+            {
+                let scope = proof
+                    .driver()
+                    .open_have(ClickProposition::Defined { expression })?;
+                proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
+            }
             let identity = ClickProposition::Comparison {
                 left: spelled_observed,
                 operator: ComparisonOperator::Equal,

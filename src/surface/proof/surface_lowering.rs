@@ -695,6 +695,31 @@ impl<'a> Proof<'a> {
         {
             return Ok(retained.clone());
         }
+        // A pure proof has one immutable program state. Reuse a checked
+        // local citation in that state, rather than capturing its native
+        // expression again at every ordinary arithmetic step. Shadowed
+        // names and ambiguous mappings still take the fresh-lowering path.
+        // This is citation lookup, not fact-dependent term construction.
+        if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
+            let mut names = BTreeSet::new();
+            collect_click_proposition_referenced_names(surface, &mut names);
+            let goal_bindings = self
+                .proposition_obligation()
+                .map(|goal| &goal.surface_bindings);
+            let rebound = names.iter().any(|name| {
+                goal_bindings.is_some_and(|bindings| bindings.get(name).is_some())
+                    || self.local_binding(name).is_some()
+                    || self.local_integer_values().get(name).is_some()
+                    || self.local_algebraic_values().get(name).is_some()
+            });
+            crate::instrumentation::record_deterministic_work(1);
+            if !rebound
+                && let Some(retained) = self.local_surface_facts().unique_kernel(surface)
+                && self.facts().contains(retained)
+            {
+                return Ok(retained.clone());
+            }
+        }
         let surface = self.substitute_goal_surface_bindings_in_proposition(surface)?;
         if let Some(goal) = self.proposition_obligation()
             && let Some(retained) =
@@ -995,4 +1020,10 @@ impl<'a> Proof<'a> {
             parameter_types: parameter_types.clone(),
         })
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/surface/proof/surface_lowering/tests.rs");
 }

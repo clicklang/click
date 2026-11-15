@@ -45,7 +45,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let kernel = proof.lower_cited_surface_proposition(&domain, "signed operand domain")?;
             if matches!(kernel, Proposition::MemoryReadDefined { .. }) {
                 let scope = proof.driver().open_have(domain.clone())?;
-                let closed = scope.driver().apply_step(ProofStep::Normalize)?;
+                let closed = scope
+                    .driver()
+                    .apply_step(ProofStep::Known)
+                    .or_else(|_| scope.driver().apply_step(ProofStep::Normalize))?;
                 proof = closed.join()?;
                 listed.push(domain);
             }

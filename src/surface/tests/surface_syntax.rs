@@ -2212,7 +2212,8 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
         .expect("deep arithmetic should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
-    verify_click_theorems(&rechecked).expect("deep expanded certificate should recheck");
+    crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
+        .expect("deep ordinary expansion should replay without search");
 
     let overflowing = "theorem overflowing_intermediate(n: int32) {
         requires n == 1;

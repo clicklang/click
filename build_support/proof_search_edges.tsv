@@ -241,7 +241,7 @@ src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::disequality_
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::equality_by_bounds	driver	6
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::equality_by_bounds	try_arithmetic_fact_closure	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::equality_by_bounds	with_goal_operation_identities	1
-src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::establish_carried_arithmetic	driver	5
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::establish_carried_arithmetic	driver	7
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::establish_carried_arithmetic	prove_stated_fact	5
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::prove_stated_fact	driver	2
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::prove_stated_fact	try_arithmetic_fact_closure	1
@@ -294,7 +294,7 @@ src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_de
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	try_direct_logical_closure	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	try_signed_definedness_closure	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	try_solve_closure	1
-src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_bounds	driver	3
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_bounds	driver	4
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	signed_operand_bound_premises	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	try_signed_definedness_after_operand_substitution	2
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	try_signed_definedness_bounds	1
@@ -322,7 +322,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::extract_special_c
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::extract_special_conjunct_premises	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::increment_headroom_premises	available_surface_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::proposed_surface_goal	surface_fact_raw_for_purpose	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	driver	6
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	driver	8
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	prove_product_bound_from_ranges	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_product_bound_from_ranges	driver	5
@@ -670,7 +670,7 @@ src/surface/proof/driver/claims.rs	driver	::apply_post_execution_arithmetic_usin
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	apply_integer_composition	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_recorded_footprint_preservation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_recorded_footprint_preservation	driver	1
-src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	14
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	15
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	driver	7
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_integer_composition_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_signed_interval_using	1
@@ -692,4 +692,4 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_signed_definedness_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_signed_definedness_bounds	1
 src/surface/proof/driver/claims.rs	driver	::apply_post_execution_arithmetic_using	try_signed_definedness_bounds	1
-src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_definedness_by_bounds	driver	2
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_definedness_by_bounds	driver	3
