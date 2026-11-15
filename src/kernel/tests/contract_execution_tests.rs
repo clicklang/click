@@ -1287,7 +1287,7 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
 }
 
 #[test]
-fn signed_addition_matches_interval_facts_across_unchanged_snapshots() {
+fn signed_addition_matches_interval_facts_across_unchanged_states() {
     let cell = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(660)), 4),
@@ -1590,6 +1590,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1712,6 +1713,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1791,6 +1793,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1856,6 +1859,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1940,6 +1944,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -2020,6 +2025,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5224,6 +5230,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5312,6 +5319,7 @@ fn opaque_rule_environment(function: ProgramFunction) -> ExecutionEnvironment {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5442,6 +5450,7 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
             .with_verified_function_rule(VerifiedFunctionRule {
                 pointer_result: None,
                 function: other,
+                concrete_loop_exits: None,
                 loop_semantics: LoopSemantics::Verify,
                 checked_callees: None,
                 applied_tactics: Default::default(),
@@ -5864,7 +5873,7 @@ fn an_outer_locals_address_survives_an_inner_scope() {
     );
 }
 
-fn path_exists_at_snapshot(
+fn path_exists_at_program_point(
     ty: &AlgebraicType,
     binder: u64,
     argument: u64,
@@ -5913,10 +5922,10 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
         },
         int32(1),
     );
-    let fact = path_exists_at_snapshot(&ty, 100, 100, before.clone(), 0);
+    let fact = path_exists_at_program_point(&ty, 100, 100, before.clone(), 0);
     let facts = PureFactContext::new().assume_proposition(fact);
     let proves = |goal| crate::kernel::PureFactContext::settles_exactly(&facts, &goal);
-    assert!(proves(path_exists_at_snapshot(
+    assert!(proves(path_exists_at_program_point(
         &ty,
         200,
         200,
@@ -5924,15 +5933,21 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
         0
     )));
     assert!(
-        !proves(path_exists_at_snapshot(&ty, 200, 200, after, 0)),
+        !proves(path_exists_at_program_point(&ty, 200, 200, after, 0)),
         "a changed graph is not alpha renaming"
     );
     assert!(
-        !proves(path_exists_at_snapshot(&ty, 200, 100, before.clone(), 0)),
+        !proves(path_exists_at_program_point(
+            &ty,
+            200,
+            100,
+            before.clone(),
+            0
+        )),
         "a free path is not the existential binder"
     );
     assert!(
-        !facts.proves_atomic_without_search(&path_exists_at_snapshot(
+        !facts.proves_atomic_without_search(&path_exists_at_program_point(
             &ty,
             200,
             100,
@@ -5942,11 +5957,17 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
         "the atomic existential rule must not match a free path either"
     );
     assert!(
-        !proves(path_exists_at_snapshot(&ty, 200, 200, before.clone(), 1)),
+        !proves(path_exists_at_program_point(
+            &ty,
+            200,
+            200,
+            before.clone(),
+            1
+        )),
         "the endpoint must match"
     );
     assert!(
-        !proves(path_exists_at_snapshot(
+        !proves(path_exists_at_program_point(
             &AlgebraicType::parameter("OtherPath".into()),
             200,
             200,
@@ -6011,7 +6032,7 @@ fn conditional_path_universal(
         var,
         sort,
         body,
-    } = path_exists_at_snapshot(ty, binder, binder, memory, target)
+    } = path_exists_at_program_point(ty, binder, binder, memory, target)
     else {
         unreachable!()
     };
@@ -6035,7 +6056,7 @@ fn conditional_path_universal(
 }
 
 #[test]
-fn certification_keeps_conditional_universal_guards_snapshots_and_sorts() {
+fn certification_keeps_conditional_universal_guards_states_and_sorts() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = AlgebraicType::parameter("Path".into());
     let memory = Memory::new().with_block("graph", 4);

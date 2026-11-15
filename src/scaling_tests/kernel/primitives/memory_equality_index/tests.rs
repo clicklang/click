@@ -21,16 +21,16 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         };
         let before = Memory::new();
         let read = |context: &PureFactContext, memory: &Memory, address: &Pointer| {
-            let snapshot = crate::kernel::intern_memory_ref(memory);
+            let retained_state = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
-                &snapshot,
+                &retained_state,
                 address,
                 LoadKind::Int32,
                 C_POINTER_BYTE_WIDTH,
-                &snapshot,
+                &retained_state,
             );
             let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
-            context.register_pointer_read(&pointer, &snapshot, address);
+            context.register_pointer_read(&pointer, &retained_state, address);
             pointer
         };
         let source = read(&PureFactContext::new(), &before, &field);
@@ -842,4 +842,72 @@ fn prepared_write_and_storage_refusals_do_not_scan_owner_buckets() {
         samples.iter().all(|work| *work <= samples[0] + 32),
         "{samples:?}"
     );
+}
+
+fn check_constant_owner_overlap_population(views: bool, late: bool) {
+    let mut samples = Vec::new();
+    for count in [4_u32, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let q = Pointer::symbolic(Variable(8_770_000));
+        let p = Pointer::symbolic(Variable(8_770_001));
+        let empty = PureFactContext::new();
+        let facts = empty
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        let range = |base: Pointer, a: u32, b: u32| {
+            MemoryRange::new_with_element_width(base, a.into(), b.into(), 1)
+        };
+        let mut frame = ResourceContext::new_with_equalities(if late { &empty } else { &facts });
+        for index in 0..count {
+            let footprint = range(q.clone(), index * 8, index * 8 + 4);
+            frame = frame.unchecked_with_fact(if views && index > 0 {
+                ResourceFact::view_memory(footprint)
+            } else {
+                ResourceFact::own_memory(footprint)
+            });
+        }
+        frame.synchronize_memory_equalities(if late { &empty } else { &facts });
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _operation = crate::kernel::search::FastOperationScope::enter(
+                "constant indexed owner insertion",
+            );
+            let added = ResourceFact::own_memory(range(p.clone(), 4, 8));
+            let grown = frame
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization([added], &facts)
+                .unwrap();
+            assert_eq!(grown.facts().len(), count as usize + 1);
+            assert!(
+                frame
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [ResourceFact::own_memory(range(p.clone(), 1, 3))],
+                        &facts
+                    )
+                    .is_err()
+            );
+        });
+        assert_eq!(frame.facts().len(), count as usize);
+        samples.push(work);
+    }
+    eprintln!("constant owner overlap, views={views}: {samples:?}");
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 48),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn constant_owner_overlap_does_not_scan_related_owners() {
+    check_constant_owner_overlap_population(false, false);
+}
+
+#[test]
+fn constant_owner_overlap_does_not_scan_covering_views() {
+    check_constant_owner_overlap_population(true, false);
+}
+
+#[test]
+fn constant_owner_overlap_merges_class_payload_without_scanning_it() {
+    check_constant_owner_overlap_population(false, true);
 }

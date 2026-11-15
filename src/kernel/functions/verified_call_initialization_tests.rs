@@ -49,6 +49,7 @@ fn apply(
         ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),

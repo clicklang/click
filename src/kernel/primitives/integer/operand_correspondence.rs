@@ -8,8 +8,8 @@ use crate::persistent::PersistentMap;
 enum CorrespondencePolicy {
     LoadAtoms,
     ConditionLoads,
-    // Only a 32-bit ring-operator path may frame changed read snapshots.
-    Snapshot(bool),
+    // Only a 32-bit ring-operator path may frame changed read states.
+    MemoryState(bool),
 }
 
 type Key = (MachineIntegerType, CorrespondencePolicy, u64, u64);
@@ -40,12 +40,12 @@ pub(crate) fn shared_condition_operand_leaf_pairs(
     shared_operand_leaf_pairs_with_policy(format, left, right, CorrespondencePolicy::ConditionLoads)
 }
 
-pub(crate) fn shared_snapshot_read_pairs(left: &KernelTerm, right: &KernelTerm) -> Option<Pairs> {
+pub(crate) fn shared_state_read_pairs(left: &KernelTerm, right: &KernelTerm) -> Option<Pairs> {
     shared_operand_leaf_pairs_with_policy(
         MachineIntegerType::Int32,
         left,
         right,
-        CorrespondencePolicy::Snapshot(true),
+        CorrespondencePolicy::MemoryState(true),
     )
 }
 
@@ -56,7 +56,7 @@ pub(crate) fn shared_machine_syntax_equal(left: &KernelTerm, right: &KernelTerm)
         MachineIntegerType::Int32,
         left,
         right,
-        CorrespondencePolicy::Snapshot(false),
+        CorrespondencePolicy::MemoryState(false),
     )
     .is_some()
 }
@@ -111,6 +111,32 @@ fn shared_operand_leaf_pairs_with_policy(
                 pairs.insert(key, equal.then(Pairs::default));
                 continue;
             }
+            if matches!(left.node(), KernelTermNode::FloatConvert { .. })
+                || matches!(right.node(), KernelTermNode::FloatConvert { .. })
+            {
+                let equal = match (left.node(), right.node()) {
+                    (
+                        KernelTermNode::FloatConvert {
+                            source: a,
+                            destination: at,
+                            operand: av,
+                        },
+                        KernelTermNode::FloatConvert {
+                            source: b,
+                            destination: bt,
+                            operand: bv,
+                        },
+                    ) => {
+                        a == b
+                            && at == bt
+                            && super::observation_identity::normalize(av)
+                                == super::observation_identity::normalize(bv)
+                    }
+                    _ => false,
+                };
+                pairs.insert(key, equal.then(Pairs::default));
+                continue;
+            }
             let (a, b) = (V(left), V(right));
             if a.fold().is_some()
                 || b.fold().is_some()
@@ -128,7 +154,7 @@ fn shared_operand_leaf_pairs_with_policy(
             if (a.variable().is_some() || a.read().is_some())
                 && (b.variable().is_some() || b.read().is_some())
             {
-                let result = if let P::Snapshot(frame) = policy {
+                let result = if let P::MemoryState(frame) = policy {
                     let a_source = a.read_source().expect("selected atom");
                     let b_source = b.read_source().expect("selected atom");
                     if a_source == b_source {
@@ -153,7 +179,7 @@ fn shared_operand_leaf_pairs_with_policy(
                 continue;
             }
             if let (Some(a), Some(b)) = (a.literal(), b.literal()) {
-                if matches!(policy, P::Snapshot(_)) {
+                if matches!(policy, P::MemoryState(_)) {
                     pairs.insert(key, (a == b).then(Pairs::default));
                     continue;
                 }
@@ -171,7 +197,7 @@ fn shared_operand_leaf_pairs_with_policy(
                 (a.binary(), b.binary())
             {
                 let child_policy = match policy {
-                    P::Snapshot(frame) => P::Snapshot(
+                    P::MemoryState(frame) => P::MemoryState(
                         frame
                             && af.format().bits() == 32
                             && matches!(
@@ -189,7 +215,7 @@ fn shared_operand_leaf_pairs_with_policy(
                 (af == bf && ao == bo).then_some(vec![(
                     af,
                     match policy {
-                        P::Snapshot(_) => P::Snapshot(false),
+                        P::MemoryState(_) => P::MemoryState(false),
                         P::LoadAtoms | P::ConditionLoads => policy,
                     },
                     av,
@@ -199,7 +225,7 @@ fn shared_operand_leaf_pairs_with_policy(
                 (ae == be && af == bf && at == bt).then_some(vec![(
                     af,
                     match policy {
-                        P::Snapshot(_) => P::Snapshot(false),
+                        P::MemoryState(_) => P::MemoryState(false),
                         P::LoadAtoms | P::ConditionLoads => policy,
                     },
                     av,
@@ -211,7 +237,7 @@ fn shared_operand_leaf_pairs_with_policy(
                 let child_policy = if matches!(policy, P::ConditionLoads) {
                     policy
                 } else {
-                    P::Snapshot(false)
+                    P::MemoryState(false)
                 };
                 (matches!(policy, P::ConditionLoads) || ac.syntax_equal(bc)).then_some(vec![
                     (format, child_policy, al, bl),
@@ -348,6 +374,22 @@ pub(crate) fn machine_operand_syntax_cmp(
             Task::Pair(a, b) => (a, b),
         };
         crate::instrumentation::record_deterministic_work(1);
+        if matches!(a, V::Shared(root) if matches!(root.node(), KernelTermNode::FloatConvert { .. }))
+            || matches!(b, V::Shared(root) if matches!(root.node(), KernelTermNode::FloatConvert { .. }))
+        {
+            // Native ordering is needed only at this explicit candidate-ordering boundary.
+            let native = |view: V<'_>| match view {
+                V::Legacy(value) => value.clone(),
+                V::Shared(root) => {
+                    crate::kernel::KernelTermExport::machine(root).expect("machine syntax")
+                }
+            };
+            let order = native(a).cmp(&native(b));
+            if !order.is_eq() {
+                return order;
+            }
+            continue;
+        }
         if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
             let order = a.cmp(b);
             if !order.is_eq() {

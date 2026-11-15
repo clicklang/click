@@ -135,7 +135,7 @@ fn composite_reader(name: &str) -> ProgramFunction {
         vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
-        ResourceSnapshot::Entry,
+        ResourceStateSource::Entry,
     )
     .unwrap();
     let definition = CompositeResourceDefinition::new(
@@ -222,6 +222,7 @@ fn environment(function: &ProgramFunction) -> ExecutionEnvironment {
     ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
         pointer_result: None,
         function: function.clone(),
+        concrete_loop_exits: None,
         loop_semantics: LoopSemantics::Verify,
         checked_callees: None,
         applied_tactics: Default::default(),
@@ -407,7 +408,7 @@ fn composite_reader_with_definition(
         vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
-        ResourceSnapshot::Entry,
+        ResourceStateSource::Entry,
     )
     .unwrap();
     program_function(
@@ -556,7 +557,7 @@ fn adapter_reader(
         vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
-        ResourceSnapshot::Entry,
+        ResourceStateSource::Entry,
     )
     .unwrap();
     program_function(
@@ -835,7 +836,7 @@ fn view_and_produce_reader(name: &str) -> ProgramFunction {
         vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Produce,
-        ResourceSnapshot::Post,
+        ResourceStateSource::Post,
     )
     .unwrap();
     let definition = CompositeResourceDefinition::new(
@@ -866,6 +867,7 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
         ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -1664,6 +1666,7 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: inner,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -2429,7 +2432,7 @@ fn composite_reader_with_mutable_range(
         vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
-        ResourceSnapshot::Entry,
+        ResourceStateSource::Entry,
     )
     .unwrap();
     let definition = CompositeResourceDefinition::new(
@@ -2690,14 +2693,14 @@ fn token_population_reader(name: &str, population: &str) -> ProgramFunction {
         vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Consume,
-        ResourceSnapshot::Entry,
+        ResourceStateSource::Entry,
     )
     .expect("a unit population term");
     let counted = ResourceSpec::quantified(
         crate::kernel::program_expression::variable("n"),
         unit,
         ResourceTransferRole::Consume,
-        ResourceSnapshot::Entry,
+        ResourceStateSource::Entry,
     )
     .expect("a counted population requirement");
     program_function(

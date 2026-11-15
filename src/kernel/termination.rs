@@ -5,6 +5,7 @@ pub(crate) use ordinary::{
 };
 mod execution;
 pub(in crate::kernel) mod loop_evidence;
+mod recursion_authority;
 pub(crate) use loop_evidence::StatementProofInput;
 mod obligations;
 pub(in crate::kernel) use completion::ProgramBodyOwner;
@@ -1614,8 +1615,8 @@ fn collect_spec_program_variables(
                     }
                     SpecExpression::RangeFold { .. } => return Visit::Stop("a range fold"),
                     SpecExpression::Let { .. } => return Visit::Stop("a `let` expression"),
-                    SpecExpression::LoopEntrySnapshot(_) => {
-                        return Visit::Stop("a loop-entry snapshot");
+                    SpecExpression::LoopEntryState(_) => {
+                        return Visit::Stop("a loop-entry state");
                     }
                     SpecExpression::AggregateFieldValue { .. } => {
                         return Visit::Stop("a by-value aggregate field");
@@ -1684,7 +1685,7 @@ pub fn program_function_callees(function: &ProgramFunction) -> BTreeSet<String> 
 }
 
 /// Identity memoization visits a shared summary body once even when distinct
-/// checked theorems apply it at different snapshots. The evidence keeps every
+/// checked theorems apply it at different states. The evidence keeps every
 /// node alive for the traversal; no deep structural key is constructed.
 pub(in crate::kernel) fn checked_statement_calls(
     statement: &ProgramStatement,
@@ -3800,11 +3801,11 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
 /// `Verify`, it may have been summarized, and nothing is granted. Nothing is
 /// granted either unless the certified body's loops are the source body's
 /// loops, shape for shape, since the indices name source loops.
-fn loops_executed_to_exit(
+fn independent_loop_exit_evidence(
     function: &ProgramFunction,
     loop_semantics: LoopSemantics,
     ruled_loops: &BTreeSet<usize>,
-) -> BTreeSet<usize> {
+) -> Arc<loop_evidence::ConcreteLoopExits> {
     let source_body = if contains_natural_control_loop(function.body()) {
         function.body()
     } else {
@@ -3820,9 +3821,9 @@ fn loops_executed_to_exit(
             .zip(&certified_loops)
             .any(|(source, certified)| !same_statement_shape(source, certified))
     {
-        return BTreeSet::new();
+        return loop_evidence::ConcreteLoopExits::independent(source_loops.len(), BTreeSet::new());
     }
-    certified_loops
+    let concrete = certified_loops
         .iter()
         .enumerate()
         .filter(|(index, certified)| {
@@ -3858,7 +3859,49 @@ fn loops_executed_to_exit(
                 && loop_semantics == LoopSemantics::ApplyVerifiedRules
         })
         .map(|(index, _)| index)
+        .collect();
+    loop_evidence::ConcreteLoopExits::independent(source_loops.len(), concrete)
+}
+
+/// Independent API inputs have no ordinary body owner. Adapt those inputs
+/// before generating the proof; an owned rule's retained authority is consumed
+/// directly and never compared with source again.
+pub(in crate::kernel) fn prepare_independent_loop_exits(
+    rules: &[VerifiedFunctionRule],
+    summaries: &BTreeMap<String, Vec<VerifiedLoopRule>>,
+) -> Vec<VerifiedFunctionRule> {
+    rules
+        .iter()
+        .map(|rule| {
+            charge_termination_work(1);
+            let mut rule = rule.clone();
+            if rule.concrete_loop_exits.is_none() {
+                let summarized = summaries
+                    .get(rule.function.name())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|rule| rule.loop_evidence.as_ref().map(|evidence| evidence.index))
+                    .collect();
+                rule.concrete_loop_exits = Some(independent_loop_exit_evidence(
+                    &rule.function,
+                    rule.loop_semantics,
+                    &summarized,
+                ));
+            }
+            rule
+        })
         .collect()
+}
+
+#[cfg(test)]
+fn loops_executed_to_exit(
+    function: &ProgramFunction,
+    semantics: LoopSemantics,
+    rules: &BTreeSet<usize>,
+) -> BTreeSet<usize> {
+    independent_loop_exit_evidence(function, semantics, rules)
+        .concrete
+        .clone()
 }
 
 fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
@@ -4474,91 +4517,19 @@ fn termination_call_graph<'a>(
     (functions, calls)
 }
 
-/// What an expression `decreases` measure asks of the function that declares
-/// it (D6, slice 1: direct self-recursion).
-///
-/// The other two function-level measures are analyses of the body: the
-/// checker walks the recursion paths itself and decides that the named
-/// parameter or resource descends. This one is not. The descent is an
-/// ordinary proof obligation, emitted by the kernel at every application of
-/// this function's contract while this function is being certified, and
-/// discharged in the proof like any other. So the only thing left for this
-/// judgment is to check that those obligations were reachable and complete:
-///
-/// * the certified function's own contract interface carries the measure.
-///   The plan is untrusted and names only a spelling; the interface is what
-///   [`crate::kernel::program_execution_environment_with_recursion_anchor`] reads
-///   to build the anchor, and the certified [`ProgramFunction`] here is the one the
-///   rule was issued for, so a measure present here is a measure that was
-///   anchored. A plan claiming a measure the interface does not carry is a
-///   plan for obligations nobody emitted, and it is refused.
-/// * every recursive edge of this function is a self-call or a call to a
-///   member its own interface names as a recursion peer, and that member
-///   declares an expression measure too. The anchor is read off the same
-///   interface, so a call to a named peer owed the peer's measure below this
-///   function's entry reading; a call to an unnamed member would owe
-///   nothing, and a cycle through it would be certified with no descent, so
-///   it is refused by name. Every member of a component is checked this
-///   way, so every edge of the cycle was ranked, each in the one
-///   lexicographic order all the members' measures share.
-/// * every loop a recursive call sits inside was certified under this function's
-///   anchor. A loop is verified once as its own judgment and then applied as
-///   a summary, so a call the summary swallowed owes nothing at the step that
-///   applies it; what makes it owe the descent is that the loop's own body
-///   was stepped under the anchor. The certified [`VerifiedLoopRule`] records
-///   which anchor that was — the kernel writes it from the environment the
-///   paths were produced in, and the surface has no way to set it — so this
-///   reads the rule, never the plan, which names only a spelling.
-///
-/// Work is the component's own members and this function's own statement
-/// tree; nothing ambient is scanned.
+/// Remaining expression-recursion proof coverage: every enclosing loop
+/// summary must answer for the function's recursion anchor. The declaration,
+/// peer permissions, and measure-kind authority were established at opening
+/// (`recursion_authority`); this operation does not reread those declarations.
+/// Migrating this source/summary walk to the producers is separate work.
 fn check_expression_measure_recursion(
     name: &str,
     source: &str,
+    declaration: &FunctionContractInterface,
     function: &ProgramFunction,
     recursive_callees: &BTreeSet<String>,
-    plans: &BTreeMap<String, FunctionTerminationPlan>,
     loop_rules: &[VerifiedLoopRule],
 ) -> Result<(), TerminationError> {
-    if !function.contract_interface().has_call_ranked_recursion() {
-        return Err(error(format!(
-            "the termination plan ranks `{name}` by the expression measure `{source}`, but the \
-             certified `{name}` carries no declared measure, so no recursive call of it owed a \
-             descent obligation"
-        )));
-    }
-    let peers = function.contract_interface().recursion_peers();
-    for callee in recursive_callees {
-        charge_termination_work(1);
-        if callee == name {
-            continue;
-        }
-        if peers
-            .binary_search_by(|peer| peer.as_str().cmp(callee))
-            .is_err()
-        {
-            return Err(error(format!(
-                "`{name}` declares the expression `decreases` measure `{source}` and is in a \
-                 recursive component with `{callee}`, but its certified interface does not name \
-                 `{callee}` as a recursion peer, so a call to `{callee}` would be ranked by \
-                 nothing"
-            )));
-        }
-    }
-    // Every member of a settled component agrees on its measure kind.
-    for member in std::iter::once(name).chain(recursive_callees.iter().map(String::as_str)) {
-        charge_termination_work(1);
-        if !matches!(
-            plans
-                .get(member)
-                .and_then(|plan| plan.recursive_measure.as_ref()),
-            Some(FunctionTerminationMeasure::Expression(_))
-        ) {
-            return Err(error(
-                "a recursive component cannot mix an expression measure with another measure kind",
-            ));
-        }
-    }
     // A loop is verified once, as its own judgment, and then applied as a
     // summary, so a self-call the summary swallowed owes nothing at the step
     // that applies it. What makes it owe the descent is the loop's own body
@@ -4587,7 +4558,7 @@ fn check_expression_measure_recursion(
                 && rule
                     .recursion_anchor
                     .as_ref()
-                    .is_some_and(|anchor| anchor.ranks(name, function.contract_interface()))
+                    .is_some_and(|anchor| anchor.ranks(name, declaration))
         });
         if !anchored {
             return Err(error(format!(
@@ -4962,8 +4933,9 @@ pub fn program_verified_function_termination_rules(
     declared_diverging: &BTreeSet<String>,
     diverging_contracts: &BTreeSet<String>,
 ) -> Result<TerminationVerdicts, TerminationError> {
+    let partial_rules = prepare_independent_loop_exits(partial_rules, verified_loop_rules);
     obligations::TerminationObligations::generate(
-        partial_rules,
+        &partial_rules,
         plan_entries,
         verified_loop_rules,
         inline_bodies,
@@ -5760,6 +5732,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5953,6 +5926,7 @@ mod local_descent_tests {
             }
             VerifiedFunctionRule {
                 pointer_result: None,
+                concrete_loop_exits: None,
                 loop_semantics: LoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
                 applied_tactics: Default::default(),
@@ -6112,6 +6086,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, parameters, body),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6329,6 +6304,7 @@ mod local_descent_tests {
     fn a_loop_certification_executed_to_its_exit_owes_no_measure() {
         let bare = |name: &str| VerifiedFunctionRule {
             pointer_result: None,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6576,6 +6552,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6598,7 +6575,7 @@ mod local_descent_tests {
         let mut function = ProgramFunction::new(
             ProgramType::Void,
             name,
-            Vec::new(),
+            vec![crate::kernel::program_parameter("n", ProgramType::Int32)],
             ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         );
         if measure {
@@ -6612,6 +6589,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: BTreeSet::from([name.to_string()]),
@@ -6799,6 +6777,7 @@ mod local_descent_tests {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body)
                 .with_recursion_measure(vec![declared_component()]),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -7119,6 +7098,7 @@ mod termination_scaling_tests {
                 Vec::new(),
                 calls_body(callees),
             ),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -7223,6 +7203,7 @@ mod checked_callee_certification_tests {
                 vec![],
                 crate::kernel::program_call("callee", vec![]),
             ),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             applied_tactics: Default::default(),
             checked_callees,

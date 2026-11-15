@@ -368,7 +368,7 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
             crate::kernel::program_expression::int32_literal(1),
         ))
         .with_role(ResourceTransferRole::Produce)
-        .with_snapshot(ResourceSnapshot::Post);
+        .with_state_source(ResourceStateSource::Post);
         let function = program_function(
             ProgramType::Void,
             "produce_one_cell",
@@ -381,6 +381,9 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
             selected.clone(),
         )];
         let execute = || {
+            let _operation = crate::kernel::search::FastOperationScope::enter(
+                "constant produced ownership call",
+            );
             execute_program_function_call_paths(
                 &state,
                 &function,
@@ -426,7 +429,11 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
     eprintln!(
         "produced ownership call axis={axis}, overlap={overlap}, (count,total,lowering): {samples:?}"
     );
-    for (_, _, work) in &samples {
+    for (_, total, work) in &samples {
+        assert!(
+            *total <= samples[0].1 + 32,
+            "whole call scans {axis}: {samples:?}"
+        );
         assert!(
             *work <= samples[0].2 + 16,
             "return construction scans {axis}: {samples:?}"

@@ -112,6 +112,10 @@ fn syntax_cmp(left: &KernelTerm, right: &KernelTerm) -> std::cmp::Ordering {
                 to: *destination,
                 value: zero(),
             },
+            KernelTermNode::FloatConvert { .. } => {
+                // This selected native-order boundary preserves pure-call ordering.
+                KernelTermExport::machine(node).expect("float conversion order")
+            }
             _ => leaf(node).expect("retained machine leaf"),
         }
     }

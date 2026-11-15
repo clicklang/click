@@ -148,7 +148,7 @@ What stays opaque:
 - **Assembling bytes outside declared uint32 storage.** Untyped allocations,
   arrays, wider integers and other scalar kinds do not acquire a wider typed
   value from separate byte cells.
-- **Specification loads** read a snapshot's cells without the byte view; the
+- **Specification loads** read a state's cells without the byte view; the
   view applies to C execution only.
 
 ## Initializing a declared uint32 through bytes
@@ -185,7 +185,7 @@ and `produces p[0..4]` transfer. Its body must write every byte; ownership and
 value postconditions alone do not initialize storage. When the selected output
 clause returns all four bytes initialized, the shared call transition supplies
 an equation between the declared uint32 observation and its four little-endian
-unsigned byte reads at that snapshot. The equation keeps load terms unchanged
+unsigned byte reads at that state. The equation keeps load terms unchanged
 and adds no initialization or authority of its own. Four byte postconditions
 can then establish the exact word without inlining the callee.
 
@@ -317,7 +317,7 @@ The copied source cells are found with one range query over the copied
 block and extent (`representation_copy_cell_moves`), and the byte view's
 containing cell with a query over the at most seven constant offsets below
 the access (`containing_integer_cell`). Neither scans memory, other blocks,
-or old snapshots. Each planted cell pays the ordinary `Memory::store` cost.
+or old states. Each planted cell pays the ordinary `Memory::store` cost.
 The regressions measure deterministic work at four or more sizes, under the
 [efficiency contract](verification-efficiency.md):
 

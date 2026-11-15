@@ -5,6 +5,7 @@ mod expression;
 mod retained_expression;
 pub(in crate::kernel) use retained_expression::evaluate_expression_value_paths;
 mod memory_loads;
+pub(in crate::kernel) use memory_loads::operand_mentions_a_memory_load;
 mod operators;
 pub(in crate::kernel) mod pointer_tags;
 mod statements;

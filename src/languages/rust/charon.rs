@@ -72,23 +72,20 @@ pub(super) fn extract_crate(
     };
     runtime.check(root, limits)?;
     let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
-    // Compile a private immutable snapshot, so even include_bytes! inputs cannot
+    // Compile a private immutable source copy, so even include_bytes! inputs cannot
     // change between dep-info, translation, and the final source recheck.
-    let snapshot = temp.path().join("sources");
-    let mut snapshot_source = None;
+    let source_copy = temp.path().join("sources");
+    let mut copied_source = None;
     if let Some(c) = crate_config {
-        let files = sources.ok_or("missing crate source snapshot")?;
+        let files = sources.ok_or("missing crate source copy")?;
         for name in &c.files {
-            let target = snapshot.join(name);
+            let target = source_copy.join(name);
             std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
-            std::fs::write(
-                &target,
-                files.get(name).ok_or("missing crate snapshot file")?,
-            )
-            .map_err(|e| e.to_string())?;
+            std::fs::write(&target, files.get(name).ok_or("missing crate source file")?)
+                .map_err(|e| e.to_string())?;
         }
-        snapshot_source = Some(
-            snapshot.join(
+        copied_source = Some(
+            source_copy.join(
                 source
                     .strip_prefix(root)
                     .map_err(|_| "crate root escapes inputs")?,
@@ -96,11 +93,11 @@ pub(super) fn extract_crate(
         );
     }
     let root = if crate_config.is_some() {
-        snapshot.as_path()
+        source_copy.as_path()
     } else {
         root
     };
-    let source = snapshot_source.as_deref().unwrap_or(source);
+    let source = copied_source.as_deref().unwrap_or(source);
     let flags = crate_config.map_or_else(|| profile::get().flags.clone(), |c| c.flags());
     if let Some(c) = crate_config {
         let dep = temp.path().join("inputs.d");
@@ -4118,7 +4115,7 @@ mod tests {
                                 block.statements.remove(index);
                             } else {
                                 // A second lifetime cannot retain initialized bytes
-                                // or readable snapshots from its predecessor.
+                                // or readable states from its predecessor.
                                 block.statements.insert(index + 1, S::BeginStorage { local: "array".into() });
                             }
                             changed = true;
@@ -4740,27 +4737,32 @@ mod tests {
             .iter_mut()
             .find(|f| f.name == "borrowed_first")
             .unwrap();
+        // The field borrow is a statement's value or, passed to a call, the
+        // call's argument.
         let mut changed = false;
-        for statement in function
-            .mir
-            .as_mut()
-            .unwrap()
-            .blocks
-            .iter_mut()
-            .flat_map(|b| &mut b.statements)
-        {
-            if let S::Assign {
-                value:
-                    E::Borrow {
-                        value_type: Type::Reference { mutable, .. },
-                        place,
-                    },
-                ..
-            } = statement
-                && matches!(place.as_ref(), E::Field { .. })
-            {
-                *mutable = true;
-                changed = true;
+        for block in &mut function.mir.as_mut().unwrap().blocks {
+            let arguments = match &mut block.terminator {
+                T::Call { arguments, .. } => arguments.iter_mut().collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            let values = block
+                .statements
+                .iter_mut()
+                .filter_map(|statement| match statement {
+                    S::Assign { value, .. } => Some(value),
+                    _ => None,
+                })
+                .chain(arguments);
+            for value in values {
+                if let E::Borrow {
+                    value_type: Type::Reference { mutable, .. },
+                    place,
+                } = value
+                    && matches!(place.as_ref(), E::Field { .. })
+                {
+                    *mutable = true;
+                    changed = true;
+                }
             }
         }
         assert!(changed);

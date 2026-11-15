@@ -138,7 +138,7 @@ fn separate_round_trips_without_generating_extent_obligations() {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 written, &PureFactContext::new(),
                 ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
-                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::default()),
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::default()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
                 FixedStateLoweringOptions::default(),
             ).unwrap();
@@ -156,20 +156,20 @@ fn relower_written_proposition(
     surface: &ClickProposition,
     state: &ExecutionState,
 ) -> Result<Proposition, String> {
-    relower_written_proposition_with_snapshots(surface, state, state, &RecordedSnapshots::default())
+    relower_written_proposition_with_states(surface, state, state, &RecordedStates::default())
 }
 
-fn relower_written_proposition_with_snapshots(
+fn relower_written_proposition_with_states(
     surface: &ClickProposition,
     pre_state: &ExecutionState,
     state: &ExecutionState,
-    recorded_snapshots: &RecordedSnapshots,
+    recorded_states: &RecordedStates,
 ) -> Result<Proposition, String> {
     crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
         surface,
         &PureFactContext::new(),
         ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
-        FixedStateFrame::new(pre_state, state, None, recorded_snapshots),
+        FixedStateFrame::new(pre_state, state, None, recorded_states),
         SpecDefinitions::new(
             &PredicateEnvironment::new(&[]),
             &ClickFunctionEnvironment::new(&[]),
@@ -450,11 +450,11 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
         )
         .expect("qualified static reads keep the selected epochs");
         assert!(format!("{spelled:?}").contains("Old("), "{spelled:?}");
-        let lowered = relower_written_proposition_with_snapshots(
+        let lowered = relower_written_proposition_with_states(
             &spelled,
             &entry,
             &post,
-            &RecordedSnapshots::new(),
+            &RecordedStates::new(),
         )
         .unwrap();
         assert_eq!(resolve(&lowered), resolve(&goal), "{spelled:?}");
@@ -1570,25 +1570,25 @@ fn external_argument_range_loadability_round_trips_through_the_range_form() {
 }
 
 #[test]
-fn quantified_loadability_uses_saved_snapshot() {
-    let (parameters, arguments, snapshot) = external_byte_range_caller();
+fn quantified_loadability_uses_saved_state() {
+    let (parameters, arguments, retained_state) = external_byte_range_caller();
     let length = MachineTerm::Variable(Variable(1));
     let requirement = external_byte_range_requirement(Variable(3_100_000), &length);
-    let post = snapshot.clone().with_memory(
-        snapshot
+    let post = retained_state.clone().with_memory(
+        retained_state
             .memory()
             .clone()
             .with_block("later-unrelated-write", 1),
     );
-    let selector = SnapshotSelector::Mark("quantified_viewability_head".into());
-    let spelled = synthesize_surface_proposition_at_entry_post_and_snapshot(
+    let selector = ProgramPointSelector::Mark("quantified_viewability_head".into());
+    let spelled = synthesize_surface_proposition_at_entry_post_and_state(
         &requirement,
         ParameterBinding::new(&parameters, &arguments),
         &post,
         &post,
-        Some((&snapshot, &selector)),
+        Some((&retained_state, &selector)),
     )
-    .expect("the quantified loadability goal must retain its saved snapshot");
+    .expect("the quantified loadability goal must retain its saved state");
 
     let ClickProposition::ForAll { body, .. } = &spelled else {
         panic!("the saved requirement is one universal: {spelled:?}");
@@ -1608,9 +1608,9 @@ fn quantified_loadability_uses_saved_snapshot() {
         "the loadability leaf must be read at the saved loop state: {spelled:?}"
     );
 
-    let mut snapshots = RecordedSnapshots::new();
-    snapshots.insert(selector, snapshot);
-    let lowered = relower_written_proposition_with_snapshots(&spelled, &post, &post, &snapshots)
+    let mut retained_states = RecordedStates::new();
+    retained_states.insert(selector, retained_state);
+    let lowered = relower_written_proposition_with_states(&spelled, &post, &post, &retained_states)
         .expect("the saved quantified spelling must lower at the later state");
     assert_eq!(
         crate::kernel::proof::proposition_identity_key(&lowered),
@@ -1831,7 +1831,7 @@ fn function_call_synthesis_scales_with_named_arguments() {
 }
 
 #[test]
-fn function_array_synthesis_requires_the_exact_named_snapshot() {
+fn function_array_synthesis_requires_the_exact_named_state() {
     let pointer = ProgramValue::pointer(Pointer {
         block: PointerBlock::Concrete("array".into()),
         offset: PointerOffsetTerm::Constant(0),
@@ -1914,11 +1914,11 @@ fn function_array_argument_keeps_its_recorded_memory_after_other_writes() {
         pointer,
         element_type: ProgramType::Int32,
     }];
-    let selector = SnapshotSelector::from(ProgramPointRef {
+    let selector = ProgramPointSelector::from(ProgramPointRef {
         region: CodeRegionRef::Region(0),
         kind: ProgramPointKind::Exit,
     });
-    let mut points = RecordedSnapshots::new();
+    let mut points = RecordedStates::new();
     points.insert(selector.clone(), historical);
     let _points = SynthesisRecordedPointsScope::enter(&points);
     let _entry =
@@ -2053,7 +2053,7 @@ fn load_defining_equation_round_trips() {
 }
 
 #[test]
-fn load_defining_equation_uses_entry_snapshot() {
+fn load_defining_equation_uses_entry_state() {
     let pointer = Pointer {
         block: PointerBlock::Concrete("load-definition-entry".into()),
         offset: PointerOffsetTerm::Constant(0),
@@ -2096,16 +2096,16 @@ fn load_defining_equation_uses_entry_snapshot() {
     )
     .expect("entry load-defining equation must be spellable");
     let ClickProposition::At {
-        selector: SnapshotSelector::ProgramPoint(point),
+        selector: ProgramPointSelector::ProgramPoint(point),
         proposition,
     } = &spelled
     else {
-        panic!("a changed post-state must retain the entry snapshot: {spelled:?}");
+        panic!("a changed post-state must retain the entry state: {spelled:?}");
     };
     assert_eq!(point.region, CodeRegionRef::Function);
     assert_eq!(point.kind, ProgramPointKind::Entry);
     let ClickProposition::Comparison { left, right, .. } = proposition.as_ref() else {
-        panic!("the entry snapshot must contain the defining equality: {spelled:?}");
+        panic!("the entry state must contain the defining equality: {spelled:?}");
     };
     assert_ne!(left, right, "the entry spelling must not be tautological");
     let lowered = relower_written_proposition(&spelled, &entry).unwrap();
@@ -2116,7 +2116,7 @@ fn load_defining_equation_uses_entry_snapshot() {
 }
 
 #[test]
-fn load_defining_equation_uses_saved_snapshot() {
+fn load_defining_equation_uses_saved_state() {
     let pointer = Pointer {
         block: PointerBlock::Concrete("load-definition-saved".into()),
         offset: PointerOffsetTerm::Constant(0),
@@ -2133,16 +2133,16 @@ fn load_defining_equation_uses_saved_snapshot() {
         crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
-    let snapshot = base.with_local(
+    let retained_state = base.with_local(
         "result",
         ProgramValue::Int32(MachineTerm::Variable(variable)),
     );
-    let entry = snapshot.clone().with_memory(
+    let entry = retained_state.clone().with_memory(
         Memory::new()
             .with_block("load-definition-saved", 4)
             .store(pointer.clone(), int32(1)),
     );
-    let post = snapshot.clone().with_memory(
+    let post = retained_state.clone().with_memory(
         Memory::new()
             .with_block("load-definition-saved", 4)
             .store(pointer, int32(2)),
@@ -2156,36 +2156,35 @@ fn load_defining_equation_uses_saved_snapshot() {
         },
         true,
     );
-    let selector = SnapshotSelector::Mark("saved_load_epoch".into());
-    let spelled = synthesize_surface_proposition_at_entry_post_and_snapshot(
+    let selector = ProgramPointSelector::Mark("saved_load_epoch".into());
+    let spelled = synthesize_surface_proposition_at_entry_post_and_state(
         &requirement,
         ParameterBinding::default(),
         &entry,
         &post,
-        Some((&snapshot, &selector)),
+        Some((&retained_state, &selector)),
     )
-    .expect("the explicitly saved load snapshot must be spellable");
+    .expect("the explicitly saved load state must be spellable");
     let ClickProposition::At {
         selector: actual,
         proposition,
     } = &spelled
     else {
-        panic!("a changed entry and post-state must use the saved snapshot: {spelled:?}");
+        panic!("a changed entry and post-state must use the saved state: {spelled:?}");
     };
     assert_eq!(actual, &selector);
     let ClickProposition::Comparison { left, right, .. } = proposition.as_ref() else {
-        panic!("the saved snapshot must contain the defining equality: {spelled:?}");
+        panic!("the saved state must contain the defining equality: {spelled:?}");
     };
     assert_ne!(left, right, "the saved spelling must not be tautological");
-    let mut recorded_snapshots = RecordedSnapshots::new();
-    recorded_snapshots.insert(selector, snapshot);
-    let lowered =
-        relower_written_proposition_with_snapshots(&spelled, &post, &post, &recorded_snapshots)
-            .expect("the saved mark must lower through its recorded snapshot");
+    let mut recorded_states = RecordedStates::new();
+    recorded_states.insert(selector, retained_state);
+    let lowered = relower_written_proposition_with_states(&spelled, &post, &post, &recorded_states)
+        .expect("the saved mark must lower through its recorded state");
     assert_eq!(
         crate::kernel::proof::proposition_identity_key(&lowered),
         crate::kernel::proof::proposition_identity_key(&requirement),
-        "the saved snapshot spelling must retain the shared load identity"
+        "the saved state spelling must retain the shared load identity"
     );
 }
 
@@ -2279,12 +2278,12 @@ fn owned_string_load_equation_round_trips_without_internal_names() {
 }
 
 #[test]
-fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
+fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
     let (state, requirement, variable) =
-        example_load_defining_requirement("owned-string:wrong-snapshot", "owner", 0);
+        example_load_defining_requirement("owned-string:wrong-retained_state", "owner", 0);
     let wrong_memory = Memory::new().with_block("owned-string:other-epoch", 16);
     let wrong_pointer = Pointer {
-        block: PointerBlock::Concrete("owned-string:wrong-snapshot".into()),
+        block: PointerBlock::Concrete("owned-string:wrong-retained_state".into()),
         offset: PointerOffsetTerm::Constant(4),
     };
     let Proposition::ConditionIs(
@@ -2329,7 +2328,7 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
             right: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_memory_ref(&wrong_memory),
                 Box::new(Pointer {
-                    block: PointerBlock::Concrete("owned-string:wrong-snapshot".into()),
+                    block: PointerBlock::Concrete("owned-string:wrong-retained_state".into()),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
@@ -2986,8 +2985,8 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
 }
 
 #[test]
-fn synthesized_uint32_cast_preserves_its_snapshot() {
-    let selector = SnapshotSelector::Mark("before".into());
+fn synthesized_uint32_cast_preserves_its_state() {
+    let selector = ProgramPointSelector::Mark("before".into());
     let expression = synthesize_uint32_operand(ContractExpression::At {
         selector: selector.clone(),
         expression: Box::new(ContractExpression::ProgramExpression(
@@ -3007,10 +3006,11 @@ fn synthesized_uint32_cast_preserves_its_snapshot() {
     };
     let before = ExecutionState::new().with_local("x", int32(u32::MAX));
     let after = ExecutionState::new().with_local("x", int32(0));
-    let mut snapshots = RecordedSnapshots::new();
-    snapshots.insert(selector, before.clone());
+    let mut retained_states = RecordedStates::new();
+    retained_states.insert(selector, before.clone());
     let lowered =
-        relower_written_proposition_with_snapshots(&surface, &before, &after, &snapshots).unwrap();
+        relower_written_proposition_with_states(&surface, &before, &after, &retained_states)
+            .unwrap();
     assert!(crate::kernel::planning_api::solve_builtin_prop(&lowered));
 }
 
@@ -3186,19 +3186,19 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
     crate::kernel::intern_memory_ref(after.memory());
     let now = with_memory(after.memory().clone().store(cell.clone(), int32(9)));
     crate::kernel::intern_memory_ref(now.memory());
-    let exit = SnapshotSelector::from(ProgramPointRef {
+    let exit = ProgramPointSelector::from(ProgramPointRef {
         region: CodeRegionRef::Region(0),
         kind: ProgramPointKind::Exit,
     });
-    let mut recorded_snapshots = RecordedSnapshots::new();
-    recorded_snapshots.insert(
+    let mut recorded_states = RecordedStates::new();
+    recorded_states.insert(
         ProgramPointRef {
             region: CodeRegionRef::Region(0),
             kind: ProgramPointKind::Entry,
         },
         before,
     );
-    recorded_snapshots.insert(exit.clone(), after);
+    recorded_states.insert(exit.clone(), after);
     let fact = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -3209,7 +3209,7 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
         true,
     );
     let spelled = {
-        let _points = SynthesisRecordedPointsScope::enter(&recorded_snapshots);
+        let _points = SynthesisRecordedPointsScope::enter(&recorded_states);
         synthesize_surface_proposition_at_entry_and_post(
             &fact,
             ParameterBinding::default(),
@@ -3222,9 +3222,8 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
         format!("{spelled:?}").contains(&format!("{exit:?}")),
         "the load must be read at the next recorded point: {spelled:?}"
     );
-    let lowered =
-        relower_written_proposition_with_snapshots(&spelled, &now, &now, &recorded_snapshots)
-            .expect("the spelling must lower through its recorded snapshot");
+    let lowered = relower_written_proposition_with_states(&spelled, &now, &now, &recorded_states)
+        .expect("the spelling must lower through its recorded state");
     assert_eq!(
         crate::kernel::proof::proposition_identity_key(&lowered),
         crate::kernel::proof::proposition_identity_key(&fact),
@@ -3261,20 +3260,20 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         "q",
         ProgramValue::typed_pointer(other.clone(), ProgramType::Int32Pointer),
     );
-    let exit = SnapshotSelector::from(ProgramPointRef {
+    let exit = ProgramPointSelector::from(ProgramPointRef {
         region: CodeRegionRef::Region(0),
         kind: ProgramPointKind::Exit,
     });
-    let mut recorded_snapshots = RecordedSnapshots::new();
-    recorded_snapshots.insert(
+    let mut recorded_states = RecordedStates::new();
+    recorded_states.insert(
         ProgramPointRef {
             region: CodeRegionRef::Region(0),
             kind: ProgramPointKind::Entry,
         },
         entry,
     );
-    recorded_snapshots.insert(exit.clone(), introduced);
-    recorded_snapshots.insert(
+    recorded_states.insert(exit.clone(), introduced);
+    recorded_states.insert(
         ProgramPointRef {
             region: CodeRegionRef::Region(1),
             kind: ProgramPointKind::Exit,
@@ -3286,7 +3285,7 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         false,
     );
     let spelled = {
-        let _points = SynthesisRecordedPointsScope::enter(&recorded_snapshots);
+        let _points = SynthesisRecordedPointsScope::enter(&recorded_states);
         synthesize_surface_proposition_at_entry_and_post(
             &fact,
             ParameterBinding::default(),
@@ -3299,9 +3298,8 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         format!("{spelled:?}").contains(&format!("{exit:?}")),
         "the pointer must be read at the point that introduced it: {spelled:?}"
     );
-    let lowered =
-        relower_written_proposition_with_snapshots(&spelled, &now, &now, &recorded_snapshots)
-            .expect("the spelling must lower through its recorded snapshot");
+    let lowered = relower_written_proposition_with_states(&spelled, &now, &now, &recorded_states)
+        .expect("the spelling must lower through its recorded state");
     assert_eq!(
         crate::kernel::proof::proposition_identity_key(&lowered),
         crate::kernel::proof::proposition_identity_key(&fact),
@@ -3328,7 +3326,7 @@ fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
         crate::kernel::intern_memory_ref(&memory)
     };
     let point = |index| {
-        SnapshotSelector::from(ProgramPointRef {
+        ProgramPointSelector::from(ProgramPointRef {
             region: CodeRegionRef::Region(index),
             kind: ProgramPointKind::Exit,
         })
@@ -3337,17 +3335,17 @@ fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
     let between = memory("near-between");
     let second = memory("near-second");
     let last = memory("near-last");
-    let mut recorded_snapshots = RecordedSnapshots::new();
-    recorded_snapshots.insert(
+    let mut recorded_states = RecordedStates::new();
+    recorded_states.insert(
         point(0),
         ExecutionState::new().with_memory(first.memory().clone()),
     );
-    recorded_snapshots.insert(
+    recorded_states.insert(
         point(1),
         ExecutionState::new().with_memory(second.memory().clone()),
     );
     let near = |memory| {
-        recorded_snapshots
+        recorded_states
             .points_near_memory(memory)
             .map(|(selector, _)| selector.clone())
             .collect::<Vec<_>>()
@@ -3402,15 +3400,15 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         );
     }
     let point = |index| {
-        SnapshotSelector::from(ProgramPointRef {
+        ProgramPointSelector::from(ProgramPointRef {
             region: CodeRegionRef::Region(index),
             kind: ProgramPointKind::Exit,
         })
     };
     let now = holding(later);
-    let mut recorded_snapshots = RecordedSnapshots::new();
-    recorded_snapshots.insert(point(0), holding(earlier));
-    recorded_snapshots.insert(point(1), now.clone());
+    let mut recorded_states = RecordedStates::new();
+    recorded_states.insert(point(0), holding(earlier));
+    recorded_states.insert(point(1), now.clone());
     let fact = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -3421,7 +3419,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         true,
     );
     let spelled = {
-        let _points = SynthesisRecordedPointsScope::enter(&recorded_snapshots);
+        let _points = SynthesisRecordedPointsScope::enter(&recorded_states);
         synthesize_surface_proposition_at_entry_and_post(
             &fact,
             ParameterBinding::default(),
@@ -3458,7 +3456,7 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
     };
     let value = MachineTerm::Variable(Variable(940_001));
     let point = |index| {
-        SnapshotSelector::from(ProgramPointRef {
+        ProgramPointSelector::from(ProgramPointRef {
             region: CodeRegionRef::Region(index),
             kind: ProgramPointKind::Exit,
         })
@@ -3473,12 +3471,12 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
     let again = overwritten
         .clone()
         .store(cell, ProgramValue::Int32(value.clone()));
-    let mut recorded_snapshots = RecordedSnapshots::new();
+    let mut recorded_states = RecordedStates::new();
     for (index, memory) in [entry, first, overwritten, again].into_iter().enumerate() {
-        recorded_snapshots.insert(point(index), ExecutionState::new().with_memory(memory));
+        recorded_states.insert(point(index), ExecutionState::new().with_memory(memory));
     }
     let offered = |term: &MachineTerm| {
-        recorded_snapshots
+        recorded_states
             .points_holding_cell_integer(term)
             .map(|(selector, _)| selector.clone())
             .collect::<Vec<_>>()
@@ -3488,7 +3486,7 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
 }
 
 #[test]
-fn allocation_result_names_survive_reassignment_and_follow_snapshot_scope() {
+fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     let function =
         crate::languages::c::syntax::parse_function("void f() { int32* p; p = malloc(4); p = 0; }")
             .unwrap();
@@ -3514,17 +3512,17 @@ fn allocation_result_names_survive_reassignment_and_follow_snapshot_scope() {
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         )
     };
-    let mut snapshots = RecordedSnapshots::new().with_source_layout(layout);
-    assert!(snapshots.region_allocation(&point.region).is_err());
-    snapshots.insert(point.clone(), state(&first));
-    let sibling = snapshots.clone();
+    let mut retained_states = RecordedStates::new().with_source_layout(layout);
+    assert!(retained_states.region_allocation(&point.region).is_err());
+    retained_states.insert(point.clone(), state(&first));
+    let sibling = retained_states.clone();
     assert_eq!(
-        snapshots.allocation_result(&first),
+        retained_states.allocation_result(&first),
         Some(point.region.clone())
     );
     let current = state(&Pointer::null());
     let raised = {
-        let _points = SynthesisRecordedPointsScope::enter(&snapshots);
+        let _points = SynthesisRecordedPointsScope::enter(&retained_states);
         synthesize_surface_pointer_expression(
             &first,
             ParameterBinding::default(),
@@ -3548,24 +3546,24 @@ fn allocation_result_names_survive_reassignment_and_follow_snapshot_scope() {
         },
     };
     let lowered =
-        relower_written_proposition_with_snapshots(&surface, &current, &current, &snapshots)
+        relower_written_proposition_with_states(&surface, &current, &current, &retained_states)
             .unwrap();
     assert_eq!(
         lowered,
         Proposition::ConditionIs(ConditionTerm::Constant(true), true)
     );
-    snapshots.insert(point.clone(), state(&second));
-    assert!(snapshots.allocation_result(&first).is_none());
+    retained_states.insert(point.clone(), state(&second));
+    assert!(retained_states.allocation_result(&first).is_none());
     assert_eq!(
-        snapshots.allocation_result(&second),
+        retained_states.allocation_result(&second),
         Some(point.region.clone())
     );
     assert_eq!(
         sibling.allocation_result(&first),
         Some(point.region.clone())
     );
-    snapshots.remove(&point);
-    assert!(snapshots.allocation_result(&second).is_none());
+    retained_states.remove(&point);
+    assert!(retained_states.allocation_result(&second).is_none());
 }
 
 #[test]
@@ -3626,7 +3624,7 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
         &spelled,
         &PureFactContext::new(),
         ContractEnvironment::new(&values, &arrays),
-        FixedStateFrame::new(&entry, &post, None, &RecordedSnapshots::new()),
+        FixedStateFrame::new(&entry, &post, None, &RecordedStates::new()),
         SpecDefinitions::new(
             &PredicateEnvironment::new(&[]),
             &ClickFunctionEnvironment::new(&[]),
@@ -3831,7 +3829,7 @@ fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
                     .expect("Bool fact spelling");
             let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 &surface, &PureFactContext::new(), ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
-                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(file.click_function_definitions())),
                 FixedStateLoweringOptions::default(),
             ).unwrap().0;
@@ -3862,7 +3860,7 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
         let lower = |proposition: &ClickProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
-                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::with_algebraic_types(file.click_function_definitions(), file.algebraic_type_definitions())),
                 FixedStateLoweringOptions::default(),
             ).unwrap().0
@@ -4082,7 +4080,7 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         let lower = |proposition: &ClickProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
-                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(file.click_function_definitions())),
                 FixedStateLoweringOptions::default(),
             ).unwrap().0
@@ -4206,7 +4204,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
             ProgramType::Int32Pointer,
         ),
     ];
-    let mut points = RecordedSnapshots::new();
+    let mut points = RecordedStates::new();
     points.record_read_event_values(3, values.iter());
     let _points = SynthesisRecordedPointsScope::enter(&points);
     for (event, value) in values.iter().enumerate() {
@@ -4234,7 +4232,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 right: expected,
             }
         );
-        let lowered = relower_written_proposition_with_snapshots(claim, &state, &state, &points)
+        let lowered = relower_written_proposition_with_states(claim, &state, &state, &points)
             .expect("event result lowers");
         assert_eq!(
             points
@@ -4266,14 +4264,14 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
 }
 
 #[test]
-fn volatile_read_event_results_follow_snapshot_branches() {
+fn volatile_read_event_results_follow_state_branches() {
     let point = ProgramPointRef {
         region: CodeRegionRef::Region(3),
         kind: ProgramPointKind::Exit,
     };
     let old = ProgramValue::Int32(MachineTerm::Variable(Variable(762010)));
     let next = ProgramValue::Int32(MachineTerm::Variable(Variable(762011)));
-    let mut ancestor = RecordedSnapshots::new();
+    let mut ancestor = RecordedStates::new();
     ancestor.insert(point.clone(), ExecutionState::new());
     ancestor.record_read_event_values(3, std::iter::once(&old));
     let mut left = ancestor.clone();
@@ -4457,7 +4455,7 @@ fn check_common_machine_call_formats(formats: &[(MachineIntegerType, &str)]) {
                 values.clone(),
                 values.clone(),
                 None,
-                &RecordedSnapshots::new(),
+                &RecordedStates::new(),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
                     &ClickFunctionEnvironment::new(file.click_function_definitions()),
@@ -4673,7 +4671,7 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
         let lower = |proposition: &ClickProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
-            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::with_algebraic_types(file.click_function_definitions(), file.algebraic_type_definitions())),
             FixedStateLoweringOptions { algebraic_values: Some(&algebraic_values), ..Default::default() },
         ).unwrap().0
@@ -4729,7 +4727,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
             values.clone(),
             values.clone(),
             None,
-            &RecordedSnapshots::new(),
+            &RecordedStates::new(),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(file.click_function_definitions()),
@@ -4922,7 +4920,7 @@ fn float_bit_literals_round_trip_exact_native_values() {
                 BTreeMap::new(),
                 BTreeMap::new(),
                 None,
-                &RecordedSnapshots::new(),
+                &RecordedStates::new(),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
                     &ClickFunctionEnvironment::new(&[]),
@@ -5033,7 +5031,7 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
                 values.clone(),
                 values.clone(),
                 None,
-                &RecordedSnapshots::new(),
+                &RecordedStates::new(),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
                     &ClickFunctionEnvironment::new(&[]),
@@ -5121,7 +5119,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                 BTreeMap::new(),
                 BTreeMap::new(),
                 None,
-                &RecordedSnapshots::new(),
+                &RecordedStates::new(),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
                     &ClickFunctionEnvironment::new(&[]),
@@ -5201,7 +5199,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
             BTreeMap::new(),
             BTreeMap::new(),
             None,
-            &RecordedSnapshots::new(),
+            &RecordedStates::new(),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),
@@ -5223,18 +5221,18 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
 }
 
 #[test]
-fn common_float_reads_retain_old_and_recorded_snapshots() {
+fn common_float_reads_retain_old_and_recorded_states() {
     for format in [
         crate::kernel::KernelFloatType::Float32,
         crate::kernel::KernelFloatType::Float64,
     ] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer {
-            block: PointerBlock::Concrete("float-snapshot".into()),
+            block: PointerBlock::Concrete("float-retained_state".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
         let selected = ExecutionState::new()
-            .with_memory(Memory::new().with_block("float-snapshot", 8))
+            .with_memory(Memory::new().with_block("float-retained_state", 8))
             .with_local(
                 "p",
                 ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
@@ -5267,11 +5265,11 @@ fn common_float_reads_retain_old_and_recorded_snapshots() {
         };
         let expected = relower_written_proposition(&comparison(current), &selected).unwrap();
         for old in [true, false] {
-            let selector = SnapshotSelector::from(ProgramPointRef {
+            let selector = ProgramPointSelector::from(ProgramPointRef {
                 region: CodeRegionRef::Region(0),
                 kind: ProgramPointKind::Entry,
             });
-            let mut points = RecordedSnapshots::new();
+            let mut points = RecordedStates::new();
             points.insert(selector.clone(), selected.clone());
             let _points = SynthesisRecordedPointsScope::enter(&points);
             let entry = if old { &selected } else { &now };
@@ -5303,7 +5301,7 @@ fn common_float_reads_retain_old_and_recorded_snapshots() {
                 panic!("comparison")
             };
             assert_eq!(
-                relower_written_proposition_with_snapshots(claim, entry, &now, &points).unwrap(),
+                relower_written_proposition_with_states(claim, entry, &now, &points).unwrap(),
                 expected,
                 "{text}"
             );
@@ -5328,7 +5326,7 @@ fn click_float_unary_negation_preserves_positive_zero_sign() {
             BTreeMap::new(),
             BTreeMap::new(),
             None,
-            &RecordedSnapshots::new(),
+            &RecordedStates::new(),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),
@@ -5410,7 +5408,7 @@ fn click_float_unary_negation_preserves_bits_and_symbolic_operands() {
                 BTreeMap::new(),
                 BTreeMap::new(),
                 None,
-                &RecordedSnapshots::new(),
+                &RecordedStates::new(),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
                     &ClickFunctionEnvironment::new(&[]),
@@ -5526,7 +5524,7 @@ fn common_float_arithmetic_round_trips_existing_operators() {
                 BTreeMap::new(),
                 BTreeMap::new(),
                 None,
-                &RecordedSnapshots::new(),
+                &RecordedStates::new(),
                 SpecDefinitions::new(
                     &PredicateEnvironment::new(&[]),
                     &ClickFunctionEnvironment::new(&[]),
@@ -5645,7 +5643,7 @@ fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
                     BTreeMap::new(),
                     BTreeMap::new(),
                     None,
-                    &RecordedSnapshots::new(),
+                    &RecordedStates::new(),
                     SpecDefinitions::new(
                         &PredicateEnvironment::new(&[]),
                         &ClickFunctionEnvironment::new(&[]),
@@ -5697,7 +5695,7 @@ fn numeric_float_casts_read_historical_and_current_operands() {
         BTreeMap::from([("x".into(), entry)]),
         BTreeMap::from([("x".into(), current)]),
         None,
-        &RecordedSnapshots::new(),
+        &RecordedStates::new(),
         SpecDefinitions::new(
             &PredicateEnvironment::new(&[]),
             &ClickFunctionEnvironment::new(&[]),
@@ -5800,7 +5798,7 @@ fn common_float_conversions_round_trip_existing_casts() {
                     BTreeMap::new(),
                     BTreeMap::new(),
                     None,
-                    &RecordedSnapshots::new(),
+                    &RecordedStates::new(),
                     SpecDefinitions::new(
                         &PredicateEnvironment::new(&[]),
                         &ClickFunctionEnvironment::new(&[]),
@@ -5819,6 +5817,169 @@ fn common_float_conversions_round_trip_existing_casts() {
                 .unwrap();
                 assert_eq!(value, expected, "{text}");
             }
+        }
+    }
+}
+
+#[test]
+fn common_float_to_integer_conversions_round_trip_with_definedness() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(999963));
+    let names = BTreeMap::from([(Variable(999963), "x".to_string())]);
+    for (source_spelling, source_type) in [
+        ("float", ProgramType::Float32),
+        ("double", ProgramType::Float64),
+    ] {
+        let source_value = match source_type {
+            ProgramType::Float32 => ProgramValue::Float32(variable.clone()),
+            ProgramType::Float64 => ProgramValue::Float64(variable.clone()),
+            _ => MachineIntegerType::from_program_type(source_type)
+                .unwrap()
+                .value_from_term(variable.clone()),
+        };
+        let state = ExecutionState::new().with_local("x", source_value);
+        for (format, target_spelling) in [
+            (MachineIntegerType::Int8, "int8"),
+            (MachineIntegerType::UInt8, "uint8"),
+            (MachineIntegerType::Int16, "int16"),
+            (MachineIntegerType::UInt16, "uint16"),
+            (MachineIntegerType::Int32, "int32"),
+            (MachineIntegerType::UInt32, "uint32"),
+            (MachineIntegerType::Int64, "int64"),
+            (MachineIntegerType::UInt64, "uint64"),
+        ] {
+            if source_type == format.program_type() {
+                continue;
+            }
+            let source = MachineTerm::opaque_conversion(
+                format!(
+                    "c_{}_to_{}",
+                    crate::kernel::program_type_spelling(source_type),
+                    crate::kernel::program_type_spelling(format.program_type())
+                ),
+                variable.clone(),
+            );
+            {
+                let expected = format.value_from_term(source.clone());
+                let root = crate::kernel::KernelTermImport::default().machine(format, &source);
+                let surface =
+                    raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+                let text = diagnostics::describe_contract_expression(&surface);
+                let parsed = parser::parse(&format!(
+                    "function probe(x: {source_spelling}) -> {target_spelling} {{ {text} }}"
+                ))
+                .unwrap_or_else(|error| panic!("{text}: {error}"));
+                let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                    parsed.click_function_definitions()[0].body().unwrap(),
+                    BTreeMap::new(),
+                    &state,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                    None,
+                    &RecordedStates::new(),
+                    SpecDefinitions::new(
+                        &PredicateEnvironment::new(&[]),
+                        &ClickFunctionEnvironment::new(&[]),
+                    ),
+                    BTreeSet::new(),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+                let (value, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+                assert_eq!(value, expected, "{text}");
+                assert!(
+                    !obligations.is_empty(),
+                    "symbolic conversion must retain its definedness obligations: {text}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn common_float_predicates_round_trip_existing_spelling() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(999977));
+    let names = BTreeMap::from([(Variable(999977), "x".to_string())]);
+    for (spelling, value) in [
+        ("float", ProgramValue::Float32(variable.clone())),
+        ("double", ProgramValue::Float64(variable.clone())),
+    ] {
+        let state = ExecutionState::new().with_local("x", value);
+        let mut conditions = vec![];
+        for operator in [
+            crate::kernel::ComparisonOperator::Equal,
+            crate::kernel::ComparisonOperator::NotEqual,
+            crate::kernel::ComparisonOperator::LessThan,
+            crate::kernel::ComparisonOperator::LessEqual,
+            crate::kernel::ComparisonOperator::GreaterThan,
+            crate::kernel::ComparisonOperator::GreaterEqual,
+        ] {
+            conditions.push(crate::kernel::FloatCondition::Comparison {
+                operator,
+                left: Box::new(variable.clone()),
+                right: Box::new(variable.clone()),
+            });
+        }
+        for classification in [
+            crate::kernel::FloatClassification::Finite,
+            crate::kernel::FloatClassification::Infinite,
+            crate::kernel::FloatClassification::Zero,
+            crate::kernel::FloatClassification::Subnormal,
+            crate::kernel::FloatClassification::Nan,
+        ] {
+            conditions.push(crate::kernel::FloatCondition::Classification {
+                classification,
+                value: Box::new(variable.clone()),
+            });
+        }
+        for condition in conditions {
+            let condition = if spelling == "float" {
+                ConditionTerm::Float32(condition)
+            } else {
+                ConditionTerm::Float64(condition)
+            };
+            let root = crate::kernel::KernelTermImport::default().condition(&condition);
+            let surface =
+                raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+            let text = diagnostics::describe_contract_expression(&surface);
+            let parsed = parser::parse(&format!(
+                "function probe(x: {spelling}) -> Bool {{ {text} }}"
+            ))
+            .unwrap();
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                parsed.click_function_definitions()[0].body().unwrap(),
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedStates::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (value, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(value, ProgramValue::of_bool(condition), "{text}");
+            assert!(obligations.is_empty(), "{text}");
         }
     }
 }

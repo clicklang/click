@@ -656,7 +656,7 @@ mod scaling_tests {
 }
 
 #[test]
-fn declared_word_read_representation_is_typed_live_and_snapshot_specific() {
+fn declared_word_read_representation_is_typed_live_and_state_specific() {
     use crate::kernel::eval::declared_uint32_read_representation as representation;
     let _session = crate::kernel::VerificationSession::enter();
     let memory = Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);

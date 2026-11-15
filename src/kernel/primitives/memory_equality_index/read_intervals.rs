@@ -87,6 +87,37 @@ impl ReadIntervals {
         }
     }
 
+    /// Select one intersecting interval along a single root-to-leaf path.
+    /// The caller must establish a complete, constant-coordinate fragment
+    /// before treating a miss as absence of overlap.
+    pub(super) fn first_overlap(
+        &self,
+        start: &AddressCoordinate,
+        end: &AddressCoordinate,
+    ) -> Option<ResourceEntryId> {
+        if start >= end {
+            return None;
+        }
+        let mut current = self.root.as_deref();
+        while let Some(node) = current {
+            record_persistent_work(1);
+            crate::instrumentation::record_deterministic_work(1);
+            if &node.key.0 < end && node.value.as_ref() > start {
+                return Some(node.key.1);
+            }
+            if let Some(left) = node.left.as_deref()
+                && left.max_end.as_ref() > start
+            {
+                current = Some(left);
+            } else if &node.key.0 < end {
+                current = node.right.as_deref();
+            } else {
+                return None;
+            }
+        }
+        None
+    }
+
     /// Used only when a class merge shifts the smaller resource payload.
     pub(super) fn iter(
         &self,
@@ -220,15 +251,35 @@ mod tests {
                 .covering(&coordinate(start), &coordinate(end))
                 .collect::<std::collections::BTreeSet<_>>();
             assert_eq!(actual, expected, "step {step}");
+            let overlaps = model
+                .iter()
+                .filter_map(|((a, entry), b)| {
+                    (start < end && *a < end && *b > start).then_some(*entry)
+                })
+                .collect::<std::collections::BTreeSet<_>>();
+            let overlap = intervals.first_overlap(&coordinate(start), &coordinate(end));
+            assert_eq!(
+                overlap.is_some(),
+                !overlaps.is_empty(),
+                "overlap at step {step}"
+            );
+            if let Some(entry) = overlap {
+                assert!(overlaps.contains(&entry));
+            }
         }
-        let snapshot = intervals.clone();
+        let retained_state = intervals.clone();
         for (start, entry) in model.keys() {
             intervals.remove(coordinate(*start), *entry);
             validate(intervals.root.as_deref());
         }
         assert_eq!(intervals.len(), 0);
         assert!(intervals.root.is_none());
-        assert_eq!(snapshot.len(), model.len());
-        assert_eq!(snapshot.iter().count(), model.len());
+        assert_eq!(retained_state.len(), model.len());
+        assert_eq!(retained_state.iter().count(), model.len());
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../../scaling_tests/kernel/primitives/memory_equality_index/read_intervals.rs");
 }

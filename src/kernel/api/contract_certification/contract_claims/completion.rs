@@ -31,6 +31,7 @@ pub(crate) struct WholeContractProof {
     open: PersistentMap<ContractCompletionGoal, BranchId>,
     proof: RootProof,
     modular: bool,
+    loop_exits: Arc<crate::kernel::termination::loop_evidence::PreparedLoopExits>,
 }
 
 impl std::fmt::Debug for WholeContractProof {
@@ -182,6 +183,8 @@ impl ContractBodyProof {
 impl WholeContractProof {
     pub(crate) fn open(entry: Arc<PreparedContractEntryCases>) -> Result<Self, String> {
         let function = &entry.function;
+        let loop_exits =
+            crate::kernel::termination::loop_evidence::PreparedLoopExits::open(function)?;
         if entry.cases.is_empty() {
             return Err("the contract entry has no cases".into());
         }
@@ -238,6 +241,7 @@ impl WholeContractProof {
             open,
             proof,
             modular,
+            loop_exits,
         })
     }
 
@@ -338,6 +342,7 @@ impl AdmittedContractProof {
         let rule = VerifiedFunctionRule {
             pointer_result: self.execution.pointer_result.clone(),
             function: self.function,
+            concrete_loop_exits: Some(self.owner.loop_exits.unknown()),
             loop_semantics: self.execution.loop_semantics,
             checked_callees: self.execution.checked_callees.clone(),
             applied_tactics: self.execution.applied_tactics.clone(),

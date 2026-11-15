@@ -1,8 +1,9 @@
 # a recursive call is framed by its own write set, not by the caller facts
 
 The recursive call owns `v[0..n - 1]` and may write every cell of it, and
-the caller's own bounds on `n` say nothing about which. The quantified frame
-of `v[k]` across the call is refused.
+the caller's own bounds on `n` say nothing about which. Preserving `v[k]`
+across the call requires separation from that footprint. The explicit
+separation goal is refused.
 
 ```c filename=quantified_frame_rejects_a_recursive_call_on_the_array.c
 void zap(int32 *v, int32 n) {
@@ -30,15 +31,14 @@ void zap(int32 *v, int32 n) {
     have to_integer(n - 1) <= 1000 by { solve() using { 0 < n; n <= 1000; }; }
     mark before_call;
     step();
-    transport(
-        forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies at(before_call, v[k]) == at(before_call, v[k]) },
-        forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies v[k] == at(before_call, v[k]) }
-    ) using {
-        forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies at(before_call, v[k]) == at(before_call, v[k]) };
-    };
+    have forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies v[k] == at(before_call, v[k]) } by {
+        intro(); intro();
+        have separate(statement(2).footprint, memory(v[k])) by { known(); }
+        preserve(separate(statement(2).footprint, memory(v[k])));
+    }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: goal: separate(region(4).footprint, v[…])
 ```

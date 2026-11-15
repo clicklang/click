@@ -231,9 +231,19 @@ impl TermRewrite<'_> {
                 }
                 KernelTermNode::MemoryLoad { .. } => {
                     let read = term.machine_read_leaf().expect("read leaf");
-                    // The selected read owns its snapshot; rewrite its address
+                    // The selected read owns its state; rewrite its address
                     // directly without manufacturing a reserved variable.
                     let rewritten = self.bits(read);
+                    KernelTerm::retained_machine_operand(
+                        format,
+                        MachineOperandView::Legacy(&rewritten),
+                    )
+                }
+                KernelTermNode::FloatConvert { .. } => {
+                    // Explicit selected rewrite boundary. Rebuild through the same native
+                    // conversion normalizer; merely inspecting a root never exports it.
+                    let native = KernelTermExport::machine(&term).expect("float conversion");
+                    let rewritten = self.bits(&native);
                     KernelTerm::retained_machine_operand(
                         format,
                         MachineOperandView::Legacy(&rewritten),
@@ -902,6 +912,56 @@ mod tests {
     }
 
     #[test]
+    fn retained_float_to_integer_rewrite_matches_native_normalization_and_refusal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = MachineTerm::Variable(Variable(999976));
+        for source in [ProgramType::Float32, ProgramType::Float64] {
+            let replacements = if source == ProgramType::Float32 {
+                vec![
+                    MachineTerm::constant(0x3fc00000),
+                    MachineTerm::constant(0x80000000),
+                    MachineTerm::constant(0x7fc00001),
+                ]
+            } else {
+                vec![
+                    MachineTerm::uint64_constant(0x3ff8000000000000),
+                    MachineTerm::uint64_constant(0x8000000000000000),
+                    MachineTerm::uint64_constant(0x7ff8000000000001),
+                ]
+            };
+            for target in [
+                MachineIntegerType::Int8,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int64,
+            ] {
+                let native = MachineTerm::opaque_conversion(
+                    format!(
+                        "c_{}_to_{}",
+                        crate::kernel::program_type_spelling(source),
+                        crate::kernel::program_type_spelling(target.program_type())
+                    ),
+                    variable.clone(),
+                );
+                let root = KernelTermImport::default()
+                    .machine_arithmetic(target, &native)
+                    .unwrap();
+                for replacement in &replacements {
+                    let expected =
+                        TermRewrite::for_bits_checked(&variable, replacement).bits(&native);
+                    let actual = TermRewrite::for_bits_checked(&variable, replacement)
+                        .shared_machine_operand(&root)
+                        .unwrap();
+                    assert_eq!(
+                        KernelTermExport::machine(&actual).unwrap(),
+                        expected,
+                        "{source:?} {target:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn shared_conditional_remainders_preserve_selected_guards() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
@@ -1395,7 +1455,7 @@ mod tests {
     }
 
     #[test]
-    fn comparison_rewrite_preserves_values_and_snapshot_separation() {
+    fn comparison_rewrite_preserves_values_and_state_separation() {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
         let (seven, canonical_seven) = comparison_read_fixture(7u32.into());

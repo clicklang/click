@@ -3,7 +3,7 @@ use super::api::{
 };
 use super::memory_provenance::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
 use super::reasoning::{
-    collect_or_cases, instantiate_range_fold_step, memory_snapshots_proven_equal_at_pointer,
+    collect_or_cases, instantiate_range_fold_step, memory_states_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };
@@ -102,7 +102,7 @@ pub(crate) use integer::{
     MachineOperandView, clear_shared_machine_variable_cache, machine_operand_syntax_cmp,
     shared_condition_operand_leaf_pairs, shared_machine_conversion_leaves,
     shared_machine_read_leaves, shared_machine_read_uses, shared_machine_syntax_equal,
-    shared_machine_syntax_variables, shared_operand_leaf_pairs, shared_snapshot_read_pairs,
+    shared_machine_syntax_variables, shared_operand_leaf_pairs, shared_state_read_pairs,
 };
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};
@@ -138,7 +138,7 @@ pub(crate) use memory_state::{
     registered_block_alignment_charged, restore_block_registries, set_never_address_taken_locals,
     withdraw_never_address_taken_locals,
 };
-pub(crate) use persistent_map::{SnapshotMap, SnapshotMapChange, SnapshotSet};
+pub(crate) use persistent_map::{HashedOrdMap, HashedOrdMapChange, HashedOrdSet};
 pub use statement_sequence::ProgramStatementSequence;
 mod iterated;
 pub use iterated::{IteratedGuard, IteratedMemory};
@@ -806,7 +806,7 @@ pub enum MachineTerm {
         scrutinee: Box<AlgebraicTerm>,
         arms: Vec<AlgebraicBitvectorMatchArm>,
     },
-    /// The value a read of `LoadKind` at the pointer returns in the snapshot.
+    /// The value a read of `LoadKind` at the pointer returns in the state.
     /// The kind is part of the load's identity: two reads of one address
     /// that differ in width or, below four bytes, in signedness return
     /// different values, so they are different terms. See [`LoadKind`].
@@ -1295,10 +1295,10 @@ pub enum ConditionTerm {
     /// true one merges the two values' classes in the e-graph, where their
     /// truth is shared; a false one contradicts that merge.
     BoolEqual(Box<ConditionTerm>, Box<ConditionTerm>),
-    /// The read of a one-byte `bool` cell at the pointer in the snapshot:
+    /// The read of a one-byte `bool` cell at the pointer in the state:
     /// `byte != 0` (the byte rule of Stage 5 bounds the byte to 0 or 1
     /// where a front end produces the read). Two reads of one cell in one
-    /// snapshot are one value.
+    /// state are one value.
     BoolLoad(SharedMemory, Box<Pointer>),
 }
 
@@ -2292,7 +2292,7 @@ pub struct Pointer {
 
 /// An assumption-free name for one pointer-valued, eight-byte load.
 /// It is a different sort from scalar load variables even when both reads
-/// use the same snapshot and address.
+/// use the same state and address.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerLoadId(pub(crate) u64);
 
@@ -3187,7 +3187,7 @@ impl PointerBlock {
         {
             return true;
         }
-        // A loaded pointer is a value obtained at the snapshot it was read
+        // A loaded pointer is a value obtained at the state it was read
         // in, and cannot point into an object that did not exist then.
         let loaded_before = |value: &Self, object: &Self| match value {
             Self::Symbolic(variable) => {
@@ -3202,7 +3202,7 @@ impl PointerBlock {
         if loaded_before(self, other) || loaded_before(other, self) {
             return true;
         }
-        // A pointer read holds the pointer its snapshot stores at the read's
+        // A pointer read holds the pointer its state stores at the read's
         // address (the read-over-write authority), so it lies in that
         // pointer's block. This reads memory, never facts.
         let stored_block = |block: &Self| match block {
@@ -4086,7 +4086,7 @@ pub enum SpecExpression {
         /// argument is built with is the result, by the function's definition.
         projection: Option<PureProjection>,
     },
-    LoopEntrySnapshot(Box<SpecExpression>),
+    LoopEntryState(Box<SpecExpression>),
     Subobject {
         pointer: Box<SpecExpression>,
         width: u32,
@@ -4284,14 +4284,14 @@ pub struct ResourceFieldProjection {
     pub children: Vec<String>,
     pub field_index: usize,
     /// Select the explicit entry state supplied to spec evaluation. There is
-    /// no fallback to the current state when that snapshot is unavailable.
+    /// no fallback to the current state when that state is unavailable.
     pub at_entry: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecPureFunctionArgument {
     /// Enforce a nominal pointer parameter without changing the argument's
-    /// value or the memory snapshot carried by an array reference.
+    /// value or the memory state carried by an array reference.
     ObjectPointer {
         argument: Box<SpecPureFunctionArgument>,
         object_class: crate::kernel::effective_type::CAccessClass,
@@ -5288,7 +5288,7 @@ pub enum SpecProposition {
     Predicate {
         name: String,
         arguments: Vec<SpecPredicateArgument>,
-        /// Whether the definition observes the resource model. Memory snapshots
+        /// Whether the definition observes the resource model. Memory states
         /// remain explicit predicate arguments independently of this flag.
         resource_state_dependent: bool,
     },
@@ -7084,17 +7084,18 @@ impl<'a> ExecutionContext<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedFunctionRule {
+    /// Producer-owned concrete/avoided loop coverage. Independent legacy
+    /// inputs have no ordinary body owner and use their separate adapter.
+    pub(super) concrete_loop_exits:
+        Option<Arc<crate::kernel::termination::loop_evidence::ConcreteLoopExits>>,
     /// Only the positive object-type premises consumed by the checked proof.
     /// Checked result origins, instantiated with the caller's actual types.
     pub(super) pointer_result: Option<Arc<PurePointerResult>>,
 
     pub(super) function: ProgramFunction,
-    /// The loop semantics every claim of this rule was certified under, or
-    /// `Verify` when any was, or when the rule is a recursion hypothesis
-    /// that certified nothing. Written by the kernel from its own
-    /// certification, so the termination check may trust it: under
-    /// `ApplyVerifiedRules` a loop with no verified loop rule ran to its
-    /// exit on every certified path.
+    /// Compatibility mode for independent execution/certification APIs.
+    /// Ordinary body proofs publish concrete loop coverage separately;
+    /// this mode alone is not source-bound exit evidence.
     pub(super) loop_semantics: LoopSemantics,
     /// The user-defined tactics this rule's certified proofs applied, by
     /// name. A tactic's procedure runs no code, so its body has no calls;
@@ -7696,7 +7697,7 @@ pub enum RuntimeError {
     HeapAllocationSizeAboveInt32,
     /// A typed memory load whose type does not fit the value the cell
     /// holds: a 4-byte load of an 8-byte cell, or a pointer cell read as an
-    /// integer. `stored` is the cell's value when the snapshot knows it.
+    /// integer. `stored` is the cell's value when the state knows it.
     LoadTypeMismatch {
         pointer: Pointer,
         value_type: ProgramType,
@@ -8322,9 +8323,9 @@ pub(super) enum LocalBinding {
     },
 }
 
-/// The snapshot a snapshot forgot knowledge from.
+/// The state a state forgot knowledge from.
 ///
-/// A snapshot is interned by content, so two states with the same known
+/// A state is interned by content, so two states with the same known
 /// cells are one node. That is only sound while the known cells decide what
 /// every address holds *relative to a fixed starting state* — and dropping a
 /// cached value breaks exactly that. After `a[i] = 7; a[j] = 0;` the write to
@@ -8340,7 +8341,7 @@ pub(super) enum LocalBinding {
 /// path-independent — and an entry state, which carries no mark, can no
 /// longer be the state something was forgotten into.
 /// The mark is the base's *identity*, never the base itself. Holding the
-/// snapshot would put a chain of `Arc<Memory>` inside every snapshot that
+/// state would put a chain of `Arc<Memory>` inside every state that
 /// ever forgot anything, and equality, ordering and dropping would all
 /// recurse down it — one stack frame per forget, on a hot path, in a
 /// structure the arena already keeps alive. Every field here is O(1) to
@@ -8348,12 +8349,12 @@ pub(super) enum LocalBinding {
 ///
 /// It is held behind an `Arc` rather than inline for the same reason the
 /// cell map is: `Memory` travels by value through deeply recursive
-/// evaluation, so a snapshot pays one pointer for the mark and the snapshots
+/// evaluation, so a state pays one pointer for the mark and the states
 /// that inherit it share the one allocation.
 ///
 /// `content_hash` comes first so that the derived ordering is the one a
 /// verification can reproduce: it is a function of the base's content, while
-/// arena tokens count process-wide and would order snapshots differently from
+/// arena tokens count process-wide and would order states differently from
 /// run to run. Within one verification every mark shares the token, so the
 /// remaining comparison is by dense arena id.
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -8378,17 +8379,17 @@ impl std::fmt::Debug for ForgottenFrom {
     }
 }
 
-/// What a snapshot no longer knows, beside its cells.
+/// What a state no longer knows, beside its cells.
 ///
 /// Two facts of the same kind, behind one pointer. `Memory` travels by value
-/// inside `Term`, whose clone recurses once per nested operator, so a snapshot
+/// inside `Term`, whose clone recurses once per nested operator, so a state
 /// pays one word for both rather than one each.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ForgottenKnowledge {
     /// Automatic-storage blocks whose lifetimes have ended. Unlike removing
     /// the block alone, retaining this tombstone makes stale aliases invalid
     /// even when a later proof step forgets or rejoins ordinary cells.
-    pub(super) ended_local_blocks: SnapshotSet<PointerBlock>,
+    pub(super) ended_local_blocks: HashedOrdSet<PointerBlock>,
     /// Set where cached values were dropped without the memory itself being
     /// known unchanged; see [`ForgottenFrom`]. Carried by later stores and by
     /// the projections used for load naming, so a state that has forgotten
@@ -8398,8 +8399,8 @@ pub struct ForgottenKnowledge {
     /// identities prevent first-wins provenance from mixing different joins;
     /// their content hashes keep read names reproducible across sessions.
     /// The persistent set caches its hash and does not retain recursive
-    /// snapshot contents. Read projections must retain this identity.
-    pub(super) join_inputs: SnapshotSet<ForgottenFrom>,
+    /// state contents. Read projections must retain this identity.
+    pub(super) join_inputs: HashedOrdSet<ForgottenFrom>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -8411,15 +8412,15 @@ pub struct Memory {
     /// keyed by its address and type rather than placed in `cells`, because
     /// two members at one address must remain independently readable after a
     /// by-value aggregate copy.
-    pub(super) union_cells: std::sync::Arc<SnapshotMap<(Pointer, ProgramType), StoredMemoryValue>>,
+    pub(super) union_cells: std::sync::Arc<HashedOrdMap<(Pointer, ProgramType), StoredMemoryValue>>,
     pub(super) forgotten: std::sync::Arc<ForgottenKnowledge>,
     pub(super) heap: std::sync::Arc<HeapMemory>,
 }
 
 /// A retained explanation, deliberately excluded from memory equality, hashing,
-/// interning keys, and every proof rule. It travels with the snapshot, including
+/// interning keys, and every proof rule. It travels with the state, including
 /// across threads. Roots guard against accidentally inheriting a stale origin
-/// when a constructor edits a cloned snapshot without recording its operation.
+/// when a constructor edits a cloned state without recording its operation.
 #[derive(Clone)]
 pub(crate) struct MemoryConstruction {
     roots: Memory,
@@ -8494,7 +8495,7 @@ impl Memory {
         }));
     }
 
-    /// O(1) diagnostic identity for a snapshot without interning or walking
+    /// O(1) diagnostic identity for a state without interning or walking
     /// its contents. This is intentionally only an identity label; equal
     /// labels imply shared storage roots, not semantic inequality otherwise.
     pub(crate) fn diagnostic_identity(&self) -> (usize, usize, usize, usize, usize) {
@@ -8513,7 +8514,7 @@ impl Memory {
         )
     }
 
-    /// Records that this snapshot dropped cached values that `base` knew,
+    /// Records that this state dropped cached values that `base` knew,
     /// without the memory the two describe having changed.
     ///
     /// Overwriting an older mark keeps the whole history: `base` carries its
@@ -8526,7 +8527,7 @@ impl Memory {
         });
     }
 
-    /// Whether the two snapshots describe one memory: the same blocks, heap
+    /// Whether the two states describe one memory: the same blocks, heap
     /// lifetimes, union views and forgotten-knowledge marks, and the same
     /// cells whatever representation each cell store keeps them in
     /// ([`CellStore::same_cells_as`]). Everything but the cell cache's layout
@@ -8540,9 +8541,9 @@ impl Memory {
                 && self.cells.same_cells_as(&other.cells))
     }
 
-    /// Whether `self == other`, for two snapshots each derived from `base`'s
+    /// Whether `self == other`, for two states each derived from `base`'s
     /// storage, comparing only what each changed from `base` (see
-    /// [`SnapshotMap::eq_relative_to`]). Exact whatever the snapshots share;
+    /// [`HashedOrdMap::eq_relative_to`]). Exact whatever the states share;
     /// the cost is the changed paths when both were derived from `base`.
     pub(super) fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
         if memory_content_hash(self) != memory_content_hash(other) {
@@ -8568,8 +8569,8 @@ impl Memory {
     }
 
     /// The same content behind freshly allocated storage roots, so it is not
-    /// the stored snapshot by [`Self::same_storage_roots`]. Tests use it to
-    /// stand for an equal snapshot reached without going through a
+    /// the stored state by [`Self::same_storage_roots`]. Tests use it to
+    /// stand for an equal state reached without going through a
     /// derivation, which would hand back the arena's canonical instance.
     #[cfg(test)]
     pub(crate) fn with_fresh_storage_roots(&self) -> Self {
@@ -8581,11 +8582,11 @@ impl Memory {
             forgotten: std::sync::Arc::new((*self.forgotten).clone()),
             heap: std::sync::Arc::new((*self.heap).clone()),
         };
-        result.record_diagnostic_transform("copy snapshot storage", vec![self.clone()], Vec::new());
+        result.record_diagnostic_transform("copy state storage", vec![self.clone()], Vec::new());
         result
     }
 
-    /// Whether two snapshots are the same stored snapshot, by the storage
+    /// Whether two states are the same stored state, by the storage
     /// roots alone. This is the O(1) half of a diagnostic label's identity:
     /// a report that must show "same memory" compares contents when this
     /// says nothing, and never the other way round.
@@ -8597,7 +8598,7 @@ impl Memory {
 /// A pinned, shallow identity for the lifetime metadata relevant to a read.
 /// Keeping the heap alive prevents allocation-address reuse in an index, and
 /// the local-lifetime bit distinguishes a retired automatic block from a
-/// snapshot where its block is still live.
+/// state where its block is still live.
 #[derive(Clone)]
 pub(in crate::kernel) struct ReadRegionIdentity {
     block_size: Option<HeapExtent>,
@@ -8701,13 +8702,13 @@ impl std::hash::Hash for Memory {
 
 impl Ord for Memory {
     /// By a content hash first, then structurally. The structural order walks
-    /// the entries two snapshots share, and snapshots along one path share
+    /// the entries two states share, and states along one path share
     /// almost all of them, so ordered collections keyed by memories (fact
     /// sets, premise sets) paid for the whole memory on every comparison
     /// (`roadmap/scaling.md`). The cached content hash is O(1) and, being a
     /// function of the entries under fixed hash keys, as deterministic as
-    /// the structural order; equal snapshots have equal hashes, so the
-    /// structural walk runs only for equal snapshots in unshared storage
+    /// the structural order; equal states have equal hashes, so the
+    /// structural walk runs only for equal states in unshared storage
     /// and on hash collisions, and the order stays consistent with `Eq`.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if std::sync::Arc::ptr_eq(&self.blocks, &other.blocks)
@@ -8727,7 +8728,7 @@ impl Ord for Memory {
 #[cfg(test)]
 thread_local! {
     /// Structural memory and resource-context comparisons run on this
-    /// thread, for the regressions that ordering does not walk snapshots.
+    /// thread, for the regressions that ordering does not walk states.
     static STRUCTURAL_COMPARISONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -8794,7 +8795,7 @@ pub enum HeapExtentKind {
 ///
 /// Equality and ordering compare the kind after the bytes. Hashing and
 /// `Debug` of an `Int32` extent are exactly those of its byte term, so
-/// snapshot hashes (which name symbolic loads and order forgotten snapshots)
+/// state hashes (which name symbolic loads and order forgotten states)
 /// and traces of every 32-bit block are those of the untagged term; a
 /// `UInt64` extent hashes and prints its kind as well.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -8965,29 +8966,29 @@ pub(super) struct PendingReallocation {
     pub(super) initialized_prefix: Vec<(i64, u32)>,
 }
 
-/// Every field is a snapshot collection, so hashing is O(1).
+/// Every field is a state collection, so hashing is O(1).
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub(super) struct HeapMemory {
     /// Live heap blocks are also present in `blocks`; this set distinguishes
     /// them from automatic storage and memory-havoc markers.
-    pub(super) live_allocations: SnapshotMap<Pointer, HeapExtent>,
+    pub(super) live_allocations: HashedOrdMap<Pointer, HeapExtent>,
     /// Heap identities are never reused within a proof. These are semantic
     /// tombstones for double-free and stale-pointer diagnostics, not
     /// resources or surviving allocation authority.
-    pub(super) deallocated_allocations: SnapshotMap<Pointer, HeapExtent>,
+    pub(super) deallocated_allocations: HashedOrdMap<Pointer, HeapExtent>,
     /// A malloc result whose null/success outcome has not yet been refined by
     /// control flow or direct return. Pending allocations carry no authority
     /// until resolved.
-    pub(super) pending_allocations: SnapshotMap<Pointer, HeapExtent>,
+    pub(super) pending_allocations: HashedOrdMap<Pointer, HeapExtent>,
     /// Object classes established by a fresh allocation's checked typed binding.
     pub(super) pending_object_classes:
-        SnapshotMap<Pointer, crate::kernel::effective_type::CAccessClass>,
+        HashedOrdMap<Pointer, crate::kernel::effective_type::CAccessClass>,
     /// Successful malloc storage remains uninitialized until individual
     /// cells are written. Contract-imported allocations are not placed here.
-    pub(super) uninitialized_allocations: SnapshotSet<Pointer>,
+    pub(super) uninitialized_allocations: HashedOrdSet<Pointer>,
     /// Explicit proof-entry objects whose bytes start unwritten. Unlike heap
     /// allocations these carry neither freshness nor deallocation authority.
-    pub(super) uninitialized_objects: SnapshotMap<Pointer, u32>,
+    pub(super) uninitialized_objects: HashedOrdMap<Pointer, u32>,
     /// Bytes of storage with an initialization history — fresh heap
     /// allocations and automatic (`local:`) objects — that a C store has
     /// initialized, whether or not their cached value survives. A store the
@@ -9001,17 +9002,17 @@ pub(super) struct HeapMemory {
     /// Successful calloc storage reads as zero until individual cells are
     /// written. The set is separate from `uninitialized_allocations` so the
     /// same heap-lifetime machinery can represent both APIs.
-    pub(super) zeroed_allocations: SnapshotSet<Pointer>,
+    pub(super) zeroed_allocations: HashedOrdSet<Pointer>,
     /// Successful reallocations of zeroed storage may preserve only a prefix
     /// of the old block. The remainder of a grown block is uninitialized.
-    pub(super) zeroed_prefix_allocations: SnapshotMap<Pointer, MachineTerm>,
+    pub(super) zeroed_prefix_allocations: HashedOrdMap<Pointer, MachineTerm>,
     /// Pending calloc results whose null/success outcome has not yet been
     /// refined.
-    pub(super) zeroed_pending_allocations: SnapshotSet<Pointer>,
+    pub(super) zeroed_pending_allocations: HashedOrdSet<Pointer>,
     /// Pending reallocations retain the old live block until their result is
     /// refined. Success then retires it and installs the copied prefix;
     /// failure simply resolves the new result to null.
-    pub(super) pending_reallocations: SnapshotMap<Pointer, PendingReallocation>,
+    pub(super) pending_reallocations: HashedOrdMap<Pointer, PendingReallocation>,
     /// The effective types C stores gave heap cells
     /// (`design/effective-types.md`); see [`HeapEffectiveTypes`].
     pub(super) effective_types: HeapEffectiveTypes,
@@ -9019,7 +9020,7 @@ pub(super) struct HeapMemory {
 
 impl std::hash::Hash for HeapMemory {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Snapshot hashes name symbolic loads and order forgotten snapshots.
+        // Memory state hashes name symbolic loads and order forgotten states.
         // Preserve existing names when construction tracking is absent: an
         // unused extension must not reshuffle ordinary proof-search inputs.
         self.live_allocations.hash(state);
@@ -9048,7 +9049,7 @@ impl std::hash::Hash for HeapMemory {
 
 impl HeapMemory {
     /// Equality of two heap states derived from `base`; see
-    /// [`SnapshotMap::eq_relative_to`].
+    /// [`HashedOrdMap::eq_relative_to`].
     fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
         self.live_allocations
             .eq_relative_to(&other.live_allocations, &base.live_allocations)
@@ -9136,7 +9137,7 @@ impl HeapMemory {
                 .deallocated_allocations
                 .diff(&next.deallocated_allocations)
                 .all(|change| match change {
-                    SnapshotMapChange::Added(pointer) => {
+                    HashedOrdMapChange::Added(pointer) => {
                         !self.live_allocations.contains_key(pointer)
                             && !self.pending_allocations.contains_key(pointer)
                             && !self.pending_reallocations.contains_key(pointer)
@@ -9160,7 +9161,7 @@ pub struct MemoryBlock {
     pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
-/// An interned, immutable memory snapshot for embedding inside terms.
+/// An interned, immutable memory state for embedding inside terms.
 ///
 /// Equality and hashing are O(1) via the arena identity and a precomputed
 /// content hash. Ordering keeps a same-identity fast path, then orders by
@@ -9177,11 +9178,11 @@ pub struct SharedMemory {
 }
 
 impl SharedMemory {
-    /// How this snapshot was produced, when the arena that named it is this
+    /// How this state was produced, when the arena that named it is this
     /// thread's and an edge producer recorded one.
     ///
     /// `None` is always a legitimate answer — for entry states, for
-    /// snapshots built by paths that record no edge, and for handles that
+    /// states built by paths that record no edge, and for handles that
     /// crossed a thread. Consumers fall back rather than conclude anything
     /// from the absence.
     pub(crate) fn derivation(&self) -> Option<std::sync::Arc<MemoryDerivation>> {
@@ -9194,7 +9195,7 @@ impl SharedMemory {
         })
     }
 
-    /// The arena id naming this snapshot, valid only against ids from the
+    /// The arena id naming this state, valid only against ids from the
     /// same arena. Strictly decreasing along `derivation().base()`, which is
     /// what makes DAG walks terminate.
     pub(crate) fn arena_id(&self) -> (u32, u32) {
@@ -9202,7 +9203,7 @@ impl SharedMemory {
     }
 
     /// Producer-recorded identity of unchanged program bytes, for graph load
-    /// congruence only. This is trusted-kernel metadata, not snapshot equality
+    /// congruence only. This is trusted-kernel metadata, not state equality
     /// or access authority. It is fixed at first interning and looked up in O(1).
     pub(crate) fn read_identity(&self) -> (u32, u32) {
         C_MEMORY_ARENA.with(|arena| {
@@ -9214,7 +9215,7 @@ impl SharedMemory {
         })
     }
 
-    /// Snapshot identity for definedness of a direct automatic object.
+    /// Memory state identity for definedness of a direct automatic object.
     /// A producer updates only the local it stores; every other transition
     /// starts a fresh identity unless it merely forgets cached values.
     pub(crate) fn local_read_definedness_identity(&self, pointer: &Pointer) -> (u32, u32) {
@@ -9240,7 +9241,7 @@ impl SharedMemory {
     }
 
     /// The producer-retained source of unchanged physical bytes. This is
-    /// read congruence only: callers must retain the current snapshot for
+    /// read congruence only: callers must retain the current state for
     /// initialization, lifetime and permission checks.
     pub(crate) fn unchanged_bytes_source(&self) -> Self {
         C_MEMORY_ARENA.with(|arena| {
@@ -9308,11 +9309,11 @@ impl std::fmt::Debug for SharedMemory {
     }
 }
 
-/// The compact identity of a memory snapshot at a retained proof frontier.
+/// The compact identity of a memory state at a retained proof frontier.
 /// This only records the persistent-node pointers already held by `Memory`;
-/// it does not intern, clone, or scan the snapshot.
+/// it does not intern, clone, or scan the state.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct MemorySnapshotIdentity {
+pub(crate) struct MemoryStateIdentity {
     shallow: MemoryShallowIdentity,
 }
 
@@ -9322,7 +9323,7 @@ thread_local! {
         const { std::cell::Cell::new(0) };
 }
 
-impl MemorySnapshotIdentity {
+impl MemoryStateIdentity {
     pub(crate) fn of(memory: &Memory) -> Self {
         Self {
             shallow: MemoryShallowIdentity::of(memory),
@@ -9332,7 +9333,7 @@ impl MemorySnapshotIdentity {
 
 /// The exact source-side identity needed to retry one unresolved call
 /// requirement.  This is deliberately limited to the selected callee, its
-/// source argument expressions, and the call's source snapshot identity; it
+/// source argument expressions, and the call's source state identity; it
 /// does not retain a C state or an ambient fact set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallRequirementSite {
@@ -9347,7 +9348,7 @@ pub(crate) struct CallRequirementSite {
     /// Enclosing runtime invocation when this requirement belongs to its
     /// worker. `source_arguments` still names the worker's actual arguments.
     pub(crate) source_invocation_arguments: Option<std::sync::Arc<Vec<ProgramExpression>>>,
-    pub(crate) source_snapshot: MemorySnapshotIdentity,
+    pub(crate) source_memory_state: MemoryStateIdentity,
 }
 
 impl CallRequirementSite {
@@ -9371,7 +9372,7 @@ impl CallRequirementSite {
             candidate_ordinal,
             source_arguments: std::sync::Arc::new(source_arguments.to_vec()),
             source_invocation_arguments: None,
-            source_snapshot: MemorySnapshotIdentity::of(source_memory),
+            source_memory_state: MemoryStateIdentity::of(source_memory),
         }
     }
 
@@ -9397,11 +9398,11 @@ pub(crate) struct CallRequirementSource {
     pub(crate) site: std::sync::Arc<CallRequirementSite>,
     pub(crate) requirement_ordinal: usize,
     pub(crate) source_requirement_ordinal: Option<usize>,
-    /// Exact snapshot identity of the source-side load carrier, when this
+    /// Exact state identity of the source-side load carrier, when this
     /// requirement is stateful and its lowering registered one.  This is
-    /// separate from `site.source_snapshot`, which identifies the caller's
+    /// separate from `site.source_memory_state`, which identifies the caller's
     /// frontier and must remain stable for source lookup.
-    pub(crate) source_load_snapshot: Option<MemorySnapshotIdentity>,
+    pub(crate) source_load_state: Option<MemoryStateIdentity>,
     /// Whether the complete selected source requirement is state independent.
     /// This is a capability of the top-level requirement, not of any one
     /// lowered leaf, so every obligation emitted from the requirement shares
@@ -9415,13 +9416,13 @@ impl CallRequirementSource {
         requirement_ordinal: usize,
         source_requirement_ordinal: Option<usize>,
         source_requirement_is_state_independent: bool,
-        source_load_snapshot: Option<MemorySnapshotIdentity>,
+        source_load_state: Option<MemoryStateIdentity>,
     ) -> Self {
         Self {
             site,
             requirement_ordinal,
             source_requirement_ordinal,
-            source_load_snapshot,
+            source_load_state,
             // Generated requirements and contracts without a source registry
             // must never advertise source-side capabilities.
             source_requirement_is_state_independent: source_requirement_ordinal.is_some()
@@ -9464,17 +9465,17 @@ impl From<&Memory> for SharedMemory {
     }
 }
 
-/// How a memory snapshot was produced from an earlier one: the edges of the
+/// How a memory state was produced from an earlier one: the edges of the
 /// named-memory-state DAG (`docs/internals/memory-dag.md`). Each
-/// variant names its base snapshot, so following `base` walks backwards
+/// variant names its base state, so following `base` walks backwards
 /// through the write history that execution already knew when it built the
-/// snapshot — instead of reconstructing that history at proof time from
+/// state — instead of reconstructing that history at proof time from
 /// recorded effect facts.
 ///
 /// A derivation is **advisory**. It only ever states a true fact about how a
-/// snapshot arose, so every consumer must fall back to its previous
+/// state arose, so every consumer must fall back to its previous
 /// reasoning when none is present; nothing may depend on one existing. That
-/// is why a snapshot interned on another thread (the arena is thread-local)
+/// is why a state interned on another thread (the arena is thread-local)
 /// is merely slower to reason about rather than wrong.
 ///
 /// `LoopHavoc` is deliberately its own edge kind rather than a bulk store.
@@ -9482,13 +9483,13 @@ impl From<&Memory> for SharedMemory {
 /// cross that form. Verified whole-loop effects may carry a checked write set;
 /// those edges are crossed only with range-disjointness evidence. Enforcing
 /// that at the edge is how havoc identity survives this arc by construction,
-/// upstream of any snapshot comparison (see conventions.md's soundness trap).
+/// upstream of any state comparison (see conventions.md's soundness trap).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MemoryDerivation {
     /// `base` with one cell written. Aliasing between the written cell and
     /// a later load is decided in the querying proof context, never from
     /// facts captured on the edge: interning is first-wins on equal
-    /// snapshots, so an edge can be shared by paths with different
+    /// states, so an edge can be shared by paths with different
     /// assumptions.
     Store {
         base: SharedMemory,
@@ -9592,7 +9593,7 @@ pub enum MemoryDerivation {
     /// A memory abstraction of all incoming branch states. A read crosses
     /// only with typed evidence that every incoming memory agrees with `base`
     /// on the complete access. The constructor retains all inputs in the
-    /// snapshot identity; this edge carries no branch-local assumptions.
+    /// state identity; this edge carries no branch-local assumptions.
     BranchJoin {
         base: SharedMemory,
         incoming: Vec<SharedMemory>,
@@ -9602,7 +9603,7 @@ pub enum MemoryDerivation {
     /// Preservation of a load outside those ranges must be justified in the
     /// querying proof context. Two paths with different assumptions (for
     /// example `length == 0` and `length == 1`) can produce this exact
-    /// snapshot, so no path's assumptions may be attached to the edge.
+    /// state, so no path's assumptions may be attached to the edge.
     ///
     /// `kept_by_caller` is the owned memory the caller kept outside the
     /// transfer, when it held any: the one-layer bodies of its residual owned
@@ -9630,7 +9631,7 @@ pub enum MemoryDerivation {
 
 impl MemoryDerivation {
     /// The stores a `CellsSeeded` edge stands for, newest first: the order a
-    /// walk from the produced snapshot meets them in. `None` for every other
+    /// walk from the produced state meets them in. `None` for every other
     /// edge kind.
     pub(crate) fn seeded_stores(&self) -> Option<Vec<(Pointer, ProgramValue)>> {
         let Self::CellsSeeded { run, .. } = self else {
@@ -9645,7 +9646,7 @@ impl MemoryDerivation {
     }
 
     /// The edge kind's name, for census rows that must stay readable
-    /// without carrying a snapshot.
+    /// without carrying a state.
     pub(crate) fn kind_name(&self) -> &'static str {
         match self {
             Self::CellsSeeded { .. } => "CellsSeeded",
@@ -9667,7 +9668,7 @@ impl MemoryDerivation {
         }
     }
 
-    /// The snapshot this one was derived from.
+    /// The state this one was derived from.
     pub fn base(&self) -> &SharedMemory {
         match self {
             Self::Store { base, .. }
@@ -9696,7 +9697,7 @@ static NEXT_MEMORY_ARENA_TOKEN: std::sync::atomic::AtomicU32 = std::sync::atomic
 struct MemoryArena {
     identities: std::collections::HashMap<std::sync::Arc<Memory>, (u32, u64)>,
     shallow_identities: std::collections::HashMap<MemoryShallowIdentity, (u32, u64)>,
-    /// Snapshots whose storage roots were registered in `shallow_identities`
+    /// Memory states whose storage roots were registered in `shallow_identities`
     /// on a structural hit. Holding them keeps those roots allocated, so a
     /// registered address cannot be reused by a different map. Each pin is
     /// an O(1) handle clone.
@@ -9707,7 +9708,7 @@ struct MemoryArena {
     /// statement, say) is recognized here by comparing its changes from the
     /// base, instead of its whole content, before the structural lookup.
     derived_children: std::collections::HashMap<(u32, u64), Vec<u32>>,
-    /// Indexed by arena id; `None` for entry states and for any snapshot
+    /// Indexed by arena id; `None` for entry states and for any state
     /// whose first interning did not come from a recorded edge.
     derivations: Vec<Option<std::sync::Arc<MemoryDerivation>>>,
     /// Immutable load-congruence keys. Producers reuse the base's key only
@@ -9762,20 +9763,20 @@ thread_local! {
 }
 
 /// Replaces this thread's memory arena with an empty one under a fresh
-/// token. Snapshots interned before keep comparing by content but lose
+/// token. Memory states interned before keep comparing by content but lose
 /// their derivations, so nothing recorded for an earlier verification can
 /// answer a DAG walk in a later one. Called by [`super::VerificationSession`]
 /// at the outermost verification entry; see its documentation.
 /// This thread's memory arena as one value: its token, every interned
-/// snapshot with its derivation, and the derivation generation. Clones share
-/// the snapshots' storage, so a capture costs one handle per arena entry.
+/// state with its derivation, and the derivation generation. Clones share
+/// the states' storage, so a capture costs one handle per arena entry.
 #[derive(Clone)]
 pub(super) struct MemoryArenaState {
     arena: (u32, MemoryArena),
     derivation_generation: u64,
 }
 
-/// How many entries the arena holds: interned snapshots and pinned roots.
+/// How many entries the arena holds: interned states and pinned roots.
 #[cfg(test)]
 pub(super) fn memory_arena_entry_count() -> usize {
     C_MEMORY_ARENA.with(|arena| {
@@ -9791,17 +9792,17 @@ pub(super) fn capture_memory_arena() -> MemoryArenaState {
     }
 }
 
-/// Reinstalls a captured arena under its own token, so every snapshot id the
-/// capture's holder kept still names the same snapshot and derivation, and
+/// Reinstalls a captured arena under its own token, so every state id the
+/// capture's holder kept still names the same state and derivation, and
 /// nothing interned since remains.
 pub(super) fn restore_memory_arena(state: &MemoryArenaState) {
     C_MEMORY_ARENA.with(|arena| *arena.borrow_mut() = state.arena.clone());
     C_MEMORY_DERIVATION_GENERATION.with(|generation| generation.set(state.derivation_generation));
 }
 
-/// Scope native import memo keys to the active snapshot arena. Global shared
+/// Scope native import memo keys to the active state arena. Global shared
 /// syntax identities remain independent; a cache lookup must not compare the
-/// contents of snapshots owned by different verification sessions.
+/// contents of states owned by different verification sessions.
 fn memory_arena_token() -> u32 {
     C_MEMORY_ARENA.with(|arena| arena.borrow().0)
 }
@@ -9815,13 +9816,13 @@ pub(super) fn start_fresh_memory_arena() {
     });
 }
 
-/// Bumped every time a derivation slot is filled on a snapshot that was
+/// Bumped every time a derivation slot is filled on a state that was
 /// interned before the edge was recorded. Memo tables over DAG walks key on
 /// this so an edge recorded later invalidates earlier "no path" answers
 /// instead of leaving them stale.
 ///
-/// A recording that interns the snapshot it derives does not bump it: no
-/// earlier question could name that snapshot, and an existing snapshot's
+/// A recording that interns the state it derives does not bump it: no
+/// earlier question could name that state, and an existing state's
 /// history never changes, so no earlier answer can. Bumping on those too
 /// emptied every negative memo at every program step, and a call step re-ran
 /// each failed alias question its walks had already answered.
@@ -9860,9 +9861,9 @@ pub(crate) fn intern_derivation_base(memory: &mut Memory) -> SharedMemory {
 ///
 /// `result` is replaced by the arena's canonical instance of its content, an
 /// O(1) handle clone. The edge recorded is the same either way; carrying the
-/// canonical instance forward means every later snapshot derived from this
+/// canonical instance forward means every later state derived from this
 /// one shares storage roots with whatever the arena already holds, so facts
-/// and terms that embed equal snapshots compare by root identity.
+/// and terms that embed equal states compare by root identity.
 pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
@@ -9883,7 +9884,7 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
         | MemoryDerivation::BlockDeclared { base, .. }
         | MemoryDerivation::ObjectInitializationRecorded { base, .. } => {
             // Declaration/initialization metadata writes no values. Keep the
-            // bytes' identity; type, lifetime and access use this snapshot.
+            // bytes' identity; type, lifetime and access use this state.
             Some(base.read_identity())
         }
         MemoryDerivation::CellsSeeded { base, run }
@@ -9899,7 +9900,7 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
         }
         _ => None,
     };
-    // A snapshot this call interns is one no query has seen yet, so filling
+    // A state this call interns is one no query has seen yet, so filling
     // its derivation cannot change an earlier answer.
     let next_id = C_MEMORY_ARENA.with(|arena| arena.borrow().1.identities.len());
     let derived = intern_memory_ref_with_read_identity(result, read_identity);
@@ -9913,7 +9914,7 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
             return;
         }
         let arena = &mut arena.1;
-        // Set once, before a newly interned snapshot can escape this producer.
+        // Set once, before a newly interned state can escape this producer.
         // A concrete local store cannot affect another automatic object.
         // Forgetting cached values changes knowledge, not initialized bytes
         // or lifetimes. All other effects conservatively retain a fresh key.
@@ -10000,7 +10001,7 @@ fn recorded_child_matching(result: &Memory, base: &SharedMemory) -> Option<Memor
 /// combined by a multiply-rotate mix rather than SipHash, which costs more
 /// than the rest of a comparison and runs twice per comparison. Like the
 /// content hash it depends only on the entries, so it is deterministic and
-/// equal for equal snapshots; a collision costs only the structural walk.
+/// equal for equal states; a collision costs only the structural walk.
 fn memory_ordering_key(memory: &Memory) -> u64 {
     use std::hash::{Hash, Hasher};
     #[derive(Default)]
@@ -10035,21 +10036,21 @@ fn memory_content_hash(memory: &Memory) -> u64 {
     hasher.finish()
 }
 
-/// The component collections a snapshot hashes: three memory maps, the
+/// The component collections a state hashes: three memory maps, the
 /// ended-lifetime set, the nine heap collections, and the forget mark.
 const C_MEMORY_HASHED_COMPONENTS: usize = 14;
 
 /// Charges a structural arena lookup. Hashing is O(1) per component because
 /// each collection caches its content hash; the comparison a bucket hit
 /// performs is charged by the collections' own `eq`, per element actually
-/// compared, and is O(1) for snapshots sharing their persistent roots.
+/// compared, and is O(1) for states sharing their persistent roots.
 fn record_memory_structural_lookup_work() {
     crate::instrumentation::record_deterministic_work(C_MEMORY_HASHED_COMPONENTS);
 }
 
-/// Interns a memory snapshot in the thread-local arena. Structurally equal
-/// snapshots interned on the same thread share one allocation and identity;
-/// snapshots that cross threads still compare correctly through the content
+/// Interns a memory state in the thread-local arena. Structurally equal
+/// states interned on the same thread share one allocation and identity;
+/// states that cross threads still compare correctly through the content
 /// hash and structural fallback.
 pub fn intern_memory(memory: Memory) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
@@ -10068,7 +10069,7 @@ pub fn intern_memory(memory: Memory) -> SharedMemory {
         if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(&memory) {
             let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
             // Remember the caller's storage roots, so the next lookup of this
-            // same snapshot is an O(1) shallow hit instead of another
+            // same state is an O(1) shallow hit instead of another
             // comparison. The pin keeps those roots alive: a registered
             // address must never be freed and reused by different content.
             arena
@@ -10104,9 +10105,9 @@ pub fn intern_memory(memory: Memory) -> SharedMemory {
     })
 }
 
-/// The interned snapshot `memory` is the canonical storage of, found by its
+/// The interned state `memory` is the canonical storage of, found by its
 /// storage roots alone, or `None`. Interns nothing and compares no content:
-/// a snapshot a derivation produced carries its interned storage forward
+/// a state a derivation produced carries its interned storage forward
 /// ([`record_memory_derivation`]), so a live state's memory is found here
 /// in O(1), and any other memory is left to the caller.
 pub(crate) fn interned_storage_of(memory: &Memory) -> Option<SharedMemory> {
@@ -10126,14 +10127,14 @@ pub(crate) fn interned_storage_of(memory: &Memory) -> Option<SharedMemory> {
     })
 }
 
-/// Interns by reference: an already-interned snapshot is found without
+/// Interns by reference: an already-interned state is found without
 /// cloning it, so hot memoization lookups keyed by interned identity pay a
 /// hash and comparison but no allocation.
 pub fn intern_memory_ref(memory: &Memory) -> SharedMemory {
     intern_memory_ref_with_read_identity(memory, None)
 }
 
-/// First interning wins, including its read identity. Existing snapshots never
+/// First interning wins, including its read identity. Existing states never
 /// change keys underneath registered applications; an earlier unannotated hit
 /// conservatively loses this equality rather than requiring graph rescans.
 fn intern_memory_ref_with_read_identity(
@@ -10156,7 +10157,7 @@ fn intern_memory_ref_with_read_identity(
         if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(memory) {
             let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
             // Remember the caller's storage roots, so the next lookup of this
-            // same snapshot is an O(1) shallow hit instead of another
+            // same state is an O(1) shallow hit instead of another
             // comparison. The pin keeps those roots alive: a registered
             // address must never be freed and reused by different content.
             arena
@@ -10199,7 +10200,7 @@ fn intern_memory_ref_with_read_identity(
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct PopulationEffects {
     /// Read permissions captured for evaluating a predicate's immutable count
-    /// snapshot. The creation root supplies its logical identity; this witness
+    /// state. The creation root supplies its logical identity; this witness
     /// cannot supply resources to an execution or resource rewrite.
     pub(super) predicate_count_permissions: Option<PredicateCountPermissions>,
 
@@ -10521,7 +10522,7 @@ pub(in crate::kernel) struct ReservedLocalScalarOwner {
     occurrence: ResourceOccurrenceId,
 }
 
-/// An immutable resource composition snapshot.
+/// An immutable resource composition state.
 ///
 /// One pointer-sized storage root keeps recursive execution frames shallow.
 /// Forks share that root; a local insertion or removal replaces only the
@@ -10692,7 +10693,7 @@ impl ResourceContext {
 }
 
 /// The memory-dependent part of a supported observation.  The resource
-/// occurrence identifies the owner; this record pins the memory snapshot and
+/// occurrence identifies the owner; this record pins the memory state and
 /// the exact footprint(s) read while the projection was made.  Unknown
 /// dependencies are deliberately conservative and are invalidated by any
 /// opaque memory transition.
@@ -10705,7 +10706,7 @@ pub(super) enum ResourceMemoryFootprint {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ResourceSupportMetadata {
-    pub(super) memory_snapshot: MemorySnapshotIdentity,
+    pub(super) memory_state_identity: MemoryStateIdentity,
     pub(super) footprint: ResourceMemoryFootprint,
 }
 
@@ -10766,20 +10767,20 @@ pub(super) struct ResourceContextStorage {
         PersistentMap<ResourceMemoryIntervalNode, ResourceOccurrenceIds>,
     pub(super) symbolic_memory_support: ResourceOccurrenceIds,
     pub(super) unknown_memory_support: ResourceOccurrenceIds,
-    /// Certified, snapshot-stable owned expansions for folded resource
+    /// Certified, state-stable owned expansions for folded resource
     /// generations. Reusing these avoids re-lowering the same body into
     /// fresh symbolic load identities at each later transition.
     pub(super) expansions_by_support_occurrence:
         PersistentMap<ResourceOccurrenceId, std::sync::Arc<Vec<ResourceFact>>>,
     /// Canonical cache buckets keyed by support fact and rank among equal
-    /// owned authorities. Independently built equivalent snapshots can
+    /// owned authorities. Independently built equivalent states can
     /// compare their support graph without exposing opaque occurrence
     /// allocation order, while invalidation remains occurrence-keyed above.
     /// Nesting by fact lets rekeying touch only the affected bucket.
     pub(super) expansions_by_support_entry:
         PersistentMap<ResourceFact, PersistentMap<usize, std::sync::Arc<Vec<ResourceFact>>>>,
     /// Persistent mutation ancestry used by checked Proof joins. The origin
-    /// distinguishes unrelated snapshots; the history names only exact facts
+    /// distinguishes unrelated states; the history names only exact facts
     /// whose multiplicity or representation changed.
     pub(super) origin: std::sync::Arc<()>,
     pub(super) history: Option<std::sync::Arc<ResourceContextChange>>,
@@ -10789,7 +10790,7 @@ pub(super) struct ResourceContextStorage {
     pub(super) observable_projection_source:
         Option<(std::sync::Arc<()>, std::sync::Arc<ResourceContextStorage>)>,
     /// Legacy callers that explicitly enumerate every fact pay the
-    /// output-sized materialization once per immutable snapshot.
+    /// output-sized materialization once per immutable state.
     pub(super) materialized: std::sync::OnceLock<Vec<ResourceFact>>,
 }
 
@@ -10820,12 +10821,12 @@ pub(super) struct ResourceContextIndex {
     /// The held facts as a canonical multiset: contexts holding the same
     /// facts share its root, so equality never walks them.
     pub(super) canonical: canonical_fact_set::CanonicalFactSet,
-    pub(super) memory_facts: SnapshotMap<ResourceFact, ()>,
+    pub(super) memory_facts: HashedOrdMap<ResourceFact, ()>,
     /// The owned facts of resources other than memory, each once: the
     /// non-memory members a composition is listed under
     /// (`CompositionMemberIndex`).
-    pub(super) owned_non_memory_facts: SnapshotMap<ResourceFact, ()>,
-    pub(super) owned_memory_ranges: SnapshotMap<MemoryRange, ()>,
+    pub(super) owned_non_memory_facts: HashedOrdMap<ResourceFact, ()>,
+    pub(super) owned_memory_ranges: HashedOrdMap<MemoryRange, ()>,
     pub(super) owned_memory_range_counts: PersistentMap<MemoryRange, usize>,
     owned_count: usize,
     owned_composite_count: usize,
@@ -10860,7 +10861,7 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_composites_by_argument_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The owned folded composites with their multiplicity, content-hashed,
     /// so a kept set's identity can name them in constant work.
-    pub(super) owned_composite_facts: SnapshotMap<ResourceFact, usize>,
+    pub(super) owned_composite_facts: HashedOrdMap<ResourceFact, usize>,
     pub(super) exact: PersistentMap<ResourceFact, ResourceEntryIds>,
     /// Exact physical ranges with their access modes, only for observing
     /// partition separation. Entries still carry their original authority.
@@ -11045,7 +11046,7 @@ impl std::hash::Hash for ResourceContext {
 impl Ord for ResourceContext {
     /// By the fact multiset's cached content hash first, then structurally.
     /// The structural order walks the facts two contexts share, and the
-    /// snapshots a path states share almost all of them, so a set of stated
+    /// states a path states share almost all of them, so a set of stated
     /// compositions paid for a whole context per comparison
     /// (`roadmap/scaling.md`). Equal contexts hold equal facts and so equal
     /// hashes, and the hash depends only on the facts, so the order is
@@ -11211,7 +11212,7 @@ impl PartialOrd for ResourceContext {
     }
 }
 
-/// Compare only the support graph, using each snapshot's stable entry
+/// Compare only the support graph, using each state's stable entry
 /// ordinals instead of the process-local opaque occurrence allocation. This
 /// avoids materializing or sorting the ambient resource population.
 fn compare_support_graph(left: &ResourceContext, right: &ResourceContext) -> std::cmp::Ordering {
@@ -11261,7 +11262,7 @@ pub enum ResourceFact {
     View(Resource),
 }
 
-/// Immutable logical indices shared by resource snapshots and population keys.
+/// Immutable logical indices shared by resource states and population keys.
 /// Cloning a resource must not clone a recursive model stored in its indices.
 pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
 
@@ -11794,38 +11795,38 @@ pub enum ResourceTerm {
     PopulationAuthority {
         protected: Box<ResourceTypeSpec>,
         population_arity: Option<usize>,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     },
     MutexGuard {
         mutex: Box<ProgramExpression>,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     },
     MutexLive {
         mutex: Box<ProgramExpression>,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     },
     MutexUse {
         protected: Option<Box<ResourceTypeSpec>>,
         mutex: Box<ProgramExpression>,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     },
     /// `publisher(flag, P)` or `subscriber(flag, P)`.
     Publication {
         side: PublicationSide,
         payload: Box<ResourceTypeSpec>,
         flag: Box<ProgramExpression>,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     },
     Composite {
         name: String,
         arguments: Vec<ProgramExpression>,
-        argument_snapshots: Vec<ResourceSnapshot>,
+        argument_state_sources: Vec<ResourceStateSource>,
         parameter_types: Vec<ProgramType>,
     },
     Token {
         name: String,
         arguments: Vec<ProgramExpression>,
-        argument_snapshots: Vec<ResourceSnapshot>,
+        argument_state_sources: Vec<ResourceStateSource>,
         parameter_types: Vec<ProgramType>,
     },
     Instance {
@@ -11894,7 +11895,7 @@ pub enum ResourceTransferRole {
 /// metadata records the selection made by lowering and prevents entry/post
 /// meaning from being inferred from a vector's position.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum ResourceSnapshot {
+pub enum ResourceStateSource {
     Entry,
     Current,
     Post,
@@ -11911,9 +11912,9 @@ pub struct ResourceSpec {
     mutex_authority_binding: Option<Arc<(Variable, String)>>,
     access: ResourceAccessMode,
     quantity: ResourceQuantity,
-    quantity_snapshot: ResourceSnapshot,
+    quantity_state_source: ResourceStateSource,
     role: ResourceTransferRole,
-    snapshot: ResourceSnapshot,
+    state_source: ResourceStateSource,
     /// A pre-state proposition controlling a conditional resource effect.
     /// `None` is the ordinary unconditional clause.
     guard: Option<SpecProposition>,
@@ -12033,14 +12034,16 @@ impl ResourceTerm {
         }
     }
 
-    pub fn declared_argument_snapshots(&self) -> Option<&[ResourceSnapshot]> {
+    pub fn declared_argument_states(&self) -> Option<&[ResourceStateSource]> {
         match self {
             Self::Composite {
-                argument_snapshots, ..
+                argument_state_sources,
+                ..
             }
             | Self::Token {
-                argument_snapshots, ..
-            } => Some(argument_snapshots),
+                argument_state_sources,
+                ..
+            } => Some(argument_state_sources),
             _ => None,
         }
     }
@@ -12064,7 +12067,7 @@ impl ResourceSpec {
         access: ResourceAccessMode,
         quantity: ResourceQuantity,
         role: ResourceTransferRole,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     ) -> Result<Self, ResourceSpecError> {
         let spec = Self {
             term,
@@ -12072,9 +12075,9 @@ impl ResourceSpec {
             resource_arguments: Arc::from([]),
             access,
             quantity,
-            quantity_snapshot: ResourceSnapshot::Current,
+            quantity_state_source: ResourceStateSource::Current,
             role,
-            snapshot,
+            state_source,
             guard: None,
             clause_position: None,
             source_arguments: None,
@@ -12087,14 +12090,14 @@ impl ResourceSpec {
         segment: MemorySegment,
         access: ResourceAccessMode,
         role: ResourceTransferRole,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     ) -> Self {
         Self::new(
             ResourceTerm::Memory(segment),
             access,
             ResourceQuantity::One,
             role,
-            snapshot,
+            state_source,
         )
         .expect("unit memory terms are valid by construction")
     }
@@ -12108,7 +12111,7 @@ impl ResourceSpec {
             segment,
             ResourceAccessMode::View,
             ResourceTransferRole::Borrow,
-            ResourceSnapshot::Current,
+            ResourceStateSource::Current,
         )
     }
 
@@ -12117,7 +12120,7 @@ impl ResourceSpec {
             segment,
             ResourceAccessMode::Own,
             ResourceTransferRole::Consume,
-            ResourceSnapshot::Current,
+            ResourceStateSource::Current,
         )
     }
 
@@ -12128,9 +12131,9 @@ impl ResourceSpec {
         arguments: Vec<ProgramExpression>,
         parameter_types: Vec<ProgramType>,
         role: ResourceTransferRole,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     ) -> Result<Self, ResourceSpecError> {
-        Self::declared_with_argument_snapshots(
+        Self::declared_with_argument_states(
             family,
             access,
             name,
@@ -12138,24 +12141,26 @@ impl ResourceSpec {
             Vec::new(),
             parameter_types,
             role,
-            snapshot,
+            state_source,
         )
     }
 
-    pub fn declared_with_argument_snapshots(
+    pub fn declared_with_argument_states(
         family: ResourceFamily,
         access: ResourceAccessMode,
         name: String,
         arguments: Vec<ProgramExpression>,
-        mut argument_snapshots: Vec<ResourceSnapshot>,
+        mut argument_state_sources: Vec<ResourceStateSource>,
         parameter_types: Vec<ProgramType>,
         role: ResourceTransferRole,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     ) -> Result<Self, ResourceSpecError> {
-        if argument_snapshots.is_empty() {
-            argument_snapshots = vec![ResourceSnapshot::Current; arguments.len()];
+        if argument_state_sources.is_empty() {
+            argument_state_sources = vec![ResourceStateSource::Current; arguments.len()];
         }
-        if arguments.len() != argument_snapshots.len() || arguments.len() != parameter_types.len() {
+        if arguments.len() != argument_state_sources.len()
+            || arguments.len() != parameter_types.len()
+        {
             return Err(ResourceSpecError::InvalidNestedTerm(
                 "resource argument metadata has the wrong length".into(),
             ));
@@ -12169,13 +12174,13 @@ impl ResourceSpec {
             ResourceFamily::Composite => ResourceTerm::Composite {
                 name,
                 arguments,
-                argument_snapshots,
+                argument_state_sources,
                 parameter_types,
             },
             ResourceFamily::Token => ResourceTerm::Token {
                 name,
                 arguments,
-                argument_snapshots,
+                argument_state_sources,
                 parameter_types,
             },
             ResourceFamily::Publication
@@ -12191,7 +12196,7 @@ impl ResourceSpec {
                 ));
             }
         };
-        Self::new(term, access, ResourceQuantity::One, role, snapshot)
+        Self::new(term, access, ResourceQuantity::One, role, state_source)
     }
 
     pub fn instance(
@@ -12200,7 +12205,7 @@ impl ResourceSpec {
         schema: ResourceFieldSchema,
         resource: ResourceSpec,
         role: ResourceTransferRole,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     ) -> Result<Self, ResourceSpecError> {
         if resource.access != ResourceAccessMode::Own
             || resource.quantity != ResourceQuantity::One
@@ -12221,7 +12226,7 @@ impl ResourceSpec {
             ResourceAccessMode::Own,
             ResourceQuantity::One,
             role,
-            snapshot,
+            state_source,
         )
         .map(|spec| spec.with_resource_arguments(references.to_vec()))
     }
@@ -12230,7 +12235,7 @@ impl ResourceSpec {
         quantity: ProgramExpression,
         resource: ResourceSpec,
         role: ResourceTransferRole,
-        snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
     ) -> Result<Self, ResourceSpecError> {
         if !resource.resource_arguments.is_empty() {
             return Err(ResourceSpecError::InvalidNestedTerm(
@@ -12271,19 +12276,19 @@ impl ResourceSpec {
             ResourceAccessMode::Own,
             ResourceQuantity::Count(quantity),
             role,
-            snapshot,
+            state_source,
         )
     }
 
-    pub fn quantified_with_quantity_snapshot(
+    pub fn quantified_with_quantity_state(
         quantity: ProgramExpression,
         resource: ResourceSpec,
         role: ResourceTransferRole,
-        snapshot: ResourceSnapshot,
-        quantity_snapshot: ResourceSnapshot,
+        state_source: ResourceStateSource,
+        quantity_state_source: ResourceStateSource,
     ) -> Result<Self, ResourceSpecError> {
-        let mut spec = Self::quantified(quantity, resource, role, snapshot)?;
-        spec.quantity_snapshot = quantity_snapshot;
+        let mut spec = Self::quantified(quantity, resource, role, state_source)?;
+        spec.quantity_state_source = quantity_state_source;
         Ok(spec)
     }
 
@@ -12350,16 +12355,16 @@ impl ResourceSpec {
         &self.quantity
     }
 
-    pub fn quantity_snapshot(&self) -> ResourceSnapshot {
-        self.quantity_snapshot
+    pub fn quantity_state_source(&self) -> ResourceStateSource {
+        self.quantity_state_source
     }
 
     pub fn role(&self) -> ResourceTransferRole {
         self.role
     }
 
-    pub fn snapshot(&self) -> ResourceSnapshot {
-        self.snapshot
+    pub fn state_source(&self) -> ResourceStateSource {
+        self.state_source
     }
 
     pub fn guard(&self) -> Option<&SpecProposition> {
@@ -12403,16 +12408,17 @@ impl ResourceSpec {
                 ResourceTerm::Instance { resource, .. } => capture(resource, entry_values),
                 ResourceTerm::Composite {
                     arguments,
-                    argument_snapshots,
+                    argument_state_sources,
                     ..
                 }
                 | ResourceTerm::Token {
                     arguments,
-                    argument_snapshots,
+                    argument_state_sources,
                     ..
                 } => {
-                    for (argument, snapshot) in arguments.iter_mut().zip(argument_snapshots) {
-                        if *snapshot == ResourceSnapshot::Entry
+                    for (argument, state_source) in arguments.iter_mut().zip(argument_state_sources)
+                    {
+                        if *state_source == ResourceStateSource::Entry
                             && let ProgramExpression::Variable(name) = argument
                             && let Some(value) = entry_values.get(name)
                         {
@@ -12472,7 +12478,7 @@ impl ResourceSpec {
                 ResourceAccessMode::Own,
                 ResourceQuantity::One,
                 self.role,
-                self.snapshot,
+                self.state_source,
             )
             .expect("validated instance terms have valid owned unit bodies")
             .with_resource_arguments(self.resource_arguments().to_vec()),
@@ -12506,8 +12512,8 @@ impl ResourceSpec {
         self.term.declared_arguments()
     }
 
-    pub fn declared_argument_snapshots(&self) -> Option<&[ResourceSnapshot]> {
-        self.term.declared_argument_snapshots()
+    pub fn declared_argument_states(&self) -> Option<&[ResourceStateSource]> {
+        self.term.declared_argument_states()
     }
 
     pub fn declared_parameter_types(&self) -> Option<&[ProgramType]> {
@@ -12527,7 +12533,7 @@ impl ResourceSpec {
             arguments,
             parameter_types,
             ResourceTransferRole::Consume,
-            ResourceSnapshot::Current,
+            ResourceStateSource::Current,
         )
         .expect("composite resource terms are valid by construction")
     }
@@ -12545,7 +12551,7 @@ impl ResourceSpec {
             arguments,
             parameter_types,
             ResourceTransferRole::Consume,
-            ResourceSnapshot::Current,
+            ResourceStateSource::Current,
         )
         .expect("token resource terms are valid by construction")
     }
@@ -12555,8 +12561,8 @@ impl ResourceSpec {
         self
     }
 
-    pub fn with_snapshot(mut self, snapshot: ResourceSnapshot) -> Self {
-        self.snapshot = snapshot;
+    pub fn with_state_source(mut self, state_source: ResourceStateSource) -> Self {
+        self.state_source = state_source;
         self
     }
 
@@ -12577,9 +12583,9 @@ impl PartialEq for ResourceSpec {
             && self.mutex_authority_binding == other.mutex_authority_binding
             && self.access == other.access
             && self.quantity == other.quantity
-            && self.quantity_snapshot == other.quantity_snapshot
+            && self.quantity_state_source == other.quantity_state_source
             && self.role == other.role
-            && self.snapshot == other.snapshot
+            && self.state_source == other.state_source
             && self.guard == other.guard
     }
 }
@@ -12593,9 +12599,9 @@ impl Hash for ResourceSpec {
         self.mutex_authority_binding.hash(state);
         self.access.hash(state);
         self.quantity.hash(state);
-        self.quantity_snapshot.hash(state);
+        self.quantity_state_source.hash(state);
         self.role.hash(state);
-        self.snapshot.hash(state);
+        self.state_source.hash(state);
         self.guard.hash(state);
     }
 }
@@ -12608,9 +12614,9 @@ impl Ord for ResourceSpec {
             &self.mutex_authority_binding,
             self.access,
             &self.quantity,
-            self.quantity_snapshot,
+            self.quantity_state_source,
             self.role,
-            self.snapshot,
+            self.state_source,
             &self.guard,
         )
             .cmp(&(
@@ -12619,9 +12625,9 @@ impl Ord for ResourceSpec {
                 &other.mutex_authority_binding,
                 other.access,
                 &other.quantity,
-                other.quantity_snapshot,
+                other.quantity_state_source,
                 other.role,
-                other.snapshot,
+                other.state_source,
                 &other.guard,
             ))
     }
@@ -12643,7 +12649,7 @@ mod named_mutex_authority_spec_tests {
             ResourceAccessMode::Own,
             ResourceQuantity::One,
             ResourceTransferRole::Borrow,
-            ResourceSnapshot::Current,
+            ResourceStateSource::Current,
         )
         .unwrap()
     }
@@ -12656,16 +12662,16 @@ mod named_mutex_authority_spec_tests {
         for term in [
             ResourceTerm::MutexLive {
                 mutex: mutex.clone(),
-                snapshot: ResourceSnapshot::Current,
+                state_source: ResourceStateSource::Current,
             },
             ResourceTerm::MutexUse {
                 protected: None,
                 mutex: mutex.clone(),
-                snapshot: ResourceSnapshot::Current,
+                state_source: ResourceStateSource::Current,
             },
             ResourceTerm::MutexGuard {
                 mutex: mutex.clone(),
-                snapshot: ResourceSnapshot::Current,
+                state_source: ResourceStateSource::Current,
             },
         ] {
             let unnamed = authority(term);
@@ -12687,7 +12693,7 @@ mod named_mutex_authority_spec_tests {
                 named
                     .clone()
                     .with_role(ResourceTransferRole::Consume)
-                    .with_snapshot(ResourceSnapshot::Entry)
+                    .with_state_source(ResourceStateSource::Entry)
                     .mutex_authority_binding(),
                 Some((Variable(9), "guard"))
             );
@@ -12720,23 +12726,23 @@ mod named_mutex_authority_spec_tests {
         let viewed = ResourceSpec::new(
             ResourceTerm::MutexGuard {
                 mutex: mutex.clone(),
-                snapshot: ResourceSnapshot::Current,
+                state_source: ResourceStateSource::Current,
             },
             ResourceAccessMode::View,
             ResourceQuantity::One,
             ResourceTransferRole::Borrow,
-            ResourceSnapshot::Current,
+            ResourceStateSource::Current,
         );
         assert!(viewed.is_err());
         let counted = ResourceSpec::new(
             ResourceTerm::MutexGuard {
                 mutex,
-                snapshot: ResourceSnapshot::Current,
+                state_source: ResourceStateSource::Current,
             },
             ResourceAccessMode::Own,
             ResourceQuantity::Count(ProgramExpression::Value(int32(2))),
             ResourceTransferRole::Borrow,
-            ResourceSnapshot::Current,
+            ResourceStateSource::Current,
         );
         assert!(counted.is_err());
     }
@@ -12753,7 +12759,7 @@ mod population_authority_spec_tests {
                 resource: Box::new(resource),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
             }),
-            snapshot: ResourceSnapshot::Current,
+            state_source: ResourceStateSource::Current,
         }
     }
 
@@ -12770,7 +12776,7 @@ mod population_authority_spec_tests {
                     ResourceAccessMode::Own,
                     ResourceQuantity::One,
                     ResourceTransferRole::Borrow,
-                    ResourceSnapshot::Current,
+                    ResourceStateSource::Current,
                 )
                 .is_ok()
             );
@@ -12780,7 +12786,7 @@ mod population_authority_spec_tests {
                     ResourceAccessMode::View,
                     ResourceQuantity::One,
                     ResourceTransferRole::Borrow,
-                    ResourceSnapshot::Current,
+                    ResourceStateSource::Current,
                 )
                 .is_err()
             );
@@ -12790,7 +12796,7 @@ mod population_authority_spec_tests {
                     ResourceAccessMode::Own,
                     ResourceQuantity::Count(ProgramExpression::Value(int32(2))),
                     ResourceTransferRole::Borrow,
-                    ResourceSnapshot::Current,
+                    ResourceStateSource::Current,
                 )
                 .is_err()
             );
@@ -13032,7 +13038,7 @@ pub enum Proposition {
         bytes: MachineTerm,
         wide: bool,
     },
-    /// A typed read is valid in this snapshot, including initialization.
+    /// A typed read is valid in this state, including initialization.
     /// This is a pure fact; it grants no resource access permission.
     MemoryReadDefined {
         memory: Memory,
@@ -13180,9 +13186,9 @@ impl Hash for Proposition {
 }
 
 /// Hashes one atomic proposition by its fields, consistently with the derived
-/// equality. Every field hashes structurally; a memory snapshot hashes by its
+/// equality. Every field hashes structurally; a memory state hashes by its
 /// cached content hash in O(1). Hashing an atom's debug text instead printed
-/// every snapshot it names, so inserting or looking up a call's effect summary
+/// every state it names, so inserting or looking up a call's effect summary
 /// cost the size of the whole memory, and each later call in a long function
 /// paid more than the last.
 fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
@@ -14276,7 +14282,7 @@ pub struct PureFactContext {
     /// Shared ordered projection used when checked paths publish this context.
     pub(super) execution_fact_projection: super::execution_facts::ContextFacts,
     /// Persistent syntax adjacency for atomic certificate planning. Unlike
-    /// free-variable indexes, this never scans snapshot contents.
+    /// free-variable indexes, this never scans state contents.
     pub(super) atomic_connection_facts:
         crate::persistent::PersistentMap<AtomicConnectionKey, AtomicConnectionFacts>,
     pub(super) atomic_ground_facts:
@@ -14293,21 +14299,21 @@ pub struct PureFactContext {
     pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
-    /// without inspecting a snapshot.
+    /// without inspecting a state.
     pub(super) shared_condition_variables: super::assumptions::shared_condition_variables::Index,
     pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<
         Variable,
         crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
     >,
-    /// Snapshot-dependent conditions use the complete collector only when
+    /// MemoryState-dependent conditions use the complete collector only when
     /// smart premise selection asks for them. Scalar updates share the cache.
-    pub(super) snapshot_condition_variable_base: crate::persistent::PersistentMap<
+    pub(super) state_condition_variable_base: crate::persistent::PersistentMap<
         Variable,
         crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
     >,
-    pub(super) snapshot_condition_variable_changes:
+    pub(super) state_condition_variable_changes:
         crate::persistent::PersistentMap<ConditionTerm, bool>,
-    pub(super) snapshot_condition_variables: std::sync::Arc<
+    pub(super) state_condition_variables: std::sync::Arc<
         std::sync::OnceLock<
             crate::persistent::PersistentMap<
                 Variable,
@@ -14406,9 +14412,9 @@ pub struct PureFactContext {
     /// from, each filed as its own condition so a walk can cite it exactly:
     /// [`super::assumptions::OrderFactsByLower`].
     pub(super) order_facts_by_lower: super::assumptions::OrderFactsByLower,
-    /// True `PointerOffsetEqual` facts by each side's snapshot shape
-    /// (`offset_snapshot_shape`), the candidates
-    /// `has_pointer_offset_snapshot_fact` checks.
+    /// True `PointerOffsetEqual` facts by each side's state shape
+    /// (`offset_state_shape`), the candidates
+    /// `has_pointer_offset_state_fact` checks.
     pub(super) pointer_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
     pub(super) observation_comparisons:
@@ -14439,8 +14445,8 @@ pub struct PureFactContext {
     pub(super) wide_order_edges:
         [[super::assumptions::retained_order_bounds::OrderEdgeIndex; 2]; 2],
     /// Condition facts containing a memory-load atom, indexed by the loaded
-    /// pointer's snapshot-blind structural fingerprint. This is derived from
-    /// `condition_facts`; it narrows snapshot-aware load-form checks
+    /// pointer's state-blind structural fingerprint. This is derived from
+    /// `condition_facts`; it narrows state-aware load-form checks
     /// without deciding them. It is maintained at each condition insert, so a
     /// fork copies only the path to the keys it changes.
     pub(super) memory_load_condition_facts: crate::persistent::PersistentMap<
@@ -14516,7 +14522,7 @@ pub struct PureFactContext {
     /// by all pointer parameters.
     pub(super) memory_loadable_object_facts:
         crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Proposition>>,
-    /// Loadability facts by base block, then by the base's snapshot-blind
+    /// Loadability facts by base block, then by the base's state-blind
     /// fingerprint. Updated with `memory_loadable_facts`, so a fork copies
     /// only the path to the shape it changes.
     pub(super) memory_loadable_shape_facts: crate::persistent::PersistentMap<
@@ -14529,7 +14535,7 @@ pub struct PureFactContext {
     /// not every proposition fact.
     /// The memory effect facts (`MemoryEffectSummary`, `MemoryMutatesOnly`,
     /// `HeapAllocationFreed`), filed under both of their memories, so a load
-    /// comparison between two snapshots reads the effects naming one of
+    /// comparison between two states reads the effects naming one of
     /// them, not every proposition fact.
     pub(super) memory_effect_facts:
         crate::persistent::PersistentMap<Memory, crate::persistent::PersistentSet<Proposition>>,
@@ -14693,7 +14699,7 @@ pub struct ExecutionPureFact {
     pub(super) transport: Option<Box<CertifiedExecutionFactTransport>>,
     /// Exact producer metadata for a kernel-minted load variable.  This is
     /// carried with the certified fact rather than recovered from the current
-    /// state, since the producer's snapshot and pointer are the authority.
+    /// state, since the producer's state and pointer are the authority.
     pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
     /// Checked callback-read evidence, independent of scalar-variable naming.
     pub(super) checked_pointer_read: Option<Box<(Pointer, SharedMemory, Pointer)>>,
@@ -14743,7 +14749,7 @@ impl PartialOrd for GeneratedLoadSourceEvents {
 }
 
 /// The source-independent identity of one kernel-generated load equation.
-/// Consumers must use the complete `(variable, snapshot, pointer)` key; the
+/// Consumers must use the complete `(variable, retained_state, pointer)` key; the
 /// source expression is retained only as the exact equation operand produced
 /// by the kernel.  A variable-level tombstone is represented by
 /// [`GeneratedLoadBinding::Ambiguous`] when one path observes incompatible
@@ -14752,7 +14758,7 @@ impl PartialOrd for GeneratedLoadSourceEvents {
 pub(crate) enum GeneratedLoadBinding {
     Exact {
         variable: Variable,
-        snapshot: MemorySnapshotIdentity,
+        retained_state: MemoryStateIdentity,
         pointer: Pointer,
         load: MachineTerm,
         /// The C value produced by a completed, nonvolatile pointer read.
@@ -15130,7 +15136,7 @@ impl CheckedFunctionExecution {
     }
 
     /// Allocation return accounting reads borrowed inputs in the immutable
-    /// checked entry snapshot, before C may mutate a pointer naming them.
+    /// checked entry state, before C may mutate a pointer naming them.
     pub(crate) fn allocation_entry_state(&self) -> &ExecutionState {
         self.entry_representation_origin
             .as_ref()

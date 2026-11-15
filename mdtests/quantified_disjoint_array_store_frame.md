@@ -1,7 +1,7 @@
 # A viewed array's cells retain their values across a disjoint store
 
 The universally quantified index selects one cell. Explicit containment
-restricts the separated range, then preservation relates its two snapshots.
+restricts the separated range, then preservation relates its two states.
 
 ```c filename=quantified_disjoint_array_store_frame.c
 void mark(int32 *next, int32 *visited, int32 n, int32 j) {

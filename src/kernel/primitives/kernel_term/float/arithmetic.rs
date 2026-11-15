@@ -173,7 +173,9 @@ impl KernelTermExport {
                         continue;
                     };
                     match root.node() {
-                        KernelTermNode::FloatConvert { source, operand } => {
+                        KernelTermNode::FloatConvert {
+                            source, operand, ..
+                        } => {
                             pending.push(Task::Convert(view.format(), *source));
                             pending.push(Task::Enter(operand));
                         }

@@ -50,6 +50,7 @@ pub(crate) fn shared_machine_syntax_variables(
                 }
                 KernelTermNode::MachineLiteral(_)
                 | KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::PointerAddress { .. }
@@ -121,6 +122,7 @@ pub(crate) fn shared_machine_conversion_leaves(
             matches!(
                 node,
                 KernelTermNode::IntegerToMachine { .. }
+                    | KernelTermNode::FloatConvert { .. }
                     | KernelTermNode::BoolCast { .. }
                     | KernelTermNode::Legacy(_)
                     | KernelTermNode::PointerAddress { .. }
@@ -134,7 +136,7 @@ pub(crate) fn shared_machine_conversion_leaves(
     )
 }
 
-/// Selected scalar read nodes. Their addresses and snapshots remain borrowed;
+/// Selected scalar read nodes. Their addresses and states remain borrowed;
 /// this syntax summary reads neither registry metadata nor proof facts.
 pub(crate) fn shared_machine_read_leaves(
     root: &KernelTerm,
@@ -998,6 +1000,7 @@ impl<'a> MachineOperandView<'a> {
                 }
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
                 KernelTermNode::Variable(_)
+                | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::MachineIf { .. }
                 | KernelTermNode::Fold(_)
                 | KernelTermNode::Match(_) => None,
@@ -1476,7 +1479,7 @@ mod cast_tests {
         );
         {
             let _session = crate::kernel::VerificationSession::enter();
-            let snapshot = crate::kernel::VerificationSession::capture_state();
+            let retained_state = crate::kernel::VerificationSession::capture_state();
             for _ in 0..96 {
                 term = KernelTerm::machine_cast_shared(
                     E::Generic,
@@ -1487,7 +1490,9 @@ mod cast_tests {
             }
             let expected =
                 term.checking_machine_cast(MachineIntegerType::Int32, MachineIntegerType::Int8);
-            assert!(crate::kernel::VerificationSession::restore_state(&snapshot));
+            assert!(crate::kernel::VerificationSession::restore_state(
+                &retained_state
+            ));
             crate::kernel::eval::begin_load_origin_epoch();
             let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
                 term.checking_machine_cast(MachineIntegerType::Int32, MachineIntegerType::Int8)
