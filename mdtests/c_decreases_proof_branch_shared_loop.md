@@ -1,7 +1,7 @@
 # Proof branches share the same C loop identity
 
-Both proof branches annotate the same source loop. The inactive branch uses a
-same `n - i` measure as the active branch. Proof annotation order must
+Both proof branches annotate the same source loop. The inactive branch uses `0`; the active branch uses `n - i`. Each
+branch owns its own ranking proof. Proof annotation order must
 not create a fictitious second C loop in the termination plan.
 
 ```c filename=proof_branch_shared_loop.c
@@ -25,7 +25,7 @@ int32 count_to_bound(int32 n) {
     step();
     if n < 0 {
         loop {
-            decreases n - i;
+            decreases 0;
             invariant i == 0;
             invariant n < 0;
         }

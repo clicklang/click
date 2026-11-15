@@ -1,3 +1,10 @@
+pub(in crate::kernel) use completion::ProgramBodyOwner;
+mod completion;
+pub(crate) use completion::{
+    ProgramContractBodies, ProgramContractFailure, ProgramContractGoal, ProgramContractProof,
+    ProgramTerminationInputs,
+};
+
 use super::prelude::*;
 use super::spec::walk::{SpecNode, Visit, WalkBudget, Walked, walk_spec};
 use crate::kernel::binary_term;
@@ -3556,12 +3563,19 @@ fn verified_loop_ranking_measures(
     function_name: &str,
     source_body: &ProgramStatement,
     rules: &[VerifiedLoopRule],
-) -> Result<(BTreeMap<usize, LoopTerminationMeasure>, BTreeSet<usize>), TerminationError> {
-    let mut certified: BTreeMap<usize, LoopTerminationMeasure> = BTreeMap::new();
+) -> Result<
+    (
+        BTreeMap<usize, Vec<LoopTerminationMeasure>>,
+        BTreeSet<usize>,
+    ),
+    TerminationError,
+> {
+    let mut certified: BTreeMap<usize, Vec<LoopTerminationMeasure>> = BTreeMap::new();
     let mut unranked = BTreeSet::new();
     let loops = loops_in_order(source_body);
     let addressed = address_taken_locals(source_body);
     for rule in rules {
+        charge_termination_work(1);
         let Some(index) = rule.loop_index else {
             continue;
         };
@@ -3598,15 +3612,9 @@ fn verified_loop_ranking_measures(
                 ranking_measures.iter().map(RankingComponent::key).collect(),
             ),
         };
-        if let Some(existing) = certified.get(&index) {
-            if existing != &measure {
-                return Err(error(format!(
-                    "verified loop rules for `{function_name}` disagree on loop {index} `decreases`"
-                )));
-            }
-        } else {
-            certified.insert(index, measure);
-        }
+        // Each strategy owns the measure checked by its own back-edge proof.
+        // Different strategies for this source loop need not share a measure.
+        certified.entry(index).or_default().push(measure);
     }
     // Termination needs every summarized path to carry a ranking proof. A
     // ranked sibling cannot stand in for an unranked execution of this loop.
@@ -3896,12 +3904,12 @@ fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
 /// This pass proves nothing. A loop's nonnegativity and lexicographic
 /// decrease obligations are members of its `close_invariants` bundle, which
 /// the loop's own verified rule already certified; the rule carries the
-/// declared measure on its loop head, so matching it against the plan is the
-/// whole of the check here.
+/// declared measure on its loop head. Every strategy owns its own ranking;
+/// an optional plan names one of them, without constraining its siblings.
 fn check_loops(
     statement: &ProgramStatement,
     supplied: &BTreeMap<usize, LoopTerminationMeasure>,
-    certified: &BTreeMap<usize, LoopTerminationMeasure>,
+    certified: &BTreeMap<usize, Vec<LoopTerminationMeasure>>,
     function_name: &str,
     next_index: &mut usize,
     unranked: &mut Vec<usize>,
@@ -3982,7 +3990,10 @@ fn check_loops(
             // Frontier-local proofs already certify their ranking components on
             // the exact source loop. They need no speculative syntax-order
             // plan; explicit plans remain demands checked against that rule.
-            let Some(measures) = supplied.get(&index).or_else(|| certified.get(&index)) else {
+            let Some(measures) = supplied
+                .get(&index)
+                .or_else(|| certified.get(&index)?.first())
+            else {
                 unranked.push(index);
                 return Ok(());
             };
@@ -3993,10 +4004,21 @@ fn check_loops(
                 )));
             }
             match certified.get(&index) {
-                Some(checked) if loop_measures_name_same_declaration(checked, measures) => Ok(()),
+                Some(checked)
+                    if checked.iter().any(|owned| {
+                        charge_termination_work(1);
+                        loop_measures_name_same_declaration(owned, measures)
+                    }) =>
+                {
+                    Ok(())
+                }
                 Some(checked) => Err(error(format!(
                     "loop {index} in `{function_name}` was certified for `{}`, not the planned `{}`",
-                    loop_termination_measure_display(checked),
+                    checked
+                        .iter()
+                        .map(loop_termination_measure_display)
+                        .collect::<Vec<_>>()
+                        .join("` or `"),
                     loop_termination_measure_display(measures)
                 ))),
                 None => Err(error(format!(
@@ -6497,7 +6519,7 @@ mod local_descent_tests {
                 crate::kernel::program_expression::int32_literal(value),
             )])
         };
-        let certified = BTreeMap::from([(0, ranking(1))]);
+        let certified = BTreeMap::from([(0, vec![ranking(1)])]);
         let mut next = 0;
         let mut unranked = Vec::new();
         check_loops(
@@ -6630,6 +6652,30 @@ mod local_descent_tests {
             BTreeSet::from(["caller", "compare", "sort"])
         );
         assert!(verdicts.unsuitable_callbacks.is_empty());
+    }
+
+    #[test]
+    fn program_completion_requires_callback_safety_even_without_requested_returns() {
+        let rules = [
+            pointer_rule("spin", &["apply"], None, &["spin"]),
+            pointer_rule("apply", &[], Some("callback"), &[]),
+        ];
+        let owner = ProgramContractProof::open(BTreeSet::new(), BTreeSet::new(), &BTreeSet::new());
+        let result = owner.complete(ProgramTerminationInputs {
+            partial_rules: &rules,
+            plans: &[],
+            inline_bodies: &[],
+            assumed_terminating: &BTreeSet::new(),
+            diverging_contracts: &BTreeSet::new(),
+            has_unselected_functions: false,
+        });
+        assert!(matches!(
+            result,
+            Err(ProgramContractFailure::Obligation {
+                goal: ProgramContractGoal::CallbackSafety,
+                ..
+            })
+        ));
     }
 
     /// `spin` hands itself to `apply`. No direct call closes the cycle, and
@@ -7307,6 +7353,65 @@ mod local_descent_tests {
             composite_resource_definitions: Vec::new(),
             recursion_anchor: anchor.map(Arc::new),
             variable_index: Default::default(),
+        }
+    }
+
+    #[test]
+    fn loop_strategies_own_independent_measures_and_need_every_path_ranked() {
+        let function = self_call_in_loop_rule("drain").function;
+        let first = loop_rule_for(&function, None);
+        let mut second = first.clone();
+        let ProgramStatement::While {
+            ranking_measures, ..
+        } = &mut second.loop_statement
+        else {
+            unreachable!();
+        };
+        *ranking_measures = vec![RankingComponent::Pure {
+            source: "other_level(n)".into(),
+            expression: SpecExpression::ProgramExpression(ProgramExpression::Variable("n".into())),
+        }];
+        let (ranked, unranked) = verified_loop_ranking_measures(
+            "drain",
+            &function.source_body,
+            &[first.clone(), second.clone()],
+        )
+        .expect("independent strategies need not name the same measure");
+        assert_eq!(ranked[&0].len(), 2);
+        assert!(unranked.is_empty());
+        check_loops(
+            &function.source_body,
+            &BTreeMap::new(),
+            &ranked,
+            "drain",
+            &mut 0,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        // A separately supplied declaration can name either owned measure.
+        for measure in &ranked[&0] {
+            check_loops(
+                &function.source_body,
+                &BTreeMap::from([(0, measure.clone())]),
+                &ranked,
+                "drain",
+                &mut 0,
+                &mut Vec::new(),
+            )
+            .unwrap();
+        }
+        let ProgramStatement::While {
+            ranking_measures, ..
+        } = &mut second.loop_statement
+        else {
+            unreachable!();
+        };
+        ranking_measures.clear();
+        for rules in [[first.clone(), second.clone()], [second, first]] {
+            let (ranked, unranked) =
+                verified_loop_ranking_measures("drain", &function.source_body, &rules).unwrap();
+            assert!(ranked.is_empty(), "a ranked sibling cannot cover this path");
+            assert_eq!(unranked, BTreeSet::from([0]));
         }
     }
 

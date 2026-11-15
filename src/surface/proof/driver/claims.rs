@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 /// The parent proof operation, before registration or termination planning.
 /// Omitted proofs have already run through the same ordinary child scopes.
-pub(in crate::surface) fn finish_whole_contract_root(
+pub(in crate::surface) fn finish_contract_body_root(
     function: &FunctionBlock,
     theorems: &[VerifiedProgramTheorem],
-) -> Result<Option<Arc<crate::kernel::CompletedContract>>, ClickError> {
+) -> Result<Option<Arc<crate::kernel::ContractBodyProof>>, ClickError> {
     let entry = theorems
         .iter()
         .find_map(|theorem| theorem.entry_context.as_ref())
@@ -625,7 +625,7 @@ fn prove_claims_by_checked_tactics(
             &pure_facts,
             function_environment,
         )
-        .and_then(|entry| entry.open_contract_root())
+        .and_then(|entry| entry.open_contract_root(function_source_registry.program()))
         .map_err(|error| {
             ClickError::new(format!(
                 "could not open contract entry for `{proof_label}`: {}",
@@ -5789,7 +5789,9 @@ pub(super) fn finish_ordered_proof<'a>(
                     let preferred = verified
                         .iter()
                         .any(|theorem| !theorem.frontier_loop_rules.is_empty());
-                    completed_strategy.publish(preferred);
+                    completed_strategy
+                        .with_loop_rules(proof_execution.core.frontier_loop_rules.to_vec().into())
+                        .publish(preferred);
                 }
                 return Ok(verified);
             };
@@ -5861,7 +5863,9 @@ pub(super) fn finish_ordered_proof<'a>(
             let preferred = verified
                 .iter()
                 .any(|theorem| !theorem.frontier_loop_rules.is_empty());
-            completed_strategy.publish(preferred);
+            completed_strategy
+                .with_loop_rules(proof_execution.core.frontier_loop_rules.to_vec().into())
+                .publish(preferred);
         }
         Ok(verified)
     })();

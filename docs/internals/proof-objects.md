@@ -430,7 +430,7 @@ outcome completion directly retires this strategy's whole-contract obligations;
 admission transfers those explicit closed cells to the shared owner. A
 finished clause or case cannot stand in for another. Different cases may use different complete
 execution strategies. Persistent candidate owners retain independent progress.
-`complete()` returns `CompletedContract` only when the indexed open-goal set is
+`complete()` returns `ContractBodyProof` only when the indexed open-goal set is
 empty. Registration consumes its already constructed rule and performs no
 additional clause-coverage or function-packaging check.
 
@@ -475,13 +475,40 @@ and native execution outputs into the script fork. A failed script drops the
 fork; a successful script joins its explicit closed-cell delta into the parent.
 Sibling scripts do not inherit each other's speculative work.
 
-Completing the ordinary parent root produces `CompletedContract`. Its rule
+Completing the ordinary parent root produces `ContractBodyProof`. Its partial rule
 metadata comes from the root's retained producer publications, checked call
 and tactic dependencies, and selected annotated subject. Registration consumes
-that completed object without gathering artifacts, selecting entry matches,
+that body proof without gathering artifacts, selecting entry matches,
 reconstructing coverage or running a later completeness decision. Imported
 library theorem dependencies are discharged before the root completes;
-whole-program termination planning remains separate.
+program-wide termination remains an open prerequisite, rather than an
+additional check on an already completed contract.
+
+`ProgramContractProof` opens before body execution, from the selected return
+requirements, nonexternal `diverges` policies, and callback safety. Body opening adds a native body child before execution and captures its program
+owner. Ordinary body completion retires that exact child directly; an unfinished
+root or a proof from another session cannot close it. Body roots publish their
+partial-correctness rules for modular calls and retain their own
+native loop-rule outputs; each loop strategy owns the measure checked by its
+back-edge proof. Strategies for the same source loop may use different measures.
+An unranked strategy still prevents a ranked sibling from covering the loop.
+No common measure is reconstructed from source annotations after body closure.
+
+The implicit program closer runs the existing SCC/descent operation inside this
+owner, discharging the declared program goals. It also owns targeted-selection
+measure handling, justification of `diverges`, and callback suitability. Startup and source-only contracts retain native termination subjects even
+when their declarations cannot expose a modular contract rule; rule eligibility
+is fixed at body opening. Source-only claims stay on their existing ordinary
+outcome scopes, while these bodies contribute a boundary/termination root without
+native reusable-claim cells. Explicit whole-contract `sorry` admissions remain
+dev-only assumptions and produce no checked contract. The program closer builds
+its call graph from those
+owned subjects and the imported rules. Only
+this successor produces `CompletedProgramContracts`, retaining the body proofs
+and closed native program root together. Source formats outstanding-goal
+failures; it does not decide additional requirements after completion. Synthetic
+one-call `executes` proofs explicitly consume the partial body rule for their
+contract-refinement inference, without claiming program-wide termination.
 
 Function-proof sessions share persistent source-definition indexes but own
 fresh entry/root slots. Clause scripts share the same session; another function

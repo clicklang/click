@@ -4008,10 +4008,6 @@ impl VerifiedLoopRule {
             .as_ref()
     }
 
-    pub(crate) fn loop_index(&self) -> Option<usize> {
-        self.loop_index
-    }
-
     pub(crate) fn with_loop_index(mut self, loop_index: usize) -> Self {
         self.loop_index = Some(loop_index);
         self
