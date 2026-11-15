@@ -13,6 +13,7 @@ impl KernelTermImport {
     pub(crate) fn algebraic(&mut self, source: &AlgebraicTerm) -> KernelTerm {
         enum Task<'a> {
             Term(&'a AlgebraicTerm),
+            If(&'a AlgebraicType, &'a ConditionTerm),
             Field(&'a AlgebraicValue),
             Argument(&'a PureFunctionArgument),
             Call(&'a AlgebraicType, &'a str, &'a [PureFunctionArgument]),
@@ -32,6 +33,15 @@ impl KernelTermImport {
                     AlgebraicTermNode::Constructor { variant, fields } => {
                         pending.push(Task::Finish(&term.algebraic_type, variant, fields.len()));
                         pending.extend(fields.iter().rev().map(Task::Field));
+                    }
+                    AlgebraicTermNode::If {
+                        condition,
+                        then_term,
+                        else_term,
+                    } => {
+                        pending.push(Task::If(&term.algebraic_type, condition));
+                        pending.push(Task::Term(else_term));
+                        pending.push(Task::Term(then_term));
                     }
                     AlgebraicTermNode::Match { scrutinee, arms } => {
                         pending.push(Task::Match(&term.algebraic_type, arms));
@@ -53,6 +63,14 @@ impl KernelTermImport {
                         term.clone(),
                     ))),
                 },
+                Task::If(ty, condition) => {
+                    let else_term = values.pop().expect("else branch");
+                    let then_term = values.pop().expect("then branch");
+                    values.push(KernelTerm::algebraic_if_raw(
+                        ty.clone(),
+                        [self.condition(condition), then_term, else_term],
+                    ));
+                }
                 Task::Match(ty, arms) => {
                     let count =
                         arms.len() + 1 + arms.iter().map(|arm| arm.bindings.len()).sum::<usize>();
@@ -86,11 +104,10 @@ impl KernelTermImport {
                         name.into(),
                         roots
                             .into_iter()
-                            .zip(
-                                arguments.iter().map(|arg| {
-                                    matches!(arg, PureFunctionArgument::SharedMachine(_))
-                                }),
-                            )
+                            .zip(arguments.iter().map(|arg| match arg {
+                                PureFunctionArgument::SharedMachine(value) => Some(value.clone()),
+                                _ => None,
+                            }))
                             .collect(),
                     ));
                 }
@@ -129,10 +146,11 @@ impl KernelTermExport {
         ALGEBRAIC_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         enum Task<'a> {
             Enter(&'a KernelTerm),
+            If(&'a AlgebraicType, &'a KernelTerm),
             Finish(&'a KernelMatch),
             Constructor(&'a KernelConstructor),
             Call(&'a KernelAlgebraicCall),
-            SharedMachine(&'a KernelTerm),
+            SharedMachine(&'a SharedMachineIntegerTerm),
         }
         fn algebraic(value: PureFunctionArgument) -> Result<AlgebraicTerm, &'static str> {
             match value {
@@ -159,6 +177,12 @@ impl KernelTermExport {
                                 .map(Task::Enter),
                         );
                         pending.extend(matched.arguments.iter().rev().map(Task::Enter));
+                    } else if let KernelTermNode::AlgebraicIf { arguments } = root.node() {
+                        let KernelType::Algebraic(ty) = root.ty() else {
+                            unreachable!()
+                        };
+                        pending.push(Task::If(ty, &arguments[0]));
+                        pending.extend(arguments[1..].iter().rev().map(Task::Enter));
                     } else if let KernelTermNode::AlgebraicCall(call) = root.node() {
                         pending.push(Task::Call(call));
                         pending.extend(
@@ -167,8 +191,8 @@ impl KernelTermExport {
                                 .zip(&call.shared_machine_arguments)
                                 .rev()
                                 .map(|(arg, shared)| {
-                                    if *shared {
-                                        Task::SharedMachine(arg)
+                                    if let Some(value) = shared {
+                                        Task::SharedMachine(value)
                                     } else {
                                         Task::Enter(arg)
                                     }
@@ -188,16 +212,20 @@ impl KernelTermExport {
                         values.push(self.argument(root)?);
                     }
                 }
-                Task::SharedMachine(root) => {
-                    let KernelType::Program(ty) = root.ty() else {
-                        return Err("shared machine argument type");
-                    };
-                    let format = MachineIntegerType::from_program_type(*ty)
-                        .ok_or("shared machine argument format")?;
-                    values.push(PureFunctionArgument::SharedMachine(
-                        SharedMachineIntegerTerm::from_shared(format, root.clone())
-                            .ok_or("shared machine argument")?,
-                    ));
+                Task::If(ty, condition) => {
+                    let else_term = algebraic(values.pop().ok_or("else branch")?)?;
+                    let then_term = algebraic(values.pop().ok_or("then branch")?)?;
+                    values.push(PureFunctionArgument::Algebraic(AlgebraicTerm {
+                        algebraic_type: ty.clone(),
+                        node: AlgebraicTermNode::If {
+                            condition: Box::new(Self::condition(condition)?),
+                            then_term: Box::new(then_term),
+                            else_term: Box::new(else_term),
+                        },
+                    }));
+                }
+                Task::SharedMachine(value) => {
+                    values.push(PureFunctionArgument::SharedMachine(value.clone()));
                 }
                 Task::Call(call) => {
                     let arguments = values.split_off(

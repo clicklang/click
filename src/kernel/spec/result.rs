@@ -263,17 +263,29 @@ impl SpecCallArgument {
         }
     }
 
-    pub(super) fn into_algebraic_call_operand(self) -> (KernelTerm, bool) {
+    pub(super) fn into_algebraic_call_operand(
+        self,
+    ) -> (KernelTerm, Option<SharedMachineIntegerTerm>) {
         match self {
-            Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => (root, false),
-            Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) => {
-                (root, true)
+            Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => (root, None),
+            Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) =>
+            {
+                let KernelType::Program(ty) = root.ty() else {
+                    unreachable!()
+                };
+                let format = MachineIntegerType::from_program_type(*ty).expect("numeric argument");
+                let carrier = SharedMachineIntegerTerm::from_shared(format, root.clone())
+                    .expect("retained argument");
+                (root, Some(carrier))
             }
             // Mixed-family descriptor adapters retain their existing exact forms
             // until their shared argument migration.
             value => {
                 let argument = value.into_payload();
-                let shared = matches!(argument, PureFunctionArgument::SharedMachine(_));
+                let shared = match &argument {
+                    PureFunctionArgument::SharedMachine(value) => Some(value.clone()),
+                    _ => None,
+                };
                 (KernelTermImport::default().argument(&argument), shared)
             }
         }

@@ -65,3 +65,36 @@ fn algebraic_match_argument_imports_visit_native_prefixes_once() {
         );
     }
 }
+
+#[test]
+fn algebraic_conditional_prefixes_import_and_export_linearly() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let leaf = KernelMatch::test_scrutinee(vec![]);
+        let mut source = leaf.clone();
+        for _ in 0..size {
+            source = AlgebraicTerm {
+                algebraic_type: leaf.algebraic_type.clone(),
+                node: AlgebraicTermNode::If {
+                    condition: Box::new(ConditionTerm::integer_equal(
+                        IntegerTerm::var(Variable(999723)),
+                        IntegerTerm::constant_i64(0),
+                    )),
+                    then_term: Box::new(source),
+                    else_term: Box::new(leaf.clone()),
+                },
+            };
+        }
+        let exports = KernelTermExport::algebraic_export_count();
+        let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermImport::default().algebraic(&source)
+        });
+        assert!(work <= 40 * size + 100, "size={size} work={work}");
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        let (native, work) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermExport::default().algebraic(&root).unwrap()
+        });
+        assert_eq!(native, source);
+        assert!(work <= 40 * size + 100, "size={size} work={work}");
+    }
+}

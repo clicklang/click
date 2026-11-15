@@ -1,6 +1,7 @@
 //! Algebraic calls retain argument roots and the native numeric carrier forms.
 //! Unlike SharedPureApplication, the native algebraic argument vector distinguishes
-//! Value(machine) from SharedMachine. Preserve that descriptor at explicit export.
+//! Value(machine) from SharedMachine. Preserve the original immutable carrier
+//! handle: reconstructing it from its root can change native argument identity.
 use super::*;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -8,7 +9,7 @@ pub struct KernelAlgebraicCall {
     pub(crate) algebraic_type: AlgebraicType,
     pub(crate) name: String,
     pub(crate) arguments: Vec<KernelTerm>,
-    pub(crate) shared_machine_arguments: Vec<bool>,
+    pub(crate) shared_machine_arguments: Vec<Option<SharedMachineIntegerTerm>>,
 }
 
 impl KernelAlgebraicCall {
@@ -23,7 +24,7 @@ impl KernelTerm {
     pub(crate) fn algebraic_call(
         ty: AlgebraicType,
         name: String,
-        arguments: Vec<(KernelTerm, bool)>,
+        arguments: Vec<(KernelTerm, Option<SharedMachineIntegerTerm>)>,
     ) -> Self {
         let (arguments, shared_machine_arguments) = arguments.into_iter().unzip();
         KernelAlgebraicCall {
@@ -122,7 +123,7 @@ mod tests {
         let call = KernelTerm::algebraic_call(
             ty,
             "matched_algebraic_argument".into(),
-            vec![(matched, false)],
+            vec![(matched, None)],
         );
         let guard = KernelTerm::algebraic_equal_raw([call, scrutinee]);
         let native_guard = KernelTermExport::condition(&guard).unwrap();

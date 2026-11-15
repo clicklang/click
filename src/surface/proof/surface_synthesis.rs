@@ -3069,6 +3069,18 @@ fn synthesize_surface_integer(
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
+// Keep this construction outside the recursive general dispatch frame.
+fn raise_algebraic_if<'a>(
+    arguments: &'a [crate::kernel::KernelTerm; 3],
+    mut raise: impl FnMut(&'a crate::kernel::KernelTerm) -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    Some(SurfaceTerm::If {
+        condition: Box::new(bool_truth(raise(&arguments[0])?)),
+        then_branch: Box::new(raise(&arguments[1])?),
+        else_branch: Box::new(raise(&arguments[2])?),
+    })
+}
+
 /// The shared term-to-surface boundary. Arithmetic and calls have common
 /// children; the legacy leaf dispatch is temporary and never projects away
 /// part of a value. Fold bodies retain their typed lexical scope.
@@ -3139,6 +3151,7 @@ pub(super) fn raise_kernel_term(
                 )),
             }
         }
+        Node::AlgebraicIf { arguments } => raise_algebraic_if(arguments, recurse)?,
         Node::IntegerIf { arguments } => SurfaceTerm::If {
             condition: Box::new(bool_truth(recurse(&arguments[0])?)),
             then_branch: Box::new(integer_typed_expression(recurse(&arguments[1])?)),
