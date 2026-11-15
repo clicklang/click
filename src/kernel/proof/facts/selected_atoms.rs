@@ -37,7 +37,8 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                 ),
                 // Native conversions are opaque. Fold children are collected
                 // below with one query-local seen set.
-                KernelTermNode::IntegerToMachine { .. }
+                KernelTermNode::FloatConvert { .. }
+                | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::PointerAddress { .. }
@@ -145,6 +146,12 @@ fn collect_in(
                     collect_in(&child, atoms, seen, true, true);
                 }
             }
+            if inside_fold && matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
+                // Preserve the existing selected fold-body native traversal.
+                let native = crate::kernel::KernelTermExport::machine(leaf)
+                    .expect("float conversion in machine fold");
+                collect_bitvector_atoms(&native, atoms);
+            }
             if let Some(native) = leaf.machine_conversion_leaf() {
                 if inside_fold {
                     // Native folds visited these children before migration.
@@ -177,6 +184,22 @@ fn collect_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_float_conversion_preserves_opaque_atom_policy() {
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::opaque_conversion(
+            "c_float32_to_int32",
+            MachineTerm::Variable(Variable(1005399)),
+        );
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+        let common =
+            SharedMachineIntegerTerm::observe_shared(MachineIntegerType::Int32, root).unwrap();
+        let mut actual = BTreeSet::new();
+        collect(&common, &mut actual);
+        assert!(actual.is_empty());
+    }
 
     #[test]
     fn shared_match_atom_selection_keeps_native_conditional_guards() {

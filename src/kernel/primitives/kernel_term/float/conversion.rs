@@ -9,6 +9,13 @@ pub(crate) enum FloatConversionOperand<'a> {
     Shared(&'a KernelTerm),
 }
 impl<'a> FloatConversionOperand<'a> {
+    pub(crate) fn shared(self) -> Option<&'a KernelTerm> {
+        match self {
+            Self::Shared(root) => Some(root),
+            _ => None,
+        }
+    }
+
     pub(crate) fn source_type(self) -> ProgramType {
         match self {
             Self::Native(source, _) => source,
@@ -18,7 +25,7 @@ impl<'a> FloatConversionOperand<'a> {
             },
         }
     }
-    pub(super) fn native(self) -> Option<&'a MachineTerm> {
+    pub(crate) fn native(self) -> Option<&'a MachineTerm> {
         match self {
             Self::Native(_, value) => Some(value),
             _ => None,

@@ -1,4 +1,5 @@
 // Staged common fold dependency reader; activated with fold producers.
+mod float_conversions;
 #[allow(dead_code)]
 mod pointer_checks;
 #[allow(dead_code)]
@@ -2094,6 +2095,19 @@ fn operand_fingerprint(root: MachineOperandView<'_>, policy: OperandFingerprintP
             continue;
         }
         let mut hash = std::collections::hash_map::DefaultHasher::new();
+        if let Some((source, destination, operand)) = float_conversions::machine_conversion(value) {
+            4u8.hash(&mut hash);
+            source.hash(&mut hash);
+            destination.hash(&mut hash);
+            float_conversions::fingerprint(operand, policy.without_frame()).hash(&mut hash);
+            let hash = hash.finish();
+            values.insert(key(policy, value), hash);
+            if let MachineOperandView::Shared(root) = value {
+                OPERAND_FINGERPRINTS
+                    .with(|memo| memo.borrow_mut().insert((policy, root.id()), hash));
+            }
+            continue;
+        }
         let (child_policy, children) = if let Some((format, op, args)) = value.binary() {
             0u8.hash(&mut hash);
             format.hash(&mut hash);
@@ -2437,6 +2451,12 @@ fn collect_scoped_leaf_memory_load_keys(
     leaf: MachineOperandView<'_>,
     keys: &mut BTreeSet<(PointerBlock, u64)>,
 ) {
+    if let MachineOperandView::Shared(root) = leaf
+        && matches!(root.node(), KernelTermNode::FloatConvert { .. })
+    {
+        float_conversions::collect_load_keys(root, keys);
+        return;
+    }
     if let MachineOperandView::Shared(root) = leaf
         && let KernelTermNode::Fold(fold) = root.node()
     {

@@ -23,7 +23,12 @@ fn rewrite_retained_leaf(
     term: &KernelTerm,
     rewrite: impl FnOnce(&MachineTerm) -> MachineTerm,
 ) -> Option<KernelTerm> {
-    let original = leaf(term)?;
+    let original = if matches!(term.node(), KernelTermNode::FloatConvert { .. }) {
+        // Selected native rewrite boundary, matching the conversion producer.
+        KernelTermExport::machine(term).ok()?
+    } else {
+        leaf(term)?
+    };
     let rewritten = rewrite(&original);
     Some(term.rewritten_machine_leaf(format(term), &original, &rewritten))
 }
@@ -500,6 +505,8 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
             KernelTermNode::Fold(_) | KernelTermNode::Match(_)
         ) {
             true
+        } else if matches!(term.node(), KernelTermNode::FloatConvert { .. }) {
+            crate::kernel::eval::operand_mentions_a_memory_load(MachineOperandView::Shared(term))
         } else if nodes.is_empty() {
             leaf(term).is_some_and(|value| crate::kernel::eval::term_mentions_a_memory_load(&value))
         } else {
@@ -641,9 +648,14 @@ pub(super) fn rewrite(
                 matches!(
                     node.node(),
                     KernelTermNode::Fold(_) | KernelTermNode::Match(_)
-                ) || node
-                    .machine_conversion_leaf()
-                    .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
+                ) || if matches!(node.node(), KernelTermNode::FloatConvert { .. }) {
+                    crate::kernel::eval::operand_mentions_a_memory_load(MachineOperandView::Shared(
+                        node,
+                    ))
+                } else {
+                    node.machine_conversion_leaf()
+                        .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
+                }
             })
         } else {
             false
@@ -858,6 +870,29 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_float_conversion_exact_rewrite_matches_native() {
+        let _session = VerificationSession::enter();
+        let from = MachineTerm::Variable(Variable(995889));
+        let to = MachineTerm::constant(0x3fc00000);
+        let native = MachineTerm::opaque_conversion("c_float32_to_int32", from.clone());
+        let expected = super::super::rewrite_term(&native, &from, &to);
+        assert_ne!(expected, native);
+        for format in crate::kernel::machine_integer::FORMATS {
+            let root = imported(format, &native);
+            let result = rewrite(&root, &from, &to, |leaf| {
+                super::super::rewrite_term(leaf, &from, &to)
+            })
+            .expect("retained conversion rewrite");
+            assert_eq!(KernelTermExport::machine(&result).unwrap(), expected);
+            let (canonical, _) = canonical(&root).expect("conversion canonicalization");
+            assert_eq!(
+                KernelTermExport::machine(&canonical[&root.id()]).unwrap(),
+                native
+            );
+        }
+    }
 
     #[test]
     fn common_call_exact_rewriting_preserves_common_results_and_noops() {

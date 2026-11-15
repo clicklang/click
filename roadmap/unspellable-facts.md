@@ -720,7 +720,11 @@ accept these roots; numeric normalization and definedness stay with existing
 producers. Memory-load collection preserves the existing opaque-call refusal.
 Ordinary observations and exact shared matching do not export float prefixes.
 Explicit selected adapters remain for native rewrite/capture/scope-summary,
-alpha-key and candidate-ordering readers; 8ad must account for those adapters.
+alpha-key, exact rewrite and candidate-ordering readers; 8ad must account for
+those adapters. Pointer selector fingerprints reuse the existing memo and
+preserve snapshot-blind versus memory-blind policies. Snapshot operand keys
+retain exact opaque conversion identity across integer observation widths.
+Freshness and contract-syntax readers accept the retained conversion as well.
 Float execution and storage handoffs remain 8aa–8ab.
 
 ### 8a inventory
