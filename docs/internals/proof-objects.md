@@ -544,6 +544,22 @@ closed native proof, retained bodies, and termination rules into
 retry proofs, or discover requirements. Source formats proof-execution failures
 before calling this packaging operation.
 
+Recursion declarations are captured by the program owner before Source theorem
+or body proofs execute. This inventory fixes the declared measure kind,
+parameter identity, and expression-peer permissions; declared expression peers
+with incompatible measure kinds are refused at opening. Opening the selected
+termination graph constructs per-function recursion authority from that retained
+inventory, including unmeasured-recursion obligations and compatible component
+indices. Selection can remove recursive edges, and completed tactic proofs can
+add them, without reopening a completed body's declaration interface. Independent
+termination APIs open the same inventory from their explicit inputs before
+executing termination proofs.
+
+Local descent execution consumes the captured authority. The remaining
+expression-recursion source/loop-anchor coverage walk and the numeric/structural
+body analyses are still proof execution, and have not yet migrated to call and
+summary producers.
+
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.
 Successful `ApplyVerifiedRules` execution publishes coverage for loops it ran

@@ -2336,15 +2336,11 @@ fn verify_program_in_context(
         })
         .collect::<BTreeSet<_>>();
     let bodyless_declarations = extern_names.union(&admitted_functions).cloned().collect();
-    let program_contracts = crate::kernel::ProgramContractProof::open(
-        requested_termination
-            .iter()
-            .map(|name| executing_function_name(&termination_kernel_names, name))
-            .filter(|name| !admitted_functions.contains(name))
-            .collect(),
-        declared_diverging.clone(),
-        &bodyless_declarations,
-    );
+    let requested_contracts = requested_termination
+        .iter()
+        .map(|name| executing_function_name(&termination_kernel_names, name))
+        .filter(|name| !admitted_functions.contains(name))
+        .collect();
 
     let standard_library_theorems = standard_library_theorem_definitions()?;
     let (
@@ -2355,6 +2351,7 @@ fn verify_program_in_context(
         mut theorem_certification_facts,
         mut theorem_certification_authorities,
         theorem_environment,
+        program_contracts,
     ) = {
         let _timing = VerificationTimingPhase::new("environment");
         let predicate_definitions = combined_predicate_definitions(&file)?;
@@ -2476,6 +2473,17 @@ fn verify_program_in_context(
                 function_environment = function_environment.with_external_function_rule(assumption);
             }
         }
+        let program_contracts =
+            crate::kernel::ProgramContractProof::open_with_recursion_declarations(
+                requested_contracts,
+                declared_diverging.clone(),
+                &bodyless_declarations,
+                &function_environment.linked_functions(),
+                &termination_plans,
+            )
+            .map_err(|error| {
+                ClickError::new(format!("could not open C recursion declarations: {error}"))
+            })?;
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
             theorem_dependencies,
@@ -2517,6 +2525,7 @@ fn verify_program_in_context(
             theorem_certification_facts,
             theorem_certification_authorities,
             theorem_environment,
+            program_contracts,
         )
     };
     let spec_definitions =
