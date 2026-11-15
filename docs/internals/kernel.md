@@ -1172,14 +1172,16 @@ constrains an `int32` count at all, `count <= u32::MAX / width`. A stated
 `modifies` frame, a havoc-derived range — does not, so a rule that needs it
 must ask rather than assume.
 
-A stated `separate(memory(...), ...)` lowers to `ResourceSeparate`, without
-conjoining extent bounds to the proposition. The memory ranges' extent guards
-travel separately as evaluation-domain obligations. Contract entry assumes
-those domains; a goal or call site must establish them through the ordinary
-obligation driver. This preserves `lower(raise(x)) == x` for a kernel separation
-fact while retaining range-formation checks. A range already proved invalid is
-still refused with the focused extent diagnostic. Observing a held composite
-can supply its contained ranges' bounds explicitly.
+A stated `separate(memory(...), ...)` lowers structurally to `ResourceSeparate`.
+It neither adds extent facts nor generates extent obligations. Ordinary operand
+expressions retain their evaluation prerequisites, such as signed overflow.
+Physical access and ownership admission still require their own bounds.
+
+Preservation interprets only complete physical observations: its memory route
+uses constant signed endpoints, their nonnegative difference, and checked byte
+scaling. It never treats a wrapped byte count as evidence for a scalar cell.
+Symbolic ranges require an explicit restriction to a complete cell first.
+This applies to value and definedness preservation and the explicit-write form.
 
 ## Floating-point semantic boundary
 

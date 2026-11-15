@@ -1,4 +1,4 @@
-# A borrowed call checks every part of separation's range validity
+# A borrowed call does not owe bounds merely to state separation
 
 ```c filename=borrowed.c
 int32 a[1];
@@ -22,5 +22,5 @@ int32 caller(int32 n) {
 ```
 
 ```expect
-fail: unproved obligation: `n <= 1073741823`
+pass
 ```

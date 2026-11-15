@@ -1,7 +1,7 @@
 # A write proves a wide-view separation obligation explicitly
 
-The separation spelling also lowers its range-formation prerequisites.
-The driver must accept that complete goal and retain the separation proof.
+The driver must retain the explicit separation proof. The viewed resources
+supply their own validity premises; separation adds no extent obligations.
 
 ```c filename=a_separation_from_a_64_bit_range.c
 unsigned char set_and_read(int *value, const unsigned char *bytes, unsigned long length, unsigned long index) {

@@ -7232,8 +7232,8 @@ same pointer origin and element width. The law grants no ownership or read
 permission. It constructs the containment implication directly, without
 searching facts, enumerating elements, or traversing memory history.
 Applications supply all three bound premises explicitly. Empty inner intervals
-are permitted. Memory access and separation still require their usual validity
-conditions.
+are permitted. Memory access still requires its usual validity conditions. Separation
+alone grants no physical-access validity.
 
 **Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements. [`mdtests/separation_subrange_supports_wide_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_subrange_supports_wide_bounds.md) covers unsigned 64-bit bounds.
 

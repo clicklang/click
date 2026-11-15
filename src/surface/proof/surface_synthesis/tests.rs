@@ -4,7 +4,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
-fn separate_round_trips_without_absorbing_extent_obligations() {
+fn separate_round_trips_without_generating_extent_obligations() {
     use crate::kernel::{MemoryRange, PointerValue, Resource};
     for wide in [false, true] {
         let pointer = PointerValue::new(
@@ -92,13 +92,8 @@ fn separate_round_trips_without_absorbing_extent_obligations() {
             ).unwrap();
         assert_eq!(lowered, expected, "{text}");
         assert!(
-            !obligations.is_empty(),
-            "range formation must still have prerequisites"
-        );
-        assert!(
-            obligations
-                .iter()
-                .all(|obligation| !obligation.is_assumable())
+            obligations.is_empty(),
+            "naming ranges must not owe physical extents: {obligations:?}"
         );
     }
 }

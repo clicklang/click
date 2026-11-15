@@ -5161,37 +5161,8 @@ fn evaluate_spec_resource_at_state_in(
     )
 }
 
-/// Whether a stated relation names a memory range whose byte extent this
-/// context has already decided cannot be valid.
-///
-/// The separation counterpart of `reject_impossible_range_guards`, which does
-/// this for a stated `owns`/`views` range. A range that runs backwards denotes
-/// no bytes, so relating it to anything states nothing, and accepting it let
-/// `separate(memory(a[s..t]), …)` be written with `s == i32::MAX` and
-/// `t == -i32::MAX` — endpoints whose wrapping difference is a tidy `2`.
-///
-/// Reject a range already known invalid with the focused extent diagnostic.
-/// Undecided guards remain separate evaluation obligations.
-fn separation_extent_is_impossible(
-    proposition: &Proposition,
-    assumptions: &PureFactContext,
-) -> bool {
-    crate::kernel::stated_separation_extent_guards(proposition)
-        .iter()
-        .any(|guard| match guard {
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true) => true,
-            Proposition::ConditionIs(condition, true) => {
-                assumptions.decide(condition) == Some(false)
-            }
-            _ => false,
-        })
-}
-
-/// Lowers a relation between two spec resources.
-///
-/// Preserve the written relation's kernel identity. Separation's memory-extent
-/// prerequisites travel as evaluation obligations, never as extra conjuncts.
-/// Relations over opaque resources and containment contribute no range bounds.
+/// Lower a resource relation structurally. Naming a descriptor does not
+/// establish a physical byte extent, access permission, or ownership.
 fn lower_spec_resource_relation_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecResource,
@@ -5209,7 +5180,7 @@ fn lower_spec_resource_relation_at_state_in(
         for (right, right_facts, right_obligations) in
             evaluate_spec_resource_at_state_in(scope, right, &right_assumptions, budget)?
         {
-            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations_under(
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &left_facts,
                 &left_obligations,
                 &right_facts,
@@ -5220,16 +5191,6 @@ fn lower_spec_resource_relation_at_state_in(
                 continue;
             };
             let proposition = relation(left.clone(), right);
-            if separation_extent_is_impossible(&proposition, assumptions) {
-                budget.record_dropped_relation_range_extent();
-                continue;
-            }
-            // An assumed contract supplies its evaluation domain; a use site
-            // owes it through the ordinary obligation driver. Keep the term
-            // structural so lower(raise(ResourceSeparate)) is ResourceSeparate.
-            for guard in crate::kernel::stated_separation_extent_bounds(&proposition) {
-                obligations.push(ProofObligation::resource_formation(guard));
-            }
             paths.push(SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition,
@@ -10228,18 +10189,6 @@ mod arithmetic_domain_scaling_tests {
 #[cfg(test)]
 mod assumed_arithmetic_domain_tests {
     use super::*;
-
-    #[test]
-    fn resource_formation_does_not_deduplicate_an_arithmetic_prerequisite() {
-        let guard = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
-        let formation = ProofObligation::resource_formation(guard.clone());
-        let arithmetic = ProofObligation::evaluation_domain(guard);
-        assert_eq!(
-            std::collections::HashSet::from([formation.clone(), arithmetic.clone()]).len(),
-            2
-        );
-        assert_eq!(BTreeSet::from([formation, arithmetic]).len(), 2);
-    }
 
     #[test]
     fn held_body_arithmetic_assumes_only_its_own_domain_and_preserves_the_value() {

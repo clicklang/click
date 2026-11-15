@@ -65,8 +65,7 @@ pub(crate) use contracts::{
     memory_range_element_count_guards, memory_range_element_count_limit,
     memory_range_extent_guard_spellings, memory_range_extent_guards, narrow_range_constant,
     scaled_extent_element_width, stated_loadable_extent_guard_spellings,
-    stated_loadable_extent_guards, stated_separation_extent_bounds,
-    stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
+    stated_loadable_extent_guards, wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
@@ -8009,7 +8008,6 @@ pub struct ExecutionBudget {
     /// constants — the surrounding facts are what decide it — so there is no
     /// element count to report, only the reason. Diagnostic only: no
     /// evaluation reads it back.
-    pub(super) dropped_relation_range_extent: bool,
     /// Set when a stated memory range was dropped because this context
     /// refutes one of its extent guards: `Some(true)` when the refuted guard
     /// orders its endpoints (the range runs backwards), `Some(false)` when
@@ -14483,9 +14481,6 @@ pub struct ProofObligation {
     /// a contract precondition assumed at function entry. Its caller must
     /// establish this same obligation before applying the contract.
     pub(super) evaluation_domain: bool,
-    /// Descriptor formation is part of an assumed interface premise, including
-    /// a pure theorem premise. It remains mandatory when that premise is used.
-    pub(super) resource_formation: bool,
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
@@ -14516,7 +14511,6 @@ impl PartialEq for ProofObligation {
             && self.context == other.context
             && self.assumable == other.assumable
             && self.evaluation_domain == other.evaluation_domain
-            && self.resource_formation == other.resource_formation
     }
 }
 
@@ -14528,7 +14522,6 @@ impl Hash for ProofObligation {
         self.context.hash(state);
         self.assumable.hash(state);
         self.evaluation_domain.hash(state);
-        self.resource_formation.hash(state);
     }
 }
 
@@ -14539,7 +14532,6 @@ impl Ord for ProofObligation {
             .then_with(|| self.context.cmp(&other.context))
             .then_with(|| self.assumable.cmp(&other.assumable))
             .then_with(|| self.evaluation_domain.cmp(&other.evaluation_domain))
-            .then_with(|| self.resource_formation.cmp(&other.resource_formation))
     }
 }
 

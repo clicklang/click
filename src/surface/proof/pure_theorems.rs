@@ -1362,20 +1362,16 @@ pub(super) fn pure_theorem_context(
     let surface_requires = theorem_requirement_propositions(theorem)?;
     let mut requires = Vec::with_capacity(surface_requires.len());
     let mut requirement_assumptions = PureFactContext::new();
-    let mut requirement_domains = Vec::new();
-    let state = ExecutionState::new().with_memory(memory.clone());
     for proposition in &surface_requires {
-        let (lowered, _, _, obligations) = lower_fixed_state_proposition_retaining_requirements(
+        let (lowered, _) = lower_pure_theorem_proposition_recording_introductions(
+            theorem.name(),
             proposition,
-            &PureFactContext::new(),
+            &requirement_assumptions,
             ContractEnvironment::new(&values, &array_refs),
-            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+            &BTreeMap::new(),
+            &integer_values,
+            &memory,
             spec_definitions,
-            FixedStateLoweringOptions {
-                integer_values: Some(&integer_values),
-                obligation_assumptions: Some(&requirement_assumptions),
-                ..Default::default()
-            },
         )
         .map_err(|message| {
             ClickError::new(format!(
@@ -1383,37 +1379,8 @@ pub(super) fn pure_theorem_context(
                 theorem.name()
             ))
         })?;
-        // As at function entry, a resource premise brings its formation domain.
-        // Applying the theorem lowers the same premise in checking mode and
-        // owes those domains. Keep them separate from the principal's identity.
-        let mut mandatory = Vec::new();
-        let mut formation = Vec::new();
-        for obligation in obligations {
-            if obligation.is_resource_formation() {
-                formation.push(obligation.proposition().clone());
-            } else {
-                mandatory.push(obligation);
-            }
-        }
-        super::fixed_state_proofs::conversion_conditions::refuse_unproved_conversion_bounds(
-            &mandatory,
-            &requirement_assumptions,
-            &super::fixed_state_proofs::conversion_conditions::StatedSite::new(
-                super::fixed_state_proofs::conversion_conditions::StatedForm::Proposition(
-                    proposition,
-                ),
-                &state,
-                &values,
-            )
-            .with_integer_values(&integer_values),
-        )
-        .map_err(ClickError::new)?;
-        // Partial endpoint arithmetic must be justified by earlier premises,
-        // before this clause's formation facts become available.
-        for domain in formation {
-            requirement_assumptions = requirement_assumptions.assume_proposition(domain.clone());
-            requirement_domains.push(domain);
-        }
+        // Guard evidence is available to later requirements, while every
+        // principal remains in the exported implication's premise list.
         requirement_assumptions = requirement_assumptions.assume_proposition(lowered.clone());
         requires.push(lowered);
     }
@@ -1428,7 +1395,6 @@ pub(super) fn pure_theorem_context(
     // both directions agree. The zip above has already paired the principals
     // with their source clauses, and a guard has no source clause of its own.
     let mut requires = requires;
-    requires.extend(requirement_domains);
     for guard in requires
         .iter()
         .flat_map(crate::kernel::stated_loadable_extent_guards)

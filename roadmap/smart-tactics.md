@@ -202,10 +202,6 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- `separate_adjacent_ranges` still owes the two ranges' formation domains at
-  its declaration. Its ordering premises alone do not establish the extent
-  bounds. Resolve this validity requirement before merging the adjacent-range
-  law; do not bypass the ordinary obligation driver.
 - `transport_wide_viewable_range_to_element_definedness.md` has only a pure
   `viewable` premise, not an initialized input memory clause. The new entry
   initialization facts do not justify inferring initialized contents from
