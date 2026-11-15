@@ -34,7 +34,7 @@ int32 consume() {
     have load_int32(statement(0).call(0).result) == 3 by { known(); }
     step();
     have at(statement(0).assignment(p, 0).exit, p.x == 3) by { known(); }
-    step();
+    step_until(function.exit);
     solve();
 }
 ```
