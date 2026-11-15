@@ -1,4 +1,4 @@
-# A conjunction does not hide an invalid memory extent
+# A conjunction can name a reversed logical range
 
 ```click
 theorem invalid(p: int32*, A: Resource) {
@@ -8,5 +8,5 @@ theorem invalid(p: int32*, A: Resource) {
 ```
 
 ```expect
-fail: range
+pass
 ```

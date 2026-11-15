@@ -5162,36 +5162,8 @@ fn evaluate_spec_resource_at_state_in(
     )
 }
 
-/// Whether a stated relation names a memory range whose byte extent this
-/// context has already decided cannot be valid.
-///
-/// The separation counterpart of `reject_impossible_range_guards`, which does
-/// this for a stated `owns`/`views` range. A range that runs backwards denotes
-/// no bytes, so relating it to anything states nothing, and accepting it let
-/// `separate(memory(a[s..t]), …)` be written with `s == i32::MAX` and
-/// `t == -i32::MAX` — endpoints whose wrapping difference is a tidy `2`.
-///
-/// Reject a range already known invalid with the focused extent diagnostic.
-/// Undecided guards remain conjuncts of the lowered separation proposition.
-fn separation_extent_is_impossible(
-    proposition: &Proposition,
-    assumptions: &PureFactContext,
-) -> bool {
-    crate::kernel::stated_separation_extent_guards(proposition)
-        .iter()
-        .any(|guard| match guard {
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true) => true,
-            Proposition::ConditionIs(condition, true) => {
-                assumptions.decide(condition) == Some(false)
-            }
-            _ => false,
-        })
-}
-
-/// Lowers a relation between two spec resources.
-///
-/// A separation names valid memory extents in every context. Relations over
-/// opaque resources, and containment relations, contribute no range bounds.
+/// Lower a resource relation structurally. Naming a descriptor does not
+/// establish a physical byte extent, access permission, or ownership.
 fn lower_spec_resource_relation_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecResource,
@@ -5219,16 +5191,7 @@ fn lower_spec_resource_relation_at_state_in(
             ) else {
                 continue;
             };
-            let mut proposition = relation(left.clone(), right);
-            if separation_extent_is_impossible(&proposition, assumptions) {
-                budget.record_dropped_relation_range_extent();
-                continue;
-            }
-            // An assumption provides every conjunct; a goal establishes all
-            // of them. The same lowering serves contracts and theorem proofs.
-            for guard in crate::kernel::stated_separation_extent_bounds(&proposition) {
-                proposition = Proposition::And(Box::new(proposition), Box::new(guard));
-            }
+            let proposition = relation(left.clone(), right);
             paths.push(SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition,

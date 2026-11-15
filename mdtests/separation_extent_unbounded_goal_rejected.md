@@ -1,4 +1,4 @@
-# separation extent unbounded goal rejected
+# Separation of distinct blocks needs no range bounds
 
 ```c filename=separation_extent_unbounded_goal_rejected.c
 int32 a[1];
@@ -14,5 +14,5 @@ int32 identity(int32 n) {
 ```
 
 ```expect
-fail: unclosed goal: separate
+pass
 ```

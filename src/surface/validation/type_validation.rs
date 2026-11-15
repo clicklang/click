@@ -3569,6 +3569,7 @@ fn validate_pointer_cast_operands(
                 }
                 match infer_program_expression_type(operand, variables) {
                     None | Some(InterfaceType::VoidPointer) => {}
+                    Some(actual) if actual.to_kernel_type() == *target_type => {}
                     Some(actual) => {
                         return Err(ClickError::new(format!(
                             "pointer cast in {context} expects a `void *` operand, got `{actual:?}`"

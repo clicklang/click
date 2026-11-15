@@ -145,7 +145,7 @@ checks each one, in one of two ways; the gate runs it
   (`int32_remainder_to_integer`; the `uint32` and `uint64` divide and
   remainder laws; 16-bit packing; and the
   `uint32_from_le_bytes` byte layout), 5 Integer truncation laws, 6 `Nat`
-  conversion laws and 12 separation laws. `separation::separate_elements` and
+  conversion laws and 15 separation laws. `separation::separate_elements` and
   `separation::distinct_elements` are generic over their index type, which
   has no rigid C form, so each is checked at each index type its builder
   admits: `int32`, `int64` and `uint64`. `distinct_elements` concludes

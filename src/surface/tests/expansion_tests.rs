@@ -22357,6 +22357,10 @@ fn instantiated_indexed_read_expands_without_transport() {
 #[ignore = "nightly: explicit fold preservation expands and cold replays"]
 fn explicit_fold_preservation_expands_without_legacy_transport() {
     for (fixture, function) in [
+        (
+            "fold_read_transport_across_a_call_with_a_checked_write_set",
+            "caller",
+        ),
         ("fold_read_transport_below_a_nonzero_start", "mark_below"),
         ("fold_read_transport_empty_fold_when_checked", "mark_any"),
         ("fold_read_transport_historical_endpoint", "mark_at"),
@@ -22380,6 +22384,47 @@ fn explicit_fold_preservation_expands_without_legacy_transport() {
             "{fixture}: {expanded}"
         );
         without_implicit_solve_for_claim(&format!("{function}.contract"), || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: initialized input and explicit read preservation cold replay"]
+fn initialized_input_and_preserved_reads_expand_without_legacy_transport() {
+    for (fixture, function) in [
+        ("initialized_input_ranges_publish_definedness", "narrow"),
+        ("initialized_input_ranges_publish_definedness", "wide"),
+        ("initialized_input_ranges_publish_definedness", "pointers"),
+        ("transport_computed_byte_read", "iterator_read"),
+        ("read_initialization_step_transport", "change"),
+        (
+            "cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length",
+            "poke",
+        ),
+        ("cstr_dynamic_explicit_have_transport", "read_terminator"),
+        ("cstr_dynamic_choose_extract", "read_terminator"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        assert!(
+            !expanded.contains("transport_certificate"),
+            "{fixture}: {expanded}"
+        );
+        let claim = if fixture.starts_with("cstr_dynamic_") {
+            format!("{function}.ensures_0")
+        } else {
+            format!("{function}.contract")
+        };
+        without_implicit_solve_for_claim(&claim, || {
             verify_c_sources(&expanded, &sources).map_err(|error| error.report())
         })
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));

@@ -1149,8 +1149,7 @@ impl SurfacePropositionMap {
             })
     }
 
-    /// Recorded atoms with a written enclosing clause, including clauses
-    /// such as separation that also lower to formation requirements. This
+    /// Recorded atoms with a written enclosing clause. This
     /// enumerates existing syntax records for smart planning; it builds no
     /// reasoning context and publishes no facts.
     pub(in crate::surface) fn requirement_kernel_atoms_for_search(

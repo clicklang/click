@@ -172,6 +172,55 @@ pub(crate) fn prove_separation_subrange(
     )
 }
 
+/// Adjacent ordered intervals are disjoint. Exact element coordinates avoid
+/// endpoint subtraction and wrapping; the constructor inspects no proof state.
+pub(crate) fn prove_separation_adjacent_ranges(
+    base: PointerValue,
+    width: u32,
+    format: MachineIntegerType,
+    lo: MachineTerm,
+    mid: MachineTerm,
+    hi: MachineTerm,
+) -> Theorem {
+    assert!(width > 0);
+    assert!(matches!(
+        format,
+        MachineIntegerType::Int32 | MachineIntegerType::UInt64
+    ));
+    crate::instrumentation::record_deterministic_work(1);
+    let premises = [(lo.clone(), mid.clone()), (mid.clone(), hi.clone())];
+    let range = |start, end| match format {
+        MachineIntegerType::Int32 => MemoryRange::from_pointer_value(&base, start, end, width),
+        MachineIntegerType::UInt64 => {
+            MemoryRange::from_pointer_value_wide(&base, start, end, width)
+        }
+        _ => unreachable!(),
+    };
+    let conclusion = Proposition::ResourceSeparate {
+        left: Box::new(Resource::Memory(range(lo, mid.clone()))),
+        right: Box::new(Resource::Memory(range(mid, hi))),
+    };
+    Theorem::new(
+        premises
+            .into_iter()
+            .rev()
+            .fold(conclusion, |body, (left, right)| {
+                Proposition::Implies(
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::machine_compare(
+                            format,
+                            CompareRelation::LessEqual,
+                            left,
+                            right,
+                        ),
+                        true,
+                    )),
+                    Box::new(body),
+                )
+            }),
+    )
+}
+
 /// Rebase the same interval to its first element. The explicit nonnegative
 /// ordered bounds make the subtraction exact in both admitted formats.
 /// This constructs descriptors; it neither grants ownership nor reads facts.

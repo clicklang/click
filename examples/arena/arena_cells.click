@@ -318,31 +318,19 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         memory(arena->occupied[0..arena->capacity]),
         memory(arena->data[0..arena->capacity])
     ) by {
-        both {
-            both { solve(); } and { assumption(); }
-        } and {
-            assumption();
-        }
+        solve();
     }
     have separate(
         memory(*arena),
         memory(arena->data[0..arena->capacity])
     ) by {
-        both {
-            both { solve(); } and { assumption(); }
-        } and {
-            assumption();
-        }
+        solve();
     }
     have separate(
         memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     ) by {
-        both {
-            both { solve(); } and { assumption(); }
-        } and {
-            assumption();
-        }
+        solve();
     }
     gather(arena_cells(arena->data, arena->occupied, arena->capacity));
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
@@ -688,7 +676,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     step();
     step();
     have 0 <= arena->capacity by {
-        assumption();
+        solve() using { 0 < count; count <= arena->capacity; };
     }
     have forall (k: int32) { 0 <= k and k < 0 implies arena->occupied[k] == 0 } by {
         intro();

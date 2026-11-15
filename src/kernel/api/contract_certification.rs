@@ -8,6 +8,7 @@ use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{bits32_constant, constant_u32};
 
 mod contract_claims;
+mod input_initialization;
 mod retained_syntax;
 pub use contract_claims::*;
 
@@ -1350,6 +1351,8 @@ pub enum ContractEntryFactOrigin {
     Extent,
     /// Loadability of a stated clause range at the entry memory.
     ClauseLoadable,
+    /// Initialized typed reads promised by an admitted input clause.
+    ClauseInitialized,
     /// A declared fact of a composite resource the entry holds, at any depth.
     CompositeDefinition,
     /// A declared fact of a tracked population.
@@ -1904,6 +1907,26 @@ fn program_function_contract_entry_facts(
         // A range its own guards refute states no memory to read.
         if !well_formed {
             continue;
+        }
+        // Active clauses have already been evaluated, retaining their source
+        // index and entry range. Publish the contract's initialization promise
+        // once, without evaluating its base or enumerating its cells again.
+        if let Some(segment) = clause
+            .section_index
+            .and_then(|index| function.resource_requires().get(index))
+            .and_then(|resource| resource.term().memory_segment())
+            && let Some(fact) = input_initialization::initialized_input_range_fact(
+                &entry_state,
+                function.contract_interface(),
+                segment,
+                range,
+            )?
+        {
+            assumptions = entry_facts.assume(
+                assumptions,
+                ContractEntryFactOrigin::ClauseInitialized,
+                fact,
+            );
         }
         // A wide range states the wide liveness fact.
         if range.wide_bounds().is_some() {

@@ -1,7 +1,7 @@
 # Computed byte reads retain their address-definedness guards
 
-An explicit range transport must prove both arithmetic definedness and read
-authority for a computed index.
+The input view publishes initialized reads. Instantiating that entry fact at
+a computed index requires the index's arithmetic definedness and bounds.
 
 ```c filename=iterator_read.c
 int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
@@ -21,13 +21,13 @@ int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
 } by {
     have 0 <= bytes_len as uint32 as int32;
     have defined(bytes[remaining - 1]) by {
-        transport(at(function.entry, viewable(bytes[0..bytes_len as uint32 as int32])), defined(bytes[remaining - 1])) using {
-            at(function.entry, viewable(bytes[0..bytes_len as uint32 as int32]));
-            0 <= bytes_len as uint32 as int32;
-            defined(remaining - 1);
+        instantiate(forall (k: int32) {
+            0 <= k and k < bytes_len as uint32 as int32 implies defined(bytes[k])
+        }, remaining - 1) using {
             0 <= to_integer(remaining - 1);
             to_integer(remaining - 1) < to_integer(bytes_len as uint32 as int32);
         };
+        assumption();
     }
 }
 ```

@@ -96,9 +96,9 @@ pub(crate) use separation_laws::{
     observe_memory_view, prove_resource_law, prove_viewable_restrict, resource_viewable,
 };
 pub(crate) use separation_laws::{
-    prove_separation_contains_element, prove_separation_distinct_elements,
-    prove_separation_elements, prove_separation_rebase, prove_separation_restrict,
-    prove_separation_subrange,
+    prove_separation_adjacent_ranges, prove_separation_contains_element,
+    prove_separation_distinct_elements, prove_separation_elements, prove_separation_rebase,
+    prove_separation_restrict, prove_separation_subrange,
 };
 mod loops;
 pub(crate) mod machine_integer;

@@ -6386,69 +6386,6 @@ mod stated_range_guard_derivation {
         assert!(crate::kernel::stated_loadable_extent_guards(&cell).is_empty());
     }
 
-    fn int32_range_resource(start: MachineTerm, end: MachineTerm) -> Resource {
-        Resource::Memory(MemoryRange::new(
-            Pointer {
-                block: "arg-memory".into(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            start,
-            end,
-        ))
-    }
-
-    /// A stated separation carries the extent guards of both ranges it names.
-    /// Naming a range in `separate(…)` means what naming it in `owns` means,
-    /// so the two directions of that meaning come from one derivation.
-    #[test]
-    fn a_stated_separation_carries_both_ranges_extents() {
-        let left_end = MachineTerm::Variable(Variable(9_200_010));
-        let right_end = MachineTerm::Variable(Variable(9_200_011));
-        let separation = Proposition::ResourceSeparate {
-            left: Box::new(int32_range_resource(
-                MachineTerm::constant(0),
-                left_end.clone(),
-            )),
-            right: Box::new(int32_range_resource(
-                MachineTerm::constant(0),
-                right_end.clone(),
-            )),
-        };
-        let guards = crate::kernel::stated_separation_extent_guards(&separation);
-        for end in [left_end, right_end] {
-            assert!(
-                guards.contains(&Proposition::ConditionIs(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), end.clone()),
-                    true,
-                )),
-                "the forward half of {end:?} is owed: {guards:?}"
-            );
-        }
-    }
-
-    /// A reversed constant range contributes the impossible guard, which is
-    /// what lets the lowering refuse `separate(memory(a[0..-1]), …)` rather
-    /// than relate a range that denotes no bytes.
-    #[test]
-    fn a_reversed_constant_separation_range_cannot_hold() {
-        let separation = Proposition::ResourceSeparate {
-            left: Box::new(int32_range_resource(
-                MachineTerm::constant(0),
-                MachineTerm::constant((-1i32) as u32),
-            )),
-            right: Box::new(int32_range_resource(
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
-            )),
-        };
-        assert!(
-            crate::kernel::stated_separation_extent_guards(&separation).contains(
-                &Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-            ),
-            "a reversed constant range is not a byte extent"
-        );
-    }
-
     #[test]
     fn shared_extent_guards_match_wide_integer_arithmetic_at_boundaries() {
         let start_var = Variable(9_200_020);
@@ -6500,26 +6437,6 @@ mod stated_range_guard_derivation {
                 }
             }
         }
-    }
-
-    /// A composite or token resource names no range, so a separation over one
-    /// owes nothing. Only memory carries an extent.
-    #[test]
-    fn a_separation_of_opaque_resources_carries_nothing() {
-        let separation = Proposition::ResourceSeparate {
-            left: Box::new(Resource::Token {
-                name: "t".into(),
-                arguments: Vec::new().into(),
-            }),
-            right: Box::new(Resource::Composite {
-                name: "c".into(),
-                arguments: Vec::new().into(),
-            }),
-        };
-        assert!(
-            crate::kernel::stated_separation_extent_guards(&separation).is_empty(),
-            "an opaque ownership atom has no endpoints"
-        );
     }
 }
 

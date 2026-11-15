@@ -65,8 +65,7 @@ pub(crate) use contracts::{
     memory_range_element_count_guards, memory_range_element_count_limit,
     memory_range_extent_guard_spellings, memory_range_extent_guards, narrow_range_constant,
     scaled_extent_element_width, stated_loadable_extent_guard_spellings,
-    stated_loadable_extent_guards, stated_separation_extent_bounds,
-    stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
+    stated_loadable_extent_guards, wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
@@ -8009,7 +8008,6 @@ pub struct ExecutionBudget {
     /// constants — the surrounding facts are what decide it — so there is no
     /// element count to report, only the reason. Diagnostic only: no
     /// evaluation reads it back.
-    pub(super) dropped_relation_range_extent: bool,
     /// Set when a stated memory range was dropped because this context
     /// refutes one of its extent guards: `Some(true)` when the refuted guard
     /// orders its endpoints (the range runs backwards), `Some(false)` when

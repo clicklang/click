@@ -4,6 +4,22 @@ use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
+/// Only conclusions can contribute order facts; implication guards cannot.
+/// Reject non-arithmetic universals before considering their finite domain.
+pub(in crate::kernel::assumptions) fn has_condition_conclusion(proposition: &Proposition) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    match proposition {
+        Proposition::ConditionIs(..) => true,
+        Proposition::And(left, right) => {
+            has_condition_conclusion(left) || has_condition_conclusion(right)
+        }
+        Proposition::Implies(_, right) | Proposition::ForAll { body: right, .. } => {
+            has_condition_conclusion(right)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Copy)]
 enum DomainRule {
     Increment,
@@ -3346,6 +3362,9 @@ impl PureFactContext {
                 }
             }
             Proposition::ForAll { body, .. } => {
+                if !has_condition_conclusion(body) {
+                    return false;
+                }
                 self.proposition_proves_condition(body, condition, value)
                     || self
                         .forall_instantiations_for_condition(proposition, condition)

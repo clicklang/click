@@ -94,14 +94,14 @@ the body and the exit assume both halves, and the entry and every back edge owe
 both. An invariant whose range is already known not to be an extent where it is
 owed is refused there, as a false invariant, rather than read as owing nothing.
 
-`separate(memory(p[a..b]), memory(q[c..d]))` includes the same validity
-conditions for both ranges. A separation premise supplies the bounds; a
-separation goal or call requirement must prove them. Observing or unfolding a
-composite resource exposes the bounds of its contained memory ranges, so a
-proof can use those bounds without repeating them in the resource definition.
-Separation alone does not grant permission to read either range.
+`separate(memory(p[a..b]), memory(q[c..d]))` names two logical resources.
+It does not assert bounds, liveness, or permission to read either resource.
+Lowering preserves the `ResourceSeparate` term without adding extent
+obligations. Arithmetic in the operands still has its ordinary prerequisites.
+Observing or unfolding an admitted composite resource can expose its contained
+memory ranges' bounds; those bounds come from the resource, not separation.
 
-Stating a range whose extent is decidably invalid is refused where the clause is
+Stating an owned or viewed range whose extent is decidably invalid is refused where the clause is
 prepared, so the two directions cannot be played against each other. At the
 program's outer boundary, where no caller is verified, a contract's range is an
 assumption about the environment in the same way the pointer being live is one:

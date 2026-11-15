@@ -179,6 +179,19 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
     }
 }
 
+/// Interpret an explicitly bounded logical range as a physical observation.
+/// A modular byte count is insufficient: reversed or oversized ranges can
+/// wrap to the width of a scalar. Use the actual signed endpoint difference
+/// and checked scaling instead. Symbolic extents need an explicit reduction
+/// to a complete cell before this primitive can use them.
+fn observation_footprint(range: &MemoryRange) -> Option<(Pointer, u32)> {
+    let start = range.signed_constant_start()?;
+    let end = range.signed_constant_end()?;
+    let elements = u32::try_from(end.checked_sub(start)?).ok()?;
+    let bytes = elements.checked_mul(range.element_width())?;
+    (bytes > 0).then(|| (range.start_pointer(), bytes))
+}
+
 /// A single separated write preserves the selected complete observation.
 /// The read producer supplied its value, including pointer provenance; apply
 /// this law directly to those values, without inspecting the memory DAG.
@@ -200,11 +213,9 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     let (Resource::Memory(left), Resource::Memory(right)) = (left.as_ref(), right.as_ref()) else {
         return None;
     };
-    let left_footprint = left.byte_footprint();
-    let right_footprint = right.byte_footprint();
-    let is_write = |(address, bytes): &(Pointer, MachineTerm)| {
-        address == written && bytes.as_const() == Some(*write_bytes)
-    };
+    let left_footprint = observation_footprint(left)?;
+    let right_footprint = observation_footprint(right)?;
+    let is_write = |(address, bytes): &(Pointer, u32)| address == written && bytes == write_bytes;
     let (address, bytes) = if is_write(&left_footprint) {
         right_footprint
     } else if is_write(&right_footprint) {
@@ -212,7 +223,7 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     } else {
         return None;
     };
-    let observed = observation_type(kind, bytes.as_const()?)?;
+    let observed = observation_type(kind, bytes)?;
     observation_equality(before, after, address, observed, kind)
 }
 
@@ -228,8 +239,8 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
     if kept.wide_bounds().is_some() {
         return None;
     }
-    let (address, bytes) = kept.byte_footprint();
-    let observed = observation_type(kind, bytes.as_const()?)?;
+    let (address, bytes) = observation_footprint(kept)?;
+    let observed = observation_type(kind, bytes)?;
     observation_equality(&footprint.before, &footprint.after, address, observed, kind)
 }
 
@@ -251,8 +262,8 @@ fn preserve_definedness(
     if kept.wide_bounds().is_some() {
         return None;
     }
-    let (pointer, bytes) = kept.byte_footprint();
-    if bytes.as_const()? != value_type.byte_width() {
+    let (pointer, bytes) = observation_footprint(kept)?;
+    if bytes != value_type.byte_width() {
         return None;
     }
     let defined = |memory: &Memory| Proposition::MemoryReadDefined {
@@ -613,6 +624,31 @@ mod tests {
             old,
             goal,
         )
+    }
+
+    #[test]
+    fn observation_footprint_uses_nonwrapping_signed_extent() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for (start, end, width, expected) in [
+            (0i32, 1i32, 4, Some(4)),
+            (-1, 0, 4, Some(4)),
+            (0, 0, 4, None),
+            (0, -1073741823, 4, None),
+            (0, 1073741825, 4, None),
+            (i32::MAX, i32::MIN, 4, None),
+            (i32::MIN, i32::MAX, 4, None),
+        ] {
+            let range = MemoryRange::new_with_element_width(
+                Pointer::symbolic(Variable(8_499_100)),
+                MachineTerm::constant(start as u32),
+                MachineTerm::constant(end as u32),
+                width,
+            );
+            assert_eq!(
+                observation_footprint(&range).map(|(_, bytes)| bytes),
+                expected
+            );
+        }
     }
 
     #[test]

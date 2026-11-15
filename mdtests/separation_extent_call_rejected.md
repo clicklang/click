@@ -11,6 +11,8 @@ int32 caller(int32 n) { return identity(n); }
 verifying "separation_extent_call_rejected.c";
 int32 identity(int32 n) {
     requires separate(memory(a[0..n]), memory(b[0..1]));
+    requires 0 <= n;
+    requires n <= 1073741823;
     ensures result >= 0;
     ensures result <= 1073741823;
 }
@@ -20,5 +22,5 @@ int32 caller(int32 n) {
 ```
 
 ```expect
-fail: unproved obligation: `separate(memory(a[0..n]), memory(b[0..1]))`
+fail: unproved obligation: `0 <= n`
 ```

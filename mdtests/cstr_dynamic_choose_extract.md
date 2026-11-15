@@ -1,10 +1,8 @@
-# Chosen C-string witness preserves an entry viewability citation
+# An observed C-string supplies the readable witness
 
-A witness length chosen from the entry readable-string fact is carried past
-the local declaration: its viewable range by an extracted entry citation
-and `transport`, its definedness by instantiating and transporting the
-entry fact. The call to `strlen` takes the caller's borrowed string
-`cstr_at(bytes, n)`.
+Observe the explicitly named borrowed string after the local declaration.
+Its current body facts supply the witness length, terminator, nonzero prefix,
+and initialized reads through ordinary instantiation.
 
 ```c filename=cstr_dynamic_choose_extract.c
 uint64 read_terminator(uint8 bytes[]) {
@@ -22,8 +20,23 @@ uint64 read_terminator(uint8 bytes[]) {
     let n: uint64;
     views click::cstr::cstr_at(bytes, n);
     ensures result < 18446744073709551615u64 by {
-        unfold(click::cstr::readable);
         step_until(region(1));
+        observe(click::cstr::cstr_at(bytes, n));
+        have viewable(bytes[0..n + 1u64]) by { observe(bytes[0..n + 1u64]); assumption(); }
+        have forall (k: uint64) { to_integer(k) < to_integer(n + 1u64) implies defined(bytes[k]) } by {
+            intro(); intro();
+            have 0u64 <= k by { normalize(); }
+            instantiate(forall (j: uint64) { 0u64 <= j and to_integer(j) < to_integer(n + 1u64) implies defined(bytes[j]) }, k) using {
+                0u64 <= k; to_integer(k) < to_integer(n + 1u64);
+            };
+            assumption();
+        }
+        have forall (k: uint64) { k < n implies bytes[k] != '\0' } by {
+            intro(); intro();
+            have 0u64 <= k by { normalize(); }
+            instantiate(forall (j: uint64) { 0u64 <= j and j < n implies bytes[j] != '\0' }, k) using { 0u64 <= k; k < n; };
+            assumption();
+        }
         have exists (len: uint64) {
             len < 18446744073709551615u64 and
                 viewable(bytes[0..len + 1u64]) and
@@ -31,55 +44,8 @@ uint64 read_terminator(uint8 bytes[]) {
                 bytes[len] == '\0' and
                 forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
         } by {
-            obtain (found_len: uint64) {
-                at(function.entry,
-                    found_len < 18446744073709551615u64 and
-                    viewable(bytes[0..found_len + 1u64]) and
-                    forall (k: uint64) { k < found_len implies bytes[k] != '\0' } and
-                    bytes[found_len] == '\0' and
-                    forall (k: uint64) { to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k]) })
-            }
-            witness { len: found_len };
-            both { solve(); } and {
-                both {
-                    both {
-                        both {
-                            both {
-                                solve();
-                            } and {
-                                extract(at(function.entry, viewable(bytes[0..found_len + 1u64])));
-                                transport(
-                                    at(function.entry, viewable(bytes[0..found_len + 1u64])),
-                                    viewable(bytes[0..found_len + 1u64])
-                                ) using {
-                                    at(function.entry, viewable(bytes[0..found_len + 1u64]));
-                                };
-                            }
-                        } and {
-                            solve();
-                        }
-                    } and {
-                        solve();
-                    }
-                } and {
-                    extract(at(function.entry, forall (k: uint64) {
-                        to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
-                    }));
-                    intro();
-                    intro();
-                    instantiate(at(function.entry, forall (k: uint64) {
-                        to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
-                    }), k) using {
-                        to_integer(k) < to_integer(found_len + 1u64);
-                    };
-                    transport(
-                        at(function.entry, defined(bytes[k])),
-                        defined(bytes[k])
-                    ) using {
-                        at(function.entry, defined(bytes[k]));
-                    };
-                }
-            }
+            witness { len: n };
+            assumption();
         }
     }
 }

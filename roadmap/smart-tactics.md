@@ -186,10 +186,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 81 | 138 |
+| `mdtests/` | 75 | 129 |
 | `examples/` | 30 | 371 |
 | `library/` | 0 | 0 |
-| Total | 111 | 509 |
+| Total | 105 | 500 |
 
 The 18 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text
@@ -202,12 +202,11 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- `fold_read_transport_across_a_call_with_a_checked_write_set.md`: the
-  pointwise preservation proof needs separation of `v[0..i]` and `v[i..n]`.
-  The current element and containment axioms do not directly construct this
-  symbolic adjacent-range fact. A direct `separation::separate_adjacent_ranges` law is
-  awaiting design approval; the call's recorded footprint containment can then
-  feed ordinary `separate_restrict` and `preserve`.
+- `transport_wide_viewable_range_to_element_definedness.md` has only a pure
+  `viewable` premise, not an initialized input memory clause. The new entry
+  initialization facts do not justify inferring initialized contents from
+  liveness alone. Reduce the legacy rule's initialization assumptions before
+  choosing its explicit replacement.
 - The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
   node, before its legacy transport calls. An explicit `node == identity`
   lookup moves the failure to the packed parent-pointer equality. Repair and

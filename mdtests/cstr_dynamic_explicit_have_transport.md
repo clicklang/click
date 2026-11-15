@@ -1,11 +1,8 @@
-# Explicitly prove a dynamic readable witness across a local declaration
+# An observed C-string supplies current readable facts
 
-The caller's readable-string facts hold at entry, and the `have`s carry them
-past the local declaration to the call: the viewable range by `transport`,
-the definedness of each byte by instantiating the entry fact and
-transporting each instance. The call itself takes the caller's borrowed
-string `cstr_at(bytes, known_len)`, so it returns `known_len` and the C code
-reads the terminator through the string's view.
+After the local declaration, observe the held string and its byte range.
+Instantiate its current quantified facts to construct the readable witness;
+no entry-to-current memory transport is needed.
 
 ```c filename=cstr_dynamic_explicit_have_transport.c
 int32 read_terminator(uint8 bytes[], uint64 known_len) {
@@ -25,44 +22,32 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
     requires viewable(bytes[0..known_len + 1u64]);
     views click::cstr::cstr_at(bytes, known_len);
     ensures result == '\0' by {
-        unfold(click::cstr::readable);
-        unfold(click::cstr::readable_len);
         step_until(region(1));
-        have viewable(bytes[0..known_len + 1u64]) by {
-            transport(
-                at(function.entry, viewable(bytes[0..known_len + 1u64])),
-                viewable(bytes[0..known_len + 1u64])
-            ) using { at(function.entry, viewable(bytes[0..known_len + 1u64])); };
-        }
+        observe(click::cstr::cstr_at(bytes, known_len));
+        have viewable(bytes[0..known_len + 1u64]) by { observe(bytes[0..known_len + 1u64]); assumption(); }
         have forall (k: uint64) { to_integer(k) < to_integer(known_len + 1u64) implies defined(bytes[k]) } by {
-            extract(at(function.entry, forall (k: uint64) {
-                to_integer(k) < to_integer(known_len + 1u64) implies defined(bytes[k])
-            }));
-            intro();
-            intro();
-            instantiate(at(function.entry, forall (k: uint64) {
-                to_integer(k) < to_integer(known_len + 1u64) implies defined(bytes[k])
-            }), k) using {
-                to_integer(k) < to_integer(known_len + 1u64);
+            intro(); intro();
+            have 0u64 <= k by { normalize(); }
+            instantiate(forall (j: uint64) { 0u64 <= j and to_integer(j) < to_integer(known_len + 1u64) implies defined(bytes[j]) }, k) using {
+                0u64 <= k; to_integer(k) < to_integer(known_len + 1u64);
             };
-            transport(
-                at(function.entry, defined(bytes[k])),
-                defined(bytes[k])
-            ) using { at(function.entry, defined(bytes[k])); };
+            assumption();
         }
         have forall (k: uint64) { k < known_len implies bytes[k] != '\0' } by {
-            extract(at(function.entry, forall (k: uint64) {
-                k < known_len implies bytes[k] != '\0'
-            }));
+            intro(); intro();
+            have 0u64 <= k by { normalize(); }
+            instantiate(forall (j: uint64) { 0u64 <= j and j < known_len implies bytes[j] != '\0' }, k) using { 0u64 <= k; k < known_len; };
+            assumption();
         }
         have exists (len: uint64) {
-            len < 18446744073709551615u64 and viewable(bytes[0..len + 1u64]) and
-            forall (k: uint64) { k < len implies bytes[k] != '\0' } and
-            bytes[len] == '\0' and
-            forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
+            len < 18446744073709551615u64 and
+                viewable(bytes[0..len + 1u64]) and
+                forall (k: uint64) { k < len implies bytes[k] != '\0' } and
+                bytes[len] == '\0' and
+                forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
         } by {
             witness { len: known_len };
-            solve();
+            assumption();
         }
     }
 }
