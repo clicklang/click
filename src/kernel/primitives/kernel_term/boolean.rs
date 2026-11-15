@@ -3,6 +3,7 @@
 use super::*;
 mod comparison;
 mod complete_pointer;
+mod overflow;
 pub use complete_pointer::KernelPointerEquality;
 mod pointer_comparison;
 
@@ -104,6 +105,19 @@ impl<'a> BooleanOperandView<'a> {
                         if !equal {
                             return false;
                         }
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+            match (left.overflow(), right.overflow()) {
+                (Some((af, ao, a)), Some((bf, bo, b))) => {
+                    if af != bf
+                        || ao != bo
+                        || !a.into_iter().zip(b).all(|(a, b)| machine_equal(a, b))
+                    {
+                        return false;
                     }
                     continue;
                 }
@@ -330,6 +344,53 @@ impl<'a> BooleanOperandView<'a> {
         }
     }
 
+    pub(crate) fn machine_arguments(
+        self,
+    ) -> Option<(MachineIntegerType, [MachineOperandView<'a>; 2])> {
+        self.comparison()
+            .map(|(format, _, arguments)| (format, arguments))
+            .or_else(|| {
+                self.overflow()
+                    .map(|(format, _, arguments)| (format, arguments))
+            })
+    }
+    pub(crate) fn overflow(
+        self,
+    ) -> Option<(
+        MachineIntegerType,
+        OverflowOperation,
+        [MachineOperandView<'a>; 2],
+    )> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::BoolOverflow {
+                    format,
+                    operation,
+                    arguments,
+                } => Some((
+                    *format,
+                    *operation,
+                    arguments.each_ref().map(MachineOperandView::Shared),
+                )),
+                _ => Self::Native(self.native_leaf()?).overflow(),
+            },
+            Self::Native(ConditionTerm::Overflows {
+                format,
+                op,
+                left,
+                right,
+            }) => Some((
+                *format,
+                *op,
+                [
+                    MachineOperandView::Legacy(left),
+                    MachineOperandView::Legacy(right),
+                ],
+            )),
+            _ => None,
+        }
+    }
+
     pub(crate) fn comparison(
         self,
     ) -> Option<(
@@ -446,6 +507,16 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
+            Old::Overflows {
+                format,
+                op,
+                left,
+                right,
+            } => Node::BoolOverflow {
+                format: *format,
+                operation: *op,
+                arguments: [self.machine(*format, left), self.machine(*format, right)],
+            },
             Old::PointerValueEqual(a, b) => {
                 return KernelTerm::pointer_value_equal_raw([
                     SharedPointerValue::import(a),
@@ -556,6 +627,16 @@ impl KernelTermExport {
         }
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::BoolOverflow {
+                format,
+                operation,
+                arguments,
+            } => Old::Overflows {
+                format: *format,
+                op: *operation,
+                left: Box::new(Self::machine(&arguments[0])?),
+                right: Box::new(Self::machine(&arguments[1])?),
+            },
             Node::PointerValueEqual(pair) => {
                 let [a, b] = pair.arguments();
                 Old::PointerValueEqual(Box::new(a.export()?), Box::new(b.export()?))

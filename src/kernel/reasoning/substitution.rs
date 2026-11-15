@@ -5393,6 +5393,23 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     },
                 );
             }
+            if let crate::kernel::KernelTermNode::BoolOverflow {
+                format,
+                operation,
+                arguments,
+            } = leaf.node()
+            {
+                let a = map_machine(&arguments[0], *format).ok_or(())?;
+                let b = map_machine(&arguments[1], *format).ok_or(())?;
+                return Ok(KernelTerm::boolean_overflow(
+                    *format,
+                    *operation,
+                    [
+                        KernelTerm::retained_machine_operand(*format, a.operand_view()),
+                        KernelTerm::retained_machine_operand(*format, b.operand_view()),
+                    ],
+                ));
+            }
             if let crate::kernel::KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
                 let offsets = map_common_substitution_offsets(arguments, &mut map_machine)?;
                 return Ok(KernelTerm::pointer_offset_equal(offsets));
@@ -5505,7 +5522,7 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
         return Some(condition.clone());
     }
     if crate::kernel::BooleanOperandView::Shared(condition)
-        .comparison()
+        .machine_arguments()
         .is_some()
     {
         return Some(condition.clone());

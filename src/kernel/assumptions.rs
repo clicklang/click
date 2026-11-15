@@ -428,6 +428,17 @@ pub(in crate::kernel) fn boolean_operands_equal_with_load_atoms(
     ) {
         return comparison_views_equal_with_load_atoms(left, right, loads_match);
     }
+    match (left.overflow(), right.overflow()) {
+        (Some((af, ao, a)), Some((bf, bo, b))) => {
+            return af == bf
+                && ao == bo
+                && a.into_iter()
+                    .zip(b)
+                    .all(|(a, b)| operands_equal_with_load_atoms(af, a, b, loads_match));
+        }
+        (None, None) => {}
+        _ => return false,
+    }
     match (left.pointer_offsets(), right.pointer_offsets()) {
         (Some(a), Some(b)) => {
             return a.iter().zip(&b).all(|(a, b)| {

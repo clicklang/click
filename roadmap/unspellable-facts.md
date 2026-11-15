@@ -386,6 +386,20 @@ snapshot keys, dependency admission, read order and observation identity. Exact
 producer metadata stays retained while logical keys preserve the native const,
 volatile, type and extent distinctions. The CI-quality check passed.
 
+8j retains overflow conditions as typed numeric operand pairs with their exact
+format and operation. Identity, observation normalization, snapshot selectors,
+dependency readers and load matching inspect the shared operands directly.
+Reconstruction reuses the existing constant and width-interval rules. Bitvector
+substitution and frame transport use smart construction; top-level pointer
+substitution preserves the condition, while nested Boolean pointer substitution
+rebuilds it raw. Explicit Surface output keeps its compatibility adapter.
+
+Validation: all 1,727 selected tests passed, including every scaling test, all
+machine formats and overflow operations, constructor and substitution parity,
+load authority, exact format/operation keys, dependencies and frame transport.
+Shared arithmetic DAGs remain retained without numeric exports. The CI-quality
+check passed.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes
