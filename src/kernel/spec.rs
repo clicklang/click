@@ -3877,8 +3877,6 @@ fn evaluate_spec_algebraic_call_in(
                     scope,
                     argument,
                     &path_assumptions,
-                    false,
-                    false,
                     budget,
                 )?
             };
@@ -5540,8 +5538,6 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
                 scope,
                 argument,
                 &path_assumptions,
-                false,
-                false,
                 budget,
             )?;
             let domain = argument_paths
@@ -7909,9 +7905,6 @@ fn evaluate_spec_pure_function_application_paths_in(
                 scope,
                 argument,
                 &path_assumptions,
-                result_type.is_pointer(),
-                KernelFloatType::from_program_type(result_type).is_some()
-                    && !budget.machine_result_production_disabled,
                 budget,
             )?;
             let mut argument_paths = argument_paths.into_iter().peekable();
@@ -8001,9 +7994,7 @@ fn evaluate_spec_pure_function_application_paths_in(
             let retained = arguments
                 .iter()
                 .map(|argument| match argument {
-                    SpecCallArgument::Shared(root) if root.ty() == &KernelType::Bool => {
-                        Some(root.clone())
-                    }
+                    SpecCallArgument::Shared(root) => Some(root.clone()),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -8133,7 +8124,14 @@ fn projected_field(
     retain: bool,
 ) -> Option<SpecValue> {
     let argument = arguments.get(projection.argument)?;
-    if let SpecCallArgument::Shared(root) = argument
+    let shared = match argument {
+        SpecCallArgument::Shared(root) => Some(match root.node() {
+            KernelTermNode::ProgramParameter { operand } => operand,
+            _ => root,
+        }),
+        _ => None,
+    };
+    if let Some(root) = shared
         && let KernelTermNode::Constructor(constructor) = root.node()
     {
         let field = constructor.field(&projection.variant, projection.field)?;
@@ -8345,8 +8343,6 @@ fn evaluate_spec_pure_function_argument_paths_in(
     scope: SpecScope<'_>,
     argument: &SpecPureFunctionArgument,
     assumptions: &PureFactContext,
-    retain_pointers: bool,
-    retain_floats: bool,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPureFunctionArgumentPath>> {
     let state = scope.state;
@@ -8360,8 +8356,6 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 scope,
                 argument,
                 assumptions,
-                retain_pointers,
-                retain_floats,
                 budget,
             )?;
             Ok(paths
@@ -8445,17 +8439,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
             Ok(paths
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
-                    value: if retain_floats
-                        && KernelFloatType::from_program_type(path.value.program_type()).is_some()
-                    {
-                        SpecCallArgument::Shared(path.value.common_operand())
-                    } else if !retain_pointers && path.value.program_type().is_pointer() {
-                        SpecCallArgument::Native(PureFunctionArgument::Value(
-                            path.value.into_native(),
-                        ))
-                    } else {
-                        SpecCallArgument::from_value(path.value)
-                    },
+                    value: SpecCallArgument::from_value(path.value),
                     facts: path.facts,
                     obligations: path.obligations,
                 })
@@ -8490,8 +8474,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 // Preserve the existing selected state; retain the pointer
                 // expression separately from its native descriptor reading.
                 let memory = array_ref_argument_memory(memory, &path.value.native());
-                let value = if !retain_pointers
-                    || budget.machine_result_production_disabled
+                let value = if budget.machine_result_production_disabled
                     || !path.value.program_type().is_pointer()
                 {
                     SpecCallArgument::Native(PureFunctionArgument::ArrayRef {

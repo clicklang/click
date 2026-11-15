@@ -5991,3 +5991,75 @@ fn common_float_calls_round_trip_existing_function_syntax() {
         assert!(obligations.is_empty());
     }
 }
+
+#[test]
+fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(1008516));
+    let names = BTreeMap::from([(Variable(1008516), "x".to_string())]);
+    let state = ExecutionState::new().with_local("x", ProgramValue::Float32(variable.clone()));
+    let condition =
+        crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
+            operator: crate::kernel::ComparisonOperator::LessThan,
+            left: Box::new(variable.clone()),
+            right: Box::new(MachineTerm::uint32_constant(0)),
+        });
+    let source = MachineTerm::ClickFunctionApplication {
+        name: "mixed_sink".into(),
+        arguments: vec![
+            crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+                crate::kernel::MachineIntegerType::UInt8,
+                condition,
+            ))),
+            crate::kernel::PureFunctionArgument::Value(ProgramValue::Float32(
+                MachineTerm::ClickFunctionApplication {
+                    name: "mixed_seed".into(),
+                    arguments: vec![crate::kernel::PureFunctionArgument::Value(
+                        ProgramValue::Float32(variable),
+                    )],
+                },
+            )),
+        ],
+    };
+    let root = crate::kernel::KernelTermImport::default()
+        .float(crate::kernel::KernelFloatType::Float64, &source);
+    assert!(
+        root.children()
+            .iter()
+            .all(|child| !matches!(child.node(), crate::kernel::KernelTermNode::Legacy(_)))
+    );
+    let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+    let text = diagnostics::describe_contract_expression(&surface);
+    let parsed = parser::parse(&format!("function mixed_seed(x: float) -> float {{ x }} function mixed_sink(flag: Bool, x: float) -> double {{ x as double }} function probe(x: float) -> double {{ {text} }}")).unwrap();
+    let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+        parsed
+            .click_function_definitions()
+            .last()
+            .unwrap()
+            .body()
+            .unwrap(),
+        BTreeMap::new(),
+        &state,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        None,
+        &RecordedStates::new(),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(parsed.click_function_definitions()),
+        ),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let (value, obligations) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &spec,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(value, ProgramValue::Float64(source), "{text}");
+    assert!(obligations.is_empty());
+}
