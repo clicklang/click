@@ -1192,7 +1192,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Prefer a direct composition before introducing a negated goal.
         // Refutation remains the fallback for strictness, ranges, and the
         // other rules outside the ordinary composition fragment.
-        if integer_composition::parts(goal).is_some()
+        if goal_values.is_empty()
+            && integer_composition::parts(goal).is_some()
             && candidates
                 .iter()
                 .all(|premise| integer_composition::parts(premise).is_some())

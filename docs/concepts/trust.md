@@ -174,12 +174,12 @@ wraps.
 Four foundational Integer order axioms in `library/integer.click` expose
 rules that arithmetic certificates already used: `add_le` adds two
 inequalities; `multiply_order_nonnegative` preserves order when scaling by a
-nonnegative factor; and `round_down_le` concludes `value <= bound` from
+nonnegative factor; `round_down_le` concludes `value <= bound` from
 `0 < divisor`, `remainder < divisor`, and
-`value * divisor <= bound * divisor + remainder`. The additional `le_antisymmetric` law concludes equality from opposite
-non-strict Integer bounds. The scaling declaration
-previously had a certificate proof; it is now trusted directly. The other two
-are new declarations. Their stated guards and conclusions have an independent
+`value * divisor <= bound * divisor + remainder`; and `le_antisymmetric`
+concludes equality from opposite non-strict Integer bounds. The scaling
+declaration previously had a certificate proof; it is now trusted directly.
+Addition, rounding, and antisymmetry are new declarations. Their stated guards and conclusions have an independent
 BigInt oracle regression, including negative and arbitrary-width values.
 
 Only the built-in library modules may declare a primitive `type`, a bodyless

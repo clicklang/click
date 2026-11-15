@@ -70,7 +70,12 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
         );
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
-        assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        if parameters.contains("y: Integer") {
+            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+            assert!(expanded.contains("le_antisymmetric"), "{expanded}");
+        } else {
+            assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        }
         assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);
         verify_click_theorems(&rechecked)
@@ -2090,14 +2095,14 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("Integer arithmetic should expand");
-    assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let rechecked = source.replace("by { solve() using { x == 1; } }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_click_theorems(&rechecked)
     });
-    result.expect("expanded Integer certificate should recheck");
-    assert_eq!(planning, 0, "explicit Integer certificate must not replan");
+    result.expect("expanded Integer composition should recheck");
+    assert_eq!(planning, 0, "explicit Integer composition must not replan");
 }
 
 /// The bounded affine planner combines at most three listed premises; a

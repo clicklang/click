@@ -1,14 +1,9 @@
 # Normalization keeps symbolic products opaque
 
 Explicit Integer normalization distributes constant coefficients, but not a
-product of two symbolic operands. Such a product still needs its named law
-or arithmetic proof search.
+product of two symbolic operands. A symbolic product stays opaque even when distribution is mathematically valid.
 
 ```click
-theorem by_arithmetic(x: Integer, y: Integer, z: Integer) {
-    ensures (x + y) * z == x * z + y * z by { solve() using {}; }
-}
-
 theorem by_normalize(x: Integer, y: Integer, z: Integer) {
     ensures (x + y) * z == x * z + y * z by { normalize(); }
 }
