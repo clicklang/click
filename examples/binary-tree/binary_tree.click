@@ -49,8 +49,6 @@ int32 tree_make_root(
     consumes tree(right);
     produces tree(node);
 
-    ensures defined(node->left);
-    ensures defined(node->right);
     ensures result == value;
     ensures node->value == value;
     ensures node->left == left;
@@ -60,8 +58,6 @@ int32 tree_make_root(
     step();
     step();
     step();
-    have defined(node->left) by { normalize(); }
-    have defined(node->right) by { normalize(); }
     fold(tree(node));
     assumption();
     assumption();

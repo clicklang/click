@@ -16,20 +16,12 @@ fn sum(bytes: &[u8]) -> i32 {
         }; solve();
     }
     loop {
-        views bytes[0..bytes.len()];
         decreases bytes.len() - i;
         invariant i <= bytes.len();
         invariant 0 <= total and total <= 255 * i;
         invariant total == prefix(bytes, i);
         preserve by {
             step_until(read(0)); step();
-            have defined(bytes[i]) by {
-                instantiate(forall (k: uint64) {
-                    true and k < bytes.len() implies defined(old(bytes[k]))
-                }, i);
-                transport(defined(old(bytes[i])), defined(bytes[i]));
-            }
-            have defined(total + bytes[i] as i32);
             have i < 18446744073709551615u64;
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {
                 peel(prefix(bytes, i + 1u64)) using {

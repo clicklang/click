@@ -6822,8 +6822,6 @@ int32 arena_pipeline(
             assumption();
         }
         let { allocated: r3 } = unfold(o3);
-        observe(arena_region(combined));
-        have defined(combined->start) by { normalize(); }
         mark z3;
         have r3.start == at(z3, combined->start) by {
             normalize();
@@ -6938,23 +6936,6 @@ int32 arena_pipeline(
             normalize() using {
                 r3.start == at(z3, combined->start);
             };
-        }
-        have defined((at(z3, combined->start) + 4)) by {
-            have defined(at(z3, combined->start)) by {
-                assumption();
-            }
-            arithmetic_certificate rules {
-                premise 0: 0 <= at(z3, combined->start) => 0 <= at(z3, combined->start);
-                premise 1: at(z3, combined->start) < 536870911 => at(z3, combined->start) <
-                    536870911;
-                premise 2: at(z3, combined->start) <= 2147483643 => at(z3, combined->start) <=
-                    2147483643;
-                premise 3: at(z3, combined->start) < 2147483643 => at(z3, combined->start) <
-                    2147483643;
-                premise 4: defined(at(z3, combined->start)) => defined(at(z3, combined->start));
-                int32_defined bounds [0, 1, 2, 3, 4] => defined((at(z3, combined->start) + 4));
-                conclusion 0;
-            }
         }
         have to_integer((at(z3, combined->start) + 4)) == (to_integer(at(z3, combined->start)) + 4) by {
             have -2147483648 <= (to_integer(at(z3, combined->start)) + 4) by {

@@ -1,7 +1,7 @@
 # Checked transport composes with same-snapshot load congruence
 
-The store writes `p[k]`. Explicit transport uses `i != k` to establish that
-`p[i]` retains its entry value. The next `have` uses only the trusted equality
+The store writes `p[k]`. The element-separation law uses `i != k` to establish that
+the store misses `p[i]`; `preserve` retains its entry value. The next `have` uses only the trusted equality
 graph: `i == j` identifies the current reads, and the transported equality
 connects that value to the entry snapshot. The final `solve` closes the
 postcondition and returns ownership of the array.
@@ -33,11 +33,13 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
     mark entry;
     step();
     have p[i] == at(entry, p[i]) by {
-        transport(
-            at(entry, p[i]) == at(entry, p[i]),
-            p[i] == at(entry, p[i])
-        ) using { i != k; };
-        assumption();
+        have separate(memory(p[k]), memory(p[i])) by {
+            apply(click::separation::separate_elements(p, k, i)) using { i != k; };
+        }
+        have separate(statement(0).footprint, memory(p[i])) by {
+            normalize() using { separate(memory(p[k]), memory(p[i])); };
+        }
+        preserve(separate(statement(0).footprint, memory(p[i])));
     }
     have p[j] == at(entry, p[i]) by {
         normalize() using { };
