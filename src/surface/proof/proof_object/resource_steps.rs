@@ -1204,12 +1204,12 @@ impl<'a> Proof<'a> {
             }
             match &instance.fields()[index] {
                 AlgebraicValue::Program(value) => {
-                    locals.values = locals.values.with_inserted(
+                    locals.set_values(locals.values.with_inserted(
                         name.clone(),
                         ContractExpression::ProgramExpression(ProgramExpression::Value(
                             value.clone(),
                         )),
-                    );
+                    ));
                 }
                 // Declaration expansion admits only C-typed field binders.
                 AlgebraicValue::Integer(_) | AlgebraicValue::Algebraic(_) => {
@@ -2740,10 +2740,12 @@ impl<'a> Proof<'a> {
                     "unfold witness binding `{name}` is already in scope"
                 )));
             }
-            transition.locals.values = transition.locals.values.with_inserted(
-                name.clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
-            );
+            transition
+                .locals
+                .set_values(transition.locals.values.with_inserted(
+                    name.clone(),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
+                ));
         }
         Ok(transition)
     }
