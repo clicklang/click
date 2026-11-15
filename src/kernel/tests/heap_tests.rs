@@ -588,9 +588,10 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
 
     let realloc_paths = execute_execution_statement_paths(
         &allocated,
-        &program_call_assign(
+        &program_reallocate_then_assign(
+            0,
             "q",
-            "realloc",
+            ProgramType::Int32Pointer,
             vec![
                 crate::kernel::program_expression::variable("p"),
                 crate::kernel::program_expression::int32_literal(12),
@@ -1061,7 +1062,9 @@ fn scoped_call_borrows_end_before_free() {
         .memory()
         .clone()
         .with_initialized_object(pointer.pointer(), 4);
-    let state = state.with_memory(memory);
+    let state = state
+        .with_memory(memory)
+        .with_local("observed", ProgramValue::Int32(0u32.into()));
     let helper = program_function(
         ProgramType::Int32,
         "read_borrow",
@@ -1086,7 +1089,8 @@ fn scoped_call_borrows_end_before_free() {
             applied_tactics: Default::default(),
         });
     let statement = program_seq(
-        program_call_assign(
+        program_call_then_assign(
+            1,
             "observed",
             "read_borrow",
             vec![crate::kernel::program_expression::variable("p")],
@@ -1168,9 +1172,10 @@ fn persistent_composite_view_blocks_free_and_realloc_locally() {
     let state = state.with_local("q", ProgramValue::pointer(Pointer::null()));
     for statement in [
         program_heap_free(crate::kernel::program_expression::variable("p")),
-        program_call_assign(
+        program_reallocate_then_assign(
+            2,
             "q",
-            "realloc",
+            ProgramType::Int32Pointer,
             vec![
                 crate::kernel::program_expression::variable("p"),
                 crate::kernel::program_expression::int32_literal(8),
@@ -1437,9 +1442,10 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
     let state = state.with_local("q", ProgramValue::pointer(Pointer::null()));
     let realloc = execute_execution_statement_paths(
         &state,
-        &program_call_assign(
+        &program_reallocate_then_assign(
+            3,
             "q",
-            "realloc",
+            ProgramType::Int32Pointer,
             vec![
                 crate::kernel::program_expression::variable("p"),
                 crate::kernel::program_expression::int32_literal(8),
@@ -1481,9 +1487,10 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         .with_local("q", ProgramValue::pointer(Pointer::null()));
     let realloc_paths = execute_execution_statement_paths(
         &state,
-        &program_call_assign(
+        &program_reallocate_then_assign(
+            4,
             "q",
-            "realloc",
+            ProgramType::Int32Pointer,
             vec![
                 crate::kernel::program_expression::variable("p"),
                 crate::kernel::program_expression::int32_literal(8),
@@ -1756,13 +1763,15 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
 
     let null = ProgramValue::pointer(Pointer::null());
     let null_state = ExecutionState::new()
+        .with_local("result", ProgramValue::Int32(0u32.into()))
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_composite("owned_item".to_string(), vec![null]),
         ));
     let null_paths = execute_execution_statement_paths(
         &null_state,
-        &program_call_assign(
+        &program_call_then_assign(
+            5,
             "result",
             "item_destroy",
             vec![crate::kernel::program_expression::int32_literal(0)],
@@ -1785,6 +1794,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let nonnull_state = ExecutionState::new()
+        .with_local("result", ProgramValue::Int32(0u32.into()))
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_composite(
@@ -1794,7 +1804,8 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         ));
     let nonnull_paths = execute_execution_statement_paths(
         &nonnull_state,
-        &program_call_assign(
+        &program_call_then_assign(
+            6,
             "result",
             "item_destroy",
             vec![crate::kernel::program_expression::pointer_value(nonnull)],
@@ -2901,9 +2912,10 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
         });
     let paths = execute_execution_statement_paths(
         &allocated,
-        &program_call_assign(
+        &program_reallocate_then_assign(
+            7,
             "q",
-            "realloc",
+            ProgramType::Int32Pointer,
             vec![
                 crate::kernel::program_expression::variable("p"),
                 ProgramExpression::Multiply(
@@ -2971,4 +2983,59 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     let range = extent.range(resized.pointer().clone(), m, 4);
     assert_eq!(range.kind(), RangeIndexKind::UInt64);
     assert!(facts.contains(&ResourceFact::own_memory(range)));
+}
+
+#[test]
+fn viewability_alone_cannot_certify_initialization_of_external_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(9_492_101));
+    for value_type in [
+        ProgramType::UInt8,
+        ProgramType::Int32,
+        ProgramType::Int32Pointer,
+    ] {
+        for initialized in [false, true] {
+            let mut memory = Memory::new();
+            if initialized {
+                memory = memory.with_initialized_object(&pointer, value_type.byte_width());
+            }
+            let assumptions =
+                PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    memory: memory.clone(),
+                    base: pointer.clone(),
+                    bytes: MachineTerm::constant(value_type.byte_width()),
+                    wide: false,
+                });
+            assert_eq!(
+                assumptions.proves_memory_read_defined(&memory, &pointer, value_type),
+                initialized
+            );
+        }
+    }
+}
+
+#[test]
+fn typed_read_initialization_accepts_only_complete_cached_byte_coverage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(9_492_102));
+    for count in [0, 1, 2] {
+        let memory = Memory::new().with_seeded_cells(
+            pointer.clone(),
+            4,
+            ProgramType::Int32,
+            0,
+            count,
+            crate::kernel::intern_memory(Memory::new()),
+        );
+        let context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            memory: memory.clone(),
+            base: pointer.clone(),
+            bytes: MachineTerm::constant(8),
+            wide: false,
+        });
+        assert_eq!(
+            context.proves_memory_read_defined(&memory, &pointer, ProgramType::Int32Pointer),
+            count == 2
+        );
+    }
 }

@@ -3562,7 +3562,7 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
         | ProgramStatement::CopyAggregate { .. }
         | ProgramStatement::InitializeScalarArray { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }

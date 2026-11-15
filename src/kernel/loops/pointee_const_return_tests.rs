@@ -65,7 +65,8 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
         ProgramValue::typed_pointer(Pointer::symbolic(Variable(917)), ProgramType::Int32Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
     let environment = ExecutionEnvironment::new().with_function(function);
-    let paths = execute_program_call_assign_paths(
+    let paths = call_then_assign_paths(
+        ProgramType::Int32Pointer,
         &state,
         "temporary",
         "view",
@@ -101,7 +102,8 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
     .with_return_pointee_constant(true);
     let function_type = function.function_pointer_type();
     let environment = ExecutionEnvironment::new().with_function(function);
-    let paths = execute_program_call_assign_paths(
+    let paths = call_then_assign_paths(
+        ProgramType::UInt8Pointer,
         &ExecutionState::new(),
         "temporary",
         "text",
@@ -123,7 +125,8 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
             function_type,
         ),
     );
-    let paths = execute_program_call_assign_paths(
+    let paths = call_then_assign_paths(
+        ProgramType::UInt8Pointer,
         &state,
         "temporary",
         "callback",
@@ -140,7 +143,8 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "mutable",
         ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
     );
-    let paths = execute_program_call_assign_paths(
+    let paths = call_then_assign_paths(
+        ProgramType::UInt8Pointer,
         &state,
         "mutable",
         "callback",
@@ -169,7 +173,8 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
             incompatible,
         ),
     );
-    let paths = execute_program_call_assign_paths(
+    let paths = call_then_assign_paths(
+        ProgramType::UInt8Pointer,
         &state,
         "temporary",
         "callback",
@@ -314,7 +319,8 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
                 ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
             );
         }
-        let paths = execute_program_call_assign_paths(
+        let paths = call_then_assign_paths(
+            ProgramType::Int32Pointer,
             &state,
             "temporary",
             "callback",
@@ -334,4 +340,27 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
             ));
         }
     }
+}
+
+fn call_then_assign_paths(
+    result_type: ProgramType,
+    state: &ExecutionState,
+    target: &str,
+    function_name: &str,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    execution_context: ExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let call_and_assignment =
+        program_call_then_assign(0, target, function_name, arguments.to_vec());
+    let statement = if state.locals.binding(target).is_none() {
+        program_seq(
+            program_declare_with_all_qualifiers(target, result_type, false, false, false, true),
+            call_and_assignment,
+        )
+    } else {
+        call_and_assignment
+    };
+    execute_execution_statement_paths(state, &statement, assumptions, execution_context, budget)
 }

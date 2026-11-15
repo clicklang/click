@@ -156,7 +156,7 @@ fn authority_call_refusal_path() -> StatementExecutionPath {
     )
 }
 
-pub(super) fn execute_program_call_assign_paths(
+pub(super) fn execute_program_call_construct_paths(
     state: &ExecutionState,
     target: &str,
     function_name: &str,
@@ -165,134 +165,6 @@ pub(super) fn execute_program_call_assign_paths(
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    if !is_modeled_pthread_call(function_name, execution_context.environment)
-        && !matches!(
-            state.locals.object_type(function_name),
-            Some(ProgramType::FunctionPointer(_))
-        )
-        && execution_context
-            .environment
-            .get_verified_function_rule(function_name)
-            .is_none()
-        && execution_context
-            .environment
-            .get_external_function_rule(function_name)
-            .is_some_and(|rule| {
-                super::functions::contract_reaches_population(rule.function.contract_interface())
-            })
-        && !execution_context
-            .environment
-            .get_external_function_rule(function_name)
-            .is_some_and(|rule| {
-                rule.is_scoped_unselected()
-                    || super::functions::authority_preserves_assumed_resource_contract(
-                        rule.function.contract_interface(),
-                    )
-            })
-    {
-        return Ok(vec![authority_call_refusal_path()]);
-    }
-    if execution_context
-        .environment
-        .modeled_pthread_binding
-        .as_ref()
-        .is_some_and(|binding| function_name == binding.create_name)
-    {
-        return execute_modeled_pthread_create_paths(
-            state,
-            ModeledCreateStatus::Local(target),
-            arguments,
-            assumptions,
-            execution_context.environment,
-            budget,
-        );
-    }
-    if execution_context
-        .environment
-        .modeled_pthread_binding
-        .as_ref()
-        .is_some_and(|binding| function_name == binding.join_name)
-    {
-        return execute_modeled_pthread_join_paths(
-            state,
-            Some(target),
-            arguments,
-            assumptions,
-            execution_context.environment,
-            budget,
-        );
-    }
-    if let Some(binding) = execution_context
-        .environment
-        .modeled_pthread_binding
-        .as_ref()
-        && [
-            binding.mutex_init_name,
-            binding.mutex_lock_name,
-            binding.mutex_unlock_name,
-            binding.mutex_destroy_name,
-        ]
-        .contains(&function_name)
-    {
-        return execute_modeled_pthread_mutex_paths(
-            state,
-            Some(target),
-            function_name,
-            arguments,
-            assumptions,
-            execution_context.environment,
-            budget,
-        );
-    }
-    if execution_context
-        .environment
-        .modeled_pthread_binding
-        .is_some()
-        && super::publication::is_publication_operation(function_name)
-    {
-        return super::publication::execute_publication_paths(
-            state,
-            Some(target),
-            function_name,
-            arguments,
-            assumptions,
-            execution_context.environment,
-            budget,
-        );
-    }
-    if let Some(path) = unbound_modeled_pthread_call(function_name, execution_context.environment) {
-        return Ok(vec![path]);
-    }
-    if function_name == "realloc" {
-        if execution_context
-            .environment
-            .selected_call_contract
-            .is_some()
-        {
-            return Ok(vec![StatementExecutionPath::new(
-                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
-                    "step(Contract) requires a function-pointer call".to_string(),
-                )),
-                Vec::new().into(),
-                Vec::new(),
-            )]);
-        }
-        return execute_program_realloc_assign_paths(state, target, arguments, assumptions, budget);
-    }
-
-    if let Some(ProgramType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
-        return execute_program_indirect_call_assign_paths(
-            state,
-            target,
-            function_name,
-            ProgramType::FunctionPointer(signature),
-            arguments,
-            assumptions,
-            execution_context,
-            budget,
-        );
-    }
-
     let Some(function) = execution_context.environment.get_function(function_name) else {
         return Ok(vec![StatementExecutionPath::new(
             StatementOutcome::RuntimeError(RuntimeError::UnknownFunction(
@@ -302,258 +174,46 @@ pub(super) fn execute_program_call_assign_paths(
             Vec::new(),
         )]);
     };
-
-    let original_destination = state.aggregate_destination.clone();
-    let selected_state;
-    let call_state = if function.contract_interface().aggregate_return_mode()
-        == AggregateReturnMode::Construction
-    {
-        let selection = state
-            .locals
-            .aggregate_layout(target)
-            .zip(state.locals.aggregate_object_pointer(target));
-        let Some((layout, pointer)) = selection.filter(|(layout, _)| {
-            Some(*layout) == function.return_aggregate_layout()
-                && !matches!(
-                    state.locals.binding(target),
-                    Some(LocalBinding::AggregateObject { constant: true, .. })
-                )
-        }) else {
-            return Ok(vec![StatementExecutionPath::new(
-                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
-                    "construction call requires a compatible writable destination".into(),
-                )),
-                Vec::new().into(),
-                Vec::new(),
-            )]);
-        };
-        selected_state = state
-            .clone()
-            .with_aggregate_return_destination(pointer.clone(), layout.clone());
-        &selected_state
-    } else {
-        state
+    let selection = state
+        .locals
+        .aggregate_layout(target)
+        .zip(state.locals.aggregate_object_pointer(target));
+    let Some((layout, pointer)) = selection.filter(|(layout, _)| {
+        function.contract_interface().aggregate_return_mode() == AggregateReturnMode::Construction
+            && Some(*layout) == function.return_aggregate_layout()
+            && !matches!(
+                state.locals.binding(target),
+                Some(LocalBinding::AggregateObject { constant: true, .. })
+            )
+    }) else {
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
+                "construction call requires a compatible writable destination".into(),
+            )),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
     };
-
-    let paths = execute_program_function_call_paths(
-        call_state,
-        function,
+    let selected = state
+        .clone()
+        .with_aggregate_return_destination(pointer.clone(), layout.clone());
+    let mut paths = execute_program_call_paths(
+        &selected,
+        None,
+        function_name,
+        None,
         arguments,
         assumptions,
         execution_context,
         budget,
-    )?
-    .into_iter()
-    .map(|mut path| {
-        let call_result = match &path.outcome {
-            FunctionOutcome::Return { value, .. } if value.program_type() != ProgramType::Void => Some(value.clone()),
-            _ => None,
-        };
-        let outcome = match path.outcome {
-            FunctionOutcome::Return { value, mut state } => {
-                if function.contract_interface().aggregate_return_mode() == AggregateReturnMode::Construction {
-                    let exact = matches!(value.native_payload(), Some(ProgramValue::Pointer(pointer))
-                        if state.locals.aggregate_object_pointer(target) == Some(pointer.pointer()));
-                    state.aggregate_destination = original_destination.clone();
-                    return StatementExecutionPath {
-                        call_parameters: path.call_parameters.clone(),
-                        loop_invariant_correspondence: Default::default(),
-                        call_result: call_result.clone(),
-                        outcome: if exact { StatementOutcome::Normal(state) } else {
-                            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
-                                "construction return changed its destination".into(),
-                            ))
-                        },
-                        facts: path.facts, obligations: path.obligations,
-                        loan_evidence: path.loan_evidence.clone(),
-                    };
-                }
-
-                if value.program_type() == ProgramType::Void {
-                    return StatementExecutionPath {
-                        call_parameters: path.call_parameters.clone(),
-                        loop_invariant_correspondence: Default::default(),
-                        call_result: call_result.clone(),
-                        outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                        facts: path.facts,
-                        obligations: path.obligations,
-
-                        loan_evidence: path.loan_evidence.clone(),
-                    };
-                }
-                if let Some(layout) = function.return_aggregate_layout() {
-                    if matches!(
-                        state.locals.binding(target),
-                        Some(LocalBinding::AggregateObject { constant: true, .. })
-                    ) {
-                        return StatementExecutionPath {
-                            call_parameters: path.call_parameters.clone(),
-                            loop_invariant_correspondence: Default::default(),
-                            call_result: call_result.clone(),
-                            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                            facts: path.facts,
-                            obligations: path.obligations,
-
-                            loan_evidence: path.loan_evidence.clone(),
-                        };
-                    }
-                    let Some(target_layout) = state.locals.aggregate_layout(target) else {
-                        return StatementExecutionPath {
-                            call_parameters: path.call_parameters.clone(),
-                            loop_invariant_correspondence: Default::default(),
-                            call_result: call_result.clone(),
-                            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                            facts: path.facts,
-                            obligations: path.obligations,
-
-                            loan_evidence: path.loan_evidence.clone(),
-                        };
-                    };
-                    if target_layout != layout {
-                        return StatementExecutionPath {
-                            call_parameters: path.call_parameters.clone(),
-                            loop_invariant_correspondence: Default::default(),
-                            call_result: call_result.clone(),
-                            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                            facts: path.facts,
-                            obligations: path.obligations,
-
-                            loan_evidence: path.loan_evidence.clone(),
-                        };
-                    }
-                    let Some(ProgramValue::Pointer(pointer)) = value.native_payload() else {
-                        return StatementExecutionPath {
-                            call_parameters: path.call_parameters.clone(),
-                            loop_invariant_correspondence: Default::default(),
-                            call_result: call_result.clone(),
-                            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                            facts: path.facts,
-                            obligations: path.obligations,
-
-                            loan_evidence: path.loan_evidence.clone(),
-                        };
-                    };
-                    if pointer.is_null() {
-                        return StatementExecutionPath {
-                            call_parameters: path.call_parameters.clone(),
-                            loop_invariant_correspondence: Default::default(),
-                            call_result: call_result.clone(),
-                            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                            facts: path.facts,
-                            obligations: path.obligations,
-
-                            loan_evidence: path.loan_evidence.clone(),
-                        };
-                    }
-                    let Some(slot) = state.locals.slot(target).cloned() else {
-                        return StatementExecutionPath {
-                            call_parameters: path.call_parameters.clone(),
-                            loop_invariant_correspondence: Default::default(),
-                            call_result: call_result.clone(),
-                            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                            facts: path.facts,
-                            obligations: path.obligations,
-
-                            loan_evidence: path.loan_evidence.clone(),
-                        };
-                    };
-                    if let Some(outcome) = crate::kernel::eval::memory_write_permission_outcome(
-                        &state,
-                        &slot,
-                        layout.size_bytes(),
-                        &crate::kernel::reasoning::path_facts::assumptions_with_path_context(
-                            assumptions,
-                            &path.facts,
-                            &path.obligations,
-                        ),
-                    ) {
-                        return StatementExecutionPath {
-                            call_parameters: path.call_parameters.clone(),
-                            loop_invariant_correspondence: Default::default(),
-                            call_result: call_result.clone(),
-                            outcome,
-                            facts: path.facts,
-                            obligations: path.obligations,
-
-                            loan_evidence: path.loan_evidence.clone(),
-                        };
-                    }
-                    let next_memory = match copy_aggregate_fields_checked(
-                        state.memory.clone(),
-                        pointer.pointer(),
-                        &slot,
-                        layout,
-                    ) {
-                        Ok(memory) => memory,
-                        Err(undefined_behavior) => {
-                            return StatementExecutionPath {
-                                call_parameters: path.call_parameters.clone(),
-                                loop_invariant_correspondence: Default::default(),
-                                call_result: call_result.clone(),
-                                outcome: StatementOutcome::UndefinedBehavior(undefined_behavior),
-                                facts: path.facts,
-                                obligations: path.obligations,
-
-                                loan_evidence: path.loan_evidence.clone(),
-                            };
-                        }
-                    };
-                    state.set_memory(next_memory);
-                    return StatementExecutionPath {
-                        call_parameters: path.call_parameters.clone(),
-                        loop_invariant_correspondence: Default::default(),
-                        call_result: call_result.clone(),
-                        outcome: StatementOutcome::Normal(state),
-                        facts: path.facts,
-                        obligations: path.obligations,
-
-                        loan_evidence: path.loan_evidence.clone(),
-                    };
-                }
-                if state.locals.is_array_object(target) {
-                    return StatementExecutionPath {
-                        call_parameters: path.call_parameters.clone(),
-                        loop_invariant_correspondence: Default::default(),
-                        call_result: call_result.clone(),
-                        outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
-                        facts: path.facts,
-                        obligations: path.obligations,
-
-                        loan_evidence: path.loan_evidence.clone(),
-                    };
-                }
-                let current = crate::kernel::reasoning::path_facts::assumptions_with_path_context(
-                    assumptions,
-                    &path.facts,
-                    &path.obligations,
-                );
-                match assign_call_result(&mut state, target, value, &mut path.obligations, &current)
-                {
-                    Ok(()) => StatementOutcome::Normal(state),
-                    Err(error) => StatementOutcome::RuntimeError(error),
-                }
-            }
-            FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
-            FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
-            FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
-                StatementOutcome::UndefinedBehavior(undefined_behavior)
-            }
-            FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
-        };
-
-        StatementExecutionPath {
-            call_parameters: path.call_parameters.clone(),
-            loop_invariant_correspondence: Default::default(),
-            call_result,
-            outcome,
-            facts: path.facts,
-            obligations: path.obligations,
-
-            loan_evidence: path.loan_evidence.clone(),
+    )?;
+    for path in &mut paths {
+        if let StatementOutcome::Normal(next) | StatementOutcome::Throw { state: next, .. } =
+            &mut path.outcome
+        {
+            next.aggregate_destination = state.aggregate_destination.clone();
         }
-    })
-    .collect::<Vec<_>>();
-    budget.check_path_width(paths.len())?;
+    }
     Ok(paths)
 }
 
@@ -1317,9 +977,7 @@ fn modeled_pthread_indeterminate_handle(
 
 /// Where a modeled `pthread_create` call's status goes.
 #[derive(Clone, Copy)]
-enum ModeledCreateStatus<'a> {
-    /// Assigned to this local.
-    Local(&'a str),
+enum ModeledCreateStatus {
     /// Read by its statement as this call's result.
     CallResult(u32),
     /// Not used.
@@ -1328,7 +986,7 @@ enum ModeledCreateStatus<'a> {
 
 fn execute_modeled_pthread_create_paths(
     state: &ExecutionState,
-    status_destination: ModeledCreateStatus<'_>,
+    status_destination: ModeledCreateStatus,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
@@ -1473,37 +1131,13 @@ fn execute_modeled_pthread_create_paths(
                                     MachineTerm::Variable(budget.allocate_kernel_variable()?);
                                 let result = ProgramValue::Int32(status.clone());
                                 call_result = Some(result.clone());
-                                let unwritable = match status_destination {
-                                    ModeledCreateStatus::Local(target) => {
-                                        assign_call_result(
-                                            &mut success,
-                                            target,
-                                            result.clone(),
-                                            &mut path.obligations,
-                                            &current,
-                                        )
-                                        .is_err()
-                                            || assign_call_result(
-                                                &mut failure,
-                                                target,
-                                                result,
-                                                &mut path.obligations,
-                                                &current,
-                                            )
-                                            .is_err()
-                                    }
-                                    ModeledCreateStatus::CallResult(call) => {
-                                        success.set_step_result(call, result.clone());
-                                        failure.set_step_result(call, result);
-                                        false
-                                    }
-                                    ModeledCreateStatus::Discarded => {
-                                        unreachable!("checked used status")
-                                    }
+                                let ModeledCreateStatus::CallResult(call) = status_destination
+                                else {
+                                    unreachable!("checked used status")
                                 };
-                                if unwritable {
-                                    refusal("modeled-pthread create status target is not writable")
-                                } else {
+                                success.set_step_result(call, result.clone());
+                                failure.set_step_result(call, result);
+                                {
                                     let mut neutral = failure.clone();
                                     neutral.resources = success.resources.clone();
                                     neutral.loan_ledger = success.loan_ledger.clone();
@@ -1642,79 +1276,6 @@ fn execute_modeled_pthread_join_paths(
     Ok(paths)
 }
 
-fn execute_program_indirect_call_assign_paths(
-    state: &ExecutionState,
-    target: &str,
-    function_name: &str,
-    function_type: ProgramType,
-    arguments: &[ProgramExpression],
-    assumptions: &PureFactContext,
-    execution_context: ExecutionContext<'_>,
-    budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    let paths = execute_program_indirect_call_paths(
-        state,
-        function_name,
-        &crate::kernel::program_expression::variable(function_name.to_string()),
-        function_type,
-        arguments,
-        assumptions,
-        execution_context,
-        budget,
-    )?;
-    Ok(paths
-        .into_iter()
-        .map(|mut path| {
-            let call_result = match &path.outcome {
-                FunctionOutcome::Return { value, .. }
-                    if value.program_type() != ProgramType::Void =>
-                {
-                    Some(value.clone())
-                }
-                _ => None,
-            };
-            let outcome = match path.outcome {
-                FunctionOutcome::Return { value, mut state } => {
-                    if value.program_type() == ProgramType::Void
-                        || state.locals.is_array_object(target)
-                    {
-                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
-                    } else {
-                        let current =
-                            crate::kernel::reasoning::path_facts::assumptions_with_path_context(
-                                assumptions,
-                                &path.facts,
-                                &path.obligations,
-                            );
-                        match assign_call_result(
-                            &mut state,
-                            target,
-                            value,
-                            &mut path.obligations,
-                            &current,
-                        ) {
-                            Ok(()) => StatementOutcome::Normal(state),
-                            Err(error) => StatementOutcome::RuntimeError(error),
-                        }
-                    }
-                }
-                FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
-                FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
-                FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
-                    StatementOutcome::UndefinedBehavior(undefined_behavior)
-                }
-                FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
-            };
-            let mut result = StatementExecutionPath::new(outcome, path.facts, path.obligations);
-            result.call_result = call_result;
-            result.call_parameters = path.call_parameters;
-            result
-        })
-        .collect())
-}
-
-/// The statement paths of an indirect call's function paths: each returned
-/// value is the call's result.
 fn indirect_call_statement_paths(paths: Vec<FunctionPath>) -> Vec<StatementExecutionPath> {
     paths
         .into_iter()
@@ -9112,7 +8673,7 @@ pub(super) fn statement_may_write_memory(
             ..
         } => true,
         ProgramStatement::Assign { name, .. } => state.locals.is_global_object(name),
-        ProgramStatement::CallAssign { .. }
+        ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -9193,7 +8754,7 @@ pub(super) fn collect_loop_modified_locals(
         | ProgramStatement::Assign { name, .. } => {
             names.insert(name.clone());
         }
-        ProgramStatement::CallAssign { target, .. } => {
+        ProgramStatement::CallConstruct { target, .. } => {
             names.insert(target.clone());
         }
         ProgramStatement::Call { .. } | ProgramStatement::CallResult { .. } => {}
@@ -9421,7 +8982,7 @@ fn for_each_statement_expression<'a>(
         | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
-        ProgramStatement::CallAssign { arguments, .. } => arguments.iter().for_each(&mut *visit),
+        ProgramStatement::CallConstruct { arguments, .. } => arguments.iter().for_each(&mut *visit),
         ProgramStatement::Call {
             arguments, callee, ..
         }
@@ -9508,7 +9069,7 @@ pub(crate) fn collect_address_taken_locals(
         | ProgramStatement::Assign { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
-        ProgramStatement::CallAssign { arguments, .. } => {
+        ProgramStatement::CallConstruct { arguments, .. } => {
             for argument in arguments {
                 collect_address_taken_in_expression(argument, names);
             }

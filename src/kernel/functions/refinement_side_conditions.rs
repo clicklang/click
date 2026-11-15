@@ -967,7 +967,7 @@ pub(super) fn statement_writes_aggregate_parameter(
         }
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. }
-        | ProgramStatement::CallAssign { arguments, .. } => {
+        | ProgramStatement::CallConstruct { arguments, .. } => {
             if arguments.iter().any(|argument| {
                 program_expression_takes_address_of_variable(argument, parameter_name)
             }) {

@@ -3,7 +3,8 @@
 After `init(pool, 1)`, `pool` is reached through the resource `control(pool)`
 that `init` produced, so `defined(pool->capacity - 1)` lowers to the
 subtraction's overflow condition together with the definedness of the read.
-`solve` proves `defined(pool->capacity)` as a nested `have` and cites it,
+The callee explicitly exports the typed validity of its written capacity cell.
+`solve` cites `defined(pool->capacity)`,
 beside the bound `pool->capacity == 1`, in the `int32_defined` rule, which
 accepts the read's definedness as a cited premise.
 
@@ -22,6 +23,7 @@ void init(struct pool* pool, int32 capacity) {
     consumes *pool;
     produces control(pool);
     ensures pool->capacity == capacity;
+    ensures defined(pool->capacity);
 } by { step(); fold(control(pool)); }
 void f(struct pool* pool) {
     consumes *pool;

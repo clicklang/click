@@ -78,10 +78,14 @@ void arena_release(struct region* region) {
     let { start: s, end: e } = unfold(freed);
     have separate(memory(*region), memory(region->arena->live_regions));
     have region->arena->data == old(region->arena->data);
+    have defined(region->arena) by { normalize(); }
     mark before_store;
     step();
     have separate(statement(0).footprint, memory(region->arena)) by {
         normalize() using { };
+    }
+    have at(statement(0).exit, defined(region->arena)) by {
+        preserve(separate(statement(0).footprint, memory(region->arena)));
     }
     have region->arena == at(before_store, region->arena) by {
         preserve(separate(statement(0).footprint, memory(region->arena)));
@@ -97,6 +101,9 @@ void arena_release(struct region* region) {
     step();
     have separate(statement(1).footprint, memory(region->arena)) by {
         normalize() using { };
+    }
+    have at(statement(1).exit, defined(region->arena)) by {
+        preserve(separate(statement(1).footprint, memory(region->arena)));
     }
     have region->arena == at(after_declare, region->arena) by {
         preserve(separate(statement(1).footprint, memory(region->arena)));
@@ -124,6 +131,9 @@ void arena_release(struct region* region) {
     have separate(statement(2).footprint, memory(region->arena)) by {
         normalize() using { separate(memory(arena->live_regions), memory(region->arena)); };
     }
+    have at(statement(2).exit, defined(region->arena)) by {
+        preserve(separate(statement(2).footprint, memory(region->arena)));
+    }
     have region->arena == at(after_assignment, region->arena) by {
         preserve(separate(statement(2).footprint, memory(region->arena)));
     }
@@ -148,16 +158,9 @@ void arena_release(struct region* region) {
         known();
     }
     step_until(function.exit);
-    have defined(region->arena) by {
-        transport(defined(at(before_store, region->arena)), defined(region->arena)) using {
-            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
-        };
-    }
+    have defined(region->arena) by { solve(); }
     have region->start == s by {
-        transport(at(before_store, region->start) == s, region->start == s) using {
-            at(before_store, region->start) == s;
-            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
-        };
+        known();
     }
     have region->end == e by {
         known();

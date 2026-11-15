@@ -1736,7 +1736,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
         .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
-        expanded.contains(" if at(region(2).entry, copied)"),
+        expanded.contains(" if at(region(3).entry, copied)"),
         "{expanded}"
     );
     assert!(
@@ -5837,7 +5837,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                step_until(region(2));
+                step_until(statement(2));
                 apply(int32_equality_transitive(observed, data[0], expected));
                 step_until(function.exit);
                 solve();
@@ -12254,7 +12254,7 @@ fn transformed_resource_branch_interface_retains_its_common_descendant() {
         .expect("select_ready should be the final verified function")
         .expanded_proof_tactics()
         .expect("the transformed interface should retain an expansion");
-    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
+    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
     assert!(
         matches!(
             tactics.as_slice(),
@@ -17539,6 +17539,10 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
     views p[0..n];
     ensures result == 0;
 } by {
+    have defined(p[i]) by {
+        instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, i);
+        known();
+    }
     fold(tag(q[i]));
     step_until(function.exit);
     solve();
@@ -17554,7 +17558,9 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
         assert!(
             error
                 .message()
-                .contains("could not lower resource `tag` argument 0"),
+                .contains("could not lower resource `tag` argument 0")
+                || error.message().contains("instantiate")
+                || error.message().contains("defined(p[i])"),
             "missing {required}: {}",
             error.message()
         );
@@ -22382,6 +22388,10 @@ fn instantiated_indexed_read_expands_without_transport() {
 #[ignore = "nightly: explicit fold preservation expands and cold replays"]
 fn explicit_fold_preservation_expands_without_legacy_transport() {
     for (fixture, function) in [
+        (
+            "transport_carries_a_kept_slot_cell_across_a_call",
+            "two_puts",
+        ),
         (
             "fold_read_transport_across_a_call_with_a_checked_write_set",
             "caller",

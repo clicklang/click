@@ -3784,11 +3784,6 @@ fn modeled_pthread_create_workers(
                 arguments,
                 ..
             }
-            | S::CallAssign {
-                function_name,
-                arguments,
-                ..
-            }
             | S::CallResult {
                 function_name,
                 arguments,
@@ -3920,7 +3915,6 @@ fn c_statement_calls_recording(
             | syntax::CStatement::Declare { .. }
             | syntax::CStatement::DeclareStructValue { .. }
             | syntax::CStatement::Assign { .. }
-            | syntax::CStatement::CallAssign { .. }
             | syntax::CStatement::Call { .. }
             | syntax::CStatement::CallResult { .. }
             | syntax::CStatement::IndirectCall { .. }
@@ -4128,27 +4122,6 @@ fn c_statement_calls_recording(
                 for case in cases {
                     visit(case.body(), calls, function_pointer_names, allocator);
                 }
-            }
-            syntax::CStatement::CallAssign {
-                function_name,
-                arguments,
-                ..
-            } => {
-                let mut dependencies = BTreeSet::new();
-                if !function_pointer_names.contains(function_name) {
-                    match c_allocator_function(function_name) {
-                        Some(function) => {
-                            allocator.insert(function);
-                        }
-                        None => {
-                            dependencies.insert(function_name.clone());
-                        }
-                    }
-                }
-                for argument in arguments {
-                    collect_function_addresses(argument, &mut dependencies);
-                }
-                calls.push(dependencies);
             }
             syntax::CStatement::Call {
                 function_name,
@@ -5251,11 +5224,6 @@ fn validate_modeled_pthread_calls(
     }
     match statement {
         S::Call {
-            function_name,
-            arguments,
-            ..
-        }
-        | S::CallAssign {
             function_name,
             arguments,
             ..
@@ -7662,7 +7630,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
         verify_c_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded = expand_c_claim_source(

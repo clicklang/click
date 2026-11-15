@@ -120,12 +120,13 @@ impl Context<'_> {
     /// length locals `pointer` and `length`, through Rust's own
     /// `<[u8]>::as_ptr` and `<[u8]>::len`.
     fn split_slice_value(
+        &self,
         slice: ProgramExpression,
         pointer: String,
         length: String,
     ) -> ProgramStatement {
         let call = |target, operation| {
-            program_call_assign(
+            self.call_then_assign(
                 target,
                 super::super::standard_library::byte_slice_function(operation),
                 vec![slice.clone()],
@@ -147,7 +148,7 @@ impl Context<'_> {
         let address = self.address(&E::Local {
             name: iterator.to_string(),
         })?;
-        Ok(chunk_call(option, "next", vec![address]))
+        Ok(self.chunk_call(option, "next", vec![address]))
     }
     pub(super) fn chunk_initialize_mir(
         &mut self,
@@ -187,7 +188,7 @@ impl Context<'_> {
                 program_seq(
                     program_seq(
                         program_declare(&built, value_type),
-                        chunk_call(
+                        self.chunk_call(
                             built.clone(),
                             "new",
                             vec![
@@ -206,9 +207,9 @@ impl Context<'_> {
                         program_seq(
                             program_seq(
                                 program_declare(&remainder, slice_type),
-                                chunk_call(remainder.clone(), "remainder", vec![address]),
+                                self.chunk_call(remainder.clone(), "remainder", vec![address]),
                             ),
-                            Self::split_slice_value(
+                            self.split_slice_value(
                                 crate::kernel::program_expression::variable(&remainder),
                                 format!("{iterator}_tail"),
                                 format!("{iterator}_tail_len"),
@@ -222,7 +223,7 @@ impl Context<'_> {
         Ok(program_seq(
             program_seq(p_capture, program_seq(l_capture, size_prefix)),
             program_seq(
-                chunk_call(
+                self.chunk_call(
                     iterator.to_string(),
                     "new",
                     vec![
@@ -232,8 +233,8 @@ impl Context<'_> {
                     ],
                 ),
                 program_seq(
-                    chunk_call(format!("{iterator}_tail"), "remainder_ptr", value()),
-                    chunk_call(format!("{iterator}_tail_len"), "remainder_len", value()),
+                    self.chunk_call(format!("{iterator}_tail"), "remainder_ptr", value()),
+                    self.chunk_call(format!("{iterator}_tail_len"), "remainder_len", value()),
                 ),
             ),
         ))
@@ -293,7 +294,7 @@ impl Context<'_> {
     /// `next()` the test leads to uses that read, so no loop has to carry
     /// the local's meaning across its head.
     pub(super) fn chunk_read_left(&self, iterator: &str) -> ProgramStatement {
-        chunk_call(
+        self.chunk_call(
             format!("{iterator}_left"),
             "len",
             vec![crate::kernel::program_expression::variable(iterator)],
@@ -320,11 +321,7 @@ impl Context<'_> {
                     value: Box::new(crate::kernel::program_expression::variable(option)),
                     variant: "Some".into(),
                 },
-                Self::split_slice_value(
-                    chunk,
-                    format!("{option}_pointer"),
-                    format!("{option}_len"),
-                ),
+                self.split_slice_value(chunk, format!("{option}_pointer"), format!("{option}_len")),
                 program_skip(),
             ));
         }
@@ -337,10 +334,10 @@ impl Context<'_> {
                 crate::kernel::program_expression::int32_literal(1),
             ),
             program_seq(
-                chunk_call(format!("{option}_pointer"), "item_ptr", value()),
+                self.chunk_call(format!("{option}_pointer"), "item_ptr", value()),
                 program_seq(
-                    chunk_call(format!("{option}_len"), "item_len", value()),
-                    chunk_call(iterator.to_string(), "after_next", value()),
+                    self.chunk_call(format!("{option}_len"), "item_len", value()),
+                    self.chunk_call(iterator.to_string(), "after_next", value()),
                 ),
             ),
         );
@@ -368,16 +365,19 @@ impl Context<'_> {
     }
 }
 
-/// Assigns `target` the result of the library `ChunksExact` operation
-/// `operation` on `arguments`.
-fn chunk_call(
-    target: String,
-    operation: &str,
-    arguments: Vec<ProgramExpression>,
-) -> ProgramStatement {
-    program_call_assign(
-        target,
-        super::super::standard_library::chunks_exact_function(operation),
-        arguments,
-    )
+impl Context<'_> {
+    /// Assigns `target` the result of the library `ChunksExact` operation
+    /// `operation` on `arguments`.
+    fn chunk_call(
+        &self,
+        target: String,
+        operation: &str,
+        arguments: Vec<ProgramExpression>,
+    ) -> ProgramStatement {
+        self.call_then_assign(
+            target,
+            super::super::standard_library::chunks_exact_function(operation),
+            arguments,
+        )
+    }
 }

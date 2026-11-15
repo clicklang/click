@@ -242,7 +242,9 @@ int32 owned_split_buffer_pipeline(
     step();
     step();
     step();
+    step();
     unfold(owned_split_buffer(owner));
+    step();
     step();
     have owner->split == 1 by { known(); }
     have owner->len == length by { known(); }
@@ -257,24 +259,27 @@ int32 owned_split_buffer_pipeline(
         known();
     }
     step();
+    step();
     have owner->data == data by { known(); }
     have 1 < owner->len by { known(); }
     have data[1] == right_value by {
         normalize() using {
-            at(region(5).entry, *(owner->data + 1)) == at(region(5).entry, right_value);
+            at(statement(5).entry, *(owner->data + 1)) == at(statement(5).entry, right_value);
             owner->data == data;
         };
     }
     step();
-    have to_integer(at(region(5).exit, owner->split)) == (to_integer(at(region(5).entry, owner->split)) + 1) by {
+    step();
+    have to_integer(at(statement(5).exit, owner->split)) == (to_integer(at(statement(5).entry, owner->split)) + 1) by {
         known();
     }
-    apply(incremented_one_is_two(at(region(5).entry, owner->split), at(region(5).exit, owner->split))) using {
-        at(region(5).entry, owner->split) == 1;
-        to_integer(at(region(5).exit, owner->split)) == (to_integer(at(region(5).entry,
+    apply(incremented_one_is_two(at(statement(5).entry, owner->split), at(statement(5).exit, owner->split))) using {
+        at(statement(5).entry, owner->split) == 1;
+        to_integer(at(statement(5).exit, owner->split)) == (to_integer(at(statement(5).entry,
             owner->split)) + 1);
     };
     fold(owned_split_buffer(owner));
+    step();
     step();
     have data[1] == right_value by { known(); }
     apply(int32_equality_transitive(c(result), data[1], right_value)) using {
@@ -293,7 +298,7 @@ int32 owned_split_buffer_pipeline(
         known();
     }
     have data[0] == left_value by {
-        rewrite(data == at(region(3).entry, owner->data));
+        rewrite(data == at(statement(3).entry, owner->data));
         known();
     }
     have data[1] == right_value by {

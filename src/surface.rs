@@ -4765,7 +4765,9 @@ impl RecordedSnapshots {
                 self.source_layout
                     .as_ref()
                     .and_then(|layout| match layout.call_number(*index) {
-                        Some(call) => state.step_result(call).cloned(),
+                        Some(call) => state
+                            .step_result(call)
+                            .map(|value| value.clone().into_native()),
                         None => layout
                             .call_result_local(*index)
                             .and_then(|local| state.locals().get(local))

@@ -98,6 +98,7 @@ int32 publish_once(struct channel* channel) diverges {
     } else {}
     step();
     step();
+    step();
     unfold(ready_payload(channel));
     step();
     solve();

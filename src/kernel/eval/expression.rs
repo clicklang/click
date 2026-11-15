@@ -1585,7 +1585,7 @@ pub(super) fn evaluate_native_expression_paths(
                 .as_ref()
                 .and_then(|results| results.get(step))
             {
-                Some(value) => ExpressionOutcome::Value(value.native().clone()),
+                Some(value) => ExpressionOutcome::Value(value.native().into_owned()),
                 None => ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(format!(
                     "the result of step {step}, read before the step ran"
                 ))),

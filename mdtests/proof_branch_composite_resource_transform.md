@@ -70,8 +70,10 @@ int32 select_ready(int32 key, int32 choose_left) {
             owns ready_bundle(key);
         } then {
             step();
+            step();
             fold(ready_bundle(key));
         } else {
+            step();
             step();
             fold(ready_bundle(key));
         }

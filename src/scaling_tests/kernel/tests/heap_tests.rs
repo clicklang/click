@@ -130,7 +130,13 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let mut memory = Memory::new().with_block(address.block.clone(), 4);
+        let mut assumptions = PureFactContext::new();
         for index in 0..count {
+            assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+                memory: memory.clone(),
+                pointer: address.clone(),
+                value_type: ProgramType::Int32,
+            });
             memory = memory.store(
                 Pointer {
                     block: PointerBlock::Heap(9200 + index),
@@ -139,12 +145,6 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
                 int32(1),
             );
         }
-        let fact = Proposition::MemoryReadDefined {
-            memory: memory.clone(),
-            pointer: address.clone(),
-            value_type: ProgramType::Int32,
-        };
-        let assumptions = PureFactContext::new().assume_proposition(fact);
         let request = Pointer {
             block: PointerBlock::Symbolic(Variable(9300)),
             offset: PointerOffsetTerm::Constant(0),
@@ -160,6 +160,13 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             },
             ProgramValue::pointer(request.clone()),
         );
+        // Supply validity at the selected adjacent transition's entry.
+        // Earlier history is deliberately not an implicit proof argument.
+        let assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+            memory: pending.clone(),
+            pointer: address.clone(),
+            value_type: ProgramType::Int32,
+        });
         let (failed, _, _) = pending
             .resolve_pending_heap_allocation(&request, false)
             .unwrap();
@@ -275,9 +282,10 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_execution_statement_paths(
                 &state,
-                &program_call_assign(
+                &program_reallocate_then_assign(
+                    0,
                     "q",
-                    "realloc",
+                    ProgramType::Int32Pointer,
                     vec![
                         crate::kernel::program_expression::variable("p"),
                         crate::kernel::program_expression::int32_literal(8),
@@ -487,6 +495,58 @@ fn sequential_free_pointer_frames_stay_near_linear() {
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
+    let mut samples = Vec::new();
+    for count in [1, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: "global:validity-anchor".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let query = Pointer::symbolic(Variable(960_000));
+        let mut memory = Memory::new()
+            .with_block(base.block.clone(), 8)
+            .store(base.offset_by_bytes(4), int32(7));
+        let mut facts = PureFactContext::new();
+        for index in 0..count {
+            let alias = Pointer::symbolic(Variable(960_000 + index));
+            facts = facts.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(alias, base.clone()),
+                true,
+            ));
+            memory = memory.store(
+                Pointer {
+                    block: PointerBlock::Heap(970_000 + index),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                int32(9),
+            );
+        }
+        // The equality supplies storage identity, not access authority.
+        facts = facts.assume_proposition(Proposition::MemoryLoadable {
+            memory: memory.clone(),
+            base: query.clone(),
+            bytes: MachineTerm::constant(8),
+            wide: false,
+        });
+        let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.proves_memory_read_defined(&memory, &query.offset_by_bytes(4), ProgramType::Int32)
+        });
+        assert!(proved);
+        samples.push(work);
+        assert!(!facts.proves_memory_read_defined(
+            &memory,
+            &query.offset_by_bytes(8),
+            ProgramType::Int32,
+        ));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 24),
         "{samples:?}"
     );
 }

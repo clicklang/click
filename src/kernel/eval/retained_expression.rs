@@ -25,12 +25,12 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             .step_results
             .as_ref()
             .and_then(|results| results.get(step))
-        && value.value().shared().is_some()
+        && value.shared().is_some()
     {
         budget.consume_expression_step()?;
         budget.check_path_width(1)?;
         return Ok(vec![ExpressionPath {
-            outcome: ExpressionOutcome::Value(value.value().clone()),
+            outcome: ExpressionOutcome::Value(value.clone().into_value()),
             facts: ExecutionFacts::new(),
             obligations: vec![],
         }]);
@@ -1366,6 +1366,20 @@ mod tests {
         assert!(roots.windows(2).all(|pair| pair[0] == pair[1]));
     }
 
+    fn machine_handoff_caller(rust: bool) -> ExecutionState {
+        let format = if rust {
+            MachineIntegerType::UInt8
+        } else {
+            MachineIntegerType::UInt32
+        };
+        let zero = if rust {
+            MachineTerm::narrow_constant(format, 0)
+        } else {
+            MachineTerm::uint32_constant(0)
+        };
+        ExecutionState::new().with_local("received", format.value_from_term(zero))
+    }
+
     fn complete_machine_handoff_program(
         rust: bool,
         size: usize,
@@ -1414,15 +1428,23 @@ mod tests {
             body,
         );
         let environment = ExecutionEnvironment::new().with_function(helper);
+        let (mut call, result) = program_call_value(
+            0,
+            "machine_handoff",
+            vec![ProgramExpression::Value(
+                format.value_from_term(MachineTerm::Variable(Variable(998341))),
+            )],
+        );
+        if !rust && let ProgramStatement::CallResult { result_type, .. } = &mut call {
+            // C states its declared return type; Rust retains the callee's.
+            *result_type = Some(program_type);
+        }
         let statement = program_seq(
-            program_call_assign(
-                "received",
-                "machine_handoff",
-                vec![ProgramExpression::Value(
-                    format.value_from_term(MachineTerm::Variable(Variable(998341))),
-                )],
+            call,
+            program_seq(
+                program_assign("received", result),
+                program_return(crate::kernel::program_expression::variable("received")),
             ),
-            program_return(crate::kernel::program_expression::variable("received")),
         );
         (environment, statement)
     }
@@ -1435,7 +1457,7 @@ mod tests {
                 let (environment, statement) = complete_machine_handoff_program(rust, size, true);
                 let exports = KernelTermExport::machine_export_count();
                 let paths = super::super::statements::execute_execution_statement_paths(
-                    &ExecutionState::new(),
+                    &machine_handoff_caller(rust),
                     &statement,
                     &PureFactContext::new(),
                     ExecutionContext::execute_bodies(&environment),
@@ -1897,6 +1919,11 @@ mod tests {
             panic!("memory receipt")
         };
         assert_eq!(loaded.shared(), Some(root));
-        assert_eq!(after.step_result(11), Some(&value.native().into_owned()));
+        assert_eq!(
+            after
+                .step_result(11)
+                .map(|value| value.native().into_owned()),
+            Some(value.native().into_owned())
+        );
     }
 }

@@ -41,6 +41,7 @@ int use_copy() {
 } by {
     step();
     step();
+    step();
     if copied == 18 {
     } else {
         have copied == -1 by {

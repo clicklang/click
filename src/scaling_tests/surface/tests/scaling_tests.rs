@@ -3240,7 +3240,7 @@ fn exceptional_cleanup_chain_project(
 #[test]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context() {
-    const CALL_WORK: &str = "operation `verification statement: call assign`";
+    const CALL_WORK: &str = "operation `verification statement: call`";
     let mut samples = Vec::new();
     let mut cleanup_work = Vec::new();
     for size in [2, 8, 16] {

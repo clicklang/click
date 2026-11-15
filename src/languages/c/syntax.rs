@@ -2514,13 +2514,6 @@ pub enum CStatement {
         /// Where the source statement was written; see [`CSite`].
         site: CSite,
     },
-    CallAssign {
-        target: String,
-        function_name: String,
-        arguments: Vec<CExpression>,
-        /// Where the source statement was written; see [`CSite`].
-        site: CSite,
-    },
     /// A call inside an expression of the statement that follows it. Its
     /// result is that statement's `CExpression::StepResult { step, .. }`,
     /// never a variable.
@@ -2530,6 +2523,7 @@ pub enum CStatement {
         arguments: Vec<CExpression>,
         /// The callee's declared result type, when it is declared here.
         result_type: Option<InterfaceType>,
+        result_aggregate_layout: Option<RecordLayout>,
         result_pointee_constant: bool,
         /// The function pointer the call goes through, when it is not a call
         /// of a named function; `function_name` then describes it as written.
@@ -3969,7 +3963,6 @@ impl CStatement {
             | Self::StepValue { site, .. }
             | Self::DeclareStructValue { site, .. }
             | Self::Assign { site, .. }
-            | Self::CallAssign { site, .. }
             | Self::Call { site, .. }
             | Self::CallResult { site, .. }
             | Self::IndirectCall { site, .. }
@@ -4002,7 +3995,6 @@ impl CStatement {
             | Self::StepValue { site, .. }
             | Self::DeclareStructValue { site, .. }
             | Self::Assign { site, .. }
-            | Self::CallAssign { site, .. }
             | Self::Call { site, .. }
             | Self::CallResult { site, .. }
             | Self::IndirectCall { site, .. }
@@ -4164,24 +4156,12 @@ impl CStatement {
                 source: Default::default(),
                 prior_result: *prior_result,
             },
-            Self::CallAssign {
-                target,
-                function_name,
-                arguments,
-                ..
-            } => crate::kernel::program_call_assign(
-                target.clone(),
-                function_name.clone(),
-                arguments
-                    .iter()
-                    .map(CExpression::to_kernel_expression)
-                    .collect(),
-            ),
             Self::CallResult {
                 call,
                 function_name,
                 arguments,
                 result_type,
+                result_aggregate_layout,
                 result_pointee_constant,
                 callee,
                 ..
@@ -4193,6 +4173,9 @@ impl CStatement {
                     .map(CExpression::to_kernel_expression)
                     .collect(),
                 result_type: result_type.map(|interface_type| interface_type.to_kernel_type()),
+                result_aggregate_layout: result_aggregate_layout
+                    .as_ref()
+                    .map(RecordLayout::to_kernel_aggregate_layout),
                 result_pointee_constant: *result_pointee_constant,
                 callee: callee.as_ref().map(CCallee::to_kernel),
             },
@@ -5017,7 +5000,6 @@ fn validate_function_returns(
         | CStatement::Declare { .. }
         | CStatement::DeclareStructValue { .. }
         | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
         | CStatement::CallResult { .. }
         | CStatement::IndirectCall { .. }
@@ -5494,7 +5476,6 @@ fn statement_contains_control_transfer(statement: &CStatement) -> bool {
         | CStatement::Declare { .. }
         | CStatement::DeclareStructValue { .. }
         | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
         | CStatement::CallResult { .. }
         | CStatement::IndirectCall { .. }
@@ -13214,8 +13195,41 @@ impl Parser {
         Ok(balanced_statement_sequence(steps).unwrap_or(CStatement::Skip))
     }
 
+    fn lower_aggregate_call_result(
+        &mut self,
+        function_name: String,
+        arguments: Vec<CExpression>,
+        struct_name: String,
+    ) -> Result<(Vec<CStatement>, CExpression), CSyntaxError> {
+        let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+        let call = self.next_call_result;
+        self.next_call_result = self.next_call_result.saturating_add(1);
+        // Value returns already materialize independent aggregate storage.
+        // Retain its pointer; copying into the destination is a separate effect.
+        prefix.push(CStatement::CallResult {
+            call,
+            function_name: function_name.clone(),
+            arguments,
+            result_type: Some(InterfaceType::UInt8Pointer),
+            result_aggregate_layout: Some(self.scalar_struct_value_layout(&struct_name)?),
+            result_pointee_constant: false,
+            site: CSite::NONE,
+            callee: None,
+        });
+        Ok((
+            prefix,
+            CExpression::StepResult {
+                step: call,
+                origin: crate::kernel::StepOrigin::Call(function_name),
+                interface_type: Some(InterfaceType::UInt8Pointer),
+                pointee_constant: false,
+                struct_name: Some(struct_name),
+            },
+        ))
+    }
+
     fn call_assignment_statement(
-        &self,
+        &mut self,
         target: String,
         function_name: String,
         arguments: Vec<CExpression>,
@@ -13236,12 +13250,40 @@ impl Parser {
                     arguments.len()
                 )));
             }
-            return Ok(CStatement::CallAssign {
-                target,
-                function_name,
-                arguments,
-                site: CSite::NONE,
-            });
+            let (prefix, arguments) = self.lower_call_arguments(arguments)?;
+            let interface_type = self.variable_types.get(&target).copied();
+            let call = self.next_call_result;
+            self.next_call_result = self
+                .next_call_result
+                .checked_add(1)
+                .expect("too many calls");
+            return Ok(prepend_statements(
+                prefix,
+                CStatement::Seq(
+                    Box::new(CStatement::CallResult {
+                        call,
+                        function_name: function_name.clone(),
+                        arguments,
+                        result_type: interface_type,
+                        result_aggregate_layout: None,
+                        result_pointee_constant: false,
+                        callee: None,
+                        site: CSite::NONE,
+                    }),
+                    Box::new(CStatement::Assign {
+                        name: target.clone(),
+                        expression: CExpression::StepResult {
+                            step: call,
+                            origin: crate::kernel::StepOrigin::Call(function_name),
+                            interface_type,
+                            pointee_constant: false,
+                            struct_name: self.variable_structs.get(&target).cloned(),
+                        },
+                        prior_result: None,
+                        site: CSite::NONE,
+                    }),
+                ),
+            ));
         }
         if !matches!(function_name.as_str(), "malloc" | "calloc") {
             if self.function_declaration_for_call(&function_name).is_some() {
@@ -13268,10 +13310,35 @@ impl Parser {
                     });
                 }
             }
-            return Ok(CStatement::CallAssign {
-                target,
-                function_name,
-                arguments,
+            if let Some(struct_name) = self
+                .function_declaration_for_call(&function_name)
+                .and_then(|function| function.return_struct_name.clone())
+                .or_else(|| self.variable_struct_values.get(&target).cloned())
+            {
+                if self.variable_struct_values.get(&target) != Some(&struct_name) {
+                    return Err(self.error_here(format!(
+                        "aggregate call result requires a destination of type `struct {struct_name}`"
+                    )));
+                }
+                let layout = self.scalar_struct_value_layout(&struct_name)?;
+                let (mut prefix, source) =
+                    self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
+                prefix.push(CStatement::AggregateCopy {
+                    target: CExpression::Variable(target),
+                    source,
+                    layout,
+                    site: CSite::NONE,
+                });
+                return Ok(balanced_statement_sequence(prefix).expect("call and aggregate copy"));
+            }
+            return Ok(CStatement::Assign {
+                name: target,
+                expression: CExpression::Call {
+                    function_name,
+                    arguments,
+                    position: None,
+                },
+                prior_result: None,
                 site: CSite::NONE,
             });
         }
@@ -13768,9 +13835,7 @@ impl Parser {
                         return true;
                     }
                 }
-                CStatement::CallAssign { arguments, .. }
-                | CStatement::Call { arguments, .. }
-                | CStatement::CallResult { arguments, .. } => {
+                CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
                     if arguments
                         .iter()
                         .any(|expression| self.expression_contains_lowerable_expression(expression))
@@ -14460,23 +14525,6 @@ impl Parser {
                     },
                 ))
             }
-            CStatement::CallAssign {
-                target,
-                function_name,
-                arguments,
-                site,
-            } => {
-                let (prefix, arguments) = self.lower_call_arguments(arguments)?;
-                Ok(prepend_statements(
-                    prefix,
-                    CStatement::CallAssign {
-                        target,
-                        function_name,
-                        arguments,
-                        site,
-                    },
-                ))
-            }
             CStatement::Call {
                 function_name,
                 arguments,
@@ -15098,13 +15146,16 @@ impl Parser {
                     let (target, layout) = self.declare_synthesized_aggregate(&struct_name)?;
                     prefix.push(CStatement::DeclareStructValue {
                         name: target.clone(),
-                        layout,
+                        layout: layout.clone(),
                         site: CSite::NONE,
                     });
-                    prefix.push(CStatement::CallAssign {
-                        target: target.clone(),
-                        function_name,
-                        arguments,
+                    let (call, source) =
+                        self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
+                    prefix.extend(call);
+                    prefix.push(CStatement::AggregateCopy {
+                        target: CExpression::Variable(target.clone()),
+                        source,
+                        layout,
                         site: CSite::NONE,
                     });
                     return Ok((prefix, CExpression::Variable(target)));
@@ -15139,6 +15190,7 @@ impl Parser {
                     function_name: function_name.clone(),
                     arguments,
                     result_type: interface_type,
+                    result_aggregate_layout: None,
                     result_pointee_constant: pointee_constant,
                     site: CSite::NONE,
                     callee: None,
@@ -15599,6 +15651,7 @@ impl Parser {
             function_name: function_name.clone(),
             arguments,
             result_type: Some(interface_type),
+            result_aggregate_layout: None,
             result_pointee_constant: pointee_constant,
             callee: Some(CCallee {
                 pointer: function,
@@ -19852,7 +19905,6 @@ fn statement_continues_enclosing_loop(statement: &CStatement) -> bool {
         | CStatement::Declare { .. }
         | CStatement::DeclareStructValue { .. }
         | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
         | CStatement::CallResult { .. }
         | CStatement::IndirectCall { .. }
@@ -19959,7 +20011,6 @@ fn prepend_condition_check_before_loop_continues(
         | CStatement::Declare { .. }
         | CStatement::DeclareStructValue { .. }
         | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
         | CStatement::CallResult { .. }
         | CStatement::IndirectCall { .. }

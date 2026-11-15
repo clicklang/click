@@ -121,10 +121,15 @@ int32 detachable_buffer_pipeline(
     step();
     step();
     step();
+    step();
+    step();
+    step();
     unfold(detached_buffer(owner));
     unfold(detached_backing(data, length));
     step();
+    step();
     fold(attached_buffer(owner));
+    step();
     step();
     step();
     known();

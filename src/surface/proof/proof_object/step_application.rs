@@ -790,7 +790,7 @@ impl<'a> Proof<'a> {
                 )
                 .ok()?;
                 let callee = match statement {
-                    ProgramStatement::CallAssign { function_name, .. }
+                    ProgramStatement::CallConstruct { function_name, .. }
                     | ProgramStatement::Call { function_name, .. }
                     | ProgramStatement::CallResult { function_name, .. } => function_name,
                     _ => return None,

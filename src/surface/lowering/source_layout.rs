@@ -255,7 +255,7 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
             pointer: expression,
         } => expression_reads(expression),
         ProgramStatement::Call { arguments, .. }
-        | ProgramStatement::CallAssign { arguments, .. }
+        | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
@@ -303,7 +303,7 @@ fn syntax_statement_reads(statement: &syntax::CStatement) -> bool {
             pointer: expression,
             ..
         } => read(expression),
-        S::Call { arguments, .. } | S::CallAssign { arguments, .. } => arguments.iter().any(read),
+        S::Call { arguments, .. } | S::CallResult { arguments, .. } => arguments.iter().any(read),
         S::Store { pointer, value, .. }
         | S::SequentialStore {
             target: pointer,
@@ -523,55 +523,43 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
-                    // A call region: `call(f, j)` names it, and a call
-                    // step's result is the state's step result of its number.
-                    match statement {
-                        ProgramStatement::CallResult {
-                            call,
-                            function_name,
-                            callee,
-                            ..
-                        } => {
-                            layout.calls.insert(statement_index);
-                            layout.call_numbers.insert(statement_index, *call);
-                            layout.step_regions.insert(*call, statement_index);
-                            if callee.is_none() {
-                                layout
-                                    .call_targets
-                                    .insert(statement_index, function_name.clone());
-                            }
-                        }
-                        ProgramStatement::Call {
-                            function_name,
-                            callee,
-                            ..
-                        } => {
-                            layout.calls.insert(statement_index);
-                            if callee.is_none() {
-                                layout
-                                    .call_targets
-                                    .insert(statement_index, function_name.clone());
-                            }
-                        }
-                        ProgramStatement::CallAssign {
-                            function_name,
-                            target,
-                            ..
-                        } => {
-                            layout.calls.insert(statement_index);
-                            layout.call_results.insert(statement_index, target.clone());
-                            layout
-                                .call_targets
-                                .insert(statement_index, function_name.clone());
-                        }
-                        _ => {}
+                    if let ProgramStatement::CallResult { call, .. } = statement {
+                        layout.call_numbers.insert(statement_index, *call);
+                        layout.step_regions.insert(*call, statement_index);
                     }
-                    if let ProgramStatement::HeapAllocate { target, .. } = statement {
+                    if let ProgramStatement::Call { .. }
+                    | ProgramStatement::CallResult { .. }
+                    | ProgramStatement::CallConstruct { .. } = statement
+                    {
+                        layout.calls.insert(statement_index);
+                    }
+                    if let ProgramStatement::Call {
+                        function_name,
+                        callee: None,
+                        ..
+                    }
+                    | ProgramStatement::CallResult {
+                        function_name,
+                        callee: None,
+                        ..
+                    }
+                    | ProgramStatement::CallConstruct { function_name, .. } = statement
+                    {
+                        layout.call_targets.insert(
+                            statement_index,
+                            crate::surface::call_source_spelling(function_name).to_string(),
+                        );
+                    }
+                    if let ProgramStatement::CallConstruct { target, .. }
+                    | ProgramStatement::HeapAllocate { target, .. } = statement
+                    {
                         layout.call_results.insert(statement_index, target.clone());
+                    }
+                    if matches!(statement, ProgramStatement::HeapAllocate { .. }) {
                         layout.allocation_regions.insert(statement_index);
                     }
                     if let ProgramStatement::Assign { name, .. }
-                    | ProgramStatement::CallAssign { target: name, .. }
+                    | ProgramStatement::CallConstruct { target: name, .. }
                     | ProgramStatement::Update {
                         target: ProgramExpression::Variable(name),
                         ..
@@ -716,14 +704,12 @@ impl SourceExecutionLayout {
                 layout.step_regions.insert(*step, index);
                 layout.prior_steps.insert(*step, name.clone());
             }
-            if let syntax::CStatement::CallAssign { .. }
-            | syntax::CStatement::Call { .. }
-            | syntax::CStatement::CallResult { .. } = statement
+            if let syntax::CStatement::Call { .. } | syntax::CStatement::CallResult { .. } =
+                statement
             {
                 layout.calls.insert(index);
             }
-            if let syntax::CStatement::CallAssign { function_name, .. }
-            | syntax::CStatement::Call {
+            if let syntax::CStatement::Call {
                 function_name,
                 callee: None,
                 ..
@@ -739,9 +725,7 @@ impl SourceExecutionLayout {
                     crate::surface::call_source_spelling(function_name).to_string(),
                 );
             }
-            if let syntax::CStatement::CallAssign { target, .. }
-            | syntax::CStatement::HeapAllocate { target, .. } = statement
-            {
+            if let syntax::CStatement::HeapAllocate { target, .. } = statement {
                 layout.call_results.insert(index, target.clone());
             }
             if matches!(statement, syntax::CStatement::HeapAllocate { .. }) {
@@ -924,7 +908,10 @@ impl SourceExecutionLayout {
                     let statement_index = *next_statement_index;
                     record_site(layout, statement_index, statement, enclosing);
                     if let syntax::CStatement::Assign { name, .. }
-                    | syntax::CStatement::CallAssign { target: name, .. }
+                    | syntax::CStatement::AggregateCopy {
+                        target: syntax::CExpression::Variable(name),
+                        ..
+                    }
                     | syntax::CStatement::Update {
                         target: syntax::CExpression::Variable(name),
                         ..
@@ -1927,6 +1914,29 @@ mod source_execution_layout_tests {
             native.data.allocation_regions
         );
         assert_eq!(source.data.call_results, native.data.call_results);
+    }
+
+    #[test]
+    fn retained_calls_have_distinct_assignment_points_in_typed_layouts() {
+        let function =
+            syntax::parse_function("int32 f() { int32 x; x=first(); x=second(); return x; }")
+                .unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        let source = SourceExecutionLayout::for_function(&function).unwrap();
+        let native = SourceExecutionLayout::for_function(&typed).unwrap();
+        assert_eq!(source.data.call_numbers.len(), 2);
+        assert_eq!(native.data.call_numbers, source.data.call_numbers);
+        assert_eq!(native.data.step_regions, source.data.step_regions);
+        assert_eq!(native.data.call_targets, source.data.call_targets);
+        for (occurrence, (region, call)) in native.data.call_numbers.iter().enumerate() {
+            assert_eq!(native.step_region(*call), Some(*region));
+            assert_eq!(
+                native.assignment_entry("x", occurrence).unwrap(),
+                region + 1
+            );
+        }
     }
 
     #[test]

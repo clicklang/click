@@ -86,6 +86,7 @@ int32 zero_pipeline(struct box* box) {
     step();
     step();
     step();
+    step();
 }
 ```
 

@@ -19,6 +19,7 @@ void check_sum(int32* start, int32 s, int32 index, int32 end) {
 } by {
     have to_integer(s + index + 1) <= to_integer(end);
     have defined(s + index + 1);
+    have defined(*start) by { normalize(); }
     have defined(*start + index + 1) by {
         rewrite(*start == s);
         known();

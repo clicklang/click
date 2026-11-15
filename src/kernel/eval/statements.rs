@@ -1344,6 +1344,17 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
+    // A modular by-value return creates fresh caller storage, just as a
+    // body return materializes a local return object. Copying that value
+    // does not borrow an external resource. Use the temporary's recorded
+    // extent, not merely its identity, to authorize this selected copy.
+    if matches!(source.block, PointerBlock::Temporary(_))
+        && source.extent_is_known()
+        && assumptions.designations_equal(source.designation(), &source.pointer().object_identity())
+        && state.memory.access_in_bounds(source, layout.size_bytes())
+    {
+        return None;
+    }
     if (!crate::kernel::eval::is_external_memory_pointer(source)
         && source.extent_is_known()
         && assumptions
@@ -1397,9 +1408,72 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     None
 }
 
+#[derive(Clone, Copy)]
+enum AllocationDestination<'a> {
+    Local(&'a str),
+    Value(ProgramType),
+}
+
+impl AllocationDestination<'_> {
+    fn program_type(self, state: &ExecutionState) -> Option<ProgramType> {
+        match self {
+            Self::Local(name) => state.local_object_type(name),
+            Self::Value(program_type) => Some(program_type),
+        }
+    }
+
+    fn finish(
+        self,
+        state: &ExecutionState,
+        value: ProgramValue,
+        assumptions: &PureFactContext,
+        budget: &mut ExecutionBudget,
+    ) -> ExecutionResult<Vec<StatementExecutionPath>> {
+        match self {
+            Self::Local(name) => execute_program_lvalue_assignment_paths(
+                state,
+                &crate::kernel::program_expression::variable(name),
+                &ProgramExpression::Value(value),
+                assumptions,
+                budget,
+            ),
+            Self::Value(_) => Ok(vec![
+                StatementExecutionPath::new(
+                    StatementOutcome::Normal(Box::new(state.clone())),
+                    Vec::new().into(),
+                    Vec::new(),
+                )
+                .with_call_result(Some(value)),
+            ]),
+        }
+    }
+}
+
 pub(super) fn execute_program_heap_allocate_paths(
     state: &ExecutionState,
     target: &str,
+    bytes_expression: &ProgramExpression,
+    zeroed: bool,
+    object_type: Option<&(crate::kernel::effective_type::CAccessClass, u32, u32)>,
+    ends_program_on_failure: bool,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    execute_program_heap_allocate_to_paths(
+        state,
+        AllocationDestination::Local(target),
+        bytes_expression,
+        zeroed,
+        object_type,
+        ends_program_on_failure,
+        assumptions,
+        budget,
+    )
+}
+
+fn execute_program_heap_allocate_to_paths(
+    state: &ExecutionState,
+    target: AllocationDestination<'_>,
     bytes_expression: &ProgramExpression,
     zeroed: bool,
     object_type: Option<&(crate::kernel::effective_type::CAccessClass, u32, u32)>,
@@ -1426,7 +1500,7 @@ pub(super) fn execute_program_heap_allocate_paths(
         | ProgramType::Int64PointerPointer
         | ProgramType::UInt128PointerPointer
         | ProgramType::UInt64PointerPointer),
-    ) = state.local_object_type(target)
+    ) = target.program_type(state)
     else {
         return Ok(vec![StatementExecutionPath::new(
             StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
@@ -1569,13 +1643,10 @@ pub(super) fn execute_program_heap_allocate_paths(
                     object_class.clone(),
                 ));
         success_state.record_pending_population_storage_creation(pointer.block.clone());
-        let assigned = execute_program_lvalue_assignment_paths(
+        let assigned = target.finish(
             &success_state,
-            &crate::kernel::program_expression::variable(target.to_string()),
-            &ProgramExpression::Value(
-                ProgramValue::typed_pointer(pointer, target_type)
-                    .with_pointer_object_class(object_class),
-            ),
+            ProgramValue::typed_pointer(pointer, target_type)
+                .with_pointer_object_class(object_class),
             &effective_assumptions,
             budget,
         )?;
@@ -1605,11 +1676,10 @@ pub(super) fn execute_program_heap_allocate_paths(
                 }
                 outcome => outcome,
             };
-            paths.push(StatementExecutionPath::new(
-                outcome,
-                merged_facts,
-                merged_obligations,
-            ));
+            paths.push(
+                StatementExecutionPath::new(outcome, merged_facts, merged_obligations)
+                    .with_call_result(assigned_path.call_result),
+            );
         }
     }
     budget.check_path_width(paths.len())?;
@@ -2150,9 +2220,9 @@ fn allocation_size_validity_refusal(
     }
 }
 
-pub(crate) fn execute_program_realloc_assign_paths(
+fn execute_program_realloc_result_paths(
     state: &ExecutionState,
-    target: &str,
+    result_type: Option<ProgramType>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -2186,7 +2256,7 @@ pub(crate) fn execute_program_realloc_assign_paths(
         | ProgramType::Int64PointerPointer
         | ProgramType::UInt128PointerPointer
         | ProgramType::UInt64PointerPointer),
-    ) = state.local_object_type(target)
+    ) = result_type
     else {
         return Ok(vec![StatementExecutionPath::new(
             StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
@@ -2238,9 +2308,9 @@ pub(crate) fn execute_program_realloc_assign_paths(
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
         if old_pointer == Pointer::null() {
-            for allocation_path in execute_program_heap_allocate_paths(
+            for allocation_path in execute_program_heap_allocate_to_paths(
                 state,
-                target,
+                AllocationDestination::Value(target_type),
                 size_expression,
                 false,
                 None,
@@ -2259,11 +2329,14 @@ pub(crate) fn execute_program_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(StatementExecutionPath::new(
-                    allocation_path.outcome,
-                    merged_facts,
-                    merged_obligations,
-                ));
+                paths.push(
+                    StatementExecutionPath::new(
+                        allocation_path.outcome,
+                        merged_facts,
+                        merged_obligations,
+                    )
+                    .with_call_result(allocation_path.call_result),
+                );
             }
             continue;
         }
@@ -2587,13 +2660,9 @@ pub(crate) fn execute_program_realloc_assign_paths(
                     initialized_prefix,
                 );
             let pending_state = state.clone().with_memory(pending_memory);
-            let assigned = execute_program_lvalue_assignment_paths(
+            let assigned = AllocationDestination::Value(target_type).finish(
                 &pending_state,
-                &crate::kernel::program_expression::variable(target.to_string()),
-                &ProgramExpression::Value(ProgramValue::typed_pointer(
-                    pending_pointer,
-                    target_type,
-                )),
+                ProgramValue::typed_pointer(pending_pointer, target_type),
                 &effective_assumptions,
                 budget,
             )?;
@@ -2609,11 +2678,14 @@ pub(crate) fn execute_program_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(StatementExecutionPath::new(
-                    assigned_path.outcome,
-                    merged_facts,
-                    merged_obligations,
-                ));
+                paths.push(
+                    StatementExecutionPath::new(
+                        assigned_path.outcome,
+                        merged_facts,
+                        merged_obligations,
+                    )
+                    .with_call_result(assigned_path.call_result),
+                );
             }
         }
     }
@@ -3302,7 +3374,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<St
         | ProgramStatement::CopyAggregate { .. }
         | ProgramStatement::InitializeScalarArray { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -3679,7 +3751,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
             "verification statement: scalar array initialization"
         }
         ProgramStatement::Assign { .. } => "verification statement: assign",
-        ProgramStatement::CallAssign { .. } => "verification statement: call assign",
+        ProgramStatement::CallConstruct { .. } => "verification statement: call construct",
         ProgramStatement::Call { .. } | ProgramStatement::CallResult { .. } => {
             "verification statement: call"
         }
@@ -3774,7 +3846,9 @@ fn execute_execution_statement_leaf_paths(
                 name, expression, ..
             } if matches!(
                 expression,
-                ProgramExpression::Value(_) | ProgramExpression::Variable(_)
+                ProgramExpression::Value(_)
+                    | ProgramExpression::Variable(_)
+                    | ProgramExpression::StepResult { .. }
             ) && state.locals.slot(name).is_some()
                 && !pending.protects_local(state, name) =>
             {
@@ -3840,7 +3914,7 @@ fn execute_execution_statement_leaf_paths(
         && matches!(
             statement,
             ProgramStatement::Call { .. }
-                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
                 | ProgramStatement::While { .. }
                 | ProgramStatement::ForStep { .. }
@@ -4257,11 +4331,11 @@ fn execute_execution_statement_leaf_paths(
             }
             paths
         }
-        ProgramStatement::CallAssign {
+        ProgramStatement::CallConstruct {
             target,
             function_name,
             arguments,
-        } => execute_program_call_assign_paths(
+        } => execute_program_call_construct_paths(
             state,
             target,
             function_name,
@@ -4291,36 +4365,81 @@ fn execute_execution_statement_leaf_paths(
             function_name,
             arguments,
             result_type,
+            result_aggregate_layout,
             result_pointee_constant,
             callee,
         } => {
-            let mut paths = execute_program_call_paths(
-                state,
-                Some(*call),
-                function_name,
-                callee.as_ref(),
-                arguments,
-                assumptions,
-                execution_context,
-                budget,
-            )?;
+            if let Some(expected) = result_aggregate_layout {
+                let actual = execution_context
+                    .environment
+                    .get_function(function_name)
+                    .and_then(|function| function.return_aggregate_layout());
+                if actual != Some(expected) {
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
+                        Vec::new().into(),
+                        Vec::new(),
+                    )]);
+                }
+            }
+            let mut paths = if function_name == "realloc" && callee.is_none() {
+                if execution_context
+                    .environment
+                    .selected_call_contract
+                    .is_some()
+                {
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
+                            "step(Contract) requires a function-pointer call".into(),
+                        )),
+                        Vec::new().into(),
+                        Vec::new(),
+                    )]);
+                }
+                execute_program_realloc_result_paths(
+                    state,
+                    *result_type,
+                    arguments,
+                    assumptions,
+                    budget,
+                )?
+            } else {
+                execute_program_call_paths(
+                    state,
+                    Some(*call),
+                    function_name,
+                    callee.as_ref(),
+                    arguments,
+                    assumptions,
+                    execution_context,
+                    budget,
+                )?
+            };
             for path in &mut paths {
                 let Some(retained_value) = path.call_result.as_ref() else {
                     continue;
                 };
-                let value = retained_value.native().into_owned();
                 // The result has the callee's declared type, as it would
                 // assigned to a local of that type.
                 let value = match result_type {
+                    // The callee already formed a value of this scalar type.
+                    // An unchanged type keeps that producer, not an exported
+                    // and re-imported arithmetic tree.
+                    Some(program_type)
+                        if !program_type.is_pointer()
+                            && *program_type == retained_value.program_type() =>
+                    {
+                        retained_value.clone().into()
+                    }
                     Some(program_type) => {
                         match crate::kernel::functions::coerce_program_value_with_pointee_constant(
-                            value,
+                            retained_value.native().into_owned(),
                             *program_type,
                             *result_pointee_constant,
                             &mut path.obligations,
                             assumptions,
                         ) {
-                            Some(value) => value,
+                            Some(value) => retained_value.retain_checked_pointer(value),
                             None => {
                                 path.outcome =
                                     StatementOutcome::RuntimeError(RuntimeError::TypeMismatch);
@@ -4328,13 +4447,10 @@ fn execute_execution_statement_leaf_paths(
                             }
                         }
                     }
-                    None => value,
+                    None => retained_value.clone().into(),
                 };
                 if let StatementOutcome::Normal(state) = &mut path.outcome {
-                    state.set_retained_step_result(
-                        *call,
-                        retained_value.retain_checked_pointer(value),
-                    );
+                    state.set_retained_step_result(*call, value);
                 }
             }
             paths

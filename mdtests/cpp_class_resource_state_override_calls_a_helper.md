@@ -49,6 +49,7 @@ void Boxed::write(int v) {
     consumes before: cell(this->slot);
     produces after: cell(this->slot);
     ensures after.value == v;
+    ensures defined(this->slot);
 } by {
     unfold(before);
     step_until(function.exit);

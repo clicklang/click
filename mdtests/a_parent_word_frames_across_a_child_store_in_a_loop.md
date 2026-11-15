@@ -56,6 +56,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                 rewrite(gparent->rb_left == parent);
                 known();
             }
+            have defined(gparent->rb_left) by { normalize(); }
             mark before_store;
             step();
             mark after_store;
@@ -72,13 +73,11 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                 rewrite(parent == at(before_store, gparent->rb_left));
                 known();
             }
+            have separate(loop(0).statement(0).footprint, memory(gparent->rb_left)) by {
+                normalize() using { at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right))); };
+            }
             have defined(gparent->rb_left) by {
-                have defined(gparent->rb_left) by {
-                    normalize() using {
-                        defined(at(before_store, gparent->rb_left));
-                    };
-                }
-                known();
+                preserve(separate(loop(0).statement(0).footprint, memory(gparent->rb_left)));
             }
             let c = fold(node_at(gparent->rb_left), { v: 0 });
             let s = fold(left_child(gparent), { v: 0 }, { child: c });

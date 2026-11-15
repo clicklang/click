@@ -131,6 +131,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     }
                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
                     step();
+                    step();
                     have p == xid by { known(); }
                     step();
                     solve();

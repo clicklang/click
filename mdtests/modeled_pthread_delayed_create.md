@@ -47,6 +47,7 @@ int32 run(struct cell *p) {
     step();
     step();
     step();
+    step();
     branch {
         step();
         solve();

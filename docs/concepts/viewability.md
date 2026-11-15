@@ -6,6 +6,10 @@ function argument, or under a quantifier without silently adding a validity
 condition. In particular, `p[k] == p[k]` is true without granting any right to
 read `p[k]` in C.
 
+A pure `viewable(p[lo..hi])` fact establishes live storage, not initialized
+contents. It cannot by itself establish `defined(p[i])`, even for an index
+proved inside the range.
+
 Use `defined(p[k])` to claim that the typed read is valid at that point.
 This checks bounds, lifetime, and initialization. A value equality does not
 prove validity: even `p[k] == 7` cannot initialize fresh heap memory. An

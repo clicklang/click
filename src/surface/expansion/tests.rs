@@ -1605,7 +1605,7 @@ int32 caller(int32 x) {
     )
     .expect("the call should expand with its consumed precondition");
     // The call retains an explicit proof of its known precondition.
-    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
     assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the call steps should check");
 }
@@ -1648,7 +1648,7 @@ int32 caller(struct box* p, int32 x) {
     )
     .expect("the memory-reading precondition should expand");
     // The memory-reading prerequisite retains its explicit proof.
-    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
     assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the condition and its ambient view should verify normally");
@@ -1762,10 +1762,10 @@ int32 caller() {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have at(region(2).entry, c(result)) == 0 by {
+    have at(statement(2).entry, c(result)) == 0 by {
         known();
     }
-    have result == at(region(2).entry, c(result)) by {
+    have result == at(statement(2).entry, c(result)) by {
         normalize();
     }
     known();
@@ -2513,8 +2513,10 @@ int32 set_then_read(int32 p[], int32 value) {
         step();
         step();
         step();
+        step();
     }
     ensures result == value by {
+        step();
         step();
         step();
         step();

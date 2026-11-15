@@ -43,7 +43,7 @@ void cycle(int32* (*acquire)(int32*), void (*release)(int32*, int32*), int32* po
     owns Available(pool);
 } by {
     step();
-    step(Acquire);
+    step(Acquire); step();
     if c(cell) != 0 {
         unfold(Acquisition(pool, c(cell)));
         unfold(Unavailable(pool, c(cell)));

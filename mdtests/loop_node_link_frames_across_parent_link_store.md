@@ -149,6 +149,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(4).footprint, memory(sid->left)));
                                     }
                                     have iid->right == sid;
+                                    have defined(iid->right) by { rewrite(iid == tmp2); normalize(); }
                                     mark before_parent_store;
                                     have separate(memory(parent->right), memory(sid->right)) by known();
                                     have separate(memory(parent->right), memory(iid->left)) by known();
@@ -198,6 +199,9 @@ void rotate(struct node* parent) {
                                     }
                                     have separate(loop(0).statement(5).footprint, memory(iid->right)) by {
                                         normalize() using { separate(memory(parent->right), memory(iid->right)); };
+                                    }
+                                    have defined(iid->right) by {
+                                        preserve(separate(loop(0).statement(5).footprint, memory(iid->right)));
                                     }
                                     have iid->right == at(before_parent_store, iid->right) by {
                                         preserve(separate(loop(0).statement(5).footprint, memory(iid->right)));

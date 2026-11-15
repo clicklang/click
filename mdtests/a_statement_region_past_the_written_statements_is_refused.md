@@ -25,7 +25,7 @@ int32 probe(int32 x) {
     requires x < 10;
     ensures result == x + 1;
 } by {
-    step(); step();
+    step(); step(); step();
     have at(statement(0).call(f, 1).exit, y) == x + 1 by solve();
     solve();
 }
