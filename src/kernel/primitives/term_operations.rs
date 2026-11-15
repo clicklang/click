@@ -5983,6 +5983,14 @@ fn listed_premise_holds_with(
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
     proposition_holds_without_facts(premise)
+        // Instantiating an Integer theorem preserves a constant arithmetic
+        // DAG such as `0 == 0 + 0`, while a written citation may lower to
+        // `true`. Both denote the same ground fact. The evaluator rejects
+        // symbolic operands from cached shape flags and uses only the named
+        // expression's shared DAG, never the available-fact collection.
+        || matches!(premise, Proposition::ConditionIs(condition, expected)
+            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition)
+                == Some(*expected))
         || holds_by_format_range(premise)
         || available(premise)
         || mirrored_equality(premise).is_some_and(|mirrored| available(&mirrored))
@@ -6000,9 +6008,44 @@ mod integer_equality_citation_tests {
     use super::*;
 
     #[test]
+    fn listed_integer_constant_arithmetic_is_available_without_facts() {
+        let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+        let sum: SharedIntegerTerm = IntegerTerm::Add(zero.clone(), zero.clone()).into();
+        let equality = ConditionTerm::IntegerEqual(zero.clone(), sum);
+        assert!(listed_premise_holds(
+            &Proposition::ConditionIs(equality.clone(), true),
+            |_| false
+        ));
+        assert!(!listed_premise_holds(
+            &Proposition::ConditionIs(equality, false),
+            |_| false
+        ));
+        let symbolic = ConditionTerm::IntegerEqual(
+            zero.clone(),
+            IntegerTerm::Variable(Variable(931_001)).into(),
+        );
+        assert!(!listed_premise_holds(
+            &Proposition::ConditionIs(symbolic, true),
+            |_| false
+        ));
+        let undefined = ConditionTerm::IntegerEqual(
+            IntegerTerm::truncating_quotient(
+                IntegerTerm::constant_i64(1),
+                IntegerTerm::constant_i64(0),
+            )
+            .into(),
+            zero,
+        );
+        assert!(!listed_premise_holds(
+            &Proposition::ConditionIs(undefined, true),
+            |_| false
+        ));
+    }
+
+    #[test]
     fn integer_equality_mirroring_preserves_polarity_and_exact_operands() {
-        let left: SharedIntegerTerm = IntegerTerm::constant_i64(7).into();
-        let right: SharedIntegerTerm = IntegerTerm::constant_i64(9).into();
+        let left: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_011)).into();
+        let right: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_012)).into();
         for polarity in [true, false] {
             let source = Proposition::ConditionIs(
                 ConditionTerm::IntegerEqual(left.clone(), right.clone()),

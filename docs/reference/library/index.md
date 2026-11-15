@@ -732,6 +732,117 @@ axiom add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `integer::le_antisymmetric`
+
+```click
+axiom le_antisymmetric(a: Integer, b: Integer) {
+    requires a <= b;
+    requires b <= a;
+    ensures a == b;
+}
+```
+
+**Meaning:** Opposite non-strict Integer bounds imply equality.
+
+**Kind:** trusted axiom.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::le_substitute`
+
+```click
+theorem le_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c == a;
+    requires d == b;
+    ensures c <= d by { normalize() using { a <= b; c == a; d == b; }; }
+}
+```
+
+**Kind:** proved theorem. These congruence and substitution laws keep affine
+composition explicit, including applications whose concrete equality guards
+evaluate to `true`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::equal_substitute`
+
+```click
+theorem equal_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a == b;
+    requires c == a;
+    requires d == b;
+    ensures c == d by { normalize() using { a == b; c == a; d == b; }; }
+}
+```
+
+**Kind:** proved theorem. These congruence and substitution laws keep affine
+composition explicit, including applications whose concrete equality guards
+evaluate to `true`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::equal_difference`
+
+```click
+theorem equal_difference(a: Integer, b: Integer) {
+    requires a == b;
+    ensures a - b == 0 by { rewrite(a, b); normalize(); }
+}
+```
+
+**Kind:** proved theorem. These congruence and substitution laws keep affine
+composition explicit, including applications whose concrete equality guards
+evaluate to `true`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::equal_add`
+
+```click
+theorem equal_add(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a == b;
+    requires c == d;
+    ensures a + c == b + d by { normalize() using { a == b; c == d; }; }
+}
+```
+
+**Kind:** proved theorem. These congruence and substitution laws keep affine
+composition explicit, including applications whose concrete equality guards
+evaluate to `true`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::equal_multiply`
+
+```click
+theorem equal_multiply(a: Integer, b: Integer, factor: Integer) {
+    requires a == b;
+    ensures a * factor == b * factor by { normalize() using { a == b; }; }
+}
+```
+
+**Kind:** proved theorem. These congruence and substitution laws keep affine
+composition explicit, including applications whose concrete equality guards
+evaluate to `true`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::equal_le`
+
+```click
+theorem equal_le(a: Integer, b: Integer) {
+    requires a == b;
+    ensures a <= b by { rewrite(a, b); normalize(); }
+}
+```
+
+**Kind:** proved theorem. These congruence and substitution laws keep affine
+composition explicit, including applications whose concrete equality guards
+evaluate to `true`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `integer::round_down_le`
 
 ```click

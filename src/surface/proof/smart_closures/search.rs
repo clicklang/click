@@ -41,7 +41,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_arithmetic_using");
-        if let Some(proof) = Self::try_integer_add_le_using(search_input, premises)? {
+        if let Some(proof) = Self::try_integer_composition_using(search_input, premises)? {
             return Ok(proof);
         }
         if let Some(proof) = Self::try_unsigned_order_step_using(search_input, premises) {
@@ -67,52 +67,59 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
     }
 
-    /// Stage one of ordinary arithmetic expansion: one addition of two
-    /// explicitly selected Integer bounds becomes a named law application.
-    /// Other arithmetic remains on the existing planner routes.
-    fn try_integer_add_le_using(
+    /// Construct ordinary proofs of the selected Integer composition plan.
+    /// Unsupported rule families retain their existing arithmetic routes.
+    fn try_integer_composition_using(
         search_input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_integer_add_le_using");
-        let [first, second] = premises else {
+        crate::kernel::search::record_discovery("try_integer_composition_using");
+        let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
+        else {
             return Ok(None);
         };
-        if !matches!(
-            search_input.goal(),
-            Some(Proposition::ConditionIs(
-                ConditionTerm::IntegerLessEqual(_, _),
-                true
-            ))
-        ) || !matches!(
-            search_input.surface_goal(),
-            Some(ClickProposition::Comparison {
-                left: ContractExpression::Add(_, _),
-                operator: ComparisonOperator::LessEqual,
-                ..
-            })
-        ) {
+        if integer_composition::parts(goal).is_none() {
             return Ok(None);
         }
-        let Some((a, ComparisonOperator::LessEqual, b)) = integer_surface_ordered_parts(first)
+        let kernels = premises
+            .iter()
+            .map(|surface| {
+                search_input.lower_cited_surface_proposition(surface, "Integer composition premise")
+            })
+            .collect::<Result<Vec<_>, ClickError>>()?;
+        if kernels
+            .iter()
+            .any(|kernel| integer_composition::parts(kernel).is_none())
+        {
+            return Ok(None);
+        }
+        let pairs = premises
+            .iter()
+            .enumerate()
+            .map(|(index, surface)| {
+                let kernel = kernels[index].clone();
+                if !search_input
+                    .facts()
+                    .listed_premise_available(&kernel, &[], false)
+                {
+                    return Err(search_input.step_error(format!(
+                        "`solve() using` premise {index} is not exactly available"
+                    )));
+                }
+                Ok((kernel, surface.clone()))
+            })
+            .collect::<Result<Vec<_>, ClickError>>()?;
+        let kernels = pairs
+            .iter()
+            .map(|(kernel, _)| kernel.clone())
+            .collect::<Vec<_>>();
+        let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &kernels)
+            .and_then(ArithmeticPlan::integer_affine)
         else {
             return Ok(None);
         };
-        let Some((c, ComparisonOperator::LessEqual, d)) = integer_surface_ordered_parts(second)
-        else {
-            return Ok(None);
-        };
-        let candidate = search_input
-            .driver()
-            .apply_step(ProofStep::ApplyTheoremUsing {
-                application: TheoremApplication {
-                    name: "click::integer::add_le".into(),
-                    arguments: vec![a, b, c, d],
-                },
-                premises: premises.to_vec(),
-            });
-        Ok(attempt::candidate_outcome(candidate)?.filter(|proof| proof.is_complete()))
+        Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal)
     }
 
     /// The fact `lower <u upper` as a proof that has it in that spelling,
@@ -1196,6 +1203,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         integer_candidates.retain(|premise| !native(premise));
 
         let spellings = SpellingCache::default();
+        // Prefer a direct composition before introducing a negated goal.
+        // Refutation remains the fallback for strictness, ranges, and the
+        // other rules outside the ordinary composition fragment.
+        if goal_values.is_empty()
+            && integer_composition::parts(goal).is_some()
+            && candidates
+                .iter()
+                .all(|premise| integer_composition::parts(premise).is_some())
+            && let Some(direct) =
+                plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &integer_candidates)
+                    .and_then(ArithmeticPlan::integer_affine)
+            && let Spelling::Spelled(pairs, _) = search_input.spell_refutation(
+                &direct,
+                &integer_candidates,
+                &candidates,
+                spelled,
+                surface_goal,
+                &spellings,
+            )
+            && let Some(proof) =
+                Self::apply_integer_composition(search_input, &direct, &pairs, surface_goal)?
+        {
+            return Ok(Some(proof));
+        }
         let first = match plan(&integer_candidates, &[]) {
             IntegerRefutation::Proved {
                 certificate,
@@ -1903,7 +1934,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let replacement = match &click_type {
-            ClickType::Resource => return Ok(None),
+            ClickType::Function { .. } | ClickType::Resource => return Ok(None),
             ClickType::Integer | ClickType::Algebraic(_) => {
                 ContractExpression::Binding(choice_name.clone())
             }
@@ -3111,10 +3142,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ArithmeticEngine::IntegerAffine,
                 ArithmeticEngine::IntegerRefutation,
             ] {
-                if let Some(plan) =
-                    plan_arithmetic(engine, goal, &kernels).and_then(ArithmeticPlan::integer_affine)
-                    && let Some(certificate) =
-                        integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
+                let Some(plan) = plan_arithmetic(engine, goal, &kernels)
+                    .and_then(ArithmeticPlan::integer_affine)
+                else {
+                    continue;
+                };
+                if let Some(proof) = Self::apply_integer_composition(
+                    search_input,
+                    &plan,
+                    &anchored_pairs,
+                    surface_goal,
+                )? {
+                    return Ok(Some(proof));
+                }
+                if let Some(certificate) =
+                    integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
                     && let Ok(proof) =
                         search_input
                             .driver()
@@ -9712,7 +9754,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Some(closed);
             }
         }
-        if let Ok(Some(closed)) = Self::try_integer_add_le_using(&proof, surfaces) {
+        if let Ok(Some(closed)) = Self::try_integer_composition_using(&proof, surfaces) {
             return Some(closed);
         }
         // A definedness goal is left to the typed candidates and the

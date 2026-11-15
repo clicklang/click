@@ -64,6 +64,9 @@ current ledger rather than installing a saved state. While workers are pending,
 parent lock and unlock freshen the protected observation, so an old value cannot
 survive a possible worker update. No new keyword or call syntax is introduced.
 
-The remaining functional claim is the exact count. This safety proof does not
-connect two completed workers to two conserved increments, and does not assign
-shared semantics to sequential `Count`.
+The exact-count proof has since landed in `mutex_counter.click`: the protected
+control owns contribution and credit population authorities; each worker spends
+one credit and contributes one increment. The parent derives two after both
+joins. The [probe overview](README.md) records its positive and hostile controls.
+This extends the safety protocol above without assigning shared semantics to
+sequential `Count`.

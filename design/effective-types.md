@@ -1,12 +1,14 @@
 # Effective types: checking strict aliasing in the kernel
 
-Status: approved 2026-10-16: the principle and the undecidable-position rule
-in [Decisions](#decisions).
+Status: implemented, with the permanent optimizing-build
+`-fno-strict-aliasing` decision in [Decisions](#decisions). The initial hole
+and staging below describe the historical baseline, not a fresh false
+acceptance on current master.
 The maintainer chose a kernel check over a frontend refusal the same day. This is the
 prerequisite for one optimization level per project with `-O2` as the default
 ([optimization level](../docs/reference/cli/import.md#optimization-level)).
 
-## The hole, as it exists on master
+## Historical hole at `ea081fe3`
 
 At `-O2` without `-fno-strict-aliasing`, GCC assumes that an object is
 accessed only through a type compatible with its own, up to signedness and
@@ -14,16 +16,18 @@ qualifiers, or through a character type (C11 6.5p7). The kernel checks memory
 accesses by width and scalar layout only, so master `ea081fe3` verifies both
 of these:
 
-| Probe | Source | Verifies today | Should be |
+| Probe | Source | Verified at that baseline | Intended result |
 | --- | --- | --- | --- |
 | rank | `long long read(long *p) { void *v = p; long long *q = v; return *q; }` | yes | refuse the load |
 | struct | `struct a { int x; }; struct b { int y; };` then `pb->y` where `pb` came from a `struct a *` through `void *` | yes, with `result == pa->x` | refuse the load |
 | narrow | `*(unsigned short *)(void *)int_ptr` | no: width mismatch | refuse (unchanged) |
 | bytes | `*(const uint32_t *)(const void *)u8_buf` | no: reached as a missing 4-cell view | refuse with the aliasing reason |
 
-Today this is not unsound. A project without an option profile passes no
-`-O` flag, so GCC builds it at `-O0`, and the one optimizing profile requires
-`-fno-strict-aliasing`. It becomes unsound when `-O2` becomes the default.
+At that baseline, projects without an option profile used `-O0` and the
+optimizing profile required `-fno-strict-aliasing`. Enabling `-O2` without
+that restriction would expose the gap. The delivered optimizing pipeline
+keeps `-fno-strict-aliasing`; the partial effective-type check is not a
+justification for removing it.
 
 Direct `T *` to `U *` casts are already refused by the frontend. The hole is
 the `void *` round trip. The kernel keeps the pointer unchanged across it, and

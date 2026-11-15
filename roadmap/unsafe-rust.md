@@ -84,7 +84,7 @@ from, unless Click adopts Tree Borrows' rule for it.
 
 ## Dependencies
 
-- The shared [object and memory laws](../design/cpp-object-model.md#decisions)
+- The shared [object and memory laws](../design/cpp-object-model.md#decisions-and-scope)
   and [current native-interface evidence](../design/object-model-current-audit.md#native-interface-evidence-matrix)
   constrain this work.
 - The loaded-pointer representation (pointers read from memory named by the

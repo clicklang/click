@@ -32,7 +32,3 @@ names the actual checked byte read without depending on an unnamed MIR local.
 The name retains that value as compiler temporaries leave scope. Both ports
 share the contract, negative-obligation, verify/profile, expansion, audit, and
 live extraction checks.
-
-This checkpoint advances original source-and-contract coverage to 16/16
-(100%), including five separate proof ports. Frozen-sidecar compatibility
-remains 11/16 (68.75%); default switching and legacy retirement remain open.

@@ -2,6 +2,67 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+#[test]
+fn full_and_concise_reports_keep_named_pointer_prerequisites() {
+    use crate::kernel::{Pointer, PointerValue, ProgramType, Variable};
+    use crate::surface::proof_diagnostics::{
+        ProofDiagnosticOrigin, ProofDiagnosticState, ProofFailureDiagnostic, render::SnapshotLabels,
+    };
+    use std::sync::Arc;
+
+    struct NamedPointers {
+        node: Pointer,
+        identity: Pointer,
+    }
+    impl ProofDiagnosticState for NamedPointers {
+        fn kernel_goal(&self) -> Option<&Proposition> {
+            None
+        }
+        fn premises(&self, _: usize) -> Vec<&Proposition> {
+            Vec::new()
+        }
+        fn premise_count(&self) -> usize {
+            0
+        }
+        fn register_names(&self, labels: &mut SnapshotLabels) {
+            labels.immutable_pointer_name(&self.node, "node");
+            labels.immutable_pointer_name(&self.identity, "identity");
+        }
+    }
+    let names = NamedPointers {
+        node: Pointer::symbolic(Variable(990_101)),
+        identity: Pointer::symbolic(Variable(990_102)),
+    };
+    let pointer = |p: &Pointer| PointerValue::new(p.clone(), ProgramType::Int32Pointer);
+    let requirement = Proposition::ConditionIs(
+        ConditionTerm::PointerValueEqual(
+            Box::new(pointer(&names.node)),
+            Box::new(pointer(&names.identity)),
+        ),
+        true,
+    );
+    let error = ClickError::with_diagnostic(
+        "a generated prerequisite has no Surface spelling",
+        ProofFailureDiagnostic {
+            failing_path: None,
+            checks: None,
+            origin: ProofDiagnosticOrigin {
+                stage: "proof step".into(),
+                location: "tactic 4".into(),
+                source_tactic_path: None,
+            },
+            claim_label: "link.contract".into(),
+            reason: "a generated prerequisite has no Surface spelling".into(),
+            state: Some(Arc::new(names)),
+        },
+    )
+    .with_unresolved_requirement(&ProofObligation::verification_condition(requirement));
+    for report in [error.concise_report(), error.report(), error.report()] {
+        assert!(report.contains("goal: node == identity"), "{report}");
+        assert!(!report.contains("<pointer"), "{report}");
+    }
+}
+
 fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, trace_goal: &str) {
     let ordinary = verify_c_sources(source, &[("access.c", c)])
         .unwrap_err()
@@ -3745,7 +3806,12 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
                 .expect("accepted transport retains its trace");
             // The target is already known: its retained proof is an ordinary
             // lookup, not a legacy transport node with two checked operands.
-            assert!(trace.contains("tactic 2: transport"), "{trace}");
+            let expected = if suffix.is_empty() {
+                "have p[0] == 7 (from `transport`)"
+            } else {
+                "transport"
+            };
+            assert!(trace.contains(&format!("tactic 2: {expected}")), "{trace}");
             assert!(!trace.contains("checked transport target:"), "{trace}");
             let focused = accepted_proof_trace(
                 &|_, path| {
@@ -3757,7 +3823,10 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
                 Some(&SourcePosition::new(3, 1)),
             )
             .expect("the written transport source occurrence remains traceable");
-            assert!(focused.contains("tactic@3: transport"), "{focused}");
+            assert!(
+                focused.contains(&format!("tactic@3: {expected}")),
+                "{focused}"
+            );
             assert!(!focused.contains("checked transport target:"), "{focused}");
         });
     }
@@ -3789,7 +3858,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
             let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
                 .expect("accepted transport retains its trace");
             let chosen = "chosen: transport(at(saved, p[0] == 7), p[0] == 7) using {";
-            assert_eq!(trace.contains(chosen), elided, "{trace}");
+            assert!(!trace.contains(chosen), "{trace}");
             assert!(
                 trace.contains("tactic 3: step (from `step_until`)"),
                 "{trace}"
@@ -3798,9 +3867,15 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
                 trace.contains("have true == true (from `implicit tail`)"),
                 "{trace}"
             );
-            // The written step, and the transport whose own name heads it.
+            // Bare transport expands to an ordinary have; explicit legacy
+            // transport retains its written node. Both retain the source path.
             assert!(trace.contains("tactic 0: step\n"), "{trace}");
-            assert!(trace.contains("tactic 2: transport\n"), "{trace}");
+            let expected = if elided {
+                "tactic 2: have p[0] == 7 (from `transport`)\n"
+            } else {
+                "tactic 2: transport\n"
+            };
+            assert!(trace.contains(expected), "{trace}");
         });
     }
     let source = r#"verifying "f.c";

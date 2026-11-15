@@ -152,6 +152,8 @@ MDTEST_FILTER=rb_produces_through_the_root_cell RUST_MIN_STACK=8388608 \
   -E 'test(=gate_tests::mdtests::mdtests)'
 ```
 
+The baseline failure was also reproduced on upstream `2175760b9` on
+2026-11-15 in 0.85 seconds, without changing verifier, C or sidecar.
 The baseline audit first encountered it in the `MDTEST_FILTER=produces_` group; all
 other ten selected fixtures passed. The full C, resources and proof remain in
 `mdtests/rb_produces_through_the_root_cell.md`. The body stores `node` in
@@ -166,7 +168,7 @@ goal: at(<state A>, root->rb_node) == <pointer A>
 `<state A>` is the memory after the store to `root->rb_node`; the report does
 not define `<pointer A>` in its legend. This prevents stating the generated
 link from the report (`unclear-trace` under the tracing procedure). The
-reproduction establishes a current tooling/composition failure, not a false
+baseline reproduction established a tooling/composition failure, not a false
 acceptance or a root cause in pointer designation. No new bug file or issue
 was filed. Keep this exact fixture as the small acceptance witness rather
 than substituting a full rbtree census.
@@ -204,6 +206,17 @@ source/scaling/documentation/Rust run has 1,915 passes and nine Rust tests that
 stop during frontend setup because this environment lacks the pinned Charon
 bundle; those nine do not reach verification. The full nightly suite was not
 run. The focused proof-mode regression above passes separately.
+### Report naming follow-up
+
+Full error reports now format an unresolved prerequisite with the same retained
+proof naming context as the rest of the diagnostic and the concise CLI report.
+The original report had discarded that context for the prerequisite, printing
+`<pointer A>` even though the match binder `identity` was retained. The fact is
+expressible as `root->rb_node == identity`; its explicit rewrite proof checks.
+This report fix is independent of the prerequisite reconstruction repair above;
+it changes no proof checking or synthesis. The repaired fixture is the
+acceptance witness for the fold behavior.
+
 
 ## Modular byte-output composition
 

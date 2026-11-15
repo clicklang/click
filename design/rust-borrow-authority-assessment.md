@@ -3,9 +3,14 @@
 This assessment records the production borrow-authority boundary beyond the
 [completed Linux frontend milestone](rust-charon-assessment.md#completed-linux-frontend-delivery). The independently checked checksum
 proofs are complete within their published contracts. Borrow authority remains
-an architecture requirement, with the following production boundary.
+an architecture requirement. The initial call-scoped evidence below predates
+the implemented local scalar leases described under
+[Source-bound scalar lease execution](#source-bound-scalar-lease-execution).
+Use [Remaining local-reference work](#remaining-local-reference-work) for the
+current residual scope, rather than the older statements that all local
+reference identities are absent.
 
-## Current evidence after call-scoped integration
+## Initial evidence after call-scoped integration
 
 | Required case | Current evidence | What remains |
 | --- | --- | --- |

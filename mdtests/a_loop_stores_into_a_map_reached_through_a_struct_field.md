@@ -46,14 +46,22 @@ void mark_all(struct arena* arena) {
                 apply(click::separation::contains_element(arena->data, 0, arena->capacity, i)) using { 0 <= i; i < arena->capacity; };
             }
             have separate(memory(arena->data[i]), memory(*arena)) by { solve(); }
+            have contains(memory(*arena), memory(arena->capacity)) by { normalize(); }
+            have contains(memory(arena->data[i]), memory(arena->data[i])) by {
+                apply(click::separation::contains_refl(memory(arena->data[i])));
+            }
+            have separate(memory(arena->data[i]), memory(arena->capacity)) by {
+                apply(click::separation::separate_restrict(memory(arena->data[i]), memory(*arena), memory(arena->data[i]), memory(arena->capacity))) using {
+                    separate(memory(arena->data[i]), memory(*arena));
+                    contains(memory(arena->data[i]), memory(arena->data[i]));
+                    contains(memory(*arena), memory(arena->capacity));
+                };
+            }
             mark write;
             step();
-            transport(at(write, arena->capacity) == at(write, arena->capacity),
-                arena->capacity == at(write, arena->capacity)) using {
-                at(write, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
-                0 <= i;
-                i < at(write, arena->capacity);
-            };
+            have arena->capacity == at(write, arena->capacity) by {
+                known();
+            }
             step();
             solve();
         }
