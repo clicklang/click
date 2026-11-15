@@ -1404,8 +1404,11 @@ These still stay a temporary:
 
 - a call's result read more than once, so a `for` loop's `next` result is one
   and a proof sees it;
-- a borrow, unless its block's call takes it as an argument: `t = &mut x;
-  f(t)` is `f(&mut x)`, whose loan lasts the call;
+- a borrow, unless its one read in its block takes it whole: a call
+  argument (`t = &mut x; f(t)` is `f(&mut x)`, whose loan lasts the call), a
+  local's whole value (`let r = &mut x`), or a reborrow (`&mut *t` is the
+  borrow). A borrow of a place rooted at a local moves past statements that
+  do not name that local;
 - a slice;
 - a local that roots a place (`&t`, `t.f`, `t[i]`);
 - an enum `match` scrutinee, whose proof split names a local.

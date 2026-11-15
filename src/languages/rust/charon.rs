@@ -4740,27 +4740,32 @@ mod tests {
             .iter_mut()
             .find(|f| f.name == "borrowed_first")
             .unwrap();
+        // The field borrow is a statement's value or, passed to a call, the
+        // call's argument.
         let mut changed = false;
-        for statement in function
-            .mir
-            .as_mut()
-            .unwrap()
-            .blocks
-            .iter_mut()
-            .flat_map(|b| &mut b.statements)
-        {
-            if let S::Assign {
-                value:
-                    E::Borrow {
-                        value_type: Type::Reference { mutable, .. },
-                        place,
-                    },
-                ..
-            } = statement
-                && matches!(place.as_ref(), E::Field { .. })
-            {
-                *mutable = true;
-                changed = true;
+        for block in &mut function.mir.as_mut().unwrap().blocks {
+            let arguments = match &mut block.terminator {
+                T::Call { arguments, .. } => arguments.iter_mut().collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            let values = block
+                .statements
+                .iter_mut()
+                .filter_map(|statement| match statement {
+                    S::Assign { value, .. } => Some(value),
+                    _ => None,
+                })
+                .chain(arguments);
+            for value in values {
+                if let E::Borrow {
+                    value_type: Type::Reference { mutable, .. },
+                    place,
+                } = value
+                    && matches!(place.as_ref(), E::Field { .. })
+                {
+                    *mutable = true;
+                    changed = true;
+                }
             }
         }
         assert!(changed);
