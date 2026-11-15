@@ -1533,3 +1533,47 @@ fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
         "a loop that writes only `g` is crossed by a read of `h`"
     );
 }
+
+#[test]
+fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
+    use crate::kernel::{
+        BooleanOperandView, KernelTermImport, PureFunctionArgument, SharedPureApplication,
+    };
+    let memory = intern_memory(entry_memory());
+    let read = |name| {
+        MachineTerm::MemoryLoad(
+            memory.clone(),
+            Box::new(at(block(name), 0)),
+            LoadKind::Int32,
+        )
+    };
+    let source = ConditionTerm::BoolIf {
+        condition: Box::new(ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(MachineTerm::Binary {
+                format: MachineIntegerType::Int32,
+                op: crate::kernel::MachineBinaryOp::Add,
+                left: Box::new(read("global:g")),
+                right: Box::new(read("global:h")),
+            }),
+            right: Box::new(MachineTerm::constant(0)),
+        }),
+        then_condition: Box::new(ConditionTerm::BoolApplication(
+            SharedPureApplication::intern(
+                "opaque_dependency".into(),
+                vec![PureFunctionArgument::Value(ProgramValue::Int32(read(
+                    "local:f:i",
+                )))],
+            ),
+        )),
+        else_condition: Box::new(ConditionTerm::Constant(false)),
+    };
+    let root = KernelTermImport::default().condition(&source);
+    let mut native = Vec::new();
+    let mut shared = Vec::new();
+    collect_condition_reads(&source, &mut native);
+    collect_condition_operand_reads(BooleanOperandView::Shared(&root), &mut shared);
+    assert_eq!(native.len(), 2);
+    assert_eq!(shared, native);
+}

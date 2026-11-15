@@ -92,6 +92,46 @@ pub(crate) fn collect_fold_variables(
     variables.extend(result.iter().copied());
 }
 
+/// Boolean roots use the same scoped child summaries as folds and matches.
+/// Native compatibility leaves keep each mode's distinct dependency rules.
+pub(crate) fn collect_boolean_variables(
+    condition: crate::kernel::BooleanOperandView<'_>,
+    mode: FoldVariableRead,
+    variables: &mut BTreeSet<Variable>,
+) {
+    if let crate::kernel::BooleanOperandView::Shared(root) = condition {
+        variables.extend(
+            common_variables(root, mode, &mut Default::default())
+                .iter()
+                .copied(),
+        );
+        return;
+    }
+    let condition = condition.native_leaf().expect("native condition");
+    let mut seen = SeenTerms::default();
+    match mode {
+        FoldVariableRead::IntegerFree => {
+            collect_condition_integer_variables(condition, variables, &mut seen)
+        }
+        FoldVariableRead::ExpressionFree => {
+            collect_condition_bitvector_variables(condition, variables)
+        }
+        FoldVariableRead::MachineCapture => {
+            collect_condition_capture_variables(condition, variables, &mut seen)
+        }
+        FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {
+            let mut integers = BTreeSet::new();
+            let mut machines = BTreeSet::new();
+            collect_condition_binder_variables(condition, &mut integers, &mut machines, &mut seen);
+            variables.extend(if mode == FoldVariableRead::IntegerBinders {
+                integers
+            } else {
+                machines
+            });
+        }
+    }
+}
+
 pub(super) fn common_variables(
     root: &KernelTerm,
     mode: FoldVariableRead,
@@ -368,6 +408,45 @@ mod tests {
             }
         }
         result
+    }
+
+    #[test]
+    fn standalone_boolean_dependencies_preserve_collection_modes() {
+        use crate::kernel::BooleanOperandView as V;
+        let comparison = ConditionTerm::IntegerEqual(
+            IntegerTerm::Variable(Variable(970_001)).into(),
+            IntegerTerm::Variable(Variable(970_002)).into(),
+        );
+        for source in [
+            comparison.clone(),
+            ConditionTerm::BoolIf {
+                condition: Box::new(ConditionTerm::Variable(Variable(970_003))),
+                then_condition: Box::new(comparison),
+                else_condition: Box::new(ConditionTerm::BoolApplication(
+                    SharedPureApplication::intern(
+                        "boolean_dependency_call".into(),
+                        vec![PureFunctionArgument::Value(ProgramValue::Int32(
+                            MachineTerm::Variable(Variable(970_004)),
+                        ))],
+                    ),
+                )),
+            },
+        ] {
+            let root = KernelTermImport::default().condition(&source);
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::ExpressionFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let mut native = BTreeSet::new();
+                let mut common = BTreeSet::new();
+                collect_boolean_variables(V::Native(&source), mode, &mut native);
+                collect_boolean_variables(V::Shared(&root), mode, &mut common);
+                assert_eq!(common, native, "{mode:?}");
+            }
+        }
     }
 
     #[test]

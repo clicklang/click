@@ -6273,6 +6273,35 @@ pub(crate) fn program_condition_fact_memories(fact: &Proposition) -> Vec<Memory>
         .collect()
 }
 
+fn collect_condition_operand_memories(
+    condition: crate::kernel::BooleanOperandView<'_>,
+    memories: &mut Vec<SharedMemory>,
+) {
+    condition.for_each_dependency_leaf(|leaf| {
+        if let crate::kernel::BooleanOperandView::Shared(root) = leaf
+            && matches!(
+                root.node(),
+                crate::kernel::KernelTermNode::BoolLiteral(_)
+                    | crate::kernel::KernelTermNode::Variable(_)
+                    | crate::kernel::KernelTermNode::Call { .. }
+            )
+        {
+            return;
+        }
+
+        if let Some((_, _, operands)) = leaf.comparison() {
+            let mut seen = BTreeSet::new();
+            for operand in operands {
+                collect_operand_memories(operand, memories, &mut seen);
+            }
+        } else {
+            // In particular preserve the structural classifier's restricted
+            // Integer-comparison admission; do not turn this into a new rule.
+            collect_condition_memories(&leaf.native(), memories);
+        }
+    });
+}
+
 fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<SharedMemory>) {
     let mut collect_binary = |left: &MachineTerm, right: &MachineTerm| {
         collect_bitvector_memories(left, memories);
@@ -6399,8 +6428,8 @@ fn collect_operand_memories(
                 if !memories.contains(memory) {
                     memories.push(memory.clone());
                 }
-            } else if let Some((condition, [left, right])) = operand.conditional() {
-                collect_condition_memories(&condition, memories);
+            } else if let Some((condition, [left, right])) = operand.conditional_view() {
+                collect_condition_operand_memories(condition, memories);
                 pending.push(right);
                 pending.push(left);
             } else if let Some((_, _, [left, right])) = operand.binary() {
@@ -8979,5 +9008,49 @@ mod retained_offset_evidence_tests {
     mod scaling_tests {
         use super::*;
         include!("../scaling_tests/kernel/memory_provenance/retained_offset_evidence_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod retained_boolean_dependency_tests {
+    use super::*;
+
+    #[test]
+    fn common_boolean_memories_keep_snapshot_order_and_call_opacity() {
+        use crate::kernel::{BooleanOperandView, KernelTermImport, SharedPureApplication};
+        let first = crate::kernel::intern_memory(Memory::new());
+        let second = crate::kernel::intern_memory(
+            Memory::new().with_block(PointerBlock::Concrete("boolean_memory".into()), 8),
+        );
+        let read = |memory| {
+            MachineTerm::MemoryLoad(
+                memory,
+                Box::new(Pointer::symbolic(Variable(970_010))),
+                LoadKind::Int32,
+            )
+        };
+        let source = ConditionTerm::BoolEqual(
+            Box::new(ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(read(first.clone())),
+                right: Box::new(read(second.clone())),
+            }),
+            Box::new(ConditionTerm::BoolApplication(
+                SharedPureApplication::intern(
+                    "opaque_memory_dependency".into(),
+                    vec![PureFunctionArgument::Value(ProgramValue::Int32(read(
+                        second.clone(),
+                    )))],
+                ),
+            )),
+        );
+        let root = KernelTermImport::default().condition(&source);
+        let mut native = Vec::new();
+        let mut common = Vec::new();
+        collect_condition_memories(&source, &mut native);
+        collect_condition_operand_memories(BooleanOperandView::Shared(&root), &mut common);
+        assert_eq!(native, vec![first, second]);
+        assert_eq!(common, native);
     }
 }

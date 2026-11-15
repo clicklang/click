@@ -234,11 +234,11 @@ changes before implementing them.
 | 8ac | Mixed-family argument adapters | Migrated Boolean/algebraic/float/pointer/numeric expressions no longer receive generic wrappers in calls. |
 | 8ad | Closure | Remove superseded adapters; validate nested combinations, Surface round trips, fact stability and scaling; account for every remaining legacy arm. |
 
-8a records the baseline inventory and authorized sequence in
+8a records the baseline inventory and authorized sequence in merged
 [PR #2801](https://github.com/clicklang/click/pull/2801). The docs-only gate
 passed all 44 documentation tests.
 
-8b adds borrowed Boolean operands and a borrowed machine-conditional view.
+8b (merged [PR #2805](https://github.com/clicklang/click/pull/2805)) adds borrowed Boolean operands and a borrowed machine-conditional view.
 Shape and branch-only readers in decision dispatch, interval checks, snapshot
 keys, syntax ordering and equality-graph admission no longer export the guard.
 Consumers that actually require native conditions keep an explicitly named
@@ -249,6 +249,21 @@ multi-size regression checks that inspecting growing guards does no export work
 beside unrelated arena terms. All 1,753 selected tests passed, including every
 scaling test and the Boolean, condition-reasoning, snapshot-key and equality-graph
 selections.
+
+8c gives standalone Boolean roots the existing five scoped variable-reader
+modes and walks shared Boolean connectives once for resource-read and snapshot
+dependencies. Comparison operands use the existing shared machine readers;
+Boolean calls stay opaque to these memory readers. Resource operand stacks
+preserve the native reader's first-occurrence order. Selected Integer-comparison
+leaves still use the existing native structural classifier, preserving its
+restricted admission rather than broadening memory discovery. This is an
+explicit selected-leaf compatibility boundary, not an export of the surrounding
+Boolean DAG. All 1,693 selected tests passed, including all scaling tests,
+resource tracking and variable collection. New regressions pin mode agreement,
+read/snapshot order, opaque-call behavior and shared-connective traversal work.
+After integrating upstream through `7a681179b` (including #2802 and #2804),
+all 1,729 integration selections passed, including every scaling test and the
+contract-claim tests.
 
 ### 8a inventory
 
