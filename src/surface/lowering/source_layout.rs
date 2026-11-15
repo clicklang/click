@@ -523,6 +523,49 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
+                    // A call region: `call(f, j)` names it, and a call
+                    // step's result is the state's step result of its number.
+                    match statement {
+                        ProgramStatement::CallResult {
+                            call,
+                            function_name,
+                            callee,
+                            ..
+                        } => {
+                            layout.calls.insert(statement_index);
+                            layout.call_numbers.insert(statement_index, *call);
+                            layout.step_regions.insert(*call, statement_index);
+                            if callee.is_none() {
+                                layout
+                                    .call_targets
+                                    .insert(statement_index, function_name.clone());
+                            }
+                        }
+                        ProgramStatement::Call {
+                            function_name,
+                            callee,
+                            ..
+                        } => {
+                            layout.calls.insert(statement_index);
+                            if callee.is_none() {
+                                layout
+                                    .call_targets
+                                    .insert(statement_index, function_name.clone());
+                            }
+                        }
+                        ProgramStatement::CallAssign {
+                            function_name,
+                            target,
+                            ..
+                        } => {
+                            layout.calls.insert(statement_index);
+                            layout.call_results.insert(statement_index, target.clone());
+                            layout
+                                .call_targets
+                                .insert(statement_index, function_name.clone());
+                        }
+                        _ => {}
+                    }
                     if let ProgramStatement::HeapAllocate { target, .. } = statement {
                         layout.call_results.insert(statement_index, target.clone());
                         layout.allocation_regions.insert(statement_index);
@@ -1130,9 +1173,35 @@ impl SourceExecutionLayout {
     ) -> Result<usize, String> {
         use crate::surface::{ProgramPointKind, SourcePathStep};
         let data = &self.data;
+        // `call(f, j)` and `call(j)` on their own count the function's
+        // calls, in the order they run.
+        match steps {
+            [SourcePathStep::Call(function, index)] => {
+                let calls = data
+                    .calls
+                    .iter()
+                    .filter(|region| data.call_targets.get(region) == Some(function))
+                    .collect::<Vec<_>>();
+                return calls.get(*index).map(|region| **region).ok_or_else(|| {
+                    format!(
+                        "this function calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                        calls.len()
+                    )
+                });
+            }
+            [SourcePathStep::AnyCall(index)] => {
+                return data.calls.iter().nth(*index).copied().ok_or_else(|| {
+                    format!(
+                        "this function makes {} call(s), so it has no `call({index})`",
+                        data.calls.len()
+                    )
+                });
+            }
+            _ => {}
+        }
         if data.source_statements.is_empty() {
             return Err(
-                "this function's source records no statements as written; name its points with `region(N)`"
+                "this function's source records no statements as written; name its points with `call(f, j)` or `region(N)`"
                     .into(),
             );
         }
@@ -1330,7 +1399,24 @@ impl SourceExecutionLayout {
     ) -> Option<Vec<crate::surface::SourcePathStep>> {
         use crate::surface::SourcePathStep;
         let data = &self.data;
-        let path = data.region_paths.get(&region)?;
+        // A call with no statement as written is named among the
+        // function's calls.
+        let Some(path) = data.region_paths.get(&region) else {
+            if !data.calls.contains(&region) {
+                return None;
+            }
+            let earlier = data.calls.range(..region);
+            let steps = vec![match data.call_targets.get(&region) {
+                Some(function) => SourcePathStep::Call(
+                    function.clone(),
+                    earlier
+                        .filter(|earlier| data.call_targets.get(earlier) == Some(function))
+                        .count(),
+                ),
+                None => SourcePathStep::AnyCall(earlier.count()),
+            }];
+            return (self.source_path_region(&steps, kind) == Ok(region)).then_some(steps);
+        };
         let mut steps = path
             .iter()
             .map(|index| SourcePathStep::Statement(*index as usize))

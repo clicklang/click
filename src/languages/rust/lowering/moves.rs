@@ -532,6 +532,7 @@ pub(super) fn lower(
                 arguments,
                 owned_arguments,
                 destination,
+                result,
                 ..
             } => {
                 let callee = cx
@@ -574,7 +575,20 @@ pub(super) fn lower(
                 }) {
                     return Err("owned call operand lacks transfer metadata".into());
                 }
-                let call = if let Type::Record { name } = &callee.return_type {
+                let call = if let Some(step) = result {
+                    // A call step: its successor reads the result as the
+                    // value of the expression that holds the call.
+                    ProgramStatement::CallResult {
+                        call: *step,
+                        function_name: function.clone(),
+                        arguments: arguments_values,
+                        result_type: scalar_type(&callee.return_type)
+                            .ok()
+                            .map(|scalar| scalar.to_kernel_type()),
+                        result_pointee_constant: false,
+                        callee: None,
+                    }
+                } else if let Type::Record { name } = &callee.return_type {
                     let flag = check(destination, name)?;
                     program_seq(
                         assertion(flag, false),

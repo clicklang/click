@@ -1762,6 +1762,7 @@ impl BodyAdapter<'_, '_> {
             destination: self.local(dest)?,
             target: target.index(),
             through_pointer: true,
+            result: None,
         })
     }
     fn operand(&self, op: &a::Operand) -> Result<E, String> {
@@ -2626,6 +2627,7 @@ impl BodyAdapter<'_, '_> {
                         destination: self.local(destination)?,
                         target: target.index(),
                         through_pointer: false,
+                        result: None,
                     });
                 }
                 self.adapter.assignment_operator_call(callee, ptr, call)?;
@@ -2800,6 +2802,7 @@ impl BodyAdapter<'_, '_> {
                         destination: self.local(dest)?,
                         target: target.index(),
                         through_pointer: false,
+                        result: None,
                     }
                 }
             }
@@ -3690,6 +3693,7 @@ pub(super) fn decode_crate(
         panics::assert_branches(&mut blocks);
         let mut locals = locals;
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
             name: name.clone(),
             return_type: adapter.ty(&f.signature.output).map_err(|error| {

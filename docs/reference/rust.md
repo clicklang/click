@@ -1233,8 +1233,13 @@ loop rules. Sidecars can declare `invariant`, memory/resource clauses, and numer
 `decreases` measures. Entry and preservation are separate obligations;
 arithmetic and indexing in the body retain Rust's panic-freedom checks.
 A decreasing measure proves termination through the existing loop checker.
-Charon locals with unique source names use those names in sidecars. Unnamed
-and ambiguous locals use collision-checked `__rust_mir_ID` identities from the
+Charon locals with unique source names use those names in sidecars. A
+compiler temporary that holds part of a source expression is put back into
+that expression, and a call nested in an expression, as in
+`or_zero(ok_if(x, true))`, is a call step whose result a proof names by its
+call, `call(result_values::ok_if, 0).result`
+(`charon_a_nested_call_result_is_named_by_its_call`). Other unnamed and
+ambiguous locals use collision-checked `__rust_mir_ID` identities from the
 locked artifact. These compiler identities can change when the artifact is refreshed.
 
 Conditions currently support scalar comparisons, boolean combinations,

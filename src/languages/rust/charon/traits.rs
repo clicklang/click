@@ -500,6 +500,7 @@ impl BodyAdapter<'_, '_> {
             destination: self.local(dest)?,
             target: target.index(),
             through_pointer: false,
+            result: None,
         })
     }
 
@@ -715,6 +716,7 @@ pub(super) fn wrap_object_coercions(
             destination: destination.clone(),
             target,
             through_pointer: false,
+            result: None,
         };
         // Blocks in order: packs after the first, the call, the unpacks.
         let first = blocks.len();

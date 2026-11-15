@@ -12447,11 +12447,7 @@ impl Parser {
                     break;
                 }
                 _ => {
-                    let function = self.expect_ident("called function")?;
-                    self.expect(Token::Comma)?;
-                    let index = self.expect_index("call index")?;
-                    self.expect(Token::RParen)?;
-                    steps.push(SourcePathStep::Call(function, index));
+                    steps.push(self.parse_call_step()?);
                     break;
                 }
             }
@@ -12473,9 +12469,35 @@ impl Parser {
         Ok(CodeRegionRef::Path(steps))
     }
 
+    /// The arguments of a `call` step after its `(`: `j)` for the `j`th
+    /// call of any function, or `f, j)` for the `j`th call of `f`. A Rust
+    /// sidecar writes `f` as its path, which arrives as the address of the
+    /// function the importer names.
+    fn parse_call_step(&mut self) -> Result<SourcePathStep, ClickError> {
+        if matches!(self.peek(), Some(Token::Number(_))) {
+            let index = self.expect_index("call index")?;
+            self.expect(Token::RParen)?;
+            return Ok(SourcePathStep::AnyCall(index));
+        }
+        if self.peek() == Some(&Token::Amp) && matches!(self.peek_next(), Some(Token::Ident(_))) {
+            self.position += 1;
+        }
+        let function = self.expect_ident("called function")?;
+        self.expect(Token::Comma)?;
+        let index = self.expect_index("call index")?;
+        self.expect(Token::RParen)?;
+        Ok(SourcePathStep::Call(function, index))
+    }
+
     fn parse_code_region_ref(&mut self) -> Result<CodeRegionRef, ClickError> {
         match self.next() {
             Some(Token::Ident(kind)) if kind == "function" => Ok(CodeRegionRef::Function),
+            // A function's `j`th call, counted among all its calls.
+            Some(Token::Ident(kind)) if kind == "call" && self.peek() == Some(&Token::LParen) => {
+                self.expect(Token::LParen)?;
+                let step = self.parse_call_step()?;
+                Ok(CodeRegionRef::Path(vec![step]))
+            }
             Some(Token::Ident(kind)) if kind == "loop" => {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("loop index")?;
@@ -15235,7 +15257,7 @@ impl Parser {
     /// Whether a `<region>.result` starts here: a `statement(...)` or
     /// `region(N)` region followed by `.result`. Read ahead only.
     fn looks_like_region_result(&mut self) -> bool {
-        if !matches!(self.peek_ident(), Some("statement" | "region"))
+        if !matches!(self.peek_ident(), Some("statement" | "region" | "call"))
             || self.peek_next() != Some(&Token::LParen)
         {
             return false;

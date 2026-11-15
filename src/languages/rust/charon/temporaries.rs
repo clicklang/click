@@ -46,6 +46,9 @@ pub(super) fn substitute_pure_values(
             }
         }
         terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(destination) = call_destination(&block.terminator) {
+            named.insert(destination.clone());
+        }
     }
     let substitutable = |name: &str| {
         temporaries.contains(name)
@@ -119,6 +122,149 @@ pub(super) fn substitute_pure_values(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// The local a call terminator assigns its result to, unless the call is
+/// already a call step.
+fn call_destination(terminator: &T) -> Option<&String> {
+    match terminator {
+        T::Call {
+            destination,
+            result: None,
+            ..
+        } => Some(destination),
+        _ => None,
+    }
+}
+
+/// Makes each call whose result only one later expression reads a call
+/// step: the call's `result` is a step number, and the read is
+/// `Expression::CallResult` of it, the value of the expression that holds
+/// the call. The destination must be a temporary of `temporaries` of scalar
+/// or enum type, assigned by nothing but this call and read once, in the call's
+/// successor, which only this call reaches. Every other call keeps its
+/// destination.
+pub(super) fn call_steps(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let mut reads = BTreeMap::<String, usize>::new();
+    let mut named = BTreeSet::<String>::new();
+    let mut assigned = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0usize; blocks.len()];
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            statement_uses(statement, &mut reads, &mut named);
+            if let S::Assign {
+                target: E::Local { name },
+                ..
+            } = statement
+            {
+                *assigned.entry(name.clone()).or_default() += 1;
+            }
+        }
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(destination) = call_destination(&block.terminator) {
+            *assigned.entry(destination.clone()).or_default() += 1;
+        }
+        for target in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(target) {
+                *count += 1;
+            }
+        }
+    }
+    let scalar = |name: &str| {
+        locals.iter().any(|local| {
+            local.name == name
+                && (local.value_type == super::super::schema::Type::Bool
+                    || local.value_type.integer_bits().is_some()
+                    || matches!(local.value_type, super::super::schema::Type::Enum { .. }))
+        })
+    };
+    let mut removed = BTreeSet::new();
+    let mut next_step = 0u32;
+    for index in 0..blocks.len() {
+        let T::Call {
+            function,
+            destination,
+            target,
+            through_pointer: false,
+            result: None,
+            ..
+        } = &blocks[index].terminator
+        else {
+            continue;
+        };
+        let (function, destination, target) = (function.clone(), destination.clone(), *target);
+        if !temporaries.contains(&destination)
+            || named.contains(&destination)
+            || reads.get(&destination) != Some(&1)
+            || assigned.get(&destination) != Some(&1)
+            || !scalar(&destination)
+            || target == index
+            || predecessors.get(target) != Some(&1)
+        {
+            continue;
+        }
+        let call = next_step;
+        let mut values = BTreeMap::from([(destination.clone(), E::CallResult { call, function })]);
+        let mut pending = Pending {
+            values: &mut values,
+            refused: Vec::new(),
+        };
+        let successor = &mut blocks[target];
+        for statement in &mut successor.statements {
+            for expression in statement_expressions_mut(statement) {
+                substitute(expression, &mut pending, true);
+            }
+            if let S::Assign { target, .. } = statement {
+                substitute_target(target, &mut pending);
+            }
+        }
+        for expression in terminator_expressions_mut(&mut successor.terminator) {
+            substitute(expression, &mut pending, true);
+        }
+        // Its one read is elsewhere: the call keeps its destination.
+        if !values.is_empty() {
+            continue;
+        }
+        if let T::Call { result, .. } = &mut blocks[index].terminator {
+            *result = Some(call);
+        }
+        next_step += 1;
+        removed.insert(destination);
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
+fn successors(terminator: &T) -> Vec<usize> {
+    match terminator {
+        T::Goto { target }
+        | T::Drop { target, .. }
+        | T::Call { target, .. }
+        | T::BoxNew { target, .. }
+        | T::BoxFree { target, .. } => vec![*target],
+        T::If {
+            then_target,
+            else_target,
+            ..
+        } => vec![*then_target, *else_target],
+        T::Switch {
+            cases, otherwise, ..
+        } => cases
+            .iter()
+            .map(|case| case.target)
+            .chain(*otherwise)
+            .collect(),
+        T::Return | T::Unreachable | T::Panic { .. } => Vec::new(),
+    }
+}
+
 /// Whether evaluating `value` has no effect and may move to a later point in
 /// its block with nothing between that changes what it reads.
 fn pure(value: &E) -> bool {
@@ -130,7 +276,8 @@ fn pure(value: &E) -> bool {
         | E::Boolean { .. }
         | E::NoneBox
         | E::Local { .. }
-        | E::FunctionAddress { .. } => true,
+        | E::FunctionAddress { .. }
+        | E::CallResult { .. } => true,
         E::IntegerFrom { value, .. }
         | E::Not { value }
         | E::BitwiseNot { value, .. }
@@ -235,13 +382,13 @@ fn terminator_expressions_mut(terminator: &mut T) -> Vec<&mut E> {
 fn terminator_named_locals(terminator: &T) -> Vec<&String> {
     match terminator {
         T::Drop { local, .. } | T::BoxFree { local, .. } => vec![local],
+        // A call's destination is counted apart, by `call_destination`.
         T::Call {
             function,
-            destination,
             owned_arguments,
             ..
         } => {
-            let mut named = vec![function, destination];
+            let mut named = vec![function];
             named.extend(owned_arguments.iter().map(|argument| &argument.local));
             named
         }
@@ -435,7 +582,8 @@ fn children(expression: &E) -> Vec<&E> {
         | E::ChunkHasNext { .. }
         | E::ChunkOptionSlice { .. }
         | E::ChunkOptionTag { .. }
-        | E::ChunkRemainder { .. } => Vec::new(),
+        | E::ChunkRemainder { .. }
+        | E::CallResult { .. } => Vec::new(),
     }
 }
 
@@ -650,6 +798,46 @@ mod tests {
         assert!(matches!(
             block.statements.as_slice(),
             [S::Assign { target: E::Local { name }, .. }, _] if name == "t1"
+        ));
+    }
+
+    #[test]
+    fn a_call_result_read_once_in_its_successor_is_a_call_step() {
+        // `t1 = f(a) -> bb1; bb1: x = t1 + 1` reads the call's result as a
+        // step, and `t1` is gone.
+        let mut locals = ["a", "x", "t1"].map(place).to_vec();
+        let mut blocks = vec![
+            MirBlock {
+                statements: Vec::new(),
+                terminator: T::Call {
+                    function: "f".into(),
+                    arguments: vec![local("a")],
+                    owned_arguments: Vec::new(),
+                    destination: "t1".into(),
+                    target: 1,
+                    through_pointer: false,
+                    result: None,
+                },
+            },
+            MirBlock {
+                statements: vec![assign("x", binary("add", local("t1"), local("a")))],
+                terminator: T::Return,
+            },
+        ];
+        let temporaries = BTreeSet::from(["t1".to_string()]);
+        super::call_steps(&mut locals, &mut blocks, &temporaries);
+        assert!(locals.iter().all(|local| local.name != "t1"));
+        assert!(matches!(
+            blocks[0].terminator,
+            T::Call {
+                result: Some(0),
+                ..
+            }
+        ));
+        assert!(matches!(
+            blocks[1].statements.as_slice(),
+            [S::Assign { value: E::Binary { left, .. }, .. }]
+                if matches!(left.as_ref(), E::CallResult { call: 0, function } if function == "f")
         ));
     }
 
