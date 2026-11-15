@@ -601,7 +601,7 @@ abstract/parameter/memory checks, algebraic and Boolean behavior, readers,
 rewrites, Surface synthesis and full ordinary example projects. The quality
 gate exited 0.
 
-8t retains algebraic roots through specification bindings, constructors and
+8t ([PR #2841](https://github.com/clicklang/click/pull/2841)) retains algebraic roots through specification bindings, constructors and
 selected match fields, algebraic-valued program matches, execution locals,
 arguments, returns, assignments, temporary results and memory cells. Runtime
 enum construction and field selection use common fields directly. Native key
@@ -622,6 +622,15 @@ constant-work construction around growing shared fields. All 2,540 broader tests
 passed, including argument/return/caller-result retention, program-call result
 parity, every scaling test and the full ordinary example corpus. The quality
 gate exited 0.
+
+Before 8u, the approved float-spelling prerequisite adds literal-only
+`float32_from_bits` and `float64_from_bits` forms. These preserve exact IEEE
+bits and the existing native carrier identity across printing and parsing,
+including signed zero and NaN payloads. They add no arithmetic or proof rules.
+The common float representation remains the separate 8u slice. The 241-test
+parser, Surface, diagnostic and documentation selection passed, as did the
+final 75-test float/documentation selection including the float proof fixtures.
+Fact-stability instrumentation reported zero changed lowerings.
 
 ### 8a inventory
 

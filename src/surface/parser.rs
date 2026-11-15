@@ -2,6 +2,7 @@ mod cpp_class_objects;
 mod cpp_generic_templates;
 mod cpp_model;
 mod cpp_syntax;
+mod float_bits;
 mod name_table;
 mod rust_generic_functions;
 mod rust_generic_resources;
@@ -1595,10 +1596,10 @@ impl Parser {
         let mut tokens = tokens;
         if language == SourceLanguage::Rust {
             rust_literals::normalize_tokens(&mut tokens);
-        } else if let Some(index) = tokens
-            .iter()
-            .position(|token| matches!(token, Token::RustInteger(_)))
-        {
+        } else if let Some(index) = tokens.iter().enumerate().find_map(|(index, token)| {
+            (matches!(token, Token::RustInteger(_)) && !float_bits::literal_token(&tokens, index))
+                .then_some(index)
+        }) {
             return Err(ClickError::new(format!(
                 "{}: Rust integer literal syntax requires a Rust sidecar",
                 positions[index]
@@ -8471,7 +8472,13 @@ impl Parser {
                 && self.tokens.get(self.position + 3) == Some(&Token::LParen))
             && !matches!(
                 self.peek_ident(),
-                Some("address" | "byte_offset" | "sizeof")
+                Some(
+                    "address"
+                        | "byte_offset"
+                        | "sizeof"
+                        | "float32_from_bits"
+                        | "float64_from_bits"
+                )
             )
             && typed_load_type_from_name(self.peek_ident()).is_none()
             && self.peek_next() == Some(&Token::LParen)
@@ -15381,6 +15388,13 @@ impl Parser {
 
     #[inline(never)]
     fn parse_contract_non_match_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if self.peek_next() == Some(&Token::LParen) {
+            match self.peek_ident() {
+                Some("float32_from_bits") => return self.parse_float_bits(32),
+                Some("float64_from_bits") => return self.parse_float_bits(64),
+                _ => {}
+            }
+        }
         if self.looks_like_algebraic_constructor() {
             let algebraic_type = self.parse_algebraic_type_application()?;
             self.expect(Token::ColonColon)?;

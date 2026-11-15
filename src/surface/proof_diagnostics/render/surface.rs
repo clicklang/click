@@ -1374,42 +1374,25 @@ impl Printer<'_> {
         }
     }
 
-    /// Comparisons supply the floating type, so an integral bound can use
-    /// an existing integer literal and C's numeric conversion. This keeps
-    /// cast prerequisites copyable even without decimal float tokens.
+    /// Keep the float type and exact bits in every literal operand.
     fn float_operand(
         &mut self,
         value: &MachineTerm,
         single: bool,
         depth: usize,
     ) -> Option<Spelled> {
-        let number = match (single, value) {
-            (true, bits32_constant!(bits)) => f64::from(f32::from_bits(constant_u32(*bits))),
-            (false, uint64_constant!(bits)) => f64::from_bits(constant_u64(*bits)),
-            _ => return self.bitvector(value, None, depth),
-        };
+        if !matches!(value, MachineTerm::Constant { .. }) {
+            return self.bitvector(value, None, depth);
+        }
         if let Err(elided) = self.enter(depth) {
             return elided;
         }
-        // Do not erase negative zero, or round a value at the signed upper
-        // endpoint through a saturating float-to-integer conversion.
-        if number.is_finite()
-            && number.fract() == 0.0
-            && (number != 0.0 || !number.is_sign_negative())
-            && ((i64::MIN as f64)..-(i64::MIN as f64)).contains(&number)
-        {
-            let integer = number as i64;
-            return Some(atom(if i32::try_from(integer).is_ok() {
-                integer.to_string()
-            } else {
-                format!("{integer}i64")
-            }));
-        }
-        Some(atom(if single {
-            format!("{:?}f32", number as f32)
+        let value = if single {
+            crate::kernel::ProgramValue::Float32(value.clone())
         } else {
-            format!("{number:?}")
-        }))
+            crate::kernel::ProgramValue::Float64(value.clone())
+        };
+        crate::surface::diagnostics::exact_float_literal_spelling(&value).map(atom)
     }
 
     fn bitvector(
@@ -2467,12 +2450,12 @@ impl Printer<'_> {
             ProgramValue::Int128(value) | ProgramValue::UInt128(value) => {
                 self.bitvector(value, None, depth)
             }
-            ProgramValue::Float32(bits32_constant!(bits)) => Some(atom(format!(
-                "{:?}f32",
-                f32::from_bits(constant_u32(*bits))
-            ))),
-            ProgramValue::Float64(uint64_constant!(bits)) => {
-                Some(atom(format!("{:?}", f64::from_bits(constant_u64(*bits)))))
+            value @ (ProgramValue::Float32(_) | ProgramValue::Float64(_))
+                if crate::surface::diagnostics::exact_float_literal_spelling(value).is_some() =>
+            {
+                Some(atom(
+                    crate::surface::diagnostics::exact_float_literal_spelling(value).unwrap(),
+                ))
             }
             ProgramValue::Float32(value) | ProgramValue::Float64(value) => {
                 self.bitvector(value, None, depth)
@@ -2948,7 +2931,7 @@ mod tests {
     }
 
     #[test]
-    fn float_diagnostics_keep_names_widths_and_decimal_literals() {
+    fn float_diagnostics_keep_names_widths_and_exact_bits() {
         let parameters = [
             crate::languages::interface::ImportedParameter::new(
                 crate::languages::interface::InterfaceType::Float64,
@@ -2971,11 +2954,17 @@ mod tests {
         ];
         let mut labels = SnapshotLabels::naming(ParameterBinding::new(&parameters, &arguments));
         for (value, expected) in [
-            (-2147483648.0_f64, "d >= -2147483648"),
-            (2147483648.0, "d >= 2147483648i64"),
-            (-0.0, "d >= -0.0"),
-            (0.0, "d >= 0"),
-            (1.5, "d >= 1.5"),
+            (
+                -2147483648.0_f64,
+                "d >= float64_from_bits(0xc1e0000000000000u64)",
+            ),
+            (
+                2147483648.0,
+                "d >= float64_from_bits(0x41e0000000000000u64)",
+            ),
+            (-0.0, "d >= float64_from_bits(0x8000000000000000u64)"),
+            (0.0, "d >= float64_from_bits(0x0000000000000000u64)"),
+            (1.5, "d >= float64_from_bits(0x3ff8000000000000u64)"),
         ] {
             let fact = Proposition::ConditionIs(
                 ConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
@@ -2999,7 +2988,10 @@ mod tests {
             }),
             true,
         );
-        assert_eq!(source(&fact, &mut labels), "f + 1.5f32 < 2");
+        assert_eq!(
+            source(&fact, &mut labels),
+            "f + float32_from_bits(0x3fc00000) < float32_from_bits(0x40000000)"
+        );
         let integer = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,

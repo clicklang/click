@@ -321,6 +321,8 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "little_endian",
     "scatter",
     "separate",
+    "float32_from_bits",
+    "float64_from_bits",
     "sizeof",
     "solve",
     "sorry",
