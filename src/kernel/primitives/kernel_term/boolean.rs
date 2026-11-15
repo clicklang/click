@@ -2,6 +2,8 @@
 //! written comparison format, even when fact equality identifies formats.
 use super::*;
 mod comparison;
+mod complete_pointer;
+pub use complete_pointer::KernelPointerEquality;
 mod pointer_comparison;
 
 /// Borrow a Boolean root or an exact native compatibility payload. Inspecting
@@ -118,6 +120,16 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
+            match (left.pointer_values(), right.pointer_values()) {
+                (Some(a), Some(b)) => {
+                    if !a.iter().zip(&b).all(|(a, b)| a.condition_syntax_equal(b)) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
             match (left.pointer_addresses(), right.pointer_addresses()) {
                 (Some(a), Some(b)) => {
                     if !a.iter().zip(&b).all(|(a, b)| a.syntax_equal(b)) {
@@ -194,6 +206,18 @@ impl<'a> BooleanOperandView<'a> {
             unreachable!()
         };
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
+    }
+
+    pub(crate) fn pointer_values(self) -> Option<[SharedPointerValue; 2]> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::PointerValueEqual(pair) = root.node()
+        {
+            return Some(pair.arguments().clone());
+        }
+        let ConditionTerm::PointerValueEqual(a, b) = self.native_leaf()? else {
+            return None;
+        };
+        Some([SharedPointerValue::import(a), SharedPointerValue::import(b)])
     }
 
     pub(crate) fn pointer_addresses(self) -> Option<[SharedPointerAddress; 2]> {
@@ -422,6 +446,12 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
+            Old::PointerValueEqual(a, b) => {
+                return KernelTerm::pointer_value_equal_raw([
+                    SharedPointerValue::import(a),
+                    SharedPointerValue::import(b),
+                ]);
+            }
             Old::PointerEqual(a, b) => Node::PointerEqual {
                 arguments: [
                     SharedPointerAddress::import(a),
@@ -526,6 +556,10 @@ impl KernelTermExport {
         }
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::PointerValueEqual(pair) => {
+                let [a, b] = pair.arguments();
+                Old::PointerValueEqual(Box::new(a.export()?), Box::new(b.export()?))
+            }
             Node::PointerEqual { arguments: [a, b] } => {
                 Old::PointerEqual(Box::new(a.export()?), Box::new(b.export()?))
             }

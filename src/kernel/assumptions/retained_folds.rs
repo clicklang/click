@@ -139,6 +139,15 @@ pub(super) fn collect_common_memory_loads(
             KernelTermNode::PointerOffsetEqual { arguments } => {
                 push_offset_memory_loads(arguments.iter(), &mut pending)?;
             }
+            KernelTermNode::PointerValueEqual(pair) => {
+                push_offset_memory_loads(
+                    pair.arguments()
+                        .iter()
+                        .flat_map(|value| value.addresses())
+                        .map(|address| &address.node().offset),
+                    &mut pending,
+                )?;
+            }
             KernelTermNode::PointerEqual { arguments } => {
                 push_offset_memory_loads(
                     arguments.iter().map(|address| &address.node().offset),

@@ -482,6 +482,12 @@ fn snapshot_blind_boolean_operand_key(
             pointer_keys::snapshot_offset(&b),
         );
     }
+    if let Some([a, b]) = condition.pointer_values() {
+        return SnapshotBlindConditionKey::PointerValueEqual(
+            pointer_keys::snapshot_value(&a),
+            pointer_keys::snapshot_value(&b),
+        );
+    }
     if let Some([a, b]) = condition.pointer_addresses() {
         return SnapshotBlindConditionKey::PointerEqual(
             pointer_keys::snapshot_address(&a),
@@ -5135,6 +5141,38 @@ mod raw_pointer_condition_tests {
                 }),
                 Box::new(Pointer::null()),
             );
+            let root = crate::kernel::KernelTermImport::default().condition(&source);
+            let actual = snapshot_blind_boolean_operand_key(
+                crate::kernel::BooleanOperandView::Shared(&root),
+            );
+            assert_eq!(actual, snapshot_blind_condition_key(&source));
+            assert!(!keys.contains(&actual));
+            keys.push(actual);
+        }
+    }
+}
+
+#[cfg(test)]
+mod complete_pointer_condition_tests {
+    use super::*;
+    use crate::kernel::SubobjectExtent;
+    #[test]
+    fn complete_pointer_conditions_keep_snapshot_domain_keys() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let a = PointerValue::new(
+            Pointer::symbolic(Variable(998620)),
+            ProgramType::Int32Pointer,
+        );
+        let mut keys = Vec::new();
+        for value in [
+            a.clone(),
+            a.clone().with_root_extent(),
+            a.clone().with_extent(Some(SubobjectExtent {
+                start: Pointer::null(),
+                width: MachineTerm::constant(4),
+            })),
+        ] {
+            let source = ConditionTerm::PointerValueEqual(Box::new(value), Box::new(a.clone()));
             let root = crate::kernel::KernelTermImport::default().condition(&source);
             let actual = snapshot_blind_boolean_operand_key(
                 crate::kernel::BooleanOperandView::Shared(&root),
