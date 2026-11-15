@@ -20,6 +20,39 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
+    match expression {
+        ProgramExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => {
+            budget.consume_expression_step()?;
+            return super::expression::evaluate_program_enum_construct_paths(
+                state,
+                *enum_type,
+                variant,
+                fields,
+                assumptions,
+                budget,
+            );
+        }
+        ProgramExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => {
+            budget.consume_expression_step()?;
+            return super::expression::evaluate_program_enum_field_paths(
+                state,
+                value,
+                variant,
+                *index,
+                assumptions,
+                budget,
+            );
+        }
+        _ => {}
+    }
     if let ProgramExpression::StepResult { step, .. } = expression
         && let Some(value) = state
             .step_results

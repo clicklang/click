@@ -1238,3 +1238,236 @@ fn algebraic_read_result_preserves_native_snapshot_and_type() {
         assert!(!paths[0].facts.has_path_conditions());
     }
 }
+
+#[test]
+fn algebraic_handoffs_keep_constructor_fields_and_binding_roots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let inner = maybe_type();
+    let outer = envelope_type(&inner);
+    let root = KernelTerm::variable(KernelType::Algebraic(inner.clone()), Variable(999760));
+    let mut values = crate::persistent::PersistentMap::default();
+    values.insert("seed".into(), root.clone());
+    let constructed = SpecAlgebraicExpression {
+        algebraic_type: outer.clone(),
+        node: SpecAlgebraicExpressionNode::Constructor {
+            variant: "Present".into(),
+            fields: vec![SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
+                algebraic_type: inner.clone(),
+                node: SpecAlgebraicExpressionNode::Binding("seed".into()),
+            })],
+        },
+    };
+    let expression = SpecAlgebraicExpression {
+        algebraic_type: inner.clone(),
+        node: SpecAlgebraicExpressionNode::Match {
+            scrutinee: Box::new(constructed.clone()),
+            arms: vec![
+                SpecAlgebraicResultMatchArm {
+                    variant: "Missing".into(),
+                    bindings: vec![],
+                    binding_types: vec![],
+                    binding_variables: vec![],
+                    body: Box::new(SpecAlgebraicExpression {
+                        algebraic_type: inner.clone(),
+                        node: SpecAlgebraicExpressionNode::Variable(Variable(999761)),
+                    }),
+                },
+                SpecAlgebraicResultMatchArm {
+                    variant: "Present".into(),
+                    bindings: vec!["selected".into()],
+                    binding_types: vec![inner.value_type()],
+                    binding_variables: vec![None],
+                    body: Box::new(SpecAlgebraicExpression {
+                        algebraic_type: inner.clone(),
+                        node: SpecAlgebraicExpressionNode::Binding("selected".into()),
+                    }),
+                },
+            ],
+        },
+    };
+    let state = ExecutionState::new();
+    let scope = SpecScope {
+        values: Some(&values),
+        ..SpecScope::unbound(&state, None)
+    };
+    let exports = KernelTermExport::algebraic_export_count();
+    let mut budget = ExecutionBudget::new();
+    let paths = evaluate_spec_algebraic_at_state_with_bindings_in(
+        scope,
+        &expression,
+        &PureFactContext::new(),
+        &mut SpecEvaluation::logical(&mut budget),
+    )
+    .unwrap();
+    assert_eq!(paths[0].value, AlgebraicResult::Shared(root.clone()));
+    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    assert!(paths[0].facts.is_empty());
+    assert!(paths[0].obligations.is_empty());
+    let mut budget = ExecutionBudget::new();
+    let mut native_budget = SpecEvaluation::logical(&mut budget);
+    native_budget.machine_result_production_disabled = true;
+    let native = evaluate_spec_algebraic_at_state_with_bindings_in(
+        scope,
+        &expression,
+        &PureFactContext::new(),
+        &mut native_budget,
+    )
+    .unwrap();
+    assert_eq!(
+        paths[0].value.clone().into_native_compat(),
+        native[0].value.clone().into_native_compat()
+    );
+}
+
+#[test]
+fn algebraic_runtime_enum_handoffs_preserve_selected_roots_and_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let inner = maybe_type();
+    let outer = envelope_type(&inner);
+    let root = KernelTerm::variable(KernelType::Algebraic(inner.clone()), Variable(999762));
+    let mut state = ExecutionState::new();
+    state.locals.set_retained_typed_with_all_qualifiers(
+        "seed",
+        SpecValue::Shared(root.clone()),
+        ProgramType::Parameter(TypeParameterName::of(&inner)),
+        false,
+        false,
+        false,
+        false,
+    );
+    let expression = ProgramExpression::EnumConstruct {
+        enum_type: TypeParameterName::of(&outer),
+        variant: "Present".into(),
+        fields: vec![ProgramExpression::Variable("seed".into())],
+    };
+    let exports = KernelTermExport::algebraic_export_count();
+    let paths = crate::kernel::eval::evaluate_expression_value_paths(
+        &state,
+        &expression,
+        &PureFactContext::new(),
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    let ExpressionOutcome::Value(value) = &paths[0].outcome else {
+        panic!("constructor");
+    };
+    let KernelTermNode::Constructor(constructor) = value.shared().unwrap().node() else {
+        panic!("common constructor");
+    };
+    assert_eq!(constructor.fields, vec![root.clone()]);
+    for (variant, index, succeeds) in [
+        ("Present", 0, true),
+        ("Present", 1, false),
+        ("Missing", 0, false),
+    ] {
+        let projection = ProgramExpression::EnumField {
+            value: Box::new(expression.clone()),
+            variant: variant.into(),
+            index,
+        };
+        let paths = crate::kernel::eval::evaluate_expression_value_paths(
+            &state,
+            &projection,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        if succeeds {
+            assert!(
+                matches!(&paths[0].outcome, ExpressionOutcome::Value(value) if value.shared() == Some(&root))
+            );
+        } else {
+            assert!(matches!(
+                paths[0].outcome,
+                ExpressionOutcome::RuntimeError(_)
+            ));
+        }
+    }
+    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+}
+
+#[test]
+fn algebraic_program_conditionals_preserve_existing_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = maybe_type();
+    let left = SpecValue::Shared(KernelTerm::variable(
+        KernelType::Algebraic(ty.clone()),
+        Variable(999766),
+    ));
+    let right = SpecValue::Shared(KernelTerm::variable(
+        KernelType::Algebraic(ty),
+        Variable(999767),
+    ));
+    let guard = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    // Program-carried algebraic values only join when equal. The separate
+    // logical algebraic evaluator owns algebraic If construction.
+    for retain in [true, false] {
+        assert!(
+            SpecValue::conditional(&guard, &left, &right, retain)
+                .unwrap()
+                .is_none()
+        );
+    }
+    let native = SpecValue::Native(left.clone().into_native());
+    assert_eq!(
+        SpecValue::conditional(&guard, &left, &native, true)
+            .unwrap()
+            .unwrap()
+            .shared(),
+        left.shared()
+    );
+}
+
+#[test]
+fn algebraic_program_call_results_retain_shared_arguments() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = maybe_type();
+    let root = KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(999768));
+    let mut values = crate::persistent::PersistentMap::default();
+    values.insert("seed".into(), root.clone());
+    let expression = SpecExpression::PureFunctionApplication {
+        name: "algebraic_program_result".into(),
+        arguments: vec![SpecPureFunctionArgument::Algebraic(
+            SpecAlgebraicExpression {
+                algebraic_type: ty.clone(),
+                node: SpecAlgebraicExpressionNode::Binding("seed".into()),
+            },
+        )],
+        result_type: ProgramType::Parameter(TypeParameterName::of(&ty)),
+        pointer_result: None,
+        result_object_class: None,
+        projection: None,
+    };
+    let state = ExecutionState::new();
+    let scope = SpecScope {
+        values: Some(&values),
+        ..SpecScope::unbound(&state, None)
+    };
+    let exports = KernelTermExport::algebraic_export_count();
+    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        scope,
+        &expression,
+        &PureFactContext::new(),
+        &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+    )
+    .unwrap();
+    let KernelTermNode::AlgebraicCall(call) = paths[0].value.shared().unwrap().node() else {
+        panic!("common call result");
+    };
+    assert_eq!(call.arguments, vec![root]);
+    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    let mut execution = ExecutionBudget::new();
+    let mut budget = SpecEvaluation::logical(&mut execution);
+    budget.machine_result_production_disabled = true;
+    let native = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        scope,
+        &expression,
+        &PureFactContext::new(),
+        &mut budget,
+    )
+    .unwrap();
+    assert_eq!(
+        paths[0].value.clone().into_native(),
+        native[0].value.clone().into_native()
+    );
+}

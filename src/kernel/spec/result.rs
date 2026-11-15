@@ -14,7 +14,10 @@ impl SpecValue {
     ) -> ExecutionResult<Option<Self>> {
         if then_value == else_value {
             return Ok(Some(if retain {
-                then_value.clone().retain_pointer_result()
+                then_value
+                    .clone()
+                    .retain_pointer_result()
+                    .retain_algebraic_result()
             } else {
                 then_value.clone()
             }));
@@ -104,6 +107,9 @@ impl SpecValue {
                 // The native constructor accepts pointer arms only when equal,
                 // selecting the complete left payload. Keep its original root.
                 then_value.clone().retain_pointer_result()
+            } else if matches!(value, ProgramValue::Parameter(_)) {
+                // Program-carried algebraic arms join only when equal.
+                then_value.clone().retain_algebraic_result()
             } else {
                 Self::Native(value)
             }
@@ -233,6 +239,11 @@ impl SpecCallArgument {
     pub(super) fn from_value(value: SpecValue) -> Self {
         match value {
             SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
+            SpecValue::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+                Self::Native(PureFunctionArgument::Value(
+                    SpecValue::Shared(root).into_native(),
+                ))
+            }
             SpecValue::Shared(value)
                 if matches!(value.node(), KernelTermNode::PointerAddress { .. }) =>
             {

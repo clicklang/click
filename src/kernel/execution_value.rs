@@ -14,6 +14,9 @@ impl PartialEq for ExecutionValue {
             (Self::Native(a), Self::Native(b)) => a == b,
             (Self::Shared(a), Self::Shared(b)) => {
                 a == b
+                    || (matches!(a.ty(), KernelType::Algebraic(_))
+                        && a.ty() == b.ty()
+                        && a.algebraic_syntax_equal(b))
                     || (a.ty() == &KernelType::Bool
                         && b.ty() == &KernelType::Bool
                         && BooleanOperandView::Shared(a)
@@ -53,7 +56,14 @@ impl ExecutionValue {
     pub fn native_payload(&self) -> Option<&ProgramValue> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(root) => root.pointer_native().or_else(|| root.boolean_native()),
+            Self::Shared(root) => root
+                .pointer_native()
+                .or_else(|| root.boolean_native())
+                .or_else(|| {
+                    matches!(root.node(), KernelTermNode::Variable(_))
+                        .then(|| root.algebraic_native_value())
+                        .flatten()
+                }),
         }
     }
     pub fn pointer(&self) -> Option<&PointerValue> {
@@ -72,6 +82,9 @@ impl ExecutionValue {
     /// Retain machine expressions and producer-defined pointer reads at their
     /// execution boundary. Other result families keep their exact native payloads.
     pub(in crate::kernel) fn retain_native(value: ProgramValue) -> Self {
+        if let ProgramValue::Parameter(term) = &value {
+            return KernelTermImport::default().algebraic(term).into();
+        }
         if let ProgramValue::Pointer(pointer) = &value
             && let Some(root) = KernelTerm::retained_pointer_read(pointer)
         {
@@ -157,10 +170,9 @@ impl ExecutionValue {
     /// Argument coercion leaves a logical Bool unchanged when the destination
     /// is also Bool. Other conversions keep the established pointer policy.
     pub(in crate::kernel) fn retain_coerced_argument(&self, value: ProgramValue) -> Self {
-        if self
-            .shared()
-            .is_some_and(|root| root.ty() == &KernelType::Bool)
-            && value.program_type() == ProgramType::Bool
+        if self.shared().is_some_and(|root| {
+            root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+        }) && self.program_type() == value.program_type()
         {
             self.clone()
         } else {
@@ -195,10 +207,34 @@ impl ExecutionValue {
         }
     }
 
+    pub(in crate::kernel) fn algebraic(&self) -> Option<KernelTerm> {
+        match self {
+            Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+                Some(root.clone())
+            }
+            Self::Native(ProgramValue::Parameter(value)) => {
+                Some(KernelTermImport::default().algebraic(value))
+            }
+            _ => None,
+        }
+    }
+
+    pub(in crate::kernel) fn retain_algebraic_result(self) -> Self {
+        match self {
+            Self::Native(ProgramValue::Parameter(value)) => {
+                KernelTermImport::default().algebraic(&value).into()
+            }
+            value => value,
+        }
+    }
+
     pub fn into_native(self) -> ProgramValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
+                if let Some(value) = term.algebraic_native_value() {
+                    return value.clone();
+                }
                 if let Some(value) = term.boolean_native() {
                     return value.clone();
                 }
@@ -242,6 +278,7 @@ impl ExecutionValue {
             Self::Shared(term) => match term.ty() {
                 KernelType::Program(ty) => *ty,
                 KernelType::Bool => ProgramType::Bool,
+                KernelType::Algebraic(ty) => ProgramType::Parameter(TypeParameterName::of(ty)),
                 _ => unreachable!(),
             },
         }
@@ -298,7 +335,8 @@ impl StoredMemoryValue {
     pub fn native(&self) -> &ProgramValue {
         self.0
             .native_payload()
-            .expect("native cell or retained pointer/Boolean")
+            .or_else(|| self.0.shared()?.algebraic_native_value())
+            .expect("native cell or retained value")
     }
     pub(crate) fn value(&self) -> &ExecutionValue {
         &self.0
@@ -330,10 +368,11 @@ impl From<ProgramValue> for StoredMemoryValue {
 }
 impl From<ExecutionValue> for StoredMemoryValue {
     fn from(value: ExecutionValue) -> Self {
-        if value
-            .shared()
-            .is_some_and(|root| root.pointer_payload().is_none() && root.ty() != &KernelType::Bool)
-        {
+        if value.shared().is_some_and(|root| {
+            root.pointer_payload().is_none()
+                && root.ty() != &KernelType::Bool
+                && !matches!(root.ty(), KernelType::Algebraic(_))
+        }) {
             Self(value.into_native().into())
         } else {
             Self(value)
@@ -391,7 +430,9 @@ impl StoredExecutionValue {
     fn identity(&self) -> StoredIdentity<'_> {
         match self.0.identity.get_or_init(|| match &self.0.value {
             ExecutionValue::Shared(root)
-                if root.pointer_payload().is_some() || root.ty() == &KernelType::Bool =>
+                if root.pointer_payload().is_some()
+                    || root.ty() == &KernelType::Bool
+                    || matches!(root.ty(), KernelType::Algebraic(_)) =>
             {
                 None
             }
@@ -414,7 +455,11 @@ impl StoredExecutionValue {
             }
         }) {
             Some(identity) => StoredIdentity::Machine(identity),
-            None => StoredIdentity::Native(self.native_payload().expect("native storage")),
+            None => StoredIdentity::Native(
+                self.native_payload()
+                    .or_else(|| self.shared()?.algebraic_native_value())
+                    .expect("native storage"),
+            ),
         }
     }
     pub fn matches_native(&self, value: &ProgramValue) -> bool {
@@ -442,6 +487,7 @@ impl From<ExecutionValue> for StoredExecutionValue {
             !root.is_shared_machine_operand()
                 && root.pointer_payload().is_none()
                 && root.ty() != &KernelType::Bool
+                && !matches!(root.ty(), KernelType::Algebraic(_))
         }) {
             ExecutionValue::Native(value.into_native())
         } else {
@@ -489,6 +535,43 @@ impl Ord for StoredExecutionValue {
 mod tests {
     use super::*;
 
+    #[test]
+    fn algebraic_storage_preserves_roots_and_native_key_contracts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = TypeParameterName::intern("StoredAlgebraicT").algebraic_type();
+        let roots = [
+            KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(999764)),
+            KernelTerm::algebraic_read(
+                ty.clone(),
+                intern_memory(Memory::new()),
+                SharedPointerAddress::import(&Pointer::symbolic(Variable(999765))),
+            ),
+        ];
+        fn hash(value: &impl std::hash::Hash) -> u64 {
+            use std::hash::Hasher;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(value, &mut hasher);
+            hasher.finish()
+        }
+        for root in roots {
+            let value = ExecutionValue::Shared(root.clone());
+            let native = value.clone().into_native();
+            let stored = StoredExecutionValue::from(value.clone());
+            let expected = StoredExecutionValue::from(native.clone());
+            assert_eq!(stored, expected);
+            assert_eq!(stored.cmp(&expected), std::cmp::Ordering::Equal);
+            assert_eq!(hash(&stored), hash(&expected));
+            assert_eq!(stored.clone().into_value().shared(), Some(&root));
+            assert_eq!(
+                value.retain_coerced_argument(native.clone()).shared(),
+                Some(&root)
+            );
+            let cell = StoredMemoryValue::from(value);
+            assert_eq!(cell.native(), &native);
+            assert_eq!(hash(&cell), hash(&native));
+            assert_eq!(cell.into_value().shared(), Some(&root));
+        }
+    }
     #[test]
     fn boolean_storage_preserves_roots_and_native_keys() {
         let _session = crate::kernel::VerificationSession::enter();
