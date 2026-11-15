@@ -480,7 +480,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_so
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_outcome_anchored_order_transitivity	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_premise_equality_chain_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_restricted_guarded_consequent	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_restricted_signed_definedness_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_restricted_signed_definedness_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_restricted_solve_closure	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_typed_atomic_solve_from_selected_premises	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_arithmetic	selected_arithmetic	1
@@ -671,3 +671,14 @@ src/surface/proof/driver/claims.rs	driver	::apply_post_execution_arithmetic_usin
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	apply_integer_composition	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_recorded_footprint_preservation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_recorded_footprint_preservation	driver	1
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	3
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	driver	3
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_integer_composition_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_signed_interval_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	apply_signed_interval_composition	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_signed_arithmetic	apply_signed_interval_composition	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_certificate	ordinary_integer_fact	2
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	ordinary_integer_fact	5
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_integer_composition_using	try_integer_composition_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_restricted_signed_definedness_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_signed_interval_using	1

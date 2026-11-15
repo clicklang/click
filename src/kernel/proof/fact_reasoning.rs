@@ -1,4 +1,5 @@
 mod computation;
+mod intervals;
 pub(crate) use computation::computes_leaf;
 
 use crate::kernel::CompareRelation;
@@ -375,6 +376,9 @@ pub(crate) fn normalize_using_conditions(
         {
             return Ok(());
         }
+    }
+    if intervals::reduces_one_operation(goal, premises) {
+        return Ok(());
     }
     // Rule L-Eq through a cited `Bool` equality (Stage 5): `a == b` with
     // truth `t` and `a` cited or constant gives `b`, and the other way. One

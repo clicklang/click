@@ -10,27 +10,56 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_definedness_certificate");
-        let Some(surface_goal) = search_input.surface_goal() else {
+        let Some((left, right)) = search_input.signed_definedness_surface_operands() else {
             return Ok(None);
         };
-        let certificate = ArithmeticCertificate::special(SpecialArithmeticCertificate {
-            nodes: vec![SpecialArithmeticNode::SignedDefined {
-                width,
-                bounds: (0..premises.len()).collect(),
-                result: surface_goal.clone(),
-            }],
-            premises,
-            conclusion: 0,
-        });
-        let Some(proof) = attempt::candidate_outcome(
-            search_input
-                .driver()
-                .apply_step(ProofStep::ArithmeticCertificate(certificate)),
-        )?
-        else {
+        let Some(ClickProposition::Defined { expression }) = search_input.surface_goal() else {
             return Ok(None);
         };
-        Ok(proof.focused_discharged().then_some(proof))
+        let observe = |term: &ContractExpression| super::super::wide_arithmetic::to_integer(term);
+        let exact = match expression {
+            ContractExpression::Add(..) => {
+                ContractExpression::Add(Box::new(observe(left)), Box::new(observe(right)))
+            }
+            ContractExpression::Subtract(..) => {
+                ContractExpression::Subtract(Box::new(observe(left)), Box::new(observe(right)))
+            }
+            _ => return Ok(None),
+        };
+        let (minimum, maximum) = match width {
+            SignedDefinedWidth::Int32 => (i64::from(i32::MIN), i64::from(i32::MAX)),
+            SignedDefinedWidth::Int64 => (i64::MIN, i64::MAX),
+        };
+        let le = |a, b| ClickProposition::Comparison {
+            left: a,
+            operator: ComparisonOperator::LessEqual,
+            right: b,
+        };
+        let mut proof = search_input.clone();
+        let mut listed = premises;
+        for operand in [left, right] {
+            for range in [
+                le(signed_literal(minimum), observe(operand)),
+                le(observe(operand), signed_literal(maximum)),
+            ] {
+                let Some(next) = Self::ordinary_integer_fact(&proof, range.clone(), &[])? else {
+                    return Ok(None);
+                };
+                proof = next;
+                listed.push(range);
+            }
+        }
+        for bound in [
+            le(signed_literal(minimum), exact.clone()),
+            le(exact, signed_literal(maximum)),
+        ] {
+            let Some(next) = Self::ordinary_integer_fact(&proof, bound, &listed)? else {
+                return Ok(None);
+            };
+            proof = next;
+        }
+        let closed = proof.driver().apply_step(ProofStep::Known)?;
+        Ok(closed.focused_discharged().then_some(closed))
     }
 
     /// `solve` on an `int32` or `int64` definedness goal: cite the constant

@@ -1,5 +1,6 @@
 //! Smart closure search and linear script interpretation.
 mod integer_composition;
+mod signed_intervals;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};

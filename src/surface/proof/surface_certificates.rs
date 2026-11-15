@@ -4105,15 +4105,7 @@ fn int32_definedness_by_integer_bounds(
         })
     };
     vec![
-        have(
-            range.clone(),
-            vec![ProofTactic::ArithmeticCertificate(
-                ArithmeticCertificate::integer(IntegerCertificate {
-                    nodes: vec![IntegerCertificateNode::TypeRange { result: range }],
-                    conclusion: 0,
-                }),
-            )],
-        ),
+        have(range.clone(), vec![ProofTactic::Normalize]),
         have(
             less_equal(minimum, exact.clone()),
             vec![ProofTactic::ArithmeticUsing(listed.clone())],

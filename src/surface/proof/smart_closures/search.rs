@@ -44,6 +44,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_integer_composition_using(search_input, premises)? {
             return Ok(proof);
         }
+        if let Some(closed) = Self::try_signed_interval_using(search_input, premises)? {
+            return Ok(closed);
+        }
+        if search_input.goal().is_some_and(|goal| {
+            crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some()
+        }) {
+            let pairs = premises
+                .iter()
+                .map(|p| {
+                    search_input
+                        .lower_cited_surface_proposition(p, "definedness premise")
+                        .map(|k| (k, p.clone()))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if let Some(closed) =
+                Self::try_restricted_signed_definedness_closure(search_input, &pairs)?
+            {
+                return Ok(closed);
+            }
+        }
         if let Some(proof) = Self::try_unsigned_order_step_using(search_input, premises) {
             return Ok(proof);
         }
@@ -67,9 +87,48 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
     }
 
+    fn try_signed_interval_using(
+        search_input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_signed_interval_using");
+        let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
+        else {
+            return Ok(None);
+        };
+        let pairs = premises
+            .iter()
+            .map(|p| {
+                search_input
+                    .lower_cited_surface_proposition(p, "signed interval premise")
+                    .map(|k| (k, p.clone()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if pairs
+            .iter()
+            .any(|(k, _)| !search_input.facts().listed_premise_available(k, &[], false))
+        {
+            return Ok(None);
+        }
+        let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
+        let Some(plan) =
+            plan_arithmetic(ArithmeticEngine::SignedInt32WithWeakening, goal, &kernels)
+                .and_then(ArithmeticPlan::signed_int32)
+        else {
+            return Ok(None);
+        };
+        let Some(certificate) =
+            search_input.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+        else {
+            return Ok(None);
+        };
+        Self::apply_signed_interval_composition(search_input, &certificate)
+    }
+
     /// Construct ordinary proofs of the selected Integer composition plan.
     /// Unsupported rule families retain their existing arithmetic routes.
-    fn try_integer_composition_using(
+    pub(in crate::surface::proof) fn try_integer_composition_using(
         search_input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
@@ -3946,6 +4005,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let certificate =
             search_input.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
+        if let Ok(Some(closed)) =
+            Self::apply_signed_interval_composition(search_input, &certificate)
+        {
+            return Some(closed);
+        }
         search_input
             .driver()
             .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
@@ -9735,6 +9799,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
+        if arithmetic_domain {
+            if let Ok(Some(closed)) =
+                Self::try_restricted_signed_definedness_closure(&proof, &premise_pairs)
+            {
+                return Some(closed);
+            }
+        }
+        if typed_first {
+            match Self::try_signed_interval_using(&proof, surfaces) {
+                Ok(Some(closed)) => return Some(closed),
+                #[cfg(test)]
+                Err(error) => eprintln!("signed interval candidate: {}", error.raw_summary()),
+                _ => {}
+            }
+        }
         if typed_first && let Some(closed) = try_typed_derivation() {
             return Some(closed);
         }
