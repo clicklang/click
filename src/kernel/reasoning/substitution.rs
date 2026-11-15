@@ -7464,7 +7464,6 @@ fn substitute_pointer_variable_in_spec_expression(
             result_type,
             pointer_result,
             result_object_class,
-            projection,
         } => SpecExpression::PureFunctionApplication {
             name: name.clone(),
             arguments: arguments
@@ -7476,7 +7475,6 @@ fn substitute_pointer_variable_in_spec_expression(
             result_type: *result_type,
             pointer_result: pointer_result.clone(),
             result_object_class: result_object_class.clone(),
-            projection: projection.clone(),
         },
         SpecExpression::LoopEntrySnapshot(expression) => {
             SpecExpression::LoopEntrySnapshot(Box::new(
