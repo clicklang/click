@@ -10,7 +10,20 @@ pub(crate) fn apply(
     available: impl Fn(&Proposition) -> bool,
 ) -> Result<(), String> {
     crate::instrumentation::record_deterministic_work(1);
-    if !available(separation) {
+    // The public arguments select a resource and a region, so either written
+    // orientation of that exact separation is sufficient. Both keys come
+    // solely from those arguments; no fact or resource bucket is traversed.
+    let separation_available = available(separation)
+        || if let Proposition::ResourceSeparate { left, right } = separation {
+            crate::instrumentation::record_deterministic_work(1);
+            available(&Proposition::ResourceSeparate {
+                left: right.clone(),
+                right: left.clone(),
+            })
+        } else {
+            false
+        };
+    if !separation_available {
         return Err("preserve separation is not exactly available".into());
     }
     let derived = if let Proposition::MemoryReadDefined { value_type, .. } = result {

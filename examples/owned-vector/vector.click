@@ -857,12 +857,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             have separate(statement(0).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(0).entry, owner->data) by {
-                preserve(separate(statement(0).footprint, memory(owner->data)));
+                preserve(memory(owner->data), statement(0));
             }
             step();
             have separate(statement(1).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(1).entry, owner->data) by {
-                preserve(separate(statement(1).footprint, memory(owner->data)));
+                preserve(memory(owner->data), statement(1));
             }
             step();
         }
@@ -1313,7 +1313,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
                 };
             }
             have owner->data == at(before_fill, owner->data) by {
-                preserve(separate(loop(0).statement(0).footprint, memory(owner->data)));
+                preserve(memory(owner->data), loop(0).statement(0));
             }
             have owner->data == old(owner->data) by {
                 normalize() using {

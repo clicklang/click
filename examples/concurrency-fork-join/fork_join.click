@@ -146,19 +146,19 @@ void *fill_range(void *argument) {
                 at(iteration, separate(memory(job->output[index]), memory(job->output)));
             }; }
             have job->output == at(iteration, job->output) by {
-                preserve(at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))));
+                preserve(at(iteration, memory(job->output)), loop(0).statement(0));
             }
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) by { normalize() using {
                 at(iteration, separate(memory(job->output[index]), memory(job->begin)));
             }; }
             have job->begin == at(iteration, job->begin) by {
-                preserve(at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))));
+                preserve(at(iteration, memory(job->begin)), loop(0).statement(0));
             }
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) by { normalize() using {
                 at(iteration, separate(memory(job->output[index]), memory(job->end)));
             }; }
             have job->end == at(iteration, job->end) by {
-                preserve(at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))));
+                preserve(at(iteration, memory(job->end)), loop(0).statement(0));
             }
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->value))) by { normalize() using {
                 at(iteration, separate(memory(job->output[index]), memory(job->value)));

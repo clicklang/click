@@ -121,7 +121,7 @@ int32 owned_split_buffer_set_left(
         };
     }
     have owner->data == at(before_store, owner->data) by {
-        preserve(separate(statement(0).footprint, memory(owner->data)));
+        preserve(memory(owner->data), statement(0));
     }
     step();
     solve();
@@ -189,7 +189,7 @@ int32 owned_split_buffer_set_right(
         };
     }
     have owner->data == at(before_store, owner->data) by {
-        preserve(separate(statement(0).footprint, memory(owner->data)));
+        preserve(memory(owner->data), statement(0));
     }
     step();
     solve();

@@ -33,7 +33,7 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
         intro(); intro();
         have separate(statement(1).footprint, memory(data[k])) by { normalize() using {}; }
         have data[k] == at(statement(1).entry, data[k]) by {
-            preserve(separate(statement(1).footprint, memory(data[k])));
+            preserve(memory(data[k]), statement(1));
         }
         rewrite(data[k], at(statement(1).entry, data[k]));
         normalize();
@@ -51,7 +51,7 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
                 normalize() using { separate(memory(fresh[0..length]), memory(data[0..length])); 0 <= k; k < length; };
             }
             have data[k] == at(before_free, data[k]) by {
-                preserve(separate(statement(3).footprint, memory(data[k])));
+                preserve(memory(data[k]), statement(3));
             }
             instantiate(forall (k: int32) { 0 <= k and k < length implies at(before_free, data[k]) == old(data[k]) }, k) using { 0 <= k; k < length; };
             rewrite(data[k], at(before_free, data[k]));

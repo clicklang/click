@@ -39,7 +39,7 @@ void poke(uint8* s, uint64 n) {
                 normalize() using { separate(memory(s[k]), memory(s[0u64])); };
             }
             have s[k] == old(s[k]) by {
-                preserve(separate(statement(0).footprint, memory(s[k])));
+                preserve(memory(s[k]), statement(0));
             }
             rewrite(s[k], old(s[k]));
             known();
@@ -64,7 +64,7 @@ void poke(uint8* s, uint64 n) {
             have separate(statement(0).footprint, memory(s[k])) by {
                 normalize() using { separate(memory(s[k]), memory(s[0u64])); };
             }
-            preserve(separate(statement(0).footprint, memory(s[k])));
+            preserve(memory(s[k]), statement(0));
         }
     }
     fold(cstr_at(s, n));

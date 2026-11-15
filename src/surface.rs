@@ -6211,7 +6211,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "preserve",
-        syntax: "preserve(separate(region.footprint, resource))",
+        syntax: "preserve(resource, region)",
         class: "simple",
     },
     PublicTacticForm {

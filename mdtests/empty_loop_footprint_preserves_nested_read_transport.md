@@ -109,7 +109,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
                 };
             }
             have arena->occupied == at(opened, arena->occupied) by {
-                preserve(separate(loop(0).statement(0).footprint, memory(arena->occupied)));
+                preserve(memory(arena->occupied), loop(0).statement(0));
             }
             have arena->occupied == old(arena->occupied) by {
                 normalize() using {

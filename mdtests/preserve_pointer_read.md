@@ -42,7 +42,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
         normalize() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before, source->data) by {
-        preserve(separate(statement(0).footprint, memory(source->data)));
+        preserve(memory(source->data), statement(0));
     }
     step() by { known(); }
     mark final;
@@ -51,7 +51,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     }
     have source->data == at(before, source->data) by {
         have source->data == at(after, source->data) by {
-            preserve(separate(statement(1).footprint, memory(source->data)));
+            preserve(memory(source->data), statement(1));
         }
         rewrite(source->data, at(after, source->data));
         known();

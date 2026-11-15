@@ -52,7 +52,7 @@ void roundtrip(struct node* p, struct node* q) {
                 normalize() using { separate(memory(q->right), memory(p->left)); };
             }
             have p->left == at(before, p->left) by {
-                preserve(separate(statement(0).footprint, memory(p->left)));
+                preserve(memory(p->left), statement(0));
             }
             let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
         },

@@ -1105,7 +1105,7 @@ step is still checked.
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
-| `preserve(separate(region.footprint, resource))` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
+| `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -2008,10 +2008,14 @@ planning again.
 
 ### Preservation
 
-**Form:** `preserve(separate(region.footprint, resource));`
+**Form:** `preserve(resource, region);`
 
-A simple tactic for a read-equality or read-definedness goal. Cite an exactly available separation
-between a recorded region footprint and the resource being read. The tactic
+A simple tactic for a read-equality or read-definedness goal. Select the resource
+being read and the recorded region across which to preserve it. The exact fact
+`separate(region.footprint, resource)` (in either order) must already be
+available; establish it with `have` first. For evidence at a saved snapshot, write
+`preserve(at(mark, resource), region)`; the snapshot scopes the separation
+evidence, retaining the same recorded region endpoints. The tactic
 constructs equality of the selected read at the region's exit and entry, in
 that order. It applies one primitive directly, with no premise discovery or
 history search. The current goal selects the read type or named-resource
@@ -2075,7 +2079,7 @@ are disjoint directly. This simple rule does not walk a region containing severa
 `preserve` supports complete pointer, `uint8`, 32/64-bit integer, and abstract
 typed memory observations. It also preserves a selected field of a named owned
 resource: cite `separate(region.footprint, r)` and write
-`preserve(separate(region.footprint, r));` under a goal such as
+`preserve(r, region);` under a goal such as
 `r.field == at(region.entry, r.field)`.
 Field lowering supplies the instance identity and field selector. The primitive
 reads that field from the footprint's persistent entry and exit resource contexts
@@ -3533,7 +3537,7 @@ These cases expand to ordinary library applications.
 See `mdtests/viewable_restrict_transport_expansion.md`.
 
 At an execution frontier, a focused equality between a read now and the same
-read at a named statement's entry also expands to `preserve(separate(statement(...).footprint, R))`
+read at a named statement's entry also expands to `preserve(R, statement(...))`
 when that footprint separation is cited, the source is the earlier read's
 reflexive equality, and the statement's recorded exit is the current point.
 This covers memory reads and abstract resource fields. The explicit footprint

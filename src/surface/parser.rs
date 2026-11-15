@@ -10904,8 +10904,38 @@ impl Parser {
             }
             "preserve" => {
                 self.expect(Token::LParen)?;
-                let separation = self.parse_proposition()?;
+                if self.peek_ident() == Some("separate") {
+                    return Err(self.error(
+                        "write `preserve(resource, region)`; establish `separate(region.footprint, resource)` with `have` first",
+                    ));
+                }
+                // A snapshot on the resource scopes its separation evidence,
+                // just as `at(point, separate(...))` did in the old spelling.
+                let mut selectors = Vec::new();
+                while self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
+                    self.check_expression_chain_limit(selectors.len())?;
+                    self.position += 2;
+                    selectors.push(self.parse_snapshot_selector()?);
+                    self.expect(Token::Comma)?;
+                }
+                let resource = self.parse_resource_subject()?;
+                for _ in &selectors {
+                    self.expect(Token::RParen)?;
+                }
+                self.expect(Token::Comma)?;
+                let region = self.parse_code_region_ref()?;
                 self.expect(Token::RParen)?;
+                let mut separation = ClickProposition::Separate {
+                    left: ResourceSubject::Footprint(region),
+                    right: resource,
+                };
+                for selector in selectors.into_iter().rev() {
+                    self.refuse_result_in_snapshot_proposition(&selector, &separation)?;
+                    separation = ClickProposition::At {
+                        selector,
+                        proposition: Box::new(separation),
+                    };
+                }
                 ProofTactic::Preserve(separation)
             }
             "arithmetic_certificate" => {
@@ -17951,10 +17981,7 @@ mod tactic_classification_tests {
         ("extract", "extract(x == 1);"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
-        (
-            "preserve",
-            "preserve(separate(statement(0).footprint, memory(*p)));",
-        ),
+        ("preserve", "preserve(memory(*p), statement(0));"),
         (
             "arithmetic-certificate",
             "arithmetic_certificate { trivial => x + 1 > x; conclusion 0; }",
@@ -18247,6 +18274,104 @@ mod lambda_certificate_parser_tests {
             assert_eq!(parser.expect_signed_i64("lower").unwrap(), -2147483648);
             assert_eq!(parser.expect_signed_i64("upper").unwrap(), 2147483646);
             assert!(parser.peek().is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod preserve_syntax_tests {
+    use super::*;
+
+    fn parser(source: &str) -> Parser {
+        let mut parser = Parser::new(source).unwrap();
+        parser
+            .names
+            .resource_bindings
+            .insert("r".into(), (Variable(123), "Node".into()));
+        parser
+    }
+
+    #[test]
+    fn preserve_arguments_retain_exact_separation_and_snapshot_scopes() {
+        for (source, evidence) in [
+            ("preserve(r, call(0));", "separate(call(0).footprint, r)"),
+            (
+                "preserve(at(saved, r), call(0));",
+                "at(saved, separate(call(0).footprint, r))",
+            ),
+            (
+                "preserve((at(saved, r)), call(0));",
+                "separate(call(0).footprint, at(saved, r))",
+            ),
+            (
+                "preserve(memory(*p), statement(0));",
+                "separate(statement(0).footprint, memory(*p))",
+            ),
+            (
+                "preserve(memory(p[i]), loop(1).statement(2));",
+                "separate(loop(1).statement(2).footprint, memory(p[i]))",
+            ),
+            (
+                "preserve(at(saved, memory(*p)), region(3));",
+                "at(saved, separate(region(3).footprint, memory(*p)))",
+            ),
+            (
+                "preserve(at(outer, at(inner, memory(*p))), region(3));",
+                "at(outer, at(inner, separate(region(3).footprint, memory(*p))))",
+            ),
+            (
+                "preserve(memory(at(saved, p)[0]), region(3));",
+                "separate(region(3).footprint, memory(at(saved, p)[0]))",
+            ),
+        ] {
+            let tactic = parser(source).parse_proof_tactic().unwrap();
+            let expected = parser(evidence).parse_proposition().unwrap();
+            assert_eq!(tactic, ProofTactic::Preserve(expected));
+            let printed =
+                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+            assert!(!printed.contains("preserve(separate("), "{printed}");
+            let reparsed = parser(&printed).parse_proof_clause_or_default().unwrap();
+            let SourceProof::Script(reparsed) = reparsed else {
+                panic!("expected a script")
+            };
+            // Resource printing canonicalizes cell sugar to a range. Check
+            // the canonical evidence, rather than incidental source metadata.
+            let ProofTactic::Preserve(actual) = &reparsed[0] else {
+                panic!("expected preserve")
+            };
+            let ProofTactic::Preserve(expected) = &tactic else {
+                unreachable!()
+            };
+            assert_eq!(
+                printing::source_click_proposition(actual),
+                printing::source_click_proposition(expected),
+                "{source} -> {printed}"
+            );
+        }
+    }
+
+    #[test]
+    fn preserve_refuses_the_old_proposition_argument_and_wrong_arity() {
+        let error = Parser::new("preserve(separate(statement(0).footprint, memory(*p)));")
+            .unwrap()
+            .parse_proof_tactic()
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("write `preserve(resource, region)`")
+        );
+        for source in [
+            "preserve();",
+            "preserve(memory(*p));",
+            "preserve(memory(*p), statement(0).footprint);",
+            "preserve(memory(*p), statement(0), statement(1));",
+            "preserve(at(saved, separate(statement(0).footprint, memory(*p))));",
+        ] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
         }
     }
 }

@@ -78,7 +78,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
         }
         have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
-            preserve(separate(statement(4).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(4));
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
@@ -104,7 +104,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
         }
         have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
-            preserve(separate(statement(5).footprint, memory(old(owner->data)[k])));
+            preserve(memory(old(owner->data)[k]), statement(5));
         }
         known();
     }

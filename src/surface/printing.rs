@@ -1,7 +1,7 @@
 use super::diagnostics::{
-    aligned_sugar, describe_contract_expression, describe_contract_segment,
-    describe_program_expression, describe_resource_subject, describe_snapshot_selector,
-    snapshot_aligned_sugar,
+    aligned_sugar, describe_code_region_ref, describe_contract_expression,
+    describe_contract_segment, describe_program_expression, describe_resource_subject,
+    describe_snapshot_selector, snapshot_aligned_sugar,
 };
 use super::*;
 
@@ -46,6 +46,42 @@ fn source_rewrite_arguments(equality: &ClickProposition) -> String {
     }
     let (left, right) = operands(equality, true);
     format!("{left}, {right}")
+}
+
+// Preserve retains its exact separation evidence internally. Its public
+// arguments select the kept resource and the transition independently.
+fn source_preserve_arguments(separation: &ClickProposition) -> String {
+    fn operands(separation: &ClickProposition) -> (String, String) {
+        match separation {
+            ClickProposition::Separate { left, right } => {
+                let (region, resource) = match (left, right) {
+                    (ResourceSubject::Footprint(region), resource)
+                    | (resource, ResourceSubject::Footprint(region)) => (region, resource),
+                    _ => unreachable!("a checked preserve must cite a region footprint"),
+                };
+                let mut resource = describe_resource_subject(resource);
+                // Parentheses distinguish an already historical instance from
+                // a snapshot scoping the entire separation evidence.
+                if resource.starts_with("at(") {
+                    resource = format!("({resource})");
+                }
+                (resource, describe_code_region_ref(region))
+            }
+            ClickProposition::At {
+                selector,
+                proposition,
+            } => {
+                let (resource, region) = operands(proposition);
+                (
+                    format!("at({}, {resource})", describe_snapshot_selector(selector)),
+                    region,
+                )
+            }
+            _ => unreachable!("a checked preserve must carry separation evidence"),
+        }
+    }
+    let (resource, region) = operands(separation);
+    format!("{resource}, {region}")
 }
 
 /// A proposition spelled for a refusal a person reads. It may print a term
@@ -1136,7 +1172,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Preserve(separation) => line(
             output,
             &prefix,
-            &format!("preserve({});", source_click_proposition(separation)),
+            &format!("preserve({});", source_preserve_arguments(separation)),
         ),
         ProofTactic::Rewrite(equality) => line(
             output,

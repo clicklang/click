@@ -287,13 +287,13 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 normalize() using { separate(memory(source->checked_out), memory(destination->checked_out)); };
             }
             have destination->checked_out == at(before_source_write, destination->checked_out) by {
-                preserve(separate(statement(0).footprint, memory(destination->checked_out)));
+                preserve(memory(destination->checked_out), statement(0));
             }
             have separate(statement(0).footprint, memory(destination->capacity)) by {
                 normalize() using { separate(memory(source->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
-                preserve(separate(statement(0).footprint, memory(destination->capacity)));
+                preserve(memory(destination->capacity), statement(0));
             }
             have separate(memory(destination->checked_out), memory(destination->capacity));
             step();
@@ -301,7 +301,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 normalize() using { separate(memory(destination->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(statement(1).entry, destination->capacity) by {
-                preserve(separate(statement(1).footprint, memory(destination->capacity)));
+                preserve(memory(destination->capacity), statement(1));
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
                 known();

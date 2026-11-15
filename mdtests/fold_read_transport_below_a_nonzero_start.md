@@ -86,7 +86,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { separate(memory(v[j]), memory(v[k])); };
             }
-            preserve(separate(statement(0).footprint, memory(v[k])));
+            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); known(); }
         apply(same_zeros(v, at(entry, v), lo, n, hi)) using {

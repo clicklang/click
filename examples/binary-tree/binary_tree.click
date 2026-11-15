@@ -105,10 +105,10 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
         normalize() using { separate(memory(swapped), memory(node->right)); };
     }
     have defined(node->left) by {
-        preserve(separate(statement(8).assignment(swapped, 0).footprint, memory(node->left)));
+        preserve(memory(node->left), statement(8).assignment(swapped, 0));
     }
     have defined(node->right) by {
-        preserve(separate(statement(8).assignment(swapped, 0).footprint, memory(node->right)));
+        preserve(memory(node->right), statement(8).assignment(swapped, 0));
     }
     fold(tree(node));
     step_until(function.exit);

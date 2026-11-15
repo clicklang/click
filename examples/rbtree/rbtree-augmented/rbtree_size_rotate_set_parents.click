@@ -165,7 +165,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
                 };
                 have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    preserve(separate(statement(3).footprint, memory(new->__rb_parent_color)));
+                    preserve(memory(new->__rb_parent_color), statement(3));
                 }
                 rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
             }
@@ -251,7 +251,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
                 };
                 have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    preserve(separate(statement(3).footprint, memory(new->__rb_parent_color)));
+                    preserve(memory(new->__rb_parent_color), statement(3));
                 }
                 rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
             }
@@ -337,7 +337,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
                 };
                 have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    preserve(separate(statement(3).footprint, memory(new->__rb_parent_color)));
+                    preserve(memory(new->__rb_parent_color), statement(3));
                 }
                 rewrite(new->__rb_parent_color, at(words, new->__rb_parent_color)); known();
             }

@@ -21,7 +21,7 @@ void change(int32* p, int32* q) {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
     have defined(*p) by {
-        preserve(separate(statement(0).footprint, memory(*p)));
+        preserve(memory(*p), statement(0));
     }
     step();
 }

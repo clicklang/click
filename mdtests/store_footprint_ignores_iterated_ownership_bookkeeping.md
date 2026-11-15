@@ -32,7 +32,7 @@ void claim(int32 *data, int32 *occupied, int32 **kept) {
         normalize() using { separate(memory(occupied[0]), memory(kept[0])); };
     }
     have kept[0] == at(before, kept[0]) by {
-        preserve(separate(statement(0).footprint, memory(kept[0])));
+        preserve(memory(kept[0]), statement(0));
     }
     fold(available(data, occupied));
     step();

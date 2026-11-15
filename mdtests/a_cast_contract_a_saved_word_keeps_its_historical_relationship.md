@@ -23,7 +23,7 @@ int32 read_packed(unsigned long* slot, struct node* p) {
         normalize() using {};
     }
     have *(slot as (int32 **)) == at(before, *(slot as (int32 **))) by {
-        preserve(separate(statement(0).region(0).footprint, memory(*slot)));
+        preserve(memory(*slot), statement(0).region(0));
     }
     have ((*slot & ~1) as (struct node *)) == p by {
         known();

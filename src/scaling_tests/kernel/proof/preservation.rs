@@ -405,3 +405,66 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
     assert!(costs[0] > 0);
 }
+
+#[test]
+fn preservation_separation_orientations_use_exact_indexes() {
+    for reversed in [false, true] {
+        for present in [false, true] {
+            let costs = [1, 4, 16].map(|size| {
+                let _session = crate::kernel::VerificationSession::enter();
+                let _reads = typed_reads::ReadScope::enter();
+                let (preservation, goal) = tests::fixture(4, false);
+                let Proposition::ResourceSeparate { left, right } = &preservation.separation else {
+                    unreachable!()
+                };
+                let mut ambient = Vec::new();
+                for index in 0..size {
+                    let other = Resource::Memory(MemoryRange::new_with_element_width(
+                        Pointer::symbolic(Variable(8_900_000 + index)),
+                        0u32.into(),
+                        1u32.into(),
+                        4,
+                    ));
+                    // Grow both separations of this same footprint and
+                    // unrelated separations. Neither may be scanned on a miss.
+                    ambient.push(Proposition::ResourceSeparate {
+                        left: left.clone(),
+                        right: Box::new(other.clone()),
+                    });
+                    ambient.push(Proposition::ResourceSeparate {
+                        left: Box::new(other),
+                        right: right.clone(),
+                    });
+                }
+                if present {
+                    ambient.push(if reversed {
+                        Proposition::ResourceSeparate {
+                            left: right.clone(),
+                            right: left.clone(),
+                        }
+                    } else {
+                        preservation.separation.clone()
+                    });
+                }
+                let facts = crate::kernel::proof::facts::ProofFacts::from_ordered(&ambient);
+                let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
+                    preservation.apply(|fact| facts.contains(fact))
+                });
+                if present {
+                    assert_eq!(result.unwrap(), goal);
+                } else {
+                    assert_eq!(
+                        result.unwrap_err(),
+                        "preserve separation is not exactly available"
+                    );
+                }
+                assert!(cost > 0);
+                cost
+            });
+            assert!(
+                costs.iter().all(|cost| *cost == costs[0]),
+                "reversed={reversed}, present={present}: {costs:?}"
+            );
+        }
+    }
+}

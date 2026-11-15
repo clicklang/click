@@ -62,7 +62,7 @@ impl box_fields::Holder {
                     at(before_put, separate(memory(*self.slot), memory(self.slot)));
                 }; }
                 have at(region(56).exit, self.slot) == at(region(56).entry, self.slot) by {
-                    preserve(separate(region(56).footprint, memory(self.slot)));
+                    preserve(memory(self.slot), region(56));
                 }
                 let after = fold(slot(self.slot), { value: Option<u32>::Some(x) }, {});
             }

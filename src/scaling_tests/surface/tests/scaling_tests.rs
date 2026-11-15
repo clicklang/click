@@ -10082,7 +10082,7 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10129,7 +10129,7 @@ fn inequality_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10176,7 +10176,7 @@ fn known_value_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10223,7 +10223,7 @@ fn snapshot_comparison_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10296,7 +10296,7 @@ fn two_read_transport_replay_cost(indexed: bool) {
         };
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert_eq!(expanded.matches("preserve(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10351,7 +10351,7 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert_eq!(expanded.matches("preserve(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10428,7 +10428,7 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
             let expanded = expanded.unwrap();
             planning.push(work);
             assert_eq!(expanded.matches("both {").count(), size - 1);
-            assert_eq!(expanded.matches("preserve(separate(").count(), size);
+            assert_eq!(expanded.matches("preserve(").count(), size);
             assert!(!expanded.contains("transport("));
             assert!(!expanded.contains("transport_certificate"));
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10500,7 +10500,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
         });
         let expanded = expanded.unwrap();
         expansion.push(work);
-        assert_eq!(expanded.matches("preserve(separate(").count(), 1);
+        assert_eq!(expanded.matches("preserve(").count(), 1);
         assert!(!expanded.contains("both {"));
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
@@ -10574,7 +10574,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         let expanded = expanded.unwrap();
         expansion.push(work);
         assert_eq!(expanded.matches("both {").count(), size / 2 - 1);
-        assert_eq!(expanded.matches("preserve(separate(").count(), size / 2);
+        assert_eq!(expanded.matches("preserve(").count(), size / 2);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10628,7 +10628,7 @@ fn implication_transport_replay_scales_with_explicit_links() {
         );
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert_eq!(expanded.matches("preserve(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10723,7 +10723,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
             });
             let expanded = expanded.unwrap();
             expansion.push(work);
-            assert_eq!(expanded.matches("preserve(separate(").count(), read_count);
+            assert_eq!(expanded.matches("preserve(").count(), read_count);
             assert!(!expanded.contains("rewrite("));
             assert!(!expanded.contains("transport("));
             assert!(!expanded.contains("transport_certificate"));

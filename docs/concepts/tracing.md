@@ -132,7 +132,7 @@ If a documented rule already covers the link and refuses it, use
 
 ### One-step preservation must be fast
 
-Write `preserve(separate(region.footprint, B));` under a read-equality goal.
+Write `preserve(B, region);` under a read-equality goal.
 It establishes the after-to-before read equality. The execution-produced
 footprint includes writes, call effects and allocation release. Establish its
 separation with explicitly supplied evidence. When a checked call publishes

@@ -118,7 +118,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                         normalize() using { separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)); };
                     }
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_store, *((&g->__rb_parent_color) as (int32 **))) by {
-                        preserve(separate(statement(0).footprint, memory(g->__rb_parent_color)));
+                        preserve(memory(g->__rb_parent_color), statement(0));
                     }
                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
                     mark before_local;
@@ -127,7 +127,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                         normalize() using {  };
                     }
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_local, *((&g->__rb_parent_color) as (int32 **))) by {
-                        preserve(separate(statement(1).region(0).footprint, memory(g->__rb_parent_color)));
+                        preserve(memory(g->__rb_parent_color), statement(1).region(0));
                     }
                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
                     step();

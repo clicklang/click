@@ -116,7 +116,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
             }
-            preserve(separate(statement(0).footprint, memory(v[k])));
+            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); known(); }
         have viewable(v[0..end]) by {

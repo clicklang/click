@@ -129,7 +129,7 @@ void caller(int32 *v, int32 i, int32 n) {
                     contains(memory(v[k]), memory(v[k]));
                 };
             }
-            preserve(separate(statement(0).footprint, memory(v[k])));
+            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..i]) by { observe(v[0..i]); known(); }
         have i <= 1073741823 by { solve(); }

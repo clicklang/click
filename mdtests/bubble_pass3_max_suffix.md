@@ -91,13 +91,13 @@ int32 bubble_pass3(int32 p[3]) {
                             normalize() using { separate(memory(p[j]), memory(p[0])); };
                         }
                         have at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]) by {
-                            preserve(separate(loop(0).statement(0).statement(1).footprint, memory(p[0])));
+                            preserve(memory(p[0]), loop(0).statement(0).statement(1));
                         }
                         have separate(loop(0).statement(0).statement(2).footprint, memory(p[0])) by {
                             normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
                         }
                         have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
-                            preserve(separate(loop(0).statement(0).statement(2).footprint, memory(p[0])));
+                            preserve(memory(p[0]), loop(0).statement(0).statement(2));
                         }
                         unfold(all_le_range);
                         intro(); intro();

@@ -58,7 +58,7 @@ impl resource_state::Store<u32> for resource_state::Slot {
                     at(before_put, separate(memory(*self.item), memory(self.item)));
                 }; }
                 have at(region(56).exit, self.item) == at(region(56).entry, self.item) by {
-                    preserve(separate(region(56).footprint, memory(self.item)));
+                    preserve(memory(self.item), region(56));
                 }
                 let state = fold(boxed(self.item), { value: Option<u32>::Some(x) }, {});
             }

@@ -29,7 +29,7 @@ void write(struct job *job, int32 *dest) {
         have separate(statement({index}).footprint, memory(job->output)) by {{
             normalize() using {{ at(entry, separate(memory(job->output), memory(dest[0..1]))); }};
         }}
-        preserve(separate(statement({index}).footprint, memory(job->output)));
+        preserve(memory(job->output), statement({index}));
     }}
 "#
             ));

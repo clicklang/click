@@ -92,7 +92,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { separate(memory(v[i]), memory(v[k])); };
             }
-            preserve(separate(statement(0).footprint, memory(v[k])));
+            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); known(); }
         have viewable(v[0..i]) by {

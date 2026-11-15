@@ -108,7 +108,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
             have separate(statement(0).footprint, memory(a[k])) by {
                 normalize() using { separate(memory(b[j]), memory(a[k])); };
             }
-            preserve(separate(statement(0).footprint, memory(a[k])));
+            preserve(memory(a[k]), statement(0));
         }
         have viewable(a[0..n]) by { observe(a[0..n]); known(); }
         apply(same_zeros(a, at(entry, a), 0, n, n)) using {

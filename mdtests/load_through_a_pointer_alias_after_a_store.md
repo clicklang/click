@@ -55,7 +55,7 @@ void set_up_word(struct node* c) {
                 normalize() using { separate(memory(p->word), memory(c->up)); };
             }
             have c->up == at(before_store, c->up) by {
-                preserve(separate(statement(2).footprint, memory(c->up)));
+                preserve(memory(c->up), statement(2));
             }
             have p == id;
             have p->word == 5;
