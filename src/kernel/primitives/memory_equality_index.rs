@@ -6,6 +6,8 @@
 #[cfg(test)]
 mod cell_tests;
 #[cfg(test)]
+mod owned_overlap_tests;
+#[cfg(test)]
 mod projection_tests;
 mod read_intervals;
 mod shape_points;
@@ -188,6 +190,8 @@ struct AddressBucket {
 #[derive(Clone, Debug, Default)]
 pub(super) struct MemoryAddresses {
     classes: PersistentMap<PointerBlock, AddressBucket>,
+    // A coordinate overflow must never turn a dropped payload into a miss.
+    incomplete: bool,
 }
 
 impl MemoryAddresses {
@@ -224,6 +228,7 @@ impl MemoryAddresses {
             block: range.base().block.clone(),
             offset: PointerOffsetTerm::Constant(0),
         }) else {
+            self.incomplete = true;
             return;
         };
         let extent = read_extent(fact);
@@ -286,6 +291,7 @@ impl MemoryAddresses {
     ) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
         let Some(key) = offset.checked_add(&bucket.origin) else {
+            self.incomplete = true;
             return;
         };
         let general = !key.is_constant();
@@ -345,14 +351,17 @@ impl MemoryAddresses {
                 .checked_add(&kept.origin)
                 .and_then(|value| value.checked_sub(&moved.origin))
             else {
+                self.incomplete = true;
                 return;
             };
             (kept, moved, shift)
         } else {
             let Some(origin) = moved.origin.checked_sub(&merge.moved_from_kept) else {
+                self.incomplete = true;
                 return;
             };
             let Some(shift) = origin.checked_sub(&kept.origin) else {
+                self.incomplete = true;
                 return;
             };
             let mut moved = moved;
@@ -374,9 +383,11 @@ impl MemoryAddresses {
         ] {
             for (start, end, entry) in smaller_intervals.iter() {
                 let Some(start) = start.0.checked_add(&shift) else {
+                    self.incomplete = true;
                     continue;
                 };
                 let Some(end) = end.0.checked_add(&shift) else {
+                    self.incomplete = true;
                     continue;
                 };
                 larger_intervals.insert(AddressCoordinate(start), AddressCoordinate(end), entry);
@@ -385,6 +396,7 @@ impl MemoryAddresses {
         for ((kind, offset), entries) in smaller.entries.iter() {
             crate::instrumentation::record_deterministic_work(1);
             let Some(offset) = offset.0.checked_add(&shift) else {
+                self.incomplete = true;
                 continue;
             };
             let general = !offset.is_constant();
@@ -1394,6 +1406,12 @@ enum MemoryQuery<'a> {
     Address(&'a Pointer),
     Footprint(&'a MemoryRange),
 }
+
+pub(super) enum ConstantOwnedOverlap {
+    Unsupported,
+    Clear,
+    Overlap(ResourceEntryId),
+}
 impl MemoryQuery<'_> {
     fn register(self, graph: &EqualityGraph) {
         match self {
@@ -1427,6 +1445,123 @@ impl MemoryQuery<'_> {
 }
 
 impl ResourceContext {
+    /// A decisive overlap query only for an already-published, complete
+    /// constant-coordinate ownership fragment. Unsupported is dispatch to
+    /// the existing legacy operation, never a failed indexed search.
+    pub(super) fn constant_owned_overlap(
+        &self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> ConstantOwnedOverlap {
+        use ConstantOwnedOverlap::*;
+        let Some(range) = fact.memory_own_range() else {
+            return Unsupported;
+        };
+        let Some(extent) = read_extent(fact) else {
+            return Unsupported;
+        };
+        if self.flat_owned_memory_ranges().is_empty() {
+            return Clear;
+        }
+        // The memory algebra deliberately permits pooling of equal-content
+        // string literal descriptions. Keep that policy on its existing path.
+        if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
+            return Unsupported;
+        }
+        {
+            let cache = self
+                .memory_equalities
+                .lock()
+                .expect("memory equality index");
+            let Some(published) = &cache.published else {
+                return Unsupported;
+            };
+            let current = std::sync::Arc::ptr_eq(&published.resources, &self.storage);
+            // Publication may retain one lazy resource delta, never a growing
+            // backlog. Let the prepared index apply that producer delta.
+            let one_delta =
+                std::sync::Arc::ptr_eq(&published.resources.origin, &self.storage.origin)
+                    && Self::history_tail_is(
+                        self.storage
+                            .history
+                            .as_ref()
+                            .and_then(|change| change.parent.as_ref()),
+                        published.resources.history.as_ref(),
+                    );
+            if !published.points_initialized
+                || !(current || one_delta)
+                || published.graph.input_key().root()
+                    != assumptions.equality_graph.input_key().root()
+                || !cache
+                    .by_inputs
+                    .get(&assumptions.equality_graph.input_key().root())
+                    .is_some_and(|root| {
+                        root.points_initialized
+                            && std::sync::Arc::ptr_eq(&root.resources.origin, &self.storage.origin)
+                    })
+            {
+                return Unsupported;
+            }
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        // Only the selected base can introduce a read definition: constant
+        // endpoints add byte displacements, not a new footprint theorem.
+        // A prepared lineage applies its equality/resource delta; this query
+        // never registers a cold ambient input.
+        let index = self.pair_memory_equalities_in_graph(
+            assumptions.equality_graph.clone(),
+            true,
+            Some(MemoryQuery::Address(range.base())),
+        );
+        if !index.points_initialized
+            || index.addresses.incomplete
+            || !std::sync::Arc::ptr_eq(&index.resources, &self.storage)
+            || index.graph.input_key() != assumptions.equality_graph.input_key()
+        {
+            return Unsupported;
+        }
+        let Some(start) = index.graph.canonical_pointer(&range.start_pointer()) else {
+            return Unsupported;
+        };
+        let Some(end) = index.graph.canonical_pointer(&range.end_pointer()) else {
+            return Unsupported;
+        };
+        if start.representative != end.representative
+            || !index.graph.affine_addresses_complete(&start.representative)
+        {
+            return Unsupported;
+        }
+        let Some(bucket) = index.addresses.classes.get(&start.representative) else {
+            return if start.offset.is_constant() && end.offset.is_constant() {
+                Clear
+            } else {
+                Unsupported
+            };
+        };
+        if bucket.general_coordinates != 0 || bucket.write_intervals.len() != bucket.owners.len() {
+            return Unsupported;
+        }
+        let (Some(start), Some(end)) = (
+            start.offset.checked_add(&bucket.origin),
+            end.offset.checked_add(&bucket.origin),
+        ) else {
+            return Unsupported;
+        };
+        if !start.is_constant()
+            || !end.is_constant()
+            || end.constant_difference(&start) != Some(i128::from(extent))
+        {
+            return Unsupported;
+        }
+        match bucket
+            .write_intervals
+            .first_overlap(&AddressCoordinate(start), &AddressCoordinate(end))
+        {
+            Some(entry) => Overlap(entry),
+            None => Clear,
+        }
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn observe_composite_context(&self) {
         projection_tests::record_context(self);
