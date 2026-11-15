@@ -22,6 +22,14 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant total == prefix(bytes, i);
         preserve by {
             step_until(read(0)); step();
+            have defined(bytes[i]) by {
+                transport(at(function.entry, viewable(bytes[0..bytes.len()])), defined(bytes[i])) using {
+                    at(function.entry, viewable(bytes[0..bytes.len()]));
+                    i < bytes.len();
+                    bytes.len() <= 9223372036854775807u64;
+                };
+            }
+            have defined(total + bytes[i] as i32);
             have i < 18446744073709551615u64;
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {
                 peel(prefix(bytes, i + 1u64)) using {

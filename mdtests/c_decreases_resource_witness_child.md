@@ -79,6 +79,16 @@ uint32 count_nodes(struct node* node) {
             }
         }
         have ((node->word & ~1) as (struct node *)) == child by { known(); }
+        mark before_assignment;
+        step();
+        have separate(statement(1).assignment(rest, 0).footprint, memory(node->word)) by {
+            normalize() using {};
+        }
+        have *((&node->word) as (int32 **)) == at(before_assignment, *((&node->word) as (int32 **))) by {
+            preserve(separate(statement(1).assignment(rest, 0).footprint, memory(node->word)));
+        }
+        have ((node->word & ~1) as (struct node *)) == child by { known(); }
+        fold(marked_list(node));
 
     }
 }
