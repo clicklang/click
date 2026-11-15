@@ -17551,8 +17551,17 @@ impl Parser {
                                             Some(InterfaceType::UInt8Array(_))
                                         ))
                         );
+                        let aggregate_result =
+                            matches!(
+                                &expression,
+                                CExpression::Call { .. }
+                                    | CExpression::IndirectCall { .. }
+                                    | CExpression::Ternary { .. }
+                                    | CExpression::StepResult { .. }
+                                    | CExpression::StatementExpression { .. }
+                            ) && self.aggregate_struct_name(&expression).is_some();
                         if struct_value
-                            || self.aggregate_struct_name(&expression).is_some()
+                            || aggregate_result
                             || matches!(&expression, CExpression::UnionAddress { .. })
                         {
                             self.resolve_field_access(&expression, &field_name)?
@@ -18552,6 +18561,7 @@ impl Parser {
     > {
         let (struct_name, union_name) = match base {
             CExpression::Call { .. }
+            | CExpression::IndirectCall { .. }
             | CExpression::Ternary { .. }
             | CExpression::StatementExpression { .. } => (self.aggregate_struct_name(base), None),
             CExpression::StepResult { struct_name, .. } => (struct_name.clone(), None),
