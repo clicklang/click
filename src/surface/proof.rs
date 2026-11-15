@@ -673,14 +673,14 @@ mod certificate_tests {
         );
         let error = root
             .driver()
-            .apply_step(ProofStep::Known)
+            .apply_step(ProofStep::Intro)
             .err()
             .expect("a rejected candidate must not be reported as success");
-        assert!(error.message().contains("known"), "{}", error.message());
+        assert!(error.message().contains("intro"), "{}", error.message());
         assert!(root.certificate().steps().is_empty());
         let completed = root
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .expect("failed validation must not mutate the retained root");
         assert_eq!(
             completed.completed_proposition().unwrap().proposition(),

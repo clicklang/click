@@ -2775,7 +2775,8 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             };
             // Keep the checked authority for the original claims,
             // but close the rewritten goals in the expanded proof.
-            // Reflexive residuals need normalization, not `known`. With
+            // Keep the normalization spelling for computational residuals until
+            // their expansion route is migrated. With
             // resource claims, keep the ordinary `known` closers: they
             // follow contract order, whose next goal may be ownership.
             if proof_context.constants.grouped_contract

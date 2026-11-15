@@ -520,3 +520,98 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
         );
     }
 }
+
+/// The new computational leaf reads the goal, not the facts that happen to
+/// share its variable. Exercise both success and refusal in cold contexts.
+#[test]
+fn known_computation_work_ignores_related_and_unrelated_facts() {
+    use crate::kernel::{ConditionTerm, IntegerTerm};
+    let mut hits = Vec::new();
+    let mut misses = Vec::new();
+    for size in [16u64, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = IntegerTerm::var(Variable(882_000));
+        let facts = ProofFacts::from_ordered(
+            &(0..size)
+                .flat_map(|i| {
+                    [
+                        Proposition::ConditionIs(
+                            ConditionTerm::integer_equal(
+                                variable.clone(),
+                                IntegerTerm::var(Variable(883_000 + i)),
+                            ),
+                            true,
+                        ),
+                        Proposition::ConditionIs(
+                            ConditionTerm::integer_equal(
+                                IntegerTerm::var(Variable(884_000 + i)),
+                                IntegerTerm::var(Variable(885_000 + i)),
+                            ),
+                            true,
+                        ),
+                    ]
+                })
+                .collect::<Vec<_>>(),
+        );
+        let successor = IntegerTerm::add(variable.clone(), IntegerTerm::constant_i64(1));
+        for (condition, expected, costs) in [
+            (
+                ConditionTerm::IntegerGreaterThan(
+                    successor.clone().into(),
+                    variable.clone().into(),
+                ),
+                true,
+                &mut hits,
+            ),
+            (
+                ConditionTerm::IntegerEqual(successor.into(), variable.into()),
+                false,
+                &mut misses,
+            ),
+        ] {
+            let proof =
+                known_computation_proof(Proposition::ConditionIs(condition, true), facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), expected);
+            costs.push(work);
+        }
+    }
+    for costs in [hits, misses] {
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work == costs[0]),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
+fn known_computation_work_is_linear_in_shared_integer_terms() {
+    use crate::kernel::{ConditionTerm, IntegerTerm};
+    let mut costs = Vec::new();
+    for depth in [16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut term: crate::kernel::SharedIntegerTerm = IntegerTerm::var(Variable(886_000)).into();
+        for _ in 0..depth {
+            term = IntegerTerm::Add(term.clone(), term).into();
+        }
+        let successor = IntegerTerm::add(term.as_ref().clone(), IntegerTerm::constant_i64(1));
+        let proof = known_computation_proof(
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterThan(successor.into(), term),
+                true,
+            ),
+            ProofFacts::default(),
+        );
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            proof.apply_known(PropositionKnownContext::Exact)
+        });
+        assert!(result.is_ok());
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{costs:?}"
+    );
+}
