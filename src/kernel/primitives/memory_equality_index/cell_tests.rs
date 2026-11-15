@@ -224,7 +224,14 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
     }
     assert!(!shifted.permits_memory_read(&y.offset_by_bytes(8), 4, &facts));
     assert!(shifted.permits_memory_read(&old.offset_by_bytes(8), 4, &facts));
-    let later = crate::kernel::intern_memory(memory.with_block("later", 8));
+    let declared = crate::kernel::intern_memory(memory.with_block("later", 8));
+    assert!(resources.permits_memory_read(&Pointer::loaded_value(&declared, &a), 4, &connected));
+    let later = crate::kernel::intern_memory(
+        declared
+            .memory()
+            .clone()
+            .store(a.offset_by_bytes(4), crate::kernel::uint8(1u32)),
+    );
     assert!(!resources.permits_memory_read(&Pointer::loaded_value(&later, &a), 4, &connected));
     assert!(
         resources
@@ -626,8 +633,17 @@ fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
             .memory_write_range(&y.offset_by_bytes(30), 4, &connected)
             .is_none()
     );
-    let later = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
-    let other_snapshot = Pointer::loaded_value(&later, &Pointer::symbolic(Variable(895_010)));
+    let slot = Pointer::symbolic(Variable(895_010));
+    let declared = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
+    let declared_read = Pointer::loaded_value(&declared, &slot);
+    assert!(resources.permits_memory_read(&declared_read.offset_by_bytes(8), 4, &connected));
+    let later = crate::kernel::intern_memory(
+        declared
+            .memory()
+            .clone()
+            .store(slot.offset_by_bytes(4), crate::kernel::uint8(1u32)),
+    );
+    let other_snapshot = Pointer::loaded_value(&later, &slot);
     assert!(!resources.permits_memory_read(&other_snapshot.offset_by_bytes(8), 4, &connected));
 }
 
