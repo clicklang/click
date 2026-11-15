@@ -16416,6 +16416,16 @@ impl Parser {
         self.expect(Token::LParen)?;
         let initial = self.parse_contract_expression()?;
         self.expect(Token::Comma)?;
+        // The old unannotated two-name spelling remains contextual sugar.
+        // A typed literal or any other expression is an ordinary step value.
+        let legacy_binder = self.peek() == Some(&Token::Pipe)
+            && matches!(self.peek_next(), Some(Token::Ident(_)))
+            && self.tokens.get(self.position + 2) == Some(&Token::Comma);
+        if !legacy_binder {
+            let step = self.parse_contract_expression()?;
+            self.expect(Token::RParen)?;
+            return Ok(lambdas::range_fold(start, end, initial, step));
+        }
         self.expect(Token::Pipe)?;
         let accumulator = self.expect_ident("fold accumulator name")?;
         self.expect(Token::Comma)?;

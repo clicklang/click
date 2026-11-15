@@ -613,8 +613,9 @@ call named specification functions classified as independent of C memory.
 Memory reads, resource observations, and snapshot selectors inside lambda
 bodies are refused. Function-valued declaration parameters and results,
 function equality, proposition-valued lambdas, and algebraic lambda
-parameters/results are not supported yet. `.all`, `.any`, and `.fold` retain
-their existing inline binder syntax; they do not yet accept lambda values.
+parameters/results are not supported yet. `.fold` accepts these lambda
+values as its step. `.all` and `.any` retain their existing inline binder
+syntax; they do not yet accept lambda values.
 
 Applications elaborate to typed lexical value bindings, using existing kernel
 terms. They introduce no higher-order proof search or automatic extensionality.
@@ -630,6 +631,35 @@ hi`. A range can introduce a binder through `.all`, `.any`, or `.fold`:
 (lo..hi).any(|k| { p[k] == needle })
 (lo..hi).fold(0, |acc, k| { acc + p[k] })
 ```
+
+### Range folds
+
+`(lo..hi).fold(initial, step)` accepts a typed specification lambda value.
+The step must have exactly the signature `fn(A, I) -> A`, where `A` is the
+accumulator carrier and `I` is the range's index carrier. The initial value
+must have carrier `A`. A step can be a literal, a local binding or alias, or
+an expression producing a lambda. Captures retain their lexical bindings.
+
+<!-- verified-example: mdtests/lambda_folds.md -->
+```click
+function lambda_total(lo: int32, hi: int32, offset: Integer) -> Integer {
+    let step = |acc: Integer, k: int32| -> Integer { acc + to_integer(k) + offset };
+    let alias: fn(Integer, int32) -> Integer = step;
+    (lo..hi).fold(0, alias)
+}
+```
+
+The supported carriers remain unchanged: an `Integer` accumulator can use
+`int32`, `uint64`, or `Integer` indices; an `int32` accumulator requires
+`int32` indices. A typed step and its initial value are checked even for an
+empty range. Applications use the same capture-avoiding elaboration as an
+explicit lambda call, and fold laws and machine arithmetic guards are unchanged.
+
+The unannotated shorthand `.fold(initial, |acc, k| { body })` remains
+supported and infers its carriers from the range, initial value, and body.
+It retains support for guarded memory reads. A standalone typed lambda used
+as a step has the current specification-lambda restrictions, including no
+memory reads in its body; capture a read value before constructing it.
 
 Quantifiers use an explicitly typed binder:
 

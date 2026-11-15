@@ -1967,13 +1967,18 @@ impl<'a> Proof<'a> {
         whole: &SharedIntegerTerm,
     ) -> Result<IntegerTerm, ClickError> {
         let name = &application.name;
+        let fold_body = definition
+            .body()
+            .map(lambdas::reduce_head_fully)
+            .transpose()
+            .map_err(|message| self.step_error(message))?;
         let Some(ContractExpression::RangeFold {
             start,
             end,
             initial,
             body,
             ..
-        }) = definition.body()
+        }) = fold_body.as_deref()
         else {
             return Err(self.step_error(format!(
                 "`peel({name}(...)) using` requires the body of `{name}` to be exactly a range fold"
@@ -2032,14 +2037,15 @@ impl<'a> Proof<'a> {
         refreshed_kernel: &Proposition,
         lower: &dyn Fn(&ClickProposition) -> Option<Proposition>,
     ) -> Option<ClickProposition> {
-        let Some(ContractExpression::RangeFold {
+        let fold_body = lambdas::reduce_head_fully(definition.body()?).ok()?;
+        let ContractExpression::RangeFold {
             end,
             initial,
             accumulator,
             item,
             body,
             ..
-        }) = definition.body()
+        } = fold_body.as_ref()
         else {
             return None;
         };

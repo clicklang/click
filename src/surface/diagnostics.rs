@@ -7358,6 +7358,18 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             start,
             end,
             initial,
+            ..
+        } if let Some(step) = lambdas::range_fold_step(expression) => format!(
+            "({}..{}).fold({}, {})",
+            describe_contract_expression(start),
+            describe_contract_expression(end),
+            describe_contract_expression(initial),
+            describe_contract_expression(step),
+        ),
+        ContractExpression::RangeFold {
+            start,
+            end,
+            initial,
             accumulator,
             item,
             body,

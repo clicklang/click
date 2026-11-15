@@ -10,6 +10,80 @@ pub(super) fn signature(parameters: &[(String, ClickType)], result: &ClickType) 
     }
 }
 
+/// A value-based fold applies its step to the primitive fold's two bound
+/// values. Fresh binders keep the step's lexical captures outside that scope.
+/// The primitive remains the common lowering target for the older shorthand.
+pub(super) fn range_fold(
+    start: ContractExpression,
+    end: ContractExpression,
+    initial: ContractExpression,
+    step: ContractExpression,
+) -> ContractExpression {
+    let mut names = BTreeSet::new();
+    lowering::collect_contract_expression_referenced_names(&step, &mut names);
+    lowering::collect_contract_expression_binding_names(&step, &mut names);
+    let mut next = 0;
+    let mut fresh = || loop {
+        let name = format!("__click_fold_{next}");
+        next += 1;
+        if names.insert(name.clone()) {
+            break name;
+        }
+    };
+    let accumulator = fresh();
+    let item = fresh();
+    let body = ContractExpression::Apply {
+        function: Box::new(step),
+        arguments: vec![
+            ContractExpression::Binding(accumulator.clone()),
+            ContractExpression::Binding(item.clone()),
+        ],
+    };
+    ContractExpression::RangeFold {
+        start: Box::new(start),
+        end: Box::new(end),
+        initial: Box::new(initial),
+        accumulator,
+        item,
+        body: Box::new(body),
+    }
+}
+
+/// Recognize the step application without exposing the primitive's binder
+/// names in printed source. A legacy body that closes over either binder
+/// cannot be moved outside that binder's scope.
+pub(super) fn range_fold_step(expression: &ContractExpression) -> Option<&ContractExpression> {
+    let ContractExpression::RangeFold {
+        accumulator,
+        item,
+        body,
+        ..
+    } = expression
+    else {
+        return None;
+    };
+    let ContractExpression::Apply {
+        function,
+        arguments,
+    } = body.as_ref()
+    else {
+        return None;
+    };
+    let [
+        ContractExpression::Binding(acc),
+        ContractExpression::Binding(index),
+    ] = arguments.as_slice()
+    else {
+        return None;
+    };
+    if acc != accumulator || index != item {
+        return None;
+    }
+    let mut names = BTreeSet::new();
+    lowering::collect_contract_expression_referenced_names(function, &mut names);
+    (!names.contains(accumulator) && !names.contains(item)).then_some(function)
+}
+
 /// Read the explicit result carrier without erasing the caller's Integer
 /// scope. Full argument/body checking belongs to scoped expression typing.
 pub(super) fn application_result_type(function: &ContractExpression) -> Result<ClickType, String> {
@@ -20,6 +94,18 @@ pub(super) fn application_result_type(function: &ContractExpression) -> Result<C
         return application_result_type(&reduced);
     }
     Err("application expects a specification lambda value".into())
+}
+
+/// Expose a value's outer form after elaborating local lambda aliases.
+/// Fold-law inspection must see the same body as ordinary value lowering.
+pub(super) fn reduce_head_fully(
+    expression: &ContractExpression,
+) -> Result<std::borrow::Cow<'_, ContractExpression>, String> {
+    let mut value = std::borrow::Cow::Borrowed(expression);
+    while let Some(reduced) = reduce_head(&value)? {
+        value = std::borrow::Cow::Owned(reduced);
+    }
+    Ok(value)
 }
 
 /// Only a literal closure has an executable body in this first slice.
@@ -131,6 +217,94 @@ pub(super) fn reduce_head(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lambda_folds_reject_incompatible_step_signatures() {
+        for (step, diagnostic) in [
+            ("7", "application expects a specification lambda"),
+            (
+                "|acc: Integer| -> Integer { acc }",
+                "lambda expects 1 arguments",
+            ),
+            (
+                "|acc: Integer, k: Integer| -> Integer { acc + k }",
+                "range fold step expects",
+            ),
+            (
+                "|acc: Integer, k: int32| -> int32 { 0 }",
+                "range fold step expects",
+            ),
+            (
+                "|acc: uint64, k: int32| -> uint64 { acc }",
+                "range fold step expects",
+            ),
+        ] {
+            let source = format!(
+                "function bad(lo: int32, hi: int32) -> Integer {{ (lo..hi).fold(0, {step}) }}"
+            );
+            let error = parser::parse(&source).expect_err(&source);
+            assert!(
+                error.message().contains(diagnostic),
+                "{source}: {}",
+                error.message()
+            );
+        }
+        let source = "function bad(lo: int32, hi: int32) -> Integer { (lo..hi).fold(0u64, |acc: Integer, k: int32| -> Integer { acc }) }";
+        let error = parser::parse(source).expect_err(source);
+        assert!(
+            error
+                .message()
+                .contains("range fold initial value expects Integer"),
+            "{}",
+            error.message()
+        );
+    }
+
+    #[test]
+    fn lambda_folds_print_step_values_without_primitive_binders() {
+        let source = "function total(lo: int32, hi: int32, offset: Integer) -> Integer { let step = |acc: Integer, k: int32| -> Integer { acc + to_integer(k) + offset }; (lo..hi).fold(0, step) }";
+        let file = parser::parse(source).unwrap();
+        let original = file.click_function_definitions()[0].body().unwrap();
+        let body = diagnostics::describe_contract_expression(original);
+        assert!(!body.contains("__click_fold_"), "{body}");
+        let reparsed = parser::parse(&format!(
+            "function total(lo: int32, hi: int32, offset: Integer) -> Integer {{ {body} }}"
+        ))
+        .unwrap();
+        assert_eq!(
+            Some(original),
+            reparsed.click_function_definitions()[0].body()
+        );
+    }
+
+    #[test]
+    fn lambda_folds_expand_and_recheck_without_search() {
+        let source = "function total(lo: int32, hi: int32) -> Integer { (lo..hi).fold(0, |acc: Integer, k: int32| -> Integer { acc + to_integer(k) }) } theorem empty(n: int32) { ensures total(n, n) == 0 by { have n <= n; peel(total(n, n)) using { n <= n; }; solve(); } }";
+        let verified = verify_click_theorems(source).unwrap();
+        let expanded = verified[0].expanded_proof_source().unwrap();
+        assert!(!expanded.contains("solve("), "{expanded}");
+        let rechecked = source.replace(
+            "by { have n <= n; peel(total(n, n)) using { n <= n; }; solve(); }",
+            &expanded,
+        );
+        verify_click_theorems(&rechecked)
+            .unwrap_or_else(|error| panic!("{rechecked}: {}", error.report()));
+    }
+
+    #[test]
+    fn lambda_fold_alias_append_expands_and_rechecks_without_search() {
+        let proof =
+            "by { peel(total(lo, hi + 1, offset)) using { lo <= hi; hi < 2147483647; }; solve(); }";
+        let source = format!(
+            "function total(lo: int32, hi: int32, offset: Integer) -> Integer {{ let step = |acc: Integer, k: int32| -> Integer {{ acc + to_integer(k) + offset }}; let alias = step; (lo..hi).fold(0, alias) }} theorem append(lo: int32, hi: int32, offset: Integer) {{ requires lo <= hi; requires hi < 2147483647; ensures total(lo, hi + 1, offset) == total(lo, hi, offset) + to_integer(hi) + offset {proof} }}"
+        );
+        let verified = verify_click_theorems(&source).unwrap();
+        let expanded = verified[0].expanded_proof_source().unwrap();
+        assert!(!expanded.contains("solve("), "{expanded}");
+        let rechecked = source.replace(proof, &expanded);
+        verify_click_theorems(&rechecked)
+            .unwrap_or_else(|error| panic!("{rechecked}: {}", error.report()));
+    }
 
     #[test]
     fn typed_lambdas_reject_invalid_signatures_and_applications() {
