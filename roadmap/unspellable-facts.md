@@ -415,6 +415,19 @@ scaling test, Boolean-read substitution and identity parity, dependency widths
 and ordering, resource diagnostics and the intervening MIR temporary tests.
 The CI-quality check passed.
 
+8l produces Boolean pure-call results as common Bool roots. Numeric arguments
+remain shared, and opaque argument descriptors retain exact producer identities.
+A cached selected call reading preserves shared numeric arguments at native
+handoffs. Observation normalization uses native semantic argument identity while
+producer roots retain differing pointer annotations. Execution result type and
+native output support the retained call; the separately scheduled local/call,
+storage and mixed-family argument slices still own those remaining boundaries.
+
+Validation: all 1,829 selected tests passed, including every scaling test,
+Boolean call result production and native handoff parity, exact descriptor and
+semantic observation identity, shared call argument rewrites, Boolean spelling,
+and existing numeric/pointer call producers. The CI-quality check passed.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes
