@@ -287,6 +287,23 @@ fn conversion_type(name: &str) -> Option<ProgramType> {
     })
 }
 
+/// The existing native conversion namespace, with no evaluation or allocation.
+pub(crate) fn numeric_float_conversion_types(name: &str) -> Option<(ProgramType, ProgramType)> {
+    if name.len() > "c_float64_to_float64".len() {
+        return None;
+    }
+    let (source, target) = name.strip_prefix("c_")?.split_once("_to_")?;
+    let source = conversion_type(source)?;
+    let target = conversion_type(target)?;
+    if source == target
+        || !matches!(source, ProgramType::Float32 | ProgramType::Float64)
+            && !matches!(target, ProgramType::Float32 | ProgramType::Float64)
+    {
+        return None;
+    }
+    Some((source, target))
+}
+
 /// Fold only a literal operand of an existing C numeric float conversion.
 /// Rebuilders already visit children: do not scan a symbolic subtree here.
 fn constant_conversion(name: &str, operand: &MachineTerm) -> Option<MachineTerm> {
@@ -295,9 +312,7 @@ fn constant_conversion(name: &str, operand: &MachineTerm) -> Option<MachineTerm>
     {
         return None;
     }
-    let (source, target) = name.strip_prefix("c_")?.split_once("_to_")?;
-    let source = conversion_type(source)?;
-    let target = conversion_type(target)?;
+    let (source, target) = numeric_float_conversion_types(name)?;
     match (source, target) {
         (ProgramType::Float32, ProgramType::Float64) => Some(MachineTerm::uint64_constant(
             float32_to_float64_bits(operand.float32_as_const()?),
