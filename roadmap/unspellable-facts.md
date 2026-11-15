@@ -410,6 +410,11 @@ read descriptor is cached without exporting an enclosing Boolean expression.
 Frame transport and load matching retain the existing Boolean-value refusals.
 Surface output remains at its explicit compatibility boundary.
 
+Validation: all 1,907 selected tests passed on current upstream, including every
+scaling test, Boolean-read substitution and identity parity, dependency widths
+and ordering, resource diagnostics and the intervening MIR temporary tests.
+The CI-quality check passed.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes
