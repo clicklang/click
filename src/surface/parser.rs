@@ -6230,6 +6230,8 @@ impl Parser {
                 InterfaceType::Int128 => InterfaceType::Int128Pointer,
                 InterfaceType::UInt64(rank) => InterfaceType::UInt64Pointer(rank),
                 InterfaceType::UInt128 => InterfaceType::UInt128Pointer,
+                InterfaceType::Float32 if !reference => InterfaceType::Float32Pointer,
+                InterfaceType::Float64 if !reference => InterfaceType::Float64Pointer,
                 InterfaceType::Int8Pointer => InterfaceType::Int8PointerPointer,
                 InterfaceType::Int16Pointer => InterfaceType::Int16PointerPointer,
                 InterfaceType::UInt16Pointer => InterfaceType::UInt16PointerPointer,
@@ -14347,8 +14349,8 @@ impl Parser {
     }
 
     /// The target of a Click cast at the cursor, after its `(` or inside the
-    /// parentheses of a pointer target: an integer type, `void *`, or an
-    /// integer pointer type such as `uint8 *`, unqualified.
+    /// parentheses of a pointer target: an integer type, `void *`, or a
+    /// scalar pointer type such as `uint8 *` or `float *`, unqualified.
     fn parse_click_cast_type(&mut self) -> Result<ProgramType, ClickError> {
         let parsed_type = self.parse_type()?;
         let target_type = parsed_type.interface_type.to_kernel_type();
@@ -16804,11 +16806,19 @@ impl Parser {
             )
     }
 
+    fn starts_float_pointer_cast_at(&self, index: usize) -> bool {
+        self.tokens.get(index) == Some(&Token::LParen)
+            && matches!(self.tokens.get(index + 1), Some(Token::Ident(name)) if matches!(name.as_str(), "float" | "double"))
+            && self.tokens.get(index + 2) == Some(&Token::Star)
+            && self.tokens.get(index + 3) == Some(&Token::RParen)
+    }
+
     fn starts_contract_scalar_cast(&self) -> bool {
-        (self.peek() == Some(&Token::LParen)
-            && self.peek_next() == Some(&Token::Ident("void".to_string()))
-            && self.tokens.get(self.position + 2) == Some(&Token::Star)
-            && self.tokens.get(self.position + 3) == Some(&Token::RParen))
+        self.starts_float_pointer_cast_at(self.position)
+            || (self.peek() == Some(&Token::LParen)
+                && self.peek_next() == Some(&Token::Ident("void".to_string()))
+                && self.tokens.get(self.position + 2) == Some(&Token::Star)
+                && self.tokens.get(self.position + 3) == Some(&Token::RParen))
             || self.peek() == Some(&Token::LParen)
                 && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "int8" | "uint8" | "int16" | "uint16" | "uint32" | "int32" | "uint64" | "int64" | "int128" | "uint128"))
     }
@@ -16857,6 +16867,9 @@ impl Parser {
     fn starts_cast_at(&self, index: usize) -> bool {
         if !matches!(self.tokens.get(index), Some(Token::Ident(name)) if name == "as") {
             return false;
+        }
+        if self.starts_float_pointer_cast_at(index + 1) {
+            return true;
         }
         match self.tokens.get(index + 1) {
             Some(Token::Ident(name)) => {

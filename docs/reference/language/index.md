@@ -218,10 +218,19 @@ A cast is written after its operand, `e as T`. An integer target is bare:
 `x as uint32`, `old(x) as int32`, `n / d as int128`. A pointer target is
 parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 `p as (const struct node *)`. The targets are the ten machine integer types
-`int8` to `uint128`, `void *`, a pointer to one of them, and a pointer to a
-struct; a pointer target is unqualified except for a struct's `const`, and
-a byte view inherits its source's qualification. A Rust source's sidecar
+`int8` to `uint128`, `void *`, a pointer to one of them, `float *`, `double *`,
+and a pointer to a struct; a pointer target is unqualified except for a
+struct's `const`, and a byte view inherits its source's qualification. A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
+
+Float pointer casts preserve the address and use the existing pointer-cast
+rules: in a pure-function body, a non-byte scalar pointer target requires a
+`void *` source. A byte pointer therefore uses
+`p as (void *) as (float *)` (or `double *`). Reads and arithmetic after
+`p as (float *)` or `p as (double *)` use that pointee's width. A cast supplies no access permission or initializedness,
+and does not perform a numeric conversion of the stored bits. Bare `as float`
+and `as double` are not added to default Click by these pointer forms.
+See `mdtests/contract_float_pointer_casts.md` for reads and pointer strides.
 
 `as` binds tighter than every binary operator and looser than every unary
 one, as in Rust, and chains left to right:

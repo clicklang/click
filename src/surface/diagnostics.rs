@@ -5983,7 +5983,11 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                     describe_program_expression(expression)
                 );
             }
-            let spelling = crate::kernel::program_type_spelling(*target_type);
+            let spelling = match target_type {
+                ProgramType::Float32Pointer => "float*",
+                ProgramType::Float64Pointer => "double*",
+                _ => crate::kernel::program_type_spelling(*target_type),
+            };
             // Contract expressions use the `expression as type` cast syntax.
             // Wrap the complete cast so it remains a single term when it is
             // embedded in a generated comparison or another proposition.
