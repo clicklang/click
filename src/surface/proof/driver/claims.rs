@@ -9,13 +9,13 @@ use std::sync::Arc;
 struct ContractClosingInput {
     returned: Option<crate::kernel::proof::CheckedReturnPath>,
     path: crate::kernel::SymbolicExecutionPath,
-    specification: crate::kernel::CheckedPathSpecification,
+    specification: Arc<crate::kernel::PublishedFunctionOutcome>,
 }
 
 fn contract_closing_input(
     root: Option<&Proof<'_>>,
     execution: &CheckedFunctionExecution,
-    function: &ProgramFunction,
+    _function: &ProgramFunction,
     path_index: usize,
     certified_path_index: usize,
     has_return_resource_rewrite: bool,
@@ -55,12 +55,10 @@ fn contract_closing_input(
         })?,
     }
     .clone();
-    let specification =
-        crate::kernel::CheckedPathSpecification::new(function, &path).ok_or_else(|| {
-            ClickError::new(format!(
-                "path {path_index} does not establish its exact function specification"
-            ))
-        })?;
+    let specification = returned.as_ref().map_or_else(
+        || execution.published_outcome(certified_path_index).clone(),
+        |returned| returned.publication().clone(),
+    );
     Ok(ContractClosingInput {
         returned,
         path,
@@ -925,14 +923,6 @@ mod exit_claim {
             match &self.certificate {
                 ClaimCertificate::Claim(tactics) => tactics,
                 ClaimCertificate::GroupedTransition | ClaimCertificate::ExactCheck => &[],
-            }
-        }
-        pub(super) fn checked_proposition(
-            &self,
-        ) -> Option<&crate::kernel::proof::CheckedProposition> {
-            match &self.evidence {
-                ClaimEvidence::Proposition(checked) => Some(checked),
-                _ => None,
             }
         }
         /// The kernel evidence this closure gives the claim's goal on the
@@ -3132,22 +3122,6 @@ fn claim_resource_receipts<'p>(
         .collect())
 }
 
-/// The checked completion a claim on the path was closed with, held by its
-/// goal on the outcome `Proof`.
-fn claim_completion<'p>(
-    outcome_proof: &'p Option<Proof<'_>>,
-    claim: &FunctionClaimRef<'_>,
-) -> Option<&'p crate::kernel::proof::CheckedProposition> {
-    match outcome_proof
-        .as_ref()?
-        .claim_goals()?
-        .evidence(&claim.key())?
-    {
-        crate::kernel::proof::ClaimGoalEvidence::Proposition(completion) => Some(completion),
-        crate::kernel::proof::ClaimGoalEvidence::Resource(_) => None,
-    }
-}
-
 /// A closer written when every proposition claim on the path is closed.
 fn no_open_goal(closer: &str) -> String {
     format!("`{closer}` has no goal to close: every claim on this path is already closed")
@@ -3200,7 +3174,6 @@ pub(super) fn finish_ordered_proof<'a>(
     // goals now, and the working-set parity invariant below must hold for
     // every drain before its working vector is finalized.
     let direct_view = proof.finalization_view()?;
-    let (mut outcome_substrate, _, outcome_branches) = proof.split_function_outcomes()?;
     let (state, frontier, proof_execution, proof_context, branch_path) = (
         direct_view.state,
         direct_view.frontier,
@@ -3349,25 +3322,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     })
             },
         )?;
-        completed_execution.paths().iter().try_for_each(|path| {
-            match implication_body(path.theorem().proposition()) {
-                Proposition::ProgramFunctionVerifies {
-                    state,
-                    function: proved_function,
-                    arguments: proved_arguments,
-                    ..
-                } if **state == *pre_state
-                    && **proved_function == *function
-                    && proved_arguments == arguments =>
-                {
-                    Ok(())
-                }
-                proposition => Err(ClickError::new(format!(
-                    "completion for `{proof_label}` produced an inexact theorem body `{}`",
-                    crate::surface::proof_diagnostics::render::render_proposition(proposition),
-                ))),
-            }
-        })?;
+        let (mut outcome_substrate, _, outcome_branches) =
+            proof.split_checked_function_outcomes(&completed_execution)?;
         // The completed paths are the proof's candidates in order, so each
         // candidate's certified path is its own index. A candidate the
         // Proof-owned outcome derivation rejected under an exact
@@ -5411,21 +5367,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             checked_returned_resources.clone();
                     }
 
-                    // The specification's requirements are the certified path's
-                    // own entry premises: exactly what the proof object checked the
-                    // path under and what contract certification authorizes
-                    // from the contract context before reusing the path, so a
-                    // claim completed on the path is bound to premises
-                    // certification already holds.
-                    // The specification states the certified path's outcome: the
-                    // body's under the contract's exit rule, which claim and
-                    // contract certification consume. The proof's own outcome
-                    // snapshot differs from it only in ghost resource
-                    // representation; a claim completed at that snapshot is
-                    // bound to the certified path by result, memory, and locals.
-                    // Named instances and authority wrappers retain checked
-                    // resource exchanges after C returns. Certify their retained
-                    // trace before accepting the resulting ownership representation.
+                    // The checked execution producer owns the specification.
+                    // Return-resource rewrites advance that same publication;
+                    // ordinary claim goals publish through their retained binding.
                     let input = match closing_input {
                         Some(input) => input,
                         None => contract_closing_input(
@@ -5458,26 +5402,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         .into();
                     let frontier_loop_rules: std::sync::Arc<[VerifiedLoopRule]> =
                         proof_execution.core.frontier_loop_rules.to_vec().into();
-                    for (claim_index, claim) in claims.iter().enumerate() {
+                    for claim in claims {
                         // A path with an outcome holds each claim's evidence on its
                         // goal there. A divergent path holds its claims vacuously.
-                        let completion = match &outcome_proof {
-                            Some(_) => claim_completion(&outcome_proof, claim),
-                            None => closures[claim_index]
-                                .require_evidence(&completed_execution, path_index, &claim.key())?
-                                .checked_proposition(),
-                        };
-                        let checked_proposition = completion
-                            .map(|completion| {
-                                checked_specification.complete(completion, certified_path)
-                                .map_err(|reason| {
-                                    ClickError::new(format!(
-                                        "`{proof_label}` claim {:?} on path {path_index} has mismatched proposition completion evidence: {reason}",
-                                        claim.key()
-                                    ))
-                                })
-                            })
-                            .transpose()?;
+                        let checked_proposition = outcome_proof
+                            .as_ref()
+                            .and_then(|root| root.published_contract_claim(&claim.key()));
                         verified.push(VerifiedProgramTheorem {
                             source_path: source_path.to_string(),
                             import_identity: None,

@@ -2,6 +2,135 @@
 //! written comparison format, even when fact equality identifies formats.
 use super::*;
 
+/// Borrow a Boolean root or an exact native compatibility payload. Inspecting
+/// this view never exports children, consults facts, or selects a branch.
+#[derive(Clone, Copy)]
+pub(crate) enum BooleanOperandView<'a> {
+    Shared(&'a KernelTerm),
+    Native(&'a ConditionTerm),
+}
+
+impl<'a> BooleanOperandView<'a> {
+    pub(crate) fn native_leaf(self) -> Option<&'a ConditionTerm> {
+        match self {
+            Self::Native(value) => Some(value),
+            Self::Shared(root) => {
+                let KernelTermNode::LegacyBool(payload) = root.node() else {
+                    return None;
+                };
+                let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
+                    value,
+                    ..
+                })) = payload.value()
+                else {
+                    return None;
+                };
+                Some(value)
+            }
+        }
+    }
+
+    /// Explicit compatibility boundary for callers that still need a native
+    /// condition. Borrow existing leaves; only common compound roots export.
+    pub(crate) fn native(self) -> std::borrow::Cow<'a, ConditionTerm> {
+        if let Some(value) = self.native_leaf() {
+            return std::borrow::Cow::Borrowed(value);
+        }
+        let Self::Shared(root) = self else {
+            unreachable!()
+        };
+        std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
+    }
+
+    pub(crate) fn constant(self) -> Option<bool> {
+        match self {
+            Self::Shared(root) if matches!(root.node(), KernelTermNode::BoolLiteral(_)) => {
+                let KernelTermNode::BoolLiteral(value) = root.node() else {
+                    unreachable!()
+                };
+                Some(*value)
+            }
+            _ => match self.native_leaf()? {
+                ConditionTerm::Constant(value) => Some(*value),
+                _ => None,
+            },
+        }
+    }
+
+    pub(crate) fn conditional(self) -> Option<[Self; 3]> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::BoolIf { arguments } => {
+                    Some(arguments.each_ref().map(Self::Shared))
+                }
+                _ => Self::Native(self.native_leaf()?).conditional(),
+            },
+            Self::Native(ConditionTerm::BoolIf {
+                condition,
+                then_condition,
+                else_condition,
+            }) => Some([
+                Self::Native(condition),
+                Self::Native(then_condition),
+                Self::Native(else_condition),
+            ]),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn equality(self) -> Option<[Self; 2]> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::BoolEqual { arguments } => {
+                    Some(arguments.each_ref().map(Self::Shared))
+                }
+                _ => Self::Native(self.native_leaf()?).equality(),
+            },
+            Self::Native(ConditionTerm::BoolEqual(left, right)) => {
+                Some([Self::Native(left), Self::Native(right)])
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn comparison(
+        self,
+    ) -> Option<(
+        MachineIntegerType,
+        CompareRelation,
+        [MachineOperandView<'a>; 2],
+    )> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::BoolCompare {
+                    format,
+                    relation,
+                    arguments,
+                } => Some((
+                    *format,
+                    *relation,
+                    arguments.each_ref().map(MachineOperandView::Shared),
+                )),
+                _ => Self::Native(self.native_leaf()?).comparison(),
+            },
+            Self::Native(ConditionTerm::Compare {
+                format,
+                relation,
+                left,
+                right,
+            }) => Some((
+                *format,
+                *relation,
+                [
+                    MachineOperandView::Legacy(left),
+                    MachineOperandView::Legacy(right),
+                ],
+            )),
+            _ => None,
+        }
+    }
+}
+
 impl KernelTermImport {
     pub(crate) fn condition(&mut self, condition: &ConditionTerm) -> KernelTerm {
         use ConditionTerm as Old;
@@ -176,6 +305,58 @@ impl KernelTermExport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boolean_views_keep_written_comparison_and_shared_children() {
+        let source = ConditionTerm::BoolIf {
+            condition: Box::new(ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::Variable(Variable(964_090))),
+                right: Box::new(MachineTerm::constant(1)),
+            }),
+            then_condition: Box::new(ConditionTerm::Constant(true)),
+            else_condition: Box::new(ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Constant(false)),
+                Box::new(ConditionTerm::Constant(true)),
+            )),
+        };
+        let common = KernelTermImport::default().condition(&source);
+        for view in [
+            BooleanOperandView::Native(&source),
+            BooleanOperandView::Shared(&common),
+        ] {
+            let [guard, yes, no] = view.conditional().unwrap();
+            let (format, relation, operands) = guard.comparison().unwrap();
+            assert_eq!(format, MachineIntegerType::UInt32);
+            assert_eq!(relation, CompareRelation::Equal);
+            assert_eq!(operands[0].variable(), Some(&Variable(964_090)));
+            assert_eq!(yes.constant(), Some(true));
+            let [left, right] = no.equality().unwrap();
+            assert_eq!(left.constant(), Some(false));
+            assert_eq!(right.constant(), Some(true));
+            assert_eq!(view.native().as_ref(), &source);
+        }
+        let [guard, _, _] = BooleanOperandView::Shared(&common).conditional().unwrap();
+        assert!(matches!(
+            guard.comparison().unwrap().2[0],
+            MachineOperandView::Shared(_)
+        ));
+    }
+
+    #[test]
+    fn boolean_view_borrows_exact_legacy_payload() {
+        let source = ConditionTerm::PointerEqual(
+            Box::new(Pointer::symbolic(Variable(964_091))),
+            Box::new(Pointer::symbolic(Variable(964_092))),
+        );
+        let root = KernelTermImport::default().condition(&source);
+        let view = BooleanOperandView::Shared(&root);
+        assert!(matches!(view.native(), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(view.native_leaf(), Some(&source));
+        assert!(view.conditional().is_none());
+        assert!(view.comparison().is_none());
+    }
 
     #[test]
     fn integer_comparisons_preserve_all_operators_and_order_after_source_drop() {

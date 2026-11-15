@@ -751,6 +751,7 @@ fn returned_proposition_event(
             proposition,
             roots.clone(),
             Some(super::super::OutcomeProofCore {
+                publication: None,
                 identity: super::super::OutcomeIdentity::fresh(),
                 result: Arc::new(int32(0)),
                 state: state.clone().into(),

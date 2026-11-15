@@ -942,3 +942,50 @@ fn pointer_call_handoffs_retain_prepared_argument_dags() {
         }
     }
 }
+
+#[test]
+fn boolean_guard_views_do_not_export_growing_prefixes() {
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _unrelated = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Bool, Variable(965_000 + i)))
+            .collect::<Vec<_>>();
+        let yes = KernelTerm::intern(KernelType::Bool, KernelTermNode::BoolLiteral(true));
+        let no = KernelTerm::intern(KernelType::Bool, KernelTermNode::BoolLiteral(false));
+        for size in [16, 64, 256] {
+            let mut guard = KernelTerm::variable(KernelType::Bool, Variable(966_000));
+            for _ in 0..size {
+                guard = KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::BoolIf {
+                        arguments: [guard, yes.clone(), no.clone()],
+                    },
+                );
+            }
+            let arm = KernelTermImport::default()
+                .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            let root = KernelTerm::intern(
+                KernelType::Program(ProgramType::Int32),
+                KernelTermNode::MachineIf {
+                    arguments: [guard.clone(), arm.clone(), arm.clone()],
+                },
+            );
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..size {
+                    let (view, arms) = MachineOperandView::Shared(&root)
+                        .conditional_view()
+                        .unwrap();
+                    assert!(matches!(view, BooleanOperandView::Shared(value) if value == &guard));
+                    let [_, yes, no] = view.conditional().unwrap();
+                    assert_eq!(yes.constant(), Some(true));
+                    assert_eq!(no.constant(), Some(false));
+                    assert!(matches!(arms[0], MachineOperandView::Shared(value) if value == &arm));
+                }
+            });
+            assert_eq!(
+                work, 0,
+                "borrowed inspection: size={size}, unrelated={unrelated}"
+            );
+        }
+    }
+}

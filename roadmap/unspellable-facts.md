@@ -234,6 +234,22 @@ changes before implementing them.
 | 8ac | Mixed-family argument adapters | Migrated Boolean/algebraic/float/pointer/numeric expressions no longer receive generic wrappers in calls. |
 | 8ad | Closure | Remove superseded adapters; validate nested combinations, Surface round trips, fact stability and scaling; account for every remaining legacy arm. |
 
+8a records the baseline inventory and authorized sequence in
+[PR #2801](https://github.com/clicklang/click/pull/2801). The docs-only gate
+passed all 44 documentation tests.
+
+8b adds borrowed Boolean operands and a borrowed machine-conditional view.
+Shape and branch-only readers in decision dispatch, interval checks, snapshot
+keys, syntax ordering and equality-graph admission no longer export the guard.
+Consumers that actually require native conditions keep an explicitly named
+compatibility conversion. This prepares the following dependency and rewrite
+slices without switching producers or changing proof rules. Native/shared view
+regressions preserve written comparison formats and exact opaque payloads; a
+multi-size regression checks that inspecting growing guards does no export work
+beside unrelated arena terms. All 1,753 selected tests passed, including every
+scaling test and the Boolean, condition-reasoning, snapshot-key and equality-graph
+selections.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes

@@ -410,9 +410,15 @@ impl<'a> Proof<'a> {
         kind: crate::kernel::proof::ContractClosingGoal,
         execution: &CheckedFunctionExecution,
         path: &crate::kernel::SymbolicExecutionPath,
-        specification: &crate::kernel::CheckedPathSpecification,
+        publication: &Arc<crate::kernel::PublishedFunctionOutcome>,
     ) -> Result<Self, ClickError> {
-        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+        let bound = self
+            .state
+            .bind_outcome_publication(publication.clone())
+            .map_err(|reason| self.step_error(reason))?;
+        let bound = self.with_kernel_state(bound);
+        let this = &bound;
+        let Some(Obligation::FunctionOutcome(goal)) = this.focused_obligation() else {
             return Err(self.step_error("contract closing requires an outcome goal"));
         };
         if !matches!(goal.first_open_goal(), Ok(Some(crate::kernel::proof::OutcomeGoal::Closing(selected))) if selected == kind)
@@ -430,19 +436,18 @@ impl<'a> Proof<'a> {
             .as_ref()
             .ok_or_else(|| self.step_error("contract claim obligations were not generated"))?;
         let closing = closing
-            .prove_goal(
-                kind,
-                execution,
-                path,
-                specification,
-                &goal.data.core,
-                claims,
-                self.facts(),
-            )
+            .prove_goal(kind, execution, path, &goal.data.core, claims, this.facts())
             .map_err(|refusal| self.contract_closing_error(refusal))?;
         let mut goal = goal.clone();
         goal.closing = Some(closing);
-        self.with_focused_outcome_obligation(goal)
+        this.with_focused_outcome_obligation(goal)
+    }
+
+    pub(in crate::surface::proof) fn published_contract_claim(
+        &self,
+        key: &FunctionContractClaimKey,
+    ) -> Option<crate::kernel::CheckedFunctionProposition> {
+        self.state.published_contract_claim(key)
     }
 
     /// Package completed evidence without discovering or checking obligations.
@@ -867,8 +872,23 @@ impl<'a> Proof<'a> {
     /// returned handle addresses the first outcome goal; `focus` reaches its
     /// siblings. Result and effect continuations consume these goals
     /// directly rather than converting through a mutable execution-context adapter.
+    #[cfg(test)]
     pub(in crate::surface::proof) fn split_function_outcomes(
         &self,
+    ) -> Result<(Self, Vec<BranchId>, BTreeMap<usize, BranchId>), ClickError> {
+        self.split_published_function_outcomes(None)
+    }
+
+    pub(in crate::surface::proof) fn split_checked_function_outcomes(
+        &self,
+        execution: &CheckedFunctionExecution,
+    ) -> Result<(Self, Vec<BranchId>, BTreeMap<usize, BranchId>), ClickError> {
+        self.split_published_function_outcomes(Some(execution))
+    }
+
+    fn split_published_function_outcomes(
+        &self,
+        publication: Option<&CheckedFunctionExecution>,
     ) -> Result<(Self, Vec<BranchId>, BTreeMap<usize, BranchId>), ClickError> {
         if !matches!(self.focused_obligation(), Some(Obligation::Frontier(_))) {
             return Err(self.step_error("outcome goals require an open execution frontier"));
@@ -1002,10 +1022,24 @@ impl<'a> Proof<'a> {
             // Import the checked path delta once, including its effect
             // evidence. Haves and resource operations share this persistent
             // context; none reconstructs assumptions from the path history.
-            let execution_facts = crate::kernel::proof::OutcomeExecutionFacts::merging(
-                path.facts().clone(),
-                path.effect_facts().clone(),
-            );
+            let outcome_core = match publication {
+                Some(publication) => publication
+                    .open_outcome(path_index)
+                    .expect("a returning checked candidate owns its outcome publication"),
+                None => OutcomeProofCore {
+                    publication: None,
+                    identity: crate::kernel::proof::OutcomeIdentity::fresh(),
+                    store_consequences_available: false,
+                    result: Arc::new(result.into_native()),
+                    state: (*state).into(),
+                    is_exceptional,
+                    effect_facts: crate::kernel::proof::OutcomeExecutionFacts::merging(
+                        path.facts().clone(),
+                        path.effect_facts().clone(),
+                    ),
+                },
+            };
+            let execution_facts = outcome_core.effect_facts.clone();
             // A leaf that holds its path's effects imports nothing more.
             let no_facts = crate::kernel::ExecutionFacts::new();
             let imported_facts = match retained_leaf {
@@ -1026,14 +1060,7 @@ impl<'a> Proof<'a> {
                 OutcomeObligation::new(
                     path_index,
                     Arc::new(OutcomeProofData::new(
-                        OutcomeProofCore {
-                            identity: crate::kernel::proof::OutcomeIdentity::fresh(),
-                            store_consequences_available: false,
-                            result: Arc::new(result.into_native()),
-                            state: (*state).into(),
-                            is_exceptional,
-                            effect_facts: execution_facts,
-                        },
+                        outcome_core,
                         OutcomeProofPresentation {
                             surface_propositions: provenance.surface_propositions,
                             recorded_snapshots: provenance.recorded_snapshots,

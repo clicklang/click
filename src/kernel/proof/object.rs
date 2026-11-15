@@ -587,6 +587,70 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(&outcome.data.core.identity)
     }
 
+    /// Install the same outcome's checked return publication before closing.
+    /// The producer already established its program-state correspondence.
+    pub(crate) fn bind_outcome_publication(
+        &self,
+        publication: Arc<crate::kernel::PublishedFunctionOutcome>,
+    ) -> Result<Self, String> {
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .ok_or("the outcome is no longer open")?;
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            return Err("publication requires a function outcome".into());
+        };
+        if !outcome
+            .data
+            .core
+            .publication
+            .as_ref()
+            .is_some_and(|original| publication.belongs_to(original))
+        {
+            return Err("the publication belongs to another function outcome".into());
+        }
+        if outcome
+            .data
+            .core
+            .publication
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, &publication))
+        {
+            return Ok(self.clone());
+        }
+        let mut outcome = outcome.clone();
+        let mut data = outcome.data.as_ref().clone();
+        data.core.publication = Some(publication);
+        outcome.data = Arc::new(data);
+        self.replace_focused_obligation(ProofObligation::FunctionOutcome(outcome))
+            .map_err(|_| "the outcome is no longer open".into())
+    }
+
+    /// Publish only the checked evidence retained by this exact ordinary goal.
+    /// No caller-supplied completion, specification, or path can be substituted.
+    pub(crate) fn published_contract_claim(
+        &self,
+        key: &crate::kernel::FunctionContractClaimKey,
+    ) -> Option<crate::kernel::CheckedFunctionProposition> {
+        let branch = self.state.open_branches.get(self.focused_branch)?;
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            return None;
+        };
+        let super::ClaimGoalEvidence::Proposition(completion) =
+            outcome.claims.as_ref()?.evidence(key)?
+        else {
+            return None;
+        };
+        let publication = outcome
+            .data
+            .core
+            .publication
+            .as_ref()
+            .expect("a checked function outcome retains its producer publication");
+        Some(publication.publish_claim(completion))
+    }
+
     /// Bind an execution strategy's whole-contract progress to the exact
     /// generative outcomes this ordinary proof owner just opened.
     pub(crate) fn start_contract_completion(
