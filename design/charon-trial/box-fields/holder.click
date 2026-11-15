@@ -57,14 +57,14 @@ impl box_fields::Holder {
                 have separate(memory(*self.slot), memory(self.slot));
                 mark before_put;
                 step_until(function.exit);
-                have at(region(59).exit, self.slot) != 0 by solve();
-                have separate(region(62).footprint, memory(self.slot)) by { normalize() using {
+                have at(region(53).exit, self.slot) != 0 by solve();
+                have separate(region(56).footprint, memory(self.slot)) by { normalize() using {
                     at(before_put, separate(memory(*self.slot), memory(self.slot)));
                 }; }
-                have at(region(62).exit, self.slot) == at(region(62).entry, self.slot) by {
+                have at(region(56).exit, self.slot) == at(region(56).entry, self.slot) by {
                     transport_certificate {
-                        premise 0: separate(region(62).footprint, memory(self.slot)) => separate(region(62).footprint, memory(self.slot));
-                        preserve 0 => at(region(62).exit, self.slot) == at(region(62).entry, self.slot);
+                        premise 0: separate(region(56).footprint, memory(self.slot)) => separate(region(56).footprint, memory(self.slot));
+                        preserve 0 => at(region(56).exit, self.slot) == at(region(56).entry, self.slot);
                         conclusion 1;
                     }
                 }

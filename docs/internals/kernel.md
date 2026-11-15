@@ -1351,9 +1351,38 @@ reads it, or with the condition that decides a branch.
 #### Where the implementation departs from this
 
 The Rust importer gives every MIR local the user did not name a local
-`__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's
-result to such a temporary, so a `for` loop's `next` result is one and a proof
-sees it.
+`__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR is three-address code,
+so most of these hold one operand of a larger source expression.
+
+`src/languages/rust/charon/temporaries.rs` puts a pure value back into the
+expression that reads it. To move, the temporary must:
+
+- be unnamed;
+- be assigned once, from a value with no effect;
+- be read once, later in the same block, with nothing between the two but
+  storage markers, assertions and other such definitions.
+
+`x = a + b * c` is then one expression again.
+
+A value with a checked operator (`+ - * / % << >>`) moves only into a read
+whose lowering emits that operator's panic check:
+
+- an assignment's value;
+- an assertion;
+- a call argument;
+- an index;
+- an operand of an operator or conversion in one of these.
+
+At any other read, it stays a temporary: an enum constructor's field, a branch
+condition, a `match` scrutinee. Moving it there would drop the check.
+
+These still stay a temporary:
+
+- a call's result, so a `for` loop's `next` result is one and a proof sees it;
+- a borrow;
+- an indexed place or slice;
+- a local that roots a place (`&t`, `t.f`, `t[i]`);
+- an enum `match` scrutinee, whose proof split names a local.
 
 This temporary is a defect to remove, not a design to extend. A proof should
 never see `__rust_mir_<N>` or any other name a front end or compiler invented. Do not add a temporary, a name check, or a special case
