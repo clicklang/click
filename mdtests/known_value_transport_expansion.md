@@ -1,4 +1,4 @@
-# Known-value transport expands to preservation and rewriting
+# Known-value transport expands to ordinary steps
 
 ```c filename=keep.c
 void keep(int *p, int *q) { *p = 0; }
@@ -18,9 +18,7 @@ void keep(int32* p, int32* q) {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by {
-        transport(at(statement(0).entry, *q) == 7, *q == 7) using {
-            separate(statement(0).footprint, memory(*q));
-        };
+        transport(at(statement(0).entry, *q) == 7, *q == 7);
     }
     step();
     known();

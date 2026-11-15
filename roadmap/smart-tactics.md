@@ -187,10 +187,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 57 | 110 |
+| `mdtests/` | 50 | 103 |
 | `examples/` | 27 | 358 |
 | `library/` | 0 | 0 |
-| Total | 84 | 468 |
+| Total | 77 | 461 |
 
 The 16 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -207,18 +207,17 @@ Keep these independently reviewable; split a family further when a baseline
 repair or missing primitive needs its own discussion. Complete whole-proof
 verification and expansion/replay checks before declaring a family migrated.
 
-1. Scalar and abstract resource reads, including field aliases.
-2. Quantified arrays: elements, copying, bounds and initializedness.
-3. Loop frames, retained metadata, nested cursors and iterated ownership.
-4. Calls and resource scopes: footprints, borrowing, folds and graph fixtures.
-5. Arena.
-6. Repair the rbtree-insert baseline below, then migrate insertion separately.
-7. Rbtree deletion.
-8. Augmented trees: local rotations, flips, propagation and model facts.
-9. Augmented trees: nested/context/double/mirrored rotations.
-10. Residual internal producers: demonstrate successful legacy output before
+1. Quantified arrays: elements, copying, bounds and initializedness.
+2. Loop frames, retained metadata, nested cursors and iterated ownership.
+3. Calls and resource scopes: footprints, borrowing, folds and graph fixtures.
+4. Arena.
+5. Repair the rbtree-insert baseline below, then migrate insertion separately.
+6. Rbtree deletion.
+7. Augmented trees: local rotations, flips, propagation and model facts.
+8. Augmented trees: nested/context/double/mirrored rotations.
+9. Residual internal producers: demonstrate successful legacy output before
     changing a producer.
-11. Final written-corpus inventory and expansion/replay audit with search
+10. Final written-corpus inventory and expansion/replay audit with search
     disabled during replay. Syntax/dispatcher retirement is the next chunk.
 
 ### Migration blockers to resolve

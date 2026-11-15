@@ -1,4 +1,4 @@
-# A multi-write transport expands to ordinary preservation
+# A multi-write transport expands to ordinary steps
 
 ```c filename=keep.c
 void keep(unsigned char *p, unsigned char *q) { *p = 0; *p = 1; }
@@ -21,10 +21,7 @@ void keep(uint8* p, uint8* q) {
     }
     have *q == at(statement(0).entry, *q) by {
         transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),
-            *q == at(statement(0).entry, *q)) using {
-            separate(statement(0).footprint, memory(*q));
-            separate(statement(1).footprint, memory(*q));
-        };
+            *q == at(statement(0).entry, *q));
     }
     step();
 }

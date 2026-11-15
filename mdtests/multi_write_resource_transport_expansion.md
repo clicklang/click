@@ -22,10 +22,7 @@ void keep(uint8* p) {
     }
     have m.value == at(statement(0).entry, m.value) by {
         transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
-            m.value == at(statement(0).entry, m.value)) using {
-            separate(statement(0).footprint, m);
-            separate(statement(1).footprint, m);
-        };
+            m.value == at(statement(0).entry, m.value));
     }
     step();
 }
