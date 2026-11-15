@@ -3163,12 +3163,11 @@ fn raise_float_arithmetic(
     use crate::kernel::KernelTermNode as Node;
     let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
     Some(match term.node() {
-        Node::FloatConvert { operand, .. } => {
-            let crate::kernel::KernelType::Program(target) = term.ty() else {
-                return None;
-            };
-            synthesize_observation_operand(recurse(operand)?, *target)?
-        }
+        Node::FloatConvert {
+            destination,
+            operand,
+            ..
+        } => synthesize_observation_operand(recurse(operand)?, *destination)?,
         Node::FloatNegate { operand } => SurfaceTerm::Negate(Box::new(recurse(operand)?)),
         Node::FloatBinary {
             operator,

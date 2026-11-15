@@ -657,6 +657,9 @@ impl KernelTermImport {
         if let Some(read) = self.scalar_read(result, term) {
             return read;
         }
+        if let Some(conversion) = self.float_to_machine(result, term) {
+            return conversion;
+        }
         let node = match term {
             Old::AlgebraicMatch { .. } => {
                 return KernelMatch::import_machine(self, result, term)
@@ -769,6 +772,7 @@ impl KernelTermExport {
         MACHINE_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::FloatConvert { .. } => Self::float_to_machine(term)?,
             Node::Fold(fold) => fold.export_machine()?,
             Node::Match(matched) => matched.export_machine(&mut KernelTermExport::default())?,
             Node::Call { name, arguments } if matches!(term.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) =>

@@ -54,30 +54,160 @@ impl KernelTerm {
         source: ProgramType,
         operand: Self,
     ) -> Result<Self, &'static str> {
-        let name = float_conversion_name(source, target);
-        if numeric_float_conversion_types(&name) != Some((source, target.program_type()))
+        Self::numeric_float_convert(target.program_type(), source, operand)
+    }
+
+    pub(crate) fn numeric_float_convert(
+        target: ProgramType,
+        source: ProgramType,
+        operand: Self,
+    ) -> Result<Self, &'static str> {
+        let name = numeric_float_conversion_name(source, target);
+        if numeric_float_conversion_types(&name) != Some((source, target))
             || operand.ty() != &KernelType::Program(source)
         {
             return Err("numeric float conversion types");
         }
         Ok(Self::intern(
-            KernelType::Program(target.program_type()),
-            KernelTermNode::FloatConvert { source, operand },
+            KernelType::Program(target),
+            KernelTermNode::FloatConvert {
+                source,
+                destination: target,
+                operand,
+            },
         ))
     }
 }
 
 pub(super) fn float_conversion_name(source: ProgramType, target: KernelFloatType) -> String {
+    numeric_float_conversion_name(source, target.program_type())
+}
+
+fn numeric_float_conversion_name(source: ProgramType, target: ProgramType) -> String {
     format!(
         "c_{}_to_{}",
         crate::kernel::program_type_spelling(source),
-        crate::kernel::program_type_spelling(target.program_type())
+        crate::kernel::program_type_spelling(target)
     )
+}
+
+impl KernelTermImport {
+    pub(crate) fn float_to_machine(
+        &mut self,
+        target: MachineIntegerType,
+        term: &MachineTerm,
+    ) -> Option<KernelTerm> {
+        let MachineTerm::PureFunctionApplication { name, arguments } = term else {
+            return None;
+        };
+        let [operand] = arguments.as_slice() else {
+            return None;
+        };
+        let (source, destination) = numeric_float_conversion_types(name)?;
+        if destination != target.program_type() {
+            return None;
+        }
+        let format = KernelFloatType::from_program_type(source)?;
+        let operand = self.float(format, operand);
+        KernelTerm::numeric_float_convert(destination, source, operand).ok()
+    }
+}
+
+impl KernelTermExport {
+    pub(crate) fn float_to_machine(term: &KernelTerm) -> Result<MachineTerm, &'static str> {
+        let KernelTermNode::FloatConvert {
+            source,
+            destination,
+            operand,
+        } = term.node()
+        else {
+            return Err("float conversion root");
+        };
+        Ok(MachineTerm::PureFunctionApplication {
+            name: numeric_float_conversion_name(*source, *destination),
+            arguments: vec![Self::float_machine(operand)?],
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn float_to_machine_conversions_preserve_types_and_invalid_literal_payloads() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for source in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            for target in [
+                MachineIntegerType::Int8,
+                MachineIntegerType::UInt8,
+                MachineIntegerType::Int16,
+                MachineIntegerType::UInt16,
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int64,
+                MachineIntegerType::UInt64,
+            ] {
+                let literals = match source {
+                    KernelFloatType::Float32 => vec![
+                        MachineTerm::Variable(Variable(999970)),
+                        MachineTerm::constant(0x3fc00000),
+                        MachineTerm::constant(0x80000000),
+                        MachineTerm::constant(0x7f800000),
+                        MachineTerm::constant(0x7fc00001),
+                    ],
+                    KernelFloatType::Float64 => vec![
+                        MachineTerm::Variable(Variable(999970)),
+                        MachineTerm::uint64_constant(0x3ff8000000000000),
+                        MachineTerm::uint64_constant(0x8000000000000000),
+                        MachineTerm::uint64_constant(0x7ff0000000000000),
+                        MachineTerm::uint64_constant(0x7ff8000000000001),
+                    ],
+                };
+                for operand in literals {
+                    let native = MachineTerm::PureFunctionApplication {
+                        name: numeric_float_conversion_name(
+                            source.program_type(),
+                            target.program_type(),
+                        ),
+                        arguments: vec![operand],
+                    };
+                    let root = KernelTermImport::default().machine(target, &native);
+                    let KernelTermNode::FloatConvert {
+                        source: actual,
+                        operand,
+                        ..
+                    } = root.node()
+                    else {
+                        panic!("retained float-to-integer conversion");
+                    };
+                    assert_eq!(*actual, source.program_type());
+                    assert_eq!(operand.ty(), &KernelType::Program(source.program_type()));
+                    assert_eq!(root.ty(), &KernelType::Program(target.program_type()));
+                    assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+                    let observed = root.with_machine_observation_type(MachineIntegerType::UInt64);
+                    assert_eq!(KernelTermExport::machine(&observed).unwrap(), native);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn float_to_machine_import_preserves_unrecognized_signatures() {
+        for (name, target) in [
+            ("c_float32_to_int32", MachineIntegerType::Int64),
+            ("c_float64_to_int128", MachineIntegerType::Int128),
+            ("c_int32_to_int64", MachineIntegerType::Int64),
+        ] {
+            let native = MachineTerm::PureFunctionApplication {
+                name: name.into(),
+                arguments: vec![MachineTerm::Variable(Variable(999971))],
+            };
+            let root = KernelTermImport::default().machine(target, &native);
+            assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
+            assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+        }
+    }
 
     #[test]
     fn float_conversions_retain_typed_operands_and_exact_native_structure() {

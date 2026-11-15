@@ -126,6 +126,7 @@ pub enum KernelTermNode {
     MachineLiteral(KernelMachineLiteral),
     FloatConvert {
         source: ProgramType,
+        destination: ProgramType,
         operand: KernelTerm,
     },
     FloatNegate {

@@ -177,8 +177,8 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 } => KernelTerm::bool_cast(*destination, get(operand))
                     .expect("Boolean conversion")
                     .with_machine_observation_type(format),
-                KernelTermNode::FloatConvert { source, operand } => {
-                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatConvert { source: *source, operand: get(operand) })
+                KernelTermNode::FloatConvert { source, destination, operand } => {
+                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatConvert { source: *source, destination: *destination, operand: get(operand) })
                 }
                 KernelTermNode::FloatNegate { operand } => {
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatNegate { operand: get(operand) })

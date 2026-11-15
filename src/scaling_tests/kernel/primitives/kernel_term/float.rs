@@ -186,3 +186,30 @@ fn float_conversion_chains_preserve_shared_operands_without_exports() {
         assert!(import_work <= 5 * size + 8, "{size}: {import_work}");
     }
 }
+
+#[test]
+fn float_to_machine_construction_retains_shared_float_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut operand =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(999972));
+        for _ in 0..size {
+            operand = KernelTerm::float_binary(
+                KernelFloatType::Float32,
+                FloatBinaryOperator::Add,
+                [operand.clone(), operand],
+            )
+            .unwrap();
+        }
+        let exports = KernelTermExport::machine_export_count();
+        for target in [ProgramType::Int8, ProgramType::UInt32, ProgramType::Int64] {
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::numeric_float_convert(target, ProgramType::Float32, operand.clone())
+                    .unwrap()
+            });
+            assert!(work <= 4, "size={size}, work={work}");
+            assert_eq!(root.children()[0].id(), operand.id());
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
