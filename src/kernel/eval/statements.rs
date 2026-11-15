@@ -3738,7 +3738,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
             "verification statement: scalar array initialization"
         }
         ProgramStatement::Assign { .. } => "verification statement: assign",
-        ProgramStatement::CallConstruct { .. } => "verification statement: call assign",
+        ProgramStatement::CallConstruct { .. } => "verification statement: call construct",
         ProgramStatement::Call { .. } | ProgramStatement::CallResult { .. } => {
             "verification statement: call"
         }

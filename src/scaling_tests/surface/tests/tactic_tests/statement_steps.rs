@@ -120,7 +120,7 @@ int32 caller(int32 a, int32 unrelated) {{
                 .filter(|event| {
                     matches!(event,
                         crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                        if name == "verification statement: call assign"
+                        if name == "verification statement: call"
                     )
                 })
                 .count();
@@ -623,7 +623,7 @@ int32 caller(int32 a, int32* p) {{
                 .filter(|event| {
                     matches!(event,
             crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-            if name == "verification statement: call assign")
+            if name == "verification statement: call")
                 })
                 .count();
             samples.push((callback, size, calls));

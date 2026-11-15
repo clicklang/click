@@ -4953,7 +4953,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
         )[..2]
             .iter()
             .all(|found| *found),
-        "the captured call must remain a checked kernel call assignment"
+        "the captured call must retain its result before assigning it"
     );
 
     let click_project = read_click_project(&sidecar, RESTORE_CALLER_SIDECAR).unwrap();
