@@ -12,7 +12,7 @@ verifying "algebraic_generic_theorem_in_c_proof.c";
 theorem symmetric<T>(left: T, right: T) {
     requires left == right;
     ensures right == left by {
-        rewrite(left == right);
+        rewrite(left, right);
         normalize();
     }
 }

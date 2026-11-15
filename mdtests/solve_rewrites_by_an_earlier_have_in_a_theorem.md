@@ -24,8 +24,8 @@ theorem black_through_an_earlier_have(v: Walk, d: Integer, rest: Walk) {
     ensures black(v) == 1 by {
         have v == Walk::At(d, rest) by {
             unfold(same(Walk::At(d, rest)));
-            rewrite(v == same(Walk::At(d, rest)));
-            rewrite(same(Walk::At(d, rest)) == Walk::At(d, rest));
+            rewrite(v, same(Walk::At(d, rest)));
+            rewrite(same(Walk::At(d, rest)), Walk::At(d, rest));
             normalize();
         }
         have black(v) == 1;

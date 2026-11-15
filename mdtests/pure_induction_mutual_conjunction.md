@@ -33,14 +33,13 @@ theorem parity_is_complementary(n: int32) {
                 unfold(parity_odd(n));
                 normalize() using { not(n <= 0); };
             }
-            rewrite(parity_even(n) == parity_odd(n - 1));
-            rewrite(parity_odd(n) == parity_even(n - 1));
+            rewrite(parity_even(n), parity_odd(n - 1));
+            rewrite(parity_odd(n), parity_even(n - 1));
             have parity_odd(n - 1) + parity_even(n - 1)
                 == parity_even(n - 1) + parity_odd(n - 1) by {
                 normalize();
             }
-            rewrite(parity_odd(n - 1) + parity_even(n - 1)
-                == parity_even(n - 1) + parity_odd(n - 1));
+            rewrite(parity_odd(n - 1) + parity_even(n - 1), parity_even(n - 1) + parity_odd(n - 1));
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));

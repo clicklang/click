@@ -103,10 +103,10 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                         normalize();
                     }
                     have gp == xid by {
-                        rewrite(gp == node_parent(Node::Inner(gid, gp)));
-                        rewrite(Node::Inner(gid, gp) == n.model);
-                        rewrite(xid == up_identity(Up::Frame(xid, xc)));
-                        rewrite(Up::Frame(xid, xc) == u.model);
+                        rewrite(gp, node_parent(Node::Inner(gid, gp)));
+                        rewrite(Node::Inner(gid, gp), n.model);
+                        rewrite(xid, up_identity(Up::Frame(xid, xc)));
+                        rewrite(Up::Frame(xid, xc), u.model);
                         known();
                     }
                     unfold(n);

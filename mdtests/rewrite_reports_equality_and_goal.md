@@ -1,6 +1,6 @@
 # A `rewrite` that finds nothing to replace shows both lowered terms
 
-`rewrite(a == b)` replaces `a` by `b` in the current goal and is refused when
+`rewrite(a, b)` replaces `a` by `b` in the current goal and is refused when
 the goal contains no `a`. The refusal used to say only that the equality "does
 not occur in the current goal", which is the right verdict and no help at
 all when the author is sure `a` is in the goal: the usual cause is that the
@@ -29,7 +29,7 @@ int pick(int a, int b, int c) {
     ensures result == c;
 } by {
     have c == c by {
-        rewrite(a == b);
+        rewrite(a, b);
         normalize();
     }
 }

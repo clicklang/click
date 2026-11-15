@@ -55,8 +55,8 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
     step();
     have result == arr[n] by {
         have at(loop(0).exit, i) == at(loop(0).exit, n);
-        rewrite(at(loop(0).exit, p) == at(loop(0).exit, arr + i));
-        rewrite(at(loop(0).exit, i) == at(loop(0).exit, n));
+        rewrite(at(loop(0).exit, p), at(loop(0).exit, arr + i));
+        rewrite(at(loop(0).exit, i), at(loop(0).exit, n));
         normalize();
     }
     known();

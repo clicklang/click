@@ -21,7 +21,8 @@ block comment is a syntax error. `#` does not start a comment and is refused
 with the `//` spelling. Comments preserve source locations and are ignored when
 loading imports or selecting proof steps.
 
-Integer literals are decimal in the default grammar. Rust sidecars also accept
+Integer literals are decimal in the default grammar, except within the
+[exact float bit forms](#exact-float-bit-literals). Rust sidecars also accept
 radix prefixes, underscore separators, and the suffixes described under
 [Rust integer literals](../rust.md#integer-literals).
 Character literals use single quotes, including
@@ -33,6 +34,31 @@ Call-style proof tactics require parentheses, including the no-argument
 call `solve()`. A single tactic call can follow `by` directly; braces enclose
 a sequence and may also enclose one call. An omitted proof runs the whole
 proof by automation.
+
+## Exact float bit literals
+
+`float32_from_bits(bits)` and `float64_from_bits(bits)` construct binary32 and
+binary64 values from their exact IEEE bit patterns, without numeric conversion.
+They preserve signed zero, infinities, and NaN signs and payloads. Each takes
+exactly one nonnegative integer literal, within the unsigned range of that
+width. The literal may be unsuffixed or have the matching `u32` or `u64` suffix.
+Variables, arithmetic expressions, negative literals, and other suffixes are
+refused. These are literal forms, not general bit-cast functions.
+
+Both default Click and Rust sidecars accept radix prefixes and underscore
+separators inside these forms. This does not enable Rust integer syntax
+elsewhere in default Click. Exact source printing uses hexadecimal bits;
+for binary32 it preserves the existing internal carrier distinction by using
+an unsuffixed literal for the signed carrier and `u32` for the unsigned one.
+Both forms denote the same IEEE bits.
+
+<!-- verified-example: mdtests/float_bit_literals_preserve_ieee_values.md -->
+```click
+theorem float_bits() {
+    ensures iszero(float32_from_bits(0x80000000u32)) by { normalize(); }
+    ensures isnan(float64_from_bits(0x7ff8000000000123u64)) by { normalize(); }
+}
+```
 
 ## Word index
 
@@ -67,6 +93,7 @@ documentation inventory keep the following accepted words synchronized.
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
 | `old`, `at`, `c`, `rust` | Point-reading and program-binding forms: `c(name)` names a C binding where a Click name has the same spelling, and `rust(name)` a Rust one. |
+| `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
 | `by`, `using` | Proof introduction and exact-premise syntax. |

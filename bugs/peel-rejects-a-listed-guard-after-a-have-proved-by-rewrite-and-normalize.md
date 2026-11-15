@@ -38,7 +38,7 @@ That verifies too. Now replace it with the form expansion writes for the inner `
 ```click
     have prefix(bytes, bytes.len() - slice_iter::len(iter)) == 0 by {
         have to_integer((bytes.len() - slice_iter::len(iter))) <= to_integer(0u64) by {
-            rewrite(at(function.entry, slice_iter::len(__rust_mir_4)) == at(function.entry, __rust_checked_3));
+            rewrite(at(function.entry, slice_iter::len(__rust_mir_4)), at(function.entry, __rust_checked_3));
             normalize();
         }
         peel(prefix(bytes, bytes.len() - slice_iter::len(iter))) using {

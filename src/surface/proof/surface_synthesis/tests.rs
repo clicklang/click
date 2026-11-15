@@ -4793,3 +4793,191 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
         );
     }
 }
+
+#[test]
+fn float_bit_literals_round_trip_exact_native_values() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut values = Vec::new();
+    for bits in [
+        0, 0x80000000, 0x3f800000, 1, 0x007fffff, 0x7f800000, 0xff800000, 0x7fc00001, 0x7f800123,
+        0xffc12345,
+    ] {
+        values.push(ProgramValue::Float32(MachineTerm::constant(bits)));
+        values.push(ProgramValue::Float32(MachineTerm::uint32_constant(bits)));
+    }
+    for bits in [
+        0,
+        0x8000000000000000,
+        0x3ff0000000000000,
+        1,
+        0x000fffffffffffff,
+        0x7ff0000000000000,
+        0xfff0000000000000,
+        0x7ff8000000000001,
+        0x7ff0000000000123,
+        0xfff8123456789abc,
+    ] {
+        values.push(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
+    }
+    for value in values {
+        let state = ExecutionState::new();
+        let surface =
+            synthesize_surface_value(&value, ParameterBinding::default(), &state).unwrap();
+        let text = diagnostics::describe_contract_expression(&surface);
+        assert!(text.starts_with("float32_from_bits(") || text.starts_with("float64_from_bits("));
+        for rust in [false, true] {
+            let prefix = if rust { "verifying \"bits.rs\";" } else { "" };
+            let ty = match (&value, rust) {
+                (ProgramValue::Float32(_), false) => "float",
+                (ProgramValue::Float32(_), true) => "f32",
+                (_, false) => "double",
+                (_, true) => "f64",
+            };
+            let file =
+                parser::parse(&format!("{prefix} function probe() -> {ty} {{ {text} }}")).unwrap();
+            let expression = file.click_function_definitions()[0].body().unwrap();
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                expression,
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (restored, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(restored, value, "{text}, rust={rust}");
+            assert!(obligations.is_empty());
+        }
+    }
+}
+
+#[test]
+fn float_bit_literals_refuse_wrong_widths_expressions_and_arity() {
+    for expression in [
+        "float32_from_bits()",
+        "float32_from_bits(1, 2)",
+        "float32_from_bits(x)",
+        "float32_from_bits(1 + 2)",
+        "float32_from_bits(-1)",
+        "float32_from_bits(4294967296)",
+        "float32_from_bits(1u64)",
+        "float32_from_bits(1u8)",
+        "float64_from_bits(1u32)",
+        "float64_from_bits(18446744073709551616)",
+    ] {
+        let error = parser::parse(&format!("function probe() -> float {{ {expression} }}"))
+            .expect_err(expression);
+        assert!(
+            error.message().contains("from_bits"),
+            "{expression}: {error:?}"
+        );
+    }
+    // The local allowance for hexadecimal bit patterns must not change the
+    // ordinary literal grammar of a C/default Click file.
+    assert!(parser::parse("function probe() -> uint32 { 0xffu32 }").is_err());
+}
+
+#[test]
+fn common_float_atoms_round_trip_printed_surface_bits() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let values = [
+        ProgramValue::Float32(MachineTerm::Variable(Variable(999804))),
+        ProgramValue::Float64(MachineTerm::Variable(Variable(999805))),
+        ProgramValue::Float32(MachineTerm::constant(0x80000000)),
+        ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8000000000123)),
+    ];
+    for value in values {
+        let named = matches!(
+            &value,
+            ProgramValue::Float32(MachineTerm::Variable(_))
+                | ProgramValue::Float64(MachineTerm::Variable(_))
+        );
+        let values = if named {
+            BTreeMap::from([("value".to_string(), value.clone())])
+        } else {
+            BTreeMap::new()
+        };
+        let state = ExecutionState::new();
+        // Scoped float binders already have their source names. Execution-local
+        // name/storage handoffs are the later 8aa boundary.
+        let bindings = match &value {
+            ProgramValue::Float32(MachineTerm::Variable(variable))
+            | ProgramValue::Float64(MachineTerm::Variable(variable)) => {
+                BTreeMap::from([(*variable, "value".to_string())])
+            }
+            _ => BTreeMap::new(),
+        };
+        let root = crate::kernel::KernelTermImport::default()
+            .argument(&crate::kernel::PureFunctionArgument::Value(value.clone()));
+        let surface =
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &bindings).unwrap();
+        let text = diagnostics::describe_contract_expression(&surface);
+        assert!(
+            text == "value"
+                || text.starts_with("float32_from_bits(")
+                || text.starts_with("float64_from_bits(")
+        );
+        for rust in [false, true] {
+            let prefix = if rust { "verifying \"bits.rs\";" } else { "" };
+            let ty = match (&value, rust) {
+                (ProgramValue::Float32(_), false) => "float",
+                (ProgramValue::Float32(_), true) => "f32",
+                (_, false) => "double",
+                (_, true) => "f64",
+            };
+            let file = parser::parse(&format!(
+                "{prefix} function probe(value: {ty}) -> {ty} {{ {text} }}"
+            ))
+            .unwrap();
+            let expression = file.click_function_definitions()[0].body().unwrap();
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                expression,
+                BTreeMap::new(),
+                &state,
+                values.clone(),
+                values.clone(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (restored, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(restored, value, "{text}, rust={rust}");
+            assert_eq!(
+                crate::kernel::KernelTermImport::default()
+                    .argument(&crate::kernel::PureFunctionArgument::Value(restored)),
+                root
+            );
+            assert!(obligations.is_empty());
+        }
+    }
+}

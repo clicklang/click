@@ -211,7 +211,7 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     have prefix(bytes, ((i as uint32) as int32)) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
-        rewrite((((i as uint32) as int32)) == ((bytes.len() as uint32) as int32));
+        rewrite((((i as uint32) as int32)), ((bytes.len() as uint32) as int32));
         solve();
     }
     have to_integer(total) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {

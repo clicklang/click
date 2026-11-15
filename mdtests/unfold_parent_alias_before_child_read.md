@@ -57,7 +57,7 @@ void probe(struct node *p, struct node *q) {
                 preserve(separate(statement(1).footprint, memory(id->other)));
             }
             have id->other == at(before_0, id->other) by {
-                rewrite(id->other == at(before_1, id->other));
+                rewrite(id->other, at(before_1, id->other));
                 known();
             }
             mark before_2;
@@ -69,7 +69,7 @@ void probe(struct node *p, struct node *q) {
                 preserve(separate(statement(2).footprint, memory(id->other)));
             }
             have id->other == at(before_0, id->other) by {
-                rewrite(id->other == at(before_2, id->other));
+                rewrite(id->other, at(before_2, id->other));
                 known();
             }
 

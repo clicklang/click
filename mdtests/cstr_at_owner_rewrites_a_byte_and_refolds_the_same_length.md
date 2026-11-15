@@ -26,7 +26,7 @@ void poke(uint8* s, uint64 n) {
         intro();
         intro();
         if k == 0u64 {
-            rewrite(k == 0u64);
+            rewrite(k, 0u64);
             solve();
         } else {
             instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k) using {
@@ -41,7 +41,7 @@ void poke(uint8* s, uint64 n) {
             have s[k] == old(s[k]) by {
                 preserve(separate(statement(0).footprint, memory(s[k])));
             }
-            rewrite(s[k] == old(s[k]));
+            rewrite(s[k], old(s[k]));
             known();
         }
     }
@@ -52,7 +52,7 @@ void poke(uint8* s, uint64 n) {
         intro();
         intro();
         if k == 0u64 {
-            rewrite(k == 0u64);
+            rewrite(k, 0u64);
             solve();
         } else {
             instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k) using {

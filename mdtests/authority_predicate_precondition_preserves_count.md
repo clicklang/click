@@ -31,7 +31,7 @@ void inspect(struct pool* pool) {
     unfold(wrapped_valid_pool);
     unfold(valid_pool);
     have 0 < pool->checked_out by {
-        rewrite(pool->checked_out == count(pool_object(pool, _)));
+        rewrite(pool->checked_out, count(pool_object(pool, _)));
         known();
     }
 }

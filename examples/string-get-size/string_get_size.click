@@ -76,7 +76,7 @@ theorem kilo_divide(x: uint64, d: uint32) {
         have 0 <= to_integer(x);
         apply(integer::uint64_divide_to_integer(x, d as uint64));
         apply(kilo_quotient(to_integer(x), to_integer(d as uint64)));
-        rewrite(to_integer(x / d as uint64) == truncating_quotient(to_integer(x), to_integer(d as uint64)));
+        rewrite(to_integer(x / d as uint64), truncating_quotient(to_integer(x), to_integer(d as uint64)));
         known();
     }
 }
@@ -741,7 +741,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have defined(tmp[2u64]) by { normalize() using { j == 1; }; }
                     have tmp[2u64] == 0u8 by { normalize() using { j == 1; }; }
                     have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); solve(); }
-                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j) == 2u64); known(); }
+                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 2u64); known(); }
                     have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
                     have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -775,7 +775,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have defined(tmp[3u64]) by { normalize() using { j == 2; }; }
                     have tmp[3u64] == 0u8 by { normalize() using { j == 2; }; }
                     have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); solve(); }
-                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j) == 3u64); known(); }
+                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 3u64); known(); }
                     have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                     have forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 } by { enumerate(); }
                     have forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -797,7 +797,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             } else {
                 have j == 0;
                 have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); solve(); }
-                have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j) == 0u64); known(); }
+                have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 0u64); known(); }
                 have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                 have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
                     intro();
@@ -810,7 +810,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     intro();
                     have k < 1u64 by { solve() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
                     have k == 0u64 by { solve() using { k < 1u64; }; }
-                    rewrite(k == 0u64);
+                    rewrite(k, 0u64);
                     solve();
                 }
             }

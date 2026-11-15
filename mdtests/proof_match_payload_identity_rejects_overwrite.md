@@ -37,8 +37,8 @@ void probe(struct node *p) {
     match a.model {
         Tag::At(id, color) => {
             have p == id by {
-                rewrite(p == identity(a.model));
-                rewrite(a.model == Tag::At(id, color));
+                rewrite(p, identity(a.model));
+                rewrite(a.model, Tag::At(id, color));
                 unfold(identity(Tag::At(id, color))); normalize();
             }
             let {kid: original_kid} = unfold(a);

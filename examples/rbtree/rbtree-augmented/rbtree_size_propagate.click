@@ -45,12 +45,12 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 cases {
                     rb == old(rb) => { known(); }
                     rb == stop => {
-                        have address(rb) == address(stop) by { rewrite(rb == stop); solve(); }
+                        have address(rb) == address(stop) by { rewrite(rb, stop); solve(); }
                         contradiction(address(rb) == address(stop));
                     }
                 }
             }
-            have address(rb) != address(stop) by { rewrite(rb == old(rb)); known(); }
+            have address(rb) != address(stop) by { rewrite(rb, old(rb)); known(); }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
                 normalize() using { address(rb) != address(stop); };
@@ -80,9 +80,9 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             let right = fold(optional_size(node->rb.rb_right), { value: 0 });
             let { result: status } = step(ComputeSize, { parent: metadata, left: left, right: right });
             have metadata.value == 1 by {
-                rewrite(metadata.value == 1 + left.value + right.value);
-                rewrite(left.value == 0);
-                rewrite(right.value == 0);
+                rewrite(metadata.value, 1 + left.value + right.value);
+                rewrite(left.value, 0);
+                rewrite(right.value, 0);
                 normalize();
             }
             unfold(left);

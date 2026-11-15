@@ -177,7 +177,7 @@ later.
   terms, and over pure-function applications as uninterpreted functions.
 - **Certificate output.** An explanation turns into kernel steps that already
   exist:
-  - `rewrite(P)` steps, with `P` an available or already-derived equality;
+  - `rewrite(from, to)` steps, with `from == to` an available or already-derived equality;
   - `extract` for constructor injectivity;
   - `contradiction` for disjoint constructors.
 

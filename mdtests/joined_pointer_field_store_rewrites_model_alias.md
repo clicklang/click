@@ -81,7 +81,7 @@ void inspect(struct node* parent) {
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm, fm) => {
-                    have parent == parent_identity(Parent::At(pid, sm, fm)) by { rewrite(Parent::At(pid, sm, fm) == tree_context.model); known(); }
+                    have parent == parent_identity(Parent::At(pid, sm, fm)) by { rewrite(Parent::At(pid, sm, fm), tree_context.model); known(); }
                     have parent == pid by { unfold(parent_identity(Parent::At(pid, sm, fm))); solve(); }
                     let { c: c, f: f } = unfold(tree_context);
             match c.model {
@@ -114,7 +114,7 @@ void inspect(struct node* parent) {
                             have child == leaf;
                             have sibling->left == child;
                             have model->left == leaf by {
-                                rewrite(model == sibling);
+                                rewrite(model, sibling);
                                 normalize() using { sibling->left == child; child == leaf; };
                             }
                             have pid->left == model;

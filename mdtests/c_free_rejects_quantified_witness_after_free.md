@@ -46,7 +46,7 @@ int32* uaf_local(int32 fallback[], int32 j) {
         step_until(function.exit);
         have j == 0;
         have defined(result[j]) by {
-            rewrite(j == 0);
+            rewrite(j, 0);
             solve();
         }
     } else {

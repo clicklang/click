@@ -13,8 +13,8 @@ theorem lift(callback: int32 (*)(int32*)) executes callback(int32* cell) {
         have result == 0 by known();
         have cell[0] == result by known();
         have cell[0] == 0 by {
-            rewrite(cell[0] == result);
-            rewrite(result == 0);
+            rewrite(cell[0], result);
+            rewrite(result, 0);
             solve();
         }
         fold(Cell(cell)); solve();

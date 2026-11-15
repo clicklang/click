@@ -49,7 +49,7 @@ function holds(b: Box, p: void*) -> int32 {
 theorem holds_is_nonzero(p: void*) {
     requires holds(Box::Box(p), p) == 1;
     ensures holds(Box::Box(p), p) != 0 by {
-        rewrite(holds(Box::Box(p), p) == 1);
+        rewrite(holds(Box::Box(p), p), 1);
         normalize();
     }
 }

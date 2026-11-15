@@ -1,4 +1,4 @@
-# Float-cast branch prerequisites retain source names and decimal bounds
+# Float-cast branch prerequisites retain source names and exact bounds
 
 ```c filename=branch_float_cast.c
 int32 positive(double d) {
@@ -23,5 +23,5 @@ int32 positive(double d) {
 ```
 
 ```expect
-fail: `d >= -2147483648`
+fail: `d >= float64_from_bits(0xc1e0000000000000u64)`
 ```

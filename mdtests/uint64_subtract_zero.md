@@ -12,7 +12,7 @@ theorem subtract_zero(n: uint64) {
 theorem subtract_zero_after_rewrite(n: uint64) {
     requires n % 4u64 == 0u64;
     ensures to_integer(n - n % 4u64) == to_integer(n) by {
-        rewrite(n % 4u64 == 0u64); normalize();
+        rewrite(n % 4u64, 0u64); normalize();
     }
 }
 

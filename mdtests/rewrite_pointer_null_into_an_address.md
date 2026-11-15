@@ -1,7 +1,7 @@
 # `rewrite` by a null pointer equality reaches an address
 
 A pointer converted to an integer, `p as uint64`, keeps the pointer inside an
-address term. Once a proof has `p == 0`, `rewrite(p == 0)` substitutes null for
+address term. Once a proof has `p == 0`, `rewrite(p, 0)` substitutes null for
 `p` there as it does in any pointer position, including in a 64-bit
 comparison, and null's address is the integer zero, exactly as evaluating the
 C cast yields it. The Linux insert fixup needs this when a context frame's
@@ -63,7 +63,7 @@ void keep(struct cell* c) {
     match f.model {
         Frame::Above(up) => {
             have frame_null(Frame::Above(up)) == 1 by {
-                rewrite(Frame::Above(up) == f.model);
+                rewrite(Frame::Above(up), f.model);
                 known();
             }
             have up == 0 by {
@@ -73,7 +73,7 @@ void keep(struct cell* c) {
                 known();
             }
             have address(up) + 1 == 1 by {
-                rewrite(up == 0);
+                rewrite(up, 0);
                 normalize();
             }
             step_until(function.exit);

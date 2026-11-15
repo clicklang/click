@@ -8,7 +8,7 @@ Observations retain the complete unsigned range.
 theorem zero_product(a: uint32, b: uint32) {
     requires to_integer(b) == 0;
     ensures to_integer(a) * to_integer(b) == 0 by {
-        rewrite(to_integer(b) == 0);
+        rewrite(to_integer(b), 0);
         solve() using {};
     }
 }
@@ -16,7 +16,7 @@ theorem zero_product(a: uint32, b: uint32) {
 theorem zero_left_product(a: uint32, b: uint32) {
     requires to_integer(b) == 0;
     ensures to_integer(b) * to_integer(a) == 0 by {
-        rewrite(to_integer(b) == 0);
+        rewrite(to_integer(b), 0);
         solve() using {};
     }
 }
@@ -24,7 +24,7 @@ theorem zero_left_product(a: uint32, b: uint32) {
 theorem unit_product(a: uint32, b: uint32) {
     requires to_integer(b) == 1;
     ensures to_integer(a) * to_integer(b) == to_integer(a) by {
-        rewrite(to_integer(b) == 1);
+        rewrite(to_integer(b), 1);
         solve() using {};
     }
 }
@@ -32,7 +32,7 @@ theorem unit_product(a: uint32, b: uint32) {
 theorem unit_left_product(a: uint32, b: uint32) {
     requires to_integer(b) == 1;
     ensures to_integer(b) * to_integer(a) == to_integer(a) by {
-        rewrite(to_integer(b) == 1);
+        rewrite(to_integer(b), 1);
         solve() using {};
     }
 }
@@ -40,7 +40,7 @@ theorem unit_left_product(a: uint32, b: uint32) {
 theorem full_unsigned_zero(b: uint32) {
     requires to_integer(b) == 0;
     ensures to_integer(4294967295u32) * to_integer(b) == 0 by {
-        rewrite(to_integer(b) == 0);
+        rewrite(to_integer(b), 0);
         solve() using {};
     }
 }
@@ -48,7 +48,7 @@ theorem full_unsigned_zero(b: uint32) {
 theorem full_unsigned_unit(b: uint32) {
     requires to_integer(b) == 1;
     ensures to_integer(4294967295u32) * to_integer(b) == 4294967295 by {
-        rewrite(to_integer(b) == 1);
+        rewrite(to_integer(b), 1);
         solve() using {};
     }
 }

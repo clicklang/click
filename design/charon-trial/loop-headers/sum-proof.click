@@ -39,7 +39,7 @@ fn sum(bytes: &[u8]) -> i32 {
     }
     have i == bytes.len();
     have prefix(bytes, i) == prefix(bytes, bytes.len()) by {
-        rewrite(i == bytes.len());
+        rewrite(i, bytes.len());
         solve();
     }
 }

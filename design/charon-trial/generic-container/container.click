@@ -459,7 +459,7 @@ impl<T> generic_container::Stack<T> {
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
                         have self.head.next == old(self.head.next).next by {
-                            rewrite(self.head == old(self.head.next));
+                            rewrite(self.head, old(self.head.next));
                             normalize();
                         }
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });

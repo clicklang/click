@@ -29,8 +29,8 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
     match before.model {
         SizedContext::Top => {
             have parent == 0 by {
-                rewrite(parent == sized_context_parent(before.model,0));
-                rewrite(before.model == SizedContext::Top);
+                rewrite(parent, sized_context_parent(before.model,0));
+                rewrite(before.model, SizedContext::Top);
                 unfold(sized_context_parent(SizedContext::Top,0)); normalize();
             }
             let { frames: frames } = unfold(before);
@@ -42,15 +42,15 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
         },
         SizedContext::Left(a, above, shade, value, sibling_model, up_model) => {
             have parent == a by {
-                rewrite(parent == sized_context_parent(before.model,0));
-                rewrite(before.model == SizedContext::Left(a, above, shade, value, sibling_model, up_model));
+                rewrite(parent, sized_context_parent(before.model,0));
+                rewrite(before.model, SizedContext::Left(a, above, shade, value, sibling_model, up_model));
                 unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model),0)); normalize();
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);
-            have parent != 0 by { rewrite(parent == a); known(); }
+            have parent != 0 by { rewrite(parent, a); known(); }
             have new != a by {
-                rewrite(a == parent);
+                rewrite(a, parent);
                 cases {
                     parent == 0 => { contradiction(parent == 0); }
                     new != parent => { known(); }
@@ -62,7 +62,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { known(); }
             have separate(memory(a->rb_left), memory(a->__rb_parent_color)) by { known(); }
             have separate(memory(parent->rb_left), memory(a->__rb_parent_color)) by {
-                rewrite(parent == a); known();
+                rewrite(parent, a); known();
             }
             mark before_store;
             step();
@@ -75,7 +75,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                 preserve(separate(statement(0).statement(0).statement(0).footprint, memory(a->__rb_parent_color)));
             }
             have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
-                rewrite(a->__rb_parent_color == at(before_store, a->__rb_parent_color)); known();
+                rewrite(a->__rb_parent_color, at(before_store, a->__rb_parent_color)); known();
             }
             step_until(function.exit);
             have a->rb_right != a by {
@@ -88,15 +88,15 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
         },
         SizedContext::Right(a, above, shade, value, sibling_model, up_model) => {
             have parent == a by {
-                rewrite(parent == sized_context_parent(before.model,0));
-                rewrite(before.model == SizedContext::Right(a, above, shade, value, sibling_model, up_model));
+                rewrite(parent, sized_context_parent(before.model,0));
+                rewrite(before.model, SizedContext::Right(a, above, shade, value, sibling_model, up_model));
                 unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model),0)); normalize();
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);
-            have parent != 0 by { rewrite(parent == a); known(); }
+            have parent != 0 by { rewrite(parent, a); known(); }
             have new != a by {
-                rewrite(a == parent);
+                rewrite(a, parent);
                 cases {
                     parent == 0 => { contradiction(parent == 0); }
                     new != parent => { known(); }
@@ -107,13 +107,13 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     unfold(sibling);
                     have parent->rb_left == 0 by { known(); }
                     have parent->rb_left != old by {
-                        rewrite(parent->rb_left == 0); known();
+                        rewrite(parent->rb_left, 0); known();
                     }
                     step(); step();
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { known(); }
                     have separate(memory(parent->rb_right), memory(a->__rb_parent_color)) by {
                         have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { known(); }
-                        rewrite(parent == a); known();
+                        rewrite(parent, a); known();
                     }
                     mark before_right_store;
                     step();
@@ -124,7 +124,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                         preserve(separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)));
                     }
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
-                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); known();
+                        rewrite(a->__rb_parent_color, at(before_right_store, a->__rb_parent_color)); known();
                     }
                     step_until(function.exit);
                     have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by solve();
@@ -143,7 +143,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { known(); }
                     have separate(memory(parent->rb_right), memory(a->__rb_parent_color)) by {
                         have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { known(); }
-                        rewrite(parent == a); known();
+                        rewrite(parent, a); known();
                     }
                     mark before_right_store;
                     step();
@@ -154,7 +154,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                         preserve(separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)));
                     }
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
-                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); known();
+                        rewrite(a->__rb_parent_color, at(before_right_store, a->__rb_parent_color)); known();
                     }
                     step_until(function.exit);
                     have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by solve();

@@ -33,7 +33,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   have to_integer(4 * outer) <= to_integer(4 * outer + 4) by { solve() using { 0 <= outer; outer < 2; }; }
   have viewable(bytes[0..8]) by { transport(at(outer_head,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(outer_head,viewable(bytes[0..8])); bytes == old(bytes); 0 <= 8; }; }
   have viewable(bytes[4 * outer..4 * outer + 4]) by { transport(viewable(bytes[0..8]),viewable(bytes[4 * outer..4 * outer + 4])) using { viewable(bytes[0..8]); 0 <= to_integer(4 * outer); to_integer(4 * outer) <= to_integer(4 * outer + 4); to_integer(4 * outer + 4) <= 8; }; }
-  have viewable(chunk[0..4]) by { rewrite(chunk == bytes + (4 * outer)); solve() using { viewable(bytes[4 * outer..4 * outer + 4]); }; }
+  have viewable(chunk[0..4]) by { rewrite(chunk, bytes + (4 * outer)); solve() using { viewable(bytes[4 * outer..4 * outer + 4]); }; }
   loop {
    decreases inner;
    views chunk[0..4];
@@ -60,7 +60,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   have (bytes + (4 * at(after_inner, outer))) + 4 == bytes + (4 * at(after_inner, outer) + 4) by {
    if at(after_inner, outer) == 0 { solve(); } else {
     have at(after_inner, outer) == 1 by { solve() using { 0 <= at(after_inner, outer); at(after_inner, outer) < 2; not (at(after_inner, outer) == 0); }; }
-    rewrite(at(after_inner, outer) == 1); solve();
+    rewrite(at(after_inner, outer), 1); solve();
    }
   }
   have cursor == bytes + (4 * outer) by { known(); }

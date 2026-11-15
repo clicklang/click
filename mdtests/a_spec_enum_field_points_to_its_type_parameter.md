@@ -40,7 +40,7 @@ theorem data_of(p: int32*, n: uint64) {
 theorem equal_parts_are_one_span(p: uint8*, q: uint8*, n: uint64) {
     requires p == q;
     ensures Span<uint8>::Span(p, n) == Span<uint8>::Span(q, n) by {
-        rewrite(p == q);
+        rewrite(p, q);
         normalize();
     }
 }

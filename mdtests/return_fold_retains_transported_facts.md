@@ -113,15 +113,15 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have region->start == s;
     have defined(s + index + 1);
     have defined(region->start + index + 1) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         known();
     }
     have to_integer(region->start + index + 1) <= to_integer(e) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         known();
     }
     have 0 <= to_integer(region->start + index) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         have 0 <= to_integer(s + index) by { solve(); }
         known();
     }
@@ -148,21 +148,21 @@ void arena_write(struct region* region, int32 index, int32 value) {
     transport(old(region->arena->capacity) == old(region->arena->capacity),
         region->arena->capacity == old(region->arena->capacity)) using { };
     have separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])) by {
-        rewrite(region->arena->data == old(region->arena->data));
-        rewrite(region->arena->occupied == old(region->arena->occupied));
-        rewrite(region->arena->capacity == old(region->arena->capacity));
+        rewrite(region->arena->data, old(region->arena->data));
+        rewrite(region->arena->occupied, old(region->arena->occupied));
+        rewrite(region->arena->capacity, old(region->arena->capacity));
         known();
     }
     have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by {
-        rewrite(region->arena->data == old(region->arena->data));
-        rewrite(region->arena->capacity == old(region->arena->capacity));
-        rewrite(region->arena == old(region->arena));
+        rewrite(region->arena->data, old(region->arena->data));
+        rewrite(region->arena->capacity, old(region->arena->capacity));
+        rewrite(region->arena, old(region->arena));
         known();
     }
     have separate(memory(*region->arena), memory(region->arena->occupied[0..region->arena->capacity])) by {
-        rewrite(region->arena->occupied == old(region->arena->occupied));
-        rewrite(region->arena->capacity == old(region->arena->capacity));
-        rewrite(region->arena == old(region->arena));
+        rewrite(region->arena->occupied, old(region->arena->occupied));
+        rewrite(region->arena->capacity, old(region->arena->capacity));
+        rewrite(region->arena, old(region->arena));
         known();
     }
     let st = fold(arena_state(region->arena), { live: n, capacity: c });

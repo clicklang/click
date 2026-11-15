@@ -6,7 +6,7 @@ store's version, not to the stored pointer `q`
 (`docs/internals/spellability.md`). The read-over-write authority relates the
 read to the pointer the store wrote, so `a[i] == q` holds by evaluation, and a
 rewrite that moves the read to an equal index keeps it a read: with `i == j`,
-`rewrite(j == i)` turns the postcondition `a[j] == q` into `a[i] == q`, which
+`rewrite(j, i)` turns the postcondition `a[j] == q` into `a[i] == q`, which
 closes. Had `a[i]` lowered to `q`, the rewritten goal would no longer mention
 `a`.
 
@@ -24,7 +24,7 @@ void set_pointer(int32** a, int32* q, int32 i, int32 j) {
 } by {
     step_until(function.exit);
     have a[i] == q by normalize();
-    rewrite(j == i);
+    rewrite(j, i);
 }
 ```
 

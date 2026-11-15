@@ -76,11 +76,11 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 } else {
                     have i == p;
                     have p <= i by {
-                        rewrite(i == p);
+                        rewrite(i, p);
                         normalize();
                     }
                     have i < capacity by {
-                        rewrite(i == p);
+                        rewrite(i, p);
                         known();
                     }
                     have occupied[i] == 0 by {
@@ -93,7 +93,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                         known();
                     }
                     have not (occupied[i] == 1) by {
-                        rewrite(occupied[i] == 0);
+                        rewrite(occupied[i], 0);
                         normalize();
                     }
                     contradiction(occupied[i] == 1);
@@ -161,7 +161,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             }
             have k != p;
             have k != i by {
-                rewrite(i == p);
+                rewrite(i, p);
                 known();
             }
             transport(at(before_store, occupied[k]) == 1, occupied[k] == 1) using {
@@ -171,7 +171,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         } else {
             have k <= p;
             have k == p;
-            rewrite(k == p);
+            rewrite(k, p);
             solve();
         }
     }
@@ -196,7 +196,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             known();
         }
         have i < k by {
-            rewrite(i == p);
+            rewrite(i, p);
             known();
         }
         have i != k;

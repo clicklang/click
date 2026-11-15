@@ -55,7 +55,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
         known();
     }
     have to_integer(s->at + 1) <= to_integer(e) by {
-        rewrite(s->at == a);
+        rewrite(s->at, a);
         known();
     }
     step_until(function.exit);
@@ -111,8 +111,8 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     }
     have first->at == first_at by { known(); }
     have pool->data[first->at] == 11 by {
-        rewrite(first->at == first_at);
-        rewrite(pool->data == at(m1, pool->data));
+        rewrite(first->at, first_at);
+        rewrite(pool->data, at(m1, pool->data));
         known();
     }
     let a = fold(pool_slot(first, pool), { at: first_at, end: first_end });

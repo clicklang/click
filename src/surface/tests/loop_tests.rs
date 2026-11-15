@@ -671,8 +671,8 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
                 }
                 have p[2] == old(p[2]) by { normalize(); }
                 have p[0] <= p[2] by {
-                    rewrite(p[0] == old(p[1]));
-                    rewrite(p[2] == old(p[2]));
+                    rewrite(p[0], old(p[1]));
+                    rewrite(p[2], old(p[2]));
                     known();
                 }
                 step(); solve();
@@ -705,13 +705,13 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
             }
         }
         have p[0] <= p[2] by {
-            rewrite(p[0] == at(before_swap, p[1]));
-            rewrite(p[2] == at(before_swap, p[2]));
+            rewrite(p[0], at(before_swap, p[1]));
+            rewrite(p[2], at(before_swap, p[2]));
             known();
         }
         have p[1] <= p[2] by {
-            rewrite(p[1] == at(before_swap, p[0]));
-            rewrite(p[2] == at(before_swap, p[2]));
+            rewrite(p[1], at(before_swap, p[0]));
+            rewrite(p[2], at(before_swap, p[2]));
             known();
         }
     "#;

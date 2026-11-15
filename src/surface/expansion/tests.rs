@@ -448,13 +448,13 @@ void use(struct root* root) {
     let { out: out } = step(produce, { cell: cell });
     match out.model {
         Out::Done(v) => {
-            have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v) == out.model); known(); }
+            have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v), out.model); known(); }
             have v == old(cell.model) by { unfold(out_value(Out::Done(v))); known(); }
             let { whole: whole } = unfold(out);
             step_until(function.exit); solve();
         },
         Out::Pending(v) => {
-            have out_value(Out::Pending(v)) == old(cell.model) by { rewrite(Out::Pending(v) == out.model); known(); }
+            have out_value(Out::Pending(v)) == old(cell.model) by { rewrite(Out::Pending(v), out.model); known(); }
             have v == old(cell.model) by { unfold(out_value(Out::Pending(v))); known(); }
             let { pending: whole } = unfold(out);
             step_until(function.exit); solve();
@@ -868,7 +868,7 @@ fn scalar_call_congruence_expands_and_rejects_tampering() {
 theorem client(xs: List<int32>, ys: List<int32>, value: int32) {
     requires xs == ys;
     ensures list::contains(xs, value) == list::contains(ys, value) by {
-        rewrite(xs == ys);
+        rewrite(xs, ys);
         solve();
     }
 }
@@ -2852,8 +2852,8 @@ fn pure_theorem_expansion_is_certificate_backed_and_idempotent() {
     requires before == 0;
     requires after == before + 1;
     ensures after == 1 by {
-        rewrite(after == before + 1);
-        rewrite(before == 0);
+        rewrite(after, before + 1);
+        rewrite(before, 0);
         solve();
     }
 }

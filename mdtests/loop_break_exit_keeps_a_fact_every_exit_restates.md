@@ -84,13 +84,13 @@ int32 inspect(struct node* p) {
             match x.model {
                 Cell::Missing => {
                     have Cell::Missing == old(x.model) by {
-                        rewrite(Cell::Missing == x.model);
+                        rewrite(Cell::Missing, x.model);
                         known();
                     }
                     unfold(x);
                     let x = fold(cell_at(p), { model: Cell::Missing });
                     have x.model == old(x.model) by {
-                        rewrite(x.model == Cell::Missing);
+                        rewrite(x.model, Cell::Missing);
                         known();
                     }
                     step();
@@ -98,7 +98,7 @@ int32 inspect(struct node* p) {
                 },
                 Cell::Red(identity) => {
                     have Cell::Red(identity) == old(x.model) by {
-                        rewrite(Cell::Red(identity) == x.model);
+                        rewrite(Cell::Red(identity), x.model);
                         known();
                     }
                     unfold(x);
@@ -107,14 +107,14 @@ int32 inspect(struct node* p) {
                     step();
                     let x = fold(cell_at(p), { model: Cell::Red(identity) });
                     have x.model == old(x.model) by {
-                        rewrite(x.model == Cell::Red(identity));
+                        rewrite(x.model, Cell::Red(identity));
                         known();
                     }
                     step();
                 },
                 Cell::Black(identity) => {
                     have Cell::Black(identity) == old(x.model) by {
-                        rewrite(Cell::Black(identity) == x.model);
+                        rewrite(Cell::Black(identity), x.model);
                         known();
                     }
                     unfold(x);
@@ -123,7 +123,7 @@ int32 inspect(struct node* p) {
                     step();
                     let x = fold(cell_at(p), { model: Cell::Black(identity) });
                     have x.model == old(x.model) by {
-                        rewrite(x.model == Cell::Black(identity));
+                        rewrite(x.model, Cell::Black(identity));
                         known();
                     }
                     step();

@@ -5210,7 +5210,7 @@ fn post_execution_rewrite_retains_its_checked_proof_step() {
             ensures successor: x + 1 == 1;
         } by {
             step_until(function.exit);
-            rewrite(x == 0);
+            rewrite(x, 0);
             normalize();
         }
     "#;
@@ -7207,7 +7207,7 @@ fn uint64_bit_test_inequality_expands_to_rewrite_and_known() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the smart uint64 inequality should expand");
     assert!(
-        expanded.contains("rewrite((word & 1u64) as uint64 == 1u64);"),
+        expanded.contains("rewrite((word & 1u64) as uint64, 1u64);"),
         "{expanded}"
     );
     assert!(expanded.contains("known();"), "{expanded}");
@@ -7240,7 +7240,7 @@ fn uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence() {
     let unavailable_rewrite = r#"
         theorem unproved_set_bit_cannot_be_a_certificate(word: uint64) {
             ensures (word & 1u64) != 0u64 by {
-                rewrite((word & 1u64) == 1u64);
+                rewrite((word & 1u64), 1u64);
                 normalize();
             }
         }
@@ -7265,7 +7265,7 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_solve() {
             requires y == 0;
             requires z == 0;
             ensures x <= 0 and z <= 0 by {
-                rewrite(x == y);
+                rewrite(x, y);
                 solve();
             }
         }
@@ -8101,7 +8101,7 @@ fn pure_solve_retains_one_selected_equality_rewrite_before_known() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the retained equality-refinement path should expand");
-    assert!(expanded.contains("rewrite(value == 1);"), "{expanded}");
+    assert!(expanded.contains("rewrite(value, 1);"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the expanded rewrite path should check");
@@ -8362,7 +8362,7 @@ fn restricted_solve_retains_equal_one_predecessor_path() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor proof should expand");
     assert!(expanded.contains("have 1 <= value"), "{expanded}");
-    assert!(expanded.contains("rewrite(value == 1)"), "{expanded}");
+    assert!(expanded.contains("rewrite(value, 1)"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -10155,7 +10155,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
             ensures result == 9;
         } by {
             step_until(function.exit);
-            rewrite(result == 9);
+            rewrite(result, 9);
             normalize();
         }
     "#;
@@ -10209,7 +10209,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
             "theorem application",
         ),
         (
-            expanded_rewrite.replacen("rewrite(result == 9);", "rewrite(result == 8);", 1),
+            expanded_rewrite.replacen("rewrite(result, 9);", "rewrite(result, 8);", 1),
             "rewrite",
         ),
     ] {
@@ -13506,7 +13506,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "owned-string",
         "owned_string.click",
         "owned_string_init",
-        "rewrite(owner->cap == capacity);",
+        "rewrite(owner->cap, capacity);",
     ),
     (
         "recursive-zero-list",
@@ -15369,8 +15369,8 @@ fn grouped_residual_normalization_expansion_checks_original_claims() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let repeated_rewrite = source.replace(
-        "rewrite(result == old(counter::state.value));",
-        "rewrite(result == old(counter::state.value));\n    rewrite(old(counter::state.value) == 7u64);",
+        "rewrite(result, old(counter::state.value));",
+        "rewrite(result, old(counter::state.value));\n    rewrite(old(counter::state.value), 7u64);",
     );
     assert_ne!(repeated_rewrite, source);
     for source in [source, repeated_rewrite.as_str()] {
@@ -16207,7 +16207,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Bi::Zero }, {});
             have bi_code(old(c.model)) == 0 by {
-                rewrite(old(c.model) == Bi::Zero);
+                rewrite(old(c.model), Bi::Zero);
                 unfold(bi_code(Bi::Zero));
                 normalize();
             }
@@ -16218,7 +16218,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Bi::Other(value) }, {});
             have bi_code(old(c.model)) == value by {
-                rewrite(old(c.model) == Bi::Other(value));
+                rewrite(old(c.model), Bi::Other(value));
                 unfold(bi_code(Bi::Other(value)));
                 normalize();
             }
@@ -16253,11 +16253,11 @@ fn match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies() {
     )
     .expect("the arm's closer should expand");
     assert!(
-        expanded.contains("rewrite(old(c.model) == Bi::Other(value));"),
+        expanded.contains("rewrite(old(c.model), Bi::Other(value));"),
         "the generated closer should cite the entry-anchored case fact: {expanded}"
     );
     assert!(
-        !expanded.contains("rewrite(c.model == Bi::Other(value));"),
+        !expanded.contains("rewrite(c.model, Bi::Other(value));"),
         "the written spelling now denotes the fold's own equation, so a \
          certificate must not cite it for the case fact: {expanded}"
     );
@@ -16702,10 +16702,10 @@ fn a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold() {
             .expect("the closing solve should expand");
     // Shared model closure can now close this equality by `known()`. If
     // a rewrite is emitted, it must still use the readable entry snapshot.
-    assert!(!expanded.contains("rewrite(t.model =="), "{expanded}");
+    assert!(!expanded.contains("rewrite(t.model,"), "{expanded}");
     assert!(
         expanded.contains("known();")
-            || expanded.contains("rewrite(old(t.model) == Tree::Node(id, color, left_model));"),
+            || expanded.contains("rewrite(old(t.model), Tree::Node(id, color, left_model));"),
         "the model equality needs checked closure: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -17972,11 +17972,7 @@ fn integer_observed_product_identity_rewrites_expand_and_recheck() {
             "ensures to_integer(a) * to_integer(b) == 1",
             1,
         ),
-        source.replacen(
-            "rewrite(to_integer(b) == 0)",
-            "rewrite(to_integer(a) == 0)",
-            1,
-        ),
+        source.replacen("rewrite(to_integer(b), 0)", "rewrite(to_integer(a), 0)", 1),
         source.replacen(
             "ensures to_integer(a) * to_integer(b) == 0",
             "ensures to_integer(a) * to_integer(a) == 0",
@@ -17995,11 +17991,11 @@ uint32 identity(uint32 a, uint32 b) {
     ensures to_integer(result) * to_integer(b) == 0;
 } by {
     have to_integer(a) * to_integer(b) == 0 by {
-        rewrite(to_integer(b) == 0);
+        rewrite(to_integer(b), 0);
         solve() using {};
     }
     step_until(function.exit);
-    rewrite(to_integer(b) == 0);
+    rewrite(to_integer(b), 0);
     solve() using {};
 }
 "#;
@@ -18031,7 +18027,7 @@ fn integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims() {
         assert!(error.message().len() < 8000);
     }
     for hostile in [
-        source.replace("rewrite(a == b);", "rewrite(a == d);"),
+        source.replace("rewrite(a, b);", "rewrite(a, d);"),
         source.replace(
             "ensures a * d + a == b * d + b",
             "ensures a * d + a == b * d + b + 1",
@@ -18049,7 +18045,7 @@ int64 identity(int64 x, int64 y) {
     ensures to_integer(result) * 3 + to_integer(result) == to_integer(y) * 3 + to_integer(y);
 } by {
     step_until(function.exit);
-    rewrite(to_integer(x) == to_integer(y));
+    rewrite(to_integer(x), to_integer(y));
     solve();
 }
 "#;
@@ -21040,13 +21036,13 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
                 both {
                     have a == 0 by {
-                        rewrite(a == b); rewrite(b == 0); normalize();
+                        rewrite(a, b); rewrite(b, 0); normalize();
                     }
                     known();
                 } and {
                     intro();
                     have a == 0 by { known(); }
-                    have a + 1 == 1 by { rewrite(a == 0); normalize(); }
+                    have a + 1 == 1 by { rewrite(a, 0); normalize(); }
                     known();
                 }
             }
@@ -22254,7 +22250,7 @@ fn rewritten_concrete_range_fold_expands_and_replays() {
         theorem fold_rewrite(n: int32) {
             requires n == 1;
             ensures (0..n).fold(0, |acc, item| { acc }) == 0 by {
-                rewrite(n == 1);
+                rewrite(n, 1);
                 normalize();
             }
         }
