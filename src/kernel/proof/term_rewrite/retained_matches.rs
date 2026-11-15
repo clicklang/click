@@ -233,8 +233,7 @@ impl TermRewrite<'_> {
         Some(KernelTermImport::default().argument(&rewritten))
     }
 
-    /// Exact native source equality. Constructor comparison keeps its selected
-    /// native boundary until algebraic equality migrates; match bodies stay shared.
+    /// Exact native source equality over common constructor and match children.
     /// Native leaves retain AlgebraicTerm's pointer-evidence-insensitive value
     /// equality; arm declarations and order retain the same exact semantics.
     fn retained_algebraic_source_matches(
@@ -258,9 +257,11 @@ impl TermRewrite<'_> {
                     }
                 }
                 (KernelTermNode::Constructor(_), AlgebraicTermNode::Constructor { .. }) => {
-                    if self.fold_integer_bridge.argument(root).ok()?
-                        != PureFunctionArgument::Algebraic(source.clone())
-                    {
+                    let source = KernelTermImport::default().algebraic(source);
+                    if !root.algebraic_syntax_equal_while(&source, || {
+                        self.visit();
+                        !self.checked_work_exhausted()
+                    })? {
                         return Some(false);
                     }
                 }

@@ -100,6 +100,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 | KernelTermNode::BoolOverflow { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
                 | KernelTermNode::IntegerCompare { arguments, .. }
+                | KernelTermNode::AlgebraicEqual { arguments }
                 | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
                 KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
                     arguments.to_vec()
@@ -207,6 +208,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                         },
                     ));
                     KernelTerm::bool_observation_leaf(condition, identity)
+                }
+                KernelTermNode::AlgebraicEqual { arguments } => {
+                    KernelTerm::algebraic_equal_raw(arguments.each_ref().map(|arg| get(arg)))
                 }
                 KernelTermNode::IntegerCompare {
                     operator,
