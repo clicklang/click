@@ -53,6 +53,23 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
         }
         _ => {}
     }
+    if let ProgramExpression::StringLiteral(identity) = expression {
+        budget.consume_expression_step()?;
+        budget.check_path_width(1)?;
+        return Ok(vec![ExpressionPath {
+            outcome: state
+                .literal_values
+                .get(identity)
+                .map(|value| ExpressionOutcome::Value(value.clone().into_value()))
+                .unwrap_or_else(|| {
+                    ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(
+                        identity.to_string(),
+                    ))
+                }),
+            facts: ExecutionFacts::new(),
+            obligations: vec![],
+        }]);
+    }
     if let ProgramExpression::StepResult { step, .. } = expression
         && let Some(value) = state
             .step_results

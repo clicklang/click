@@ -224,7 +224,8 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             crate::kernel::binary_c_expression!(a, b) => {
                 pending.extend([(a.as_ref(), true), (b.as_ref(), true)])
             }
-            ProgramExpression::Value(_)
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
@@ -1675,7 +1676,8 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {

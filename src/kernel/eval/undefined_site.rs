@@ -170,7 +170,8 @@ fn unconditional_operands<'a>(
     operands: &mut Vec<&'a ProgramExpression>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}

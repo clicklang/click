@@ -4013,6 +4013,7 @@ fn loop_exit_state_difference(
         enclosing_frame_holds_locals,
         step_results,
         aggregate_step_objects,
+        literal_values,
         locals,
         memory: _,
         resources: _,
@@ -4113,6 +4114,7 @@ fn loop_exit_state_difference(
         values
     );
     component!(aggregate_step_objects, "aggregate expression storage");
+    component!(literal_values, "literal objects");
     component!(step_results, "call results");
     Some(differences.join(", "))
 }
@@ -9164,7 +9166,8 @@ pub(super) fn collect_address_taken_in_expression(
         ProgramExpression::AddressOf(target) | ProgramExpression::CheckedObjectAddress(target) => {
             collect_variable_names(target, names)
         }
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
@@ -9219,7 +9222,8 @@ pub(super) fn collect_variable_names(expression: &ProgramExpression, names: &mut
         ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => collect_variable_names(expression, names),

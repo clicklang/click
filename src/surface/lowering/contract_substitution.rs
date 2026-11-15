@@ -4503,7 +4503,8 @@ pub(in crate::surface) fn substitute_program_expression_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ProgramExpression, String> {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => Ok(expression.clone()),
         ProgramExpression::Variable(name) => {

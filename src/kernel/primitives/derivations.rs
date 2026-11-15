@@ -1937,7 +1937,8 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
             continue;
         }
         match expression {
-            ProgramExpression::Value(_)
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::Value(_)
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::Cast { expression, .. } => pending.push((expression, false)),

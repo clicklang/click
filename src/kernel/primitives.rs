@@ -2911,6 +2911,59 @@ impl std::ops::Deref for PointerValue {
     }
 }
 
+/// A source occurrence of a string literal, independent of C variable names.
+/// Shared so pointer and expression nodes stay small and cloning does not copy names.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct StringLiteralId(Arc<StringLiteralOccurrence>);
+
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+struct StringLiteralOccurrence {
+    source: Option<String>,
+    function: String,
+    ordinal: u32,
+}
+
+impl StringLiteralId {
+    pub fn new(function: impl Into<String>, ordinal: u32) -> Self {
+        Self(Arc::new(StringLiteralOccurrence {
+            source: None,
+            function: function.into(),
+            ordinal,
+        }))
+    }
+
+    pub fn with_source(self, source: impl Into<String>) -> Self {
+        Self(Arc::new(StringLiteralOccurrence {
+            source: Some(source.into()),
+            function: self.0.function.clone(),
+            ordinal: self.0.ordinal,
+        }))
+    }
+
+    pub fn source(&self) -> Option<&str> {
+        self.0.source.as_deref()
+    }
+    pub fn function(&self) -> &str {
+        &self.0.function
+    }
+    pub fn ordinal(&self) -> u32 {
+        self.0.ordinal
+    }
+
+    pub(crate) fn payload_bytes(&self) -> usize {
+        self.0.function.len() + self.0.source.as_ref().map_or(0, String::len) + 4
+    }
+}
+
+impl std::fmt::Display for StringLiteralId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(source) = &self.0.source {
+            write!(f, "{source:?}::")?;
+        }
+        write!(f, "{}.string_literal({})", self.0.function, self.0.ordinal)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PointerBlock {
     Concrete(String),
@@ -2920,7 +2973,7 @@ pub enum PointerBlock {
     /// one literal's pointer stable, and differing bytes prove that two
     /// occurrences cannot be the same object.
     StringLiteral {
-        identity: String,
+        identity: StringLiteralId,
         bytes: Vec<u8>,
     },
     Function(String),
@@ -3269,7 +3322,7 @@ impl std::fmt::Display for PointerBlock {
                 application.id()
             ),
             Self::Concrete(name) => formatter.write_str(name),
-            Self::StringLiteral { identity, .. } => write!(formatter, "string:{identity}"),
+            Self::StringLiteral { identity, .. } => write!(formatter, "{identity}"),
             Self::Function(name) => write!(formatter, "function:{name}"),
             Self::FunctionSymbolic(variable) => {
                 write!(formatter, "symbolic-function-pointer:{}", variable.0)
@@ -3621,6 +3674,8 @@ pub enum IntegerCastMode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ProgramExpression {
+    /// A literal object installed for this function, never a program local.
+    StringLiteral(StringLiteralId),
     Value(ProgramValue),
     Variable(String),
     FunctionAddress(String),
@@ -6093,7 +6148,7 @@ pub(super) struct FunctionStaticStorage {
 /// NUL and are installed in a stable read-only memory block at function entry.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StringLiteral {
-    pub(super) name: String,
+    pub(super) identity: StringLiteralId,
     pub(super) bytes: Vec<u8>,
     /// The character type of the literal's elements: `UInt8` where plain
     /// `char` is unsigned and `Int8` where it is signed. Each byte is stored
@@ -10217,6 +10272,8 @@ pub struct ExecutionState {
     pub(crate) step_results: Option<Arc<PersistentMap<u32, StoredExecutionValue>>>,
     /// Anonymous aggregate storage created by expression steps, keyed by producer.
     pub(crate) aggregate_step_objects: crate::persistent::PersistentMap<u32, Pointer>,
+    /// Literal values of this frame. Objects themselves have static storage duration.
+    pub(crate) literal_values: Arc<PersistentMap<StringLiteralId, StoredExecutionValue>>,
 }
 
 /// The function pointer a call goes through, with its type.
@@ -10257,7 +10314,8 @@ impl ProgramExpression {
     pub(crate) fn collect_step_results_read(&self, steps: &mut Vec<u32>) {
         match self {
             ProgramExpression::StepResult { step, .. } => steps.push(*step),
-            ProgramExpression::Value(_)
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)
             | ProgramExpression::FunctionAddress(_) => {}
             ProgramExpression::EnumConstruct { fields, .. } => {

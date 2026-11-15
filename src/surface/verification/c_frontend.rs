@@ -843,6 +843,7 @@ pub(super) fn c_layouts(
             }
         }
         for function in unit.functions {
+            tables.register_string_literals(&function);
             tables.qualified_functions.insert(
                 (source_path.clone(), function.source_name().to_string()),
                 function.name().to_string(),

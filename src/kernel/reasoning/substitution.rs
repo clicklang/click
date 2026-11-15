@@ -872,6 +872,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
         .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
         .collect();
     ExecutionState {
+        literal_values: state.literal_values.clone(),
         aggregate_step_objects: state
             .aggregate_step_objects
             .iter()
@@ -2675,6 +2676,7 @@ fn collect_program_expression_bound_variables(
     match expression {
         ProgramExpression::Value(value) => collect_program_value_bound_variables(value, variables),
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
@@ -4743,6 +4745,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
     to: &MachineTerm,
 ) -> ProgramExpression {
     match expression {
+        ProgramExpression::StringLiteral(_) => expression.clone(),
         ProgramExpression::Value(value) => ProgramExpression::Value(
             substitute_bitvector_variable_in_program_value(value, from, to),
         ),
@@ -6816,6 +6819,7 @@ fn substitute_pointer_variable_in_program_expression(
             substitute_pointer_variable_in_program_value(value, from, to),
         ),
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => expression.clone(),
         ProgramExpression::Cast {

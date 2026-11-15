@@ -15102,3 +15102,60 @@ fn realloc_argument_calls_are_separate_retained_operations() {
         syntax::CExpression::StepResult { .. }
     ));
 }
+
+#[test]
+fn c_string_literal_identities_are_function_local_occurrences_not_variables() {
+    let functions = syntax::parse_functions(
+        r#"
+        const char* first(int choice) { if (choice) return "same"; return "same"; }
+        const char* second() { return "same"; }
+    "#,
+    )
+    .unwrap();
+    let first = &functions[0];
+    assert_eq!(first.string_literals().len(), 2);
+    assert_eq!(first.string_literals()[0].identity().unwrap().ordinal(), 0);
+    assert_eq!(first.string_literals()[1].identity().unwrap().ordinal(), 1);
+    assert_eq!(
+        functions[1].string_literals()[0]
+            .identity()
+            .unwrap()
+            .ordinal(),
+        0
+    );
+    assert_ne!(
+        first.string_literals()[0].identity(),
+        functions[1].string_literals()[0].identity()
+    );
+    for function in functions {
+        let body = format!("{:?}", function.body());
+        assert!(body.contains("StringLiteral"), "{body}");
+        assert!(!body.contains("__click_string_literal"), "{body}");
+    }
+}
+
+#[test]
+fn c_sizeof_string_literal_uses_the_array_extent_without_a_variable() {
+    let function =
+        syntax::parse_function("int32 width() { return sizeof(\"ab\" \"cd\"); }").unwrap();
+    let execution = crate::kernel::prove_symbolic_program_function_execution(
+        crate::kernel::ExecutionState::new(),
+        function.to_kernel_function(),
+        vec![],
+        Default::default(),
+    )
+    .expect("sizeof literal executes");
+    let mut proposition = execution.proposition();
+    while let crate::kernel::Proposition::Implies(_, body) = proposition {
+        proposition = body;
+    }
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
+        ..
+    } = proposition
+    else {
+        panic!("sizeof must return")
+    };
+    assert_eq!(value.native().as_ref(), &crate::kernel::int32(5));
+    assert_eq!(function.string_literals().len(), 1);
+}

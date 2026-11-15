@@ -4976,6 +4976,10 @@ id = "library.theorem.integer::round_down_le"
 path = "reference/library/index.md#integerround_down_le"
 
 [[item]]
+id = "language.string-literal-reference"
+path = "reference/language/c.md#string-literals"
+
+[[item]]
 id = "library.theorem.integer::le_antisymmetric"
 path = "reference/library/index.md#integerle_antisymmetric"
 

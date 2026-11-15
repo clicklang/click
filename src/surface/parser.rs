@@ -190,6 +190,10 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) string_literal_values:
+        std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
+    pub(in crate::surface) string_literal_owners:
+        std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
@@ -839,6 +843,8 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
+    string_literal_owners: std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
     /// The loop clause currently being read, including its phase proofs.
     /// Source-aware parsing can reject unbound values before proof execution.
     loop_name_context: Option<String>,
@@ -1262,6 +1268,33 @@ struct ParsedFunctionSignature {
     return_struct_name: Option<String>,
 }
 
+impl ProgramLayouts {
+    pub(in crate::surface) fn register_string_literals(
+        &mut self,
+        function: &crate::languages::interface::ImportedFunction,
+    ) {
+        for literal in function.string_literals() {
+            let literal = literal.to_kernel();
+            let id = literal.identity().clone();
+            std::sync::Arc::make_mut(&mut self.string_literal_owners)
+                .entry(id.function().to_owned())
+                .or_default()
+                .insert(id.source().map(str::to_owned));
+            let pointer = crate::kernel::Memory::string_literal_pointer(&id, literal.bytes());
+            std::sync::Arc::make_mut(&mut self.string_literal_values).insert(
+                id,
+                ProgramValue::typed_pointer(
+                    pointer,
+                    literal
+                        .element_type()
+                        .pointer_to()
+                        .expect("character pointer"),
+                ),
+            );
+        }
+    }
+}
+
 /// Give a concrete replacement for scalar and slice signatures. Record and
 /// method contracts need an `impl` and the imported type identity instead.
 impl Parser {
@@ -1390,6 +1423,8 @@ impl Parser {
             &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.string_literal_values = layouts.string_literal_values;
+        parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
@@ -1634,6 +1669,8 @@ impl Parser {
         };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
+            string_literal_values: Default::default(),
+            string_literal_owners: Default::default(),
             rust_object_traits,
             cpp_object_methods,
             record_spellings: BTreeMap::new(),
@@ -14398,18 +14435,32 @@ impl Parser {
         ))
     }
 
-    /// The target of a Click cast at the cursor, after its `(` or inside the
-    /// parentheses of a pointer target: an integer type, `void *`, or a
-    /// scalar pointer type such as `uint8 *` or `float *`, unqualified.
-    fn parse_click_cast_type(&mut self) -> Result<ProgramType, ClickError> {
+    /// A native cast target. Pointer qualifiers add to the source view;
+    /// an unqualified byte cast still inherits its source qualification.
+    fn parse_click_cast_type(&mut self) -> Result<(ProgramType, bool, bool), ClickError> {
+        let mut constant = false;
+        let mut volatile = false;
+        while let Some(name) = self.peek_ident() {
+            match name {
+                "const" => constant = true,
+                "volatile" => volatile = true,
+                _ => break,
+            }
+            self.position += 1;
+        }
         let parsed_type = self.parse_type()?;
         let target_type = parsed_type.interface_type.to_kernel_type();
         if parsed_type.reference
-            || (target_type.is_pointer() && (parsed_type.constant || parsed_type.pointee_constant))
+            || parsed_type.constant
+            || (!target_type.is_pointer() && (constant || volatile))
         {
-            return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
+            return Err(self.error("contract cast qualifiers apply to a pointer's pointee"));
         }
-        Ok(target_type)
+        Ok((
+            target_type,
+            constant || parsed_type.pointee_constant,
+            volatile,
+        ))
     }
 
     /// A struct-pointer cast of `source_operand`, `p as (struct s *)`: the
@@ -14451,6 +14502,16 @@ impl Parser {
     fn lower_click_cast(
         &mut self,
         target_type: ProgramType,
+        operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        self.lower_qualified_click_cast(target_type, false, false, operand)
+    }
+
+    fn lower_qualified_click_cast(
+        &mut self,
+        target_type: ProgramType,
+        pointee_constant: bool,
+        pointee_volatile: bool,
         operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let historical = crate::surface::validation::contains_old_expression(&operand)
@@ -14497,8 +14558,8 @@ impl Parser {
                     crate::kernel::IntegerCastMode::CConversion
                 },
                 pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
+                pointee_volatile,
+                pointee_constant,
                 explicit_qualification: false,
             },
         })
@@ -14518,7 +14579,7 @@ impl Parser {
         if self.starts_contract_scalar_cast() {
             let open = self.position;
             self.position += 1;
-            let target_type = self.parse_click_cast_type()?;
+            let (target_type, _, _) = self.parse_click_cast_type()?;
             let close = self.position;
             self.expect(Token::RParen)?;
             let target = self.tokens[open + 1..close]
@@ -15374,7 +15435,94 @@ impl Parser {
         found
     }
 
+    /// A source literal object: `f.string_literal(i)` or `"file.c"::f.string_literal(i)`.
+    fn take_string_literal_reference(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+        let start = self.position;
+        let first = match self.peek() {
+            Some(Token::Ident(name)) => (false, name.clone()),
+            Some(Token::String(name)) => (true, name.clone()),
+            _ => return Ok(None),
+        };
+        self.position += 1;
+        let (source, function) = if self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            let Some(Token::Ident(function)) = self.peek() else {
+                self.position = start;
+                return Ok(None);
+            };
+            let function = function.clone();
+            self.position += 1;
+            let source = if first.0 {
+                first.1.clone()
+            } else {
+                // An explicit source alias uses the same qualification as C objects.
+                match self.source_aliases.get(&first.1) {
+                    Some(source) => source.clone(),
+                    None => {
+                        self.position = start;
+                        return Ok(None);
+                    }
+                }
+            };
+            (Some(source), function)
+        } else {
+            if first.0 {
+                self.position = start;
+                return Ok(None);
+            }
+            if let Some((alias, name)) = first.1.split_once("::") {
+                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                    self.position = start;
+                    return Ok(None);
+                };
+                (Some(source), name.to_string())
+            } else {
+                (None, first.1.clone())
+            }
+        };
+        if self.peek() != Some(&Token::Dot)
+            || self.peek_next() != Some(&Token::Ident("string_literal".into()))
+        {
+            self.position = start;
+            return Ok(None);
+        }
+        self.position += 2;
+        self.expect(Token::LParen)?;
+        let ordinal = self.expect_index("string literal ordinal")?;
+        self.expect(Token::RParen)?;
+        let source = if source.is_some() {
+            source
+        } else {
+            let owners = self.string_literal_owners.get(&function).ok_or_else(|| {
+                self.error(format!("C function `{function}` has no string literals"))
+            })?;
+            if owners.len() != 1 {
+                return Err(self.error(format!(
+                    "literal owner `{function}` is ambiguous; qualify its C source"
+                )));
+            }
+            owners.first().expect("registered owner").clone()
+        };
+        let mut id = crate::kernel::StringLiteralId::new(
+            function,
+            u32::try_from(ordinal).map_err(|_| self.error("string literal ordinal exceeds u32"))?,
+        );
+        if let Some(source) = source {
+            id = id.with_source(source);
+        }
+        let value = self
+            .string_literal_values
+            .get(&id)
+            .ok_or_else(|| self.error(format!("unknown string literal `{id}`")))?;
+        Ok(Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(value.clone()),
+        )))
+    }
+
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if let Some(literal) = self.take_string_literal_reference()? {
+            return Ok(literal);
+        }
         let start = self.position;
         if let Ok(region) = self.parse_code_region_ref()
             && self.peek() == Some(&Token::Dot)
@@ -16978,13 +17126,34 @@ impl Parser {
     }
 
     fn starts_contract_scalar_cast(&self) -> bool {
-        self.starts_float_pointer_cast_at(self.position)
-            || (self.peek() == Some(&Token::LParen)
-                && self.peek_next() == Some(&Token::Ident("void".to_string()))
-                && self.tokens.get(self.position + 2) == Some(&Token::Star)
-                && self.tokens.get(self.position + 3) == Some(&Token::RParen))
-            || self.peek() == Some(&Token::LParen)
-                && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "int8" | "uint8" | "int16" | "uint16" | "uint32" | "int32" | "uint64" | "int64" | "int128" | "uint128"))
+        if self.peek() != Some(&Token::LParen) {
+            return false;
+        }
+        let mut index = self.position + 1;
+        while matches!(self.tokens.get(index), Some(Token::Ident(name)) if matches!(name.as_str(), "const" | "volatile"))
+        {
+            index += 1;
+        }
+        match self.tokens.get(index) {
+            Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "float" | "double") => {
+                self.tokens.get(index + 1) == Some(&Token::Star)
+                    && self.tokens.get(index + 2) == Some(&Token::RParen)
+            }
+            Some(Token::Ident(name)) => matches!(
+                name.as_str(),
+                "int8"
+                    | "uint8"
+                    | "int16"
+                    | "uint16"
+                    | "uint32"
+                    | "int32"
+                    | "uint64"
+                    | "int64"
+                    | "int128"
+                    | "uint128"
+            ),
+            _ => false,
+        }
     }
 
     fn parenthesized_atom_continues_as_contract_expression(&self) -> bool {
@@ -17043,7 +17212,7 @@ impl Parser {
             }
             Some(Token::LParen) => matches!(
                 self.tokens.get(index + 2),
-                Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "struct" | "const")
+                Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "struct" | "const" | "volatile")
                     || rust_syntax::click_integer_cast_type(name).is_some()
             ),
             _ => false,
@@ -18227,6 +18396,48 @@ mod rewrite_syntax_tests {
                 Parser::new(source).unwrap().parse_proof_tactic().is_err(),
                 "{source}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod qualified_native_pointer_cast_tests {
+    use super::*;
+
+    #[test]
+    fn native_pointer_cast_qualifiers_survive_both_source_renderers() {
+        for qualifiers in ["const", "volatile", "const volatile"] {
+            for ty in ["int8", "uint8", "void", "float", "double"] {
+                let source = format!("p as ({qualifiers} {ty} *)");
+                let parse = |source: &str| {
+                    Parser::new(source)
+                        .unwrap()
+                        .parse_contract_expression()
+                        .unwrap_or_else(|error| panic!("{source}: {error}"))
+                };
+                let expression = parse(&source);
+                let lowered = contract_expression_as_program_expression(&expression).unwrap();
+                let ProgramExpression::Cast {
+                    pointee_constant,
+                    pointee_volatile,
+                    ..
+                } = &lowered
+                else {
+                    panic!("pointer cast")
+                };
+                assert_eq!(*pointee_constant, qualifiers.contains("const"));
+                assert_eq!(*pointee_volatile, qualifiers.contains("volatile"));
+                for rendered in [
+                    diagnostics::describe_contract_expression(&expression),
+                    diagnostics::describe_program_expression(&lowered),
+                ] {
+                    assert_eq!(
+                        contract_expression_as_program_expression(&parse(&rendered)).unwrap(),
+                        lowered,
+                        "{source}: {rendered}"
+                    );
+                }
+            }
         }
     }
 }

@@ -1694,14 +1694,19 @@ impl Parser {
                     }
                     if self.starts_contract_scalar_cast() {
                         self.position += 1;
-                        let target_type = self.parse_click_cast_type()?;
+                        let (target_type, constant, volatile) = self.parse_click_cast_type()?;
                         if !target_type.is_pointer() {
                             return Err(self.error(
                                 "an integer cast target is written without parentheses: `e as uint32`; only a pointer target is parenthesized, `e as (uint8 *)`",
                             ));
                         }
                         self.expect(Token::RParen)?;
-                        operand = self.lower_click_cast(target_type, operand)?;
+                        operand = self.lower_qualified_click_cast(
+                            target_type,
+                            constant,
+                            volatile,
+                            operand,
+                        )?;
                         continue;
                     }
                     self.position -= 1;

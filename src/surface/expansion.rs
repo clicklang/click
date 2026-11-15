@@ -1302,7 +1302,7 @@ pub(in crate::surface) fn verification_target_at_file(
 /// pointer has no source form. None of them is Click syntax, so an expansion
 /// that renders one cannot parse; expansion has to say which name it is
 /// missing instead of handing the parse error on.
-const UNSPELLABLE_POINTER_FORMS: [&str; 6] = [
+const UNSPELLABLE_POINTER_FORMS: [&str; 5] = [
     // The ellipsis `describe_pointer` prints for a heap, temporary or
     // symbolic block no source names.
     "…",
@@ -1310,7 +1310,6 @@ const UNSPELLABLE_POINTER_FORMS: [&str; 6] = [
     "symbolic-function-pointer:",
     "heap-allocation:",
     "arg-memory",
-    "string:",
 ];
 
 /// Reports why a rendered expansion is not Click. A composite resource's

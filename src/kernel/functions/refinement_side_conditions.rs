@@ -505,7 +505,8 @@ pub(super) fn program_expression_supports_stateful_memory_refinement(
     expression: &ProgramExpression,
 ) -> bool {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => true,
@@ -560,7 +561,8 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
     expression: &ProgramExpression,
 ) -> bool {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => true,
@@ -640,7 +642,8 @@ pub(super) fn program_expression_mentions_variable(
 ) -> bool {
     match expression {
         ProgramExpression::Variable(variable) => variable == name,
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
         ProgramExpression::Cast { expression, .. }
@@ -700,7 +703,8 @@ pub(super) fn program_expression_takes_address_of_variable(
         | ProgramExpression::CheckedObjectAddress(expression) => {
             program_expression_mentions_variable(expression, name)
         }
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
@@ -847,7 +851,8 @@ pub(super) fn program_expression_uses_object_address(
 ) -> bool {
     match expression {
         ProgramExpression::Variable(variable) => variable == name,
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
         // A scalar or pointer load produces a value, not the address of the

@@ -4752,6 +4752,33 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
 }
 
 #[test]
+#[ignore = "nightly: literal raising round trips through a verified C function"]
+fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
+    let identity = crate::kernel::StringLiteralId::new("text", 1).with_source("literal_raising.c");
+    let pointer = Memory::string_literal_pointer(&identity, b"same\0");
+    let value = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer)
+        .with_pointer_pointee_constant(true);
+    let raised =
+        synthesize_surface_value(&value, ParameterBinding::default(), &ExecutionState::new())
+            .expect("a literal needs no local or recorded alias to have a name");
+    let name = diagnostics::describe_contract_expression(&raised);
+    assert!(name.contains("text.string_literal(1)"), "{name}");
+    let c = "const uint8* text() { const uint8* discarded = \"same\"; return \"same\"; }";
+    let click = format!(
+        "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"literal_raising.c\"; const uint8* text() {{ ensures result == {name}; }}"
+    );
+    crate::surface::verify_c_sources(&click, &[("literal_raising.c", c)])
+        .expect("raised literal reference");
+    assert!(
+        crate::surface::verify_c_sources(
+            &click.replace("string_literal(1)", "string_literal(0)"),
+            &[("literal_raising.c", c)]
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
     use crate::kernel::{IntegerTerm, PointerValue};
     for (format, name) in [

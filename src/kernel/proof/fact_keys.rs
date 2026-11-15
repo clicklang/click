@@ -1041,7 +1041,7 @@ enum AlphaPointerOffsetNode {
 enum AlphaPointerBlockKey {
     Concrete(String),
     StringLiteral {
-        identity: String,
+        identity: crate::kernel::StringLiteralId,
         bytes: Vec<u8>,
     },
     Function(String),

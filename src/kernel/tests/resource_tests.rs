@@ -3837,7 +3837,7 @@ fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
 fn equal_content_string_literals_remain_readable_without_separation_evidence() {
     let literal = |identity: &str| Pointer {
         block: PointerBlock::StringLiteral {
-            identity: identity.to_string(),
+            identity: StringLiteralId::new(identity, 0),
             bytes: b"ok\0".to_vec(),
         },
         offset: PointerOffsetTerm::Constant(0),

@@ -1885,10 +1885,7 @@ pub(super) fn describe_runtime_error(
         }
         crate::kernel::RuntimeError::FunctionContract(message)
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
-            format!(
-                "function contract could not be applied: {}",
-                name_string_literal_storage(message)
-            )
+            format!("function contract could not be applied: {message}")
         }
         crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
@@ -5055,6 +5052,16 @@ pub(in crate::surface) fn describe_pointer(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
+    if let PointerBlock::StringLiteral { identity, .. } = &pointer.block {
+        return if pointer.offset == PointerOffsetTerm::Constant(0) {
+            identity.to_string()
+        } else {
+            format!(
+                "byte_offset({identity}, {})",
+                describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
+            )
+        };
+    }
     // Two parameters can point into one block, and then every one of them can
     // express the address -- `b[j]` is also `a[(b - a) + j]`. As in
     // [`describe_source_cell`], the shortest spelling is the one written
@@ -5656,6 +5663,26 @@ pub(super) fn describe_program_value(
             describe_bitvector_with_context(value, parameter_binding),
             "f64",
         ),
+        ProgramValue::Pointer(pointer)
+            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }) =>
+        {
+            let base = describe_pointer(pointer, parameter_binding);
+            let ty = crate::kernel::program_type_spelling(pointer.program_type());
+            let constant = if pointer.pointee_constant() {
+                "const "
+            } else {
+                ""
+            };
+            let volatile = if pointer.pointee_volatile() {
+                "volatile "
+            } else {
+                ""
+            };
+            format!(
+                "({})",
+                click_cast(&base, &format!("{constant}{volatile}{ty}"))
+            )
+        }
         ProgramValue::Pointer(pointer) => describe_pointer(pointer, parameter_binding),
     }
 }
@@ -5746,26 +5773,6 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
     }
 }
 
-/// A string literal's storage reads as "a string literal": its block name
-/// is one the lowering generated, not one the source has.
-fn name_string_literal_storage(message: &str) -> String {
-    let Some(start) = message.find("`string:") else {
-        return message.to_string();
-    };
-    let Some(length) = message[start + 1..].find('`') else {
-        return message.to_string();
-    };
-    let end = start + 1 + length;
-    if !message[start..end].contains("__click_string_literal") {
-        return message.to_string();
-    }
-    format!(
-        "{}a string literal{}",
-        &message[..start],
-        &message[end + 1..]
-    )
-}
-
 pub(in crate::surface) fn describe_callback_source(expression: &syntax::CExpression) -> String {
     match expression {
         syntax::CExpression::Field {
@@ -5824,6 +5831,20 @@ impl Drop for ReferenceResultSourceScope {
     fn drop(&mut self) {
         REFERENCE_RESULT_SOURCE.with(|slot| slot.set(self.0));
     }
+}
+
+fn qualified_native_pointer_spelling(target: &str, constant: bool, volatile: bool) -> String {
+    let target = match target {
+        "float32*" => "float*",
+        "float64*" => "double*",
+        target => target,
+    };
+    if !target.contains('*') {
+        return target.to_string();
+    }
+    let constant = if constant { "const " } else { "" };
+    let volatile = if volatile { "volatile " } else { "" };
+    format!("{constant}{volatile}{target}")
 }
 
 /// Click's cast, `operand as target`, from their spellings. A pointer
@@ -5919,6 +5940,7 @@ pub(in crate::surface) fn describe_operator_kind(
 
 pub(super) fn describe_program_expression(expression: &ProgramExpression) -> String {
     match expression {
+        ProgramExpression::StringLiteral(identity) => identity.to_string(),
         ProgramExpression::Value(value) => {
             describe_program_value(value, ParameterBinding::default())
         }
@@ -5954,11 +5976,15 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             expression,
             target_type,
             pointee_struct,
+            pointee_constant,
+            pointee_volatile,
             ..
         } => {
             // The contract parser accepts the null pointer constant directly;
             // a C header's `(void *)0` must not expose the kernel type name.
             if target_type.is_pointer()
+                && !pointee_constant
+                && !pointee_volatile
                 && matches!(
                     expression.as_ref(),
                     ProgramExpression::Value(ProgramValue::Int32(int32_constant!(0)))
@@ -5988,12 +6014,14 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                 ProgramType::Float64Pointer => "double*",
                 _ => crate::kernel::program_type_spelling(*target_type),
             };
+            let spelling =
+                qualified_native_pointer_spelling(spelling, *pointee_constant, *pointee_volatile);
             // Contract expressions use the `expression as type` cast syntax.
             // Wrap the complete cast so it remains a single term when it is
             // embedded in a generated comparison or another proposition.
             format!(
                 "({})",
-                click_cast(&describe_program_expression(expression), spelling)
+                click_cast(&describe_program_expression(expression), &spelling)
             )
         }
         ProgramExpression::Negate(expression) | ProgramExpression::FloatNegate(expression) => {
@@ -7147,6 +7175,8 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 ProgramExpression::Cast {
                     target_type,
                     pointee_struct,
+                    pointee_constant,
+                    pointee_volatile,
                     ..
                 } => {
                     if pointee_struct.is_none()
@@ -7159,7 +7189,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         .as_ref()
                         .map(|name| format!("struct {name} *"))
                         .unwrap_or_else(|| {
-                            crate::kernel::program_type_spelling(*target_type).to_string()
+                            qualified_native_pointer_spelling(
+                                crate::kernel::program_type_spelling(*target_type),
+                                *pointee_constant,
+                                *pointee_volatile,
+                            )
                         });
                     format!("({})", click_cast(&operand, &spelling))
                 }
