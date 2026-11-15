@@ -162,6 +162,14 @@ cell map that has forgotten a store looks exactly like the cell map before
 that store. After `a[i] = 7; a[j] = 0;` the second write drops the possibly
 aliasing `a[i]` cell and the map is empty again, as it was at function entry.
 
+Content identity also means two paths that reach equal memory share one
+snapshot and its first-recorded history. Each `ExecutionState` therefore also
+carries a `ReachedPoint` (`src/kernel/primitives/reached_point.rs`): a
+`ProgramPointId` minted at every memory transition, linked to the point the
+state came from, and to both arms at a branch join. It is not part of state
+equality, and nothing reads it yet; naming and the version walk are to move
+onto it.
+
 So `Memory` carries a `forgotten_from` mark: the interned identity of the
 state cached values were dropped from, part of equality, hashing, ordering
 and the interning key. A state means "the memory the mark denotes, with

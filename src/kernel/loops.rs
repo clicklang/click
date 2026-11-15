@@ -4016,6 +4016,8 @@ fn loop_exit_state_difference(
         literal_values,
         locals,
         memory: _,
+        // Where a state was reached is not part of what it holds.
+        point: _,
         resources: _,
     } = left;
     let mut differences = Vec::new();

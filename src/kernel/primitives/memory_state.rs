@@ -9492,6 +9492,18 @@ impl ExecutionState {
             self.resources.loan_dependency_state(),
         );
         self.memory = memory;
+        self.point = self.point.after();
+    }
+
+    /// The point this state's path has reached.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn reached_point(&self) -> &super::reached_point::ReachedPoint {
+        &self.point
+    }
+
+    /// Stand this state at a new point reached from both arms of a join.
+    pub(crate) fn join_reached_points(&mut self, left: &Self, right: &Self) {
+        self.point = super::reached_point::ReachedPoint::joining(&left.point, &right.point);
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
