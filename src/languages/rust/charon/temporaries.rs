@@ -15,7 +15,7 @@
 //! - named by a statement rather than read by an expression;
 //! - the storage of a place, as in `&t`, `t.f` or `t[i]`;
 //! - an enum `match` scrutinee;
-//! - assigned a call, a borrow or an indexed place.
+//! - assigned a call, a borrow or a slice.
 
 use super::super::schema::{
     Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place,
@@ -290,11 +290,13 @@ fn pure(value: &E) -> bool {
         E::Field { base, .. } | E::EnumField { base, .. } => pure(base),
         E::EnumConstruct { fields, .. } => fields.iter().all(pure),
         E::SliceLength { slice } => pure(slice),
-        // A call has effects; a borrow begins a loan; an indexed place and
-        // the iterator protocol need their own checked preparation.
+        // A read of an element: the lowering checks its index where it
+        // prepares the read (`checked`).
+        E::Index { slice, index } => pure(slice) && pure(index),
+        // A call has effects; a borrow begins a loan; a slice and the
+        // iterator protocol need their own preparation.
         E::Call { .. }
         | E::Borrow { .. }
-        | E::Index { .. }
         | E::ArrayToSlice { .. }
         | E::Array { .. }
         | E::Repeat { .. }
@@ -622,8 +624,9 @@ struct Pending<'a> {
     refused: Vec<(String, E)>,
 }
 
-/// Whether `value` holds an operator whose panic the lowering checks:
-/// arithmetic that can overflow, divide by zero, or shift too far.
+/// Whether `value` holds an operation whose panic the lowering checks:
+/// arithmetic that can overflow, divide by zero, or shift too far, and an
+/// index that can be out of bounds.
 fn checked(value: &E) -> bool {
     match value {
         E::Binary { operator, .. }
@@ -634,6 +637,7 @@ fn checked(value: &E) -> bool {
         {
             true
         }
+        E::Index { .. } => true,
         value => children(value).into_iter().any(checked),
     }
 }
@@ -848,6 +852,39 @@ mod tests {
             [S::Assign { value: E::Binary { left, .. }, .. }]
                 if matches!(left.as_ref(), E::CallResult { call: 0, function } if function == "f")
         ));
+    }
+
+    #[test]
+    fn an_indexed_read_moves_only_where_its_bounds_check_is_emitted() {
+        let read = || E::Index {
+            slice: Box::new(local("a")),
+            index: Box::new(local("b")),
+        };
+        // `t1 = a[b]; x = t1 + 1` is `x = a[b] + 1`.
+        let (locals, _) = substituted(
+            vec![
+                assign("t1", read()),
+                assign("x", binary("add", local("t1"), local("b"))),
+            ],
+            T::Return,
+        );
+        assert!(!locals.contains(&"t1".to_string()));
+        // A constructor's field checks no index, so `a[b]` stays in `t1`.
+        let (locals, _) = substituted(
+            vec![
+                assign("t1", read()),
+                assign(
+                    "x",
+                    E::EnumConstruct {
+                        name: "Option".into(),
+                        variant: "Some".into(),
+                        fields: vec![local("t1")],
+                    },
+                ),
+            ],
+            T::Return,
+        );
+        assert!(locals.contains(&"t1".to_string()));
     }
 
     #[test]
