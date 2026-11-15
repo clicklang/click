@@ -79,6 +79,7 @@ impl PreparedContractEntryCases {
 /// Consume executions produced by this opened entry. Their root premises and
 /// entry representation were fixed by the producer; no premise authorization,
 /// resource rebasing, or execution-metadata reconstruction occurs here.
+#[cfg(test)]
 fn execution_from_owned_contract_entry(
     entry: &Arc<PreparedContractEntryCases>,
     artifacts: &[CheckedFunctionExecution],
@@ -98,6 +99,16 @@ fn execution_from_owned_contract_entry(
             "the contract has no execution produced by its opened entry".into(),
         );
     }
+    execution_from_bound_contract_entry(entry, &selected)
+}
+
+/// Package the explicit outputs of this root's own completed strategies.
+/// Their entry binding was fixed when the ordinary proof opened them.
+#[cfg(test)]
+fn execution_from_bound_contract_entry(
+    entry: &Arc<PreparedContractEntryCases>,
+    selected: &[&CheckedFunctionExecution],
+) -> FunctionContractExecution {
     let cases = entry
         .cases
         .iter()
@@ -134,7 +145,7 @@ fn execution_from_owned_contract_entry(
         .collect::<Vec<_>>();
     let mut checked_call_events = crate::kernel::proof::CheckedCallEvents::default();
     let mut applied_tactics = BTreeSet::new();
-    for artifact in &selected {
+    for artifact in selected {
         checked_call_events.extend(&artifact.checked_call_events);
         applied_tactics.extend(artifact.applied_tactics.iter().cloned());
     }

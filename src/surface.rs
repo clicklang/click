@@ -36,11 +36,10 @@ use crate::kernel::{
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
-    program_seq, program_termination_height_plan,
-    program_unverified_function_contract_claims_diagnostic,
-    program_verified_function_termination_rules, program_while_with_invariant_and_effect_checks,
-    prove_int32_le_antisymmetric, prove_owned_resource_quantity_nonnegative,
-    prove_program_condition_fact_transport, prove_program_function_contract_refinement,
+    program_seq, program_termination_height_plan, program_verified_function_termination_rules,
+    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
+    prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
     prove_symbolic_loop_exit_with_proven_phases_using_budget,
     prove_symbolic_program_condition_evaluation, prove_universally_quantified_pure_implication,
@@ -9586,10 +9585,6 @@ impl FunctionSignature {
 
     pub fn return_pointee_is_constant(&self) -> bool {
         self.return_pointee_constant
-    }
-
-    fn declared_loadable_bytes(&self) -> &[(String, u32)] {
-        &self.declared_loadable_bytes
     }
 
     pub fn return_type(&self) -> InterfaceType {

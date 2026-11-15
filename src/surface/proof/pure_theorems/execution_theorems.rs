@@ -374,35 +374,11 @@ pub(super) fn verify_execution_theorem(
         spec_definitions,
         resources,
         theorems,
-        function_source_registry,
+        Arc::new(function_source_registry.for_contract_proof()),
         tactics,
     )?;
-    let entry = verified
-        .iter()
-        .filter(|verified| {
-            verified
-                .checked_execution
-                .has_checked_resource_transitions()
-        })
-        .find_map(|verified| verified.entry_context.clone())
-        .or_else(|| {
-            verified
-                .iter()
-                .find_map(|verified| verified.entry_context.clone())
-        })
-        .ok_or_else(|| error("the one-call proof did not retain its contract entry"))?;
-    let artifacts = crate::surface::verification::distinct_checked_executions(&verified)
-        .into_iter()
-        .map(|execution| CheckedFunctionExecution::clone(execution))
-        .collect::<Vec<_>>();
-    let owner = entry
-        .completion
-        .clone()
-        .ok_or_else(|| error("the one-call proof did not open a whole-contract owner"))?;
-    let admitted = owner.admit_executions(&artifacts);
-    let completed = admitted
-        .complete()
-        .map_err(|goal| error(&format!("the one-call proof still owes {goal:?}")))?;
+    let completed = finish_whole_contract_root(&block, &verified)?
+        .ok_or_else(|| error("the one-call proof did not open a whole-contract root"))?;
     let rule = completed
         .into_rule()
         .expect("a synthetic one-call function is never a program entry");

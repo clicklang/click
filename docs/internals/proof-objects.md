@@ -461,16 +461,31 @@ the immutable entry input. Conditional resource exits remain work of the open
 returned-resource goal; conditional effect cases consume their prepared entry
 views and projections without sharing case-local facts with siblings.
 
-Ordinary outcome completion updates `ContractProofProgress` for the retained
-whole-contract owner. Each execution strategy binds its exact generative
-outcomes once and keeps persistent counters for the declared obligations.
-Completing an outcome credits its closed proposition goals and its completed
-resource/effect boundary; a checked refutation discharges that outcome's
-obligations vacuously. An obligation retires only when every path of one
-strategy completes it. Partial strategies cannot combine their path coverage,
-and proof forks retain independent progress. Completed obligations transfer
-directly to the whole-contract owner during admission; registration does not
-scan proposition or exit receipts to infer coverage.
+A function proof opens one `WholeContractRoot` with its checked entry. Its
+ordinary `ProofObject` starts with a whole-contract judgment and opens the
+boundary and declared-claim cells for every prepared entry case. A persistent
+index addresses each cell's native branch; completion retires that branch.
+
+Each script works in a `ContractRootAttempt`, a persistent fork of the parent.
+Its execution strategies retain their own path counters in
+`ContractProofProgress`: an obligation retires only when every live path of one
+strategy completes it. Partial strategies cannot combine their path coverage.
+The affine `CompletedContractExecution` publishes only its own completed cells
+and native execution outputs into the script fork. A failed script drops the
+fork; a successful script joins its explicit closed-cell delta into the parent.
+Sibling scripts do not inherit each other's speculative work.
+
+Completing the ordinary parent root produces `CompletedContract`. Its rule
+metadata comes from the root's retained producer publications, checked call
+and tactic dependencies, and selected annotated subject. Registration consumes
+that completed object without gathering artifacts, selecting entry matches,
+reconstructing coverage or running a later completeness decision. Imported
+library theorem dependencies are discharged before the root completes;
+whole-program termination planning remains separate.
+
+Function-proof sessions share persistent source-definition indexes but own
+fresh entry/root slots. Clause scripts share the same session; another function
+or one-call theorem proof starts a new one.
 
 The checked execution producer constructs `PublishedFunctionOutcome` alongside
 each path, retaining its specification, theorem, and raw result/state together.

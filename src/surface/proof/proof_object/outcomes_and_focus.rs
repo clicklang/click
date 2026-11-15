@@ -526,7 +526,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn open_contract_execution(
         &self,
         execution: CheckedFunctionExecution,
-        whole: Option<&crate::kernel::WholeContractProof>,
+        whole: Option<&crate::kernel::WholeContractRoot>,
         branches: impl Iterator<Item = BranchId>,
     ) -> Result<crate::kernel::ContractExecutionOwner, ClickError> {
         self.state
@@ -549,7 +549,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn finish_contract_execution(
         &self,
         execution: crate::kernel::ContractExecutionOwner,
-    ) -> Result<CheckedFunctionExecution, ClickError> {
+    ) -> Result<crate::kernel::CompletedContractExecution, ClickError> {
         self.state
             .finish_contract_execution(execution)
             .map_err(|reason| self.step_error(reason))

@@ -1,7 +1,16 @@
 //! Ownership of the complete clause-by-entry-case contract judgment.
 
 use super::*;
+use crate::kernel::proof::{BranchId, ProofBranch, ProofBranchState, ProofFacts, ProofObject};
 use crate::persistent::PersistentMap;
+mod root;
+pub(crate) use root::{CompletedContractExecution, WholeContractRoot};
+#[derive(Clone)]
+enum ContractRootObligation {
+    WholeContract,
+    Cell(ContractCompletionGoal),
+}
+type RootProof = ProofObject<Arc<PreparedContractEntryCases>, ContractRootObligation, ()>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum ContractCompletionGoal {
@@ -19,7 +28,8 @@ pub(crate) enum ContractCompletionGoal {
 #[derive(Clone)]
 pub(crate) struct WholeContractProof {
     entry: Arc<PreparedContractEntryCases>,
-    open: PersistentMap<ContractCompletionGoal, ()>,
+    open: PersistentMap<ContractCompletionGoal, BranchId>,
+    proof: RootProof,
 }
 
 impl std::fmt::Debug for WholeContractProof {
@@ -33,6 +43,7 @@ impl std::fmt::Debug for WholeContractProof {
 
 /// Executions have been admitted to this owner's entry alternatives, but the
 /// clause and boundary obligations remain ordinary open proof obligations.
+#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct AdmittedContractProof {
     owner: WholeContractProof,
@@ -43,7 +54,7 @@ pub(crate) struct AdmittedContractProof {
 /// Evidence that every declared clause and every entry boundary was completed.
 /// Registration receives an already packaged rule; it discovers no new claim
 /// requirements and cannot substitute another function or a subset of proofs.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct CompletedContract {
     rule: Option<VerifiedFunctionRule>,
 }
@@ -54,6 +65,7 @@ pub(crate) struct ContractExecutionOwner {
     execution: CheckedFunctionExecution,
     progress: Option<ContractProofProgress>,
     open: PersistentMap<usize, crate::kernel::proof::OutcomeIdentity>,
+    root: Option<WholeContractRoot>,
 }
 
 impl ContractExecutionOwner {
@@ -92,6 +104,7 @@ impl ContractExecutionOwner {
         Ok(Self {
             execution,
             progress,
+            root: None,
             open: outcomes
                 .into_iter()
                 .map(|(index, identity, _)| (index, identity))
@@ -137,18 +150,23 @@ impl ContractExecutionOwner {
         Ok(())
     }
 
-    pub(in crate::kernel) fn finish(mut self) -> Result<CheckedFunctionExecution, String> {
+    pub(in crate::kernel) fn bind_root(mut self, root: Option<&WholeContractRoot>) -> Self {
+        self.root = root.cloned();
+        self
+    }
+
+    pub(in crate::kernel) fn finish(mut self) -> Result<CompletedContractExecution, String> {
         if !self.open.is_empty() {
             return Err("execution still owns unfinished outcome obligations".into());
         }
         self.execution.contract_completion = self.progress.map(Arc::new);
-        Ok(self.execution)
+        Ok(CompletedContractExecution::new(self.execution, self.root))
     }
 }
 
 impl CompletedContract {
-    pub(crate) fn into_rule(self) -> Option<VerifiedFunctionRule> {
-        self.rule
+    pub(crate) fn into_rule(&self) -> Option<VerifiedFunctionRule> {
+        self.rule.clone()
     }
 }
 
@@ -171,24 +189,43 @@ impl WholeContractProof {
                 return Err("the contract declaration reuses a claim identity".into());
             }
         }
-        let mut open = PersistentMap::default();
+        let mut goals = Vec::new();
         for case in 0..entry.cases.len() {
             crate::instrumentation::record_deterministic_work(1);
-            open.insert(ContractCompletionGoal::Boundary { case }, ());
+            goals.push(ContractCompletionGoal::Boundary { case });
             for claim in function.contract_claims() {
                 crate::instrumentation::record_deterministic_work(1);
-                open.insert(
-                    ContractCompletionGoal::Claim {
-                        case,
-                        key: claim.key().clone(),
-                    },
-                    (),
-                );
+                goals.push(ContractCompletionGoal::Claim {
+                    case,
+                    key: claim.key().clone(),
+                });
             }
         }
-        Ok(Self { entry, open })
+        let branch = |goal| {
+            ProofBranch::new(
+                goal,
+                ProofBranchState {
+                    facts: ProofFacts::default(),
+                    unfolded_predicates: Default::default(),
+                    execution: None,
+                },
+            )
+        };
+        let root = RootProof::root(entry.clone(), branch(ContractRootObligation::WholeContract));
+        let (proof, ids) = root
+            .replace_focused_with_checked_branches(
+                goals
+                    .iter()
+                    .cloned()
+                    .map(|goal| branch(ContractRootObligation::Cell(goal)))
+                    .collect(),
+            )
+            .unwrap_or_else(|_| panic!("the contract root was just opened"));
+        let open = goals.into_iter().zip(ids).collect();
+        Ok(Self { entry, open, proof })
     }
 
+    #[cfg(test)]
     pub(crate) fn admit_executions(
         self,
         artifacts: &[CheckedFunctionExecution],
@@ -223,6 +260,7 @@ impl WholeContractProof {
         }
     }
 
+    #[cfg(test)]
     fn accept_progress(&mut self, progress: &ContractProofProgress) {
         if !Arc::ptr_eq(&self.entry, &progress.owner.entry) {
             return;
@@ -234,17 +272,41 @@ impl WholeContractProof {
         }
     }
 
-    fn retire(&mut self, goal: ContractCompletionGoal) {
+    fn retire(&mut self, goal: ContractCompletionGoal) -> bool {
         crate::instrumentation::record_deterministic_work(1);
+        let Some(&branch) = self.open.get(&goal) else {
+            return false;
+        };
+        self.proof = self
+            .proof
+            .focus_open_branch(branch)
+            .unwrap_or_else(|_| panic!("the contract goal index addresses its open branch"))
+            .publish_checked_focused_result(self.entry.clone(), None, vec![], vec![])
+            .unwrap_or_else(|_| panic!("the selected contract goal is open"));
         self.open.remove(&goal);
+        true
     }
 
     fn first_open(&self) -> Option<ContractCompletionGoal> {
         crate::instrumentation::record_deterministic_work(1);
-        self.open.keys().next().cloned()
+        let id = self.open.values().next()?;
+        match &self
+            .proof
+            .state()
+            .open_branches()
+            .get(*id)
+            .expect("an indexed contract cell is open")
+            .obligation
+        {
+            ContractRootObligation::Cell(goal) => Some(goal.clone()),
+            ContractRootObligation::WholeContract => {
+                unreachable!("the root was opened into its declared cells")
+            }
+        }
     }
 }
 
+#[cfg(test)]
 impl AdmittedContractProof {
     pub(crate) fn execution(&self) -> &Arc<FunctionContractExecution> {
         &self.execution
@@ -690,7 +752,8 @@ mod tests {
     fn ordinary_completion_installs_its_producer_directly() {
         let (entry, execution) =
             super::super::super::entry_authority_tests::checked_execution(0, None).unwrap();
-        let whole = WholeContractProof::open(entry).unwrap();
+        let whole = WholeContractProof::open(entry.clone()).unwrap();
+        let root_owner = WholeContractRoot::open(entry).unwrap();
         let make_proof = || {
             let core = execution.open_outcome(0).unwrap();
             let mut closing = ContractClosingContext::new(&execution).open(0, &core);
@@ -711,7 +774,7 @@ mod tests {
             proof
                 .open_contract_execution(
                     execution.clone(),
-                    Some(&whole),
+                    Some(&root_owner),
                     std::iter::once(proof.focused_branch()),
                 )
                 .unwrap()
@@ -723,7 +786,7 @@ mod tests {
             proof
                 .open_contract_execution(
                     foreign,
-                    Some(&whole),
+                    Some(&root_owner),
                     std::iter::once(proof.focused_branch())
                 )
                 .is_err(),
@@ -746,7 +809,10 @@ mod tests {
                 .is_err(),
             "completion is consumed exactly once"
         );
-        let execution = completed.finish_contract_execution(owner).unwrap();
+        let execution = completed
+            .finish_contract_execution(owner)
+            .unwrap()
+            .into_execution();
         assert!(execution.closed_exit_obligations[0].is_some());
         assert!(
             whole

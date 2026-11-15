@@ -429,7 +429,9 @@ pub(in crate::surface) struct FunctionSourceRegistry {
     claim_entries: ClaimEntryCache,
 }
 
-/// One entry context per function, shared by all of that function's claim
+/// One entry/root session per function proof, shared by its clause scripts.
+/// A new parent proof starts with fresh slots through `for_contract_proof`.
+/// Its immutable entry context is shared by all of that function's claim
 /// proofs. A context built twice would carry distinct fresh ledger and loan
 /// identities, so separately proved claims could not be certified against one
 /// entry state. Building it once gives every claim the same entry.
@@ -524,6 +526,15 @@ impl FunctionSourceRegistry {
             }
         }
         self
+    }
+
+    /// Clause scripts share one function-proof session. New parent proofs
+    /// retain the definition indexes and start with a fresh entry/root slot.
+    pub(in crate::surface) fn for_contract_proof(&self) -> Self {
+        Self {
+            functions: self.functions.clone(),
+            claim_entries: ClaimEntryCache::default(),
+        }
     }
 
     pub(in crate::surface) fn claim_entries(&self) -> &ClaimEntryCache {

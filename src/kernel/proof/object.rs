@@ -654,7 +654,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     pub(crate) fn open_contract_execution(
         &self,
         execution: crate::kernel::CheckedFunctionExecution,
-        whole: Option<&crate::kernel::WholeContractProof>,
+        whole: Option<&crate::kernel::WholeContractRoot>,
         branches: impl Iterator<Item = BranchId>,
     ) -> Result<crate::kernel::ContractExecutionOwner, String> {
         let mut outcomes = Vec::new();
@@ -679,7 +679,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 publication.clone(),
             ));
         }
-        crate::kernel::ContractExecutionOwner::open(execution, whole, outcomes)
+        crate::kernel::ContractExecutionOwner::open(
+            execution,
+            whole.map(|root| root.plan()),
+            outcomes,
+        )
+        .map(|owner| owner.bind_root(whole))
     }
 
     pub(crate) fn complete_function_outcome_in_execution(
@@ -735,7 +740,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     pub(crate) fn finish_contract_execution(
         &self,
         execution: crate::kernel::ContractExecutionOwner,
-    ) -> Result<crate::kernel::CheckedFunctionExecution, String> {
+    ) -> Result<crate::kernel::CompletedContractExecution, String> {
         if !self.is_complete() {
             return Err("ordinary outcome proof still has open obligations".into());
         }
