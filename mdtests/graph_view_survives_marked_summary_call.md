@@ -8,6 +8,7 @@ void caller(int32 *left, int32 *visited, int32 n) {
 ```
 
 ```click
+import click::separation;
 verifying "graph_view_survives_marked_summary_call.c";
 resource graph(left: int32*, n: int32) {
     views left[0..n];
@@ -30,12 +31,25 @@ void caller(int32 *left, int32 *visited, int32 n) {
     have forall (k: int32) { 0 <= k and k < n implies old(left[k]) == left[k] } by {
         intro(); intro();
         extract(0 <= k); extract(k < n);
-        have old(left[k]) == old(left[k]) by normalize();
-        transport(old(left[k]) == old(left[k]), old(left[k]) == left[k]) using {
-            old(left[k]) == old(left[k]);
-            0 <= k; k < n;
-            separate(memory(left[0..n]), memory(visited[0..n]));
-        };
+        have contains(memory(left[0..n]), memory(left[k])) by {
+            apply(separation::contains_element(left, 0, n, k)) using { 0 <= k; k < n; };
+        }
+        have contains(memory(visited[0..n]), statement(0).footprint) by { known(); }
+        have separate(memory(visited[0..n]), memory(left[0..n])) by {
+            apply(separation::separate_symm(memory(left[0..n]), memory(visited[0..n]))) using {
+                separate(memory(left[0..n]), memory(visited[0..n]));
+            };
+        }
+        have separate(statement(0).footprint, memory(left[k])) by {
+            apply(separation::separate_restrict(memory(visited[0..n]), memory(left[0..n]), statement(0).footprint, memory(left[k]))) using {
+                separate(memory(visited[0..n]), memory(left[0..n]));
+                contains(memory(visited[0..n]), statement(0).footprint);
+                contains(memory(left[0..n]), memory(left[k]));
+            };
+        }
+        have left[k] == old(left[k]) by {
+            preserve(separate(statement(0).footprint, memory(left[k])));
+        }
         known();
     }
 }

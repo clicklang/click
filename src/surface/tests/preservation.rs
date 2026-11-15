@@ -1729,6 +1729,14 @@ fn resource_scope_preservation_migrations_expand_and_replay() {
             "mdtests/resource_unfold_binds_scalar_field.md",
             "claim.contract",
         ),
+        (
+            "mdtests/conditional_call_indexed_result_fact.md",
+            "caller.contract",
+        ),
+        (
+            "mdtests/graph_view_survives_marked_summary_call.md",
+            "caller.contract",
+        ),
     ] {
         let (source, sources) = mdtest_sources(fixture);
         let sources = sources

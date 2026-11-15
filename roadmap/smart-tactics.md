@@ -187,10 +187,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 29 | 67 |
+| `mdtests/` | 27 | 65 |
 | `examples/` | 27 | 350 |
 | `library/` | 0 | 0 |
-| Total | 56 | 417 |
+| Total | 54 | 415 |
 
 The 12 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -215,7 +215,6 @@ pattern is understood but the complete family has not yet been validated.
 | ID | Work | Confidence |
 | --- | --- | --- |
 | 2 | Retained-field substitution repair and regression | Medium |
-| 3 | Recursive-call and copied-byte refusal migrations | Clear; revalidate |
 | 4 | Conditional-call and graph-summary migrations | Clear; revalidate |
 | 5 | Arena: final live-count store preservation | Clear |
 | 6 | Arena: pre-loop viewability and initial reads | Uncertain: exact held-range spelling |
