@@ -1,6 +1,7 @@
 //! Prepared offset nodes. Construction preserves written shape, scale and
 //! interpretation; it neither normalizes offsets nor consults facts.
 use super::*;
+mod operations;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum KernelPointerOffset {
@@ -21,10 +22,11 @@ pub(crate) enum KernelPointerOffset {
 /// Shared internal address component. Numeric children are common KernelTerm
 /// handles; offsets are not independently spellable Click values.
 #[derive(Clone)]
-pub(crate) struct SharedPointerOffset(Arc<OffsetData>);
+pub struct SharedPointerOffset(Arc<OffsetData>);
 struct OffsetData {
     id: OffsetIdentity,
     node: KernelPointerOffset,
+    constant: Option<i64>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 enum OffsetIdentity {
@@ -88,6 +90,7 @@ impl SharedPointerOffset {
         interner.next_id = id.checked_add(1).expect("offset identity exhausted");
         let value = Arc::new(OffsetData {
             id: OffsetIdentity::Interned(id),
+            constant: node.constant_value(),
             node: node.clone(),
         });
         interner.nodes.insert(node.clone(), Arc::downgrade(&value));
@@ -118,6 +121,7 @@ impl KernelPointerOffset {
             crate::instrumentation::record_deterministic_work(1);
             return Ok(SharedPointerOffset(Arc::new(OffsetData {
                 id: OffsetIdentity::Constant(*value),
+                constant: Some(*value),
                 node: self,
             })));
         }

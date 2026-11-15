@@ -67,6 +67,9 @@ pub enum KernelTermNode {
         relation: CompareRelation,
         arguments: [KernelTerm; 2],
     },
+    PointerOffsetEqual {
+        arguments: [SharedPointerOffset; 2],
+    },
     IntegerCompare {
         operator: IntegerComparisonOperator,
         arguments: [KernelTerm; 2],
@@ -341,7 +344,9 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::MemoryLoad { .. } | KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::MemoryLoad { .. }
+            | KernelTermNode::PointerAddress { .. }
+            | KernelTermNode::PointerOffsetEqual { .. } => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,

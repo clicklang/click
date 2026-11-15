@@ -8,7 +8,6 @@ struct Transport<'a> {
     assumptions: Option<(&'a PureFactContext, bool)>,
     reconstructed_word: bool,
     offsets: HashMap<SharedPointerOffset, SharedPointerOffset>,
-    constants: HashMap<SharedPointerOffset, Option<i64>>,
     indices: HashMap<KernelTerm, SharedMachineIntegerTerm>,
     blocks: HashMap<SharedPointerBlock, SharedPointerBlock>,
 }
@@ -23,54 +22,8 @@ impl<'a> Transport<'a> {
             assumptions,
             reconstructed_word,
             offsets: Default::default(),
-            constants: Default::default(),
             indices: Default::default(),
             blocks: Default::default(),
-        }
-    }
-    fn constant(&mut self, value: i64) -> SharedPointerOffset {
-        let result = KernelPointerOffset::Constant(value)
-            .into_shared()
-            .expect("constant offset");
-        self.constants.insert(result.clone(), Some(value));
-        result
-    }
-    fn add(
-        &mut self,
-        mut left: SharedPointerOffset,
-        mut right: SharedPointerOffset,
-    ) -> SharedPointerOffset {
-        // Same constant/trailing-displacement policy as PointerOffsetTerm::add.
-        // Child summaries come from this postorder walk, never a prefix scan.
-        loop {
-            crate::instrumentation::record_deterministic_work(1);
-            let a = self.constants[&left];
-            let b = self.constants[&right];
-            if let (Some(a), Some(b)) = (a, b) {
-                return self.constant(a + b);
-            }
-            if a == Some(0) {
-                return right;
-            }
-            if b == Some(0) {
-                return left;
-            }
-            if let (
-                KernelPointerOffset::Add([base, trailing]),
-                KernelPointerOffset::Constant(value),
-            ) = (left.node(), right.node())
-                && let Some(trailing) = self.constants[trailing]
-            {
-                let total = trailing + value;
-                left = base.clone();
-                right = self.constant(total);
-                continue;
-            }
-            let result = KernelPointerOffset::Add([left, right])
-                .into_shared()
-                .expect("offset children");
-            self.constants.insert(result.clone(), None);
-            return result;
         }
     }
     fn index(&mut self, root: &KernelTerm) -> Option<SharedMachineIntegerTerm> {
@@ -105,12 +58,7 @@ impl<'a> Transport<'a> {
                 continue;
             }
             let result = match offset.node() {
-                KernelPointerOffset::Constant(value) => {
-                    self.constants.insert(offset.clone(), Some(*value));
-                    offset.clone()
-                }
-                KernelPointerOffset::Variable(_) => {
-                    self.constants.insert(offset.clone(), None);
+                KernelPointerOffset::Constant(_) | KernelPointerOffset::Variable(_) => {
                     offset.clone()
                 }
                 KernelPointerOffset::Add([left, right]) => {
@@ -118,7 +66,10 @@ impl<'a> Transport<'a> {
                         pending.extend([(offset, true), (right, false), (left, false)]);
                         continue;
                     }
-                    self.add(self.offsets[left].clone(), self.offsets[right].clone())
+                    SharedPointerOffset::add(
+                        self.offsets[left].clone(),
+                        self.offsets[right].clone(),
+                    )
                 }
                 KernelPointerOffset::Int32Scaled { value, byte_width }
                 | KernelPointerOffset::Int64Scaled {
@@ -133,10 +84,7 @@ impl<'a> Transport<'a> {
                     // reuses existing signed-extension/literal policy without
                     // materializing an address or numeric expression tree.
                     let leaf = transported_scaled_index(index, *byte_width, wide);
-                    let constant = leaf.as_const();
-                    let result = KernelPointerOffset::import(&leaf);
-                    self.constants.insert(result.clone(), constant);
-                    result
+                    KernelPointerOffset::import(&leaf)
                 }
             };
             self.offsets.insert(offset.clone(), result);
@@ -203,6 +151,15 @@ impl PointerRewrite for Transport<'_> {
     ) -> Result<Option<SharedPointerAddress>, ()> {
         Transport::address(self, value).map(Some).ok_or(())
     }
+}
+
+pub(super) fn transport_offsets(
+    source: &[SharedPointerOffset; 2],
+    after: &Memory,
+    assumptions: Option<(&PureFactContext, bool)>,
+) -> Option<[SharedPointerOffset; 2]> {
+    let mut transport = Transport::new(after, assumptions, false);
+    Some([transport.offset(&source[0])?, transport.offset(&source[1])?])
 }
 
 pub(crate) fn transport_address(

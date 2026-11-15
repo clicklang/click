@@ -6294,6 +6294,17 @@ fn collect_condition_operand_memories(
             for operand in operands {
                 collect_operand_memories(operand, memories, &mut seen);
             }
+        } else if let Some(offsets) = leaf.pointer_offsets() {
+            let mut seen = BTreeSet::new();
+            crate::kernel::SharedPointerOffset::visit_pair(&offsets, |node| {
+                if let Some(index) = node.index() {
+                    collect_operand_memories(
+                        crate::kernel::MachineOperandView::Shared(index),
+                        memories,
+                        &mut seen,
+                    );
+                }
+            });
         } else {
             // In particular preserve the structural classifier's restricted
             // Integer-comparison admission; do not turn this into a new rule.
@@ -6521,6 +6532,11 @@ pub(in crate::kernel) fn transport_framed_common_condition(
         | Node::BoolIf { .. }
         | Node::BoolEqual { .. }
         | Node::Call { .. } => None,
+        Node::PointerOffsetEqual { arguments } => {
+            Some(crate::kernel::KernelTerm::pointer_offset_equal(
+                shared_pointer_transport::transport_offsets(arguments, after, assumptions)?,
+            ))
+        }
         Node::BoolCompare {
             format,
             relation,
@@ -9136,6 +9152,24 @@ mod common_boolean_transport_tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         for source in [
+            ConditionTerm::PointerOffsetEqual(
+                Box::new(PointerOffsetTerm::Add(
+                    Box::new(PointerOffsetTerm::Constant(0)),
+                    Box::new(PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::MemoryLoad(
+                            memory.clone(),
+                            Box::new(address.clone()),
+                            LoadKind::Int32,
+                        ),
+                        4,
+                    )),
+                )),
+                Box::new(PointerOffsetTerm::scaled_int64_node(
+                    MachineTerm::Variable(Variable(972_002)),
+                    8,
+                    true,
+                )),
+            ),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

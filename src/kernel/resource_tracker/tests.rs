@@ -1577,3 +1577,33 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
     assert_eq!(native.len(), 2);
     assert_eq!(shared, native);
 }
+
+#[test]
+fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
+    use crate::kernel::{BooleanOperandView, KernelTermImport};
+    let memory = intern_memory(entry_memory());
+    let offset = |name| {
+        PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::MemoryLoad(
+                memory.clone(),
+                Box::new(at(block(name), 0)),
+                LoadKind::Int32,
+            ),
+            4,
+        )
+    };
+    let source = ConditionTerm::PointerOffsetEqual(
+        Box::new(PointerOffsetTerm::Add(
+            Box::new(offset("global:g")),
+            Box::new(offset("global:h")),
+        )),
+        Box::new(offset("local:f:i")),
+    );
+    let root = KernelTermImport::default().condition(&source);
+    let mut expected = Vec::new();
+    let mut actual = Vec::new();
+    collect_condition_reads(&source, &mut expected);
+    collect_condition_operand_reads(BooleanOperandView::Shared(&root), &mut actual);
+    assert_eq!(expected.len(), 3);
+    assert_eq!(actual, expected);
+}
