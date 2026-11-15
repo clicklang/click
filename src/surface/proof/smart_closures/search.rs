@@ -1647,6 +1647,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 _ => return Ok(Err(failed.clone())),
             };
+            let identity = ClickProposition::Comparison {
+                left: spelled_observed.clone(),
+                operator: ComparisonOperator::Equal,
+                right: spelled_value.clone(),
+            };
+            // Reads need their own explicit domain as well as the result's
+            // arithmetic range; initialized resource fields may not yet have
+            // that domain recorded as a pure fact.
+            for observed in
+                written_integer_observations_with_entry(std::iter::once(&identity), false)
+            {
+                let Some(expression) = integer_composition::observed_argument(&observed) else {
+                    continue;
+                };
+                let domain = ClickProposition::Defined { expression };
+                let Ok(kernel) =
+                    proof.lower_cited_surface_proposition(&domain, "operation operand domain")
+                else {
+                    continue;
+                };
+                if matches!(kernel, Proposition::MemoryReadDefined { .. })
+                    && !proof.facts().listed_premise_available(&kernel, &[], false)
+                {
+                    let scope = proof.driver().open_have(domain)?;
+                    let closed = scope
+                        .driver()
+                        .apply_step(ProofStep::Known)
+                        .or_else(|_| scope.driver().apply_step(ProofStep::Normalize))?;
+                    proof = closed.join()?;
+                }
+            }
             // The identity is checked at the format of the observation's
             // value reading (rule W).
             let (min, max) = match observed.value_read() {
@@ -1725,8 +1756,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .map(|fact| (fact.clone(), bound.clone())),
                 );
             }
-            if machine.ty().is_signed()
-                && !conversion
+            if matches!(
+                machine.ty(),
+                MachineIntegerType::Int32 | MachineIntegerType::Int64
+            ) && !conversion
                 && let Some(expression) = integer_composition::observed_argument(&spelled_observed)
             {
                 let scope = proof
@@ -1734,11 +1767,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .open_have(ClickProposition::Defined { expression })?;
                 proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
             }
-            let identity = ClickProposition::Comparison {
-                left: spelled_observed,
-                operator: ComparisonOperator::Equal,
-                right: spelled_value,
-            };
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
             let step = ProofStep::NormalizeUsing(vec![lower, upper]);

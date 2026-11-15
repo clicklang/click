@@ -731,4 +731,29 @@ by {step(); have defined(pool->capacity - 1) by solve();}
             "defined(x - y)",
         );
     }
+    #[test]
+    #[ignore = "nightly: grouped struct-field expansion and strict replay"]
+    fn signed_unfolded_struct_field_expands_and_replays_with_scalar_reads() {
+        let c = "struct pair { int32 low; int32 high; }; void bump(struct pair* pair) { pair->low = pair->low + 1; }";
+        let source = r#"
+            predicate ordered_pair(pair: struct pair*) { 0 <= pair->low and pair->low <= pair->high }
+            verifying "bump.c";
+            void bump(struct pair* pair) {
+                requires ordered_pair(pair);
+                requires pair->low < pair->high;
+                owns *pair;
+                ensures ordered_pair(pair);
+            } by { unfold(ordered_pair); step_until(function.exit); solve(); }
+        "#;
+        let expanded = crate::surface::expand_c_claim_source(
+            source,
+            &[("bump.c", c)],
+            "bump",
+            crate::surface::ContractProofClaim::Grouped,
+        )
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[("bump.c", c)]))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    }
 }

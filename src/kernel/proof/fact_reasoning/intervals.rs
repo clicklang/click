@@ -314,6 +314,34 @@ mod tests {
         assert!(normalize_using_conditions(&goal, &[wrong], &facts).is_err());
     }
     #[test]
+    fn signed_observations_do_not_clip_with_an_unsigned_guard() {
+        let x = MachineTerm::Variable(Variable(987_777));
+        let root = MachineTerm::logical_machine_binary(
+            MachineIntegerType::UInt32,
+            MachineBinaryOp::Add,
+            x.clone(),
+            MachineTerm::constant(1),
+        );
+        let unsigned: SharedIntegerTerm = IntegerTerm::from_machine(MachineIntegerType::UInt32, x)
+            .unwrap()
+            .into();
+        let exact: SharedIntegerTerm = IntegerTerm::Add(unsigned.clone(), literal(1)).into();
+        let guard = Proposition::And(
+            Box::new(le(literal(0), exact.clone())),
+            Box::new(le(exact, literal(i64::from(u32::MAX)))),
+        );
+        let selected = vec![
+            le(literal(0), unsigned.clone()),
+            le(unsigned, literal(i64::from(u32::MAX) - 1)),
+            guard,
+        ];
+        let goal = le(literal(0), observe(root));
+        assert!(
+            normalize_using_conditions(&goal, &selected, &ProofFacts::from_ordered(&selected))
+                .is_err()
+        );
+    }
+    #[test]
     fn extreme_strict_endpoints_refuse_without_panicking() {
         let (goal, _) = inputs(MachineBinaryOp::Add, 1);
         let x = observe(MachineTerm::Variable(Variable(987_701)));
