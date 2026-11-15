@@ -3058,6 +3058,13 @@ fn expand_declared_resource_subject(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceSubject, ClickError> {
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector,
+            resource: Box::new(expand_declared_resource_subject(
+                *resource,
+                resource_definitions,
+            )?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(expand_declared_resource_subject(
@@ -3947,9 +3954,14 @@ fn expand_declared_resource_expression_children(
         ContractExpression::At {
             selector,
             expression,
-        } => ContractExpression::At {
-            selector,
-            expression: Box::new(recurse(*expression)?),
+        } => match recurse(*expression)? {
+            ContractExpression::Resource(resource) => {
+                ContractExpression::Resource(Box::new(ResourceSubject::At { selector, resource }))
+            }
+            expression => ContractExpression::At {
+                selector,
+                expression: Box::new(expression),
+            },
         },
         ContractExpression::BitwiseNot(body) => {
             ContractExpression::BitwiseNot(Box::new(recurse(*body)?))

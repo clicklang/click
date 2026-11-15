@@ -2014,8 +2014,10 @@ A simple tactic for a read-equality or read-definedness goal. Select the resourc
 being read and the recorded region across which to preserve it. The exact fact
 `separate(region.footprint, resource)` (in either order) must already be
 available; establish it with `have` first. For evidence at a saved snapshot, write
-`preserve(at(mark, resource), region)`; the snapshot scopes the separation
-evidence, retaining the same recorded region endpoints. The tactic
+`preserve(at(mark, resource), region)`. Here `at(mark, resource)` is an ordinary
+resource descriptor evaluated at the saved snapshot, just as in `separate` or
+`contains`. Parentheses only group: `(at(mark, resource))` has the same meaning.
+The recorded region endpoints remain fixed. The tactic
 constructs equality of the selected read at the region's exit and entry, in
 that order. It applies one primitive directly, with no premise discovery or
 history search. The current goal selects the read type or named-resource

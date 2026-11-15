@@ -2281,6 +2281,15 @@ fn collect_resource_fact_reads_from_resource_subject(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::At { resource, .. } => collect_resource_fact_reads_from_resource_subject(
+            resource,
+            predicate_definitions,
+            click_function_definitions,
+            visited_predicates,
+            visited_functions,
+            reads,
+            resource_name,
+        ),
         ResourceSubject::Emp => Ok(()),
         ResourceSubject::Star(left, right) => {
             collect_resource_fact_reads_from_resource_subject(

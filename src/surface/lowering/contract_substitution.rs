@@ -1002,6 +1002,9 @@ fn collect_resource_subject_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::At { resource, .. } => {
+            collect_resource_subject_binding_names(resource, names)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_resource_subject_binding_names(left, names);
@@ -1398,6 +1401,38 @@ fn rewrite_resource_subject_exact(
     preserve_snapshots: bool,
 ) -> (ResourceSubject, bool) {
     match subject {
+        ResourceSubject::At { selector, resource } => {
+            let (source, target) = if preserve_snapshots {
+                let (
+                    ContractExpression::At {
+                        selector: from,
+                        expression: source,
+                    },
+                    ContractExpression::At {
+                        selector: to,
+                        expression: target,
+                    },
+                ) = (source, target)
+                else {
+                    return (subject.clone(), false);
+                };
+                if from != selector || to != selector {
+                    return (subject.clone(), false);
+                }
+                (source.as_ref(), target.as_ref())
+            } else {
+                (source, target)
+            };
+            let (resource, changed) =
+                rewrite_resource_subject_exact(resource, source, target, preserve_snapshots);
+            (
+                ResourceSubject::At {
+                    selector: selector.clone(),
+                    resource: Box::new(resource),
+                },
+                changed,
+            )
+        }
         ResourceSubject::Emp => (ResourceSubject::Emp, false),
         ResourceSubject::Star(left, right) => {
             let (a, x) = rewrite_resource_subject_exact(left, source, target, preserve_snapshots);
@@ -2065,6 +2100,10 @@ fn substitute_resource_subject(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector: selector.clone(),
+            resource: Box::new(substitute_resource_subject(resource, substitutions)?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(substitute_resource_subject(left, substitutions)?),
@@ -2261,6 +2300,12 @@ fn apply_contract_lets_to_resource_subject(
     bindings: &[ContractLetBinding],
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector,
+            resource: Box::new(apply_contract_lets_to_resource_subject(
+                *resource, bindings,
+            )?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(apply_contract_lets_to_resource_subject(*left, bindings)?),
@@ -2960,6 +3005,9 @@ fn collect_resource_subject_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::At { resource, .. } => {
+            collect_resource_subject_referenced_names(resource, names)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_resource_subject_referenced_names(left, names);

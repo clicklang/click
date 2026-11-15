@@ -46,7 +46,7 @@ fn preserve_checks_byte_reads_without_search() {
         )
         .replace(
             "preserve(memory(*q), statement(0))",
-            "preserve(at(saved, memory(*q)), statement(0))",
+            "preserve(((at(saved, (memory(*q))))), statement(0))",
         );
     without_implicit_solve(|| verify_c_sources(&historical, &sources)).unwrap();
     let expanded_historical =

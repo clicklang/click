@@ -3894,10 +3894,15 @@ at(region(0).entry, p[0] == 7)
 at(region(0).entry, viewable(p[0..n]))
 ```
 
-Where a resource is expected, in `separate(...)`, `contains(...)` or a
-`Resource` theorem argument, `at(point, name)` names the bound resource
-instance `name` as it was held at that point. It is how a proof names an
-instance a call has since consumed, which the current state no longer holds.
+Where a resource is expected, in `separate(...)`, `contains(...)`, `preserve(...)`
+or a `Resource` theorem argument, `at(point, resource)` evaluates the resource
+descriptor at that point. It accepts memory, named instances, resource parameters,
+and resource constructors using the same grammar. Parentheses only group:
+`at(point, resource)` and `(at(point, resource))` mean the same thing.
+
+For a named instance, `at(point, name)` names the instance as it was held at
+that point. It is how a proof names an instance a call has since consumed,
+which the current state no longer holds.
 A point where the path did not hold `name` is refused with "resource instance `name`
 is not owned at this snapshot"
 (`mdtests/a_consumed_resource_instance_is_named_at_a_mark.md`,

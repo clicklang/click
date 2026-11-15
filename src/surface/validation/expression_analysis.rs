@@ -561,6 +561,7 @@ fn contract_segment_contains_old_expression(segment: &ContractSegment) -> bool {
 
 fn resource_subject_contains_old_expression(resource: &ResourceSubject) -> bool {
     match resource {
+        ResourceSubject::At { resource, .. } => resource_subject_contains_old_expression(resource),
         ResourceSubject::Emp => false,
         ResourceSubject::Star(left, right) => {
             resource_subject_contains_old_expression(left)
@@ -729,6 +730,7 @@ fn contract_segment_contains_at_expression(segment: &ContractSegment) -> bool {
 
 fn resource_subject_contains_at_expression(resource: &ResourceSubject) -> bool {
     match resource {
+        ResourceSubject::At { .. } => true,
         ResourceSubject::Emp => false,
         ResourceSubject::Star(left, right) => {
             resource_subject_contains_at_expression(left)
@@ -961,6 +963,9 @@ fn collect_click_function_calls_in_resource_subject(
     calls: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::At { resource, .. } => {
+            collect_click_function_calls_in_resource_subject(resource, calls)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_click_function_calls_in_resource_subject(left, calls);
@@ -1706,6 +1711,16 @@ fn validate_recursive_calls_in_resource_subject(
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
     match subject {
+        ResourceSubject::At { resource, .. } => validate_recursive_calls_in_resource_subject(
+            caller,
+            resource,
+            lower_bounds,
+            structural_subterms,
+            definitions,
+            function_calls,
+            measures,
+            algebraic_definitions,
+        ),
         ResourceSubject::Emp => Ok(()),
         ResourceSubject::Star(left, right) => {
             validate_recursive_calls_in_resource_subject(

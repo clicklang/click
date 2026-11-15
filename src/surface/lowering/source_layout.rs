@@ -1604,6 +1604,9 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::At { resource, .. } => {
+            collect_resource_subject_referenced_names(resource, names)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_resource_subject_referenced_names(left, names);

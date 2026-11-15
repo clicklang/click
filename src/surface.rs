@@ -2284,14 +2284,16 @@ pub struct ResourceFieldAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
+    /// A resource descriptor evaluated in a recorded state.
+    At {
+        selector: SnapshotSelector,
+        resource: Box<ResourceSubject>,
+    },
     Star(Box<ResourceSubject>, Box<ResourceSubject>),
     Emp,
     Instance {
         name: String,
         identity: crate::kernel::Variable,
-        /// `at(point, name)`: the instance as it was held at that recorded
-        /// state, for an instance the current state no longer holds.
-        at: Option<SnapshotSelector>,
     },
     Footprint(CodeRegionRef),
     Parameter {
@@ -2989,6 +2991,7 @@ fn collect_current_resource_subject_variables(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::At { .. } => {}
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_current_resource_subject_variables(left, names);

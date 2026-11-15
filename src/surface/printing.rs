@@ -59,13 +59,10 @@ fn source_preserve_arguments(separation: &ClickProposition) -> String {
                     | (resource, ResourceSubject::Footprint(region)) => (region, resource),
                     _ => unreachable!("a checked preserve must cite a region footprint"),
                 };
-                let mut resource = describe_resource_subject(resource);
-                // Parentheses distinguish an already historical instance from
-                // a snapshot scoping the entire separation evidence.
-                if resource.starts_with("at(") {
-                    resource = format!("({resource})");
-                }
-                (resource, describe_code_region_ref(region))
+                (
+                    describe_resource_subject(resource),
+                    describe_code_region_ref(region),
+                )
             }
             ClickProposition::At {
                 selector,

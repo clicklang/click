@@ -6958,33 +6958,6 @@ impl Parser {
         .then_some(start + 3 - position)
     }
 
-    /// `at(point, name)`: a bound resource instance as it was held at a
-    /// recorded state. Leaves the position unchanged when the tokens are not
-    /// exactly that form, so `at(point, expression)` still parses as a value.
-    fn try_parse_instance_at(&mut self) -> Option<ResourceSubject> {
-        if self.peek_ident() != Some("at") || self.peek_next() != Some(&Token::LParen) {
-            return None;
-        }
-        let saved = self.position;
-        self.position += 2;
-        if let Ok(selector) = self.parse_snapshot_selector()
-            && self.peek() == Some(&Token::Comma)
-            && let Some(Token::Ident(name)) = self.peek_next()
-            && let Some((identity, _)) = self.names.resource_bindings.get(name)
-            && self.tokens.get(self.position + 2) == Some(&Token::RParen)
-        {
-            let subject = ResourceSubject::Instance {
-                name: name.clone(),
-                identity: *identity,
-                at: Some(selector),
-            };
-            self.position += 3;
-            return Some(subject);
-        }
-        self.position = saved;
-        None
-    }
-
     fn parse_resource_subject_atom(&mut self) -> Result<ResourceSubject, ClickError> {
         if self.peek() == Some(&Token::LParen) {
             self.position += 1;
@@ -7003,13 +6976,23 @@ impl Parser {
             let subject = ResourceSubject::Instance {
                 name: name.to_string(),
                 identity: *identity,
-                at: None,
             };
             self.position += 1;
             return Ok(subject);
         }
-        if let Some(subject) = self.try_parse_instance_at() {
-            return Ok(subject);
+        if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 2;
+            let selector = self.parse_snapshot_selector()?;
+            self.expect(Token::Comma)?;
+            let resource = self.parse_resource_subject()?;
+            self.expect(Token::RParen)?;
+            let mut names = BTreeSet::new();
+            collect_current_resource_subject_variables(&resource, &mut names);
+            self.refuse_result_in_snapshot(Some(&selector), names.contains("result"))?;
+            return Ok(ResourceSubject::At {
+                selector,
+                resource: Box::new(resource),
+            });
         }
         if let Some(name) = self.peek_ident()
             && let Some(index) = self.resource_parameters.get(name).copied()
@@ -10904,38 +10887,14 @@ impl Parser {
             }
             "preserve" => {
                 self.expect(Token::LParen)?;
-                if self.peek_ident() == Some("separate") {
-                    return Err(self.error(
-                        "write `preserve(resource, region)`; establish `separate(region.footprint, resource)` with `have` first",
-                    ));
-                }
-                // A snapshot on the resource scopes its separation evidence,
-                // just as `at(point, separate(...))` did in the old spelling.
-                let mut selectors = Vec::new();
-                while self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
-                    self.check_expression_chain_limit(selectors.len())?;
-                    self.position += 2;
-                    selectors.push(self.parse_snapshot_selector()?);
-                    self.expect(Token::Comma)?;
-                }
                 let resource = self.parse_resource_subject()?;
-                for _ in &selectors {
-                    self.expect(Token::RParen)?;
-                }
                 self.expect(Token::Comma)?;
                 let region = self.parse_code_region_ref()?;
                 self.expect(Token::RParen)?;
-                let mut separation = ClickProposition::Separate {
+                let separation = ClickProposition::Separate {
                     left: ResourceSubject::Footprint(region),
                     right: resource,
                 };
-                for selector in selectors.into_iter().rev() {
-                    self.refuse_result_in_snapshot_proposition(&selector, &separation)?;
-                    separation = ClickProposition::At {
-                        selector,
-                        proposition: Box::new(separation),
-                    };
-                }
                 ProofTactic::Preserve(separation)
             }
             "arithmetic_certificate" => {
@@ -11525,7 +11484,7 @@ impl Parser {
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                     | ContractExpression::Binding(name) => name,
                     ContractExpression::Resource(subject) => match *subject {
-                        ResourceSubject::Instance { name, at: None, .. } => name,
+                        ResourceSubject::Instance { name, .. } => name,
                         _ => return Err(self.error("resource arguments must name instances")),
                     },
                     _ => {
@@ -12680,41 +12639,34 @@ impl Parser {
         self.parse_ensure_bitwise_or()
     }
 
-    fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
-        let mut atom = self.position;
-        while self.tokens.get(atom) == Some(&Token::LParen) {
-            atom += 1;
-        }
-        let resource_start = match self.tokens.get(atom) {
-            Some(Token::Ident(name)) => {
-                self.resource_parameters.contains_key(name)
-                    || self.empty_resource_token_len(atom).is_some()
-                    || (name == "memory" && self.tokens.get(atom + 1) == Some(&Token::LParen))
-            }
-            _ => false,
-        };
-        if resource_start {
-            return self
-                .parse_resource_subject()
-                .map(|r| ContractExpression::Resource(Box::new(r)));
-        }
-        // `at(point, name)` naming an instance, possibly parenthesized and
-        // combined with `*`, is a resource descriptor too.
+    fn resource_expression_follows(&mut self) -> bool {
         let saved = self.position;
-        self.position = atom;
-        let instance_at = self.try_parse_instance_at().is_some();
-        self.position = saved;
-        if instance_at {
-            return self
-                .parse_resource_subject()
-                .map(|r| ContractExpression::Resource(Box::new(r)));
+        loop {
+            if self.peek() == Some(&Token::LParen) {
+                self.position += 1;
+            } else if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
+                self.position += 2;
+                if self.parse_snapshot_selector().is_err() || self.expect(Token::Comma).is_err() {
+                    self.position = saved;
+                    return false;
+                }
+            } else {
+                break;
+            }
         }
-        if self.peek_ident().is_some_and(|name| {
+        let follows = self.peek_ident().is_some_and(|name| {
             self.resource_parameters.contains_key(name)
+                || self.empty_resource_token_len(self.position).is_some()
+                || (name == "memory" && self.peek_next() == Some(&Token::LParen))
                 || (self.names.resource_bindings.contains_key(name)
                     && !matches!(self.peek_next(), Some(Token::Dot | Token::LParen)))
-        }) || (self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen))
-        {
+        });
+        self.position = saved;
+        follows
+    }
+
+    fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
+        if self.resource_expression_follows() {
             return self
                 .parse_resource_subject()
                 .map(|r| ContractExpression::Resource(Box::new(r)));
@@ -12786,9 +12738,7 @@ impl Parser {
         // measure, as before resource descriptors could be theorem arguments.
         let component = match component {
             ContractExpression::Resource(subject) => match *subject {
-                ResourceSubject::Instance { name, at: None, .. } => {
-                    ContractExpression::Binding(name)
-                }
+                ResourceSubject::Instance { name, .. } => ContractExpression::Binding(name),
                 other => ContractExpression::Resource(Box::new(other)),
             },
             other => other,
@@ -18288,6 +18238,10 @@ mod preserve_syntax_tests {
             .names
             .resource_bindings
             .insert("r".into(), (Variable(123), "Node".into()));
+        parser.resource_parameters.insert("R".into(), 0);
+        parser
+            .declared_resource_fields
+            .insert("Node".into(), Vec::new());
         parser
     }
 
@@ -18297,7 +18251,7 @@ mod preserve_syntax_tests {
             ("preserve(r, call(0));", "separate(call(0).footprint, r)"),
             (
                 "preserve(at(saved, r), call(0));",
-                "at(saved, separate(call(0).footprint, r))",
+                "separate(call(0).footprint, at(saved, r))",
             ),
             (
                 "preserve((at(saved, r)), call(0));",
@@ -18313,11 +18267,11 @@ mod preserve_syntax_tests {
             ),
             (
                 "preserve(at(saved, memory(*p)), region(3));",
-                "at(saved, separate(region(3).footprint, memory(*p)))",
+                "separate(region(3).footprint, at(saved, memory(*p)))",
             ),
             (
                 "preserve(at(outer, at(inner, memory(*p))), region(3));",
-                "at(outer, at(inner, separate(region(3).footprint, memory(*p))))",
+                "separate(region(3).footprint, at(outer, at(inner, memory(*p))))",
             ),
             (
                 "preserve(memory(at(saved, p)[0]), region(3));",
@@ -18351,17 +18305,76 @@ mod preserve_syntax_tests {
     }
 
     #[test]
+    fn snapshot_resources_share_one_grammar_and_parentheses_only_group() {
+        for subject in [
+            "r",
+            "R",
+            "memory(*p)",
+            "Node()",
+            "separation::emp",
+            "memory(*p) * r",
+        ] {
+            let resource = format!("at(saved, {subject})");
+            let expected = parser(&resource).parse_resource_subject().unwrap();
+            for resource in [
+                resource,
+                format!("(at(saved, {subject}))"),
+                format!("at(saved, ({subject}))"),
+                format!("((at(saved, (({subject})))))"),
+            ] {
+                assert_eq!(
+                    parser(&resource).parse_resource_subject().unwrap(),
+                    expected,
+                    "{resource}"
+                );
+                let ProofTactic::Preserve(ClickProposition::Separate { right, .. }) =
+                    parser(&format!("preserve({resource}, statement(0));"))
+                        .parse_proof_tactic()
+                        .unwrap()
+                else {
+                    panic!("expected preserve")
+                };
+                assert_eq!(right, expected, "{resource}");
+                let ClickProposition::Separate { right, .. } =
+                    parser(&format!("separate(statement(0).footprint, {resource})"))
+                        .parse_proposition()
+                        .unwrap()
+                else {
+                    panic!("expected separation")
+                };
+                assert_eq!(right, expected, "{resource}");
+                let actual = parser(&resource).parse_contract_expression().unwrap();
+                if subject == "Node()" {
+                    // Constructor calls are resolved after all declarations,
+                    // including when nested under a snapshot.
+                    assert!(
+                        matches!(actual, ContractExpression::At { .. }),
+                        "{resource}"
+                    );
+                } else {
+                    assert_eq!(
+                        actual,
+                        ContractExpression::Resource(Box::new(expected.clone())),
+                        "{resource}"
+                    );
+                }
+            }
+        }
+        for value in ["at(saved, x)", "at(saved, f(x))", "at(saved, r.field)"] {
+            assert!(
+                matches!(
+                    parser(value).parse_contract_expression().unwrap(),
+                    ContractExpression::At { .. }
+                ),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
     fn preserve_refuses_the_old_proposition_argument_and_wrong_arity() {
-        let error = Parser::new("preserve(separate(statement(0).footprint, memory(*p)));")
-            .unwrap()
-            .parse_proof_tactic()
-            .unwrap_err();
-        assert!(
-            error
-                .message()
-                .contains("write `preserve(resource, region)`")
-        );
         for source in [
+            "preserve(separate(statement(0).footprint, memory(*p)));",
             "preserve();",
             "preserve(memory(*p));",
             "preserve(memory(*p), statement(0).footprint);",

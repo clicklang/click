@@ -8090,31 +8090,56 @@ impl AnnotationLowerer<'_> {
         self.lower_program_expression_to_spec(expression, environment)
     }
 
+    #[inline(never)]
+    fn lower_at_resource_subject_to_spec(
+        &mut self,
+        selector: &SnapshotSelector,
+        resource: &ResourceSubject,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecResource, String> {
+        // Naming a saved instance only needs the existing snapshot/identity
+        // lookup; do not construct a value environment for unrelated locals.
+        if let ResourceSubject::Instance { name, identity } = resource
+            && let Some(state) = self.snapshots.and_then(|snapshots| snapshots.get(selector))
+        {
+            let instance = state
+                .resource_instance_at_path(*identity, &[])
+                .ok_or_else(|| {
+                    format!("resource instance `{name}` is not owned at this snapshot")
+                })?;
+            return Ok(SpecResource::Value(Resource::Instance(instance.clone())));
+        }
+        if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
+            return self.lower_resource_subject_to_spec(resource, &snapshot);
+        }
+        match self.resolve_visit_selector(selector, environment)? {
+            ResolvedProgramPoint::Current => {
+                self.lower_resource_subject_to_spec(resource, environment)
+            }
+            ResolvedProgramPoint::FunctionEntry => {
+                let old = environment.old_state(&self.entry_values, self.entry_state.memory())?;
+                self.lower_resource_subject_to_spec(resource, &old)
+            }
+            _ => Err("`at(...)` resources require a recorded snapshot".into()),
+        }
+    }
+
     fn lower_resource_subject_to_spec(
         &mut self,
         resource: &ResourceSubject,
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
+            ResourceSubject::At { selector, resource } => {
+                self.lower_at_resource_subject_to_spec(selector, resource, environment)
+            }
             ResourceSubject::Emp => Ok(SpecResource::Value(Resource::Emp)),
             ResourceSubject::Star(left, right) => Ok(SpecResource::Star(
                 Box::new(self.lower_resource_subject_to_spec(left, environment)?),
                 Box::new(self.lower_resource_subject_to_spec(right, environment)?),
             )),
-            ResourceSubject::Instance { identity, name, at } => {
-                // `at(point, name)` reads the named state; inside an
-                // enclosing snapshot a bare name reads that snapshot.
-                let named = match at {
-                    Some(selector) => Some(
-                        self.snapshots
-                            .and_then(|snapshots| snapshots.get(selector))
-                            .ok_or_else(|| {
-                                format!("`at(..., {name})` names a state that is not recorded here")
-                            })?,
-                    ),
-                    None => None,
-                };
-                if let Some(state) = named.or(environment.snapshot_state.as_ref()) {
+            ResourceSubject::Instance { identity, name } => {
+                if let Some(state) = environment.snapshot_state.as_ref() {
                     let instance =
                         state
                             .resource_instance_at_path(*identity, &[])
