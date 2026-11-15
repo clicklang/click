@@ -423,8 +423,8 @@ producer roots retain differing pointer annotations. Execution result type and
 native output support the retained call; the separately scheduled local/call,
 storage and mixed-family argument slices still own those remaining boundaries.
 
-Validation: all 1,829 selected tests passed, including every scaling test,
-Boolean call result production and native handoff parity, exact descriptor and
+Validation: all 1,869 selected tests passed on the integrated upstream tree,
+including every scaling test, contract completion, Boolean call result production and native handoff parity, exact descriptor and
 semantic observation identity, shared call argument rewrites, Boolean spelling,
 and existing numeric/pointer call producers. The CI-quality check passed.
 
