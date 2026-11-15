@@ -288,18 +288,18 @@ fn recursive_drop::pushed(x: u32) -> u32 {
 fn recursive_drop::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    step_until(region(51));
-    have separate(region(44).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(44).exit, stack.head) == at(region(44).entry, stack.head) by {
-        preserve(separate(region(44).footprint, memory(stack.head)));
-    }
-    have separate(region(48).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(48).exit, stack.head) == at(region(48).entry, stack.head) by {
-        preserve(separate(region(48).footprint, memory(stack.head)));
+    step_until(region(52));
+    have separate(region(45).footprint, memory(stack.head)) by { normalize() using {}; }
+    have at(region(45).exit, stack.head) == at(region(45).entry, stack.head) by {
+        preserve(separate(region(45).footprint, memory(stack.head)));
     }
     have separate(region(49).footprint, memory(stack.head)) by { normalize() using {}; }
     have at(region(49).exit, stack.head) == at(region(49).entry, stack.head) by {
         preserve(separate(region(49).footprint, memory(stack.head)));
+    }
+    have separate(region(50).footprint, memory(stack.head)) by { normalize() using {}; }
+    have at(region(50).exit, stack.head) == at(region(50).entry, stack.head) by {
+        preserve(separate(region(50).footprint, memory(stack.head)));
     }
     step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
