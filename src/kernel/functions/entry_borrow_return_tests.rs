@@ -138,6 +138,7 @@ fn run_mixed_call(
     let function = mixed_memory_contract(composite, produced_first);
     let environment =
         ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
+            descent_completion: None,
             pointer_result: None,
             function: function.clone(),
             concrete_loop_exits: None,
