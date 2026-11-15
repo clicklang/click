@@ -214,8 +214,6 @@ pattern is understood but the complete family has not yet been validated.
 
 | ID | Work | Confidence |
 | --- | --- | --- |
-| 2 | Retained-field substitution repair and regression | Medium |
-| 4 | Conditional-call and graph-summary migrations | Clear; revalidate |
 | 5 | Arena: final live-count store preservation | Clear |
 | 6 | Arena: pre-loop viewability and initial reads | Uncertain: exact held-range spelling |
 | 7 | Arena allocation: search-loop preservation | Medium |

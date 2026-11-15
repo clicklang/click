@@ -2084,6 +2084,22 @@ fn substitute_contract_segment(
             end: substitute_contract_expression_in(end, substitutions)?,
             layout: layout.clone(),
         },
+        ContractSegmentSurface::Field {
+            base,
+            name,
+            element_width,
+            element_type,
+            value_bytes,
+        } => ContractSegmentSurface::Field {
+            base: base
+                .as_ref()
+                .map(|base| substitute_contract_expression_in(base, substitutions).map(Box::new))
+                .transpose()?,
+            name: name.clone(),
+            element_width: *element_width,
+            element_type: *element_type,
+            value_bytes: *value_bytes,
+        },
         surface => surface.clone(),
     };
     Ok(ContractSegment {
@@ -2354,6 +2370,21 @@ pub(in crate::surface) fn apply_contract_lets_to_segment(
             start: substitute_contract_expression(&start, &substitutions)?,
             end: substitute_contract_expression(&end, &substitutions)?,
             layout: layout.clone(),
+        },
+        ContractSegmentSurface::Field {
+            base,
+            name,
+            element_width,
+            element_type,
+            value_bytes,
+        } => ContractSegmentSurface::Field {
+            base: base
+                .map(|base| substitute_contract_expression(&base, &substitutions).map(Box::new))
+                .transpose()?,
+            name,
+            element_width,
+            element_type,
+            value_bytes,
         },
         surface => surface,
     };

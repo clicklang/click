@@ -201,6 +201,14 @@ impl Parser {
     /// Records a contract's or theorem's `let`, in scope for the rest of
     /// the declaration.
     pub(super) fn bind_contract_let_operand(&mut self, binding: &ContractLetBinding) {
+        // A declared pointer alias keeps its pointee layout. Otherwise field
+        // places fall through to the width-unknown legacy field path.
+        // Declaration parsing restores the enclosing struct-name scope.
+        if let Some(ClickType::CObjectPointer { struct_name, .. }) = &binding.click_type {
+            self.names
+                .struct_params
+                .insert(binding.name.clone(), struct_name.clone());
+        }
         let value = match &binding.kind {
             ContractLetBindingKind::Value(value) => Some(value),
             _ => None,

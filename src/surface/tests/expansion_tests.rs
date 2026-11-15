@@ -1885,6 +1885,45 @@ fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
     }
 }
 
+#[test]
+#[ignore = "nightly: call field requirements and contract lets expand and replay"]
+fn call_field_requirements_substitute_actual_arguments_in_expansion() {
+    let (source, sources) =
+        mdtest_sources("mdtests/solve_composes_a_pointer_field_chain_across_a_call.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let with_let = source
+        .replace(
+            "void touch(struct region* region) {",
+            "void touch(struct region* region) {\n    let saved: struct arena* = region->arena;",
+        )
+        .replace(
+            "requires separate(memory(*region), memory(region->arena->data));",
+            "requires separate(memory(*region), memory(saved->data));",
+        );
+    assert_ne!(with_let, source);
+    let with_nested_let = with_let
+        .replace(
+            "let saved: struct arena* = region->arena;",
+            "let saved: struct region* = region;",
+        )
+        .replace("memory(saved->data)", "memory(saved->arena->data)");
+    for (variant, source) in [
+        ("direct", &source),
+        ("contract let", &with_let),
+        ("nested contract let", &with_nested_let),
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &sources, "caller.contract")
+            .unwrap_or_else(|error| panic!("{variant}: {}", error.report()));
+        without_implicit_solve_for_claim("caller.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{variant}: {error}"));
+    }
+}
+
 /// The int64 postcondition retains a separate, guarded domain proof.
 /// Its expanded claim contains only simple proof steps.
 #[test]
