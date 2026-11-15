@@ -129,6 +129,17 @@ control queries the context built without the premise.
 `tests/search_boundary.rs` checks rejected dependencies, aliases, method
 references, macro tokens, extra diagnostic scans, and capability privacy.
 
+`ResourceContext::admit_without_discovery` admits an explicit resource batch
+through indexed ownership checks and exact exclusive-resource checks. It returns
+a successor, a conflict, or an opaque unsupported admission. Unsupported retains
+the candidate entries, their occurrence IDs, the original assumptions and the
+first unresolved check; it exposes no valid successor. The explicitly named
+`try_compose_with_legacy_discovery_and_occurrences` compatibility wrapper resumes
+the existing discovery operation there without reinserting the batch or
+rechecking completed entries. The fast operation has a required test-build
+discovery guard. This boundary does not remove discovery from compatibility
+callers or extend the indexed geometry fragment.
+
 Direct order queries read persistent constant-bound extrema and strict-upper
 witnesses keyed by the written or canonical endpoint. Admission updates only the
 new fact's endpoints; queries do not filter an endpoint's condition bucket.

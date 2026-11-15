@@ -2,6 +2,117 @@
 //! Each entry remains reachable only through its inventoried compatibility caller.
 use super::*;
 
+impl ResourceContext {
+    /// Compatibility admission: indexed checking first, then explicitly
+    /// resume the existing discovery operation for unsupported coverage.
+    pub(crate) fn try_compose_with_legacy_discovery_and_occurrences(
+        self,
+        facts: impl IntoIterator<Item = ResourceFact>,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        match self.admit_without_discovery(facts, assumptions) {
+            OwnershipAdmission::Admitted { context, inserted } => Ok((context, inserted)),
+            OwnershipAdmission::Conflict(error) => Err(error),
+            OwnershipAdmission::Unsupported(pending) => pending.resume_legacy_discovery(),
+        }
+    }
+}
+
+impl PendingOwnershipAdmission<'_> {
+    pub(crate) fn resume_legacy_discovery(
+        self,
+    ) -> Result<
+        (ResourceContext, Vec<(ResourceFact, ResourceOccurrenceId)>),
+        ResourceContextValidityError,
+    > {
+        let Self {
+            context,
+            inserted,
+            indexed_checked,
+            first_new,
+            first_unresolved,
+            assumptions,
+        } = self;
+        for right_entry in first_unresolved..context.storage.next_entry_id {
+            let right = context.fact(right_entry);
+            if right_entry != first_unresolved
+                && let Some(error) = context.exclusive_validity_error(right)
+            {
+                return Err(error);
+            }
+            if indexed_checked[(right_entry - first_new) as usize] {
+                continue;
+            }
+            let Some(right_range) = right.memory_own_range() else {
+                continue;
+            };
+            let coordinates = constant_memory_coordinates(right_range);
+            if coordinates
+                .as_ref()
+                .is_some_and(|(_, start, end)| start >= end)
+            {
+                continue;
+            }
+            let same_origin_neighbors = coordinates.and_then(|(origin, start, end)| {
+                let members = context
+                    .storage
+                    .index
+                    .owned_memory_by_block
+                    .get(&right_range.base().block)?
+                    .len();
+                context.constant_owned_neighbors(&origin, start, end, members)
+            });
+            if let Some(mut candidates) = same_origin_neighbors {
+                candidates.remove(&right_entry);
+                // Every owned range of this block has this origin, so the two
+                // neighbours stand for the block; ranges an exact alias
+                // relates from other blocks are still compared.
+                if assumptions.has_pointer_block_aliases() {
+                    candidates.extend(
+                        context
+                            .owned_validity_candidates(
+                                right_range,
+                                Some(&right_range.base().block),
+                                assumptions,
+                            )
+                            .into_iter()
+                            .filter(|entry| *entry < right_entry),
+                    );
+                }
+                for left_entry in candidates {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let left = context.fact(left_entry);
+                    if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
+                        left,
+                        right,
+                        assumptions,
+                    ) {
+                        return Err(error);
+                    }
+                }
+                continue;
+            }
+            for left_entry in context.owned_validity_candidates(right_range, None, assumptions) {
+                if left_entry >= right_entry {
+                    break;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                let left = context.fact(left_entry);
+                if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
+                    left,
+                    right,
+                    assumptions,
+                ) {
+                    return Err(error);
+                }
+            }
+        }
+        context.advance_prepared_memory_equalities(assumptions);
+        Ok((context, inserted))
+    }
+}
+
 impl crate::kernel::search::ProofSearch<ResourceContext> {
     pub(crate) fn ownership_validity_candidates(
         proof_input: &ResourceContext,

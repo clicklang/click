@@ -1462,6 +1462,30 @@ fn migrated_operations_cannot_drop_their_discovery_guard() {
 }
 
 #[test]
+fn ownership_admission_requires_its_guard_and_rejects_discovery() {
+    let path = "src/kernel/primitives/resource_algebra/ownership_admission.rs";
+    for (body, accepted) in [
+        ("", false),
+        (
+            "#[cfg(test)] let _fast = crate::kernel::search::FastOperationScope::enter(\"admit_without_discovery\");",
+            true,
+        ),
+        (
+            "#[cfg(test)] let _fast = crate::kernel::search::FastOperationScope::enter(\"admit_without_discovery\"); self.owned_validity_candidates();",
+            false,
+        ),
+    ] {
+        let source =
+            format!("impl ResourceContext {{ fn admit_without_discovery() {{ {body} }} }}");
+        assert_eq!(
+            proof_search_boundary::check(path, &syn::parse_file(&source).unwrap()).is_ok(),
+            accepted,
+            "{source}",
+        );
+    }
+}
+
+#[test]
 fn kernel_claim_focus_must_keep_its_discovery_guard() {
     let source = "impl ProofObject<L, P, E> { fn focus_contract_claim() {} }";
     let errors =

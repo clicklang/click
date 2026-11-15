@@ -6,6 +6,9 @@ use crate::kernel::binary_term;
 use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineCastSpelling, MachineIntegerType, OverflowOperation};
 mod observable;
+mod ownership_admission;
+pub(crate) use ownership_admission::OwnershipAdmission;
+use ownership_admission::PendingOwnershipAdmission;
 
 /// A proof-aware composition query in progress on this thread. Bridging a
 /// query's snapshot form to a carrier entry can itself ask whether a
@@ -5921,7 +5924,7 @@ impl ResourceContext {
         facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
-        self.try_compose_into_valid_context_with_occurrences(facts, assumptions)
+        self.try_compose_with_legacy_discovery_and_occurrences(facts, assumptions)
             .map(|(context, _)| context)
     }
 
@@ -5985,117 +5988,6 @@ impl ResourceContext {
         }
         next.advance_prepared_memory_equalities(assumptions);
         Ok(Some(next))
-    }
-
-    pub(crate) fn try_compose_into_valid_context_with_occurrences(
-        mut self,
-        facts: impl IntoIterator<Item = ResourceFact>,
-        assumptions: &PureFactContext,
-    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
-    {
-        if self.storage.facts.is_empty() {
-            self.synchronize_memory_equalities(assumptions);
-        }
-        let first_new = self.storage.next_entry_id;
-        let mut inserted = Vec::new();
-        let mut indexed_checked = Vec::new();
-        for fact in facts {
-            // Check the new footprint against the maintained caller frame
-            // before insertion, so the query never has to skip its own entry.
-            let checked = match self.constant_owned_overlap(&fact, assumptions) {
-                super::memory_equality_index::ConstantOwnedOverlap::Unsupported => false,
-                super::memory_equality_index::ConstantOwnedOverlap::Clear => true,
-                super::memory_equality_index::ConstantOwnedOverlap::Overlap(entry) => {
-                    return Err(
-                        ResourceContextValidityError::OverlappingOwnedMemoryResources {
-                            left: self
-                                .fact(entry)
-                                .memory_own_range()
-                                .expect("indexed owner")
-                                .clone(),
-                            right: fact.memory_own_range().expect("queried owner").clone(),
-                        },
-                    );
-                }
-            };
-            let entry = self.storage.next_entry_id;
-            self.insert_fact(fact.clone());
-            inserted.push((fact, self.occurrence(entry)));
-            indexed_checked.push(checked);
-        }
-        for right_entry in first_new..self.storage.next_entry_id {
-            let right = self.fact(right_entry);
-            if let Some(error) = self.exclusive_validity_error(right) {
-                return Err(error);
-            }
-            if indexed_checked[(right_entry - first_new) as usize] {
-                continue;
-            }
-            let Some(right_range) = right.memory_own_range() else {
-                continue;
-            };
-            let coordinates = constant_memory_coordinates(right_range);
-            if coordinates
-                .as_ref()
-                .is_some_and(|(_, start, end)| start >= end)
-            {
-                continue;
-            }
-            let same_origin_neighbors = coordinates.and_then(|(origin, start, end)| {
-                let members = self
-                    .storage
-                    .index
-                    .owned_memory_by_block
-                    .get(&right_range.base().block)?
-                    .len();
-                self.constant_owned_neighbors(&origin, start, end, members)
-            });
-            if let Some(mut candidates) = same_origin_neighbors {
-                candidates.remove(&right_entry);
-                // Every owned range of this block has this origin, so the two
-                // neighbours stand for the block; ranges an exact alias
-                // relates from other blocks are still compared.
-                if assumptions.has_pointer_block_aliases() {
-                    candidates.extend(
-                        self.owned_validity_candidates(
-                            right_range,
-                            Some(&right_range.base().block),
-                            assumptions,
-                        )
-                        .into_iter()
-                        .filter(|entry| *entry < right_entry),
-                    );
-                }
-                for left_entry in candidates {
-                    crate::instrumentation::record_deterministic_work(1);
-                    let left = self.fact(left_entry);
-                    if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
-                        left,
-                        right,
-                        assumptions,
-                    ) {
-                        return Err(error);
-                    }
-                }
-                continue;
-            }
-            for left_entry in self.owned_validity_candidates(right_range, None, assumptions) {
-                if left_entry >= right_entry {
-                    break;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                let left = self.fact(left_entry);
-                if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
-                    left,
-                    right,
-                    assumptions,
-                ) {
-                    return Err(error);
-                }
-            }
-        }
-        self.advance_prepared_memory_equalities(assumptions);
-        Ok((self, inserted))
     }
 
     /// Nominate at most four entries when this origin accounts for every
@@ -13016,7 +12908,7 @@ impl ReservedLocalScalarOwner {
             return None;
         }
         let (resources, mut inserted) = resources
-            .try_compose_into_valid_context_with_occurrences([self.fact.clone()], assumptions)
+            .try_compose_with_legacy_discovery_and_occurrences([self.fact.clone()], assumptions)
             .ok()?;
         let mut resources =
             resources.without_exact_representation_for_occurrence(inserted.pop()?.1)?;
