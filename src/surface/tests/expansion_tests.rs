@@ -21150,6 +21150,9 @@ fn compact_store_proof_repairs_expand_and_replay() {
         let claim = format!("{function}.contract");
         let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
             .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        if function == "release_run" {
+            assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        }
         without_implicit_solve_for_claim(&claim, || {
             verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
         })
