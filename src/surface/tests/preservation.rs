@@ -1598,3 +1598,26 @@ fn memory_observation_does_not_establish_initialization() {
         error.report()
     );
 }
+
+#[test]
+#[ignore = "nightly: quantified preservation migration expansion and cold replay"]
+fn quantified_preservation_migrations_expand_and_replay() {
+    for fixture in [
+        "mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md",
+        "mdtests/quantified_frame_preserves_uint64_equality.md",
+        "mdtests/quantified_frame_carries_a_bound_fact_to_the_current_state.md",
+        "mdtests/quantified_disjoint_array_store_frame.md",
+        "mdtests/quantified_fact_explicit_transport_inside_have.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "mark.contract")
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+    }
+}

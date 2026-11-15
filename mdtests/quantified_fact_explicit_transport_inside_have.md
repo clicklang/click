@@ -1,8 +1,8 @@
-# Explicit universal transport inside a C proof's `have`
+# Explicit universal preservation inside a C proof's `have`
 
 One source is a bounded-value precondition, as in the DFS search. The other
 is a reflexive entry-snapshot fact whose target says every bounded cell of
-`next` is unchanged by a store to separate `visited`. Both transports run
+`next` is unchanged by a store to separate `visited`. The proof introduces each index and applies preservation
 inside `have` proofs at the post-store frontier.
 
 ```c filename=quantified_fact_explicit_transport_inside_have.c
@@ -29,46 +29,43 @@ void mark(int32 *next, int32 *visited) {
     have at(entry, forall (k: int32) {
         0 <= k and k < 2 implies 0 <= next[k]
     }) by { known(); }
-    have forall (k: int32) {
-        0 <= k and k < 2 implies at(entry, next[k]) == at(entry, next[k])
-    } by {
-        intro(); intro(); normalize();
+    have contains(memory(visited[0..1]), memory(visited[0])) by {
+        apply(click::separation::contains_element(visited, 0, 1, 0)) using { 0 <= 0; 0 < 1; };
     }
     step();
     have forall (k: int32) {
+        0 <= k and k < 2 implies next[k] == at(entry, next[k])
+    } by {
+        intro(); intro();
+        have contains(memory(next[0..2]), memory(next[k])) by {
+            apply(click::separation::contains_element(next, 0, 2, k)) using { 0 <= k; k < 2; };
+        }
+        have separate(memory(visited[0]), memory(next[k])) by {
+            apply(click::separation::separate_restrict(memory(visited[0..1]), memory(next[0..2]), memory(visited[0]), memory(next[k]))) using {
+                separate(memory(visited[0..1]), memory(next[0..2]));
+                contains(memory(visited[0..1]), memory(visited[0]));
+                contains(memory(next[0..2]), memory(next[k]));
+            };
+        }
+        have separate(statement(0).footprint, memory(next[k])) by {
+            normalize() using { separate(memory(visited[0]), memory(next[k])); };
+        }
+        preserve(separate(statement(0).footprint, memory(next[k])));
+    }
+    have forall (k: int32) {
         0 <= k and k < 2 implies 0 <= next[k]
     } by {
-        transport(
-            at(entry, forall (k: int32) {
-                0 <= k and k < 2 implies 0 <= next[k]
-            }),
-            forall (k: int32) {
-                0 <= k and k < 2 implies 0 <= next[k]
-            }
-        ) using {
-            at(entry, forall (k: int32) {
-                0 <= k and k < 2 implies 0 <= next[k]
-            });
-            separate(memory(next[0..2]), memory(visited[0..1]));
-        };
+        intro(); intro();
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies next[j] == at(entry, next[j]) }, k) using { 0 <= k; k < 2; };
+        instantiate(at(entry, forall (j: int32) { 0 <= j and j < 2 implies 0 <= next[j] }), k) using { 0 <= k; k < 2; };
+        rewrite(next[k], at(entry, next[k]));
         known();
     }
     have forall (k: int32) {
         0 <= k and k < 2 implies at(entry, next[k]) == next[k]
     } by {
-        transport(
-            forall (k: int32) {
-                0 <= k and k < 2 implies at(entry, next[k]) == at(entry, next[k])
-            },
-            forall (k: int32) {
-                0 <= k and k < 2 implies at(entry, next[k]) == next[k]
-            }
-        ) using {
-            forall (k: int32) {
-                0 <= k and k < 2 implies at(entry, next[k]) == at(entry, next[k])
-            };
-            separate(memory(next[0..2]), memory(visited[0..1]));
-        };
+        intro(); intro();
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies next[j] == at(entry, next[j]) }, k) using { 0 <= k; k < 2; };
         known();
     }
 }
