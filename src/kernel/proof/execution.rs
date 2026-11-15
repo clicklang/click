@@ -4,6 +4,9 @@
 //! execution proof must advance. It contains no Surface Click syntax,
 //! certificate builder, diagnostic cursor, or smart-planning state.
 
+mod return_producer;
+pub(crate) use return_producer::CheckedReturnSeed;
+
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
@@ -299,15 +302,10 @@ pub(crate) struct CheckedReturnProposition {
     context: Arc<CheckedReturnContext>,
 }
 
-/// The selected checked return path and the producer it replaces. Only the
-/// proof operation constructs this receipt; publication preserves its theorem
-/// identity instead of rebuilding the completed resource trace a second time.
+/// The selected return producer's constructed path and publication, ready
+/// for ordinary contract closing without replaying its C history.
 pub(crate) struct CheckedReturnPath {
-    index: usize,
-    source: Theorem,
     path: crate::kernel::SymbolicExecutionPath,
-    deferred: bool,
-    error: Option<crate::kernel::RuntimeError>,
     publication: Arc<crate::kernel::PublishedFunctionOutcome>,
 }
 
@@ -331,6 +329,7 @@ impl crate::kernel::CheckedFunctionExecution {
         self.published_outcome(index).open_core()
     }
 
+    #[cfg(test)]
     pub(crate) fn with_contract_completion(
         mut self,
         progress: Option<crate::kernel::ContractProofProgress>,
@@ -341,6 +340,7 @@ impl crate::kernel::CheckedFunctionExecution {
         self
     }
 
+    #[cfg(test)]
     pub(crate) fn with_closed_exit_obligations(
         mut self,
         completions: Vec<crate::kernel::ClosedContractExit>,
@@ -355,27 +355,6 @@ impl crate::kernel::CheckedFunctionExecution {
                 return Err("contract closing belongs to a different producer path");
             }
             self.closed_exit_obligations[index] = Some(completion);
-        }
-        Ok(self)
-    }
-
-    pub(crate) fn with_checked_return_paths(
-        mut self,
-        paths: Vec<CheckedReturnPath>,
-    ) -> Result<Self, &'static str> {
-        for completed in paths {
-            let source = self
-                .execution
-                .paths
-                .get(completed.index)
-                .ok_or("return completion selected an unknown path")?;
-            if !Arc::ptr_eq(&source.theorem.proposition, &completed.source.proposition) {
-                return Err("return completion belongs to a different producer path");
-            }
-            self.published_outcomes[completed.index] = completed.publication;
-            self.execution.paths[completed.index] = completed.path;
-            self.deferred_contract_exits[completed.index] = completed.deferred;
-            self.deferred_contract_exit_errors[completed.index] = completed.error;
         }
         Ok(self)
     }
@@ -6250,6 +6229,8 @@ pub(crate) struct ExecutionProofCore {
     /// Post-return exchanges indexed by the selected outcome. Forking a
     /// focused outcome must not copy or modify its sibling traces.
     return_resource_rewrites: crate::persistent::PersistentMap<usize, ExecutionEvidence>,
+    return_producers:
+        crate::persistent::PersistentMap<usize, return_producer::ReturnRewriteProducer>,
     /// Events on the current unjoined path. A branch join restores its
     /// parent's set; finalization collects all retained arm events by walking
     /// the output trace once.
@@ -8124,6 +8105,7 @@ impl ExecutionProofCore {
             pending_loop_return_start: None,
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
             return_resource_rewrites: Default::default(),
+            return_producers: Default::default(),
             return_proof_contexts: Default::default(),
             return_pending_propositions: Default::default(),
             checked_call_events: CheckedCallEvents::new(),
@@ -10658,6 +10640,9 @@ impl ExecutionProofCore {
                 .expect("completion consumes the selected prepared return fold"),
         );
         let path = prepared.path_index;
+        if let Some(producer) = proved.return_producers.get(&path) {
+            self.return_producers.insert(path, producer.clone());
+        }
         // Only the selected outcome's new proof evidence is transferred.
         if let Some(trace) = proved.return_resource_rewrites.get(&path) {
             self.return_resource_rewrites = self
@@ -10686,13 +10671,7 @@ impl ExecutionProofCore {
             presentation.rewrite.before_facts = proved_facts.clone();
             presentation.rewrite.after_facts = rewrite.after_facts.clone();
         }
-        let mut trace = self
-            .return_resource_rewrites
-            .get(&path)
-            .unwrap_or(&self.execution_evidence[path])
-            .clone();
-        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
-        self.return_resource_rewrites = self.return_resource_rewrites.with_inserted(path, trace);
+        self.push_return_rewrite(path, rewrite)?;
         Ok(facts)
     }
 
@@ -10858,6 +10837,12 @@ impl ExecutionProofCore {
         if self.execution_evidence.get(path_index).is_none() {
             return Err("return proof selected an unknown path".into());
         }
+        if let Some(producer) = self.return_producers.get(&path_index) {
+            let mut next = producer.clone();
+            next.accept_proposition(&proof, base)?;
+            self.return_producers.insert(path_index, next);
+            return Ok(());
+        }
         let mut pending = self
             .return_pending_propositions
             .get(&path_index)
@@ -10877,6 +10862,12 @@ impl ExecutionProofCore {
         let context = if let Some(context) = self.return_proof_contexts.get(&path_index) {
             context.clone()
         } else {
+            if let Some(producer) = self.return_producers.get(&path_index) {
+                let context = producer.seed_context();
+                self.return_proof_contexts
+                    .insert(path_index, context.clone());
+                return Ok(context);
+            }
             let candidates = self
                 .frontier
                 .execution()
@@ -10910,9 +10901,19 @@ impl ExecutionProofCore {
             .unwrap_or(&self.execution_evidence[path_index])
             .clone();
         for (proof, base) in pending.iter() {
-            trace.push(CheckedExecutionEvent::ReturnProposition(Box::new(
-                CheckedReturnProposition::check(proof.clone(), base, context.clone())?,
-            )));
+            let retained = if let Some(producer) = self.return_producers.get(&path_index) {
+                let mut next = producer.clone();
+                next.accept_proposition(proof, base)?;
+                self.return_producers.insert(path_index, next);
+                CheckedReturnProposition {
+                    proof: proof.clone(),
+                    base: base.clone(),
+                    context: context.clone(),
+                }
+            } else {
+                CheckedReturnProposition::check(proof.clone(), base, context.clone())?
+            };
+            trace.push(CheckedExecutionEvent::ReturnProposition(Box::new(retained)));
         }
         self.return_resource_rewrites = self
             .return_resource_rewrites
@@ -10973,6 +10974,10 @@ impl ExecutionProofCore {
             "resource fold",
             "return fold: construct selected instance",
         );
+        self.flush_return_propositions(path_index)
+            .map_err(crate::kernel::ResourceRewriteRefusal::OwnedMessage)?;
+        self.retain_return_facts(path_index, before_facts)
+            .map_err(crate::kernel::ResourceRewriteRefusal::OwnedMessage)?;
         let definition = function
             .proof_composite_resource_definition(instance.name())
             .ok_or("instance definition is not registered on the function")?;
@@ -11039,9 +11044,6 @@ impl ExecutionProofCore {
         )>,
         defer: bool,
     ) -> Result<(), ResourceRewriteCheckError> {
-        if !defer {
-            self.flush_return_propositions(path_index)?;
-        }
         if !self.evidence_completed {
             return Err("return resource rewrite requires completed execution"
                 .to_string()
@@ -11146,15 +11148,7 @@ impl ExecutionProofCore {
             }));
             return Ok(());
         }
-        let mut trace = self
-            .return_resource_rewrites
-            .get(&path_index)
-            .unwrap_or(&self.execution_evidence[path_index])
-            .clone();
-        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
-        self.return_resource_rewrites = self
-            .return_resource_rewrites
-            .with_inserted(path_index, trace);
+        self.push_return_rewrite(path_index, rewrite)?;
         Ok(())
     }
 
@@ -11174,10 +11168,9 @@ impl ExecutionProofCore {
         // The checked outcome operation owns this goal's current logical
         // presentation, including expansions cached since the C return.
         // Retain it directly rather than reconstructing it from C history.
+        self.flush_return_propositions(path_index)?;
+        self.retain_return_facts(path_index, before_facts)?;
         let presented_before_state = &*outcome.state;
-        if !defer {
-            self.flush_return_propositions(path_index)?;
-        }
         if !self.evidence_completed {
             return Err("return resource rewrite requires completed execution".into());
         }
@@ -11305,15 +11298,7 @@ impl ExecutionProofCore {
             }));
             return Ok(());
         }
-        let mut trace = self
-            .return_resource_rewrites
-            .get(&path_index)
-            .unwrap_or(&self.execution_evidence[path_index])
-            .clone();
-        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
-        self.return_resource_rewrites = self
-            .return_resource_rewrites
-            .with_inserted(path_index, trace);
+        self.push_return_rewrite(path_index, rewrite)?;
         Ok(())
     }
 
@@ -11534,49 +11519,19 @@ impl ExecutionProofCore {
         })
     }
 
-    /// Complete a selected return path against the original checked function
-    /// execution. The receipt retains the exact path used by its claim proofs.
+    /// Publish the selected producer's current return for ordinary closing.
+    /// No C execution evidence is replayed or compared here.
     pub(crate) fn checked_return_path(
         &self,
-        execution: &crate::kernel::CheckedFunctionExecution,
         path_index: usize,
     ) -> Result<CheckedReturnPath, ReturnPathRefusal> {
-        let source = execution.paths().get(path_index).ok_or(ReturnPathRefusal {
-            reason: "return fold selected an unknown path",
-            unjustified_fact: None,
-        })?;
-        let candidates = execution
-            .proof_candidates
-            .as_ref()
+        self.return_producers
+            .get(&path_index)
             .ok_or(ReturnPathRefusal {
-                reason: "return completion requires a proof-produced execution",
+                reason: "return rewrite has no opened checked outcome",
                 unjustified_fact: None,
-            })?;
-        let mut unjustified = None;
-        let (mut paths, _, deferred, errors, publications) = self
-            .checked_execution_paths(
-                candidates,
-                &execution.function,
-                &execution.assumptions,
-                Some(path_index),
-                &mut unjustified,
-            )
-            .map_err(|reason| ReturnPathRefusal {
-                reason,
-                unjustified_fact: unjustified,
-            })?;
-        let path = paths.pop().ok_or(ReturnPathRefusal {
-            reason: "return fold selected an unknown path",
-            unjustified_fact: None,
-        })?;
-        Ok(CheckedReturnPath {
-            index: path_index,
-            source: source.theorem.clone(),
-            path,
-            deferred: deferred[0],
-            error: errors.into_iter().next().flatten(),
-            publication: publications[0].retain_identity(execution.published_outcome(path_index)),
-        })
+            })?
+            .finish()
     }
 
     /// Whether this path retains a kernel-checked exchange after its C return.
@@ -11796,6 +11751,15 @@ impl ExecutionProofCore {
                     && fact.is_certified()
                     && fact.generated_load_binding().is_some()
             });
+            let return_seed = CheckedReturnSeed::new(
+                self,
+                path_index,
+                candidates,
+                candidate,
+                function,
+                completed.clone(),
+                has_checked_entry,
+            );
             let (
                 outcome,
                 obligations,
@@ -11907,19 +11871,7 @@ impl ExecutionProofCore {
                 &facts,
                 candidate.obligations(),
             ));
-            publications.push(crate::kernel::PublishedFunctionOutcome::from_execution(
-                candidates.state(),
-                function,
-                candidates.arguments(),
-                assumptions,
-                &facts,
-                candidate.obligations(),
-                &outcome,
-                candidate,
-                &theorem,
-            ));
-            drop(premises);
-            paths.push(crate::kernel::SymbolicExecutionPath {
+            let path = crate::kernel::SymbolicExecutionPath {
                 call_parameters: None,
                 completion_origin: Some(candidate.outcome().clone()),
                 call_result: None,
@@ -11930,7 +11882,21 @@ impl ExecutionProofCore {
                 obligations,
                 theorem,
                 loan_evidence,
-            });
+            };
+            publications.push(crate::kernel::PublishedFunctionOutcome::from_execution(
+                candidates.state(),
+                function,
+                candidates.arguments(),
+                assumptions,
+                &path.facts,
+                candidate.obligations(),
+                &outcome,
+                candidate,
+                &path,
+                return_seed,
+            ));
+            paths.push(path);
+            drop(premises);
             deferred_contract_exits.push(deferred_contract_exit);
             deferred_contract_exit_errors.push(deferred_contract_exit_error);
         }

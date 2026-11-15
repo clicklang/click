@@ -5,7 +5,9 @@ mod publication;
 pub(crate) use publication::PublishedFunctionOutcome;
 
 mod completion;
-pub(crate) use completion::{ContractCompletionGoal, ContractProofProgress, WholeContractProof};
+pub(crate) use completion::{
+    ContractCompletionGoal, ContractExecutionOwner, ContractProofProgress, WholeContractProof,
+};
 
 mod retained_context;
 pub(crate) use retained_context::{RetainedClosingEntry, RetainedClosingFootprint};

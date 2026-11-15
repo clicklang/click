@@ -7,7 +7,6 @@ use std::sync::Arc;
 /// Input retained across ordinary closing steps. Return rewrites are resolved
 /// once before the first step, and the same path identity reaches registration.
 struct ContractClosingInput {
-    returned: Option<crate::kernel::proof::CheckedReturnPath>,
     path: crate::kernel::SymbolicExecutionPath,
     specification: Arc<crate::kernel::PublishedFunctionOutcome>,
 }
@@ -28,23 +27,19 @@ fn contract_closing_input(
             .execution()
             .ok_or_else(|| ClickError::new("return instance fold lost its checked execution"))?
             .core;
-        Some(
-            core.checked_return_path(execution, path_index)
-                .map_err(|refusal| {
-                    let message =
-                        format!("could not certify return instance fold: {}", refusal.reason);
-                    match refusal.unjustified_fact {
-                        Some(fact) => unjustified_return_fact_error(
-                            root,
-                            post_return_facts,
-                            &fact,
-                            &message,
-                            path_index,
-                        ),
-                        None => ClickError::new(message),
-                    }
-                })?,
-        )
+        Some(core.checked_return_path(path_index).map_err(|refusal| {
+            let message = format!("could not certify return instance fold: {}", refusal.reason);
+            match refusal.unjustified_fact {
+                Some(fact) => unjustified_return_fact_error(
+                    root,
+                    post_return_facts,
+                    &fact,
+                    &message,
+                    path_index,
+                ),
+                None => ClickError::new(message),
+            }
+        })?)
     } else {
         None
     };
@@ -60,7 +55,6 @@ fn contract_closing_input(
         |returned| returned.publication().clone(),
     );
     Ok(ContractClosingInput {
-        returned,
         path,
         specification,
     })
@@ -3373,26 +3367,21 @@ pub(super) fn finish_ordered_proof<'a>(
             &completed_execution,
             resource_prefix,
         );
-        let mut contract_progress = proof_context
-            .constants
-            .entry_context
-            .as_ref()
-            .and_then(|entry| entry.completion.as_ref())
-            .and_then(|owner| {
-                outcome_substrate.start_contract_completion(
-                    owner,
-                    &completed_execution,
-                    outcome_branches.values().copied(),
-                )
-            });
-        let mut closed_exit_obligations = Vec::new();
+        let mut contract_owner = outcome_substrate.open_contract_execution(
+            completed_execution.clone(),
+            proof_context
+                .constants
+                .entry_context
+                .as_ref()
+                .and_then(|entry| entry.completion.as_ref()),
+            outcome_branches.values().copied(),
+        )?;
         let mut verified = Vec::new();
         let mut checked_resource_claims_by_path =
             vec![Vec::<FunctionContractClaimKey>::new(); execution.paths().len()];
         let mut checked_resource_transitions_by_path = vec![false; execution.paths().len()];
         let mut checked_returned_resources_by_path =
             vec![crate::kernel::ResourceContext::new(); execution.paths().len()];
-        let mut checked_return_paths = Vec::new();
         let mut surface_closers_by_claim = vec![Vec::new(); claims.len()];
         let mut surface_grouped_closers_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_tactics_by_path = Vec::with_capacity(execution.paths().len());
@@ -3656,7 +3645,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 .focus_branch(goal)?
                                 .prepare_outcome_cases(
                                     &mut outcome_substrate,
-                                    contract_progress.as_mut(),
+                                    &mut contract_owner,
                                 )?
                         };
                     if outcome_proof.is_none()
@@ -5382,14 +5371,10 @@ pub(super) fn finish_ordered_proof<'a>(
                             &post_return_facts,
                         )?,
                     };
-                    let checked_return_path = input.returned;
-                    let certified_path = &input.path;
                     let checked_specification = input.specification;
                     if let Some(root) = outcome_proof.as_ref() {
-                        let completion = root.contract_exit_completion(certified_path)?;
                         checked_resource_transitions_by_path[path_index] =
-                            completion.completes_boundary();
-                        closed_exit_obligations.push(completion);
+                            root.contract_exit_completes_boundary();
                     }
                     let specification = checked_specification.specification();
                     let theorem = checked_specification.theorem();
@@ -5435,9 +5420,6 @@ pub(super) fn finish_ordered_proof<'a>(
                             checked_proposition,
                             entry_context: proof_context.constants.entry_context.clone(),
                         });
-                    }
-                    if let Some(completed) = checked_return_path {
-                        checked_return_paths.push(completed);
                     }
                     if let Some(return_proof) = loop_return {
                         let per_claim = closures
@@ -5513,8 +5495,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     if let Some(root) = outcome_proof.take() {
                         // Retire only this checked outcome. Sibling paths are
                         // completed by their own retained proofs.
-                        outcome_substrate = root
-                            .complete_outcome_in(&outcome_substrate, contract_progress.as_mut())?;
+                        outcome_substrate =
+                            root.complete_outcome_in(&outcome_substrate, &mut contract_owner)?;
                     }
                     drop(_path_certification_timing);
                 }
@@ -5575,21 +5557,15 @@ pub(super) fn finish_ordered_proof<'a>(
                 }
             }
         }
-        let final_checked_execution = completed_execution
-            .clone()
-            .with_checked_return_paths(checked_return_paths)
-            .map_err(ClickError::new)?
-            .with_closed_exit_obligations(closed_exit_obligations)
-            .map_err(ClickError::new)?;
+        let final_checked_execution =
+            outcome_substrate.finish_contract_execution(contract_owner)?;
         let completed_with_resource_claims =
             final_checked_execution.with_checked_resource_claims(checked_resource_claims_by_path);
         let completed_with_resource_claims = completed_with_resource_claims
             .with_checked_resource_transitions(checked_resource_transitions_by_path);
         let completed_with_resource_claims = completed_with_resource_claims
             .with_checked_returned_resources(checked_returned_resources_by_path);
-        let completed_with_resource_claims = std::sync::Arc::new(
-            completed_with_resource_claims.with_contract_completion(contract_progress),
-        );
+        let completed_with_resource_claims = std::sync::Arc::new(completed_with_resource_claims);
         for theorem in &mut verified {
             theorem.checked_execution = std::sync::Arc::clone(&completed_with_resource_claims);
         }
