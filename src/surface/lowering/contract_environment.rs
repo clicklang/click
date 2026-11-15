@@ -203,6 +203,7 @@ pub(in crate::surface) fn program_value_matches_click_type(
     interface_type: InterfaceType,
 ) -> bool {
     match (value.numeric_value(), interface_type) {
+        (ProgramValue::Bool(_), InterfaceType::Bool) => true,
         (
             ProgramValue::Int8(_),
             InterfaceType::Int8

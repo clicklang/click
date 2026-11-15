@@ -65,6 +65,12 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { body, .. } => contains_old_expression(body),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => contains_old_expression(function) || arguments.iter().any(contains_old_expression),
+
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contains_old_expression(inner)
@@ -142,6 +148,12 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { body, .. } => contains_resource_count(body),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => contains_resource_count(function) || arguments.iter().any(contains_resource_count),
+
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contains_resource_count(inner)
@@ -346,6 +358,17 @@ pub(in crate::surface) fn collect_resource_count_families(
             ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
             | ContractExpression::RegionParameter { .. } => {}
+            ContractExpression::Lambda { body, .. } => collect_expression(body, families),
+            ContractExpression::Apply {
+                function,
+                arguments,
+            } => {
+                collect_expression(function, families);
+                for argument in arguments {
+                    collect_expression(argument, families);
+                }
+            }
+
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner) => collect_expression(inner, families),
@@ -617,6 +640,12 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => true,
+        ContractExpression::Lambda { body, .. } => contains_at_expression(body),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => contains_at_expression(function) || arguments.iter().any(contains_at_expression),
+
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contains_at_expression(inner)
@@ -797,6 +826,10 @@ pub(in crate::surface) fn collect_click_function_calls(
 }
 
 fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut BTreeSet<String>) {
+    if let Ok(Some(reduced)) = lambdas::reduce_head(expression) {
+        collect_click_function_calls(&reduced, calls);
+        return;
+    }
     match expression {
         ContractExpression::Resource(subject) => {
             collect_click_function_calls_in_resource_subject(subject, calls)
@@ -804,6 +837,17 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => {}
+        ContractExpression::Lambda { body, .. } => collect_click_function_calls(body, calls),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            collect_click_function_calls(function, calls);
+            for argument in arguments {
+                collect_click_function_calls(argument, calls);
+            }
+        }
+
         ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             collect_click_function_calls(inner, calls)
@@ -1317,6 +1361,18 @@ fn validate_recursive_calls_in_expression(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(()),
+        ContractExpression::Lambda { body, .. } => recurse(body, lower_bounds, structural_subterms),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            recurse(function, lower_bounds, structural_subterms)?;
+            for argument in arguments {
+                recurse(argument, lower_bounds, structural_subterms)?;
+            }
+            Ok(())
+        }
+
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             recurse(inner, lower_bounds, structural_subterms)

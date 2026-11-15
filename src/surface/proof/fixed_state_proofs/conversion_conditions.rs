@@ -865,6 +865,15 @@ pub(in crate::surface) fn walk_written_expressions(
     let mut children: Vec<&ContractExpression> = Vec::new();
     match expression {
         ContractExpression::Resource(_) => {}
+        ContractExpression::Lambda { .. } => {}
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            children.push(function);
+            children.extend(arguments);
+        }
+
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
