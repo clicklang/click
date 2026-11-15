@@ -373,8 +373,8 @@ rechecks those steps without rerunning the planner. Profiling and audit use the
 same checked boundary.
 
 Two rules make the mathematical `Integer` family complete for refutations
-over the integers, the form a simplex-based planner produces (see
-`design/smt-auto-stage1.md` in the repository). `negated_goal`
+over the integers, the form a simplex-based planner produces (see the
+[historical solver design](https://github.com/clicklang/click/blob/2175760b9/design/smt-auto-stage1.md)). `negated_goal`
 assumes the integer negation of a bound goal: for the goal `t <= 0` it is
 `-t + 1 <= 0`, and an equality goal is refused. A conclusion node may then be a
 contradiction, a constant claim such as `1 <= 0`. This is sound with or

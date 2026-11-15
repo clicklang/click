@@ -154,6 +154,8 @@ MDTEST_FILTER=rb_produces_through_the_root_cell RUST_MIN_STACK=8388608 \
   -E 'test(=gate_tests::mdtests::mdtests)'
 ```
 
+The baseline failure was also reproduced on upstream `2175760b9` on
+2026-11-15 in 0.85 seconds, without changing verifier, C or sidecar.
 The baseline audit first encountered it in the `MDTEST_FILTER=produces_` group; all
 other ten selected fixtures passed. The full C, resources and proof remain in
 `mdtests/rb_produces_through_the_root_cell.md`. The body stores `node` in
@@ -168,7 +170,7 @@ goal: at(<state A>, root->rb_node) == <pointer A>
 `<state A>` is the memory after the store to `root->rb_node`; the report does
 not define `<pointer A>` in its legend. This prevents stating the generated
 link from the report (`unclear-trace` under the tracing procedure). The
-reproduction establishes a current tooling/composition failure, not a false
+baseline reproduction established a tooling/composition failure, not a false
 acceptance or a root cause in pointer designation. No new bug file or issue
 was filed. Keep this exact fixture as the small acceptance witness rather
 than substituting a full rbtree census.

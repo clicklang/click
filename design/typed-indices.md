@@ -1,411 +1,62 @@
 # An index keeps its type until it is an offset
 
-Status: direction accepted on 2026-10-08. Stages 1, 2 and 3 are built; the
-stage 2 status names what is left. The [rulings](#rulings) at the end record
-what was decided not to build. This document states
-the design, what a survey of the kernel found, and the order to build it in.
-The site counts come from one read-only survey of `src/kernel` by text
-search; they size the work and are not an audit.
+This record preserves the typed-index decisions implemented in October 2026.
+The staged migration is complete; heap-block extents followed in
+[Heap extents](heap-extents.md). Current public behavior is specified in the
+[C reference](../docs/reference/language/c.md) and
+[Rust reference](../docs/reference/rust.md).
 
-## The problem
+## Index and range rules
 
-A place in a contract is `p[i]` or a range `p[lo..hi]`. Every index and
-bound is forced through signed 32 bits before it reaches memory. A C `int`
-index fits that. A C `size_t` and a Rust `usize` do not, so their contracts
-cast at each use and state the bound that makes the cast exact:
+An index keeps its integer type until it becomes an offset. A C `int` index
+is sign-extended; a C `size_t` or Rust `usize` index retains its 64-bit value.
+The kernel does not silently narrow a wide index because facts show it fits.
+A written narrowing cast still means truncation and can name a different
+address from the original program's access.
 
-```click
-requires length <= 2147483647u64;
-views bytes[0..length as int32];
-ensures result == bytes[index as int32];
-```
+`CMemoryRange` distinguishes `Int32` and `UInt64` coordinates. Any 64-bit
+bound selects the wide kind, including a constant or nonzero start. Signed
+64-bit bounds are read through sign extension; range guards exclude negative
+values. A range's kind must not depend on facts established by its contract.
 
-That is not C's rule. In C, `p[i]` converts `i` to a pointer-sized offset:
-an `int` is sign-extended and a `size_t` is used as it is. The 32-bit limit
-belongs to Click's representation of a range. It happens to match C's
-commonest case and shows as bookkeeping everywhere else.
+Wide membership requires the selected index to lie between the range's bounds
+and the complete byte extent to fit the modeled object limit,
+`end <= i64::MAX / element_width`. Wide scaled offsets are exact products;
+constant folding must not turn them into wrapping offsets. Calls must prove
+range guards, including `start <= end`, before transferring a range.
+Entry may assume guards already established by its caller.
 
-## The design
+Wide ownership can split into windows and suffixes and rejoin after calls.
+Cross-kind reasoning must compare exact byte offsets, rather than interpret
+one kind's bounds through the other's comparisons. Full-width `viewable`,
+quantifiers, folds and order reasoning support the same coordinates.
+The checksum proofs use a full-width specification with a bounded int32
+per-batch layer; the old overall `INT_MAX` length cap is unnecessary.
 
-An index keeps its own integer type until the moment it becomes an offset,
-and each type converts in its own exact way.
+## Representation and scaling
 
-| Written | Index type | Becomes an offset by |
-|---|---|---|
-| C `p[i]`, `int i` | `int32` | sign extension, as C converts to `ptrdiff_t` |
-| C `p[n]`, `size_t n` | `uint64` | its value |
-| Rust `bytes[index]` | `usize` | its value |
-| Rust `bytes[0..bytes.len()]` | `usize` | its value |
+Keep range-kind identity in equality, hashing and ordering. Narrow-only
+accessors must refuse wide ranges. A low-word fact cannot determine an entire
+64-bit bound. Constant readers, struct strides and cross-width footprints must
+respect the same distinction.
 
-No cast is written, because nothing is narrowed. The one bound left is that
-an object is at most `isize::MAX` bytes, which C and Rust both guarantee and
-the memory model supplies. Each language indexes with the types it has; the
-kernel has one notion underneath, an offset from a base.
-
-## What the kernel had on 2026-10-08
-
-This is the survey the stages were planned from, kept for its reasoning.
-Each 32-bit restriction it lists has since been lifted: range bounds and the
-object extent by stage 2, order reasoning by stage 3.
-
-The offset layer is already typed. `PointerOffsetTerm`
-(`src/kernel/primitives.rs`) is an exact integer held in `i64`, with
-`Int32Scaled` and `Int64Scaled { unsigned }` forms, and
-`Pointer::offset_by_typed_elements` builds the right one. Its only
-production caller is C pointer arithmetic in a function body
-(`src/kernel/eval/operators.rs`), so a body's `bytes[index]` with a `size_t`
-index already forms a wide offset.
-
-Three things are still 32-bit.
-
-- **Range bounds.** `CMemoryRange` holds `start` and `end` as untyped
-  `MachineTerm`s, and every reader takes them as signed 32-bit. A 64-bit
-  bound is refused where a range is lowered ("segment start did not evaluate
-  to int32"), in eight checks across `src/surface/lowering`,
-  `src/surface/checking` and `src/kernel/loops.rs`. About 230 sites build a
-  range and about 400 read a bound.
-- **Object extent.** The byte count of a range is a `u32`
-  (`memory_range_byte_count`, `memory_range_element_count_limit`), and
-  `byte_normalized_memory_range` stores that count as a range bound.
-  Overlap, loans and covering across element widths rest on it. About 50
-  sites.
-- **Order reasoning.** `PureFactContext::decide` has a 64-bit arm, but the
-  transitive order walk and the bounds index match the 32-bit comparisons
-  only. `0 <= i < n` over `uint64` is decided when stated or reducible to
-  constants; chains and `i + 1 <= n` are weaker than for `int32`.
-
-The first two are why a contract casts. The third is why removing the cast
-alone would make existing proofs harder.
-
-## How to build it
-
-Keep the bound terms as they are. Give `CMemoryRange` one field, the index
-kind: `Int32`, `Int64` or `UInt64`. Then:
-
-- convert a bound to an offset through `offset_by_typed_elements`, at
-  `byte_footprint` and the 48 `offset_by_elements` sites;
-- recover an index from an offset with its kind
-  (`element_index_from_offset`, `element_index_from_base`);
-- choose the comparison by kind in the five places that order bounds: the
-  overlap check, loop-effect containment, `pointer_access_in_range`, and the
-  two symbolic index walks;
-- accept a typed bound at the eight lowering checks.
-
-A range's kind defaults to `Int32`, so the constructors that exist do not
-change meaning.
-
-### Stage 1. Typed bounds, with the 32-bit cap kept
-
-A bound or index of any integer type is accepted and converted to the
-32-bit index a place takes. The requirement that it fits stays. Casts
-disappear from C and Rust contracts alike. Contracts still state
-`requires n <= 2147483647`.
-
-Built 2026-10-08, by a smaller route than the `kind` field above. A 64-bit
-bound or index is converted where it meets the place, as the cast
-`n as int32` converts it, so every term downstream is the one an explicit cast
-gives and no reader of a range changes:
-
-- a range bound of any form, where the surface lowers a segment
-  (`lower_resource_segment_with_values`) and where the kernel evaluates one
-  (`evaluate_loop_effect_segment` and its sibling in `src/kernel/loops.rs`);
-- an indexed read, for a 64-bit parameter written alone, in the parser
-  (`wide_index_params`). Any other 64-bit index expression still takes the
-  cast, because the parser does not type expressions.
-
-The kernel's cast already owes an "int32 narrowing upper bound" obligation,
-so a contract whose requirements do not show the bound fits is refused at
-setup; the refusal now says which requirement to state.
-
-What looked like a gap in this stage belongs to stage 3. A 64-bit index
-expression that is not a lone parameter, `bytes[index + 1]`, still takes the
-cast in a contract. Converting it in the parser was tried on 2026-10-08 and
-dropped, because the C is the obstacle and not the contract: for
-
-```c
-unsigned char next(const unsigned char *bytes, unsigned long length, unsigned long index) {
-    return bytes[index + 1];
-}
-```
-
-with `requires length <= 2147483647; requires index + 1 < length; views
-bytes[0..length];`, the body's own read is refused, "missing resource fact
-`views bytes[(truncate32(index) + 1)]`", whatever the contract's
-postcondition says. The kernel does not carry `index + 1 < length` over
-64-bit terms to the 32-bit index of the range. That is the order reasoning
-of stage 3, and it is the first thing a real `size_t` loop will hit.
-
-### Stage 2. The extent is `isize::MAX`
-
-The byte count becomes 64-bit with the limit `isize::MAX / width`, and the
-contracts drop the bound. Lacker said to go ahead on 2026-10-08. A survey
-of the kernel the same day gave the plan below; its site counts are text
-searches.
-
-**Status, 2026-10-09.** Built for the shape a `size_t` or `usize` length
-gives: a range from constant zero to a symbolic `uint64` bound is wide, in
-contracts, loop clauses and proofs, and a 64-bit index is never narrowed.
-Steps 0 to 4, 7 and 8 below are done for that shape, with `viewable` over a
-wide range, `uint64` folds for model functions, and the Rust iterators
-counting a `usize`. Step 5 is done too (2026-10-10): a range with a
-`uint64` bound is wide whatever its start, and an integer literal beside the
-64-bit bound is read as `uint64` (`wide_range_bounds` in
-`src/kernel/primitives/contracts.rs`, the one rule every lowering asks).
-Signed bounds followed (2026-10-11): a range with a symbolic 64-bit bound,
-signed or unsigned, is wide, and an `int32` or `int64` bound in it is read
-as its sign extension. No signed kind was needed. A negative bound reads as
-at least 2^63, past every range's end, so the range's own guards rule it
-out; a signed access index is read the same way, and an unsigned order
-between sign extensions of values known nonnegative is decided by the
-signed order. Step 9 is done the same day: a range with any 64-bit bound,
-a constant included, is wide, and the 32-bit conversion of a bound is gone;
-only a cast the contract writes, `bytes[0..length as int32]`, makes a 64-bit
-bound a 32-bit one. Step 6 followed: an owned window `(bytes + index)[0..4]`
-or suffix `bytes[i..length]` is split from an owned wide range and rejoins it
-when the call returns. A window is restated at its root base,
-`bytes[index..index + 4]`, both to split the owner and to meet its
-neighbours again, and fragments of a wide request are chained from its start
-address as an `Int32` request's are. The Adler-32 checksum trials followed:
-every public contract now states its result over the full-width `uint64`
-specification with no length limit, and the `int32` specification remains
-only as the per-batch computation layer joined to it through a bridge
-([adler2 trial](adler32/project/adler2/README.md)). What was
-learned along the way:
-
-- A callee is given its ranges' guards on entry, `start <= end` among them,
-  and the call did not prove that one: the planner places a range by its
-  endpoints, and `bytes[5..2]` lies inside `bytes[0..8]` by them. A call
-  now proves the order of each range it hands over; the other guards follow
-  from the range that covers it.
-
-- Offsets of two unequal 64-bit indices are different without a no-wrap
-  bound. An `Int64Scaled` offset is the exact product, folded to a constant
-  only when it fits `i64`, so the object-size limit is needed for
-  membership (condition 4 below) and not for telling two cells apart.
-- The wide order walk needed its own direction-split edges. Walking up
-  through a bound many indices share read every fact below it, which made
-  a line of stores quadratic; the scaling test caught it.
-- An index that is a call's result is compared with the bound in the
-  bound's spelling, when the two are decided equal.
-
-Keeping 32-bit ranges and letting the memory model discharge the bound is
-a dead end: the object limit gives `length <= isize::MAX / width`, far
-above `INT_MAX`, so `length as int32` is still inexact.
-
-**The representation.** `CMemoryRange` (`src/kernel/primitives.rs`) gets a
-last field, `kind: RangeIndexKind { Int32, UInt64 }`, part of its `Hash`,
-`Eq` and `Ord`, since `p[0..n]` in two kinds can share one untyped term.
-`MachineTerm::Variable` carries no width, so a reader that puts a
-64-bit bound in a signed 32-bit comparison was accepted silently. Debug
-builds now refuse it: a fact context keeps each variable at one width
-(`src/kernel/primitives/term_width.rs`).
-To fence that off the fields become private, `start()` and `end()` assert
-`kind == Int32`, and a wide reader calls `wide_bounds()`. A reader that
-was not audited then stops at once on a wide range instead of answering.
-Signed 64-bit bounds keep the stage 1 cast for now.
-
-**Wide membership.** `pointer_access_in_range`
-(`src/kernel/assumptions/memory_reasoning.rs`) dispatches a wide range to
-a new arm and leaves the `Int32` body alone. An access is in
-`p[lo..hi]` of width `w` when
-
-1. its exact offset from the base is `Int64Scaled { value: i, byte_width:
-   w, unsigned: true }`, or a nonnegative constant divisible by `w`;
-2. the access width is `w`;
-3. `lo <= i` and `i < hi` are decided as 64-bit unsigned comparisons;
-4. `hi <= i64::MAX / w` is decided: the extent fact.
-
-Condition 4 makes `i * w` fit `i64`, so the offset is the mathematical
-one; that answers the `uint64` above `i64::MAX` risk at the rule. The
-extent fact is assumed only for a range a contract holds on entry, where
-it is the object-size limit, and proved everywhere else. A question
-across kinds answers conservatively unless both sides are exact constant
-offsets. The constant readers return nothing for a wide range.
-
-**Order of work.** Each step lands with a regression and the scaling test
-named.
-
-0. The refactor alone: private fields, the kind, asserting accessors.
-   Nothing builds a wide range, so no work count may move.
-1. A read through `views bytes[0..length]` with no bound on `length`.
-   Lowering builds a wide range when a contract clause starts at constant
-   zero and ends at a `uint64`; under it an index is not cast. Scaling:
-   wide copies of `symbolic_range_membership_ignores_unrelated_index_bounds`
-   and `unsigned_order_walk_ignores_unsigned_bounds_of_other_indices`
-   (`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`).
-2. Calls: a wide range covered by a wide range, and by a constant `Int32`
-   one (`uint8 buf[16]; read(buf, 16, 3)`).
-3. Writes through `owns`. Scaling:
-   `stores_beside_many_owned_ranges_scale_near_linearly`,
-   `stores_to_bounded_unordered_indices_are_near_linear`
-   (`src/scaling_tests/surface/tests/scaling_tests.rs`) with `size_t`.
-4. Loops: `evaluate_loop_effect_segment` and
-   `loop_effect_segment_contains_range` in `src/kernel/loops.rs` carry the
-   kind and compare without a modular add.
-5. A nonzero start, and `index + c`.
-6. Two ranges on one block: splitting, overlap, loans.
-7. `forall k` over a wide range in `ensures`.
-8. Rust slices, and the bound out of the Rust examples.
-9. Every clause shape, and the stage 1 cast for unsigned bounds deleted.
-
-**Decided 2026-10-09 (Lacker).** Wide ranges land as one series: the work
-is done behind a switch until every test passes with it on, then wide is
-the rule. Making a range wide only where its bound is not proved to fit 32
-bits would let it land in steps, but then a range's kind would depend on
-what a contract happens to prove. And a 64-bit index is never narrowed:
-the kernel stops rewriting a `size_t` index to a 32-bit one where it is
-proved to fit, and the Rust lowering stops converting a fixed array's
-`usize` index, so a body's access and a contract's place name one address
-in one form. This changes how existing `size_t` addresses are spelled,
-diagnostics included.
-
-Four more, the same day:
-
-- `viewable(...)` gets a 64-bit size. A held `Int32` range also states that
-  its memory is live, as a fact whose size is a 32-bit byte count, and
-  proofs cite it, for instance to carry a read across a loop. A wide range
-  states the same fact with a 64-bit size, so those proofs keep their
-  shape. Until it does, a held wide range is itself the evidence, which is
-  enough for a read, a write and a reference binding.
-- An index in a model function has the type the code has:
-  `prefix(bytes, end: usize)`, not `int32` and not `Integer`. Folds and
-  `forall` range over 64-bit values for that.
-- A cast written inside a place, `bytes[index as int32]`, stays legal and
-  means what it says, the element at the truncated index. With an index
-  never narrowed it names another address than the body's `bytes[index]`
-  unless the index is known to fit, and the two are not equated
-  automatically. The mismatch says to drop the cast.
-- A cast written in a range bound, `bytes[0..length as int32]`, means what
-  it says in the same way (decided 2026-10-09): the range up to the
-  truncated length, a 32-bit range whose bound has to be shown to fit.
-  The kernel used to drop one such cast and read the range as 64-bit.
-- A signed 64-bit bound, `views a[0..n]` with `long n`, kept the stage 1
-  cast until the unsigned series had landed. It is now read as its sign
-  extension in the unsigned kind (status above).
-
-**To keep.** The `Int32` body of `pointer_access_in_range`; ranges indexed
-by the root of their base, with a wide range at the same root and out of
-the int32-coordinate interval index; the order of `S + c`; and the
-eighteen mdtests and examples that state `2147483647u64`, which must pass
-with the bound redundant. `mdtests/a_64_bit_bound_must_be_shown_to_fit_a_32_bit_index.md`
-pins the refusal and changes with steps 1 and 3.
-
-**Not known yet.** Whether the body's wide read and the contract's place
-name the same pointer with no 32-bit bridge between them, which step 1
-rests on and is the first thing to try; and whether the extent guards are
-assumed at entry or proved at calls.
-
-### Stage 3. Order reasoning for 64-bit terms
-
-The order walk, its memo and the bounds index reach the 64-bit comparisons.
-Stage 1 can land before this, because a contract may still cast where a
-proof needs the 32-bit reasoning. Stage 2 should not: with the bound gone, a
-`usize` proof has only the 64-bit route.
-
-The kernel half was built on 2026-10-08, in
-`src/kernel/assumptions/condition_reasoning/order_paths.rs`:
-
-- `wide_order_chain` walks the unsigned or the signed 64-bit order index
-  from one end of a question to the other. It decides transitivity, a
-  constant bound reached through a chain, `a <= b` with `a != b`, and
-  refutes by the reversed chain. A literal is an end of a chain and never
-  a step, so a question costs work in its own chain and not in the facts
-  that share a constant with it; the scaling test holds both.
-- The rule that lifts a truncated comparison to its 64-bit form reads
-  `a as int32 + c` as the truncation of `a + c`. Truncation commutes with
-  addition, so this is exact, and the range check is made on the sum.
-- A signed 64-bit index is admitted where its value is proved to lie in
-  `0..=INT_MAX` (`int64_index_fits_int32`). It was refused outright.
-
-These make a C operation in range. A goal in a proof is a separate matter,
-because a tactic builds a kernel theorem for each step it takes. Order
-chains have theirs: `integer::uint64_less_equal_transitive` and
-`integer::uint64_less_than_less_equal_transitive`, proved library theorems. Linear arithmetic does not:
-`solve() using { ... }` proves a linear `uint64` order goal through those
-bridges (`src/surface/proof/wide_arithmetic.rs`): it writes the steps a
-proof would write by hand and adds no rule to the kernel. A `size_t` loop
-invariant (`i + 2 <= length` from `i + 1 < length`) is one step.
-
-## Risks
-
-- **Kinds mixed on one block.** Two ranges of different kinds compared with
-  one operator. The kernel has had this class of bug: `p[-1..0]` read as
-  index 4294967295 (`memory_range_covers_with_exact_index`). Every ordered
-  comparison of bounds has to name its kind, and a comparison across kinds
-  has to convert both to offsets first.
-- **`uint64` above `i64::MAX`.** `scale_int64` folds a constant only when it
-  fits `i64`; the symbolic case is unguarded. The extent limit has to bound
-  the index before it is scaled.
-- **Low-word facts.** A 32-bit fact can pin only the low word of a 64-bit
-  term (`src/kernel/reasoning/path_facts.rs`). A typed bound must not be
-  resolved from one.
-- **Constant readers.** `constant_range_extent` and
-  `memory_range_in_element_width` read a constant bound `as i32`.
-- **Struct-cell scaling** multiplies a bound in `int32` in the parser.
-
-## Efficiency
-
-A range is on the verifier's hot path, and
-`docs/internals/verification-efficiency.md` asks for deterministic scaling
-regressions over several input sizes before a representation change. Three
-of its rules bear on this one: ranges are indexed by the root of their base,
-`Pointer` orders every `S + c` of one anchor by `c`, and terms used as cache
-keys need stable identities. The kind field has to keep all three. The
-existing regressions to extend are the symbolic-index, stores-beside-ranges
-and range-membership tests in `src/scaling_tests/surface/tests/scaling_tests.rs`,
-`src/scaling_tests/kernel/tests/memory_scaling_tests.rs` and
-`src/scaling_tests/kernel/tests/resource_scaling_tests.rs`.
-
-## Order of work
-
-1. Stage 1 in the kernel, behind the existing surface: a typed bound is
-   accepted, with regressions for each kind and for two kinds on one block.
-2. Stage 1 at the surface: C and Rust sidecars drop the casts. The Rust
-   conversion that reads a `usize` parameter as an index
-   (`design/rust-sidecar-signatures.md`, section 4) becomes the general
-   rule.
-3. Stage 3, measured against the proofs that cast today.
-4. Stage 2, with its scaling regressions.
-
-Stage 1 should wait until the Rust sidecar work has landed, since both
-change how a place's index is parsed and lowered.
+Queries use the selected base and index, without scanning unrelated ranges or
+all inequalities sharing a bound. Existing deterministic regressions live in
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`,
+`src/scaling_tests/kernel/tests/resource_scaling_tests.rs` and
+`src/scaling_tests/surface/tests/scaling_tests.rs`.
 
 ## Rulings
 
-[machine-integers.md](machine-integers.md) (proposed 2026-10-21) proposes
-reversing the first two rulings below; it measures their premises.
+The October 16 rejection of format-carrying machine nodes and a common
+comparison family was superseded by the accepted
+[machine-integer design](machine-integers.md). It must not guide new work.
+Variable width still comes from its context; the debug width audit rejects
+inconsistent uses. The current representation is described in
+[Kernel](../docs/internals/kernel.md).
 
-`MachineTerm` stays the one term arena for every width, with the width
-implied by the operator family, the constant's shape, a load's kind or a
-cast's destination. On 2026-10-16 these were ruled **wontfix**, after the
-width invariant was made checkable instead:
-
-- **One integer term type that carries its width.** Merging the per-width
-  operator, constant and conversion variants into format-carrying nodes
-  rewrites about 8,000 match sites, more than 6,000 of them on the 32-bit
-  forms, across the files the kernel's other work edits daily. The term
-  order is load-bearing (equalities are filed with their smaller operand
-  first), so a merged node either changes canonical forms or encodes
-  signedness in its operator and removes nothing. The uniform view the
-  merge would give already exists: `as_binary`, `as_unary` and `build` in
-  `src/kernel/primitives/term_shape.rs`.
-- **One comparison family for every width.** The same holds for the
-  `Bitvector32*`, `Bitvector64*` and `Integer*` comparisons, whose uniform
-  view is `as_bitvector_comparison`. The 64-bit order reasoning the merge was
-  meant to bring is stage 3, which is built; the same chain, bound and gap
-  questions decide alike at `int32`, `int64` and `uint64`
-  (`order_chains_decide_alike_at_every_width`).
-- **A width on `Variable`.** Variables are rebuilt from their numbers in
-  many places, and a width in their identity would split equal variables
-  silently. Each fact context records the width its facts use each variable
-  at instead, and debug builds refuse a second width.
-- **Load equations at their load's width.** A store fact or a load
-  variable's defining fact is written with the 32-bit equality at every
-  width; `is_load_variable_defining_fact` and `is_store_fact` read that
-  shape. The width checker treats it as the one exception: its two sides
-  must agree with each other.
-
-What is enforced instead, in debug builds, by `term_width.rs`: an operator's
-operands, `If` arms and a comparison's operands have the width they need, a
-`CValue`'s term has its tag's width, a narrow constant lies inside its
-type's range, and a fact context uses each variable at one width.
+The [original migration record](https://github.com/clicklang/click/blob/2175760b9/design/typed-indices.md)
+contains the staged experiments and historical site counts. The
+[retired Rust-signature proposal](https://github.com/clicklang/click/blob/2175760b9/design/rust-sidecar-signatures.md)
+is historical too: Rust signatures, reference fields and full-width slice
+indices are implemented, as the current reference records.
