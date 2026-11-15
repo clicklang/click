@@ -4250,22 +4250,22 @@ mod tests {
     #[test]
     fn pure_instantiate_branch_continuations_keep_checked_sibling_proofs() {
         let source = r#"
-            theorem branched(x: int32) {
-                requires forall (k: int32) { k <= k };
-                requires x == 0 or x != 0;
-                ensures x <= x by {
-                    if x == 0 {
-                        instantiate(forall (k: int32) { k <= k }, x) using {}
+            theorem branched(x: int32, flag: int32) {
+                requires forall (k: int32) { k <= 0 };
+                requires flag == 0 or flag != 0;
+                ensures x <= 0 by {
+                    if flag == 0 {
+                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
                     } else {
-                        instantiate(forall (k: int32) { k <= k }, x) using {}
+                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
                     }
                     known();
                 }
             }
         "#;
         let cases = source
-            .replace("if x == 0 {", "cases {\n x == 0 => {")
-            .replace("} else {", "}\n x != 0 => {")
+            .replace("if flag == 0 {", "cases {\n flag == 0 => {")
+            .replace("} else {", "}\n flag != 0 => {")
             .replace(
                 "using {}\n                    }\n                    known();",
                 "using {}\n                    }\n }\n                    known();",
@@ -4301,7 +4301,7 @@ mod tests {
                     .is_some()
             );
             let wrong_sibling = source.replacen(
-                "instantiate(forall (k: int32) { k <= k }, x) using {}",
+                "instantiate(forall (k: int32) { k <= 0 }, x) using {}",
                 "",
                 1,
             );

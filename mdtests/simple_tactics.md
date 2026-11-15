@@ -1,8 +1,8 @@
 # simple proof tactics
 
 These proofs use only deterministic, bounded simple tactics. `known` reuses
-an available semantic fact without deriving a new one, `normalize` computes a
-proposition without consulting the proof context, and `rewrite` performs one
+an available semantic fact or checks a goal-local computation. `normalize`
+retains its other normalization routes, and `rewrite` performs one
 explicitly named equality substitution.
 
 ```c filename=simple_tactics.c

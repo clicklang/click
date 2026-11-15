@@ -1026,9 +1026,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if available(proposition) || spelled_otherwise() || observed_otherwise() {
             return Ok(self.closed_focused());
         }
+        if super::fact_reasoning::computes_leaf(proposition) {
+            return Ok(self.closed_focused());
+        }
         // A conjunction or disjunction that is not itself a fact still
-        // follows directly from facts: every conjunct, or one disjunct.
-        // That is a lookup per side of the goal and no derivation search.
+        // follows from checked leaves: every conjunct, or one disjunct.
+        // Each side uses indexed facts or goal-local computation, without
+        // derivation search.
         if !matches!(proposition, Proposition::And(..) | Proposition::Or(..)) {
             return Err(PropositionCloseError::Unavailable);
         }
@@ -1038,6 +1042,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 || super::fact_reasoning::order_claim_forms(side)
                     .iter()
                     .any(|form| facts.contains(form))
+                || super::fact_reasoning::computes_leaf(side)
         };
         match first_unavailable_connective_side(proposition, &side_available) {
             None => Ok(self.closed_focused()),
@@ -2869,6 +2874,69 @@ mod tests {
     use super::*;
     use crate::kernel::proof::PropositionObligation;
     use crate::kernel::{MachineTerm, Sort, Term, Variable};
+
+    fn known_computation_proof(
+        goal: Proposition,
+        facts: ProofFacts,
+    ) -> ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> {
+        ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Proposition(PropositionObligation::new(goal, ())),
+                ProofBranchState {
+                    facts,
+                    unfolded_predicates: PersistentOrderedSet::default(),
+                    execution: None,
+                },
+            ),
+        )
+    }
+
+    #[test]
+    fn known_computation_keeps_logical_introductions_explicit() {
+        let truth = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true);
+        let falsehood =
+            Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true);
+        for goal in [
+            Proposition::Implies(Box::new(falsehood.clone()), Box::new(truth.clone())),
+            Proposition::ForAll {
+                name: Default::default(),
+                var: Variable(55),
+                sort: Sort::Integer,
+                body: Box::new(truth.clone()),
+            },
+            Proposition::Exists {
+                name: Default::default(),
+                var: Variable(55),
+                sort: Sort::Integer,
+                body: Box::new(truth.clone()),
+            },
+            falsehood,
+        ] {
+            assert!(
+                known_computation_proof(goal, ProofFacts::default())
+                    .apply_known(PropositionKnownContext::Exact)
+                    .is_err()
+            );
+        }
+        for goal in [
+            truth.clone(),
+            Proposition::And(Box::new(truth.clone()), Box::new(truth.clone())),
+            Proposition::Or(
+                Box::new(Proposition::ConditionIs(
+                    crate::kernel::ConditionTerm::Constant(false),
+                    true,
+                )),
+                Box::new(truth),
+            ),
+        ] {
+            assert!(
+                known_computation_proof(goal, ProofFacts::default())
+                    .apply_known(PropositionKnownContext::Exact)
+                    .is_ok()
+            );
+        }
+    }
 
     fn integer_choice_proof(
         source: Proposition,
