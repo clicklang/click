@@ -731,6 +731,7 @@ mod tests {
         };
     }
     composition_case!(
+        #[ignore = "nightly: minimal scaled-bound expansion and replay took 2.1s in parallel"]
         integer_composition_single_scaled_bound,
         "x: Integer",
         "requires x <= 3;",
