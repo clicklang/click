@@ -633,3 +633,48 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
         }
     }
 }
+
+#[test]
+fn actual_boolean_call_results_retain_roots_and_native_handoff_behavior() {
+    let _session = VerificationSession::enter();
+    let call = |arguments| SpecExpression::PureFunctionApplication {
+        name: "produced_boolean_call".into(),
+        arguments,
+        result_type: ProgramType::Bool,
+        pointer_result: None,
+        result_object_class: None,
+        projection: None,
+    };
+    let expression = call(vec![SpecPureFunctionArgument::Value(call_expression(
+        MachineIntegerType::Int32,
+        vec![],
+    ))]);
+    let paths = produced_paths(&expression, false);
+    let root = paths[0].value.shared().expect("retained Boolean call");
+    assert_eq!(root.ty(), &KernelType::Bool);
+    assert_eq!(paths[0].value.program_type(), ProgramType::Bool);
+    let native = paths[0].value.clone().into_native();
+    assert_eq!(
+        native,
+        produced_paths(&expression, true)[0]
+            .value
+            .clone()
+            .into_native()
+    );
+    for expression in [
+        call(vec![SpecPureFunctionArgument::Value(expression.clone())]),
+        SpecExpression::Let {
+            name: "boolean_result".into(),
+            value: Box::new(expression.clone()),
+            body: Box::new(SpecExpression::ProgramExpression(
+                ProgramExpression::Variable("boolean_result".into()),
+            )),
+        },
+        SpecExpression::Cast(Box::new(expression), ProgramType::Bool),
+    ] {
+        assert_eq!(
+            native_results(produced_paths(&expression, false)),
+            native_results(produced_paths(&expression, true))
+        );
+    }
+}

@@ -364,7 +364,9 @@ impl NodeKey {
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,
-                    LegacyIdentity::Fresh(_) | LegacyIdentity::Machine(_)
+                    LegacyIdentity::Fresh(_)
+                        | LegacyIdentity::Machine(_)
+                        | LegacyIdentity::ExactApplicationArgument { .. }
                 )
             }
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {

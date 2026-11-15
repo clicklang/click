@@ -474,11 +474,13 @@ impl TermClasses {
                         }
                     }
                 }
-                N::IntegerToMachine { .. } | N::Legacy(_) | N::Call { .. } => self
-                    .intern_typed_machine(
-                        term.machine_conversion_leaf().expect("conversion leaf"),
-                        width,
-                    ),
+                N::IntegerToMachine { .. }
+                | N::PointerAddress { .. }
+                | N::Legacy(_)
+                | N::Call { .. } => self.intern_typed_machine(
+                    term.machine_conversion_leaf().expect("conversion leaf"),
+                    width,
+                ),
                 N::Variable(variable) => self.intern_typed_machine(&T::Variable(*variable), width),
                 N::MachineLiteral(value) => {
                     crate::instrumentation::record_deterministic_work(1);
@@ -506,6 +508,25 @@ impl TermClasses {
 mod tests {
     use super::*;
     use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn common_pointer_address_registration_matches_native_classes() {
+        use crate::kernel::{KernelTermExport, Pointer};
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = T::object_pointer_address(Pointer::symbolic(Variable(999460)), None);
+        for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            let root = KernelTermImport::default().machine(format, &native);
+            assert!(matches!(root.node(), N::PointerAddress { .. }));
+            for width in [W::Bits8, W::Bits16, W::Bits32, W::Bits64, W::Bits128] {
+                let mut classes = TermClasses::default();
+                let exports = KernelTermExport::machine_export_count();
+                let shared = classes.intern_shared_machine(&root, width);
+                let written = classes.intern_typed_machine(&native, width);
+                assert_eq!(classes.root(shared), classes.root(written));
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
 
     #[test]
     fn common_call_registration_matches_native_classes() {

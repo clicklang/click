@@ -14,6 +14,10 @@ impl PartialEq for ExecutionValue {
             (Self::Native(a), Self::Native(b)) => a == b,
             (Self::Shared(a), Self::Shared(b)) => {
                 a == b
+                    || (a.ty() == &KernelType::Bool
+                        && b.ty() == &KernelType::Bool
+                        && BooleanOperandView::Shared(a)
+                            .syntax_equal(BooleanOperandView::Shared(b)))
                     || matches!((a.pointer_payload(), b.pointer_payload()),
                         (Some(a), Some(b)) if a.same_source_payload(b))
                     || match (a.pointer_native(), b.pointer_native()) {
@@ -165,6 +169,14 @@ impl ExecutionValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
+                if term.ty() == &KernelType::Bool {
+                    return ProgramValue::Bool(MachineTerm::bool_cast(
+                        MachineIntegerType::UInt8,
+                        BooleanOperandView::Shared(&term)
+                            .identity_leaf()
+                            .into_owned(),
+                    ));
+                }
                 if let Some(value) = term.pointer_native() {
                     return value.clone();
                 }
@@ -204,6 +216,7 @@ impl ExecutionValue {
             Self::Native(value) => value.program_type(),
             Self::Shared(term) => match term.ty() {
                 KernelType::Program(ty) => *ty,
+                KernelType::Bool => ProgramType::Bool,
                 _ => unreachable!(),
             },
         }

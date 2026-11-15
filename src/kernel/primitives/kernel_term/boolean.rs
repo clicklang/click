@@ -1,6 +1,7 @@
 //! Logical Bool operands of machine conversions. Import/export preserves the
 //! written comparison format, even when fact equality identifies formats.
 use super::*;
+mod call;
 mod comparison;
 mod complete_pointer;
 mod overflow;
@@ -178,27 +179,9 @@ impl<'a> BooleanOperandView<'a> {
     /// bridges; no enclosing Boolean connective reaches this boundary.
     pub(crate) fn identity_leaf(self) -> std::borrow::Cow<'a, ConditionTerm> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::Call { name, arguments } = root.node()
+            && let Some(call) = root.boolean_call_native()
         {
-            let mut export = KernelTermExport::default();
-            let arguments = arguments
-                .iter()
-                .map(|argument| {
-                    if let KernelType::Program(ty) = argument.ty()
-                        && let Some(format) = MachineIntegerType::from_program_type(*ty)
-                        && !matches!(argument.node(), KernelTermNode::Legacy(_))
-                    {
-                        PureFunctionArgument::SharedMachine(
-                            MachineOperandView::Shared(argument).retain(format),
-                        )
-                    } else {
-                        export.argument(argument).expect("Boolean call argument")
-                    }
-                })
-                .collect();
-            return std::borrow::Cow::Owned(ConditionTerm::BoolApplication(
-                SharedPureApplication::intern(name.clone(), arguments),
-            ));
+            return std::borrow::Cow::Borrowed(call);
         }
         self.native()
     }
@@ -619,23 +602,7 @@ impl KernelTermImport {
                     self.condition(else_condition),
                 ],
             },
-            Old::BoolApplication(application) => Node::Call {
-                name: application.name().into(),
-                arguments: application
-                    .arguments()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, arg)| match arg {
-                        PureFunctionArgument::Integer(_) => self.argument(arg),
-                        PureFunctionArgument::Value(integer_c_value!(_))
-                        | PureFunctionArgument::SharedMachine(_) => self.argument(arg),
-                        _ => KernelTerm::legacy_at(
-                            arg.clone(),
-                            LegacyIdentity::ApplicationArgument(application.clone(), index),
-                        ),
-                    })
-                    .collect(),
-            },
+            Old::BoolApplication(application) => return self.boolean_call(application),
             _ => {
                 // Keep the entire condition, including pointer metadata. Do not
                 // key this payload by ConditionTerm's semantic equality.
