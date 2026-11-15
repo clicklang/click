@@ -50,7 +50,7 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
           "name": "clang"
         },
         "sources": {
@@ -58,9 +58,9 @@
             "artifact": {
               "bytes": 29681,
               "path": ".click/fixture/shapes.cpp.click-cpp.json",
-              "sha256": "e3a42c4ceb2f5fdcef6ec43d86a9824d46ea4a9f9db9eeb471cde48edbb804a5"
+              "sha256": "79fe5d2d25dcdcf46f1f2380fa66a4b74b38c5a90cf0b2f38a16ba4c4c16555a"
             },
-            "identity": "ade505895fdf4a3e4b1d1274a59358b68760dc6c206588b7d52aa8a8c4be04d2",
+            "identity": "9039319ccc25f74559ae3642f2e11b4f94125b07833555ba231e4ef5d0ba0e38",
             "inputs": {
               "$unit/shapes.cpp": "20d45936f1f12e5064e5aefe0e16f1add254391d1fe87bee3069d157cd2a2f0c"
             }

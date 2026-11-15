@@ -158,8 +158,13 @@ implementation:
   uint32 across proof modes. The [writable-byte span composition](../design/object-model-current-audit.md#writable-byte-span-composition)
   now constructs a span over caller storage, copies it into a modular fill,
   and proves that exact word, with bounds, permission and expired-backing
-  controls. The actual Bitcoin cursor/serialization helpers still need their
-  own unchanged-source witnesses.
+  controls. The unchanged `ser_readdata32<FixtureReader>` graph now imports,
+  including its nested span temporaries and record template argument. Its
+  [cursor witness](../design/object-model-current-audit.md#bitcoin-read32-import-and-remaining-cursor-refusal)
+  still refuses a source read after the first output store; it is not yet
+  a serialization proof. Repair that copied-descriptor/read-preservation
+  boundary and establish ordinary, expanded cold and retained checking before
+  moving on to the real cursor's exception behavior.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

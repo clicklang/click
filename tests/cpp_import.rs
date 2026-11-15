@@ -1733,7 +1733,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     assert_eq!(fs::read(project.lock()).unwrap(), first_lock);
 
     let prepared = load_import(&project.config()).expect("load the locked artifact");
-    assert_eq!(prepared.export().schema, 60);
+    assert_eq!(prepared.export().schema, 61);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -2975,7 +2975,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().functions[0].declared_noexcept);
     assert!(matches!(
@@ -3094,7 +3094,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } =
         &import.export().functions[0].parameters[0].value_type
@@ -3206,7 +3206,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -3267,7 +3267,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -3313,7 +3313,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3973,7 +3973,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     assert_eq!(import.export().functions[0].name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -4053,7 +4053,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     assert_eq!(import.export().functions[0].name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -4173,7 +4173,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let caller = &import.export().functions[0];
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -4312,7 +4312,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -4415,7 +4415,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -4516,7 +4516,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -4663,7 +4663,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -4814,7 +4814,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let destructor = import
         .export()
         .reachable_functions
@@ -4999,7 +4999,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -5103,7 +5103,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 60);
+    assert_eq!(import.export().schema, 61);
     let destructor = import
         .export()
         .reachable_functions
@@ -11577,7 +11577,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 60);
+        assert_eq!(import.export().schema, 61);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }}"
         );
@@ -11765,7 +11765,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 60);
+            assert_eq!(import.export().schema, 61);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == true implies ({relation}); ensures result == false implies not ({relation}); }}"
@@ -19754,4 +19754,163 @@ fn cpp_native_interface_record_copy_checks_every_source_field_offline() {
             "{error}"
         );
     }
+}
+
+const RECORD_TEMPORARY_ARGUMENT_SOURCE: &str = r#"
+struct Value {
+    int value;
+    explicit Value(int input) noexcept : value(input) {}
+};
+Value convert(Value source) noexcept { return Value{source.value}; }
+struct Sink {
+    int total;
+    void put(Value input) noexcept { total = input.value; }
+};
+template<class Stream> void feed(Stream& sink, int input) noexcept {
+    sink.put(convert(Value{input}));
+}
+int probe(Sink& sink, int input) noexcept {
+    feed(sink, input);
+    return sink.total;
+}
+"#;
+
+#[test]
+#[ignore = "nightly: nonthrowing record prvalue arguments and template stream"]
+fn record_prvalue_arguments_construct_forward_and_end_at_the_full_expression() {
+    let project =
+        Project::with_fixture("record-args.cpp", "probe", RECORD_TEMPORARY_ARGUMENT_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lowered = lower_import(&import).unwrap();
+    let feed_path = &import
+        .export()
+        .reachable_functions
+        .iter()
+        .find(|function| function.name.starts_with("feed__record_"))
+        .unwrap()
+        .path;
+    let feed_name = click::languages::cpp::names::path_name(feed_path);
+    let feed = lowered
+        .reachable_kernel_functions()
+        .iter()
+        .find(|function| function.name() == feed_name)
+        .unwrap();
+    fn ends(statement: &click::kernel::ProgramStatement, result: &mut Vec<Vec<String>>) {
+        match statement {
+            click::kernel::ProgramStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    ends(statement, result);
+                }
+            }
+            click::kernel::ProgramStatement::EndAutomaticLifetimes { names, .. } => {
+                result.push(names.clone())
+            }
+            _ => {}
+        }
+    }
+    let mut endings = Vec::new();
+    ends(feed.body(), &mut endings);
+    assert!(
+        endings.iter().any(|names| names.len() == 2),
+        "both argument temporaries end together: {endings:?}"
+    );
+    let source = r#"verifying "record-args.cpp";
+Value::Value(int32 input) {
+    owns this->value;
+    ensures this->value == input;
+}
+struct Value convert(struct Value source) {
+    ensures result.value == old(source.value);
+}
+void Sink::put(struct Value input) {
+    owns this->total;
+    ensures this->total == old(input.value);
+}
+void feed<Sink>(struct Sink& sink, int32 input) {
+    owns sink.total;
+    ensures sink.total == input;
+}
+int32 probe(struct Sink& sink, int32 input) {
+    owns sink.total;
+    ensures sink.total == input;
+    ensures result == input;
+}
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let false_value = source.replace("ensures result == input;", "ensures result == 7;");
+    let sidecar = project.directory.join("false.click");
+    fs::write(&sidecar, &false_value).unwrap();
+    let parsed = read_click_project(&sidecar, &false_value).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+#[ignore = "nightly: record temporary argument source admission controls"]
+fn record_temporary_arguments_refuse_storage_observation_unwinding_and_copy_returns() {
+    for (name, source, diagnostic) in [
+        (
+            "self-address",
+            RECORD_TEMPORARY_ARGUMENT_SOURCE
+                .replace("int value;", "int* self; int value;")
+                .replace(": value(input)", ": self(&value), value(input)")
+                .replace(
+                    "sink.put(convert(Value{input}));",
+                    "sink.put(Value{input});",
+                ),
+            "temporary constructor must preserve argument values",
+        ),
+        (
+            "throwing-consumer",
+            RECORD_TEMPORARY_ARGUMENT_SOURCE
+                .replace("void put(Value input) noexcept", "void put(Value input)"),
+            "record temporary calls require a nonthrowing callee",
+        ),
+        (
+            "copy-return",
+            RECORD_TEMPORARY_ARGUMENT_SOURCE
+                .replace("return Value{source.value};", "return source;"),
+            "record return requires a resolved trivial lvalue copy",
+        ),
+    ] {
+        let project = Project::with_fixture(&format!("{name}.cpp"), "probe", &source);
+        if name == "throwing-consumer" {
+            project.write_exception_enabled_compilation_database();
+            project.write_config_with_profile("probe", &format!("{name}.cpp"), true);
+        }
+        let result = refresh_import(&project.config())
+            .and_then(|_| load_import(&project.config()).map(|_| ()));
+        let error = result.expect_err(name);
+        assert!(error.contains(diagnostic), "{name}: {error}");
+    }
+}
+
+#[test]
+#[ignore = "nightly: nominal record function-template arguments"]
+fn record_function_template_arguments_preserve_nominal_identity_offline() {
+    let source = "namespace left { struct Stream { int value; }; } struct left_Stream { int value; }; template<class T> int read(T& stream) noexcept { return stream.value; } int probe(left::Stream& a, left_Stream& b) noexcept { int first = read(a); int second = read(b); return first + second; }";
+    let project = Project::with_fixture("record-template.cpp", "probe", source);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let instances = import
+        .export()
+        .reachable_functions
+        .iter()
+        .filter(|function| function.name.starts_with("read__record_"))
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 2);
+    assert_ne!(instances[0].name, instances[1].name);
+    assert_ne!(instances[0].declaration_id, instances[1].declaration_id);
+    let proof = r#"verifying "record-template.cpp";
+int32 read<left::Stream>(struct Stream& stream) { views stream.value; ensures result == stream.value; }
+int32 read<left_Stream>(struct left_Stream& stream) { views stream.value; ensures result == stream.value; }
+int32 probe(struct Stream& a, struct left_Stream& b) {
+    requires a.value == 3; requires b.value == 5;
+    views a.value; views b.value;
+    ensures result == 8;
+}
+"#;
+    check_return_call_sidecar(&project, &import, proof);
 }
