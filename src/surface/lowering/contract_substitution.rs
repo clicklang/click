@@ -2,45 +2,42 @@ use super::*;
 use crate::kernel::{bits32_constant, constant_u32};
 use std::borrow::Cow;
 
-pub(in crate::surface) fn unfold_structural_invariant_proposition(
+pub(in crate::surface) fn unfold_surface_predicates(
     predicate_environment: &PredicateEnvironment,
     proposition: &ClickProposition,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
 ) -> Result<ClickProposition, String> {
-    if unfolded_predicates.is_empty() {
-        return Ok(proposition.clone());
-    }
-
-    for name in unfolded_predicates {
+    for name in selected_definitions {
         if predicate_environment.get(name).is_none() {
             return Err(format!("unknown predicate `{name}`"));
         }
     }
 
-    let mut active = BTreeSet::new();
-    unfold_click_predicates_in_proposition_with_active(
+    unfold_selected_predicates_in_proposition(
         predicate_environment,
-        unfolded_predicates,
+        &|name| selected_definitions.contains(name),
         proposition,
-        &mut active,
+        &mut BTreeSet::new(),
+        false,
     )
 }
 
 pub(in crate::surface) fn unfold_click_predicates_in_proposition_with_active(
     predicate_environment: &PredicateEnvironment,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
     proposition: &ClickProposition,
     active: &mut BTreeSet<String>,
 ) -> Result<ClickProposition, String> {
     unfold_selected_predicates_in_proposition(
         predicate_environment,
         &|name| {
-            unfolded_predicates
+            selected_definitions
                 .iter()
                 .any(|predicate| predicate == name)
         },
         proposition,
         active,
+        true,
     )
 }
 
@@ -50,6 +47,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
     selected: &impl Fn(&String) -> bool,
     proposition: &ClickProposition,
     active: &mut BTreeSet<String>,
+    recursive: bool,
 ) -> Result<ClickProposition, String> {
     match proposition {
         ClickProposition::ChangesOnly { .. } => Ok(proposition.clone()),
@@ -62,12 +60,17 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 .get(name)
                 .ok_or_else(|| format!("unknown predicate `{name}`"))?;
             let unfolded = instantiate_click_predicate_definition(definition, arguments)?;
-            let unfolded = unfold_selected_predicates_in_proposition(
-                predicate_environment,
-                selected,
-                &unfolded,
-                active,
-            )?;
+            let unfolded = if recursive {
+                unfold_selected_predicates_in_proposition(
+                    predicate_environment,
+                    selected,
+                    &unfolded,
+                    active,
+                    true,
+                )?
+            } else {
+                unfolded
+            };
             active.remove(name);
             Ok(unfolded)
         }
@@ -114,6 +117,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 proposition,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::And(left, right) => Ok(ClickProposition::And(
@@ -122,12 +126,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::Or(left, right) => Ok(ClickProposition::Or(
@@ -136,12 +142,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::Not(body) => Ok(ClickProposition::Not(Box::new(
@@ -150,6 +158,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?,
         ))),
         ClickProposition::Implies(left, right) => Ok(ClickProposition::Implies(
@@ -158,12 +167,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::ForAll {
@@ -180,6 +191,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::Exists {
@@ -196,6 +208,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::RangeAll {
@@ -214,6 +227,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::RangeAny {
@@ -232,6 +246,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::PredicateCall { name, arguments } => {

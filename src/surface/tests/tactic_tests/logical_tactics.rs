@@ -1131,7 +1131,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
                 requires sorted_pair(p);
                 ensures consequence: p[0] <= p[1] by {
                     step_until(function.exit);
-                    unfold(sorted_pair);
+                    unfold(sorted_pair(p));
                     solve();
                 }
             }
@@ -1146,7 +1146,12 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
         Some(
             [
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
-                ProofTactic::UnfoldPredicate("sorted_pair".to_string()),
+                ProofTactic::UnfoldFunction(ClickFunctionApplication {
+                    name: "sorted_pair".into(),
+                    arguments: vec![ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable("p".into())
+                    )]
+                }),
                 ProofTactic::Solve,
             ]
             .as_slice()
@@ -1180,7 +1185,7 @@ fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
             int32 compare_swap2(int32* p) {
                 consumes p[0..2];
                 ensures sorted: sorted_pair(p) by {
-                    unfold(sorted_pair);
+                    unfold(sorted_pair(p));
                 }
             }
         "#;
@@ -1219,7 +1224,7 @@ fn unfolds_general_sorted_predicate() {
                 requires sorted(p, n);
                 ensures still_sorted: sorted(p, n) by {
                     step_until(function.exit);
-                    unfold(sorted);
+                    unfold(sorted(p, n));
                     solve();
                 }
             }
@@ -1243,11 +1248,11 @@ fn unfolds_general_sorted_predicate() {
         ContractProofClaim::Ensure(0),
     )
     .expect("the retained predicate proof should expand");
-    assert!(expanded.contains("unfold(sorted);"), "{expanded}");
+    assert!(expanded.contains("unfold(sorted("), "{expanded}");
     verify_c_sources(&expanded, &[("keep_sorted.c", c_source)])
         .expect("the expanded predicate proof should independently reverify");
 
-    let corrupted = expanded.replacen("unfold(sorted);", "unfold(missing);", 1);
+    let corrupted = expanded.replacen("unfold(sorted(", "unfold(missing(", 1);
     assert_ne!(
         corrupted, expanded,
         "the expansion should expose its checked unfold"
@@ -1925,7 +1930,7 @@ fn pure_unfold_then_solve_retains_the_checked_proof_path() {
 
         theorem unfold_reflexive(x: int32) {
             ensures reflexive(x) by {
-                unfold(reflexive);
+                unfold(reflexive(x));
                 solve();
             }
         }
@@ -2923,7 +2928,7 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
 
             ensures ordered_pair(pair);
         } by {
-            unfold(ordered_pair);
+            unfold(ordered_pair(pair));
             step_until(function.exit);
             solve();
         }
@@ -3620,4 +3625,119 @@ fn solve_trivial_disjuncts_reject_false_goals() {
         let source = format!("theorem invalid(n: uint64) {{ ensures {goal} by solve(); }}");
         verify_c_sources(&source, &[]).expect_err("neither disjunct holds for every n");
     }
+}
+
+#[test]
+fn local_predicate_unfold_opens_only_the_selected_application() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem selected() {
+            requires positive(1);
+            ensures 1 > 0 by { unfold(positive(1)); known(); }
+        }
+        theorem goal(x: int32) {
+            requires x > 0;
+            ensures positive(x) by { unfold(positive(x)); known(); }
+        }
+    "#;
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
+    let not_a_mode = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem later() {
+            ensures true by {
+                unfold(positive(1));
+                have positive(2) by { known(); }
+                known();
+            }
+        }
+    "#;
+    assert!(without_implicit_solve(|| verify_click_theorems(not_a_mode)).is_err());
+}
+
+#[test]
+fn local_predicate_unfold_is_one_layer_and_keeps_other_applications_opaque() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        predicate wrapped(x: int32) { positive(x) }
+        theorem selected(x: int32) {
+            requires wrapped(x);
+            ensures x > 0 by {
+                unfold((wrapped(x)));
+                unfold(positive(x));
+                known();
+            }
+        }
+    "#;
+    verify_c_sources(source, &[]).expect("two local layers should expose the consequence");
+    let one_layer = source.replace("unfold(positive(x));", "");
+    assert!(verify_c_sources(&one_layer, &[]).is_err());
+    let other_application = source.replace("unfold((wrapped(x)))", "unfold(wrapped(1))");
+    assert!(verify_c_sources(&other_application, &[]).is_err());
+    assert!(parse(&source.replace("unfold((wrapped(x)))", "unfold(wrapped)")).is_err());
+}
+
+#[test]
+fn local_predicate_unfold_accepts_an_explicit_quantified_target() {
+    let source = r#"
+        predicate positive(x: int32) { x > 0 }
+        theorem selected() {
+            requires forall (x: int32) { x > 0 };
+            ensures forall (x: int32) { positive(x) } by {
+                unfold(forall (x: int32) { positive(x) });
+                known();
+            }
+        }
+    "#;
+    verify_c_sources(source, &[]).expect("the selected quantified goal should open locally");
+}
+
+#[test]
+fn local_predicate_unfold_selects_an_explicit_snapshot_and_expands() {
+    let source = r#"
+        verifying "identity.c";
+        predicate positive(x: int32) { x > 0 }
+        int32 identity(int32 x) {
+            requires positive(x);
+            ensures x > 0 by {
+                step_until(function.exit);
+                unfold(at(function.entry, positive(x)));
+                known();
+            }
+        }
+    "#;
+    let c = "int32 identity(int32 x) { return x; }";
+    verify_c_sources(source, &[("identity.c", c)]).expect("the selected entry fact should open");
+    let expanded = expand_c_claim_source(
+        source,
+        &[("identity.c", c)],
+        "identity",
+        ContractProofClaim::Ensure(0),
+    )
+    .expect("the local unfold should expand");
+    verify_c_sources(&expanded, &[("identity.c", c)])
+        .expect("explicit local expansion should reverify");
+}
+
+#[test]
+fn local_predicate_unfold_keeps_heap_snapshots_distinct() {
+    let source = r#"
+        verifying "overwrite.c";
+        predicate zero(p: int32[]) { p[0] == 0 }
+        void overwrite(int32* p) {
+            owns p[0..1];
+            requires zero(p);
+            ensures zero(p) by {
+                step_until(function.exit);
+                unfold(at(function.entry, zero(p)));
+                unfold(zero(p));
+                known();
+            }
+        }
+    "#;
+    let error = verify_c_sources(
+        source,
+        &[("overwrite.c", "void overwrite(int32* p) { p[0] = 1; }")],
+    )
+    .expect_err("an entry definition must not prove a predicate over changed memory");
+    assert!(error.message().contains("known"), "{error}");
 }

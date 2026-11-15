@@ -21,8 +21,8 @@ theorem first_cell_owner_is_wide_owner(
 ) {
     requires FirstCellOwner(callback);
     ensures WideOwner(callback) by {
-        unfold(FirstCellOwner);
-        unfold(WideOwner);
+        unfold(FirstCellOwner(callback));
+        unfold(WideOwner(callback));
         solve();
     }
 }

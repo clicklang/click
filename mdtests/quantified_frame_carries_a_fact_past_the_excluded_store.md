@@ -30,7 +30,7 @@ void mark(int32 *v, int32 n, int32 i) {
         have separate(statement(0).footprint, memory(v[k])) by {
             normalize() using { separate(memory(v[i]), memory(v[k])); };
         }
-        preserve(separate(statement(0).footprint, memory(v[k])));
+        preserve(memory(v[k]), statement(0));
     }
 }
 ```

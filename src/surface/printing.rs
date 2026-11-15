@@ -656,9 +656,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("{};", application.tactic_spelling()),
         ),
-        ProofTactic::UnfoldPredicate(name) => {
-            line(output, &prefix, &format!("unfold({name});"));
-        }
+        ProofTactic::UnfoldProposition(target) => line(
+            output,
+            &prefix,
+            &format!("unfold({});", source_click_proposition(target)),
+        ),
         ProofTactic::UnfoldFunction(application) => line(
             output,
             &prefix,

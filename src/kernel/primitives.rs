@@ -6558,10 +6558,35 @@ impl Ord for ContractRequirementSources {
     }
 }
 
+// Declaration provenance is retained through instantiation but does not alter
+// a definition's semantic identity, just like ContractRequirementSources.
+#[derive(Clone, Debug, Default)]
+pub(super) struct PredicateRequirementSource(Option<usize>);
+impl PartialEq for PredicateRequirementSource {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for PredicateRequirementSource {}
+impl std::hash::Hash for PredicateRequirementSource {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl PartialOrd for PredicateRequirementSource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for PredicateRequirementSource {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PredicateUnfolding {
     pub(super) predicate: SpecProposition,
     pub(super) body: SpecProposition,
+    pub(super) requirement_source: PredicateRequirementSource,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

@@ -3462,7 +3462,7 @@ mathematical product.
 | --- | --- | --- | --- | --- |
 | `transport(P, Q)` | smart | Specialized | Carry a fact from an earlier memory state. | [Reference](#fact-transport) |
 | `transport(P, Q) using { R; ... }` | simple | Expansion output | Carry a fact using explicit frame evidence. | [Reference](#transport-with-selected-premises) |
-| `unfold(name)` | simple | Core | Make a predicate transparent in the current proof branch. | [Reference](#unfolding-predicates) |
+| `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a resource from its body and children. | [Reference](#folding-resources) |
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
@@ -3476,7 +3476,7 @@ mathematical product.
 | `observe(resource)` | simple | Specialized | Read a resource's persistent observations. | [Reference](#observing-resources) |
 
 Predicate calls are opaque to framing until their definitions are unfolded.
-To carry such a fact across C execution, run `unfold(name)` before the relevant
+To carry such a fact across C execution, unfold the selected application before the relevant
 steps and transport the unfolded definition.
 
 ### Fact transport
@@ -3708,40 +3708,23 @@ the named evidence.
 
 ### Unfolding predicates
 
-**Form:** `unfold(name)`
+**Form:** `unfold(predicate(args))`
 
-**Core.** Make the predicate `name` transparent for the rest of this proof
-branch. Every available fact that mentions it gains its one-layer body, the
-current goal is rewritten the same way, and a later goal that mentions it is
-read through its body too. The argument is the predicate's name, not one call:
-every instance opens together, found through the per-predicate fact index.
+**Core.** Open one layer of the selected predicate application at the current
+state. Click adds its definition equivalence as an ordinary fact. If the
+application is already available, its body becomes available too. Matching
+occurrences in the current goal are replaced by that body.
 
-**Accepts** the name of any declared `predicate`, in a pure theorem or a C
-proof:
+Other applications stay opaque. Later goals receive no special interpretation;
+open their applications explicitly as needed. A predicate called by the body
+also stays opaque until another unfold step opens it.
 
-- Each available fact mentioning `name`, anywhere inside it (a conjunct of a
-  requirement, under a quantifier or implication), gains a copy with every
-  application replaced by the body at its arguments. The original fact stays.
-- The current goal is rewritten the same way, including an application inside
-  an `and`.
-- A later goal of the same branch, such as a `have` goal, reads through the
-  body too.
-- A predicate mentioned nowhere is accepted and only marks the name
-  transparent.
+Use `unfold(at(mark, predicate(args)))` to select an application at a saved
+snapshot. An explicitly written quantified proposition or named fact can also
+select a quantified application without introducing free binder names.
 
-**Outside it**, with what to write instead:
-
-- A predicate the body calls: it stays opaque; `unfold` it as well.
-- A pure function or a resource name: use `unfold(f(args))` or
-  `unfold(resource(args))`.
-- Transparency outside the `have` that unfolded it: `unfold` again there.
-
-**Failure, checking, and tools:**
-
-An unknown name, including a resource's, fails with ``unknown predicate
-`name` ``. An `unfold` inside a `have` ends with it: the predicate is opaque
-again afterwards. Click opens exactly the named predicate layer; expansion is
-unchanged, and profiling charges the produced proposition.
+Bare predicate names are rejected. Owned resource bindings keep their existing
+`unfold(binding)` form; pure functions use `unfold(function(args))`.
 
 **Checked examples:** [`sorted_predicate.md`](https://github.com/clicklang/click/blob/master/mdtests/sorted_predicate.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
 
@@ -3768,7 +3751,8 @@ before exit, or at a function outcome after the C has returned) or in a `tactic`
 
 - The arguments name the held instance up to equality by current facts:
   under `requires p == q;`, `unfold(cell(q))` opens a held `cell(p)`.
-  `unfold(name)` on an instance binding opens that instance, its field names
+  `unfold(name
+([`unfold_names_a_witness_for_a_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_a_witness_for_a_fold_body_fact.md)))` on an instance binding opens that instance, its field names
   denoting the instance's fields.
 - The body's `if` guard, or its `match` arm, must be decided by current facts;
   a decided false guard opens an empty body.
@@ -3788,7 +3772,7 @@ before exit, or at a function outcome after the C has returned) or in a `tactic`
 - Inside `have ... by { ... }` or another fixed-state proposition proof: run
   `unfold` at the frontier before the `have`.
 - Reading one layer without consuming it: `observe(resource)`.
-- A predicate: `unfold(name)` with the predicate's name.
+- A predicate: `unfold(predicate(args))` with explicit arguments.
 
 **Failure, checking, and tools:**
 

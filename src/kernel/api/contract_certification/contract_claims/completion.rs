@@ -220,7 +220,6 @@ impl WholeContractProof {
                 goal,
                 ProofBranchState {
                     facts: ProofFacts::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             )
@@ -572,7 +571,6 @@ mod tests {
                 crate::kernel::proof::ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: ProofFacts::from_ordered(&[]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),

@@ -30,7 +30,7 @@ theorem nonnegative_is_acceptable(x: int32) {
     requires x >= 0;
 
     ensures acceptable(x) by {
-        unfold(acceptable);
+        unfold(acceptable(x));
         solve();
     }
 }
@@ -54,7 +54,7 @@ int32 loop_explicit_initialize_and_preserve(int32 x) diverges {
         }
     }
     step();
-    unfold(acceptable);
+    unfold(acceptable(x));
     solve();
 }
 ```

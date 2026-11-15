@@ -153,7 +153,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
                 }
                 have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
-                    preserve(separate(loop(0).statement(0).footprint, memory(occupied[k])));
+                    preserve(memory(occupied[k]), loop(0).statement(0));
                 }
                 have contains(memory(data[0..capacity]), memory(data[i])) by {
                     apply(click::separation::contains_element(data, 0, capacity, i)) using { 0 <= i; i < capacity; };
@@ -177,7 +177,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     normalize() using { separate(memory(data[i]), memory(occupied[k])); };
                 }
                 have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
-                    preserve(separate(loop(0).statement(1).footprint, memory(occupied[k])));
+                    preserve(memory(occupied[k]), loop(0).statement(1));
                 }
                 known();
             }

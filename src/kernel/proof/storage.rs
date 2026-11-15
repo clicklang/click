@@ -700,10 +700,6 @@ impl<T: Clone + Ord> PersistentOrderedSet<T> {
         self.ordered.iter()
     }
 
-    pub(crate) fn to_vec(&self) -> Vec<T> {
-        self.iter().cloned().collect()
-    }
-
     #[cfg(test)]
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         self.ordered.shares_tail_with(&other.ordered) && self.exact.shares_root_with(&other.exact)

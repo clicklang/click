@@ -75,7 +75,6 @@ impl<'a> Proof<'a> {
             theorems,
             &[],
             &[],
-            &[],
             None,
         )
     }
@@ -330,7 +329,6 @@ impl<'a> Proof<'a> {
             state: KernelProofObject::root(ProofLocals::default(), {
                 let context = BranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 };
                 surface_goal
@@ -368,7 +366,6 @@ impl<'a> Proof<'a> {
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
-        unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
     ) -> Self {
         Self::for_fixed_state(
@@ -382,7 +379,6 @@ impl<'a> Proof<'a> {
             surface_propositions,
             spec_definitions,
             theorem_environment,
-            unfolded_predicates,
             effect_facts,
             &[],
             None,
@@ -404,7 +400,6 @@ impl<'a> Proof<'a> {
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
-        unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
     ) -> Self {
         Self::for_fixed_state(
@@ -418,7 +413,6 @@ impl<'a> Proof<'a> {
             surface_propositions,
             spec_definitions,
             theorem_environment,
-            unfolded_predicates,
             effect_facts,
             &[],
             None,
@@ -438,7 +432,6 @@ impl<'a> Proof<'a> {
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
-        unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
     ) -> Self {
@@ -453,7 +446,6 @@ impl<'a> Proof<'a> {
             surface_propositions,
             spec_definitions,
             theorem_environment,
-            unfolded_predicates,
             effect_facts,
             original_requirements,
         )
@@ -471,7 +463,6 @@ impl<'a> Proof<'a> {
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
-        unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
     ) -> Self {
@@ -486,7 +477,6 @@ impl<'a> Proof<'a> {
             surface_propositions,
             spec_definitions,
             theorem_environment,
-            unfolded_predicates,
             effect_facts,
             original_requirements,
             None,
@@ -504,7 +494,6 @@ impl<'a> Proof<'a> {
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
-        unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
     ) -> Self {
         Self::for_fixed_state(
@@ -518,7 +507,6 @@ impl<'a> Proof<'a> {
             surface_propositions,
             spec_definitions,
             theorem_environment,
-            unfolded_predicates,
             effect_facts,
             &[],
             None,
@@ -538,7 +526,6 @@ impl<'a> Proof<'a> {
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
-        unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
     ) -> Self {
         Self::for_fixed_state(
@@ -552,7 +539,6 @@ impl<'a> Proof<'a> {
             surface_propositions,
             spec_definitions,
             theorem_environment,
-            unfolded_predicates,
             effect_facts,
             &[],
             Some(available.proof_facts()),
@@ -570,7 +556,6 @@ impl<'a> Proof<'a> {
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,
-        unfolded_predicates: &'a [String],
         effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
         indexed: Option<ProofFacts>,
@@ -582,7 +567,6 @@ impl<'a> Proof<'a> {
         );
         let goal = goal(BranchState {
             facts,
-            unfolded_predicates: PersistentOrderedSet::default(),
             execution: None,
         });
         let goal = match &goal.obligation {
@@ -591,7 +575,6 @@ impl<'a> Proof<'a> {
                     .state
                     .facts
                     .with_selected_load_equality_bridge(proposition.kernel()),
-                unfolded_predicates: goal.state.unfolded_predicates.clone(),
                 execution: goal.state.execution.clone(),
             }),
             Obligation::Frontier(_) | Obligation::FunctionOutcome(_) => goal.clone(),
@@ -607,7 +590,6 @@ impl<'a> Proof<'a> {
                 surface_propositions,
                 spec_definitions,
                 theorem_environment,
-                unfolded_predicates,
                 effect_facts: effect_facts.persistent_facts(),
                 lowering_context,
                 original_requirements,

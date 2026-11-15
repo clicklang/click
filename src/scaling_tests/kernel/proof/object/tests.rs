@@ -22,7 +22,6 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
                 ProofObligation::Frontier(FrontierObligation),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(core, ()))),
                 },
             ),
@@ -176,7 +175,6 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
                 ProofObligation::Frontier(FrontierObligation),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(core, ()))),
                 },
             ),
@@ -396,7 +394,6 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
                 )),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -435,7 +432,6 @@ fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
                 )),
                 ProofBranchState {
                     facts: ProofFacts::from_ordered(&[]),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -488,7 +484,6 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
                 ProofObligation::Proposition(PropositionObligation::new(goal.clone(), ())),
                 ProofBranchState {
                     facts: ProofFacts::from_ordered(&ambient),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),

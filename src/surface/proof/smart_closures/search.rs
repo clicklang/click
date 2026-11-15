@@ -1,6 +1,24 @@
 //! Discovery over Surface proof presentations; semantic state remains in ProofObject.
 use super::*;
 
+thread_local! {
+    static PREDICATE_SEARCH_PATH: std::cell::RefCell<BTreeSet<String>> = const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+// Search cycle prevention belongs to the active search, never proof state.
+struct PredicateSearchGuard(String);
+impl PredicateSearchGuard {
+    fn enter(name: &str) -> Option<Self> {
+        PREDICATE_SEARCH_PATH
+            .with(|path| path.borrow_mut().insert(name.to_string()))
+            .then(|| Self(name.to_string()))
+    }
+}
+impl Drop for PredicateSearchGuard {
+    fn drop(&mut self) {
+        PREDICATE_SEARCH_PATH.with(|path| path.borrow_mut().remove(&self.0));
+    }
+}
+
 /// Premise citations must already be evaluable; a proposed `have` may
 /// carry evaluation requirements that its ordinary driver still must prove.
 #[derive(Clone, Copy)]
@@ -1863,21 +1881,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let ClickProposition::PredicateCall { name, .. } = &selection.source_proposition else {
+            let ClickProposition::PredicateCall { .. } = &selection.source_proposition else {
                 continue;
             };
-            let proof = if search_input.active_unfolded_predicates().contains(name) {
-                search_input.clone()
-            } else {
-                let Some(unfolded) = attempt::candidate_outcome(
-                    search_input
-                        .driver()
-                        .apply_step(ProofStep::UnfoldPredicate(name.clone())),
-                )?
-                else {
-                    continue;
-                };
-                unfolded
+            let Some(proof) = attempt::candidate_outcome(search_input.driver().apply_step(
+                ProofStep::UnfoldProposition(ClickProposition::At {
+                    selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                        region: CodeRegionRef::Function,
+                        kind: ProgramPointKind::Entry,
+                    }),
+                    proposition: Box::new(selection.source_proposition.clone()),
+                }),
+            ))?
+            else {
+                continue;
             };
             if let Some(closed) =
                 crate::kernel::search::ProofSearch::try_selected_entry_existential_closure(
@@ -1899,10 +1916,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };
-        let unfolded = unfold_structural_invariant_proposition(
+        let unfolded = unfold_surface_predicates(
             context.spec_definitions.predicates,
             &selection.source_proposition,
-            &search_input.active_unfolded_predicates(),
+            &[match &selection.source_proposition {
+                ClickProposition::PredicateCall { name, .. } => name,
+                _ => return Ok(None),
+            }
+            .to_string()],
         )
         .map_err(|message| search_input.step_error(message))?;
         let ClickProposition::Exists {
@@ -5793,20 +5814,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     introduced_surfaces,
                 )
             }
-            (ClickProposition::ForAll { .. }, Proposition::ForAll { .. }) => {
-                crate::kernel::search::ProofSearch::try_structural_forall_solve_closure(
-                    search_input,
-                    surface_goal,
-                    introduced_surfaces,
-                )
-            }
+            (
+                ClickProposition::ForAll { .. } | ClickProposition::RangeAll { .. },
+                Proposition::ForAll { .. },
+            ) => crate::kernel::search::ProofSearch::try_structural_forall_solve_closure(
+                search_input,
+                surface_goal,
+                introduced_surfaces,
+            ),
             // A predicate-call goal unfolds to its body, which the
             // structural arms and logical closers then work over. Repeat
             // unfolds are refused so recursive predicate bodies cannot loop
             // the search.
-            (ClickProposition::PredicateCall { name, .. }, _)
-                if !search_input.focused_branch_unfolds().contains(name) =>
-            {
+            (ClickProposition::PredicateCall { name, .. }, _) => {
                 crate::kernel::search::ProofSearch::try_structural_predicate_solve_closure(
                     search_input,
                     name,
@@ -6081,17 +6101,54 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_structural_predicate_solve_closure");
-        match attempt::candidate_outcome(
+        let Some(_guard) = PredicateSearchGuard::enter(name) else {
+            return Ok(None);
+        };
+        let target = search_input
+            .surface_goal()
+            .expect("predicate goal has a Surface form")
+            .clone();
+        let Some(unfolded) = attempt::candidate_outcome(
             search_input
                 .driver()
-                .apply_step(ProofStep::UnfoldPredicate(name.to_string())),
-        )? {
-            Some(unfolded) => crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
-                &(unfolded),
-                introduced_surfaces,
-            ),
-            None => Ok(None),
+                .apply_step(ProofStep::UnfoldProposition(target)),
+        )?
+        else {
+            return Ok(None);
+        };
+        if let Some(closed) = Self::try_solve_closure_with_surfaces(&unfolded, introduced_surfaces)?
+        {
+            return Ok(Some(closed));
         }
+        // A premise at another snapshot is a separate application. Open it
+        // explicitly so both its body and its exact source spelling are
+        // available to ordinary instantiation and preservation search.
+        for source in search_input.facts().mentioning_predicate(&name.to_string()) {
+            check_verification_deadline()?;
+            let Proposition::Predicate { .. } = source else {
+                continue;
+            };
+            let surface = search_input
+                .structural_proposition_candidate(source)
+                .ok_or_else(|| {
+                    search_input
+                        .step_error("selected predicate premise has no structural Surface spelling")
+                })?;
+            let Some(opened) = attempt::candidate_outcome(
+                unfolded
+                    .driver()
+                    .apply_step(ProofStep::UnfoldProposition(surface)),
+            )?
+            else {
+                continue;
+            };
+            if let Some(closed) =
+                Self::try_solve_closure_with_surfaces(&opened, introduced_surfaces)?
+            {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
     }
 
     #[inline(never)]
@@ -6145,35 +6202,58 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(instances) = crate::kernel::finite_forall_goal_instances(goal, true) else {
             return Ok(None);
         };
-        // A goal stated as a predicate call binds through the predicate's
-        // body; unfold it at the surface to name the binders.
-        let predicate_environment = match search_input.context.as_ref() {
-            ProofContext::Pure(context) => context.spec_definitions.predicates,
-            ProofContext::FixedState(context) => context.spec_definitions.predicates,
-            ProofContext::Execution(context) => context.spec_definitions.predicates,
-        };
-        let all_predicates = predicate_environment
-            .definitions
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
-        let unfolded = unfold_click_predicates_in_proposition_with_active(
-            predicate_environment,
-            &all_predicates,
-            surface_goal,
-            &mut BTreeSet::new(),
-        )
-        .unwrap_or_else(|_| surface_goal.clone());
+        // Local unfolding has already made the quantifier explicit. Use
+        // its written binders, including the range syntax for universals.
         let mut binder_names = Vec::new();
-        let mut surface_body = &unfolded;
-        while let ClickProposition::ForAll { name, body, .. } = surface_body {
-            binder_names.push(name.clone());
-            surface_body = body;
+        let mut surface_body = surface_goal.clone();
+        loop {
+            match surface_body {
+                ClickProposition::ForAll { name, body, .. } => {
+                    binder_names.push(name);
+                    surface_body = *body;
+                }
+                ClickProposition::RangeAll {
+                    start,
+                    end,
+                    item,
+                    body,
+                    ..
+                } => {
+                    binder_names.push(item.clone());
+                    let bound = ContractExpression::Binding(item);
+                    surface_body = ClickProposition::Implies(
+                        Box::new(ClickProposition::And(
+                            Box::new(ClickProposition::Comparison {
+                                left: start,
+                                operator: ComparisonOperator::LessEqual,
+                                right: bound.clone(),
+                            }),
+                            Box::new(ClickProposition::Comparison {
+                                left: bound,
+                                operator: ComparisonOperator::LessThan,
+                                right: end,
+                            }),
+                        )),
+                        body,
+                    );
+                    break;
+                }
+                _ => break,
+            }
         }
         if binder_names.is_empty() {
             return Ok(None);
         }
 
+        let mut binder_types = Vec::new();
+        let mut kernel_body = goal;
+        while let Proposition::ForAll { sort, body, .. } = kernel_body {
+            let Some(ty) = sort.machine_integer_type() else {
+                return Ok(None);
+            };
+            binder_types.push(ty);
+            kernel_body = body;
+        }
         let mut proof = search_input.clone();
         for (values, instance) in instances {
             check_verification_deadline()?;
@@ -6186,23 +6266,28 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ) {
                 continue;
             }
-            let Some(value_expressions) = values
-                .iter()
-                .map(|value| {
-                    u32::try_from(*value).ok().map(|bits| {
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(int32(bits)))
-                    })
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
+            if values.len() != binder_types.len() {
                 return Ok(None);
-            };
+            }
+            let value_expressions = values
+                .iter()
+                .zip(&binder_types)
+                .map(|(value, ty)| {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ty.value_from_term(if *ty == MachineIntegerType::UInt64 {
+                            MachineTerm::uint64_constant(*value as u64)
+                        } else {
+                            MachineTerm::constant(*value as u32)
+                        }),
+                    ))
+                })
+                .collect::<Vec<_>>();
             let substitutions = binder_names
                 .iter()
                 .cloned()
                 .zip(value_expressions)
                 .collect::<BTreeMap<_, _>>();
-            let Ok(surface_instance) = substitute_click_proposition(surface_body, &substitutions)
+            let Ok(surface_instance) = substitute_click_proposition(&surface_body, &substitutions)
             else {
                 return Ok(None);
             };
@@ -8750,70 +8835,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 surfaces.push(synthesized);
             }
-            // Unfolding retains the opaque predicate fact alongside its
-            // checked body. Reconstruct that body's exact surface form
-            // from only the active predicate indexes when generic synthesis
-            // cannot express it (notably byte-indexed loads).
-            if surfaces.is_empty() {
-                let click_function_environment = match search_input.context.as_ref() {
-                    ProofContext::Pure(context) => context.spec_definitions.functions,
-                    ProofContext::FixedState(context) => context.spec_definitions.functions,
-                    ProofContext::Execution(context) => context.spec_definitions.functions,
-                };
-                for name in search_input.focused_branch_unfolds().iter() {
-                    for opaque in search_input.facts().mentioning_predicate(name) {
-                        let opaque_surfaces = match search_input.context.as_ref() {
-                            ProofContext::Pure(context) => context
-                                .theorem_context
-                                .surface_requirements
-                                .surfaces(opaque)
-                                .cloned()
-                                .collect::<Vec<_>>(),
-                            ProofContext::FixedState(context) => context
-                                .surface_propositions
-                                .surfaces(opaque)
-                                .cloned()
-                                .collect::<Vec<_>>(),
-                            ProofContext::Execution(_) => execution_view?
-                                .surface_propositions
-                                .surfaces(opaque)
-                                .cloned()
-                                .collect::<Vec<_>>(),
-                        };
-                        for opaque_surface in opaque_surfaces {
-                            let ClickProposition::PredicateCall {
-                                name: surface_name,
-                                arguments,
-                            } = opaque_surface
-                            else {
-                                continue;
-                            };
-                            let Some(definition) = predicate_environment.get(&surface_name) else {
-                                continue;
-                            };
-                            let Ok(body_surface) =
-                                instantiate_click_predicate_definition(definition, &arguments)
-                            else {
-                                continue;
-                            };
-                            if unfold_predicates_in_proposition(
-                                SpecDefinitions::new(
-                                    predicate_environment,
-                                    click_function_environment,
-                                ),
-                                std::slice::from_ref(name),
-                                opaque,
-                                search_input.facts().assumptions(),
-                            )
-                            .is_ok_and(|kernel| kernel == quantified)
-                                && !surfaces.contains(&body_surface)
-                            {
-                                surfaces.push(body_surface);
-                            }
-                        }
-                    }
-                }
-            }
             for surface in surfaces {
                 for value in candidate_values.iter() {
                     let argument = match value {
@@ -8837,6 +8858,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     binding,
                                     ContractExpression::ProgramExpression(ProgramExpression::Value(
                                         ProgramValue::Int32(MachineTerm::Variable(bound))
+                                        | ProgramValue::UInt64(MachineTerm::Variable(bound))
+                                        | ProgramValue::Int64(MachineTerm::Variable(bound))
                                     )) if bound == variable
                                 )
                                 .then(|| {
@@ -8989,7 +9012,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     let substitutions = std::iter::once((name.clone(), argument.clone()))
                         .collect::<BTreeMap<_, _>>();
-                    let Ok(mut source) = substitute_click_proposition(surface_body, &substitutions)
+                    let Ok(mut source) =
+                        substitute_click_proposition(&surface_body, &substitutions)
                     else {
                         continue;
                     };

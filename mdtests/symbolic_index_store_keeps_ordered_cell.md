@@ -37,12 +37,13 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     ensures result == 0;
 } by {
     unfold(zero_terminated(data, len, cap));
-    unfold(terminated_at);
+    unfold(at(function.entry, terminated_at(data, len)));
     have index < cap;
     step();
     step();
+    have data[len] == 0 by { known(); }
     have terminated_at(data, len) by {
-        unfold(terminated_at);
+        unfold(terminated_at(data, len));
         known();
     }
     step();

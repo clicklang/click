@@ -486,7 +486,7 @@ theorem only_element(v: int32, x: int32) {
             predicate positive(x: int32) { x > 0 }
             theorem from_positive(x: int32) {
                 requires positive(x);
-                ensures x > 0 by { unfold(positive); known(); }
+                ensures x > 0 by { unfold(positive(x)); known(); }
             }
         "#;
         let checked = capture(|| {
@@ -641,7 +641,7 @@ int32 add3(int32 x) {
 
 theorem add3_adds_four() {
     ensures Adds(&add3, { amount: 4 }) by {
-        unfold(Adds);
+        unfold(Adds(&add3, { amount: 4 }));
         solve();
     }
 }

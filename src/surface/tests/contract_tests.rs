@@ -1914,7 +1914,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         expanded.contains("have nonnegative(result) by {"),
         "{expanded}"
     );
-    assert!(expanded.contains("unfold(same);"), "{expanded}");
+    assert!(expanded.contains("unfold(same("), "{expanded}");
     assert!(
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
@@ -1923,7 +1923,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
     verify_c_sources(&expanded, sources)
         .expect("the rewritten predicate proof should verify normally");
 
-    let corrupted = expanded.replacen("unfold(same);", "unfold(nonnegative);", 1);
+    let corrupted = expanded.replacen("unfold(same(", "unfold(nonnegative(", 1);
     assert_ne!(
         corrupted, expanded,
         "expansion should expose the predicate unfold"
@@ -2623,7 +2623,7 @@ fn source_have_failures_keep_the_written_operation_in_each_execution_phase() {
     ] {
         for (body, diagnostic) in [
             ("apply(missing()); known();", "unknown theorem `missing`"),
-            ("unfold(missing); known();", "missing"),
+            ("unfold(missing(0)); known();", "missing"),
             ("step(); known();", "unsupported proof operation `step`"),
         ] {
             let source = format!(

@@ -30,8 +30,8 @@ contract int32 Shifts(int32 x) {
 theorem adds_three_shifts_two(f: int32 (*)(int32)) {
     requires Adds(f, { amount: 3 });
     ensures Shifts(f, { offset: 2 }) by {
-        unfold(Adds);
-        unfold(Shifts);
+        unfold(Adds(f, { amount: 3 }));
+        unfold(Shifts(f, { offset: 2 }));
         solve();
     }
 }

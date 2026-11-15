@@ -373,10 +373,10 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
             ensures returns_one: result == 1;
         } by {
             branch {
-                unfold(selected);
+                unfold(selected(x));
                 step();
             } else {
-                unfold(selected);
+                unfold(selected(x));
                 step();
             }
             step();
@@ -639,7 +639,7 @@ fn parses_execute_until_proof_tactic() {
 fn parses_unfold_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { step_until(function.exit); unfold(sorted); solve(); }",
+        "== 2 by { step_until(function.exit); unfold(sorted(p, 2)); solve(); }",
     );
     let file = parse(&source).expect("unfold explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -649,7 +649,15 @@ fn parses_unfold_proof_tactic() {
         Some(
             [
                 ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
-                ProofTactic::UnfoldPredicate("sorted".to_string()),
+                ProofTactic::UnfoldFunction(ClickFunctionApplication {
+                    name: "sorted".into(),
+                    arguments: vec![
+                        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                            "p".into()
+                        )),
+                        ContractExpression::IntegerLiteral("2".into())
+                    ]
+                }),
                 ProofTactic::Solve,
             ]
             .as_slice()
@@ -1202,7 +1210,7 @@ const ORDERED_PAIR_CLICK: &str = r#"
     } by {
         step_until(function.exit);
         have ordered_pair(pair) by {
-            unfold(ordered_pair);
+            unfold(ordered_pair(pair));
             solve();
         }
         solve();
@@ -1322,7 +1330,7 @@ fn grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure() {
 
             ensures ordered_pair(pair);
         } by {
-            unfold(ordered_pair);
+            unfold(ordered_pair(pair));
             step_until(function.exit);
             solve();
         }

@@ -40,7 +40,7 @@ void decrement(int32* state) {
 
 theorem decrement_is_decrease() {
     ensures Decrease(&decrement) by {
-        unfold(Decrease);
+        unfold(Decrease(&decrement));
         solve();
     }
 }

@@ -2341,7 +2341,7 @@ fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
         theorem equality_transitive_after_unfold(x: int32, y: int32, z: int32) {
             requires equality_chain(x, y, z);
             ensures x == z by {
-                unfold(equality_chain);
+                unfold(equality_chain(x, y, z));
                 solve();
             }
         }
@@ -2352,7 +2352,7 @@ fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
         .proof_tactics()
         .expect("unfolded solve should commit a surface certificate");
     assert!(tactics.iter().any(
-        |tactic| matches!(tactic, ProofTactic::UnfoldPredicate(name) if name == "equality_chain")
+        |tactic| matches!(tactic, ProofTactic::UnfoldFunction(application) if application.name == "equality_chain")
     ));
     assert!(
         tactics
@@ -5320,7 +5320,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         contract int32 One() { ensures result == 1; }
         int32 callback() { ensures result == 1; } by { step_until(function.exit); normalize(); }
         theorem callback_contract() {
-            ensures One(&callback) by { unfold(One); solve(); }
+            ensures One(&callback) by { unfold(One(&callback)); solve(); }
         }
     "#;
     let inputs = [

@@ -127,7 +127,7 @@ int32 identity_permutation(int32 p[3]) {
     requires viewable(p[0..3]);
     ensures same_multiset: permutation::permutation(p, p, 0, 3) by {
         step_until(function.exit);
-        unfold(permutation::permutation);
+        unfold(permutation::permutation(p, p, 0, 3));
         solve();
     }
 }

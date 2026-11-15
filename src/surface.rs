@@ -5739,7 +5739,7 @@ pub enum ProofTactic {
     Synthetic(Box<ProofTactic>),
     SmartExecute,
     ExecuteUntil(CodeRegionRef),
-    UnfoldPredicate(String),
+    UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
     /// `peel(f(args)) using { ... }`: the same defining equation, plus
     /// the range-fold law the listed guards select, stated over `f(args)`.
@@ -6079,7 +6079,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "unfold-predicate",
-        syntax: "unfold(name)",
+        syntax: "unfold(predicate(args))",
         class: "simple",
     },
     PublicTacticForm {
@@ -6437,7 +6437,7 @@ impl ProofTactic {
                 TacticClass::Simple(SimpleTactic::StatementTransition)
             }
             Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
-            Self::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
+            Self::UnfoldProposition(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
             Self::UnfoldFunction(_) | Self::PeelFunction { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldFunction)
             }
@@ -10139,17 +10139,6 @@ impl SourceProof {
         )
     }
 
-    fn unfold_tactic_names(&self) -> Vec<String> {
-        match self {
-            Self::Default | Self::Tactic(_) => Vec::new(),
-            Self::Script(tactics) => {
-                let mut names = Vec::new();
-                collect_unfold_tactic_names(tactics, &mut names);
-                names
-            }
-        }
-    }
-
     pub fn tactic(&self) -> Option<&SmartTactic> {
         match self {
             Self::Default => None,
@@ -10192,45 +10181,6 @@ impl ProofTactic {
             for tactic in proof.tactics().unwrap_or_default() {
                 tactic.collect_termination_loop_clauses(clauses);
             }
-        }
-    }
-}
-
-fn collect_unfold_tactic_names(tactics: &[ProofTactic], names: &mut Vec<String>) {
-    for tactic in tactics {
-        match tactic {
-            ProofTactic::UnfoldPredicate(name) => names.push(name.clone()),
-            ProofTactic::Have(have) => {
-                if let SourceProof::Script(tactics) = &have.proof {
-                    collect_unfold_tactic_names(tactics, names);
-                }
-            }
-            ProofTactic::Open(open) => {
-                collect_unfold_tactic_names(&open.tactics, names);
-                if let Some(close_proof) = &open.close_proof {
-                    collect_unfold_tactic_names(close_proof, names);
-                }
-            }
-            ProofTactic::If(proof_if) => {
-                collect_unfold_tactic_names(&proof_if.then_tactics, names);
-                collect_unfold_tactic_names(&proof_if.else_tactics, names);
-            }
-            ProofTactic::StructuralInduct { arms, .. } => {
-                for arm in arms {
-                    collect_unfold_tactic_names(&arm.tactics, names);
-                }
-            }
-            ProofTactic::Match(proof_match) => {
-                let arms = &proof_match.arms;
-                for arm in arms {
-                    collect_unfold_tactic_names(&arm.tactics, names);
-                }
-            }
-            ProofTactic::Branch(branch) => {
-                collect_unfold_tactic_names(&branch.then_tactics, names);
-                collect_unfold_tactic_names(&branch.else_tactics, names);
-            }
-            _ => {}
         }
     }
 }

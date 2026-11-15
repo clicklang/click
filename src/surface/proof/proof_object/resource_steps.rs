@@ -308,7 +308,6 @@ impl<'a> Proof<'a> {
             .expect("population member change requires an open goal")
             .with_state(BranchState {
                 facts: after_facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -372,7 +371,6 @@ impl<'a> Proof<'a> {
             .expect("population authority exchange requires an open goal")
             .with_state(BranchState {
                 facts: before_facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -1081,7 +1079,6 @@ impl<'a> Proof<'a> {
                 updated,
                 BranchState {
                     facts,
-                    unfolded_predicates: branch.state.unfolded_predicates.clone(),
                     execution: Some(Arc::new(execution)),
                 },
             )
@@ -1103,7 +1100,6 @@ impl<'a> Proof<'a> {
             execution.core.state = after.into();
             branch.with_state(BranchState {
                 facts,
-                unfolded_predicates: branch.state.unfolded_predicates.clone(),
                 execution: Some(Arc::new(execution)),
             })
         };
@@ -1228,6 +1224,17 @@ impl<'a> Proof<'a> {
         application: &ClickFunctionApplication,
         premises: Option<&[ClickProposition]>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        let definitions = match self.context.as_ref() {
+            ProofContext::Pure(context) => context.spec_definitions,
+            ProofContext::FixedState(context) => context.spec_definitions,
+            ProofContext::Execution(context) => context.spec_definitions,
+        };
+        if premises.is_none() && definitions.predicates.get(&application.name).is_some() {
+            return self.apply_local_predicate_unfold(&ClickProposition::PredicateCall {
+                name: application.name.clone(),
+                arguments: application.arguments.clone(),
+            });
+        }
         let mut referenced_names = BTreeSet::new();
         for argument in &application.arguments {
             collect_contract_expression_referenced_names(argument, &mut referenced_names);
@@ -2161,37 +2168,6 @@ impl<'a> Proof<'a> {
         None
     }
 
-    pub(super) fn apply_predicate_unfold(
-        &self,
-        name: &String,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        match self.context.as_ref() {
-            ProofContext::Pure(context) => self.apply_proposition_predicate_unfold(
-                name,
-                context.spec_definitions,
-                context.claim_label,
-                self.node.depth,
-            ),
-            ProofContext::FixedState(context) => self.apply_proposition_predicate_unfold(
-                name,
-                context.spec_definitions,
-                context.claim_label,
-                context.tactic_index,
-            ),
-            // A function-outcome goal unfolds its own path-local facts and
-            // delta only: the borrowed execution snapshot is shared by every
-            // sibling outcome and must not absorb one path's unfolding.
-            ProofContext::Execution(context) if self.focused_outcome_data().is_some() => self
-                .apply_proposition_predicate_unfold(
-                    name,
-                    context.spec_definitions,
-                    context.claim_label,
-                    context.tactic_index,
-                ),
-            ProofContext::Execution(_) => self.apply_execution_unfold(name),
-        }
-    }
-
     /// Unfolds `names` in a goal's surface form. A signed character
     /// parameter passed to a predicate's `uint8` bytes first takes its
     /// explicit byte view, as contract lowering and call steps give it: the
@@ -2218,206 +2194,7 @@ impl<'a> Proof<'a> {
                     .map(crate::languages::interface::ImportedParameter::interface_type)
             })
         });
-        unfold_structural_invariant_proposition(
-            predicates,
-            elaborated.as_ref().unwrap_or(surface),
-            names,
-        )
-    }
-
-    pub(super) fn apply_proposition_predicate_unfold(
-        &self,
-        name: &String,
-        spec_definitions: SpecDefinitions<'_>,
-        claim_label: &str,
-        tactic_index: usize,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        let checked = check_unfold_predicate_in_facts(
-            self.facts(),
-            name,
-            spec_definitions,
-            claim_label,
-            tactic_index,
-        )?;
-        let goal = match self.focused_obligation() {
-            Some(Obligation::Proposition(goal)) => {
-                let surface = match &goal.surface {
-                    Some(surface) => Some(
-                        self.unfold_goal_surface(
-                            spec_definitions.predicates,
-                            surface,
-                            std::slice::from_ref(name),
-                        )
-                        .map_err(|message| self.step_error(message))?,
-                    ),
-                    None => None,
-                };
-                // Fixed-state and outcome certificates check `unfold` from its
-                // retained surface form.  Re-lower that unfolded body
-                // against the checked successor facts as part of this same
-                // audited step, so resource counts and current memory loads
-                // resolve exactly as they do during independent verification.
-                // Unfolding only the already-lowered kernel predicate leaves
-                // those expressions stranded in the older lowering context.
-                let kernel = match (&surface, self.context.as_ref()) {
-                    (Some(surface), ProofContext::FixedState(context)) => {
-                        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-                        lower_fixed_state_proposition_with_assumptions(
-                            &surface,
-                            checked.facts.assumptions(),
-                            context.parameter_binding,
-                            context.fixed_state,
-                            context.spec_definitions,
-                        )
-                        .map_err(|message| self.step_error(message))?
-                    }
-                    (Some(surface), ProofContext::Execution(_))
-                        if self.focused_outcome_data().is_some() =>
-                    {
-                        let view = self
-                            .outcome_fixed_state_view()
-                            .expect("a focused outcome judgment resolves its fixed-state view");
-                        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-                        lower_fixed_state_proposition_with_assumptions(
-                            &surface,
-                            checked.facts.assumptions(),
-                            view.parameter_binding,
-                            view.fixed_state,
-                            view.spec_definitions,
-                        )
-                        .map_err(|message| self.step_error(message))?
-                    }
-                    _ => unfold_predicates_in_proposition(
-                        spec_definitions,
-                        std::slice::from_ref(name),
-                        goal.kernel(),
-                        checked.facts.assumptions(),
-                    )
-                    .map_err(|message| self.step_error(message))?,
-                };
-                self.refined_proposition(
-                    self.refined_branch_state(checked.facts.clone()),
-                    kernel,
-                    surface,
-                    false,
-                )
-            }
-            Some(Obligation::Frontier(_) | Obligation::FunctionOutcome(_)) => {
-                let branch = self.focused_branch().expect("focused branch exists");
-                let mut unfolded = branch.state.unfolded_predicates.clone();
-                unfolded.insert(name.clone());
-                branch.with_state(BranchState {
-                    facts: checked.facts.clone(),
-                    unfolded_predicates: unfolded,
-                    execution: branch.state.execution.clone(),
-                })
-            }
-            None => return Err(self.step_error("`unfold` requires an open goal")),
-        };
-        let goal = {
-            let mut unfolded = goal.state.unfolded_predicates.clone();
-            unfolded.insert(name.clone());
-            goal.with_state(BranchState {
-                facts: goal.state.facts.clone(),
-                unfolded_predicates: unfolded,
-                execution: goal.state.execution.clone(),
-            })
-        };
-        Ok(CheckedFocusedTransition {
-            locals: self.state().locals().clone(),
-            branch: Some(goal),
-            added_facts: checked.added_facts.clone(),
-            checked_facts: checked.added_facts,
-        })
-    }
-
-    pub(super) fn apply_execution_unfold(
-        &self,
-        name: &String,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("`unfold` requires an execution-frontier proof"));
-        };
-        let mut execution = self
-            .execution()
-            .cloned()
-            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let checked = check_unfold_predicate_facts(&mut execution, context, self.facts(), name)?;
-        let mut unfolded_predicates = self.focused_branch_unfolds().clone();
-        for name in &checked.added_unfolded_predicates {
-            unfolded_predicates.insert(name.clone());
-        }
-        let refined_goal = match self.focused_obligation() {
-            Some(Obligation::Proposition(goal)) => {
-                let surface = goal
-                    .surface
-                    .as_deref()
-                    .map(|surface| {
-                        self.unfold_goal_surface(
-                            context.spec_definitions.predicates,
-                            surface,
-                            std::slice::from_ref(name),
-                        )
-                        .map_err(|message| self.step_error(message))
-                    })
-                    .transpose()?;
-                let kernel = match &surface {
-                    Some(surface) => {
-                        let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-                        let pre_state = context
-                            .old_reference_state(&execution.core.frontier, &execution.core.state);
-                        lower_fixed_state_proposition_with_assumptions(
-                            &surface,
-                            checked.facts.assumptions(),
-                            context.parameter_binding(),
-                            FixedStateFrame::new(
-                                pre_state,
-                                &execution.core.state,
-                                None,
-                                &execution.presentation.recorded_snapshots,
-                            ),
-                            context.spec_definitions,
-                        )
-                        .map_err(|message| {
-                            self.step_error(format!("could not unfold proposition goal: {message}"))
-                        })?
-                    }
-                    None => unfold_predicates_in_proposition(
-                        context.spec_definitions,
-                        std::slice::from_ref(name),
-                        goal.kernel(),
-                        checked.facts.assumptions(),
-                    )
-                    .map_err(|message| self.step_error(message))?,
-                };
-                Some((kernel, surface))
-            }
-            _ => None,
-        };
-        let goal_context = BranchState {
-            facts: checked.facts,
-            unfolded_predicates,
-            execution: Some(Arc::new(execution)),
-        };
-        let goal = match refined_goal {
-            Some((kernel, surface)) => {
-                self.refined_proposition(goal_context, kernel, surface, false)
-            }
-            None => self
-                .focused_branch()
-                .expect("execution unfold requires an open goal")
-                .with_state(goal_context),
-        };
-        Ok(CheckedFocusedTransition {
-            locals: self.state().locals().clone(),
-            // A nested proposition proof stated at this frontier unfolds its
-            // own goal through the same checked operation. Other execution
-            // goals retain their kind while installing the updated snapshot
-            // and unfold delta.
-            branch: Some(goal),
-            added_facts: checked.added_facts.clone(),
-            checked_facts: checked.added_facts,
-        })
+        unfold_surface_predicates(predicates, elaborated.as_ref().unwrap_or(surface), names)
     }
 
     /// `take`, `give`, `gather`, or `scatter`: one checked kernel step on
@@ -2559,7 +2336,6 @@ impl<'a> Proof<'a> {
             .expect("an iterated ownership step requires an open goal")
             .with_state(BranchState {
                 facts: self.facts().clone(),
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -2674,7 +2450,6 @@ impl<'a> Proof<'a> {
             .expect("resource observation requires an open goal")
             .with_state(BranchState {
                 facts: checked.facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -2828,7 +2603,6 @@ impl<'a> Proof<'a> {
             .expect("resource unfold requires an open goal")
             .with_state(BranchState {
                 facts: checked.facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -2943,7 +2717,6 @@ impl<'a> Proof<'a> {
             &pre_state,
             (*execution.core.state).clone(),
             context.spec_definitions,
-            &execution.core.unfolded_predicates,
             family_reaches_population,
         )?;
         let selected = &checked.selected;
@@ -2972,7 +2745,6 @@ impl<'a> Proof<'a> {
             .expect("resource fold requires an open goal")
             .with_state(BranchState {
                 facts: checked.facts,
-                unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
@@ -3067,7 +2839,6 @@ impl<'a> Proof<'a> {
                 updated,
                 BranchState {
                     facts: checked.facts,
-                    unfolded_predicates: branch_state.unfolded_predicates.clone(),
                     execution: Some(Arc::new(execution)),
                 },
             )),
@@ -3165,7 +2936,6 @@ impl<'a> Proof<'a> {
             pre_state,
             outcome,
             context.spec_definitions,
-            &self.active_unfolded_predicates(),
             closure,
             family_reaches_population,
         )?;
@@ -3252,7 +3022,6 @@ impl<'a> Proof<'a> {
         updated.data = Arc::new(data);
         let state = BranchState {
             facts: checked.facts,
-            unfolded_predicates: branch_state.unfolded_predicates.clone(),
             execution: Some(Arc::new(execution)),
         };
         Ok(CheckedFocusedTransition {
@@ -3316,7 +3085,6 @@ impl<'a> Proof<'a> {
         updated.data = Arc::new(data);
         let state = BranchState {
             facts: self.facts().clone(),
-            unfolded_predicates: branch_state.unfolded_predicates.clone(),
             execution: Some(Arc::new(execution.clone())),
         };
         Ok(CheckedFocusedTransition {

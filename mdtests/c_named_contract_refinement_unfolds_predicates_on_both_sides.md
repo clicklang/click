@@ -26,10 +26,10 @@ contract void ProducesNonnegative(int32* cell) {
 theorem zero_is_nonnegative(callback: void (*)(int32*)) {
     requires ProducesZero(callback);
     ensures ProducesNonnegative(callback) by {
-        unfold(ProducesZero);
-        unfold(ProducesNonnegative);
-        unfold(IsZero);
-        unfold(IsNonnegative);
+        unfold(ProducesZero(callback));
+        unfold(ProducesNonnegative(callback));
+        unfold(IsZero(cell));
+        unfold(IsNonnegative(cell));
         solve();
     }
 }

@@ -184,7 +184,7 @@ fn check_isolated_program(value: i32, expected: i32) {
         verifying "answer.c";
         predicate wanted(x: int32) {{ x == {expected} }}
         int32 answer() {{
-            ensures wanted(result) by {{ step_until(function.exit); unfold(wanted); solve(); }}
+            ensures wanted(result) by {{ step_until(function.exit); unfold(wanted(result)); solve(); }}
         }}
         "#
     );

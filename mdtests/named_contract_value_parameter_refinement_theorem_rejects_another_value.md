@@ -1,7 +1,7 @@
 # A refinement theorem for one value does not prove another
 
 `add3` adds three, so a theorem concluding `Adds(&add3, { amount: 4 })` is
-refused: the obligation `unfold(Adds)` opens binds `amount` to `4`.
+refused: the obligation `unfold(Adds(&add3, { amount: 4 }))` opens binds `amount` to `4`.
 
 ```c filename=adds.c
 int32 add3(int32 x) {
@@ -26,7 +26,7 @@ int32 add3(int32 x) {
 
 theorem add3_adds_four() {
     ensures Adds(&add3, { amount: 4 }) by {
-        unfold(Adds);
+        unfold(Adds(&add3, { amount: 4 }));
         solve();
     }
 }

@@ -1375,7 +1375,7 @@ pub enum ContractEntryFactOrigin {
     /// The facts of the instance arm the requirements select.
     Publication,
     /// The identity of a registered predicate whose body the entry holds.
-    PredicateIdentity,
+    PredicateIdentity(Option<usize>),
     /// A fact of `requires` clause `index` where that clause is the body of
     /// a registered predicate: what the predicate says once unfolded.
     PredicateBody(usize),
@@ -1544,19 +1544,20 @@ pub fn program_function_contract_entry(
                 continue;
             };
             if PureFactContext::settles_exactly(&assumptions, &body) {
-                identities.push(predicate);
+                identities.push((predicate, unfolding.requirement_source()));
             }
         }
     }
-    let assumptions = identities
-        .into_iter()
-        .fold(assumptions, |assumptions, identity| {
-            entry_facts.assume(
-                assumptions,
-                ContractEntryFactOrigin::PredicateIdentity,
-                identity,
-            )
-        });
+    let assumptions =
+        identities
+            .into_iter()
+            .fold(assumptions, |assumptions, (identity, source)| {
+                entry_facts.assume(
+                    assumptions,
+                    ContractEntryFactOrigin::PredicateIdentity(source),
+                    identity,
+                )
+            });
     let stated = entry_facts
         .0
         .iter()

@@ -39,7 +39,7 @@ void fill_t(uint8* dst) {
         known();
     }
     have bytes::all_equal(dst, 0u64, 4u64, 7u8) by {
-        unfold(bytes::all_equal);
+        unfold(bytes::all_equal(dst, 0u64, 4u64, 7u8));
         intro(); intro();
         instantiate((0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 }), k) using { k < 4u64; };
         known();

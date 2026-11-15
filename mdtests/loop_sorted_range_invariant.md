@@ -41,8 +41,8 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
     requires sorted(p, 3);
     ensures still_sorted: sorted(p, 3);
 } by {
-    unfold(sorted);
-    unfold(sorted_range);
+    unfold(sorted(p, 3));
+    unfold(sorted_range(p, 0, 3));
     step();
     step();
     loop as carry_sorted {
@@ -51,12 +51,14 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
         invariant sorted(old(p), 3);
 
         initialize by {
-            unfold(sorted);
-            unfold(sorted_range);
+            unfold(sorted(old(p), 3));
+            unfold(sorted_range(p, 0, 3));
             have i >= 0 and i <= 3 by {
                 both { normalize(); } and { normalize(); }
             }
             have sorted(old(p), 3) by {
+                unfold(sorted(old(p), 3));
+                unfold(sorted_range(old(p), 0, 3));
                 intro();
                 intro();
                 intro();
@@ -74,13 +76,13 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
             }
         }
         preserve by {
-            unfold(sorted);
-            unfold(sorted_range);
+            unfold(sorted(old(p), 3));
+            unfold(sorted_range(p, 0, 3));
         }
     }
     step();
-    unfold(sorted);
-    unfold(sorted_range);
+    unfold(sorted(old(p), 3));
+    unfold(sorted_range(p, 0, 3));
     solve();
 }
 ```

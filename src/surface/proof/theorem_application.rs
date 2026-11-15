@@ -149,7 +149,6 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     lowering_assumptions: &PureFactContext,
     context: &TheoremApplicationContext<'_>,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
 ) -> Result<Vec<Proposition>, ClickError> {
     let evidence_context = std::cell::OnceCell::new();
     let evidence_assumptions =
@@ -271,7 +270,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             .collect()
     });
     for (requirement_index, requirement) in requirements.iter().enumerate() {
-        let mut lowered = lower(requirement).map_err(|error| {
+        let lowered = lower(requirement).map_err(|error| {
             theorem_application_error(
                 claim_label,
                 path_index,
@@ -282,18 +281,6 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                 ),
             )
         })?;
-        if !unfolded_predicates.is_empty() {
-            lowered = unfold_predicates_in_proposition(
-                spec_definitions,
-                unfolded_predicates,
-                &lowered,
-                evidence_assumptions(),
-            )
-            .map_err(|message| {
-                theorem_application_error(claim_label, path_index, tactic_index, message)
-            })?;
-        }
-        lowered = lowered.clone();
         if let Some(substitutions) = &prepared_substitutions {
             let written =
                 observe_machine_parameters(requirement, theorem.parameters(), substitutions);

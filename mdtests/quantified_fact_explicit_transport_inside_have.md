@@ -50,7 +50,7 @@ void mark(int32 *next, int32 *visited) {
         have separate(statement(0).footprint, memory(next[k])) by {
             normalize() using { separate(memory(visited[0]), memory(next[k])); };
         }
-        preserve(separate(statement(0).footprint, memory(next[k])));
+        preserve(memory(next[k]), statement(0));
     }
     have forall (k: int32) {
         0 <= k and k < 2 implies 0 <= next[k]

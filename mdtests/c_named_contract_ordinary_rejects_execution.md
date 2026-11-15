@@ -10,8 +10,8 @@ contract int32 Target(int32 x) { ensures result == x; }
 theorem lift(callback: int32 (*)(int32)) {
     requires Source(callback);
     ensures Target(callback) by {
-        unfold(Source);
-        unfold(Target);
+        unfold(Source(callback));
+        unfold(Target(callback));
         step_until(function.exit);
         solve();
     }

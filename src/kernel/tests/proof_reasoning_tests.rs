@@ -971,15 +971,14 @@ fn checked_pure_completion(
     conclusion: &Proposition,
 ) -> crate::kernel::proof::CheckedProposition {
     use crate::kernel::proof::{
-        OutcomeProofState, PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts,
-        ProofObject, ProofObligation, PropositionKnownContext, PropositionObligation,
+        OutcomeProofState, ProofBranch, ProofBranchState, ProofFacts, ProofObject, ProofObligation,
+        PropositionKnownContext, PropositionObligation,
     };
 
     let branch = ProofBranch::new(
         ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
         ProofBranchState {
             facts: ProofFacts::from_ordered(requirements),
-            unfolded_predicates: PersistentOrderedSet::default(),
             execution: None,
         },
     );

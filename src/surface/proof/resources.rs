@@ -1440,6 +1440,7 @@ pub(super) fn project_initial_resource_facts(
 ) -> Result<Vec<Proposition>, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
+    let retained_count = facts.facts.fact_count();
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
         state,
@@ -1456,7 +1457,12 @@ pub(super) fn project_initial_resource_facts(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(facts.facts.to_vec())
+    // The input positions carry requirement-source identities. The indexed
+    // store deduplicates facts, so materializing it would shift those positions.
+    // Preserve the explicit input prefix and append only projected products.
+    let mut projected = available_pure_facts.to_vec();
+    projected.extend(facts.facts.to_vec().into_iter().skip(retained_count));
+    Ok(projected)
 }
 
 pub(super) fn project_outcome_resource_facts(
@@ -3689,18 +3695,6 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 )
             ))
         })?;
-        let lowered_fact = unfold_predicates_in_proposition(
-            spec_definitions,
-            &[],
-            &lowered_fact,
-            available_pure_facts.assumptions(),
-        )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: could not unfold `unfold({})` pure fact: {message}",
-                describe_resource_clause(resource)
-            ))
-        })?;
         let temporary_views = borrowed_parent_binding
             .as_ref()
             .map(|binding| {
@@ -4013,7 +4007,6 @@ fn fold_composite_resources_on_outcome_with_facts(
     pre_state: &ExecutionState,
     mut outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<FoldedOutcome, ClickError> {
@@ -4378,18 +4371,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 if collecting {
                     lowered
                 } else {
-                    unfold_predicates_in_proposition(
-                    spec_definitions,
-                    unfolded_predicates,
-                    &lowered,
-                    pure_facts.assumptions(),
-                )
-                .map_err(|message| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: could not unfold exact `fold({})` fact: {message}",
-                        describe_resource_clause(resource)
-                    ))
-                })?
+                    Proposition::clone(&lowered)
                 }
             };
             if let Some(binding) = dynamic_body_fact_dependency(
@@ -4976,7 +4958,6 @@ pub(super) fn fold_composite_resource_for_proof(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     fold_composite_resource_for_proof_with_closure(
@@ -4990,7 +4971,6 @@ pub(super) fn fold_composite_resource_for_proof(
         pre_state,
         state,
         spec_definitions,
-        unfolded_predicates,
         ResourceBodyClosure::Initialize,
         family_reaches_population,
     )
@@ -5012,7 +4992,6 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     pre_state: &ExecutionState,
     outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
@@ -5031,7 +5010,6 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
         pre_state,
         outcome,
         spec_definitions,
-        unfolded_predicates,
         closure,
         family_reaches_population,
     )?;
@@ -5091,7 +5069,6 @@ pub(super) fn close_open_resource_for_proof(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     preserve_exposed_body: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     fold_composite_resource_for_proof_with_closure(
@@ -5105,7 +5082,6 @@ pub(super) fn close_open_resource_for_proof(
         pre_state,
         state,
         spec_definitions,
-        unfolded_predicates,
         ResourceBodyClosure::CloseOpen {
             preserve_exposed_body,
         },
@@ -5125,7 +5101,6 @@ fn fold_composite_resource_for_proof_with_closure(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
@@ -5146,7 +5121,6 @@ fn fold_composite_resource_for_proof_with_closure(
         pre_state,
         outcome,
         spec_definitions,
-        unfolded_predicates,
         closure,
         family_reaches_population,
     )?;

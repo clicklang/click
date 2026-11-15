@@ -1,7 +1,7 @@
 # a predicate goal is opaque without unfold
 
-The negative of `mdtests/unfold_predicate_stays_open_for_the_branch.md`.
-Without `unfold(small)`, the goal `small(c)` is not read through its body,
+The negative of `mdtests/unfold_predicate_selects_one_application.md`.
+Without `unfold(small(c))`, the goal `small(c)` is not read through its body,
 so the two bounds in the context do not close it.
 
 ```click

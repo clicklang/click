@@ -123,7 +123,6 @@ fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
                     ProofObligation::<(), _>::FunctionOutcome(goal.clone()),
                     crate::kernel::proof::ProofBranchState::<()> {
                         facts,
-                        unfolded_predicates: crate::kernel::proof::PersistentOrderedSet::default(),
                         execution: None,
                     },
                 ),
@@ -228,7 +227,7 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
 
 #[test]
 fn owned_outcome_completion_is_indexed_and_does_not_copy_sibling_facts() {
-    use crate::kernel::proof::{PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts};
+    use crate::kernel::proof::{ProofBranch, ProofBranchState, ProofFacts};
     let execution = closing_execution();
     let context = crate::kernel::ContractClosingContext::new(&execution);
     for count in [16_usize, 64, 256] {
@@ -258,7 +257,6 @@ fn owned_outcome_completion_is_indexed_and_does_not_copy_sibling_facts() {
                         ProofObligation::FunctionOutcome(goal),
                         ProofBranchState {
                             facts: facts.clone(),
-                            unfolded_predicates: PersistentOrderedSet::default(),
                             execution: None,
                         },
                     )

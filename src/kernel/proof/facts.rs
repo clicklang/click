@@ -345,6 +345,10 @@ pub(crate) struct ProofFacts {
         PersistentMap<AlgebraicTerm, PersistentSequence<Arc<Proposition>>>,
     by_quantified_equivalence:
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
+    /// Full snapshot-aware alpha identities for explicit quantified inputs.
+    /// Built with each fact, so a simple lookup never forces a deferred
+    /// assumptions index or visits a related-fact bucket.
+    by_quantified_identity: PersistentMap<super::PropositionIdentityKey, Arc<Proposition>>,
     /// Guarded universals whose conclusion is a conjunction, keyed by the
     /// alpha form of each proper sub-conjunction restated under the same
     /// binder and guards: `forall k { G implies A and B }` is found under
@@ -1104,6 +1108,7 @@ impl ProofFacts {
         let mut finite_classifications_by_key = PersistentMap::default();
         let mut algebraic_equalities_by_term = PersistentMap::default();
         let mut by_quantified_equivalence = PersistentMap::default();
+        let mut by_quantified_identity = PersistentMap::default();
         let mut quantified_conjunct_projections = PersistentMap::default();
         let mut implications_by_consequent = PersistentMap::default();
         let mut implications_by_quantified_consequent = PersistentMap::default();
@@ -1130,6 +1135,7 @@ impl ProofFacts {
             ordered.push(Arc::clone(fact));
             top_level_exact = top_level_exact.with_value(Arc::clone(fact));
             by_quantified_equivalence = index_quantified_fact(by_quantified_equivalence, fact);
+            by_quantified_identity = index_quantified_identity(by_quantified_identity, fact);
             quantified_conjunct_projections =
                 index_quantified_conjunct_projections(quantified_conjunct_projections, fact);
             (
@@ -1149,6 +1155,8 @@ impl ProofFacts {
                     let conjunct = Arc::new(conjunct);
                     quantified_proper_conjuncts =
                         index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                    by_quantified_identity =
+                        index_quantified_identity(by_quantified_identity, &conjunct);
                     quantified_conjunct_projections = index_quantified_conjunct_projections(
                         quantified_conjunct_projections,
                         &conjunct,
@@ -1206,6 +1214,7 @@ impl ProofFacts {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            by_quantified_identity,
             quantified_conjunct_projections,
             rewritten_load_evidence: PersistentSequence::default(),
             implications_by_consequent,
@@ -1235,6 +1244,24 @@ impl ProofFacts {
             || call_payload_identity_key(fact).is_some_and(|key| self.call_payloads.contains(&key))
             || crate::kernel::comparison_form(fact)
                 .is_some_and(|comparison| self.exact.contains(&comparison))
+    }
+
+    /// Exact alpha membership of one explicitly selected quantified fact.
+    /// Conjunctions consist of the selected leaves, each an indexed query.
+    pub(crate) fn contains_quantified_identity(&self, fact: &Proposition) -> bool {
+        if self.contains(fact) {
+            return true;
+        }
+        if let Proposition::And(left, right) = fact {
+            return self.contains_quantified_identity(left)
+                && self.contains_quantified_identity(right);
+        }
+        if !quantified_identity_shape(fact) {
+            return false;
+        }
+        super::proposition_identity_key(fact)
+            .and_then(|key| self.by_quantified_identity.get(&key))
+            .is_some_and(|candidate| super::propositions_are_alpha_equal(candidate, fact))
     }
 
     /// Semantic availability for checking a requested premise or goal, as
@@ -1310,6 +1337,8 @@ impl ProofFacts {
         let mut algebraic_equalities_by_term = self.algebraic_equalities_by_term.clone();
         let by_quantified_equivalence =
             index_quantified_fact(self.by_quantified_equivalence.clone(), &fact);
+        let mut by_quantified_identity =
+            index_quantified_identity(self.by_quantified_identity.clone(), &fact);
         let mut quantified_conjunct_projections = index_quantified_conjunct_projections(
             self.quantified_conjunct_projections.clone(),
             &fact,
@@ -1328,6 +1357,8 @@ impl ProofFacts {
                 let conjunct = Arc::new(conjunct);
                 quantified_proper_conjuncts =
                     index_quantified_fact(quantified_proper_conjuncts, &conjunct);
+                by_quantified_identity =
+                    index_quantified_identity(by_quantified_identity, &conjunct);
                 quantified_conjunct_projections = index_quantified_conjunct_projections(
                     quantified_conjunct_projections,
                     &conjunct,
@@ -1402,6 +1433,7 @@ impl ProofFacts {
             finite_classifications_by_key,
             algebraic_equalities_by_term,
             by_quantified_equivalence,
+            by_quantified_identity,
             quantified_conjunct_projections,
             rewritten_load_evidence: self.rewritten_load_evidence.clone(),
             implications_by_consequent,
@@ -3595,6 +3627,33 @@ fn collect_pointer_offset_bitvector_atoms(
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     offset.for_each_scaled_operand(|value| selected_atoms::collect(value, atoms));
+}
+
+fn quantified_identity_shape(mut fact: &Proposition) -> bool {
+    while let Proposition::Implies(_, body) = fact {
+        fact = body;
+    }
+    matches!(
+        fact,
+        Proposition::ForAll { .. } | Proposition::Exists { .. }
+    )
+}
+
+fn index_quantified_identity(
+    index: PersistentMap<super::PropositionIdentityKey, Arc<Proposition>>,
+    fact: &Arc<Proposition>,
+) -> PersistentMap<super::PropositionIdentityKey, Arc<Proposition>> {
+    if !quantified_identity_shape(fact) {
+        return index;
+    }
+    let Some(key) = super::proposition_identity_key(fact) else {
+        return index;
+    };
+    if index.get(&key).is_some() {
+        index
+    } else {
+        index.with_inserted(key, fact.clone())
+    }
 }
 
 fn index_quantified_fact(

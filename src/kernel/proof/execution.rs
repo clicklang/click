@@ -7,7 +7,7 @@
 mod return_producer;
 pub(crate) use return_producer::CheckedReturnSeed;
 
-use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
+use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue};
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -3250,11 +3250,17 @@ impl ContractEntryAuthority {
 /// The contract entry opened before a body proof. The producer selects its
 /// premises and constructs the state and resource transfer together; retaining
 /// it never asks the body proof to reconstruct or authorize its own inputs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OpenedEntryFactSource {
+    SourceFact(usize),
+    Requirement(usize),
+}
+
 #[derive(Clone)]
 pub(crate) struct OpenedContractEntry {
     entry: Arc<CheckedFunctionEntry>,
     facts: ProofFacts,
-    source_origins: Vec<Option<usize>>,
+    source_origins: Vec<Option<OpenedEntryFactSource>>,
     cases: Arc<crate::kernel::PreparedContractEntryCases>,
     contract_root: Option<crate::kernel::WholeContractRoot>,
 }
@@ -3286,7 +3292,7 @@ impl OpenedContractEntry {
             };
             if selected && kept.insert(fact.clone()) {
                 propositions.push(fact.clone());
-                source_origins.push(Some(index));
+                source_origins.push(Some(OpenedEntryFactSource::SourceFact(index)));
             }
         }
         for fact in contract.facts() {
@@ -3301,7 +3307,12 @@ impl OpenedContractEntry {
             );
             if visible && kept.insert(fact.proposition().clone()) {
                 propositions.push(fact.proposition().clone());
-                source_origins.push(None);
+                source_origins.push(match fact.origin() {
+                    Origin::PredicateIdentity(Some(source)) => {
+                        Some(OpenedEntryFactSource::Requirement(source))
+                    }
+                    _ => None,
+                });
             }
         }
         let byte_order = environment.byte_order_fact();
@@ -3378,7 +3389,7 @@ impl OpenedContractEntry {
 
     /// The selected source occurrence for each admitted fact. Derived facts
     /// carry no source occurrence; Surface retains only their presentation.
-    pub(crate) fn source_origins(&self) -> &[Option<usize>] {
+    pub(crate) fn source_origins(&self) -> &[Option<OpenedEntryFactSource>] {
         &self.source_origins
     }
 
@@ -5576,7 +5587,6 @@ impl CheckedInterfaceLowering {
                             )),
                             ProofBranchState {
                                 facts: root_facts,
-                                unfolded_predicates: Default::default(),
                                 execution: None,
                             },
                         ),
@@ -6289,7 +6299,6 @@ pub(crate) struct ExecutionProofCore {
     next_kernel_variable: u64,
     pub(crate) has_empty_execution_branch_leaf: bool,
     pub(crate) has_structured_branch_history: bool,
-    pub(crate) unfolded_predicates: SharedVec<String>,
 }
 
 #[cfg_attr(test, derive(Clone))]
@@ -8145,7 +8154,6 @@ impl ExecutionProofCore {
             next_kernel_variable: 0,
             has_empty_execution_branch_leaf: false,
             has_structured_branch_history: false,
-            unfolded_predicates: Default::default(),
         }
     }
 

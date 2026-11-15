@@ -40,11 +40,11 @@ struct object* object_retain(struct object* obj) {
     ensures result == obj;
 } by {
     open(control(obj)) {
-        unfold(valid_refcount);
+        unfold(valid_refcount(obj));
         step();
         fold(object_ref(obj));
         have valid_refcount(obj) by {
-            unfold(valid_refcount);
+            unfold(valid_refcount(obj));
             solve();
         }
     }

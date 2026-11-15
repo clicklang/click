@@ -113,7 +113,7 @@ fn function_pointers::apply(f: fn(i32) -> i32, x: i32) -> i32 {
 
 theorem twice_is_doubling() {
     ensures Doubling(function_pointers::twice) by {
-        unfold(Doubling);
+        unfold(Doubling(function_pointers::twice));
         solve();
     }
 }
@@ -1386,7 +1386,7 @@ Theorems can be reused by explicit application:
 theorem nonnegative_body(x: int32) {
     requires nonnegative(x);
     ensures x >= 0 by {
-        unfold(nonnegative);
+        unfold(nonnegative(x));
         solve();
     }
 }
@@ -1680,8 +1680,8 @@ the callee must be verified or explicitly external in the project. Extra
 theorem parameters are refused, and every feasible proof case must
 execute exactly one call, as in the abstract form.
 `apply(increment_is_exact())` then introduces `Exact(&increment)` at a call site
-exactly like a concrete `unfold(Name)` refinement theorem. This is the explicit
-route for a target contract with resource handles, which `unfold(Name)` refuses.
+exactly like a concrete `unfold(Name(callback))` refinement theorem. This is the explicit
+route for a target contract with resource handles, which `unfold(Name(callback))` refuses.
 The [modeled-instance variant](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
 carries a tree instance through the same two maps.
 
@@ -4463,7 +4463,7 @@ remain exact. Click does not unfold predicate bodies unless a proof asks for it:
 <!-- verified-example: mdtests/sorted_predicate.md -->
 ```click
 ensures still_sorted: sorted(p, n) by {
-    unfold(sorted);
+    unfold(sorted(p, n));
 }
 ```
 
@@ -4479,13 +4479,13 @@ loop as carry_sorted {
     invariant sorted(old(p), 3);
 
     initialize by {
-        unfold(sorted);
-        unfold(sorted_range);
+        unfold(sorted(old(p), 3));
+        unfold(sorted_range(p, 0, 3));
         ...
     }
     preserve by {
-        unfold(sorted);
-        unfold(sorted_range);
+        unfold(sorted(old(p), 3));
+        unfold(sorted_range(p, 0, 3));
     }
 }
 ```

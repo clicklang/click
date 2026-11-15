@@ -966,7 +966,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
             theorem nonnegative_is_acceptable(x: int32) {
                 requires x >= 0;
                 ensures acceptable(x) by {
-                    unfold(acceptable);
+                    unfold(acceptable(x));
                     solve();
                 }
             }
@@ -988,7 +988,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
                     }
                 }
                 step();
-                unfold(acceptable);
+                unfold(acceptable(x));
                 solve();
             }
         "#;

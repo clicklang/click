@@ -22,7 +22,7 @@ int32 return_zero() {
 
 theorem zero_is_positive() {
     ensures Positive(&return_zero) by {
-        unfold(Positive);
+        unfold(Positive(&return_zero));
         solve();
     }
 }

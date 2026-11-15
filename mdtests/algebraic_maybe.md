@@ -48,7 +48,7 @@ theorem maybe_accepts_pointer_type_arguments(value: int32*) {
 
 theorem maybe_works_through_predicates(value: int32) {
     ensures wrapped_equal(value, value) by {
-        unfold(wrapped_equal);
+        unfold(wrapped_equal(value, value));
         solve();
     }
 }

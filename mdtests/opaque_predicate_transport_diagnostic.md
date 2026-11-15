@@ -35,5 +35,5 @@ int32 preserve_sorted(int32 p[3]) {
 ```
 
 ```expect
-fail: `transport` cannot frame opaque predicate `sorted` across C execution because its memory footprint is hidden; run `unfold(sorted);` before the execution steps and transport its unfolded definition
+fail: `transport` cannot frame opaque predicate `sorted` across C execution because its memory footprint is hidden; unfold the selected application, such as `unfold(sorted(args));`, before execution and transport its unfolded definition
 ```

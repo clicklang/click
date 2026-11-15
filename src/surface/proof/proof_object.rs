@@ -115,7 +115,6 @@ pub(super) struct ExecutionSplitData<'a> {
     base_executions: [Option<Arc<ExecutionProofState>>; 2],
     path_facts: [Option<Vec<Proposition>>; 2],
     parent_facts: ProofFacts,
-    parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     statement_index: usize,
     continuation_index: usize,
@@ -217,7 +216,6 @@ pub(super) struct ExecutionProofCaseSplitData<'a> {
     base_executions: [Arc<ExecutionProofState>; 2],
     path_facts: [Vec<Proposition>; 2],
     common_facts: ProofFacts,
-    parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     execution_start_state: ExecutionState,
     /// The lexical scope at the split. Each arm starts in it: a `match` arm
@@ -251,7 +249,6 @@ struct CheckedExecutionJoinArm<'v> {
     /// What the arm appended to `effect_base`, taken when first read.
     introduced_effect_facts: std::cell::OnceCell<crate::kernel::ExecutionFacts>,
     introduced_derivations: Vec<Theorem>,
-    introduced_unfolds: Vec<String>,
     /// Frontier-local loops the arm proved inside its region. They are
     /// checked function-proof state, so a join carries them like unfolds.
     introduced_loop_clauses: Vec<StructuralClause>,
@@ -299,7 +296,6 @@ struct CheckedExecutionJoinParts {
     execution: ExecutionProofState,
     facts: ProofFacts,
     common_added_facts: Vec<Proposition>,
-    unfolded_predicates: PersistentOrderedSet<String>,
     step: ProofStep,
     /// A terminal join's outcome paths per arm, counted only while tracing.
     trace_arm_paths: Option<[usize; 2]>,
@@ -428,8 +424,6 @@ enum ProofScopeStructure {
     Have {
         proposition: ClickProposition,
         kernel: Proposition,
-        /// The initial unfolded goal, published only after the body closes.
-        retained_body: Option<(ClickProposition, Proposition)>,
     },
     Open {
         resource: ResourceClause,
@@ -719,10 +713,8 @@ pub(in crate::surface::proof) struct ChosenProjection {
     pub(in crate::surface::proof) principal_fact_index: usize,
     pub(in crate::surface::proof) source_token: ProjectionSourceToken,
     pub(in crate::surface::proof) source_proposition: ClickProposition,
-    /// Exact source token selected before any checked predicate unfolding.
+    /// Exact existential source selected by `choose`.
     pub(in crate::surface::proof) source_requirement: Proposition,
-    /// The existential proposition after the active, checked unfolding path.
-    pub(in crate::surface::proof) checked_source: Proposition,
     pub(in crate::surface::proof) chosen_name: String,
     pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
     pub(in crate::surface::proof) source_snapshot: crate::kernel::MemorySnapshotIdentity,
@@ -1108,7 +1100,6 @@ pub(super) struct ProofExecutionView<'p> {
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,
-    pub(super) unfolded_predicates: &'p SharedVec<String>,
     pub(super) branch_path: &'p PersistentSequence<String>,
     outcome_provenance: &'p crate::kernel::proof::PersistentVector<OutcomeProvenance>,
 }
@@ -2974,15 +2965,6 @@ impl<'a> Proof<'a> {
     }
 
     /// The focused branch branch's path-local unfold delta.
-    pub(in crate::surface::proof) fn focused_branch_unfolds(
-        &self,
-    ) -> &PersistentOrderedSet<String> {
-        &self
-            .focused_branch()
-            .expect("unfold queries require an open goal")
-            .state
-            .unfolded_predicates
-    }
 
     /// The focused branch goal's path-local fact context. Every caller is a
     /// checked operation or search query on an open goal: `apply_step` and
@@ -2999,7 +2981,6 @@ impl<'a> Proof<'a> {
     fn refined_branch_state(&self, facts: ProofFacts) -> BranchState {
         BranchState {
             facts,
-            unfolded_predicates: self.focused_branch_unfolds().clone(),
             execution: self.branch_execution().cloned(),
         }
     }
@@ -3253,7 +3234,6 @@ impl<'a> Proof<'a> {
                 KernelProofObject::root(self.state().locals().clone(), {
                     let context = BranchState {
                         facts,
-                        unfolded_predicates: self.focused_branch_unfolds().clone(),
                         execution: match &outcome {
                             Some(_) => self.branch_execution().cloned(),
                             None => None,
@@ -3323,25 +3303,6 @@ impl<'a> Proof<'a> {
         self.state
             .completed_proposition()
             .ok_or_else(|| self.step_error("completed proof is not a proposition judgment"))
-    }
-
-    pub(in crate::surface::proof) fn active_unfolded_predicates(&self) -> Vec<String> {
-        let inherited = match self.context.as_ref() {
-            ProofContext::Pure(_) => &[][..],
-            ProofContext::FixedState(context) => context.unfolded_predicates,
-            ProofContext::Execution(_) => self
-                .execution()
-                .map(|execution| execution.core.unfolded_predicates.as_slice())
-                .unwrap_or(&[]),
-        };
-        let mut names = inherited.to_vec();
-        let mut seen = inherited.iter().cloned().collect::<BTreeSet<_>>();
-        for name in self.focused_branch_unfolds() {
-            if seen.insert(name.clone()) {
-                names.push(name.clone());
-            }
-        }
-        names
     }
 
     pub(super) fn certificate(&self) -> ProofCertificate {
@@ -3750,7 +3711,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Witness(_) => "witness",
         ProofStep::LetSatisfy(_) => "obtain",
         ProofStep::Choose(_) => "choose",
-        ProofStep::UnfoldPredicate(_)
+        ProofStep::UnfoldProposition(_)
         | ProofStep::UnfoldFunction(_)
         | ProofStep::PeelFunction { .. }
         | ProofStep::UnfoldResource(_)
@@ -3782,6 +3743,7 @@ mod provenance;
 pub(in crate::surface::proof) use provenance::ProofCheckpoint;
 pub(in crate::surface::proof) use provenance::ProofStepSite;
 use provenance::{ProofNode, ProofStepBlock, ProofStepOrigin};
+mod local_predicate_unfold;
 mod resource_steps;
 mod scope;
 mod splits_and_scopes;

@@ -3262,7 +3262,7 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation::permutation)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation::permutation(args))` when a proof needs the predicate body.
 
 ## `click::bytes`
 
@@ -3298,7 +3298,7 @@ predicate equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: uint64
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::equal)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::equal(args))` when a proof needs the predicate body.
 
 ### `bytes::equal_range`
 
@@ -3314,7 +3314,7 @@ predicate equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint64) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::equal_range)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::equal_range(args))` when a proof needs the predicate body.
 
 ### `bytes::all_equal`
 
@@ -3330,7 +3330,7 @@ predicate all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_equal)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_equal(args))` when a proof needs the predicate body.
 
 ### `bytes::contains`
 
@@ -3346,7 +3346,7 @@ predicate contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::contains)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::contains(args))` when a proof needs the predicate body.
 
 ### `bytes::all_not_equal`
 
@@ -3362,7 +3362,7 @@ predicate all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_not_equal)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_not_equal(args))` when a proof needs the predicate body.
 
 ## `click::cstr`
 
@@ -3380,7 +3380,7 @@ predicate prefix(bytes: uint8[], len: uint64) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::prefix)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::prefix(args))` when a proof needs the predicate body.
 
 ### `cstr::len`
 
@@ -3399,7 +3399,7 @@ no null terminator, and byte `len` is a null terminator.
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::len)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::len(args))` when a proof needs the predicate body.
 
 ### `cstr::cstr`
 
@@ -3415,7 +3415,7 @@ predicate cstr(bytes: uint8[]) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::cstr)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::cstr(args))` when a proof needs the predicate body.
 
 ### `cstr::readable_len`
 
@@ -3436,7 +3436,7 @@ terminator is defined.
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::readable_len)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::readable_len(args))` when a proof needs the predicate body.
 
 ### `cstr::readable_len_unique`
 
@@ -3522,7 +3522,7 @@ an arbitrary write to the string. See
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::readable)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::readable(args))` when a proof needs the predicate body.
 
 ### `cstr_at`
 
@@ -3579,7 +3579,7 @@ predicate bounded(bytes: uint8[], max: uint64) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::bounded)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr::bounded(args))` when a proof needs the predicate body.
 
 ### `cstr::len_is_viewable`
 
@@ -3588,7 +3588,7 @@ theorem len_is_viewable(bytes: uint8[], len: uint64) {
     requires cstr::len(bytes, len);
 
     ensures viewable(bytes[0..len + 1u64]) by {
-        unfold(cstr::len);
+        unfold(cstr::len(bytes, len));
         solve();
     }
 }
@@ -3608,7 +3608,7 @@ theorem len_has_prefix(bytes: uint8[], len: uint64) {
     requires cstr::len(bytes, len);
 
     ensures cstr::prefix(bytes, len) by {
-        unfold(cstr::len);
+        unfold(cstr::len(bytes, len));
         solve();
     }
 }
@@ -3627,7 +3627,7 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
     requires cstr::len(bytes, len);
 
     ensures bytes[len] == '\0' by {
-        unfold(cstr::len);
+        unfold(cstr::len(bytes, len));
         solve();
     }
 }
@@ -3664,7 +3664,7 @@ function pow10(e: uint64) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::pow10)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::pow10(args))` when a proof needs the function body.
 
 ### `format::decimal_length`
 
@@ -3678,7 +3678,7 @@ function decimal_length(v: uint64) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_length)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_length(args))` when a proof needs the function body.
 
 ### `format::decimal_digit`
 
@@ -3696,7 +3696,7 @@ function decimal_digit(v: uint64, k: uint64) -> uint8 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_digit)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_digit(args))` when a proof needs the function body.
 
 ### `format::padded_length`
 
@@ -3710,7 +3710,7 @@ function padded_length(v: uint64, width: uint64) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_length)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_length(args))` when a proof needs the function body.
 
 ### `format::padded_digit`
 
@@ -3728,7 +3728,7 @@ function padded_digit(v: uint64, width: uint64, pad: uint8, k: uint64) -> uint8 
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_digit)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_digit(args))` when a proof needs the function body.
 
 ### `format::magnitude`
 
@@ -3742,7 +3742,7 @@ function magnitude(v: int32) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::magnitude)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::magnitude(args))` when a proof needs the function body.
 
 ### `format::signed_length`
 
@@ -3756,7 +3756,7 @@ function signed_length(v: int32) -> uint64 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_length)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_length(args))` when a proof needs the function body.
 
 ### `format::signed_digit`
 
@@ -3774,7 +3774,7 @@ function signed_digit(v: int32, k: uint64) -> uint8 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_digit)` when a proof needs the function body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_digit(args))` when a proof needs the function body.
 
 ### `format::pow10_0`
 

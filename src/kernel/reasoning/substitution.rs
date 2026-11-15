@@ -580,6 +580,7 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .predicate_unfoldings()
         .iter()
         .map(|unfolding| PredicateUnfolding {
+            requirement_source: unfolding.requirement_source.clone(),
             predicate: s.spec_proposition(&unfolding.predicate),
             body: s.spec_proposition(&unfolding.body),
         })

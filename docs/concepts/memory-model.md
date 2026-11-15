@@ -444,7 +444,7 @@ When an array parameter is passed to a pure Click function or predicate,
 <!-- verified-example: mdtests/compare_swap2_permutation.md -->
 ```click
 ensures pair_permutation: permutation::permutation(p, old(p), 0, 2) by {
-    unfold(permutation::permutation);
+    unfold(permutation::permutation(p, old(p), 0, 2));
 }
 ```
 

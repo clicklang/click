@@ -40,8 +40,8 @@ theorem exact_increment_is_progress(
 ) {
     requires ExactIncrement(step);
     ensures ProgressPair(step) by {
-        unfold(ExactIncrement);
-        unfold(ProgressPair);
+        unfold(ExactIncrement(step));
+        unfold(ProgressPair(step));
         solve();
     }
 }

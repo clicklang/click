@@ -103,7 +103,7 @@ theorem len_is_viewable(bytes: uint8[], len: uint64) {
     requires cstr::len(bytes, len);
 
     ensures viewable(bytes[0..len + 1u64]) by {
-        unfold(cstr::len);
+        unfold(cstr::len(bytes, len));
         solve();
     }
 }
@@ -112,7 +112,7 @@ theorem len_has_prefix(bytes: uint8[], len: uint64) {
     requires cstr::len(bytes, len);
 
     ensures cstr::prefix(bytes, len) by {
-        unfold(cstr::len);
+        unfold(cstr::len(bytes, len));
         solve();
     }
 }
@@ -121,7 +121,7 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
     requires cstr::len(bytes, len);
 
     ensures bytes[len] == '\0' by {
-        unfold(cstr::len);
+        unfold(cstr::len(bytes, len));
         solve();
     }
 }

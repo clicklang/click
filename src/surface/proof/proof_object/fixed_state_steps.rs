@@ -913,13 +913,7 @@ impl<'a> Proof<'a> {
             integer_values: &integer_values,
             pointer_element_widths: BTreeMap::new(),
         };
-        let unfolded_predicates = self.active_unfolded_predicates();
-        let explicit_premises = unfold_available_predicate_facts(
-            context.spec_definitions,
-            &unfolded_predicates,
-            &explicit_premises,
-        )
-        .map_err(|message| self.step_error(message))?;
+
         // An explicit `using` list supplies both argument-domain evidence
         // and the theorem's premises; omitted guards cannot leak in from
         // the surrounding proof context.
@@ -942,7 +936,6 @@ impl<'a> Proof<'a> {
             &lowering_assumptions,
             &application_context,
             context.spec_definitions,
-            &unfolded_predicates,
         )?;
 
         let mut facts = self.facts().clone();
@@ -974,7 +967,6 @@ impl<'a> Proof<'a> {
         application: &TheoremApplication,
         surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        let unfolded_predicates = self.active_unfolded_predicates();
         let algebraic_values = application
             .arguments
             .iter()
@@ -1000,7 +992,6 @@ impl<'a> Proof<'a> {
             &self.local_integer_values(),
             &algebraic_values,
             view.surface_propositions,
-            &unfolded_predicates,
             view.effect_facts,
             view.spec_definitions,
         )?;
@@ -1060,7 +1051,6 @@ impl<'a> Proof<'a> {
             &self.local_integer_values(),
             &algebraic_values,
             &execution.presentation.surface_propositions,
-            &execution.core.unfolded_predicates,
             &execution.core.effect_facts,
             context.spec_definitions,
         )?;
@@ -1206,23 +1196,13 @@ impl<'a> Proof<'a> {
         let source_fact_index = source_selection
             .as_ref()
             .map_or(source_ordinal, |selection| selection.principal_fact_index);
-        let mut source = source_facts
+        let source = source_facts
             .get(source_fact_index)
             .cloned()
             .ok_or_else(|| {
                 self.step_error(format!("requirement {source_ordinal} was not available"))
             })?;
-        let unfolded_predicates = self.active_unfolded_predicates();
-        if !matches!(source, Proposition::Exists { .. }) && !unfolded_predicates.is_empty() {
-            source = unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                &source,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| self.step_error(message))?;
-        }
-        let checked_source = source.clone();
+
         let Proposition::Exists {
             var, sort, body, ..
         } = source
@@ -1276,7 +1256,6 @@ impl<'a> Proof<'a> {
                 .get(source_fact_index)
                 .expect("validated requirement source index")
                 .clone(),
-            checked_source,
             source_selection.as_ref(),
             chosen_variable,
             choice,
@@ -1667,7 +1646,6 @@ impl<'a> Proof<'a> {
         &self,
         view: &FixedStateOperationView<'_>,
         source_requirement: Proposition,
-        checked_source: Proposition,
         source_selection: Option<&CallerRequirementSelection>,
         chosen_variable: Variable,
         choice: &ProofChoice,
@@ -1700,7 +1678,7 @@ impl<'a> Proof<'a> {
         // The body passed by `apply_fixed_state_choose` is the existential
         // body before substitution. Build the substituted body from the
         // selected requirement, preserving the original binder identity.
-        let instantiated = match (&checked_source, chosen) {
+        let instantiated = match (&source_requirement, chosen) {
             (Proposition::Exists { var, body, .. }, crate::kernel::integer_c_value!(value)) => {
                 substitute_int32_variable_in_proposition(body, *var, value.clone())
             }
@@ -1813,7 +1791,6 @@ impl<'a> Proof<'a> {
             },
             source_proposition: source_selection.source_proposition.clone(),
             source_requirement,
-            checked_source,
             chosen_name: choice.name.clone(),
             chosen_variable,
             source_snapshot,
@@ -2023,14 +2000,7 @@ impl<'a> Proof<'a> {
         let goal = self
             .proposition_goal("`witness` requires a proposition goal")?
             .clone();
-        let unfolded_predicates = self.active_unfolded_predicates();
-        let goal = unfold_predicates_in_proposition(
-            view.spec_definitions,
-            &unfolded_predicates,
-            &goal,
-            self.facts().assumptions(),
-        )
-        .map_err(|message| self.step_error(format!("could not unfold witness goal: {message}")))?;
+
         let values = parameter_values(view.parameter_binding)
             .map_err(|error| self.step_error(error.message))?;
         let array_refs = array_refs_for_parameters(
@@ -3058,18 +3028,9 @@ impl<'a> Proof<'a> {
         view: &FixedStateOperationView<'_>,
         surface_equality: &ClickProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        let unfolded_predicates = self.active_unfolded_predicates();
-        let goal = Box::new(
-            unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                self.proposition_goal("`rewrite` requires a proposition goal")?,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| {
-                self.step_error(format!("could not unfold `rewrite` goal: {message}"))
-            })?,
-        );
+        let goal = Box::new(Proposition::clone(
+            self.proposition_goal("`rewrite` requires a proposition goal")?,
+        ));
         let lookup = |map: &SurfacePropositionMap, surface: &ClickProposition| {
             map.available_kernel_matching(surface, |kernel| {
                 self.facts().materialization_available(kernel)
@@ -3115,17 +3076,7 @@ impl<'a> Proof<'a> {
                 ),
             }
         };
-        let equality = Box::new(
-            unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                &equality,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| {
-                self.step_error(format!("could not unfold `rewrite` equality: {message}"))
-            })?,
-        );
+        let equality = Box::new(Proposition::clone(&equality));
         self.finish_rewrite(goal, equality, surface_equality, || {
             let (mut parameters, mut arguments) =
                 crate::surface::diagnostics::local_naming_tables(view.fixed_state.state);
@@ -3302,7 +3253,7 @@ impl<'a> Proof<'a> {
         let Some(execution) = self.execution() else {
             return Ok(None);
         };
-        let Some(view) = self.execution_proposition_fixed_state_view() else {
+        let Some(_) = self.execution_proposition_fixed_state_view() else {
             return Ok(None);
         };
         let entry_snapshot = self
@@ -3343,21 +3294,6 @@ impl<'a> Proof<'a> {
         {
             return Ok(None);
         }
-        let mut checked_source = projection.source_requirement.clone();
-        let unfolded_predicates = self.active_unfolded_predicates();
-        if !matches!(checked_source, Proposition::Exists { .. }) && !unfolded_predicates.is_empty()
-        {
-            checked_source = unfold_predicates_in_proposition(
-                view.spec_definitions,
-                &unfolded_predicates,
-                &checked_source,
-                self.facts().assumptions(),
-            )
-            .map_err(|message| self.step_error(message))?;
-        }
-        if checked_source != projection.checked_source {
-            return Ok(None);
-        }
         let Some(binding) = self.local_binding(&projection.chosen_name) else {
             return Ok(None);
         };
@@ -3365,7 +3301,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         }
         let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
-        let chosen_body = match checked_source {
+        let chosen_body = match projection.source_requirement.clone() {
             Proposition::Exists { var, body, .. } => match binding {
                 ContractExpression::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::Int32(_),
@@ -4071,7 +4007,6 @@ impl<'a> Proof<'a> {
                 .map_err(|message| self.step_error(message))?;
             let state = BranchState {
                 facts,
-                unfolded_predicates: branch_state.unfolded_predicates.clone(),
                 execution: Some(Arc::new(execution)),
             };
             return Ok(CheckedFocusedTransition::replacing(

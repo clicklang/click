@@ -10775,6 +10775,17 @@ impl Parser {
                         && self.peek_next() != Some(&Token::LParen))
                 {
                     ProofTactic::UnfoldResource(self.parse_owned_resource_target()?)
+                } else if self.peek_ident().is_some_and(|name| {
+                    self.contract_value_parameter_names
+                        .get(name)
+                        .is_some_and(|parameters| !parameters.is_empty())
+                }) || matches!(self.peek_ident(), Some("at" | "forall" | "exists"))
+                    || self.peek() == Some(&Token::LParen)
+                    || self
+                        .peek_ident()
+                        .is_some_and(|name| self.names.fact_names.contains_key(name))
+                {
+                    ProofTactic::UnfoldProposition(self.parse_proposition()?)
                 } else if matches!(self.peek(), Some(Token::Ident(_)))
                     && self.peek_next() == Some(&Token::LParen)
                 {
@@ -10788,8 +10799,7 @@ impl Parser {
                         "resource instance `{name}` is not available as an unfold target"
                     )));
                 } else {
-                    let predicate = self.expect_reference_name("predicate name")?;
-                    ProofTactic::UnfoldPredicate(predicate)
+                    return Err(self.error("unfold requires an application, such as `unfold(p(x))`, or an owned resource"));
                 };
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
@@ -18103,7 +18113,7 @@ mod tactic_classification_tests {
         ),
         ("user-tactic", "name(x, { cell: c });"),
         ("step-until", "step_until(label);"),
-        ("unfold-predicate", "unfold(name);"),
+        ("unfold-predicate", "unfold(predicate(x));"),
         ("unfold-function", "unfold(f(x));"),
         ("peel-function", "peel(f(x)) using { x == 1; };"),
         ("unfold-resource", "unfold(reference(p));"),

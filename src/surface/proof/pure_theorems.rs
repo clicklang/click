@@ -2318,40 +2318,49 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: proving `{name}({subject})` requires an explicit contract-refinement proof"
         )));
     };
-    let proof_tactics = if let Some((source_name, _, _)) = &source_contract {
-        let Some((first_two, remainder)) = tactics.split_at_checked(2) else {
+    // Contract refinement opens explicitly selected contract applications.
+    // Compare the lowered applications, including callback and value arguments.
+    let selected_application = |tactic: &ProofTactic| -> Result<Option<Proposition>, ClickError> {
+        let target = match tactic {
+            ProofTactic::UnfoldProposition(target) => target.clone(),
+            ProofTactic::UnfoldFunction(application) => ClickProposition::PredicateCall {
+                name: application.name.clone(),
+                arguments: application.arguments.clone(),
+            },
+            _ => return Ok(None),
+        };
+        lower(&target).map(Some)
+    };
+    let count = if source_contract.is_some() { 2 } else { 1 };
+    let Some((prefix, proof_tactics)) = tactics.split_at_checked(count) else {
+        return Err(ClickError::new(format!(
+            "`{claim_label}`: contract refinement must begin by unfolding its selected contract applications"
+        )));
+    };
+    let mut expected = vec![goal.clone()];
+    if source_contract.is_some() {
+        expected.push(lower(
+            theorem.requires()[0]
+                .proposition()
+                .expect("source contract requirement"),
+        )?);
+    }
+    for tactic in prefix {
+        let Some(selected) = selected_application(tactic)? else {
             return Err(ClickError::new(format!(
-                "`{claim_label}`: abstract refinement must begin by unfolding `{source_name}` and `{name}`"
+                "`{claim_label}`: contract refinement requires explicit `unfold(contract(callback))` applications"
             )));
         };
-        let unfolded = first_two
+        let Some(index) = expected
             .iter()
-            .map(|tactic| match tactic {
-                ProofTactic::UnfoldPredicate(unfolded) => Some(unfolded.as_str()),
-                _ => None,
-            })
-            .collect::<Option<BTreeSet<_>>>();
-        let expected = BTreeSet::from([*source_name, name.as_str()]);
-        if unfolded.as_ref() != Some(&expected) {
-            return Err(ClickError::new(format!(
-                "`{claim_label}`: abstract refinement must begin by unfolding `{source_name}` and `{name}`"
-            )));
-        }
-        remainder
-    } else {
-        let Some((ProofTactic::UnfoldPredicate(unfolded), remainder)) = tactics.split_first()
+            .position(|value| crate::kernel::proof::propositions_are_alpha_equal(value, &selected))
         else {
             return Err(ClickError::new(format!(
-                "`{claim_label}`: contract-refinement proof must begin with `unfold({name});`"
+                "`{claim_label}`: unfold selects a different contract application"
             )));
         };
-        if unfolded != name {
-            return Err(ClickError::new(format!(
-                "`{claim_label}`: expected `unfold({name});`, got `unfold({unfolded});`"
-            )));
-        }
-        remainder
-    };
+        expected.remove(index);
+    }
     let function_environment = function_environment.ok_or_else(|| {
         ClickError::new(format!(
             "`{claim_label}`: contract-refinement theorems require the C function environment"

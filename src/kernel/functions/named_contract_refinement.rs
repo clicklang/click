@@ -10,7 +10,7 @@ use super::*;
 /// uses — the target's proof parameters, the implementation's binders, and
 /// the implementation's C parameter list — so the printed obligation cannot
 /// drift from the one that was refused. A target with no proof parameters
-/// gets the `unfold(Name)` form, which is the route that already exists.
+/// gets the `unfold(Name(&function))` form, which is the route that already exists.
 ///
 /// `declared_parameter_spellings` carries, per parameter position, the C
 /// spelling the caller's source declaration uses where this interface cannot
@@ -47,7 +47,7 @@ pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
         return format!(
             "theorem {theorem}() {{\n    \
              ensures {contract}(&{function}) by {{\n        \
-             unfold({contract});\n        \
+             unfold({contract}(&{function}));\n        \
              solve();\n    \
              }}\n\
              }}",
@@ -254,7 +254,7 @@ pub(in crate::kernel) fn function_refines_named_contract(
         return Ok(false);
     };
     context.object_type_requirements = object_type_requirements.clone();
-    function_refines_named_contract_in_case(&context, &[], &BTreeSet::new(), false, None, budget)
+    function_refines_named_contract_in_case(&context, &[], false, None, budget)
 }
 
 /// Whether `source`, a named contract a fact fixed, implements `contract`.
@@ -284,14 +284,7 @@ pub(super) fn contract_refines_contract(
         return Ok(false);
     };
     context.function_value_arguments = source.value_arguments().to_vec();
-    function_refines_named_contract_in_case(
-        &context,
-        &[],
-        &BTreeSet::new(),
-        false,
-        Some(caller_facts),
-        budget,
-    )
+    function_refines_named_contract_in_case(&context, &[], false, Some(caller_facts), budget)
 }
 
 pub(in crate::kernel) fn prepare_function_contract_refinement_context(
@@ -1067,7 +1060,6 @@ pub(super) fn state_with_refinement_instances(
 pub(super) fn function_refines_named_contract_in_case(
     context: &FunctionContractRefinementContext,
     case_assumptions: &[Proposition],
-    unfolded_predicates: &BTreeSet<String>,
     explicit_case: bool,
     caller_facts: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
@@ -1075,11 +1067,7 @@ pub(super) fn function_refines_named_contract_in_case(
     let contract = &context.contract;
     let function_interface = &context.function_interface;
     let contract_interface = contract.interface();
-    if !predicate_interfaces_are_explicitly_compatible(
-        contract_interface,
-        function_interface,
-        unfolded_predicates,
-    ) {
+    if !predicate_interfaces_are_explicitly_compatible(contract_interface, function_interface) {
         return Ok(false);
     }
     let mut propositions = contract_interface
@@ -1359,22 +1347,13 @@ pub(super) fn function_refines_named_contract_in_case(
 pub(super) fn predicate_interfaces_are_explicitly_compatible(
     contract: &FunctionContractInterface,
     function: &FunctionContractInterface,
-    unfolded_predicates: &BTreeSet<String>,
 ) -> bool {
-    let contract_unfoldings = contract
+    contract
         .predicate_unfoldings()
         .iter()
-        .collect::<BTreeSet<_>>();
-    let function_unfoldings = function
-        .predicate_unfoldings()
-        .iter()
-        .collect::<BTreeSet<_>>();
-    let permitted = |unfolding: &PredicateUnfolding| match unfolding.predicate() {
-        SpecProposition::Predicate { name, .. } => unfolded_predicates.contains(name),
-        _ => false,
-    };
-    contract_unfoldings
-        .difference(&function_unfoldings)
-        .chain(function_unfoldings.difference(&contract_unfoldings))
-        .all(|unfolding| permitted(unfolding))
+        .collect::<BTreeSet<_>>()
+        == function
+            .predicate_unfoldings()
+            .iter()
+            .collect::<BTreeSet<_>>()
 }

@@ -41,7 +41,7 @@ impl SourceContext {
                 ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::Induct { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
-                    | ProofTactic::UnfoldPredicate(_)
+                    | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::PeelFunction { .. }
                     | ProofTactic::Witness(_)
@@ -74,7 +74,7 @@ impl SourceContext {
                     | ProofTactic::StepCall(_)
                     | ProofTactic::UserTactic(_)
                     | ProofTactic::TransportUsing { .. }
-                    | ProofTactic::UnfoldPredicate(_)
+                    | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::PeelFunction { .. }
                     | ProofTactic::UnfoldResource(_)
@@ -89,7 +89,7 @@ impl SourceContext {
                 ProofTactic::FoldResource(_)
                     | ProofTactic::UnfoldResource(_)
                     | ProofTactic::ConstructResource(_)
-                    | ProofTactic::UnfoldPredicate(_)
+                    | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::PeelFunction { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }

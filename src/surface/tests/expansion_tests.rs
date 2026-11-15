@@ -3882,7 +3882,7 @@ fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
         verify_c_sources(&click, &sources).expect("the original sorting proof verifies");
     let expanded = expand_checked_function_claim(&click, &verified_for_label, "sort3.sorted")
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    assert!(expanded.contains("unfold(sorted_range);"), "{expanded}");
+    assert!(expanded.contains("unfold(sorted_range("), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -4603,8 +4603,8 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
         theorem lift(callback: int32 (*)(int32)) {
             requires Source(callback);
             ensures Target(callback) by {
-                unfold(Source);
-                unfold(Target);
+                unfold(Source(callback));
+                unfold(Target(callback));
                 intro();
                 have result == x implies result >= 0 by {
                     apply(nonnegative_equal(x, result));
@@ -5158,7 +5158,7 @@ fn grouped_post_execution_unfold_retains_its_checked_proof_step() {
             ensures selected(x);
         } by {
             step_until(function.exit);
-            unfold(selected);
+            unfold(selected(x));
             known();
         }
     "#;
@@ -7297,7 +7297,7 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
             theorem equality_transitive_after_unfold(x: int32, y: int32, z: int32) {
                 requires equality_chain(x, y, z);
                 ensures x == z by {
-                    unfold(equality_chain);
+                    unfold(equality_chain(x, y, z));
                     solve() using {
                         x == y;
                         y == z;
@@ -8055,14 +8055,14 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("compare_swap2.c", c_source)], line, column);
     let expanded = expanded.expect("post-execution predicate goal should expand");
-    assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
+    assert!(expanded.contains("unfold(sorted_pair("), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     let reverified = { verify_c_sources(&expanded, &[("compare_swap2.c", c_source)]) };
     reverified.expect("expanded predicate-goal proof should independently reverify");
 
-    let corrupted = expanded.replacen("unfold(sorted_pair);", "unfold(missing);", 1);
+    let corrupted = expanded.replacen("unfold(sorted_pair(", "unfold(missing(", 1);
     assert_ne!(
         corrupted, expanded,
         "the expansion should expose its checked predicate unfold"
@@ -10251,7 +10251,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
             ensures is_nine(result);
         } by {
             step_until(function.exit);
-            unfold(is_nine);
+            unfold(is_nine(result));
             normalize();
         }
     "#;
@@ -10268,7 +10268,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
     assert!(
         tactics.iter().any(|tactic| matches!(
             tactic,
-            ProofTactic::UnfoldPredicate(name) if name == "is_nine"
+            ProofTactic::UnfoldFunction(application) if application.name == "is_nine"
         )),
         "the retained proof lost its predicate unfold: {tactics:#?}"
     );
@@ -10278,7 +10278,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
     verify_c_sources(&rewritten, &sources)
         .expect("the serialized predicate unfold should independently reverify");
 
-    let corrupted = rewritten.replacen("unfold(is_nine);", "unfold(is_eight);", 1);
+    let corrupted = rewritten.replacen("unfold(is_nine(", "unfold(is_eight(", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the unfold"
@@ -11755,7 +11755,7 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             owns p[0..2];
             ensures result == 7;
         } by {
-            unfold(first_is_seven);
+            unfold(first_is_seven(p));
             branch ensuring {
                 fact p[0] == 7;
                 owns p[0..2];
@@ -12913,7 +12913,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         expanded.contains("have valid_pool(pool) by {"),
         "{expanded}"
     );
-    assert!(expanded.contains("unfold(valid_pool);"), "{expanded}");
+    assert!(expanded.contains("unfold(valid_pool("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("the retained predicate closure should check independently without search");
 }
@@ -12952,7 +12952,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
         int32 sort_three_cells(int32 p[3]) {
             consumes p[0..3];
             ensures permutation::permutation(p, old(p), 0, 3) by {
-                unfold(permutation::permutation);
+                unfold(permutation::permutation(p, old(p), 0, 3));
             }
         }
     "#;
@@ -13147,7 +13147,7 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                 invariant j >= 0 and j <= 2;
                 invariant all_le_range(p, 0, j, p[j]);
                 initialize by {
-                    unfold(all_le_range);
+                    unfold(all_le_range(p, 0, j, p[j]));
                     solve();
                 }
                 preserve by {
@@ -13161,23 +13161,23 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                         have defined(j + 1) by { solve(); }
                         have p[j] <= p[j + 1] by { solve(); }
                         have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range);
+                            unfold(all_le_range(p, 0, j, p[j + 1]));
                             solve();
                         }
                     } else {
                         have defined(j + 1) by { solve(); }
                         have p[j] <= p[j + 1] by { solve(); }
                         have all_le_range(p, 0, j, p[j + 1]) by {
-                            unfold(all_le_range);
+                            unfold(all_le_range(p, 0, j, p[j + 1]));
                             solve();
                         }
                     }
                     step();
-                    unfold(all_le_range);
+                    unfold(all_le_range(p, 0, j, p[j + 1]));
                 }
             }
             step();
-            unfold(all_le_range);
+            unfold(all_le_range(p, 0, j, p[j + 1]));
             solve();
         }
     "#;
@@ -14136,7 +14136,7 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
             requires bytes::all_not_equal(p, 0, 3, 'y');
             ensures p[1] != 'y' by {
                 step_until(function.exit);
-                unfold(bytes::all_not_equal);
+                unfold(bytes::all_not_equal(p, 0, 3, 'y'));
                 solve();
             }
         }
@@ -14147,7 +14147,7 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
             "bytes::all_not_equal(p, 0, 3, 'y')",
             "(0u64..3u64).all(|k| { p[k] != 'y' })",
         )
-        .replace("unfold(bytes::all_not_equal);", "");
+        .replace("unfold((0u64..3u64).all(|k| { p[k] != 'y' }));", "");
     for source in [click_source, ordinary_source.as_str()] {
         verify_c_sources(source, &sources)
             .expect("universal instantiation must work with or without a predicate unfold");
@@ -14159,8 +14159,9 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
         )
         .expect("the universal specialization should expand");
         assert!(expanded.contains("instantiate("), "{expanded}");
-        verify_c_sources(&expanded, &sources)
-            .expect("the universal specialization should check independently");
+        verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
+            panic!("the universal specialization should check independently: {error}\n{expanded}")
+        });
     }
 }
 
@@ -14385,7 +14386,7 @@ fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
                 ensures result == x;
             } by {
                 have reflexive(x) by {
-                    unfold(reflexive);
+                    unfold(reflexive(x));
                     solve();
                 }
                 step_until(function.exit);
@@ -14423,7 +14424,7 @@ fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
             .find("step_until(function.exit)")
             .expect("expanded proof should retain its suffix")];
     assert!(
-        expanded_have.contains("unfold(reflexive);"),
+        expanded_have.contains("unfold(reflexive("),
         "{expanded_have}"
     );
     assert!(expanded_have.contains("known();"), "{expanded_have}");
@@ -14452,7 +14453,7 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
                 ensures result == x;
             } by {
                 have x == z by {
-                    unfold(equality_chain);
+                    unfold(equality_chain(x, y, z));
                     solve() using {
                         x == y;
                         y == z;
@@ -14576,7 +14577,7 @@ fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
                 views data[1..2];
                 ensures result == 0;
             } by {
-                unfold(second_is);
+                unfold(second_is(owner, value));
                 have data[1] == value by solve();
                 step_until(function.exit);
                 solve();
@@ -14624,7 +14625,7 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
                 requires first_is_seven(p);
                 owns p[0..2];
             } by {
-                unfold(first_is_seven);
+                unfold(first_is_seven(p));
                 step();
                 have p[0] == 7 by solve();
                 step();
@@ -15593,7 +15594,7 @@ fn unfolded_conjunction_have_solve_expands_and_rechecks() {
             } by {
                 step_until(function.exit);
                 have ordered_pair(pair) by {
-                    unfold(ordered_pair);
+                    unfold(ordered_pair(pair));
                     solve();
                 }
                 solve();
@@ -15652,7 +15653,7 @@ fn outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate() {
 
                 ensures ordered_pair(pair);
             } by {
-                unfold(ordered_pair);
+                unfold(ordered_pair(pair));
                 step_until(function.exit);
                 known();
                 solve();
@@ -22497,4 +22498,42 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
         .err()
         .expect("a null store cannot produce the nonempty tree");
     assert!(!error.message().contains("no Surface spelling"), "{error}");
+}
+
+#[test]
+fn contract_unfold_rejects_another_application() {
+    let (source, sources) =
+        mdtest_sources("mdtests/named_contract_value_parameter_contract_refinement_theorem.md");
+    let source = source.replace(
+        "unfold(Adds(f, { amount: 3 }))",
+        "unfold(Adds(f, { amount: 4 }))",
+    );
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &sources)
+        .expect_err("unfolding one contract application must not open another");
+    assert!(
+        error.message().contains("different contract application"),
+        "{error}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: byte-copy predicate expansion and independent replay"]
+fn local_byte_predicate_unfolds_expand_and_replay() {
+    let (source, sources) =
+        mdtest_sources("mdtests/char_argument_to_byte_predicate_unfolds_as_bytes.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "copy_u")
+        .expect("the copy should have an explicit local predicate proof");
+    assert!(expanded.contains("old(src)"), "{expanded}");
+    without_implicit_solve_for_claim("copy_u.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded byte proof should replay independently");
 }

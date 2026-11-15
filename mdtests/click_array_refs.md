@@ -46,7 +46,7 @@ int32 keep_first_change_second(int32 p[2], int32 x) {
     consumes p[1..2];
     ensures first_cell_preserved: same_first(p, old(p)) by {
         step_until(function.exit);
-        unfold(same_first);
+        unfold(same_first(p, old(p)));
         solve();
     }
 }
@@ -58,7 +58,7 @@ int32 identity_two_arrays(int32 p[1], int32 q[1]) {
     ensures exact_opaque_fact: same_first(p, q);
     ensures unfolded_requirement: p[0] == q[0] by {
         step_until(function.exit);
-        unfold(same_first);
+        unfold(same_first(p, q));
         solve();
     }
 }

@@ -2687,13 +2687,13 @@ pub(in crate::surface) fn function_contract_summary(
             },
             Requirement::Resource(_) => continue,
         };
-        let opaque_predicate = matches!(
-            &proposition,
-            ClickProposition::PredicateCall { name, .. }
-                if spec_definitions.predicates.get(name).is_some()
-        )
-        .then(|| lowerer.click_proposition_to_spec_proposition(&proposition, &context))
-        .transpose();
+        let mut called = BTreeSet::new();
+        crate::surface::validation::collect_called_predicates(&proposition, &mut called);
+        let opaque_predicate = called
+            .iter()
+            .any(|name| spec_definitions.predicates.get(name).is_some())
+            .then(|| lowerer.click_proposition_to_spec_proposition(&proposition, &context))
+            .transpose();
         let Ok(proposition) = unfold_contract_predicates(&proposition) else {
             opaque_contract_supported = false;
             continue;
@@ -2705,8 +2705,10 @@ pub(in crate::surface) fn function_contract_summary(
         match lowerer.click_proposition_to_spec_proposition(&proposition, &context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
-                    predicate_unfoldings
-                        .push(PredicateUnfolding::new(predicate, proposition.clone()));
+                    predicate_unfoldings.push(
+                        PredicateUnfolding::new(predicate, proposition.clone())
+                            .with_requirement_source(source_index),
+                    );
                 }
                 requires.push(proposition);
                 contract_requirement_sources.push(Some(source_index));
@@ -2738,13 +2740,13 @@ pub(in crate::surface) fn function_contract_summary(
             Ensure::Resource(_) => None,
         })
     {
-        let opaque_predicate = matches!(
-            proposition,
-            ClickProposition::PredicateCall { name, .. }
-                if spec_definitions.predicates.get(name).is_some()
-        )
-        .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &ensures_context))
-        .transpose();
+        let mut called = BTreeSet::new();
+        crate::surface::validation::collect_called_predicates(proposition, &mut called);
+        let opaque_predicate = called
+            .iter()
+            .any(|name| spec_definitions.predicates.get(name).is_some())
+            .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &ensures_context))
+            .transpose();
         let Ok(proposition) = unfold_contract_predicates(proposition) else {
             opaque_contract_supported = false;
             continue;
@@ -4164,37 +4166,13 @@ impl AnnotationLowerer<'_> {
         &mut self,
         loop_index: usize,
     ) -> Result<Vec<LoopInvariantCheck>, ClickError> {
-        let unfolded_predicates = self
-            .structural_clauses
-            .for_loop(loop_index)
-            .into_iter()
-            .flat_map(|clause| {
-                clause
-                    .initialize_proof()
-                    .into_iter()
-                    .chain(clause.preserve_proof())
-            })
-            .flat_map(SourceProof::unfold_tactic_names)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
         self.structural_clauses
             .for_loop(loop_index)
             .into_iter()
             .flat_map(StructuralClause::items)
             .enumerate()
             .map(|(item_index, item)| {
-                let proposition = unfold_structural_invariant_proposition(
-                    self.spec_definitions.predicates,
-                    item.proposition(),
-                    &unfolded_predicates,
-                )
-                .map_err(|message| {
-                    ClickError::new(format!(
-                        "loop {loop_index} {}: {message}",
-                        item.title(item_index)
-                    ))
-                })?;
+                let proposition = item.proposition().clone();
                 Ok(LoopInvariantCheck::new(
                     self.click_proposition_to_spec_proposition(
                         &proposition,

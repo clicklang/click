@@ -59,7 +59,7 @@ pub enum ProofStep {
     StepCall(CallBinderTransport),
     /// One application of a user-defined tactic's verified contract.
     UserTactic(CallBinderTransport),
-    UnfoldPredicate(String),
+    UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
     /// `peel(f(args)) using { ... }`: the same defining equation, plus
     /// the range-fold law the listed guards select, stated over `f(args)`.
@@ -714,7 +714,7 @@ impl ProofStep {
             ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
             ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
             ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
-            ProofTactic::UnfoldPredicate(name) => Self::UnfoldPredicate(name.clone()),
+            ProofTactic::UnfoldProposition(target) => Self::UnfoldProposition(target.clone()),
             ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
             ProofTactic::PeelFunction {
                 application,
@@ -840,7 +840,7 @@ impl ProofStep {
             Self::StepContract(name) => ProofTactic::StepContract(name.clone()),
             Self::StepCall(transport) => ProofTactic::StepCall(transport.clone()),
             Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
-            Self::UnfoldPredicate(name) => ProofTactic::UnfoldPredicate(name.clone()),
+            Self::UnfoldProposition(target) => ProofTactic::UnfoldProposition(target.clone()),
             Self::UnfoldFunction(application) => ProofTactic::UnfoldFunction(application.clone()),
             Self::PeelFunction {
                 application,
@@ -1132,7 +1132,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::StepContract(_)
         | ProofStep::StepCall(_) => TacticClass::Simple(SimpleTactic::StatementTransition),
         ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
-        ProofStep::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
+        ProofStep::UnfoldProposition(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
         ProofStep::UnfoldFunction(_) | ProofStep::PeelFunction { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldFunction)
         }

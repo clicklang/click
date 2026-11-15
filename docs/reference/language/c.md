@@ -1870,7 +1870,7 @@ function: `requires Adds(f, { amount: k });`. A call through `f` then binds
 with `amount` fixed to `3`. An unknown, missing, or repeated name is refused.
 A refinement theorem may conclude a contract with value parameters, fixing
 them as an attachment does: `ensures Adds(&add3, { amount: 3 }) by {
-unfold(Adds); solve(); }`, whose `unfold(Adds)` opens the obligation with
+unfold(Adds(&add3, { amount: 3 })); solve(); }`, whose `unfold(Adds(&add3, { amount: 3 }))` opens the obligation with
 `amount` bound to `3`. An abstract refinement fixes the values of both its
 source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
 Shifts(f, { offset: 3 })`. See
@@ -1970,14 +1970,14 @@ before the call that needs the contract.
 
 When refinement depends on a conditional footprint, state it as a closed pure
 theorem. The conclusion applies the named contract to one concrete function
-address. `unfold(Contract)` introduces arbitrary values for the contract's
+address. `unfold(Contract(callback))` introduces arbitrary values for the contract's
 call parameters, after which an ordinary proof can use explicit logical cases:
 
 <!-- verified-example: mdtests/c_named_function_contract_refinement_theorem.md -->
 ```click
 theorem set_one_is_make_positive() {
     ensures MakePositive(&set_one_if_active) by {
-        unfold(MakePositive);
+        unfold(MakePositive(&set_one_if_active));
 
         if active != 0 {
             solve();
@@ -2006,9 +2006,8 @@ combinations of footprint guards.
 <!-- verified-example: mdtests/c_named_contract_ordinary_rejects_missing_premise.md -->
 
 The same proof may explicitly open stateful predicates used by either
-interface. After the contract itself is open, `unfold(Predicate)` authorizes
-the registered, checked definition of every occurrence of that predicate in
-the local comparison. This remains an explicit proof step: direct function
+interface. After the contract itself is open, `unfold(predicate(args))` opens the
+selected application in the local comparison. This remains an explicit proof step: direct function
 pointer formation does not unfold a predicate whose opaque interface differs,
 and naming an unrelated predicate grants no authority. Ordinary `solve` may
 select a needed predicate unfolding and record it in its certificate. The
@@ -2045,8 +2044,8 @@ theorem exact_increment_is_progress(
 ) {
     requires ExactIncrement(step);
     ensures ProgressPair(step) by {
-        unfold(ExactIncrement);
-        unfold(ProgressPair);
+        unfold(ExactIncrement(step));
+        unfold(ProgressPair(step));
         solve();
     }
 }

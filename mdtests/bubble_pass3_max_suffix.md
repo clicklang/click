@@ -59,7 +59,7 @@ int32 bubble_pass3(int32 p[3]) {
         invariant j >= 0 and j <= 2;
         invariant all_le_range(p, 0, j, p[j]);
         initialize by {
-            unfold(all_le_range);
+            unfold(all_le_range(p, 0, j, p[j]));
             solve();
         }
         preserve by {
@@ -75,7 +75,7 @@ int32 bubble_pass3(int32 p[3]) {
                 have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
                     if j == 0 {
-                        unfold(all_le_range);
+                        unfold(all_le_range(p, 0, j, p[j + 1]));
                         solve();
                     } else {
                         have j == 1 by solve();
@@ -99,7 +99,7 @@ int32 bubble_pass3(int32 p[3]) {
                         have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
                             preserve(memory(p[0]), loop(0).statement(0).statement(2));
                         }
-                        unfold(all_le_range);
+                        unfold(all_le_range(p, 0, j, p[j + 1]));
                         intro(); intro();
                         have k == 0 by solve();
                         solve();
@@ -109,17 +109,17 @@ int32 bubble_pass3(int32 p[3]) {
                 have defined(j + 1);
                 have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
-                    unfold(all_le_range);
+                    unfold(all_le_range(p, 0, j, p[j + 1]));
                     solve();
                 }
             }
             step();
-            unfold(all_le_range);
+            unfold(all_le_range(p, 0, j, p[j + 1]));
         }
         owns p[0..3];
     }
     step();
-    unfold(all_le_range);
+    unfold(all_le_range(p, 0, j, p[j + 1]));
     solve();
 }
 ```

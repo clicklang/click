@@ -2784,7 +2784,7 @@ fn validate_pure_theorem_tactics(
             ProofTactic::Synthetic(inner) => {
                 validate_pure_theorem_tactics(theorem_name, std::slice::from_ref(inner))?;
             }
-            ProofTactic::UnfoldPredicate(_)
+            ProofTactic::UnfoldProposition(_)
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::PeelFunction { .. }
             | ProofTactic::Induct { .. }
@@ -2896,7 +2896,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::UserTactic(_) => "tactic",
         ProofTactic::SmartExecute => "implicit tail",
         ProofTactic::ExecuteUntil(_) => "step_until",
-        ProofTactic::UnfoldPredicate(_)
+        ProofTactic::UnfoldProposition(_)
         | ProofTactic::UnfoldFunction(_)
         | ProofTactic::PeelFunction { .. }
         | ProofTactic::UnfoldResource(_)

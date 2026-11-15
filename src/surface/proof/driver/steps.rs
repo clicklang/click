@@ -282,7 +282,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if !super::execution_statements::implicit_solve_disabled()
             && matches!(
                 &step,
-                ProofStep::UnfoldPredicate(_)
+                ProofStep::UnfoldProposition(_)
                     | ProofStep::UnfoldFunction(_)
                     | ProofStep::UnfoldResource(_)
                     | ProofStep::UnfoldWitnesses { .. }
@@ -507,7 +507,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 target,
                 premises,
             } => driver_proof.apply_transport_using(source, target, premises),
-            ProofStep::UnfoldPredicate(name) => driver_proof.apply_predicate_unfold(name),
+            ProofStep::UnfoldProposition(target) => {
+                driver_proof.apply_local_predicate_unfold(target)
+            }
             ProofStep::UnfoldFunction(application) => {
                 driver_proof.apply_function_unfold(application, None)
             }

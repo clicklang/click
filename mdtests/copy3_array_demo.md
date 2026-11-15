@@ -91,7 +91,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     normalize() using { separate(memory(dst[i]), memory(src[k])); };
                 }
                 have src[k] == at(iteration, src[k]) by {
-                    preserve(separate(statement(2).statement(0).footprint, memory(src[k])));
+                    preserve(memory(src[k]), statement(2).statement(0));
                 }
                 known();
             }
@@ -108,11 +108,11 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                         normalize() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
                     have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
-                        preserve(separate(statement(2).statement(0).footprint, memory(dst[k])));
+                        preserve(memory(dst[k]), statement(2).statement(0));
                     }
                     have separate(statement(2).statement(1).footprint, memory(dst[k])) by { normalize() using { }; }
                     have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
-                        preserve(separate(statement(2).statement(1).footprint, memory(dst[k])));
+                        preserve(memory(dst[k]), statement(2).statement(1));
                     }
                     known();
                 } else {

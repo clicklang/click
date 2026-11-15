@@ -35,7 +35,6 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
         &[],
-        &[],
     );
     for size in [128, 512, 2048, 8192] {
         let premises = (0..size)
@@ -107,7 +106,6 @@ fn reflexive_pointer_metadata_does_not_search_snapshot_history() {
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
             &[],
         );
@@ -220,7 +218,6 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
         );
         let (certificate, work) = crate::instrumentation::measure_deterministic_work(|| {

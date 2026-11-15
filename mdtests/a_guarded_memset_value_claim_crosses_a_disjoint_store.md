@@ -26,7 +26,7 @@ void fill(uint8* dst) {
     step();
     step();
     have bytes::all_equal(dst, 0u64, 4u64, 7u8) by {
-        unfold(bytes::all_equal);
+        unfold(bytes::all_equal(dst, 0u64, 4u64, 7u8));
         intro(); intro();
         have separate(memory(dst[4u64]), memory(dst[k])) by {
             apply(separation::separate_elements(dst, 4u64, k));

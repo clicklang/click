@@ -22,7 +22,7 @@ fn proof_step_supports_explicit_fact_transport() {
                 owns p[0..2];
                 ensures result == 7;
             } by {
-                unfold(first_is_seven);
+                unfold(first_is_seven(p));
                 step();
                 transport(old(p[0]) == 7, p[0] == 7) using {
                     old(p[0]) == 7;
@@ -87,7 +87,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
                 owns p[0..3];
                 ensures result >= 0;
             } by {
-                unfold(ordered);
+                unfold(ordered(p));
                 step();
                 transport(0 <= old(p[1]), 0 <= p[1]) using {
                     0 <= old(p[0]);
@@ -180,7 +180,7 @@ fn smart_step_starts_each_source_tactic_with_an_empty_step_delta() {
                 owns p[0..3];
                 ensures result >= 0;
             } by {
-                unfold(ordered);
+                unfold(ordered(p));
                 step();
                 step();
                 solve();
@@ -853,7 +853,7 @@ fn execute_step_omits_materialization_only_transport() {
                 requires first_is_seven(p);
                 owns p[0..2];
             } by {
-                unfold(first_is_seven);
+                unfold(first_is_seven(p));
                 have p[0] == 7 by {
                     known();
                 }
@@ -931,7 +931,7 @@ fn execute_step_omits_materialized_mixed_snapshot_transport() {
                 requires first_less_than_second(p);
                 owns p[0..2];
             } by {
-                unfold(first_less_than_second);
+                unfold(first_less_than_second(p));
                 step();
                 step();
                 solve();
@@ -999,7 +999,7 @@ fn execute_step_omits_materialization_transport_across_statements() {
                 owns p[0..2];
                 owns q[0..1];
             } by {
-                unfold(first_less_than_second);
+                unfold(first_less_than_second(p));
                 step();
                 step();
                 step();

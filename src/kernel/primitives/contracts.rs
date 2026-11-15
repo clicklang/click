@@ -1737,7 +1737,20 @@ impl PredicateUnfolding {
             *resource_state_dependent |=
                 super::super::spec::predicate_dependencies::observes_resource_state(&body);
         }
-        Self { predicate, body }
+        Self {
+            predicate,
+            body,
+            requirement_source: PredicateRequirementSource::default(),
+        }
+    }
+
+    pub(crate) fn with_requirement_source(mut self, source: usize) -> Self {
+        self.requirement_source = PredicateRequirementSource(Some(source));
+        self
+    }
+
+    pub(crate) fn requirement_source(&self) -> Option<usize> {
+        self.requirement_source.0
     }
 
     pub fn predicate(&self) -> &SpecProposition {

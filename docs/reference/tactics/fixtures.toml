@@ -65,7 +65,7 @@ needle = "step_until(statement(2));"
 [[form]]
 id = "unfold-predicate"
 path = "mdtests/sorted_predicate.md"
-needle = "unfold(sorted);"
+needle = "unfold(sorted(p, n));"
 
 [[form]]
 id = "unfold-function"

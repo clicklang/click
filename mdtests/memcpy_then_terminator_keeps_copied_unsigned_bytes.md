@@ -26,7 +26,7 @@ void copy_u(uint8* dst, const uint8* src) {
     requires separate(memory(dst[0..5]), memory(src[0..4]));
     ensures bytes::equal(dst, 0u64, src, 0u64, 4u64);
 } by {
-    unfold(bytes::equal);
+    unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
     step();
     mark copied;
     step();

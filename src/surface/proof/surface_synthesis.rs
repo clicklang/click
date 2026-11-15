@@ -2478,20 +2478,24 @@ fn synthesize_surface_atomic_proposition(
         ));
         while index < kernel_arguments.len() {
             match &kernel_arguments[index] {
-                Term::Memory(_) => {
+                Term::Memory(memory) => {
                     let Some(Term::ProgramValue(ProgramValue::Pointer(pointer))) =
                         kernel_arguments.get(index + 1)
                     else {
                         return None;
                     };
-                    call_arguments.push(ContractExpression::ProgramExpression(
-                        synthesize_surface_pointer(
-                            pointer,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )?,
-                    ));
+                    call_arguments.push(synthesize_at_memory(
+                        &crate::kernel::intern_memory_ref(memory),
+                        state,
+                        |selected| {
+                            synthesize_surface_pointer_expression(
+                                pointer,
+                                parameter_binding,
+                                selected,
+                                bound_variables,
+                            )
+                        },
+                    )?);
                     index += 2;
                 }
                 Term::ProgramValue(ProgramValue::Pointer(pointer)) => {
@@ -2505,7 +2509,18 @@ fn synthesize_surface_atomic_proposition(
                     ));
                     index += 1;
                 }
-                Term::ProgramValue(crate::kernel::int_promoted_c_value!(value)) => {
+                Term::ProgramValue(
+                    ProgramValue::Int8(value)
+                    | ProgramValue::UInt8(value)
+                    | ProgramValue::Int16(value)
+                    | ProgramValue::UInt16(value)
+                    | ProgramValue::Int32(value)
+                    | ProgramValue::UInt32(value)
+                    | ProgramValue::Int64(value)
+                    | ProgramValue::UInt64(value)
+                    | ProgramValue::Int128(value)
+                    | ProgramValue::UInt128(value),
+                ) => {
                     call_arguments.push(synthesize_surface_bitvector(
                         value,
                         parameter_binding,

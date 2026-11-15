@@ -422,7 +422,7 @@ void dummy_rotate(struct root* root) {
 } by { step_until(function.exit); normalize(); }
 
 theorem dummy_rotate_contract() {
-    ensures Rotate(&dummy_rotate) by { unfold(Rotate); solve(); }
+    ensures Rotate(&dummy_rotate) by { unfold(Rotate(&dummy_rotate)); solve(); }
 }
 
 int produce(struct root* root, const struct callbacks* augment) {
@@ -1997,7 +1997,7 @@ int32 inspect(struct box* owner) {
     ensures result == 0;
 } by {
     unfold(owned_box(owner));
-    unfold(terminated_at);
+    unfold(terminated_at(owner->data, owner->len));
     step();
     step_until(function.exit);
     solve();
@@ -2064,7 +2064,7 @@ int32 contains(uint8 p[], int32 n) {
     requires bytes::contains(p, 0, n as uint64, 'x');
     ensures bytes::contains(p, 0, n as uint64, 'x') by {
         step_until(function.exit);
-        unfold(bytes::contains);
+        unfold(bytes::contains(p, 0, n as uint64, 'x'));
         obtain (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
         };
@@ -2161,7 +2161,7 @@ int32 compare_swap2(int32 p[2]) {
     let expanded_tail = expanded_tail
         .expect("the implicit tail should expand its branch from retained Proof steps");
     verify_c_sources(&expanded_tail, &[("compare_swap2.c", c_source)])
-        .expect("the expanded implicit tail should verify normally");
+        .unwrap_or_else(|error| panic!("{expanded_tail}\n{}", error.report()));
     let original_condition = "if at(region(1).entry, p[1]) < at(region(1).entry, p[0]) {";
     let corrupted_condition = "if at(region(1).entry, p[1]) >= at(region(1).entry, p[0]) {";
     let corrupted_tail = expanded_tail.replacen(original_condition, corrupted_condition, 1);
@@ -2913,7 +2913,7 @@ void set_one_if_active(int32 active, int32* cell) {
 
 theorem set_one_is_make_positive() {
     ensures MakePositive(&set_one_if_active) by {
-        unfold(MakePositive);
+        unfold(MakePositive(&set_one_if_active));
         if active != 0 {
             solve();
         } else {
@@ -3140,7 +3140,7 @@ fn smart_inventory_keeps_refinement_proofs_named_like_arithmetic_axioms() {
     let source = r#"
 contract int32 Identity(int32 x) { ensures result == x; }
 theorem int32_le_antisymmetric() {
-    ensures Identity(&identity) by { unfold(Identity); solve(); }
+    ensures Identity(&identity) by { unfold(Identity(&identity)); solve(); }
 }
 "#;
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();

@@ -65,7 +65,6 @@ fn branch(goal: ProgramContractGoal) -> ProofBranch<ProgramContractGoal, ()> {
         goal,
         ProofBranchState {
             facts: ProofFacts::default(),
-            unfolded_predicates: Default::default(),
             execution: None,
         },
     )
