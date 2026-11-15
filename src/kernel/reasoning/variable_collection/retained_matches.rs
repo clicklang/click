@@ -32,20 +32,7 @@ pub(super) fn match_variables(
     } else if mode == FoldVariableRead::IntegerFree && integer_result {
         // The native Integer match uses the algebraic *free* Integer reader;
         // ordinary argument collection deliberately has a different meaning.
-        if let KernelTermNode::Legacy(value) = scrutinee.node() {
-            let PureFunctionArgument::Algebraic(value) = value.value() else {
-                unreachable!("typed algebraic scrutinee");
-            };
-            let mut free = BTreeSet::new();
-            collect_algebraic_free_integer_variables(value, &mut free, &mut SeenTerms::default());
-            let mut result = Variables::default();
-            for variable in free {
-                result = result.with_value(variable);
-            }
-            result
-        } else {
-            common_variables(scrutinee, mode, summaries)
-        }
+        super::retained_folds::algebraic_integer_variables(scrutinee, true)
     } else {
         common_variables(scrutinee, mode, summaries)
     };

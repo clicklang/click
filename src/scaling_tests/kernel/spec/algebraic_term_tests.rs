@@ -90,17 +90,19 @@ fn algebraic_integer_match_scales_with_nested_depth() {
             last_binding = Some(AlgebraicValue::Integer(IntegerTerm::var(*variable)));
             value = matched.arguments[1].clone();
         }
-        let crate::kernel::KernelTermNode::Legacy(leaf) = value.node() else {
-            panic!("constructor boundary");
+        let crate::kernel::KernelTermNode::Constructor(constructor) = value.node() else {
+            panic!("common constructor");
         };
-        let PureFunctionArgument::Algebraic(AlgebraicTerm {
-            node: AlgebraicTermNode::Constructor { fields, .. },
-            ..
-        }) = leaf.value()
-        else {
-            panic!("payload constructor");
+        assert_eq!(constructor.algebraic_type, ty);
+        assert_eq!(constructor.variant, "Box");
+        assert_eq!(constructor.fields.len(), 1);
+        let AlgebraicValue::Integer(binding) = last_binding.unwrap() else {
+            unreachable!();
         };
-        assert_eq!(fields, &vec![last_binding.unwrap()]);
+        assert_eq!(
+            constructor.fields[0],
+            KernelTermImport::default().integer(&binding.into())
+        );
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);
         let (native, export_work) = crate::instrumentation::measure_deterministic_work(|| {
             paths[0].value.clone().into_native_compat()

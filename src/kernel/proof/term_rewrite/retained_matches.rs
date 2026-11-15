@@ -222,7 +222,8 @@ impl TermRewrite<'_> {
         Some(KernelTermImport::default().argument(&rewritten))
     }
 
-    /// Exact native source equality, without exporting the retained target.
+    /// Exact native source equality. Constructor comparison keeps its selected
+    /// native boundary until algebraic equality migrates; match bodies stay shared.
     /// Native leaves retain AlgebraicTerm's pointer-evidence-insensitive value
     /// equality; arm declarations and order retain the same exact semantics.
     fn retained_algebraic_source_matches(
@@ -240,6 +241,18 @@ impl TermRewrite<'_> {
                 return Some(false);
             }
             match (root.node(), &source.node) {
+                (KernelTermNode::Variable(left), AlgebraicTermNode::Variable(right)) => {
+                    if left != right {
+                        return Some(false);
+                    }
+                }
+                (KernelTermNode::Constructor(_), AlgebraicTermNode::Constructor { .. }) => {
+                    if self.fold_integer_bridge.argument(root).ok()?
+                        != PureFunctionArgument::Algebraic(source.clone())
+                    {
+                        return Some(false);
+                    }
+                }
                 (KernelTermNode::Legacy(value), _) => {
                     if !matches!(value.value(), PureFunctionArgument::Algebraic(value) if value == source)
                     {
@@ -357,11 +370,17 @@ mod tests {
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);
         let result = rewrite.retained_match(&outer).unwrap();
         for child in &result.arguments {
-            let KernelTermNode::Legacy(value) = child.node() else {
-                panic!("exact native replacement boundary");
-            };
-            assert!(
-                matches!(value.value(), PureFunctionArgument::Algebraic(value) if value == &replacement)
+            assert_eq!(
+                child.ty(),
+                &KernelType::Algebraic(replacement.algebraic_type.clone())
+            );
+            assert!(matches!(
+                child.node(),
+                KernelTermNode::Variable(variable) if *variable == Variable(991997)
+            ));
+            assert_eq!(
+                KernelTermExport::default().argument(child),
+                Ok(PureFunctionArgument::Algebraic(replacement.clone()))
             );
         }
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);

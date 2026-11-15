@@ -3102,6 +3102,18 @@ pub(super) fn raise_kernel_term(
         Node::Match(matched) => {
             matches::raise_match(matched, parameter_binding, state, bound_variables)?
         }
+        Node::Constructor(_) => {
+            let argument = crate::kernel::KernelTermExport::default()
+                .argument(term)
+                .ok()?;
+            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
+        }
+        Node::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {
+            let argument = crate::kernel::KernelTermExport::default()
+                .argument(term)
+                .ok()?;
+            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
+        }
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
         }
