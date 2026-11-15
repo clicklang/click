@@ -10123,6 +10123,14 @@ impl ProofObligation {
             true
         }
         fn established(assumptions: &PureFactContext, goal: &Proposition) -> bool {
+            // Arithmetic domains already have their own indexed admission and
+            // interval query. Do not force the ambient alpha-equivalence index
+            // before asking that query, on either a hit or a miss.
+            if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
+                .is_some()
+            {
+                return assumptions.proves_atomic_without_search(goal);
+            }
             if assumptions.states_required_goal(goal) || reflexive_guard(goal) {
                 return true;
             }
