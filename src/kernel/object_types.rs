@@ -152,13 +152,37 @@ pub(super) fn merge_pointer_results<'a>(
 pub(super) fn execution_pointer_result(
     cases: &[Vec<ContractPathSet>],
 ) -> Option<Arc<PurePointerResult>> {
+    pointer_result_from_outcomes(
+        cases
+            .iter()
+            .flatten()
+            .flat_map(|set| &set.paths)
+            .map(super::api::path_function_outcome),
+    )
+}
+
+/// Native function proofs retain their producer's outcomes. Reading them
+/// does not parse or re-check the theorem that the same producer emitted.
+pub(in crate::kernel) fn published_execution_pointer_result<'a>(
+    executions: impl IntoIterator<Item = &'a super::CheckedFunctionExecution>,
+) -> Option<Arc<PurePointerResult>> {
+    pointer_result_from_outcomes(
+        executions
+            .into_iter()
+            .flat_map(|execution| execution.published_outcomes.iter())
+            .map(|publication| Some(publication.specification().outcome())),
+    )
+}
+
+fn pointer_result_from_outcomes<'a>(
+    outcomes: impl IntoIterator<Item = Option<&'a FunctionOutcome>>,
+) -> Option<Arc<PurePointerResult>> {
     let mut result = PurePointerResult {
         classes: BTreeSet::new(),
         arguments: BTreeSet::new(),
     };
-    for path in cases.iter().flatten().flat_map(|set| &set.paths) {
-        let FunctionOutcome::Return { value, state } = super::api::path_function_outcome(path)?
-        else {
+    for outcome in outcomes {
+        let FunctionOutcome::Return { value, state } = outcome? else {
             continue;
         };
         let Some(pointer) = value.pointer() else {

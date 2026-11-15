@@ -4,6 +4,42 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
+/// The parent proof operation, before registration or termination planning.
+/// Omitted proofs have already run through the same ordinary child scopes.
+pub(in crate::surface) fn finish_whole_contract_root(
+    function: &FunctionBlock,
+    theorems: &[VerifiedProgramTheorem],
+) -> Result<Option<Arc<crate::kernel::CompletedContract>>, ClickError> {
+    let entry = theorems
+        .iter()
+        .find_map(|theorem| theorem.entry_context.as_ref())
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "function proof for `{}` did not retain its contract root",
+                function.signature().name()
+            ))
+        })?;
+    let Some(root) = &entry.completion else {
+        return Ok(None);
+    };
+    root.finish().map(Some).map_err(|goal| {
+        let missing = match goal {
+            crate::kernel::ContractCompletionGoal::Boundary { case } => {
+                format!("closing obligations for entry case {case}")
+            }
+            crate::kernel::ContractCompletionGoal::Claim { case, key } => format!(
+                "{} in entry case {case}",
+                crate::surface::diagnostics::describe_unverified_contract_claims(function, &[key])
+            ),
+        };
+        ClickError::new(format!(
+            "contract proof for `{}` still owes {missing}",
+            function.signature().name()
+        ))
+        .at_declaration(function.signature().name())
+    })
+}
+
 /// Input retained across ordinary closing steps. Return rewrites are resolved
 /// once before the first step, and the same path identity reaches registration.
 struct ContractClosingInput {
@@ -589,6 +625,7 @@ fn prove_claims_by_checked_tactics(
             &pure_facts,
             function_environment,
         )
+        .and_then(|entry| entry.open_contract_root())
         .map_err(|error| {
             ClickError::new(format!(
                 "could not open contract entry for `{proof_label}`: {}",
@@ -611,21 +648,12 @@ fn prove_claims_by_checked_tactics(
         })
         .collect::<Vec<_>>();
     let pure_facts = PureFactList::from_proof_facts(opened_entry.facts());
-    let completion =
-        if function.opaque_contract_supported() && !function.contract_claims().is_empty() {
-            Some(
-                crate::kernel::WholeContractProof::open(opened_entry.prepared_cases().clone())
-                    .map_err(|reason| {
-                        ClickError::new(format!(
-                            "could not open contract proof for `{proof_label}`: {reason}"
-                        ))
-                    })?,
-            )
-        } else {
-            None
-        };
+    let completion = opened_entry.contract_root().cloned();
+    let root_attempt = completion.as_ref().map(|root| root.begin_attempt());
+    let strategy_root = root_attempt.as_ref().map(|attempt| attempt.root().clone());
     let entry_context = Arc::new(ProofEntryContext {
         completion,
+        strategy_root,
         cases: opened_entry.prepared_cases().clone(),
         state: state.clone(),
         arguments: arguments.clone(),
@@ -772,6 +800,9 @@ fn prove_claims_by_checked_tactics(
             Ok(theorems) => {
                 #[cfg(test)]
                 FLAT_PROOF_UNITS.with(|units| units.set(units.get() + 1));
+                if let Some(attempt) = root_attempt {
+                    attempt.commit();
+                }
                 return Ok(ClaimProofResult { theorems });
             }
             Err(error) => return Err(error),
@@ -3373,7 +3404,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 .constants
                 .entry_context
                 .as_ref()
-                .and_then(|entry| entry.completion.as_ref()),
+                .and_then(|entry| entry.strategy_root.as_ref()),
             outcome_branches.values().copied(),
         )?;
         let mut verified = Vec::new();
@@ -5565,7 +5596,8 @@ pub(super) fn finish_ordered_proof<'a>(
             .with_checked_resource_transitions(checked_resource_transitions_by_path);
         let completed_with_resource_claims = completed_with_resource_claims
             .with_checked_returned_resources(checked_returned_resources_by_path);
-        let completed_with_resource_claims = std::sync::Arc::new(completed_with_resource_claims);
+        let completed_strategy = completed_with_resource_claims;
+        let completed_with_resource_claims = std::sync::Arc::clone(completed_strategy.execution());
         for theorem in &mut verified {
             theorem.checked_execution = std::sync::Arc::clone(&completed_with_resource_claims);
         }
@@ -5752,6 +5784,12 @@ pub(super) fn finish_ordered_proof<'a>(
                 // from sibling branches legitimately have no capture.  Let
                 // them finish; the matching context records the expansion,
                 // or the expansion entry reports that no result was seen.
+                if !verified.is_empty() {
+                    let preferred = verified
+                        .iter()
+                        .any(|theorem| !theorem.frontier_loop_rules.is_empty());
+                    completed_strategy.publish(preferred);
+                }
                 return Ok(verified);
             };
             finish_deferred_expansion(
@@ -5817,6 +5855,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         crate::surface::expansion::take_expansion_replaces_from();
                 }
             }
+        }
+        if !verified.is_empty() {
+            let preferred = verified
+                .iter()
+                .any(|theorem| !theorem.frontier_loop_rules.is_empty());
+            completed_strategy.publish(preferred);
         }
         Ok(verified)
     })();

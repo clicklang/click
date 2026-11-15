@@ -74,7 +74,8 @@ pub(in crate::surface) use crate::kernel::proof::{
 };
 use claim_proofs::finish_ordered_proof;
 pub(super) use claim_proofs::{
-    prove_claim_by_tactics, prove_claims_by_grouped_script, prove_claims_by_implicit_tail,
+    finish_whole_contract_root, prove_claim_by_tactics, prove_claims_by_grouped_script,
+    prove_claims_by_implicit_tail,
 };
 pub(in crate::surface) use cursor_execution::surface_snapshot_selector;
 use cursor_execution::*;
@@ -1829,7 +1830,8 @@ pub(super) fn function_claims(function_block: &FunctionBlock) -> Vec<FunctionCla
 /// instead of building it again.
 #[derive(Clone, Debug)]
 pub(in crate::surface) struct ProofEntryContext {
-    pub(in crate::surface) completion: Option<crate::kernel::WholeContractProof>,
+    pub(in crate::surface) completion: Option<crate::kernel::WholeContractRoot>,
+    pub(in crate::surface) strategy_root: Option<crate::kernel::WholeContractRoot>,
     pub(in crate::surface) cases: Arc<crate::kernel::PreparedContractEntryCases>,
     pub(in crate::surface) state: ExecutionState,
     pub(in crate::surface) arguments: Vec<ProgramExpression>,

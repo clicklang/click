@@ -5,8 +5,11 @@ mod publication;
 pub(crate) use publication::PublishedFunctionOutcome;
 
 mod completion;
+#[cfg(test)]
+pub(crate) use completion::WholeContractProof;
 pub(crate) use completion::{
-    ContractCompletionGoal, ContractExecutionOwner, ContractProofProgress, WholeContractProof,
+    CompletedContract, CompletedContractExecution, ContractCompletionGoal, ContractExecutionOwner,
+    ContractProofProgress, WholeContractRoot,
 };
 
 mod retained_context;

@@ -2496,8 +2496,8 @@ fn verify_program_in_context(
     check_verification_deadline()?;
     let mut verified = Vec::new();
     let mut termination_loop_rules = BTreeMap::<String, Vec<VerifiedLoopRule>>::new();
-    // Standard-library theorems already checked for their certification
-    // authority during this verification; see the certification loop below.
+    // Imported library proof dependencies are resolved before the contract
+    // root completes, once per theorem in this verification.
     let mut checked_standard_library_theorems = BTreeSet::<String>::new();
     let unselected_function_names = selected_functions.as_ref().map(|selected| {
         file.function_blocks()
@@ -2721,6 +2721,7 @@ fn verify_program_in_context(
                 )));
             }
         }
+        let function_source_registry = Arc::new(function_source_registry.for_contract_proof());
         let mut verification_function_environment = function_environment.clone();
         if function_environment.has_conditional_resource_effects() {
             verification_function_environment =
@@ -2862,13 +2863,49 @@ fn verify_program_in_context(
                 }
             }
         }
+        // Discharge the proof's imported theorem dependencies before closing
+        // its parent root. Registration receives no pending dependency checks.
+        let mut dependencies = BTreeSet::new();
+        collect_function_theorem_dependencies(&function_block, &mut dependencies);
+        let mut read_proof_texts = BTreeSet::new();
+        for theorem in &function_verified {
+            if let Some(tactics) = &theorem.proof_tactics
+                && read_proof_texts.insert(Arc::as_ptr(tactics) as *const ProofTactic)
+            {
+                collect_applied_theorems(tactics, &mut dependencies);
+            }
+        }
+        for name in dependencies {
+            if !theorem_certification_facts.contains_key(&name)
+                && checked_standard_library_theorems.insert(name.clone())
+                && let Some(index) = standard_library_theorem_index(&name)
+                && theorem_has_certification_binders(&standard_library_theorems[index])
+            {
+                let dependency = verify_theorem_definitions(
+                    TheoremEnvironment::with_full_library_prefix(index, &[])?,
+                    &standard_library_theorems[index..=index],
+                    spec_definitions,
+                    None,
+                    &resource_environment,
+                    function_source_registry.clone(),
+                )?;
+                record_theorem_certification_authority(
+                    &dependency,
+                    &mut theorem_certification_facts,
+                    &mut theorem_certification_authorities,
+                );
+            }
+        }
+        // The parent is an ordinary proof root opened with the entry. Child
+        // scripts have already joined their own checked completions into it.
+        let completed_contract =
+            crate::surface::proof::finish_whole_contract_root(&function_block, &function_verified)?;
         let function_termination_loop_rules = termination_loop_rules
             .entry(executing_function_name(
                 &termination_kernel_names,
                 function_block.signature().name(),
             ))
             .or_default();
-        let checked_executions = distinct_checked_executions(&function_verified);
         // Rules for different loops are never equal, so each rule is
         // compared only with the kept rules for its own loop.
         let mut kept_by_loop = BTreeMap::<Option<usize>, Vec<usize>>::new();
@@ -2891,202 +2928,13 @@ fn verify_program_in_context(
                 function_termination_loop_rules.push(rule.clone());
             }
         }
-        // A frontier-local proof constructs loop annotations and checked
-        // rules while checking the actual execution path. Final whole-contract
-        // certification must use one coherent proof's artifacts; otherwise it
-        // forgets the rule and starts concretely unrolling a symbolic loop.
-        // Per-claim proofs may legitimately choose different invariants, so do
-        // not merge their loop sets. Select that bound block before building
-        // the entry context so predicate unfolds in its loop phases are
-        // reflected in the exact certification facts as well.
+        // Frontier-local loop measures belong to the separate termination
+        // plan. The completed ordinary contract root already owns its subject
+        // and execution metadata; registration does not reconstruct them.
         let frontier_loop_artifacts = function_verified
             .iter()
             .find(|verified| !verified.frontier_loop_rules.is_empty());
-        let certification_function_block = frontier_loop_artifacts.map_or_else(
-            || function_block.clone(),
-            |verified| {
-                function_block.with_bound_frontier_loop_clauses(&verified.frontier_loop_clauses)
-            },
-        );
-        // Select one coherent retained entry, preferring the proof that
-        // performed a checked resource exchange. Every entry alternative was
-        // constructed before this proof executed, including frontier-loop proofs.
-        let proof_entry = function_verified
-            .iter()
-            .filter(|verified| {
-                verified
-                    .checked_execution
-                    .has_checked_resource_transitions()
-            })
-            .find_map(|verified| verified.entry_context.clone())
-            .or_else(|| {
-                function_verified
-                    .iter()
-                    .find_map(|verified| verified.entry_context.clone())
-            })
-            .ok_or_else(|| {
-                ClickError::new(format!(
-                    "function proof for `{}` did not retain its contract entry cases",
-                    function_block.signature.name(),
-                ))
-            })?;
-        let certification_state = proof_entry.cases.caller_state().clone();
-        let certification_arguments = proof_entry.arguments.clone();
-        let mut certification_facts = proof_entry.pure_facts.clone();
-        let mut certification_theorems = BTreeSet::new();
-        // The checked C transition certificate does not retain pure
-        // theorem-application bookkeeping. Select those authorities from the
-        // exact source proofs as well as any retained checked tactics.
-        collect_function_theorem_dependencies(&function_block, &mut certification_theorems);
-        // The theorems of one proof share its proof text; read each distinct
-        // text once rather than once per theorem.
-        let mut read_proof_texts = BTreeSet::new();
-        for verified in &function_verified {
-            if let Some(tactics) = &verified.proof_tactics
-                && read_proof_texts.insert(Arc::as_ptr(tactics) as *const ProofTactic)
-            {
-                collect_applied_theorems(tactics, &mut certification_theorems);
-            }
-        }
-        for theorem_name in certification_theorems {
-            // A cited standard-library theorem is a dependency: the proof
-            // used its declaration without re-proving it. The kernel accepts
-            // a pure theorem into certification only with authority from a
-            // checked proof, so check just this cited theorem, once, against
-            // the library declarations before it.
-            if !theorem_certification_facts.contains_key(&theorem_name)
-                && checked_standard_library_theorems.insert(theorem_name.clone())
-                && let Some(index) = standard_library_theorem_index(&theorem_name)
-                && theorem_has_certification_binders(&standard_library_theorems[index])
-            {
-                let verified_dependency = verify_theorem_definitions(
-                    TheoremEnvironment::with_full_library_prefix(index, &[])?,
-                    &standard_library_theorems[index..=index],
-                    spec_definitions,
-                    None,
-                    &resource_environment,
-                    function_source_registry.clone(),
-                )?;
-                record_theorem_certification_authority(
-                    &verified_dependency,
-                    &mut theorem_certification_facts,
-                    &mut theorem_certification_authorities,
-                );
-            }
-            if let Some(facts) = theorem_certification_facts.get(&theorem_name) {
-                certification_facts.extend(facts.iter().cloned());
-            }
-        }
-        // A sized array parameter form (`int32 p[2]`) declares its span
-        // loadable as part of the calling convention; certification may rely
-        // on it to discharge requirement side-obligations.
-        for (name, bytes) in function_block.signature.declared_loadable_bytes() {
-            let position = parsed_function
-                .parameters()
-                .iter()
-                .position(|parameter| parameter.name() == name);
-            let Some(ProgramExpression::Value(ProgramValue::Pointer(base))) =
-                position.and_then(|index| certification_arguments.get(index))
-            else {
-                continue;
-            };
-            certification_facts.push(Proposition::MemoryLoadable {
-                memory: certification_state.memory().clone(),
-                base: base.pointer().clone(),
-                bytes: MachineTerm::constant(*bytes),
-                wide: false,
-            });
-        }
-        // Certification reuses the checked caller's authority identities,
-        // while its selected premises form a fresh proof context. Pair that
-        // explicit input once here, before annotations or contract checking.
-        certification_state
-            .resources()
-            .synchronize_memory_equalities(&assumptions_from_propositions(&certification_facts));
-        let contract_function = annotated_function_with_assumptions(
-            &certification_function_block,
-            parsed_function,
-            &certification_state,
-            &certification_arguments,
-            spec_definitions,
-            &resource_environment,
-            Some(ResourceFrameEntry {
-                assumptions: &assumptions_from_propositions(&certification_facts),
-                checked_entry_state: None,
-            }),
-            None,
-        )?;
-        if contract_function.opaque_contract_supported() {
-            crate::surface::clear_ambient_source_tactic();
-            let certification_started = std::time::Instant::now();
-            let admitted_contract = {
-                let _certification_timing = VerificationTimingPhase::new("certification");
-                instrumentation::measure_operation(
-                    function_block.signature.name(),
-                    "contract certification",
-                    "contract symbolic execution",
-                    || {
-                        // Retain the coherent frontier proof's annotated body
-                        // as the primary subject, with the other clause proofs
-                        // still available as independent execution strategies.
-                        let mut checked_artifacts = Vec::with_capacity(checked_executions.len());
-                        if let Some(primary) = frontier_loop_artifacts {
-                            checked_artifacts
-                                .push(CheckedFunctionExecution::clone(&primary.checked_execution));
-                        }
-                        for execution in &checked_executions {
-                            if frontier_loop_artifacts.is_none_or(|primary| {
-                                !Arc::ptr_eq(&primary.checked_execution, execution)
-                            }) {
-                                checked_artifacts.push(CheckedFunctionExecution::clone(execution));
-                            }
-                        }
-                        // The entry state and arguments outlive the call: a
-                        // refusal below names the unauthorized entry premise
-                        // through them, in the names the user wrote.
-                        Ok::<_, ClickError>(
-                            proof_entry
-                                .completion
-                                .clone()
-                                .ok_or_else(|| {
-                                    ClickError::new(
-                                        "the function proof did not open a whole-contract owner",
-                                    )
-                                })?
-                                .admit_executions(&checked_artifacts),
-                        )
-                    },
-                )?
-            };
-            let contract_execution = admitted_contract.execution().clone();
-            if instrumentation::enabled() {
-                instrumentation::emit(VerificationEvent::ContractExecutionFinished {
-                    function: function_block.signature.name().to_string(),
-                    elapsed: certification_started.elapsed(),
-                });
-            }
-            let claims_started = std::time::Instant::now();
-            if contract_execution.path_count() == 0 {
-                let unauthorized_premise = describe_unauthorized_entry_premise(
-                    contract_execution.reuse_unauthorized_premise(),
-                    contract_execution.reuse_entry_resources(),
-                    contract_execution.reuse_context_facts(),
-                    ParameterBinding::new(parsed_function.parameters(), &certification_arguments),
-                    &certification_state,
-                );
-                return Err(ClickError::new(
-                    match contract_execution.reuse_diagnostic() {
-                        Some(detail) => format!(
-                            "could not certify contract for `{}`: {detail}{unauthorized_premise}",
-                            function_block.signature.name(),
-                        ),
-                        None => format!(
-                            "could not certify contract for `{}`: certification produced no paths",
-                            function_block.signature.name(),
-                        ),
-                    },
-                ));
-            }
+        if let Some(completed_contract) = completed_contract {
             if let Some(verified) = frontier_loop_artifacts {
                 let mut loop_measures = BTreeMap::new();
                 for clause in verified.frontier_loop_clauses.iter() {
@@ -3138,79 +2986,6 @@ fn verify_program_in_context(
                     }
                 }
             }
-            let completed_contract = admitted_contract;
-            if instrumentation::enabled() {
-                instrumentation::emit(VerificationEvent::ContractClaimsFinished {
-                    function: function_block.signature.name().to_string(),
-                    elapsed: claims_started.elapsed(),
-                });
-            }
-            let completed_contract = match completed_contract.complete() {
-                Ok(completed) => completed,
-                Err(goal) => {
-                    let missing = match goal {
-                        crate::kernel::ContractCompletionGoal::Boundary { case } => {
-                            format!("closing obligations for entry case {case}")
-                        }
-                        crate::kernel::ContractCompletionGoal::Claim { case, key } => format!(
-                            "{} in entry case {case}",
-                            crate::surface::diagnostics::describe_unverified_contract_claims(
-                                &function_block,
-                                &[key],
-                            )
-                        ),
-                    };
-                    let checked_propositions = function_verified
-                        .iter()
-                        .filter_map(|verified| verified.checked_proposition.clone())
-                        .collect::<Vec<_>>();
-                    let diagnostic_result = program_unverified_function_contract_claims_diagnostic(
-                        &contract_function,
-                        &contract_execution,
-                        &checked_propositions,
-                    );
-                    let detail = match &diagnostic_result {
-                        Ok(keys) if !keys.is_empty() => format!(
-                            "; unverified claims: {}",
-                            crate::surface::diagnostics::describe_unverified_contract_claims(
-                                &function_block,
-                                keys,
-                            )
-                        ),
-                        Ok(_) => String::new(),
-                        Err(failure) => format!("; {}", failure.reason),
-                    };
-                    let summary = format!(
-                        "could not certify contract for `{}`: the whole-contract proof still owes {missing}{}",
-                        function_block.signature.name(),
-                        detail,
-                    );
-                    if let Err(failure) = diagnostic_result
-                        && let Some(state) =
-                            proof_trace::CertificationTraceState::from_failure(&failure)
-                    {
-                        let diagnostic = proof_diagnostics::ProofFailureDiagnostic {
-                            failing_path: None,
-                            checks: None,
-                            origin: proof_diagnostics::ProofDiagnosticOrigin {
-                                stage: "contract certification".to_string(),
-                                location: failure
-                                    .reason
-                                    .split_once(" is invalid:")
-                                    .map_or("execution path".to_string(), |(path, _)| {
-                                        path.to_string()
-                                    }),
-                                source_tactic_path: None,
-                            },
-                            claim_label: function_block.contract_claim_label(),
-                            reason: summary.clone(),
-                            state: Some(Arc::new(state)),
-                        };
-                        return Err(ClickError::with_diagnostic(summary, diagnostic));
-                    }
-                    return Err(ClickError::new(summary));
-                }
-            };
             if let Some(rule) = completed_contract.into_rule() {
                 function_environment = function_environment.with_verified_function_rule(rule);
             }
@@ -4595,68 +4370,6 @@ fn c_statement_calls_recording(
         allocator,
     );
     calls
-}
-
-/// Names the entry premise a contract context could not authorize, as a
-/// trailing clause on the kernel's refusal.
-///
-/// The kernel can only say what *kind* of premise it was — it has the lowered
-/// proposition and none of the names the sidecar wrote. A reader needs the
-/// premise itself: "assumed a pure fact at entry" is the same sentence whether
-/// the missing fact is `loadable(s[0..n])` or a separation, and the repair is
-/// completely different. The reconstruction is the same bounded one proof
-/// steps use, so what is printed is a proposition the user could write; when
-/// it cannot be reconstructed, the bounded kernel-vocabulary printer prints
-/// the same proposition rather than nothing.
-fn describe_unauthorized_entry_premise(
-    premise: Option<&Proposition>,
-    entry_resources: &[ResourceFact],
-    context_facts: &[Proposition],
-    parameter_binding: ParameterBinding<'_>,
-    state: &ExecutionState,
-) -> String {
-    use crate::surface::diagnostics::{describe_click_proposition, describe_pure_fact_spelled};
-    use crate::surface::proof_diagnostics::render::render_resource_facts_diagnostic;
-    let Some(premise) = premise else {
-        return String::new();
-    };
-    let described =
-        crate::surface::proof::synthesize_surface_proposition(premise, parameter_binding, state)
-            .map_or_else(
-                || describe_pure_fact_spelled(premise, parameter_binding),
-                |surface| describe_click_proposition(&surface),
-            );
-    // A loadability premise is a claim about the entry's memory resources;
-    // name them, so the reader sees what the refused range was compared to.
-    let held = if matches!(premise, Proposition::MemoryLoadable { .. }) {
-        format!(
-            "; the contract entry holds {}",
-            render_resource_facts_diagnostic(entry_resources, parameter_binding)
-        )
-    } else {
-        String::new()
-    };
-    // The facts the premise was checked against,
-    // so the reader can tell a missing requirement from a missing rule.
-    const SHOWN_CONTEXT_FACTS: usize = 12;
-    let mut shown = context_facts
-        .iter()
-        .filter(|fact| !crate::kernel::is_load_variable_defining_fact(fact))
-        .map(|fact| format!("`{}`", describe_pure_fact_spelled(fact, parameter_binding)))
-        .collect::<Vec<_>>();
-    let hidden = shown.len().saturating_sub(SHOWN_CONTEXT_FACTS);
-    shown.truncate(SHOWN_CONTEXT_FACTS);
-    let context = if shown.is_empty() {
-        "; the contract context holds no pure facts".to_string()
-    } else if hidden > 0 {
-        format!(
-            "; the contract context holds {} and {hidden} more",
-            shown.join(", ")
-        )
-    } else {
-        format!("; the contract context holds {}", shown.join(", "))
-    };
-    format!(": `{described}`{held}{context}")
 }
 
 /// Words one termination refusal for the function `name`. A refused callee
@@ -7687,26 +7400,6 @@ pub(in crate::surface) fn implication_body(proposition: &Proposition) -> &Propos
         _ => proposition,
     }
 }
-
-/// Each distinct checked execution behind `verified`, in first-use order.
-///
-/// A grouped proof issues one theorem per path and claim, all sharing one
-/// execution. Finalization checks that read every path of an execution visit
-/// it once here instead of once per theorem, which would multiply their work
-/// by the number of paths. Identity is the shared allocation, so the lookup
-/// never compares executions structurally; two equal executions from
-/// separate proofs are merely both checked.
-pub(in crate::surface) fn distinct_checked_executions(
-    verified: &[VerifiedProgramTheorem],
-) -> Vec<&Arc<CheckedFunctionExecution>> {
-    let mut seen = BTreeSet::new();
-    verified
-        .iter()
-        .map(|verified| &verified.checked_execution)
-        .filter(|execution| seen.insert(Arc::as_ptr(execution)))
-        .collect()
-}
-
 pub(in crate::surface) fn assumptions_from_propositions(
     propositions: &(impl PropositionSource + ?Sized),
 ) -> PureFactContext {
