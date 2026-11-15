@@ -214,11 +214,11 @@ passed as `n as uint64`.
 
 ### Casts
 
-A cast is written after its operand, `e as T`. An integer target is bare:
-`x as uint32`, `old(x) as int32`, `n / d as int128`. A pointer target is
+A cast is written after its operand, `e as T`. A numeric target is bare:
+`x as uint32`, `old(x) as int32`, `n / d as int128`, `x as float`, `x as double`. A pointer target is
 parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 `p as (const struct node *)`. The targets are the ten machine integer types
-`int8` to `uint128`, `void *`, a pointer to one of them, `float *`, `double *`,
+`int8` to `uint128`, `float`, `double`, `void *`, a pointer to one of them,
 and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
 or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
 targets support `const`. An unqualified byte view inherits its source's const
@@ -230,9 +230,16 @@ rules: in a pure-function body, a non-byte scalar pointer target requires a
 `void *` source. A byte pointer therefore uses
 `p as (void *) as (float *)` (or `double *`). Reads and arithmetic after
 `p as (float *)` or `p as (double *)` use that pointee's width. A cast supplies no access permission or initializedness,
-and does not perform a numeric conversion of the stored bits. Bare `as float`
-and `as double` are not added to default Click by these pointer forms.
+and does not perform a numeric conversion of the stored bits.
 See `mdtests/contract_float_pointer_casts.md` for reads and pointer strides.
+
+The numeric targets `float` and `double` use the existing C binary32 and
+binary64 conversion rules, including integer rounding, width conversion,
+signed zero, infinities, and NaNs. Like integer targets, these Click spellings
+cast the value observed by their operand, including `old(...)` and `at(...)`.
+They do not add a conversion from mathematical `Integer` or 128-bit integers.
+Float-to-integer casts keep their existing finite/range obligations. Checked
+examples: `mdtests/float_numeric_cast_spellings.md`.
 
 `as` binds tighter than every binary operator and looser than every unary
 one, as in Rust, and chains left to right:

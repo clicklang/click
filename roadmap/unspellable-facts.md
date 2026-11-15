@@ -670,7 +670,7 @@ Surface and scaling selection passed. The separate float proof fixtures passed
 with zero fact-stability differences. The full ordinary example corpus and
 quality checks passed.
 
-8w retains float negation and binary arithmetic operands in typed common
+8w ([PR #2863](https://github.com/clicklang/click/pull/2863)) retains float negation and binary arithmetic operands in typed common
 nodes. Borrowed views read the selected shape; iterative import/export preserves
 operator order and exact native bits without evaluating arithmetic or caching
 boxed expression prefixes. Existing producer evaluation stays unchanged.
@@ -681,6 +681,14 @@ the full scaling suite; float proof fixtures had zero fact-stability
 differences. Ordinary examples and quality checks passed. An initial deep
 integer-spelling stack regression was fixed by extracting the float renderer
 into a separate helper; no stack sizes or synthesis budgets changed.
+
+Before 8x, the approved numeric-float-cast prerequisite adds `as float` and
+`as double` as spellings for existing C conversions. Numeric casts read the
+operand's selected value; pointer-cast rules and conversion rounding and
+definedness remain unchanged. Cast diagnostics use the source type names.
+All 347 selected cast, parser, syntax and diagnostic checks passed; cast proof
+fixtures passed, and float fixtures had zero fact-stability differences.
+Quality checks passed.
 
 ### 8a inventory
 

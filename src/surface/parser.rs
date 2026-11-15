@@ -14412,7 +14412,7 @@ impl Parser {
     /// A name an `as` clause binds may not be a cast's type name: `e as T`
     /// is a cast, so `induct(x) as uint32` would read as one.
     fn refuse_cast_type_binder(&self, name: &str) -> Result<(), ClickError> {
-        if rust_syntax::click_integer_cast_type(name).is_some()
+        if rust_syntax::click_numeric_cast_type(name).is_some()
             || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
         {
             return Err(self.error(format!(
@@ -14497,7 +14497,7 @@ impl Parser {
         ))
     }
 
-    /// A Click cast of `operand` to an integer or pointer `target_type`,
+    /// A Click cast of `operand` to a numeric or pointer `target_type`,
     /// `x as uint32` or `p as (uint8 *)`.
     fn lower_click_cast(
         &mut self,
@@ -14516,11 +14516,13 @@ impl Parser {
     ) -> Result<ContractExpression, ClickError> {
         let historical = crate::surface::validation::contains_old_expression(&operand)
             || crate::surface::validation::contains_at_expression(&operand);
-        // Integer casts consume the value observed by their operand.
-        // Other cast families retain their current-expression validation.
-        let integer_target = matches!(
+        // Numeric casts consume the value observed by their operand.
+        // Pointer casts retain their current-expression validation.
+        let numeric_target = matches!(
             target_type,
-            ProgramType::Int8
+            ProgramType::Float32
+                | ProgramType::Float64
+                | ProgramType::Int8
                 | ProgramType::Int16
                 | ProgramType::Int32
                 | ProgramType::UInt8
@@ -14531,7 +14533,7 @@ impl Parser {
                 | ProgramType::Int128
                 | ProgramType::UInt128
         );
-        if historical && !integer_target {
+        if historical && !numeric_target {
             return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
         }
         let expression = contract_expression_as_program_expression(&operand)
@@ -17136,8 +17138,11 @@ impl Parser {
         }
         match self.tokens.get(index) {
             Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "float" | "double") => {
-                self.tokens.get(index + 1) == Some(&Token::Star)
-                    && self.tokens.get(index + 2) == Some(&Token::RParen)
+                (self.tokens.get(index + 1) == Some(&Token::Star)
+                    && self.tokens.get(index + 2) == Some(&Token::RParen))
+                    || (index == self.position + 1
+                        && matches!(name.as_str(), "float" | "double")
+                        && self.tokens.get(index + 1) == Some(&Token::RParen))
             }
             Some(Token::Ident(name)) => matches!(
                 name.as_str(),
@@ -17195,7 +17200,7 @@ impl Parser {
         ) || self.starts_cast_at(close + 1)
     }
 
-    /// Whether `as` at `index` begins a cast: `as` and an integer type name,
+    /// Whether `as` at `index` begins a cast: `as` and a numeric type name,
     /// or `as (` with a pointer type, so `(a + b) as uint32 == c` reads its
     /// parentheses as an expression.
     fn starts_cast_at(&self, index: usize) -> bool {
@@ -17207,13 +17212,13 @@ impl Parser {
         }
         match self.tokens.get(index + 1) {
             Some(Token::Ident(name)) => {
-                rust_syntax::click_integer_cast_type(name).is_some()
+                rust_syntax::click_numeric_cast_type(name).is_some()
                     || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
             }
             Some(Token::LParen) => matches!(
                 self.tokens.get(index + 2),
                 Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "struct" | "const" | "volatile")
-                    || rust_syntax::click_integer_cast_type(name).is_some()
+                    || rust_syntax::click_numeric_cast_type(name).is_some()
             ),
             _ => false,
         }
