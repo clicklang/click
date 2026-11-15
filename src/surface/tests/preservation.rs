@@ -1621,3 +1621,30 @@ fn quantified_preservation_migrations_expand_and_replay() {
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
     }
 }
+
+#[test]
+#[ignore = "nightly: copy-loop migration expansion and cold replay"]
+fn copy_loop_preservation_migrations_expand_and_replay() {
+    for (fixture, claim) in [
+        ("mdtests/copy3_array_demo.md", "copy3.contract"),
+        (
+            "mdtests/copy_n_segment_invariant.md",
+            "copy_n_segment_invariant.contract",
+        ),
+        (
+            "mdtests/uninitialized_destination_beside_a_viewed_source.md",
+            "copy_n_segment_invariant.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+    }
+}

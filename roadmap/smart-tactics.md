@@ -187,10 +187,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 44 | 96 |
+| `mdtests/` | 41 | 88 |
 | `examples/` | 27 | 358 |
 | `library/` | 0 | 0 |
-| Total | 71 | 454 |
+| Total | 68 | 446 |
 
 The 16 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -207,8 +207,8 @@ Keep these independently reviewable; split a family further when a baseline
 repair or missing primitive needs its own discussion. Complete whole-proof
 verification and expansion/replay checks before declaring a family migrated.
 
-1. Remaining array fixtures: copying, loop-carried prefixes, viewability and
-   initializedness.
+1. Remaining array fixtures: bubble-sort and unfolded-resource prefixes,
+   bounded/initializedness observations and refusal controls.
 2. Loop frames, retained metadata, nested cursors and iterated ownership.
 3. Calls and resource scopes: footprints, borrowing, folds and graph fixtures.
 4. Arena.
