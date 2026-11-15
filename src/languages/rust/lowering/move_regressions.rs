@@ -151,18 +151,22 @@ fn generated_call_results_do_not_reuse_later_mir_call_identities() {
     .unwrap();
     let (functions, _) = super::lower(&export).unwrap();
     let caller = functions.iter().find(|f| f.name() == "caller").unwrap();
-    let mut pending = vec![caller.kernel_function().body()];
-    let mut calls = Vec::new();
-    while let Some(statement) = pending.pop() {
+    fn collect(statement: &ProgramStatement, calls: &mut Vec<u32>) {
         match statement {
-            ProgramStatement::Seq(first, rest) => {
-                pending.push(rest);
-                pending.push(first);
+            ProgramStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    collect(statement, calls);
+                }
             }
             ProgramStatement::CallResult { call, .. } => calls.push(*call),
             _ => {}
         }
     }
+    let mut calls = Vec::new();
+    collect(
+        caller.prelowered_kernel_function().unwrap().body(),
+        &mut calls,
+    );
     assert_eq!(
         calls,
         [1, 0],
