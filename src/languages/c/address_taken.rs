@@ -267,7 +267,8 @@ fn child_expressions<'a>(
 ) {
     match expression {
         CExpression::ScalarUpdate { .. } => {}
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)

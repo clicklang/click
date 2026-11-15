@@ -429,6 +429,7 @@ fn collect_spec_program_expression_carriers(
     match expression {
         ProgramExpression::Value(value) => collect_program_value_carriers(value, variables),
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. }
@@ -1747,6 +1748,7 @@ impl<'a> TermRewrite<'a> {
     ) -> Result<ProgramExpression, SpecRewriteError> {
         self.spec_visit()?;
         let result = match expression {
+            ProgramExpression::StringLiteral(_) => expression.clone(),
             ProgramExpression::Value(value) => ProgramExpression::Value(self.value(value)),
             ProgramExpression::Variable(name) => ProgramExpression::Variable(name.clone()),
             ProgramExpression::FunctionAddress(name) => {

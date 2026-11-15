@@ -436,6 +436,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Err(_) => {}
             }
         }
+        if let Some(proof) =
+            Self::try_recorded_footprint_preservation(search_input, source, target)?
+        {
+            return Ok(Ok(proof));
+        }
         if let Some(proof) = Self::try_history_indexed_equalities(search_input, source, target)? {
             return Ok(Ok(proof));
         }

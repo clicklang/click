@@ -4752,6 +4752,33 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
 }
 
 #[test]
+#[ignore = "nightly: literal raising round trips through a verified C function"]
+fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
+    let identity = crate::kernel::StringLiteralId::new("text", 1).with_source("literal_raising.c");
+    let pointer = Memory::string_literal_pointer(&identity, b"same\0");
+    let value = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer)
+        .with_pointer_pointee_constant(true);
+    let raised =
+        synthesize_surface_value(&value, ParameterBinding::default(), &ExecutionState::new())
+            .expect("a literal needs no local or recorded alias to have a name");
+    let name = diagnostics::describe_contract_expression(&raised);
+    assert!(name.contains("text.string_literal(1)"), "{name}");
+    let c = "const uint8* text() { const uint8* discarded = \"same\"; return \"same\"; }";
+    let click = format!(
+        "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"literal_raising.c\"; const uint8* text() {{ ensures result == {name}; }}"
+    );
+    crate::surface::verify_c_sources(&click, &[("literal_raising.c", c)])
+        .expect("raised literal reference");
+    assert!(
+        crate::surface::verify_c_sources(
+            &click.replace("string_literal(1)", "string_literal(0)"),
+            &[("literal_raising.c", c)]
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
     use crate::kernel::{IntegerTerm, PointerValue};
     for (format, name) in [
@@ -5393,6 +5420,78 @@ fn click_integer_unary_negation_keeps_subtraction_semantics() {
         };
         for (expression, previous) in expressions.into_iter().zip(previous) {
             assert_eq!(evaluate(&expression), evaluate(&previous));
+        }
+    }
+}
+
+#[test]
+fn common_float_arithmetic_round_trips_existing_operators() {
+    use crate::kernel::{FloatBinaryOperator, KernelFloatType};
+    let _session = crate::kernel::VerificationSession::enter();
+    for (format, spelling) in [
+        (KernelFloatType::Float32, "float"),
+        (KernelFloatType::Float64, "double"),
+    ] {
+        let variable = MachineTerm::Variable(Variable(999936));
+        let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
+        let names = BTreeMap::from([(Variable(999936), "x".to_string())]);
+        let literal = match format {
+            KernelFloatType::Float32 => MachineTerm::constant(0x80000000),
+            KernelFloatType::Float64 => MachineTerm::uint64_constant(0x8000000000000000),
+        };
+        let mut sources = vec![match format {
+            KernelFloatType::Float32 => MachineTerm::float32_negate(variable.clone()),
+            KernelFloatType::Float64 => MachineTerm::float64_negate(variable.clone()),
+        }];
+        for operator in [
+            FloatBinaryOperator::Add,
+            FloatBinaryOperator::Subtract,
+            FloatBinaryOperator::Multiply,
+            FloatBinaryOperator::Divide,
+        ] {
+            sources.push(match format {
+                KernelFloatType::Float32 => {
+                    MachineTerm::float32_binary(variable.clone(), literal.clone(), operator)
+                }
+                KernelFloatType::Float64 => {
+                    MachineTerm::float64_binary(variable.clone(), literal.clone(), operator)
+                }
+            });
+        }
+        for source in sources {
+            let root = crate::kernel::KernelTermImport::default().float(format, &source);
+            let surface =
+                raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+            let text = diagnostics::describe_contract_expression(&surface);
+            let parsed = parser::parse(&format!(
+                "function probe(x: {spelling}) -> {spelling} {{ {text} }}"
+            ))
+            .unwrap_or_else(|error| panic!("{text}: {error}"));
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                parsed.click_function_definitions()[0].body().unwrap(),
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (value, _) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(value, format.value(source), "{text}");
         }
     }
 }

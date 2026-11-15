@@ -884,7 +884,7 @@ fn bounded_pointer_block_work(block: &crate::kernel::PointerBlock) -> bool {
         crate::kernel::PointerBlock::Concrete(name)
         | crate::kernel::PointerBlock::Function(name) => name.len(),
         crate::kernel::PointerBlock::StringLiteral { identity, bytes } => {
-            identity.len().saturating_add(bytes.len())
+            identity.payload_bytes().saturating_add(bytes.len())
         }
         _ => 1,
     };

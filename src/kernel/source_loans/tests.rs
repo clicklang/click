@@ -46,6 +46,7 @@ fn export() -> r::RustExport {
         records: vec![],
         enums: vec![],
         functions: vec![r::Function {
+            sites: Vec::new(),
             name: "test::reuse".into(),
             return_type: Type::Unit,
             parameters: vec![place("parent", reference_type())],
@@ -59,6 +60,7 @@ fn export() -> r::RustExport {
             mir: Some(r::MirBody {
                 locals: vec![place("child", reference_type()), place("x", Type::I32)],
                 blocks: vec![r::MirBlock {
+                    terminator_site: None,
                     statements: vec![
                         assign(
                             local("child"),
@@ -794,6 +796,7 @@ fn branch_export(depth: usize, diamonds: usize) -> r::RustExport {
     for index in 0..diamonds {
         let first = index * 3;
         blocks.push(r::MirBlock {
+            terminator_site: None,
             statements: if index == 0 { births.clone() } else { vec![] },
             terminator: r::MirTerminator::If {
                 condition: local("choose"),
@@ -803,12 +806,14 @@ fn branch_export(depth: usize, diamonds: usize) -> r::RustExport {
         });
         for value in [7, 9] {
             blocks.push(r::MirBlock {
+                terminator_site: None,
                 statements: vec![assign(deref(&child), E::Integer { value })],
                 terminator: r::MirTerminator::Goto { target: first + 3 },
             });
         }
     }
     blocks.push(r::MirBlock {
+        terminator_site: None,
         statements: vec![assign(deref("parent"), E::Integer { value: 8 })],
         terminator: r::MirTerminator::Return,
     });
@@ -1051,6 +1056,7 @@ fn source_scalar_lease_nested_branch_regions_end_only_at_outer_continuation() {
     let mut source = branch_export(2, 1);
     let mir = source.functions[0].mir.as_mut().unwrap();
     mir.blocks[1] = r::MirBlock {
+        terminator_site: None,
         statements: vec![],
         terminator: r::MirTerminator::If {
             condition: local("choose"),
@@ -1060,6 +1066,7 @@ fn source_scalar_lease_nested_branch_regions_end_only_at_outer_continuation() {
     };
     for value in [5, 6] {
         mir.blocks.push(r::MirBlock {
+            terminator_site: None,
             statements: vec![assign(deref("nested_1"), E::Integer { value })],
             terminator: r::MirTerminator::Goto { target: 3 },
         });

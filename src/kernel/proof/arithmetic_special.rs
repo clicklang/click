@@ -45,7 +45,7 @@ fn pointer_block_payload(block: &PointerBlock) -> Option<usize> {
             1usize.checked_add(name.len())?
         }
         PointerBlock::StringLiteral { identity, bytes } => 1usize
-            .checked_add(identity.len())?
+            .checked_add(identity.payload_bytes())?
             .checked_add(bytes.len())?,
         PointerBlock::PureFunctionApplication(_)
         | PointerBlock::FunctionSymbolic(_)
@@ -5193,7 +5193,10 @@ mod tests {
         let blocks = [
             PointerBlock::Concrete("c".repeat(MAX_TERM_PAYLOAD + 1)),
             PointerBlock::StringLiteral {
-                identity: "s".repeat(MAX_TERM_PAYLOAD / 2 + 1),
+                identity: crate::kernel::StringLiteralId::new(
+                    "s".repeat(MAX_TERM_PAYLOAD / 2 + 1),
+                    0,
+                ),
                 bytes: vec![b'x'; MAX_TERM_PAYLOAD / 2 + 1],
             },
         ];
@@ -5248,7 +5251,10 @@ mod tests {
         let blocks = [
             PointerBlock::Concrete("c".repeat(MAX_TERM_PAYLOAD + 1)),
             PointerBlock::StringLiteral {
-                identity: "s".repeat(MAX_TERM_PAYLOAD / 2 + 1),
+                identity: crate::kernel::StringLiteralId::new(
+                    "s".repeat(MAX_TERM_PAYLOAD / 2 + 1),
+                    0,
+                ),
                 bytes: vec![b'x'; MAX_TERM_PAYLOAD / 2 + 1],
             },
         ];

@@ -36,6 +36,11 @@ num-traits = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# The Rust frontend reads a function body's statements as written, for
+# `statement(i)` paths, from the source file; `span-locations` gives their
+# lines and columns.
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "2", features = ["full", "visit"] }
 tar = "0.4.45"
 tempfile = "3"
 

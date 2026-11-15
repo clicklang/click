@@ -97,6 +97,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     .collect(),
                 KernelTermNode::Fold(fold) => fold.arguments.to_vec(),
                 KernelTermNode::MachineBinary { arguments, .. }
+                | KernelTermNode::FloatBinary { arguments, .. }
                 | KernelTermNode::BoolOverflow { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
                 | KernelTermNode::IntegerCompare { arguments, .. }
@@ -109,7 +110,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 KernelTermNode::Constructor(constructor) => constructor.fields.clone(),
                 KernelTermNode::AlgebraicCall(call) => call.arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
-                KernelTermNode::BoolCast { operand, .. }
+                KernelTermNode::FloatNegate { operand } | KernelTermNode::BoolCast { operand, .. }
                 | KernelTermNode::MachineObservation { operand, .. }
                 | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
@@ -176,6 +177,12 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 } => KernelTerm::bool_cast(*destination, get(operand))
                     .expect("Boolean conversion")
                     .with_machine_observation_type(format),
+                KernelTermNode::FloatNegate { operand } => {
+                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatNegate { operand: get(operand) })
+                }
+                KernelTermNode::FloatBinary { operator, arguments } => {
+                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatBinary { operator: *operator, arguments: arguments.each_ref().map(|arg| get(arg)) })
+                }
                 KernelTermNode::FloatRead(read) => {
                     let (_, address) = read.parts();
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatRead(read.observe(

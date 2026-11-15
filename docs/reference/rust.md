@@ -1238,7 +1238,10 @@ compiler temporary that holds part of a source expression is put back into
 that expression, and a call nested in an expression, as in
 `or_zero(ok_if(x, true))`, is a call step whose result a proof names by its
 call, `call(result_values::ok_if, 0).result`
-(`charon_a_nested_call_result_is_named_by_its_call`). Other unnamed and
+(`charon_a_nested_call_result_is_named_by_its_call`). A proof names a
+point by the statements as written, `statement(i)`, `S.statement(j)`,
+`S.call(f, j)` and the rest, as a C proof does; Click reads them from the
+source with `syn` (`src/languages/rust/source_statements.rs`). Other unnamed and
 ambiguous locals use collision-checked `__rust_mir_ID` identities from the
 locked artifact. These compiler identities can change when the artifact is refreshed.
 

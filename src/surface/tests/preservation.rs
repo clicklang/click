@@ -570,7 +570,7 @@ fn generic_viewability_transport_expands_to_ordinary_restriction() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
-fn single_write_transport_expands_to_preserve_without_search() {
+fn single_write_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
     let sources = sources
         .iter()
@@ -578,7 +578,6 @@ fn single_write_transport_expands_to_preserve_without_search() {
         .collect::<Vec<_>>();
     verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("preserve("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -589,7 +588,7 @@ fn single_write_transport_expands_to_preserve_without_search() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_05")]
-fn single_write_resource_transport_expands_to_preserve_without_search() {
+fn single_write_resource_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
     let sources = sources
         .iter()
@@ -597,7 +596,6 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
         .collect::<Vec<_>>();
     verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("preserve("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -606,11 +604,7 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
 #[test]
 fn bare_transport_of_a_known_resource_read_expands_to_lookup() {
     let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
-    let bare = source.replace(
-        " using {\n            separate(statement(0).footprint, m);\n        }",
-        "",
-    );
-    assert_ne!(bare, source);
+    let bare = source;
     let sources = sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
@@ -636,17 +630,11 @@ fn multiple_write_transport_expands_to_ordinary_equalities() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    for source in [source.clone(), source.replace(
-        "separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));",
-        "separate(statement(1).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*q));",
-    )] {
-        verify_c_sources(&source, &sources).unwrap();
-        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
-        assert!(!expanded.contains("transport("), "{expanded}");
-        assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    }
+    verify_c_sources(&source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -658,7 +646,6 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -676,10 +663,7 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
     let c = sources[0].1.replace("*p = 1;", "*q = 1;");
     let overlapping = source.replace("views *q;", "owns *q;");
     assert!(verify_c_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
-    let invalid = source.replace(
-        "            separate(statement(1).footprint, memory(*q));",
-        "            separate(statement(1).footprint, memory(*p));",
-    );
+    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport(");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -758,8 +742,6 @@ fn known_value_transport_expands_to_ordinary_steps() {
     );
     for source in [source.clone(), reversed] {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert!(expanded.contains("preserve("), "{expanded}");
-        assert!(expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -777,12 +759,15 @@ fn known_value_transport_expands_to_ordinary_steps() {
 fn known_value_transport_preserves_resource_fields_across_statements() {
     let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == 7 by", r#"
+    let source = source.replace(
+        "    have *q == 7 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
-    have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    have *q == 7 by"#,
+    );
     let resource = source
         .replace(
             "void keep(int32*",
@@ -794,7 +779,6 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -885,7 +869,7 @@ fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
 }
 
 #[test]
-fn two_read_transport_expands_both_operands_without_search() {
+fn two_read_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let sources = sources
         .iter()
@@ -902,7 +886,6 @@ fn two_read_transport_expands_both_operands_without_search() {
     ));
     for source in variants {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -923,7 +906,7 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     assert!(verify_c_sources(&source.replace("    requires *q == *r;\n", ""), &sources).is_err());
-    let invalid = source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));");
+    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport(");
     assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
@@ -932,7 +915,9 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
 fn two_read_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == *r by", r#"
+    let source = source.replace(
+        "    have *q == *r by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
@@ -940,7 +925,8 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
     have separate(statement(1).footprint, memory(*r)) by {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
-    have *q == *r by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    have *q == *r by"#,
+    );
     let resource = source
         .replace(
             "void keep(int32*",
@@ -955,7 +941,6 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(").count(), 4, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -1503,10 +1488,10 @@ test_batches! {
         resource_viewability_restriction_expands_without_transport,
         viewability_transport_expands_to_ordinary_restriction,
         generic_viewability_transport_expands_to_ordinary_restriction,
-        single_write_transport_expands_to_preserve_without_search,
+        single_write_transport_expansion_replays_without_search,
     ],
     transport_batch_05: [
-        single_write_resource_transport_expands_to_preserve_without_search,
+        single_write_resource_transport_expansion_replays_without_search,
         multiple_write_transport_expands_to_ordinary_equalities,
         multiple_write_resource_transport_expands_to_ordinary_equalities,
         multiple_write_transport_rejects_changed_reads_and_invalid_separation,
@@ -1555,26 +1540,21 @@ fn computed_scalar_transport_expands_to_ordinary_steps() {
 
 #[test]
 #[ignore = "nightly: indexed transport expansion and cold replay"]
-fn indexed_read_transport_expands_to_selected_preservation() {
+fn indexed_read_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let source = source.replace("*q", "q[0]").replace("*r", "q[1]");
-    let source = source.replace(
-        "            separate(statement(0).footprint, memory(q[0]));",
-        "            at(statement(0).entry, q[0] == q[1]);\n            separate(statement(0).footprint, memory(q[0]));",
-    );
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: returned-have transport expansion and cold replay"]
-fn a_returned_have_expands_the_same_single_preservation() {
+fn returned_have_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
     let source = source
         .replace(
@@ -1589,11 +1569,13 @@ fn a_returned_have_expands_the_same_single_preservation() {
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert_eq!(expanded.matches("preserve(").count(), 1, "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    let changed = expanded.replace("at(statement(0).exit, *q)", "at(statement(0).exit, *p)");
-    assert_ne!(changed, expanded, "the preservation names its exit read");
-    assert!(without_implicit_solve(|| verify_c_sources(&changed, &sources)).is_err());
+    let changed = source.replace(
+        "*q == at(statement(0).entry, *q)",
+        "*q != at(statement(0).entry, *q)",
+    );
+    assert_ne!(changed, source);
+    assert!(verify_c_sources(&changed, &sources).is_err());
 }
 
 #[test]

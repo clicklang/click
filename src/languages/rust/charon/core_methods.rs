@@ -142,6 +142,7 @@ impl Adapter<'_> {
         self.core_methods.borrow_mut().insert(
             name.clone(),
             out::Function {
+                sites: Vec::new(),
                 name: name.clone(),
                 return_type: result,
                 parameters: ["a", "b"][..arity]
@@ -250,6 +251,7 @@ impl Adapter<'_> {
         self.core_methods.borrow_mut().insert(
             function.clone(),
             out::Function {
+                sites: Vec::new(),
                 name: function.clone(),
                 return_type: ok,
                 parameters,
@@ -340,6 +342,7 @@ impl Adapter<'_> {
         self.core_methods.borrow_mut().insert(
             function.clone(),
             out::Function {
+                sites: Vec::new(),
                 name: function.clone(),
                 return_type: payload,
                 parameters,
@@ -415,6 +418,7 @@ impl Adapter<'_> {
         self.core_methods.borrow_mut().insert(
             function.clone(),
             out::Function {
+                sites: Vec::new(),
                 name: function.clone(),
                 return_type: Type::Unit,
                 parameters: vec![

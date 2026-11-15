@@ -368,6 +368,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "region-allocation",
     "region-footprint",
     "region-parameter",
+    "string-literal-reference",
     "read-event-result",
     "auto",
     "bool",
@@ -2874,7 +2875,8 @@ pub(crate) fn collect_program_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {

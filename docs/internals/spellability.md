@@ -51,6 +51,14 @@ checked. Each one costs completeness, expansion, or a readable report.
   number; `SourceExecutionLayout::step_region` maps the number to its step).
   A postfix update's result, the value it replaced, is
   `at(<its region>.entry, x)`.
+  A region is spelled by its statement as written. A C statement carries its
+  site. Rust's lowering builds its kernel body itself, so it hands the layout
+  the statement each region comes from: `moves::Sited` builds each lowered
+  statement with one source site per region, in the layout's own preorder.
+  The sites come from the MIR `Site` statements the Charon import places,
+  each the innermost `syn` statement holding the MIR's span
+  (`source_statements.rs`). The layout refuses a function whose region count
+  differs from its sites' count, rather than guess.
   Source-layout result locals preserve allocation naming.
   A call that copies a by-value aggregate argument into its parameter object
   names that copy `<region>.parameter(name)`: the call producer hands back

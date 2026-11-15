@@ -18,6 +18,8 @@ use std::sync::Arc;
 #[cfg(test)]
 mod aggregate_return_tests;
 mod construction_return;
+#[cfg(test)]
+mod literal_objects;
 mod produced_argument_supply;
 #[cfg(test)]
 mod produced_argument_supply_tests;
@@ -18588,7 +18590,8 @@ fn resolve_retained_aggregate_fields(
         }
     }
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}

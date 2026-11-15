@@ -654,12 +654,12 @@ Both widths round-trip printed loads and indexed reads; pointer-stride proof
 fixtures pass. All 325 selected cast, parser, diagnostic, documentation and
 fixture tests passed, with no fact-stability differences.
 
-Before 8w, the approved unary-negation prerequisite fixes Click `-x` on
+Before 8w, the approved unary-negation prerequisite ([PR #2861](https://github.com/clicklang/click/pull/2861)) fixes Click `-x` on
 floats to preserve sign-bit negation (including zeros and NaN payloads).
 Generic unary carriers defer the choice until the operand type is known;
 integer negation keeps the established zero-subtraction semantics.
 
-8v imports float reads into typed common nodes with shared addresses and the
+8v ([PR #2854](https://github.com/clicklang/click/pull/2854)) imports float reads into typed common nodes with shared addresses and the
 producer's exact snapshot. Selected native export remains lazy; variable-reader
 policies and native observation identity remain unchanged. Surface spelling
 uses the float pointer casts for both widths, with current, entry and recorded
@@ -669,6 +669,18 @@ integer read's canonical memory selection. Runtime storage activation remains
 Surface and scaling selection passed. The separate float proof fixtures passed
 with zero fact-stability differences. The full ordinary example corpus and
 quality checks passed.
+
+8w retains float negation and binary arithmetic operands in typed common
+nodes. Borrowed views read the selected shape; iterative import/export preserves
+operator order and exact native bits without evaluating arithmetic or caching
+boxed expression prefixes. Existing producer evaluation stays unchanged.
+Readers use the common DAG summaries; Surface spelling uses the existing
+arithmetic operators. Conversions, selections and calls remain explicit native
+boundaries for their following slices. All 1,829 selected tests passed, including
+the full scaling suite; float proof fixtures had zero fact-stability
+differences. Ordinary examples and quality checks passed. An initial deep
+integer-spelling stack regression was fixed by extracting the float renderer
+into a separate helper; no stack sizes or synthesis budgets changed.
 
 ### 8a inventory
 

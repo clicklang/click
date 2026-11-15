@@ -2407,7 +2407,9 @@ impl Renderer<'_> {
             crate::kernel::PointerBlock::LoadedPointer(identity) => {
                 self.fmt(format_args!("loaded-pointer#{}", identity.0))
             }
-            crate::kernel::PointerBlock::StringLiteral { identity, .. } => self.push(identity),
+            crate::kernel::PointerBlock::StringLiteral { identity, .. } => {
+                self.push(&identity.to_string())
+            }
         };
         self.push("+");
         self.offset(&p.offset, 0);

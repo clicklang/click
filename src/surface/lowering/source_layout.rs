@@ -224,7 +224,8 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             crate::kernel::binary_c_expression!(a, b) => {
                 pending.extend([(a.as_ref(), true), (b.as_ref(), true)])
             }
-            ProgramExpression::Value(_)
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
@@ -338,6 +339,7 @@ impl SourceExecutionLayout {
             .iter()
             .map(|p| p.name().to_string())
             .collect();
+        let imported = function;
         let Some(function) = function.prelowered_kernel_function() else {
             return Ok(Self::new_for_function(function));
         };
@@ -583,6 +585,45 @@ impl SourceExecutionLayout {
             }
         }
         visit(function.body(), &mut next_statement_index, &mut layout)?;
+        // The statements as written its front end says each region comes
+        // from, which name them as C's do.
+        if let Some(sites) = imported.source_sites() {
+            if sites.regions.len() != next_statement_index {
+                return Err(ClickError::new(format!(
+                    "`{}` has {next_statement_index} regions but its front end placed {} in its statements as written",
+                    imported.name(),
+                    sites.regions.len()
+                )));
+            }
+            for (region, site) in sites.regions.iter().enumerate() {
+                let Some(site) = site else {
+                    continue;
+                };
+                let path = sites.paths.get(*site as usize).ok_or_else(|| {
+                    ClickError::new(format!(
+                        "`{}` places a region in statement {site}, which it does not have",
+                        imported.name()
+                    ))
+                })?;
+                layout
+                    .source_statements
+                    .entry(path.clone())
+                    .or_default()
+                    .push(region);
+                layout.region_paths.insert(region, path.clone());
+            }
+            // A loop is the statement its own region comes from, the region
+            // just before its body.
+            let loops = layout
+                .loop_bodies
+                .iter()
+                .filter_map(|(index, body)| {
+                    let path = layout.region_paths.get(&body.checked_sub(1)?)?;
+                    Some((*index, path.clone()))
+                })
+                .collect::<Vec<_>>();
+            layout.loop_paths.extend(loops);
+        }
         collect_kernel_automatic_exits(function.body(), &mut layout);
         Ok(Self {
             data: std::sync::Arc::new(layout),
@@ -1638,7 +1679,8 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {

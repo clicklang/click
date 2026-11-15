@@ -56,7 +56,7 @@ fn write_havoc_block(identity: &mut String, block: PointerBlock) {
             identity: name,
             bytes,
         } => {
-            write_havoc_string(identity, "bsl", &name);
+            write_havoc_string(identity, "bsl", &name.to_string());
             let _ = write!(identity, "{}:", bytes.len());
             for byte in bytes {
                 let _ = write!(identity, "{byte:02x}");
@@ -7409,10 +7409,10 @@ impl Memory {
         }
     }
 
-    pub(crate) fn string_literal_pointer(function: &str, name: &str, bytes: &[u8]) -> Pointer {
+    pub(crate) fn string_literal_pointer(identity: &StringLiteralId, bytes: &[u8]) -> Pointer {
         Pointer {
             block: PointerBlock::StringLiteral {
-                identity: format!("{function}:{name}"),
+                identity: identity.clone(),
                 bytes: bytes.to_vec(),
             },
             offset: PointerOffsetTerm::Constant(0),

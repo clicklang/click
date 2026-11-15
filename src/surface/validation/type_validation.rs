@@ -3829,7 +3829,8 @@ fn validate_pointer_cast_operands(
             }
             validate_pointer_cast_operands(operand, variables, context)
         }
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::StepResult { .. } => Ok(()),
@@ -4028,6 +4029,7 @@ pub(in crate::surface) fn infer_program_expression_type(
         .then_some(InterfaceType::Int32),
         ProgramExpression::AddressOf(_)
         | ProgramExpression::CheckedObjectAddress(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => None,
         ProgramExpression::PointerOffsetBytes { pointer, .. }

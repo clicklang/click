@@ -98,6 +98,20 @@ pub struct ImportedFunction {
     /// (the loops in preorder): the state a proof names `iter` in that loop
     /// and `loop(i).iter` elsewhere.
     pub(super) loop_iterators: Vec<Option<RustLoopIterator>>,
+    /// For a front end that lowers its own body, the statements as written
+    /// each region of that body comes from.
+    pub(super) source_sites: Option<std::sync::Arc<SourceSites>>,
+}
+
+/// The statements as written of a function whose front end lowers its own
+/// body, and the one each region of that body comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SourceSites {
+    /// Each statement's path, `statement(i).statement(j)...`, by its index.
+    pub(crate) paths: Vec<Vec<u32>>,
+    /// The statement each region comes from, by region in the order the
+    /// source layout numbers them; `None` for a region the lowering added.
+    pub(crate) regions: Vec<Option<u32>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -625,6 +639,7 @@ impl ImportedFunction {
             local_pointers: BTreeSet::new(),
             string_literals: Vec::new(),
             loop_iterators: Vec::new(),
+            source_sites: None,
         }
     }
 
@@ -817,6 +832,16 @@ impl ImportedFunction {
 
     pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
         &self.local_struct_values
+    }
+
+    pub(crate) fn with_source_sites(mut self, sites: SourceSites) -> Self {
+        self.source_sites = Some(std::sync::Arc::new(sites));
+        self
+    }
+
+    /// The statements as written each region of the lowered body comes from.
+    pub(crate) fn source_sites(&self) -> Option<&SourceSites> {
+        self.source_sites.as_deref()
     }
 
     pub(crate) fn with_loop_iterators(mut self, iterators: Vec<Option<RustLoopIterator>>) -> Self {

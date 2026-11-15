@@ -4032,7 +4032,8 @@ fn c_statement_calls_recording(
             syntax::CExpression::UnionField { pointer, .. } => {
                 collect_function_addresses(pointer, names);
             }
-            syntax::CExpression::Void
+            syntax::CExpression::StringLiteral(_)
+            | CExpression::Void
             | syntax::CExpression::Variable(_)
             | syntax::CExpression::StepResult { .. }
             | syntax::CExpression::Int32Literal(_)
@@ -4890,6 +4891,7 @@ impl parser::ProgramLayouts {
             .map(|function| (function.name(), function.source_name()))
             .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
+            tables.register_string_literals(function);
             let captures = function.closure_captures();
             if !captures.is_empty() {
                 tables.closure_captures.insert(
