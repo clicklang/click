@@ -29,7 +29,9 @@ work expands into simple tactics:
   without decomposition or a search for an alternative derivation.
   `solve() using { P; ... }` closes it from only the listed premises, trying
   arithmetic over them last; a miss adds arithmetic's reason.
-  The written simple form of an arithmetic step is `arithmetic_certificate`.
+  Integer composition expands to ordinary `have`, `apply(...) using`, and
+  explicit normalization steps. Arithmetic families still awaiting migration
+  use `arithmetic_certificate`.
 - The *implicit tail* ends every proof script, including the empty script of
   an omitted proof. It runs the C that is left, splitting at each C branch the
   facts do not decide into paths that each run to function exit, then closes
