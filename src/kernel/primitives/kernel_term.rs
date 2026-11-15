@@ -124,6 +124,13 @@ pub enum KernelTermNode {
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    FloatNegate {
+        operand: KernelTerm,
+    },
+    FloatBinary {
+        operator: FloatBinaryOperator,
+        arguments: [KernelTerm; 2],
+    },
     FloatLiteral {
         carrier: MachineIntegerType,
         bits: u128,
@@ -414,6 +421,7 @@ impl NodeKey {
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::FloatBinary { arguments, .. }
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
@@ -434,6 +442,7 @@ impl NodeKey {
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
@@ -772,6 +781,7 @@ impl KernelTerm {
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::FloatBinary { arguments, .. }
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
@@ -782,6 +792,7 @@ impl KernelTerm {
             | KernelTermNode::IntegerIf { arguments }
             | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }

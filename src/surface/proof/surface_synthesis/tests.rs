@@ -5396,3 +5396,75 @@ fn click_integer_unary_negation_keeps_subtraction_semantics() {
         }
     }
 }
+
+#[test]
+fn common_float_arithmetic_round_trips_existing_operators() {
+    use crate::kernel::{FloatBinaryOperator, KernelFloatType};
+    let _session = crate::kernel::VerificationSession::enter();
+    for (format, spelling) in [
+        (KernelFloatType::Float32, "float"),
+        (KernelFloatType::Float64, "double"),
+    ] {
+        let variable = MachineTerm::Variable(Variable(999936));
+        let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
+        let names = BTreeMap::from([(Variable(999936), "x".to_string())]);
+        let literal = match format {
+            KernelFloatType::Float32 => MachineTerm::constant(0x80000000),
+            KernelFloatType::Float64 => MachineTerm::uint64_constant(0x8000000000000000),
+        };
+        let mut sources = vec![match format {
+            KernelFloatType::Float32 => MachineTerm::float32_negate(variable.clone()),
+            KernelFloatType::Float64 => MachineTerm::float64_negate(variable.clone()),
+        }];
+        for operator in [
+            FloatBinaryOperator::Add,
+            FloatBinaryOperator::Subtract,
+            FloatBinaryOperator::Multiply,
+            FloatBinaryOperator::Divide,
+        ] {
+            sources.push(match format {
+                KernelFloatType::Float32 => {
+                    MachineTerm::float32_binary(variable.clone(), literal.clone(), operator)
+                }
+                KernelFloatType::Float64 => {
+                    MachineTerm::float64_binary(variable.clone(), literal.clone(), operator)
+                }
+            });
+        }
+        for source in sources {
+            let root = crate::kernel::KernelTermImport::default().float(format, &source);
+            let surface =
+                raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+            let text = diagnostics::describe_contract_expression(&surface);
+            let parsed = parser::parse(&format!(
+                "function probe(x: {spelling}) -> {spelling} {{ {text} }}"
+            ))
+            .unwrap_or_else(|error| panic!("{text}: {error}"));
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                parsed.click_function_definitions()[0].body().unwrap(),
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (value, _) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(value, format.value(source), "{text}");
+        }
+    }
+}
