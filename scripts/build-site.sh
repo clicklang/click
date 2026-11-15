@@ -3,7 +3,7 @@
 # by the VitePress project in site/) at the root, and the AI reference (docs/,
 # built by mdBook) under reference/. The reference's llms.txt is also written
 # at the root, where agents look for it, with its links pointing into
-# reference/. .github/workflows/pages.yml deploys this directory.
+# reference/. This build is for local preview and CI validation only.
 #
 # Usage: scripts/build-site.sh [DIR]      (default: target/click-pages)
 #

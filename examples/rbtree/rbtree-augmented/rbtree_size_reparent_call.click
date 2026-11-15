@@ -19,11 +19,11 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
         },
         SizedTree::Node(identity, before, shade, value, left_model, right_model) => {
             let { metadata: metadata, left: left, right: right } = unfold(tree);
-            have 0 <= color by { rewrite(color == 1); normalize(); }
-            have color <= 1 by { rewrite(color == 1); normalize(); }
+            have 0 <= color by { rewrite(color, 1); normalize(); }
+            have color <= 1 by { rewrite(color, 1); normalize(); }
             step();
             have rb->__rb_parent_color == address(p) + 1 by {
-                rewrite(color == 1);
+                rewrite(color, 1);
                 arithmetic_certificate rules {
                     premise 0: aligned(p, 8) => aligned(p, 8);
                     pointer_word_from_alignment alignments [0] => (address(p) | 1) == address(p) + 1;
@@ -41,7 +41,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                 known();
             }
             have (rb->__rb_parent_color & 1) == 1 by {
-                rewrite(rb->__rb_parent_color == address(p) + 1);
+                rewrite(rb->__rb_parent_color, address(p) + 1);
                 arithmetic_certificate rules {
                     premise 0: aligned(p, 8) => aligned(p, 8);
                     pointer_word_from_alignment alignments [0] => ((address(p) + 1) & 1) == 1;
@@ -49,7 +49,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                 }
             }
             have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by {
-                rewrite((rb->__rb_parent_color & 1) == 1);
+                rewrite((rb->__rb_parent_color & 1), 1);
                 known();
             }
             unfold(color_bit(Color::Black));

@@ -32,7 +32,7 @@ theorem rewritten_identity(x: int32, y: int32) {
     requires x == y;
 
     ensures x + 1 == y + 1 by {
-        rewrite(x == y);
+        rewrite(x, y);
         normalize();
     }
 }
@@ -42,7 +42,7 @@ int32 identity(int32 x) {
     ensures result == 7;
 } by {
     step_until(function.exit);
-    rewrite(x == 7);
+    rewrite(x, 7);
     normalize();
 }
 ```

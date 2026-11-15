@@ -157,12 +157,12 @@ struct node* rotate_left(
                 model: Shape::Node(pivot, lower.model, z.model)
             }, { left: lower, right: z });
             have shape_left(old(r.model)) == middle_model by {
-                rewrite(old(r.model) == Shape::Node(pivot_node, middle_model, far_model));
+                rewrite(old(r.model), Shape::Node(pivot_node, middle_model, far_model));
                 unfold(shape_left(Shape::Node(pivot_node, middle_model, far_model)));
                 normalize();
             }
             have shape_right(old(r.model)) == far_model by {
-                rewrite(old(r.model) == Shape::Node(pivot_node, middle_model, far_model));
+                rewrite(old(r.model), Shape::Node(pivot_node, middle_model, far_model));
                 unfold(shape_right(Shape::Node(pivot_node, middle_model, far_model)));
                 normalize();
             }
@@ -170,8 +170,8 @@ struct node* rotate_left(
             have rotated.model == Shape::Node(old(node->right),
                 Shape::Node(node, old(l.model), shape_left(old(r.model))),
                 shape_right(old(r.model))) by {
-                rewrite(shape_left(old(r.model)) == middle_model);
-                rewrite(shape_right(old(r.model)) == far_model);
+                rewrite(shape_left(old(r.model)), middle_model);
+                rewrite(shape_right(old(r.model)), far_model);
                 solve();
             }
             step();

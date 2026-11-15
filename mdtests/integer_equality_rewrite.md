@@ -9,7 +9,7 @@ the goal; it does not establish the refined proposition.
 theorem integer_product_congruence(a: Integer, b: Integer, d: Integer) {
     requires a == b;
     ensures a * d + a == b * d + b by {
-        rewrite(a == b);
+        rewrite(a, b);
         solve();
     }
 }
@@ -18,19 +18,19 @@ theorem integer_compound_rewrite(a: Integer, b: Integer, d: Integer) {
     requires a == b;
     requires d != 0;
     ensures a * d + a == b * d + b by {
-        rewrite(a == b);
+        rewrite(a, b);
         solve();
     }
     ensures truncating_quotient(a, d) == truncating_quotient(b, d) by {
-        rewrite(a == b);
+        rewrite(a, b);
         solve();
     }
     ensures truncating_remainder(a, d) == truncating_remainder(b, d) by {
-        rewrite(a == b);
+        rewrite(a, b);
         solve();
     }
     ensures -(a - d) == -(b - d) by {
-        rewrite(b == a);
+        rewrite(b, a);
         solve();
     }
 }

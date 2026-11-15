@@ -36,7 +36,7 @@ theorem append_right_identity<T>(xs: TestList<T>) {
             TestList::Cons(head, tail) => {
                 apply(ih(tail));
                 unfold(append(TestList<T>::Cons(head, tail), TestList<T>::Nil));
-                rewrite(append(tail, TestList<T>::Nil) == tail);
+                rewrite(append(tail, TestList<T>::Nil), tail);
                 normalize();
             }
         }

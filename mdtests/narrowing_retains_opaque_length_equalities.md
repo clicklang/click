@@ -9,7 +9,7 @@ import click::format;
 theorem narrowed_length(n: uint64) {
     requires format::padded_length(n, 3u64) == 3u64;
     ensures (format::padded_length(n, 3u64) as int32) == 3 by {
-        rewrite(format::padded_length(n, 3u64) == 3u64);
+        rewrite(format::padded_length(n, 3u64), 3u64);
         normalize();
     }
 }
@@ -17,7 +17,7 @@ theorem narrowed_length(n: uint64) {
 theorem narrowed_length_sum(n: uint64) {
     requires format::padded_length(n, 3u64) == 3u64;
     ensures (1u64 + format::padded_length(n, 3u64)) as int32 == 4 by {
-        rewrite(format::padded_length(n, 3u64) == 3u64);
+        rewrite(format::padded_length(n, 3u64), 3u64);
         normalize();
     }
 }
@@ -27,7 +27,7 @@ theorem narrowed_length_result(n: uint64, result: int32) {
     requires result == (1u64 + format::padded_length(n, 3u64)) as int32;
     ensures result == 4 by {
         have (1u64 + format::padded_length(n, 3u64)) as int32 == 4 by {
-            rewrite(format::padded_length(n, 3u64) == 3u64);
+            rewrite(format::padded_length(n, 3u64), 3u64);
             normalize();
         }
         solve() using {

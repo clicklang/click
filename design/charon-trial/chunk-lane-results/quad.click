@@ -35,13 +35,13 @@ fn quad::load(bytes: &[u8]) -> quad::Quad {
  apply(quad_byte_observation(bytes[3]));
  step_until(function.exit);
  have result.lanes[0] == old(bytes[0] as uint32);
- have to_integer(result.lanes[0]) == old(to_integer(bytes[0] as int32)) by { rewrite(result.lanes[0] == old(bytes[0] as uint32)); known(); }
+ have to_integer(result.lanes[0]) == old(to_integer(bytes[0] as int32)) by { rewrite(result.lanes[0], old(bytes[0] as uint32)); known(); }
  have result.lanes[1] == old(bytes[1] as uint32);
- have to_integer(result.lanes[1]) == old(to_integer(bytes[1] as int32)) by { rewrite(result.lanes[1] == old(bytes[1] as uint32)); known(); }
+ have to_integer(result.lanes[1]) == old(to_integer(bytes[1] as int32)) by { rewrite(result.lanes[1], old(bytes[1] as uint32)); known(); }
  have result.lanes[2] == old(bytes[2] as uint32);
- have to_integer(result.lanes[2]) == old(to_integer(bytes[2] as int32)) by { rewrite(result.lanes[2] == old(bytes[2] as uint32)); known(); }
+ have to_integer(result.lanes[2]) == old(to_integer(bytes[2] as int32)) by { rewrite(result.lanes[2], old(bytes[2] as uint32)); known(); }
  have result.lanes[3] == old(bytes[3] as uint32);
- have to_integer(result.lanes[3]) == old(to_integer(bytes[3] as int32)) by { rewrite(result.lanes[3] == old(bytes[3] as uint32)); known(); }
+ have to_integer(result.lanes[3]) == old(to_integer(bytes[3] as int32)) by { rewrite(result.lanes[3], old(bytes[3] as uint32)); known(); }
  solve();
 }
 fn quad::walk(bytes: &[u8]) -> u32 {
@@ -117,13 +117,13 @@ fn quad::walk(bytes: &[u8]) -> u32 {
                 have lanes.lanes[3] == chunk[3];
 
                 have lanes.lanes[0] == chunk[0] as uint32;
-                have to_integer(lanes.lanes[0]) == to_integer(chunk[0] as int32) by { rewrite(lanes.lanes[0] == chunk[0] as uint32); apply(quad_byte_observation(chunk[0])); known(); }
+                have to_integer(lanes.lanes[0]) == to_integer(chunk[0] as int32) by { rewrite(lanes.lanes[0], chunk[0] as uint32); apply(quad_byte_observation(chunk[0])); known(); }
                 have lanes.lanes[1] == chunk[1] as uint32;
-                have to_integer(lanes.lanes[1]) == to_integer(chunk[1] as int32) by { rewrite(lanes.lanes[1] == chunk[1] as uint32); apply(quad_byte_observation(chunk[1])); known(); }
+                have to_integer(lanes.lanes[1]) == to_integer(chunk[1] as int32) by { rewrite(lanes.lanes[1], chunk[1] as uint32); apply(quad_byte_observation(chunk[1])); known(); }
                 have lanes.lanes[2] == chunk[2] as uint32;
-                have to_integer(lanes.lanes[2]) == to_integer(chunk[2] as int32) by { rewrite(lanes.lanes[2] == chunk[2] as uint32); apply(quad_byte_observation(chunk[2])); known(); }
+                have to_integer(lanes.lanes[2]) == to_integer(chunk[2] as int32) by { rewrite(lanes.lanes[2], chunk[2] as uint32); apply(quad_byte_observation(chunk[2])); known(); }
                 have lanes.lanes[3] == chunk[3] as uint32;
-                have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32) by { rewrite(lanes.lanes[3] == chunk[3] as uint32); apply(quad_byte_observation(chunk[3])); known(); }
+                have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32) by { rewrite(lanes.lanes[3], chunk[3] as uint32); apply(quad_byte_observation(chunk[3])); known(); }
                 step_until(loop(0).back_edge());
                 have iter == at(taken, iter.after_next());
                 have iter.len() == at(taken, iter.len()) - 1u64;

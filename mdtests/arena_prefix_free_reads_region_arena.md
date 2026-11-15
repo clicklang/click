@@ -116,14 +116,14 @@ void arena_release(struct region* region) {
         preserve(separate(statement(1).footprint, memory(region->arena->data)));
     }
     have region->arena == at(before_store, region->arena) by {
-        rewrite(region->arena == at(after_declare, region->arena));
+        rewrite(region->arena, at(after_declare, region->arena));
         known();
     }
     mark after_assignment;
     have arena == at(after_assignment, region->arena);
     have separate(memory(at(after_assignment, &arena->live_regions)[0]), memory((&arena->data)[0..1]));
     have separate(memory(at(after_assignment, &arena->live_regions)[0]), memory(at(after_assignment, &region->arena->data)[0])) by {
-        rewrite(at(after_assignment, region->arena) == arena);
+        rewrite(at(after_assignment, region->arena), arena);
         known();
     }
     have separate(memory(arena->live_regions), memory(region->arena));
@@ -146,15 +146,15 @@ void arena_release(struct region* region) {
         preserve(separate(statement(2).footprint, memory(at(after_assignment, &region->arena->data)[0])));
     }
     have region->arena->data == load_int32_pointer(at(after_assignment, &region->arena->data)) by {
-        rewrite(region->arena == at(after_assignment, region->arena));
+        rewrite(region->arena, at(after_assignment, region->arena));
         normalize();
     }
     have region->arena->data == at(after_assignment, region->arena->data) by {
-        rewrite(region->arena->data == load_int32_pointer(at(after_assignment, &region->arena->data)));
+        rewrite(region->arena->data, load_int32_pointer(at(after_assignment, &region->arena->data)));
         known();
     }
     have region->arena == at(before_store, region->arena) by {
-        rewrite(region->arena == at(after_assignment, region->arena));
+        rewrite(region->arena, at(after_assignment, region->arena));
         known();
     }
     step_until(function.exit);

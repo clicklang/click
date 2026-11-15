@@ -20,7 +20,7 @@ tactic stop() {
     unfold(dirty);
     let done = fold(ghost(0), { model: Walk::Done });
     have pending(done.model) == 0 by {
-        rewrite(done.model == Walk::Done); unfold(pending(Walk::Done)); normalize();
+        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); normalize();
     }
 }
 void walk(int32 n) {

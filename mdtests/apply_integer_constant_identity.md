@@ -6,7 +6,7 @@ accept the same fact when its constant expression remains structural.
 ```click
 theorem equality_gives_order(a: Integer, b: Integer) {
     requires a == b;
-    ensures a <= b by { rewrite(a == b); normalize(); }
+    ensures a <= b by { rewrite(a, b); normalize(); }
 }
 
 theorem concrete_application() {

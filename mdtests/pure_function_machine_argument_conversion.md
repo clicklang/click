@@ -15,7 +15,7 @@ function identity(word: int32) -> int32 { word }
 theorem zero_word(word: uint64) {
     requires word == 0;
     ensures is_zero(word) == 1 by {
-        rewrite(word == 0);
+        rewrite(word, 0);
         unfold(is_zero(0));
         solve();
     }

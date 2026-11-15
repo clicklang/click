@@ -1934,11 +1934,11 @@ fn result_parameter_postconditions_audit_every_site() {
 #[test]
 fn a_claims_rewrites_combine_into_one_source() {
     let original = "step;\nsolve;\nstep;\nauto;\nstep;\n";
-    let first = "step;\nrewrite(a);\nknown();\nstep;\nauto;\nstep;\n";
+    let first = "step;\nrewrite(a, b);\nknown();\nstep;\nauto;\nstep;\n";
     let second = "step;\nsolve;\nstep;\nstep;\n";
     assert_eq!(
         combine_rewrites(original, &[second, first]).as_deref(),
-        Some("step;\nrewrite(a);\nknown();\nstep;\nstep;\n"),
+        Some("step;\nrewrite(a, b);\nknown();\nstep;\nstep;\n"),
     );
     assert_eq!(combine_rewrites(original, &[first]).as_deref(), Some(first));
 }
@@ -1946,8 +1946,8 @@ fn a_claims_rewrites_combine_into_one_source() {
 #[test]
 fn rewrites_of_the_same_text_do_not_combine() {
     let original = "step;\nsolve;\nstep;\n";
-    let first = "step;\nrewrite(a);\nstep;\n";
-    let second = "step;\nrewrite(b);\nstep;\n";
+    let first = "step;\nrewrite(a, b);\nstep;\n";
+    let second = "step;\nrewrite(b, a);\nstep;\n";
     assert_eq!(combine_rewrites(original, &[first, second]), None);
     assert_eq!(combine_rewrites(original, &[first, first]), None);
 }

@@ -35,7 +35,7 @@ void touch(int32 n) {
     match c.model {
         Walk::At(wd, rest) => {
             have depth(c.model) == wd by {
-                rewrite(c.model == Walk::At(wd, rest));
+                rewrite(c.model, Walk::At(wd, rest));
                 unfold(depth(Walk::At(wd, rest)));
                 normalize();
             }

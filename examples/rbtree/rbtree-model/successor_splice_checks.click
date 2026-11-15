@@ -43,8 +43,8 @@ theorem immediate_successor(erased: struct rb_node*, successor: struct rb_node*,
         apply(splice_black_leaf_facts(successor, erased));
         have black_height(splice_black_leaf(l, erased)) == black_height(splice_black_leaf(successor,
             erased)) by {
-            rewrite(black_height(splice_black_leaf(l, erased)) == Nat::Succ(Nat::Zero));
-            rewrite(black_height(splice_black_leaf(successor, erased)) == Nat::Succ(Nat::Zero));
+            rewrite(black_height(splice_black_leaf(l, erased)), Nat::Succ(Nat::Zero));
+            rewrite(black_height(splice_black_leaf(successor, erased)), Nat::Succ(Nat::Zero));
             normalize();
         }
         apply(is_rb_black_node(erased, above, splice_black_leaf(l, erased), splice_black_leaf(successor,
@@ -106,10 +106,10 @@ theorem deep_red_right_subtree(erased: struct rb_node*, successor: struct rb_nod
             splice_black_leaf(successor, r), splice_black_leaf(far, r), erased));
         have black_height(splice_black_leaf(l, erased)) == black_height(RbTree::Node(r, erased, Color::Red,
             splice_black_leaf(successor, r), splice_black_leaf(far, r))) by {
-            rewrite(black_height(splice_black_leaf(l, erased)) == Nat::Succ(Nat::Zero));
+            rewrite(black_height(splice_black_leaf(l, erased)), Nat::Succ(Nat::Zero));
             unfold(black_height(RbTree::Node(r, erased, Color::Red, splice_black_leaf(successor, r),
                 splice_black_leaf(far, r))));
-            rewrite(black_height(splice_black_leaf(successor, r)) == Nat::Succ(Nat::Zero));
+            rewrite(black_height(splice_black_leaf(successor, r)), Nat::Succ(Nat::Zero));
             normalize();
         }
         apply(is_rb_black_node(erased, above, splice_black_leaf(l, erased), RbTree::Node(r, erased,
@@ -182,16 +182,14 @@ theorem immediate_successor_rejects_zero_height(erased: struct rb_node*,
         apply(splice_black_leaf_facts(l, erased));
         apply(rb_reparent_preserves_black_height(splice_black_leaf(l, erased), successor));
         have not(black_height(rb_reparent(splice_black_leaf(l, erased), successor)) == Nat::Zero) by {
-            rewrite(black_height(rb_reparent(splice_black_leaf(l, erased), successor))
-                == black_height(splice_black_leaf(l, erased)));
-            rewrite(black_height(splice_black_leaf(l, erased)) == Nat::Succ(Nat::Zero));
+            rewrite(black_height(rb_reparent(splice_black_leaf(l, erased), successor)), black_height(splice_black_leaf(l, erased)));
+            rewrite(black_height(splice_black_leaf(l, erased)), Nat::Succ(Nat::Zero));
             normalize();
         }
         apply(rb_reparent_preserves_is_rb(splice_black_leaf(l, erased), successor));
         have is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1;
         rewrite(rb_successor_context(successor, above, Color::Black,
-                splice_black_leaf(l, erased), splice_black_leaf(successor, erased), Context::Top)
-            == Context::Right(successor, above, Color::Black,
+                splice_black_leaf(l, erased), splice_black_leaf(successor, erased), Context::Top), Context::Right(successor, above, Color::Black,
                 rb_reparent(splice_black_leaf(l, erased), successor), Context::Top));
         unfold(ctx_rb(Context::Right(successor, above, Color::Black,
             rb_reparent(splice_black_leaf(l, erased), successor), Context::Top), Nat::Zero, Color::Black));
@@ -265,8 +263,8 @@ theorem immediate_red_successor(erased: struct rb_node*, successor: struct rb_no
         apply(splice_red_leaf_facts(successor, erased));
         have black_height(splice_red_leaf(l, erased)) == black_height(splice_red_leaf(successor, erased)) by
             {
-            rewrite(black_height(splice_red_leaf(l, erased)) == Nat::Zero);
-            rewrite(black_height(splice_red_leaf(successor, erased)) == Nat::Zero);
+            rewrite(black_height(splice_red_leaf(l, erased)), Nat::Zero);
+            rewrite(black_height(splice_red_leaf(successor, erased)), Nat::Zero);
             normalize();
         }
         apply(is_rb_black_node(erased, above, splice_red_leaf(l, erased), splice_red_leaf(successor,

@@ -42,7 +42,7 @@ void put(struct Node *p, struct Node *q, int32 x, uint64 stamp) {
         step(); step(); step(); step();
         step(set_word, {});
         have child == q;
-        have child->tag == address(id) + stamp by { rewrite(id == r); solve(); }
+        have child->tag == address(id) + stamp by { rewrite(id, r); solve(); }
         branch ensuring { fact child->tag == address(id) + stamp; } then {
             step();
             have child->tag == address(id) + stamp;

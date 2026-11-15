@@ -12,27 +12,27 @@ theorem nested_offset(outer: uint64, inner: uint64) {
     ensures to_integer(((1u64 - outer) * 2u64 + (2u64 - inner)) * 2u64) < 8 by {
         if 0u64 < outer {
             have outer == 1u64;
-            rewrite(outer == 1u64);
-            if inner < 2u64 { have inner == 1u64; rewrite(inner == 1u64); normalize(); }
-            else { have inner == 2u64; rewrite(inner == 2u64); normalize(); }
+            rewrite(outer, 1u64);
+            if inner < 2u64 { have inner == 1u64; rewrite(inner, 1u64); normalize(); }
+            else { have inner == 2u64; rewrite(inner, 2u64); normalize(); }
         } else {
             have outer == 0u64;
-            rewrite(outer == 0u64);
-            if inner < 2u64 { have inner == 1u64; rewrite(inner == 1u64); normalize(); }
-            else { have inner == 2u64; rewrite(inner == 2u64); normalize(); }
+            rewrite(outer, 0u64);
+            if inner < 2u64 { have inner == 1u64; rewrite(inner, 1u64); normalize(); }
+            else { have inner == 2u64; rewrite(inner, 2u64); normalize(); }
         }
     }
     ensures to_integer(((1u64 - outer) * 2u64 + (2u64 - inner)) * 2u64 + 1u64) < 8 by {
         if 0u64 < outer {
             have outer == 1u64;
-            rewrite(outer == 1u64);
-            if inner < 2u64 { have inner == 1u64; rewrite(inner == 1u64); normalize(); }
-            else { have inner == 2u64; rewrite(inner == 2u64); normalize(); }
+            rewrite(outer, 1u64);
+            if inner < 2u64 { have inner == 1u64; rewrite(inner, 1u64); normalize(); }
+            else { have inner == 2u64; rewrite(inner, 2u64); normalize(); }
         } else {
             have outer == 0u64;
-            rewrite(outer == 0u64);
-            if inner < 2u64 { have inner == 1u64; rewrite(inner == 1u64); normalize(); }
-            else { have inner == 2u64; rewrite(inner == 2u64); normalize(); }
+            rewrite(outer, 0u64);
+            if inner < 2u64 { have inner == 1u64; rewrite(inner, 1u64); normalize(); }
+            else { have inner == 2u64; rewrite(inner, 2u64); normalize(); }
         }
     }
 }
@@ -171,27 +171,27 @@ fn nested(bytes: &[u8]) -> usize {
                                     apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(chunk, chunk_len), 2u64, (2u64 - iter.len())));
                                     solve();
                                 }
-                                rewrite(iter.nth(0u64).as_ptr() == chunk + (2u64 - iter.len()) * 2u64);
-                                rewrite(chunk == bytes + (1u64 - loop(0).iter.len()) * 4u64);
+                                rewrite(iter.nth(0u64).as_ptr(), chunk + (2u64 - iter.len()) * 2u64);
+                                rewrite(chunk, bytes + (1u64 - loop(0).iter.len()) * 4u64);
                                 if loop(0).iter.len() == 1u64 {
-                                    rewrite(loop(0).iter.len() == 1u64);
+                                    rewrite(loop(0).iter.len(), 1u64);
                                     if iter.len() == 2u64 {
-                                        rewrite(iter.len() == 2u64);
+                                        rewrite(iter.len(), 2u64);
                                         normalize();
                                     } else {
                                         have iter.len() == 1u64 by { solve() using { not iter.len() == 2u64; iter.len() <= 2u64; 1u64 <= iter.len(); }; }
-                                        rewrite(iter.len() == 1u64);
+                                        rewrite(iter.len(), 1u64);
                                         normalize();
                                     }
                                 } else {
                                     have loop(0).iter.len() == 0u64 by { solve() using { not loop(0).iter.len() == 1u64; loop(0).iter.len() <= 1u64; }; }
-                                    rewrite(loop(0).iter.len() == 0u64);
+                                    rewrite(loop(0).iter.len(), 0u64);
                                     if iter.len() == 2u64 {
-                                        rewrite(iter.len() == 2u64);
+                                        rewrite(iter.len(), 2u64);
                                         normalize();
                                     } else {
                                         have iter.len() == 1u64 by { solve() using { not iter.len() == 2u64; iter.len() <= 2u64; 1u64 <= iter.len(); }; }
-                                        rewrite(iter.len() == 1u64);
+                                        rewrite(iter.len(), 1u64);
                                         normalize();
                                     }
                                 }

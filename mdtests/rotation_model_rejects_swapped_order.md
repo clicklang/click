@@ -91,12 +91,12 @@ struct tree_node* rotate_left(struct tree_node* root) {
         HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
         HeapTree::Node(node, value, left_model, right_model) => {
             have heap_right(t.model) == right_model by {
-                rewrite(t.model == HeapTree::Node(node, value, left_model, right_model));
+                rewrite(t.model, HeapTree::Node(node, value, left_model, right_model));
                 unfold(heap_right(HeapTree::Node(node, value, left_model, right_model)));
                 normalize();
             }
             have right_model != HeapTree::Empty by {
-                rewrite(right_model == heap_right(t.model));
+                rewrite(right_model, heap_right(t.model));
                 known();
             }
             match right_model {
@@ -113,8 +113,8 @@ struct tree_node* rotate_left(struct tree_node* root) {
                             HeapTree::Node(node, value, left_model, middle_model))
                     }, { left: z, right: lower });
                     have rotated.model == heap_rotate_left(old(t.model)) by {
-                        rewrite(old(t.model) == HeapTree::Node(node, value, left_model, right_model));
-                        rewrite(right_model == HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model));
+                        rewrite(old(t.model), HeapTree::Node(node, value, left_model, right_model));
+                        rewrite(right_model, HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model));
                         unfold(heap_rotate_left(HeapTree::Node(node, value, left_model,
                             HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model))));
                         normalize();

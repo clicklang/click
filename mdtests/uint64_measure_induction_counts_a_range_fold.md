@@ -13,7 +13,7 @@ theorem full_width_count_is_its_length(n: uint64) {
         if n <= 0u64 {
             peel(full_width_count(n)) using { n <= 0u64; };
             have n == 0u64 by solve() using { n <= 0u64; };
-            rewrite(n == 0u64);
+            rewrite(n, 0u64);
             normalize();
         } else {
             have 0u64 < n by solve();
@@ -26,10 +26,10 @@ theorem full_width_count_is_its_length(n: uint64) {
                 to_integer(0u64) <= to_integer(n - 1u64);
                 to_integer(n - 1u64) < to_integer(18446744073709551615u64);
             };
-            rewrite(full_width_count(n - 1u64) == to_integer(n - 1u64));
+            rewrite(full_width_count(n - 1u64), to_integer(n - 1u64));
             have to_integer(1u64) <= to_integer(n);
             have to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
-            rewrite(to_integer(n - 1u64) == to_integer(n) - to_integer(1u64));
+            rewrite(to_integer(n - 1u64), to_integer(n) - to_integer(1u64));
             solve() using {};
         }
     }

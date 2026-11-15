@@ -494,21 +494,35 @@ back-edge proof. Strategies for the same source loop may use different measures.
 An unranked strategy still prevents a ranked sibling from covering the loop.
 No common measure is reconstructed from source annotations after body closure.
 
-The implicit program closer runs the existing SCC/descent operation inside this
-owner, discharging the declared program goals. It also owns targeted-selection
-measure handling, justification of `diverges`, and callback suitability. Startup and source-only contracts retain native termination subjects even
-when their declarations cannot expose a modular contract rule; rule eligibility
-is fixed at body opening. Source-only claims stay on their existing ordinary
-outcome scopes, while these bodies contribute a boundary/termination root without
-native reusable-claim cells. Explicit whole-contract `sorry` admissions remain
-dev-only assumptions and produce no checked contract. The program closer builds
-its call graph from those
-owned subjects and the imported rules. Only
-this successor produces `CompletedProgramContracts`, retaining the body proofs
-and closed native program root together. Source formats outstanding-goal
-failures; it does not decide additional requirements after completion. Synthetic
-one-call `executes` proofs explicitly consume the partial body rule for their
-contract-refinement inference, without claiming program-wide termination.
+Program closing has separate generation, proof execution, and completion APIs.
+`ProgramContractProof::generate_termination` seals body opening and constructs
+`ProgramTerminationProof`. Its immutable requirements enumerate source loops,
+recursive peers and measures, direct and indirect call dependencies, and callback
+address-takings. Generation can reject malformed input, but executes no loop,
+recursion, or callback proof. Targeted-selection measure handling occurs here,
+using the already generated recursive edges rather than retrying a checker.
+
+`ProgramTerminationProof::prove_implicitly` executes these requirements. It
+shares the existing loop/recursion descent primitives with the standalone
+termination API. Local descent is proved once per function; strict callback and
+pointer-enabled dependency proofs reuse those results and do not walk the
+function bodies again. Each produced return proof closes its corresponding
+native return goal; callback safety and divergence policy close their own goals.
+The executor never blanket-retires the root's remaining goals.
+
+Only successful proof execution constructs the affine `ProvedProgramContracts`
+token. Its infallible `complete()` takes no checking inputs and only moves the
+closed native proof, retained bodies, and termination rules into
+`CompletedProgramContracts`. It does not analyze source, interpret verdicts,
+retry proofs, or discover requirements. Source formats proof-execution failures
+before calling this packaging operation.
+
+Startup and source-only contracts retain native termination subjects without
+gaining unsupported modular rules; rule eligibility is fixed at body opening.
+Source-only clauses keep their existing ordinary outcome scopes. Explicit
+whole-contract `sorry` admissions remain dev-only assumptions and produce no
+checked contract. Synthetic one-call `executes` proofs continue to use partial
+body rules for contract-refinement inference.
 
 Function-proof sessions share persistent source-definition indexes but own
 fresh entry/root slots. Clause scripts share the same session; another function

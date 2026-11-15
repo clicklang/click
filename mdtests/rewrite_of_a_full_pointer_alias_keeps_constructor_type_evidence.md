@@ -39,7 +39,7 @@ int parent(struct node* node) {
             step(); step();
             have unp == gparent by { solve(); }
             have Wrapped::Node(id, unp, left, right) == Wrapped::Node(id, gparent, left, right) by {
-                rewrite(unp == gparent);
+                rewrite(unp, gparent);
                 normalize();
             }
             have ((node->word & ~3) as (struct node *)) == unp by { solve(); }

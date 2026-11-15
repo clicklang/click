@@ -206,10 +206,10 @@ int32 vector_copy(
                     };
                 }
                 have src[k] == at(region(3).entry, src[k]) by {
-                    rewrite(at(region(3).entry, src[k]) == src[k]);
+                    rewrite(at(region(3).entry, src[k]), src[k]);
                     normalize();
                 }
-                rewrite(src[k] == at(region(3).entry, src[k]));
+                rewrite(src[k], at(region(3).entry, src[k]));
                 known();
             }
             have 0 <= i by {
@@ -355,7 +355,7 @@ int32 vector_copy(
                             conclusion 2;
                         }
                     }
-                    rewrite(at(region(4).entry, k) == at(region(4).entry, (i as int32)));
+                    rewrite(at(region(4).entry, k), at(region(4).entry, (i as int32)));
                     instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k) using {
                         at(region(3).entry, i) < at(region(3).entry, length);
                         not k < at(region(3).entry, i);
@@ -564,12 +564,12 @@ int32 vector_grow(struct vector* owner) {
     step();
     step();
     have 0 <= old_capacity by {
-        rewrite(old_capacity == owner->cap);
+        rewrite(old_capacity, owner->cap);
         have 0 <= owner->cap;
         known();
     }
     have (old_capacity as uint32) <= 1073741823u32 by {
-        rewrite(old_capacity == owner->cap);
+        rewrite(old_capacity, owner->cap);
         solve() using {
             1 <= owner->cap;
             owner->cap <= 536870910;
@@ -702,7 +702,7 @@ int32 vector_grow(struct vector* owner) {
                                     conclusion 2;
                                 }
                             }
-                            rewrite(at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32));
+                            rewrite(at(function.entry, owner->cap), (at(function.entry, 1073741823) as int32));
                             normalize();
                         }
                     }
@@ -760,7 +760,7 @@ int32 vector_grow(struct vector* owner) {
                             conclusion 2;
                         }
                     }
-                    rewrite(at(function.entry, owner->cap == (536870910 as int32)));
+                    rewrite(at(function.entry, owner->cap), at(function.entry, (536870910 as int32)));
                     normalize();
                 }
             }
@@ -860,7 +860,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             step();
             have not old(owner->len) < old(owner->cap) by {
-                rewrite(at(function.entry, owner->len == owner->cap));
+                rewrite(at(function.entry, owner->len), at(function.entry, owner->cap));
                 normalize();
             }
             have result == 0 by {
@@ -963,17 +963,17 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have 1 <= owner->cap by {
-                rewrite(owner->cap == at(statement(3).entry, owner->cap));
+                rewrite(owner->cap, at(statement(3).entry, owner->cap));
                 known();
             }
             have owner->cap <= 536870911 by {
-                rewrite(owner->cap == at(statement(3).entry, owner->cap));
+                rewrite(owner->cap, at(statement(3).entry, owner->cap));
                 known();
             }
             fold(allocated_vector(owner));
             step();
             have not old(owner->len) < old(owner->cap) by {
-                rewrite(at(function.entry, owner->len == owner->cap));
+                rewrite(at(function.entry, owner->len), at(function.entry, owner->cap));
                 normalize();
             }
             have result == 0 or result == 1 by {
@@ -993,8 +993,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have owner->len == (old(owner->len) + 1) by {
-                rewrite(owner->len == (at(statement(3).entry, owner->len) + 1));
-                rewrite(at(statement(3).entry, owner->len) == old(owner->len));
+                rewrite(owner->len, (at(statement(3).entry, owner->len) + 1));
+                rewrite(at(statement(3).entry, owner->len), old(owner->len));
                 normalize();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
@@ -1015,7 +1015,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have owner->data[old(owner->len)] == value by {
-                rewrite(old(owner->len) == at(statement(3).entry, owner->len));
+                rewrite(old(owner->len), at(statement(3).entry, owner->len));
                 known();
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
@@ -1029,7 +1029,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 extract(k < old(owner->len));
                 instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(5).entry, owner->data[j]) == old(owner->data[j]) }, k);
                 have k < at(statement(3).entry, owner->len) by {
-                    rewrite(at(statement(3).entry, owner->len) == old(owner->len));
+                    rewrite(at(statement(3).entry, owner->len), old(owner->len));
                     known();
                 }
                 instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k) using {
@@ -1050,7 +1050,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                         k < old(owner->len);
                     };
                 }
-                rewrite(owner->data[k] == at(statement(3).entry, owner->data[k]));
+                rewrite(owner->data[k], at(statement(3).entry, owner->data[k]));
                 known();
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
@@ -1108,11 +1108,11 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             known();
         }
         have 1 <= owner->cap by {
-            rewrite(owner->cap == at(region(0).entry, owner->cap));
+            rewrite(owner->cap, at(region(0).entry, owner->cap));
             known();
         }
         have owner->cap <= 536870911 by {
-            rewrite(owner->cap == at(region(0).entry, owner->cap));
+            rewrite(owner->cap, at(region(0).entry, owner->cap));
             known();
         }
         fold(allocated_vector(owner));

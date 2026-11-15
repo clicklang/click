@@ -66,7 +66,7 @@ int32 peek(struct node* n, int32 x) {
                     have n->next == at(before_assignment, n->next) by {
                         preserve(separate(statement(2).footprint, memory(n->next)));
                     }
-                    have defined(id->next) by { rewrite(id == n); normalize(); }
+                    have defined(id->next) by { rewrite(id, n); normalize(); }
                     let t = fold(list(0), { model: Chain::Nil });
                 },
                 Chain::Cons(tid, w, more) => {
@@ -85,7 +85,7 @@ int32 peek(struct node* n, int32 x) {
                     have n->next->next == at(before_assignment, n->next->next) by {
                         preserve(separate(statement(2).footprint, memory(n->next->next)));
                     }
-                    have defined(id->next) by { rewrite(id == n); normalize(); }
+                    have defined(id->next) by { rewrite(id, n); normalize(); }
                     let t = fold(list(n->next), { model: Chain::Cons(tid, w, more) }, { tail: u });
                 },
             }

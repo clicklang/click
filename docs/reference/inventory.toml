@@ -5002,3 +5002,11 @@ path = "reference/library/index.md#integerequal_multiply"
 [[item]]
 id = "library.theorem.integer::equal_le"
 path = "reference/library/index.md#integerequal_le"
+
+[[item]]
+id = "language.word.float32_from_bits"
+path = "reference/language/grammar.md#exact-float-bit-literals"
+
+[[item]]
+id = "language.word.float64_from_bits"
+path = "reference/language/grammar.md#exact-float-bit-literals"

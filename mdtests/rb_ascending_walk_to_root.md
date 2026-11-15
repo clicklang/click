@@ -279,7 +279,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
             match c.model {
                 Context::Top => {
                     have ctx_node_is(c.model, parent) != 1 by {
-                        rewrite(c.model == Context::Top);
+                        rewrite(c.model, Context::Top);
                         unfold(ctx_node_is(Context::Top, parent));
                         normalize() using { parent != 0; };
                     }
@@ -303,11 +303,10 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                   sibling_model, up_model), t.model));
                         rewrite(plug(up_model,
                                      RbTree::Node(identity, grandparent, color,
-                                                  t.model, sibling_model))
-                            == plug(Context::Left(identity, grandparent, color,
+                                                  t.model, sibling_model)), plug(Context::Left(identity, grandparent, color,
                                                   sibling_model, up_model), t.model));
                         rewrite(Context::Left(identity, grandparent, color,
-                                              sibling_model, up_model) == c.model);
+                                              sibling_model, up_model), c.model);
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);
@@ -344,11 +343,10 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                    sibling_model, up_model), t.model));
                         rewrite(plug(up_model,
                                      RbTree::Node(identity, grandparent, color,
-                                                  sibling_model, t.model))
-                            == plug(Context::Right(identity, grandparent, color,
+                                                  sibling_model, t.model)), plug(Context::Right(identity, grandparent, color,
                                                    sibling_model, up_model), t.model));
                         rewrite(Context::Right(identity, grandparent, color,
-                                               sibling_model, up_model) == c.model);
+                                               sibling_model, up_model), c.model);
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);
@@ -391,12 +389,12 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         },
     }
     have plug(c.model, t.model) == t.model by {
-        rewrite(c.model == Context::Top);
+        rewrite(c.model, Context::Top);
         unfold(plug(Context::Top, t.model));
         normalize();
     }
     have t.model == plug(old(c.model), old(t.model)) by {
-        rewrite(t.model == plug(c.model, t.model));
+        rewrite(t.model, plug(c.model, t.model));
         known();
     }
     unfold(c);
@@ -406,8 +404,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         RbTree::Node(identity, parent_model, color, left_model, right_model) => {
             have RbTree::Node(identity, parent_model, color, left_model, right_model)
                 == plug(old(c.model), old(t.model)) by {
-                rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model)
-                    == t.model);
+                rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model), t.model);
                 known();
             }
             let { left: l, right: r } = unfold(t);
@@ -415,8 +412,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                 model: RbTree::Node(identity, parent_model, color, left_model, right_model)
             }, { left: l, right: r });
             have sub.model == plug(old(c.model), old(t.model)) by {
-                rewrite(sub.model
-                    == RbTree::Node(identity, parent_model, color, left_model, right_model));
+                rewrite(sub.model, RbTree::Node(identity, parent_model, color, left_model, right_model));
                 known();
             }
             step();

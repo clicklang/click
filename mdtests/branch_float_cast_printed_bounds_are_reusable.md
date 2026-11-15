@@ -14,8 +14,8 @@ verifying "branch_float_cast.c";
 
 int32 positive(double d) {
     requires isfinite(d);
-    requires d >= -2147483648;
-    requires d < 2147483648i64;
+    requires d >= float64_from_bits(0xc1e0000000000000u64);
+    requires d < float64_from_bits(0x41e0000000000000u64);
     ensures result >= 0;
 } by {
     branch { step(); solve(); } else {}

@@ -75,7 +75,7 @@ remains supported.
 - `induct(n) as ih` or `induct(xs) as ih { ... }`, with `apply(ih(m))`: prove
   a pure theorem by induction. See
   [Proposition reasoning](#proposition-reasoning).
-- `rewrite(P)`: rewrite the goal with an available equality. See
+- `rewrite(from, to)`: rewrite the goal with an available equality. See
   [Proposition reasoning](#proposition-reasoning).
 - `contradiction(P)`: close an impossible case from a fact and its negation.
   See [Proposition reasoning](#proposition-reasoning).
@@ -103,7 +103,7 @@ when the default misses or when a proof must not search.
   evaluation) and `extract(P)` (one part of a fact) do no search. They are
   what expansion writes; write them by hand only in a proof that must not
   search.
-- **Equalities and states: `rewrite`, `transport`.** `rewrite(P)` is the
+- **Equalities and states: `rewrite`, `transport`.** `rewrite(from, to)` is the
   default: it rewrites the goal with an equality at the current state.
   `transport(P, Q)` carries a fact stated at an earlier state to the current
   one when `step` did not carry it; its `using` form, which lists the frame
@@ -1107,7 +1107,7 @@ step is still checked.
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(separate(region.footprint, resource))` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
-| `rewrite(P)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
+| `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
 | `intro() as name` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
@@ -1772,7 +1772,7 @@ cited premise is accepted:
   `extract` the single condition and cite it. Two premises stating opposite
   values of one condition are refused as inconsistent.
 - A goal that needs a cited equality's value substituted into a term, such as
-  `x * 2 < 15` from `x == 7`: `rewrite(x == 7)` then `normalize()`
+  `x * 2 < 15` from `x == 7`: `rewrite(x, 7)` then `normalize()`
   ([`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md)).
 - A goal between two symbolic terms that follows from a cited premise without
   being one of its spellings, such as `x <= y` from `x < y`:
@@ -2304,16 +2304,18 @@ checked proof.
 
 ### Rewriting
 
-**Form:** `rewrite(P)`
+**Form:** `rewrite(from, to)`
 
-**Core.** Replace one side of an available equality with the other throughout
-the current goal. The goal becomes the rewritten proposition; no fact changes.
+**Core.** Replace `from` with `to` throughout the current goal, using an
+available equality `from == to`. The goal becomes the rewritten proposition;
+no fact changes. Both arguments are expressions, not a proposition or a named
+fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
 
-**Accepts** an equality `P`, written `L == R`, and a goal containing `L`:
+**Accepts** expressions `L` and `R` whose equality `P` is `L == R`, and a goal containing `L`:
 
 - `P` is available: a fact or a leaf conjunct of one, or decided by the
   equality closure (`x == z` from `x == y` and `y == z`; `x + 1 == y + 1`
-  from `x == y`), in either orientation: `rewrite(y == x)` is accepted
+  from `x == y`), in either orientation: `rewrite(y, x)` is accepted
   from the fact `x == y`. `L == L` is accepted and changes nothing.
 - `P` is a native equality of any C integer type (`int8` through `uint32`
   as 32-bit words, `int64` and `uint64` at full width), a mathematical
@@ -2321,7 +2323,7 @@ the current goal. The goal becomes the rewritten proposition; no fact changes.
 - Direction is as written: every occurrence of `L` is replaced by `R` in one
   pass, and `R` is not rewritten again. An occurrence is a subterm identical
   to `L` as lowered: C and `Integer` arithmetic associate to the left, so
-  `x + y == z` rewrites `x + y + w` but `y + w == z` does not
+  `rewrite(x + y, z)` rewrites `x + y + w` but `rewrite(y + w, z)` does not
   ([`rewrite_replaces_only_a_parsed_occurrence.md`](https://github.com/clicklang/click/blob/master/mdtests/rewrite_replaces_only_a_parsed_occurrence.md)).
   `L` may be composite, such as `x + y` or a pure-function application.
 - Occurrences are replaced under `and`, `or`, `not`, and implications; inside
@@ -3180,7 +3182,7 @@ from an earlier `have` or a proof `if` condition inside a pure theorem has none
 and is not offered. In a pure theorem, an omitted proof of `ensures P` is the
 same `solve`. `have name: P` also names the fact: until the end of
 the enclosing block, `name` stands for `P` wherever a proposition is cited
-whole, as in `using { name; }`, `rewrite(name)` or `contradiction(name)`, and is
+whole, as in `using { name; }`, `extract(name)` or `contradiction(name)`, and is
 read as `P` there, so citing it proves exactly what restating `P` proves.
 
 The name is not visible inside the fact's own proof, and expansion writes `P` in

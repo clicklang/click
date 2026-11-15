@@ -52,7 +52,7 @@ theorem append_right_identity(xs: TestList<int32>) {
                     TestList<int32>::Cons(head, tail),
                     TestList<int32>::Nil
                 ));
-                rewrite(append(tail, TestList<int32>::Nil) == tail);
+                rewrite(append(tail, TestList<int32>::Nil), tail);
                 normalize();
             }
         }
@@ -70,8 +70,8 @@ theorem copy_tree_identity(tree: Tree<int32>) {
                 apply(ih(left));
                 apply(ih(right));
                 unfold(copy_tree(Tree<int32>::Node(left, value, right)));
-                rewrite(copy_tree(left) == left);
-                rewrite(copy_tree(right) == right);
+                rewrite(copy_tree(left), left);
+                rewrite(copy_tree(right), right);
                 normalize();
             }
         }

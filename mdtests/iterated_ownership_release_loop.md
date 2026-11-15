@@ -101,7 +101,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 if i < k {
                     have to_integer(i + 1) <= to_integer(k);
                     have n <= k by {
-                        rewrite(n == at(opened, i));
+                        rewrite(n, at(opened, i));
                         known();
                     }
                     have at(opened, occupied[k]) == 0 by {
@@ -132,7 +132,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 } else {
                     have i == k;
                     have k == i;
-                    rewrite(k == i);
+                    rewrite(k, i);
                     normalize();
                 }
             }
@@ -160,8 +160,8 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
     have i >= start;
     have i == start;
     have w.next == start by {
-        rewrite(w.next == i);
-        rewrite(i == start);
+        rewrite(w.next, i);
+        rewrite(i, start);
         normalize();
     }
 }

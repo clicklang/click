@@ -73,7 +73,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
     match state.phase {
         SizedInsertContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right) => {
             have sized_context_uncle_pending(state.phase) != 1 by {
-                rewrite(state.phase == SizedInsertContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
+                rewrite(state.phase, SizedInsertContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
                 unfold(sized_context_uncle_pending(SizedInsertContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right))); normalize();
             }
             contradiction(sized_context_uncle_pending(state.phase) == 1);
@@ -84,7 +84,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             have tree.model == SizedTree::Node(g, above, Color::Black, gv,
                 SizedTree::Node(p, g, Color::Red, pv,
                     SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)) by {
-                rewrite(tree.model == sized_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
+                rewrite(tree.model, sized_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
                 unfold(sized_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right)); normalize();
             }
             let { metadata: g_size, left: parent_tree, right: g_right } = unfold(tree);
@@ -92,12 +92,12 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             let { metadata: n_size, left: n_left, right: n_right } = unfold(focus);
             unfold(color_bit(Color::Red));
             have (node->__rb_parent_color & 1) == 0 by {
-                rewrite((node->__rb_parent_color & 1) == color_bit(Color::Red));
-                rewrite(color_bit(Color::Red) == 0); normalize();
+                rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
+                rewrite(color_bit(Color::Red), 0); normalize();
             }
             have node->__rb_parent_color == address(p) by {
-                rewrite(node->__rb_parent_color == address(p) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1) == 0); normalize();
+                rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
+                rewrite((node->__rb_parent_color & 1), 0); normalize();
             }
             step(); step(); step(); step();
             let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, left, right) }, { metadata: n_size, left: n_left, right: n_right });
@@ -128,7 +128,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have loop_tree.model == SizedTree::Node(g, above, Color::Black, gv,
                         SizedTree::Node(p, g, Color::Red, pv,
                             SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)) by {
-                        rewrite(loop_tree.model == sized_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
+                        rewrite(loop_tree.model, sized_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
                         unfold(sized_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right)); normalize();
                     }
                     let { metadata: g_size, left: parent_tree, right: g_right } = unfold(loop_tree);
@@ -139,8 +139,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p != u by { known(); }
                     unfold(color_bit(Color::Black));
                     have (u->__rb_parent_color & 1) == 1 by {
-                        rewrite((u->__rb_parent_color & 1) == color_bit(Color::Black));
-                        rewrite(color_bit(Color::Black) == 1); normalize();
+                        rewrite((u->__rb_parent_color & 1), color_bit(Color::Black));
+                        rewrite(color_bit(Color::Black), 1); normalize();
                     }
                     let { metadata: m_size, left: m_left, right: m_right } = unfold(p_right);
                     have p->rb_right == m by { known(); }
@@ -159,11 +159,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))));
                     unfold(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
                     have to_integer(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == to_integer(uv) by {
-                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)) == uv); solve();
+                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)), uv); solve();
                     }
                     unfold(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
                     have to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv) by {
-                        rewrite(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)) == mv); normalize();
+                        rewrite(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)), mv); normalize();
                     }
                     have to_integer(gv) == 2 + to_integer(nv) + to_integer(mv) + to_integer(uv) by {
                         solve() using {
@@ -175,14 +175,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     have rb_subtree_size(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))) == to_integer(nv) by known();
                     have rb_subtree_size(sized_shape(left)) + rb_subtree_size(sized_shape(right)) + 1 == to_integer(nv) by {
-                        rewrite(to_integer(nv) == rb_subtree_size(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))));
+                        rewrite(to_integer(nv), rb_subtree_size(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))));
                         unfold(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right)));
                         unfold(rb_subtree_size(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))));
                         normalize();
                     }
                     have rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv) by { known(); }
                     have rb_subtree_size(sized_shape(middle_left)) + rb_subtree_size(sized_shape(middle_right)) + 1 == to_integer(mv) by {
-                        rewrite(to_integer(mv) == rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))));
+                        rewrite(to_integer(mv), rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))));
                         unfold(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
                         unfold(rb_subtree_size(RbTree::Node(m, p, Color::Black, sized_shape(middle_left), sized_shape(middle_right)))); normalize();
                     }
@@ -198,7 +198,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }; }
                     have rb_subtree_size(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == to_integer(uv) by { known(); }
                     have rb_subtree_size(sized_shape(uncle_left)) + rb_subtree_size(sized_shape(uncle_right)) + 1 == to_integer(uv) by {
-                        rewrite(to_integer(uv) == rb_subtree_size(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))));
+                        rewrite(to_integer(uv), rb_subtree_size(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))));
                         unfold(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
                         unfold(rb_subtree_size(RbTree::Node(u, g, Color::Black, sized_shape(uncle_left), sized_shape(uncle_right)))); normalize();
                     }
@@ -217,14 +217,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     apply(size_children_fit(mv, uv));
                     unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                     have p->__rb_parent_color == address(g) by {
-                        rewrite(p->__rb_parent_color == address(g) + (p->__rb_parent_color & 1));
-                        rewrite((p->__rb_parent_color & 1) == color_bit(Color::Red));
-                        rewrite(color_bit(Color::Red) == 0); normalize();
+                        rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
+                        rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
+                        rewrite(color_bit(Color::Red), 0); normalize();
                     }
                     have g->__rb_parent_color == address(above) + 1 by {
-                        rewrite(g->__rb_parent_color == address(above) + (g->__rb_parent_color & 1));
-                        rewrite((g->__rb_parent_color & 1) == color_bit(Color::Black));
-                        rewrite(color_bit(Color::Black) == 1); normalize();
+                        rewrite(g->__rb_parent_color, address(above) + (g->__rb_parent_color & 1));
+                        rewrite((g->__rb_parent_color & 1), color_bit(Color::Black));
+                        rewrite(color_bit(Color::Black), 1); normalize();
                     }
                     let { metadata: u_size, left: u_left, right: u_right } = unfold(g_right);
                     step(); step(); step(); step(); step(); step(); step();
@@ -273,17 +273,17 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above);
                     }
                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(link.model, 0) by {
-                        rewrite(sized_context_parent(link.model, 0) == above); known();
+                        rewrite(sized_context_parent(link.model, 0), above); known();
                     }
                     let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     have parent->__rb_parent_color == at(before_parent_update, gparent->__rb_parent_color) by { known(); }
                     have p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { known(); }
                     have p->__rb_parent_color == address(above) + (p->__rb_parent_color & 1) by {
-                        rewrite(p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
+                        rewrite(p->__rb_parent_color, at(before_parent_update, g->__rb_parent_color));
                         known();
                     }
                     have (p->__rb_parent_color & 1) == color_bit(Color::Black) by {
-                        rewrite(p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
+                        rewrite(p->__rb_parent_color, at(before_parent_update, g->__rb_parent_color));
                         known();
                     }
                     let g_size = fold(size_metadata(g), { value: gv });
@@ -331,30 +331,30 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))));
                     unfold(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
                     have 0 <= sized_value(sized_left(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))))) by {
-                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))) == SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
-                        rewrite(sized_left(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right));
+                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
+                        rewrite(sized_left(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right));
                         unfold(sized_value(SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right))); solve();
                     }
                     have 0 <= sized_value(sized_right(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))))) by {
-                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))) == SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
-                        rewrite(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right));
-                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)) == uv); solve();
+                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
+                        rewrite(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right));
+                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)), uv); solve();
                     }
                     have sized_value(sized_right(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))))) <= 2147483646 by {
-                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))) == SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
-                        rewrite(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right));
-                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)) == uv); solve();
+                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
+                        rewrite(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right));
+                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)), uv); solve();
                     }
                     have sized_value(sized_left(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))))) <= 2147483646 - sized_value(sized_right(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))))) by {
-                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))) == SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
-                        rewrite(sized_left(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right));
-                        rewrite(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))) == SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right));
+                        rewrite(sized_right(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
+                        rewrite(sized_left(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right));
+                        rewrite(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right));
                         unfold(sized_value(SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right)));
-                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)) == uv); solve();
+                        rewrite(sized_value(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)), uv); solve();
                     }
                     let { checked: checked } = step(RotateTreeRight, { tree: rotated });
                     have sized_shape(checked.model) == sized_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right) by {
-                        rewrite(sized_shape(checked.model) == sized_shape(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))));
+                        rewrite(sized_shape(checked.model), sized_shape(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))));
                         unfold(sized_shape(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(node, p, Color::Red, nv, left, right), SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)))));
                         unfold(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right)));
                         unfold(sized_shape(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))));
@@ -378,26 +378,26 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         };
                     }
                     have to_integer(sized_value(checked.model)) == to_integer(gv) by {
-                        rewrite(to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)));
-                        rewrite(sized_shape(checked.model) == sized_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
+                        rewrite(to_integer(sized_value(checked.model)), rb_subtree_size(sized_shape(checked.model)));
+                        rewrite(sized_shape(checked.model), sized_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
                         known();
                     }
                     have sized_value(checked.model) == gv;
                     apply(sized_parent_is_shape(checked.model, above));
                     have rb_parent_is(sized_shape(checked.model), above) == 1 by {
-                        rewrite(sized_shape(checked.model) == sized_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
+                        rewrite(sized_shape(checked.model), sized_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
                         unfold(sized_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
                         unfold(rb_parent_is(RbTree::Node(p, above, Color::Black, RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right)), RbTree::Node(g, p, Color::Red, RbTree::Node(m, g, Color::Black, sized_shape(middle_left), sized_shape(middle_right)), RbTree::Node(u, g, Color::Black, sized_shape(uncle_left), sized_shape(uncle_right)))), above)); normalize();
                     }
                     have sized_parent_is(checked.model, above) == 1 by {
-                        rewrite(sized_parent_is(checked.model, above) == rb_parent_is(sized_shape(checked.model), above));
+                        rewrite(sized_parent_is(checked.model, above), rb_parent_is(sized_shape(checked.model), above));
                         known();
                     }
                     let { frames: path } = unfold(link);
                     have path.model == old(state.context) by { known(); }
                     have sized_parent_is(checked.model, sized_context_parent(path.model, 0)) == 1 by {
-                        rewrite(path.model == old(state.context));
-                        rewrite(sized_context_parent(old(state.context), 0) == above);
+                        rewrite(path.model, old(state.context));
+                        rewrite(sized_context_parent(old(state.context), 0), above);
                         known();
                     }
                     mark before_restore;
@@ -412,7 +412,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_context_uncle_finish(SizedInsertContextUnclePhase::Before(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right))); solve();
                     }
                     have sized_shape(state.model) == sized_context_uncle_expected(old(state.phase), node) by {
-                        rewrite(old(state.phase) == SizedInsertContextUnclePhase::Before(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
+                        rewrite(old(state.phase), SizedInsertContextUnclePhase::Before(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
                         unfold(sized_context_uncle_expected(SizedInsertContextUnclePhase::Before(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right), node)); solve();
                     }
                     step();

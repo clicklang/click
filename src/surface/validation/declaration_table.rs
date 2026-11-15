@@ -173,6 +173,8 @@ const BUILTIN_CALL_FORMS: &[&str] = &[
     "old",
     "rust",
     "separate",
+    "float32_from_bits",
+    "float64_from_bits",
     "sizeof",
     "viewable",
 ];

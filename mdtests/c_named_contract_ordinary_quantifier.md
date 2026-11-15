@@ -20,7 +20,7 @@ theorem lift(callback: int32 (*)(int32)) {
         have forall (k: int32) { k == x implies k >= 0 } by {
             intro();
             intro();
-            rewrite(k == x);
+            rewrite(k, x);
             known();
         }
         have result == x implies result >= 0 by {

@@ -245,8 +245,7 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
     }, { left: l2, right: r2 });
     let d = fold(ctx_at(new_node, root), { model: old(c.model) }, {});
     have u.model == rb_substitute(old(t.model), new_node) by {
-        rewrite(old(t.model)
-            == RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
+        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
         unfold(rb_substitute(
             RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
             new_node));
@@ -295,8 +294,7 @@ void replace_left_child(struct rb_node* victim, struct rb_node* new_node,
     }, { left: l2, right: r2 });
     let d = fold(ctx_at(new_node, root), { model: old(c.model) }, { sibling: s, up: up });
     have u.model == rb_substitute(old(t.model), new_node) by {
-        rewrite(old(t.model)
-            == RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
+        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
         unfold(rb_substitute(
             RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
             new_node));
@@ -345,8 +343,7 @@ void replace_right_child(struct rb_node* victim, struct rb_node* new_node,
     let s2 = fold(rb_at(parent->rb_left), { model: RbTree::Empty }, {});
     let d = fold(ctx_at(new_node, root), { model: old(c.model) }, { sibling: s2, up: up });
     have u.model == rb_substitute(old(t.model), new_node) by {
-        rewrite(old(t.model)
-            == RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
+        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
         unfold(rb_substitute(
             RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
             new_node));

@@ -1,40 +1,28 @@
-name: pages
+name: site-preview
 
-# Builds the website (the guide at the root, the AI reference under
-# reference/) and deploys it to GitHub Pages from `master`. A pull request
-# that changes the guide or the site only builds it, so a page that does not
-# render fails there and not after the merge. This check is not required and
-# does not run in the merge queue.
+# Build documentation for validation only. Public hosting is paused until
+# the guide and reference are ready to publish.
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'guide/**'
-      - 'site/**'
-      - 'docs/**'
-      - 'book.toml'
-      - 'scripts/build-site.sh'
-      - 'scripts/build-ai-reference.sh'
-      - 'scripts/mdbook-build.sh'
-      - 'scripts/tools.sh'
-      - 'tests/support/ai_reference.rs'
-      - '.github/workflows/pages.yml'
   pull_request:
     paths:
       - 'guide/**'
       - 'site/**'
       - 'scripts/build-site.sh'
-      - '.github/workflows/pages.yml'
+      - '.github/workflows/site-preview.yml'
+      - 'docs/**'
+      - 'book.toml'
+      - 'scripts/build-ai-reference.sh'
+      - 'scripts/mdbook-build.sh'
+      - 'scripts/tools.sh'
+      - 'tests/support/ai_reference.rs'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Deployments run one at a time and each one finishes; a build for a pull
-# request is superseded by a newer push to it.
 concurrency:
-  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: site-preview-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -69,32 +57,5 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
-      # Reports the path the site is served under: `/click` for the project
-      # site, empty once a custom domain is set. A pull request build does not
-      # need Pages to be enabled.
-      - uses: actions/configure-pages@v5
-        id: pages
-        if: github.event_name != 'pull_request'
       - name: Build the site
-        env:
-          CLICK_SITE_BASE: ${{ steps.pages.outputs.base_path }}/
         run: scripts/build-site.sh "$RUNNER_TEMP/click-pages"
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
-        with:
-          path: ${{ runner.temp }}/click-pages
-
-  deploy:
-    needs: build
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/deploy-pages@v4
-        id: deployment

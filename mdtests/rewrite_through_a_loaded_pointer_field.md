@@ -3,7 +3,7 @@
 `o->in->cells[2]` reads memory at an address that is itself read from
 memory. The read of `o->in` keeps its own name: only the precondition
 `o->in == a` relates it to `a`, and lowering never rewrites through a fact
-(`docs/internals/spellability.md`). `rewrite(o->in == a)` moves the nested
+(`docs/internals/spellability.md`). `rewrite(o->in, a)` moves the nested
 read to `a->cells[2]`, named as lowering names it, and `normalize()` closes
 the resulting reflexive goal. `solve()` checks the adjacent cell through the
 same relationship.
@@ -36,7 +36,7 @@ int32 same(struct outer* o, struct inner* a) {
     ensures result == 0;
 } by {
     have o->in->cells[2] == a->cells[2] by {
-        rewrite(o->in == a);
+        rewrite(o->in, a);
         normalize();
     }
     have o->in->cells[3] == a->cells[3] by {

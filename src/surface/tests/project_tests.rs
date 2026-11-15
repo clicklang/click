@@ -923,7 +923,7 @@ int32 buffer_pipeline(
         unfold(buffer_storage(owner));
         have owner->len == 1 by solve();
         have 1 <= owner->len by {
-            rewrite(owner->len == 1);
+            rewrite(owner->len, 1);
             normalize();
         }
         fold(nonempty_buffer(owner));

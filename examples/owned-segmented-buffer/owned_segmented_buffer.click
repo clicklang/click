@@ -261,15 +261,15 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
     have owner->first_data == old(owner->second_data);
     have owner->first_len == old(owner->second_len);
     have separate(memory(*owner), memory(owner->first_data[0..owner->first_len])) by {
-        rewrite(owner->first_data == old(owner->second_data));
-        rewrite(owner->first_len == old(owner->second_len));
+        rewrite(owner->first_data, old(owner->second_data));
+        rewrite(owner->first_len, old(owner->second_len));
         known();
     }
     have owner->second_data == old(owner->first_data);
     have owner->second_len == old(owner->first_len);
     have separate(memory(*owner), memory(owner->second_data[0..owner->second_len])) by {
-        rewrite(owner->second_data == old(owner->first_data));
-        rewrite(owner->second_len == old(owner->first_len));
+        rewrite(owner->second_data, old(owner->first_data));
+        rewrite(owner->second_len, old(owner->first_len));
         known();
     }
     fold(owned_segmented_buffer(owner));
@@ -319,8 +319,8 @@ int32 owned_segmented_buffer_pipeline(
     step();
     step();
     have at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value) by {
-        rewrite(at(statement(4).entry, first_value) == at(statement(4).entry, owner->first_data[0]));
-        rewrite(at(statement(4).entry, owner->first_data) == at(statement(4).entry, first_data));
+        rewrite(at(statement(4).entry, first_value), at(statement(4).entry, owner->first_data[0]));
+        rewrite(at(statement(4).entry, owner->first_data), at(statement(4).entry, first_data));
         normalize();
     }
     have first_data[0] == first_value by { known(); }
@@ -334,8 +334,8 @@ int32 owned_segmented_buffer_pipeline(
     have owner->first_data == first_data by { known(); }
     have owner->second_data == second_data by { known(); }
     have at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value) by {
-        rewrite(at(statement(5).entry, second_value) == at(statement(5).entry, owner->second_data[0]));
-        rewrite(at(statement(5).entry, owner->second_data) == at(statement(5).entry, second_data));
+        rewrite(at(statement(5).entry, second_value), at(statement(5).entry, owner->second_data[0]));
+        rewrite(at(statement(5).entry, owner->second_data), at(statement(5).entry, second_data));
         normalize();
     }
     have second_data[0] == second_value by { known(); }

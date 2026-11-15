@@ -136,11 +136,11 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have region->start == s;
     have defined(region->start + index + 1);
     have to_integer(region->start + index + 1) <= to_integer(e) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         known();
     }
     have 0 <= to_integer(region->start + index) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         solve() using {
             0 <= s;
             to_integer(s) <= to_integer(s + index);
@@ -249,19 +249,19 @@ void arena_write(struct region* region, int32 index, int32 value) {
         known();
     }
     have separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])) by {
-        rewrite(region->arena->occupied == at(w, region->arena->occupied));
-        rewrite(region->arena->data == at(w, region->arena->data));
-        rewrite(region->arena->capacity == at(w, region->arena->capacity));
+        rewrite(region->arena->occupied, at(w, region->arena->occupied));
+        rewrite(region->arena->data, at(w, region->arena->data));
+        rewrite(region->arena->capacity, at(w, region->arena->capacity));
         known();
     }
     have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by {
-        rewrite(region->arena->data == at(w, region->arena->data));
-        rewrite(region->arena->capacity == at(w, region->arena->capacity));
+        rewrite(region->arena->data, at(w, region->arena->data));
+        rewrite(region->arena->capacity, at(w, region->arena->capacity));
         known();
     }
     have separate(memory(*region->arena), memory(region->arena->occupied[0..region->arena->capacity])) by {
-        rewrite(region->arena->occupied == at(w, region->arena->occupied));
-        rewrite(region->arena->capacity == at(w, region->arena->capacity));
+        rewrite(region->arena->occupied, at(w, region->arena->occupied));
+        rewrite(region->arena->capacity, at(w, region->arena->capacity));
         known();
     }
     let r = fold(arena_region(region), { start: s, end: e });

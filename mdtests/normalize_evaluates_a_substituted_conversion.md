@@ -21,8 +21,8 @@ theorem converted_zero(word: uint64, base: uint64) {
     requires to_integer(word) == to_integer(base) + to_integer(word & 1);
     requires (word & 1) == zero_color();
     ensures to_integer(word) == to_integer(base) by {
-        rewrite(to_integer(word) == to_integer(base) + to_integer(word & 1));
-        rewrite((word & 1) == zero_color());
+        rewrite(to_integer(word), to_integer(base) + to_integer(word & 1));
+        rewrite((word & 1), zero_color());
         unfold(zero_color());
         normalize();
     }
