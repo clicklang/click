@@ -146,8 +146,9 @@ Symbolic entry and actual modular calls must enforce matching native
 requirements for the selected profile. Check layout, type, constness,
 designation, initialization and lifetime separately from resource permission.
 A native signature or successful cell lookup cannot justify all of them.
-The remaining evidence matrix is in the current audit; no particular archived
-`valid_place` or `initialized` syntax is an acceptance requirement.
+The completed [entry/call matrix](object-model-current-audit.md#native-interface-evidence-matrix)
+records the selected evidence; no particular archived `valid_place` or
+`initialized` syntax is an acceptance requirement.
 
 Proof-entry naming is observational. It must not execute a store into raw
 output, initialize a constructor placeholder or assume convenient separation.
@@ -181,12 +182,11 @@ safe-Rust import evidence.
 
 ## Acceptance and cost
 
-The active milestone requires the pointer-field resource-fold repair, a
-source-to-entry-to-call evidence matrix, and exact modular byte-output
-composition with initialization, authority, stale-snapshot and forged-type
-negatives. Passing separate prerequisites is not evidence that their
-composition works. Use the named current witnesses rather than historical
-example counts.
+The bounded milestone's pointer-field fold, entry/call matrix and exact modular
+byte-output composition are checked in the current audit, including
+initialization, authority, stale-snapshot and forged-type controls. Keep these
+compositions as regressions when extending a source profile. Use the named
+current witnesses rather than historical example counts.
 
 Keep lookup indexed by selected object/range and work proportional to the
 explicit input and affected delta, up to indexing factors. Do not eagerly

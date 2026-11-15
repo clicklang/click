@@ -197,7 +197,7 @@ binder shadowing/forks, signed and unsigned word reads, casted calls, and
 recorded array snapshots. The gate covers 32/64-bit calls; the complete
 ten-format sweep is a named nightly check. Multi-size controls grow binder/alias populations
 and unrelated recorded history. This does not close the larger rbtree reports
-or replace the remaining native-interface matrix.
+or replace the native-interface checks recorded below.
 
 Delivery validation on the integrated branch: all 1,635 active scaling tests,
 the selected source/proof-object and documentation tests, seven named C++
@@ -386,6 +386,11 @@ trivial record-copy and bounded construction profiles. Ordinary readable
 resources promise initialized input; explicit unwritten resources and checked
 output initialization remain distinct. No universal `valid_place` predicate or
 archived native-input metadata is required to justify the selected operations.
+The byte bridge uses the selected pinned compiler/LP64 little-endian
+representation model; it is not a blanket C++20 retyping guarantee. Standard-
+library contracts remain explicit assumptions. Native record-reference locals,
+unsupported result categories, nontrivial copy/move bodies and the broader
+source forms listed in the C++ coverage item remain outside these witnesses.
 
 They do not establish arbitrary casts/retyping, byte-built pointers, broader
 lifetime replacement, union punning, general inheritance, additional targets,
@@ -401,8 +406,8 @@ existing work items.
 
 ### Completion validation
 
-On `8f8173fe9` with the completion increment, all 78 selected matrix checks and
-all 1,664 active scaling tests pass. Seven focused checks cover the modular
+On the integrated `b22678f9f` completion branch, all 78 selected matrix checks
+and all 1,669 active scaling tests pass. Seven focused checks cover the modular
 byte-output proof modes and the six previous CI regressions (retained native
 memory, Rust core-method work bounds, Option and Vec). All 41 selected Markdown
 fixtures pass with zero observed fact-stability differences, including the
