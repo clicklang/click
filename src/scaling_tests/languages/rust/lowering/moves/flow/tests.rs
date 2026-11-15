@@ -68,7 +68,9 @@ fn split_while_headers_preserve_order_and_have_linear_work_and_emitted_size() {
                     loops += 1;
                     pending.push(body);
                 }
-                ProgramStatement::Assign { name, .. } if name == "marker" => assignments += 1,
+                ProgramStatement::Assign { name, .. } if name.is_named("marker") => {
+                    assignments += 1
+                }
                 ProgramStatement::Break => panic!("do not manufacture a break"),
                 _ => (),
             }
@@ -136,7 +138,9 @@ fn nested_while_regions_have_linear_analysis_work_and_emitted_size() {
                     count += 1;
                     pending.push(body);
                 }
-                ProgramStatement::Assign { name, .. } if name == "marker" => assignments += 1,
+                ProgramStatement::Assign { name, .. } if name.is_named("marker") => {
+                    assignments += 1
+                }
                 _ => (),
             }
         }

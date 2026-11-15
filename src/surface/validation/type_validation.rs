@@ -682,7 +682,9 @@ fn integer_expression_kind(
         ContractExpression::Binding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
@@ -981,7 +983,9 @@ fn contains_integer_expression_signal(
         ContractExpression::Binding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
@@ -1305,7 +1309,9 @@ pub(super) fn infer_scoped_spec_value_type(
         ContractExpression::Binding(name) if integer_bindings.contains(name) => {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name)
             if integer_bindings.contains(name) =>
         {
@@ -4030,6 +4036,70 @@ fn validate_pointer_cast_operands(
     }
 }
 
+fn interface_type_from_program_type(target_type: &ProgramType) -> Option<InterfaceType> {
+    match target_type {
+        ProgramType::Parameter(name) => Some(InterfaceType::Parameter(*name)),
+        ProgramType::ParameterPointer(name) => Some(InterfaceType::ParameterPointer(*name)),
+        ProgramType::Int128 => Some(InterfaceType::Int128),
+        ProgramType::UInt128 => Some(InterfaceType::UInt128),
+
+        ProgramType::Bool => Some(InterfaceType::Bool),
+        ProgramType::Int8 => Some(InterfaceType::Int8),
+        ProgramType::Int16 => Some(InterfaceType::Int16),
+        ProgramType::Int32 => Some(InterfaceType::Int32),
+        ProgramType::UInt8 => Some(InterfaceType::UInt8),
+        ProgramType::UInt16 => Some(InterfaceType::UInt16),
+        ProgramType::UInt32 => Some(InterfaceType::UInt32),
+        ProgramType::Int32Pointer => Some(InterfaceType::Int32Pointer),
+        ProgramType::UInt8Pointer => Some(InterfaceType::UInt8Pointer),
+        ProgramType::Int32PointerPointer => Some(InterfaceType::Int32PointerPointer),
+        ProgramType::UInt8PointerPointer => Some(InterfaceType::UInt8PointerPointer),
+        ProgramType::FunctionPointer(signature) => Some(InterfaceType::FunctionPointer(*signature)),
+        ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
+        ProgramType::Int64 => Some(InterfaceType::Int64(LongRank::Long)),
+        ProgramType::UInt64 => Some(InterfaceType::UInt64(LongRank::Long)),
+        ProgramType::Float32 => Some(InterfaceType::Float32),
+        ProgramType::Float64 => Some(InterfaceType::Float64),
+        ProgramType::VoidPointer => Some(InterfaceType::VoidPointer),
+        ProgramType::VoidPointerPointer => Some(InterfaceType::VoidPointerPointer),
+        ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
+        ProgramType::Int16Pointer => Some(InterfaceType::Int16Pointer),
+        ProgramType::UInt16Pointer => Some(InterfaceType::UInt16Pointer),
+        ProgramType::UInt32Pointer => Some(InterfaceType::UInt32Pointer),
+        ProgramType::Int64Pointer => Some(InterfaceType::Int64Pointer(LongRank::Long)),
+        ProgramType::Int128Pointer => Some(InterfaceType::Int128Pointer),
+        ProgramType::UInt64Pointer => Some(InterfaceType::UInt64Pointer(LongRank::Long)),
+        ProgramType::UInt128Pointer => Some(InterfaceType::UInt128Pointer),
+        ProgramType::Int8PointerPointer => Some(InterfaceType::Int8PointerPointer),
+        ProgramType::Int16PointerPointer => Some(InterfaceType::Int16PointerPointer),
+        ProgramType::UInt16PointerPointer => Some(InterfaceType::UInt16PointerPointer),
+        ProgramType::UInt32PointerPointer => Some(InterfaceType::UInt32PointerPointer),
+        ProgramType::Int64PointerPointer => {
+            Some(InterfaceType::Int64PointerPointer(LongRank::Long))
+        }
+        ProgramType::Int128PointerPointer => Some(InterfaceType::Int128PointerPointer),
+        ProgramType::UInt64PointerPointer => {
+            Some(InterfaceType::UInt64PointerPointer(LongRank::Long))
+        }
+        ProgramType::UInt128PointerPointer => Some(InterfaceType::UInt128PointerPointer),
+        ProgramType::Float32Pointer => Some(InterfaceType::Float32Pointer),
+        ProgramType::Float64Pointer => Some(InterfaceType::Float64Pointer),
+        ProgramType::Float32PointerPointer => Some(InterfaceType::Float32PointerPointer),
+        ProgramType::Float64PointerPointer => Some(InterfaceType::Float64PointerPointer),
+        ProgramType::Int8Array(_) => None,
+        ProgramType::Int16Array(_)
+        | ProgramType::UInt16Array(_)
+        | ProgramType::UInt32Array(_)
+        | ProgramType::Int128Array(_)
+        | ProgramType::Int64Array(_)
+        | ProgramType::UInt128Array(_)
+        | ProgramType::UInt64Array(_)
+        | ProgramType::Float32Array(_)
+        | ProgramType::Float64Array(_)
+        | ProgramType::PointerArray(_, _) => None,
+    }
+}
+
 pub(in crate::surface) fn infer_program_expression_type(
     expression: &ProgramExpression,
     variables: &BTreeMap<String, InterfaceType>,
@@ -4065,74 +4135,17 @@ pub(in crate::surface) fn infer_program_expression_type(
             crate::kernel::TypeParameterName::of(&term.algebraic_type),
         )),
         ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
-        ProgramExpression::Variable(name) => variables.get(name).copied(),
+        ProgramExpression::Variable(name) => match name {
+            crate::kernel::BindingName::Named(name) => variables.get(name).copied(),
+            crate::kernel::BindingName::Local(id) => id
+                .program_type()
+                .and_then(|ty| interface_type_from_program_type(&ty)),
+        },
         ProgramExpression::Cast {
             expression: _,
             target_type,
             ..
-        } => match target_type {
-            ProgramType::Parameter(name) => Some(InterfaceType::Parameter(*name)),
-            ProgramType::ParameterPointer(name) => Some(InterfaceType::ParameterPointer(*name)),
-            ProgramType::Int128 => Some(InterfaceType::Int128),
-            ProgramType::UInt128 => Some(InterfaceType::UInt128),
-
-            ProgramType::Bool => Some(InterfaceType::Bool),
-            ProgramType::Int8 => Some(InterfaceType::Int8),
-            ProgramType::Int16 => Some(InterfaceType::Int16),
-            ProgramType::Int32 => Some(InterfaceType::Int32),
-            ProgramType::UInt8 => Some(InterfaceType::UInt8),
-            ProgramType::UInt16 => Some(InterfaceType::UInt16),
-            ProgramType::UInt32 => Some(InterfaceType::UInt32),
-            ProgramType::Int32Pointer => Some(InterfaceType::Int32Pointer),
-            ProgramType::UInt8Pointer => Some(InterfaceType::UInt8Pointer),
-            ProgramType::Int32PointerPointer => Some(InterfaceType::Int32PointerPointer),
-            ProgramType::UInt8PointerPointer => Some(InterfaceType::UInt8PointerPointer),
-            ProgramType::FunctionPointer(signature) => {
-                Some(InterfaceType::FunctionPointer(*signature))
-            }
-            ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
-            ProgramType::Int64 => Some(InterfaceType::Int64(LongRank::Long)),
-            ProgramType::UInt64 => Some(InterfaceType::UInt64(LongRank::Long)),
-            ProgramType::Float32 => Some(InterfaceType::Float32),
-            ProgramType::Float64 => Some(InterfaceType::Float64),
-            ProgramType::VoidPointer => Some(InterfaceType::VoidPointer),
-            ProgramType::VoidPointerPointer => Some(InterfaceType::VoidPointerPointer),
-            ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
-            ProgramType::Int16Pointer => Some(InterfaceType::Int16Pointer),
-            ProgramType::UInt16Pointer => Some(InterfaceType::UInt16Pointer),
-            ProgramType::UInt32Pointer => Some(InterfaceType::UInt32Pointer),
-            ProgramType::Int64Pointer => Some(InterfaceType::Int64Pointer(LongRank::Long)),
-            ProgramType::Int128Pointer => Some(InterfaceType::Int128Pointer),
-            ProgramType::UInt64Pointer => Some(InterfaceType::UInt64Pointer(LongRank::Long)),
-            ProgramType::UInt128Pointer => Some(InterfaceType::UInt128Pointer),
-            ProgramType::Int8PointerPointer => Some(InterfaceType::Int8PointerPointer),
-            ProgramType::Int16PointerPointer => Some(InterfaceType::Int16PointerPointer),
-            ProgramType::UInt16PointerPointer => Some(InterfaceType::UInt16PointerPointer),
-            ProgramType::UInt32PointerPointer => Some(InterfaceType::UInt32PointerPointer),
-            ProgramType::Int64PointerPointer => {
-                Some(InterfaceType::Int64PointerPointer(LongRank::Long))
-            }
-            ProgramType::Int128PointerPointer => Some(InterfaceType::Int128PointerPointer),
-            ProgramType::UInt64PointerPointer => {
-                Some(InterfaceType::UInt64PointerPointer(LongRank::Long))
-            }
-            ProgramType::UInt128PointerPointer => Some(InterfaceType::UInt128PointerPointer),
-            ProgramType::Float32Pointer => Some(InterfaceType::Float32Pointer),
-            ProgramType::Float64Pointer => Some(InterfaceType::Float64Pointer),
-            ProgramType::Float32PointerPointer => Some(InterfaceType::Float32PointerPointer),
-            ProgramType::Float64PointerPointer => Some(InterfaceType::Float64PointerPointer),
-            ProgramType::Int8Array(_) => None,
-            ProgramType::Int16Array(_)
-            | ProgramType::UInt16Array(_)
-            | ProgramType::UInt32Array(_)
-            | ProgramType::Int128Array(_)
-            | ProgramType::Int64Array(_)
-            | ProgramType::UInt128Array(_)
-            | ProgramType::UInt64Array(_)
-            | ProgramType::Float32Array(_)
-            | ProgramType::Float64Array(_)
-            | ProgramType::PointerArray(_, _) => None,
-        },
+        } => interface_type_from_program_type(target_type),
         ProgramExpression::Ternary {
             condition,
             then_branch,

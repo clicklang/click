@@ -72,8 +72,8 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
         arguments: vec![ContractExpression::ProgramExpression(
             ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Add(
-                    Box::new(ProgramExpression::Variable("p".to_string())),
-                    Box::new(ProgramExpression::Variable("index".to_string())),
+                    Box::new(ProgramExpression::Variable(("p".to_string()).into())),
+                    Box::new(ProgramExpression::Variable(("index".to_string()).into())),
                 )),
                 value_type: ProgramType::Int32,
                 volatile: false,
@@ -118,7 +118,7 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
 #[test]
 fn a_program_expression_form_lists_the_premises_it_consulted() {
     let (values, state) = indexed_pointer_site();
-    let expression = ProgramExpression::Variable("index".to_string());
+    let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
@@ -168,7 +168,7 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
 #[test]
 fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
     let (values, state) = indexed_pointer_site();
-    let expression = ProgramExpression::Variable("index".to_string());
+    let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::ConditionIs(
@@ -196,7 +196,7 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
 #[test]
 fn established_conditions_are_named_beside_the_missing_one() {
     let (values, state) = indexed_pointer_site();
-    let expression = ProgramExpression::Variable("index".to_string());
+    let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let guard = Proposition::ConditionIs(
         ConditionTerm::Overflows {
@@ -243,7 +243,7 @@ fn established_conditions_are_named_beside_the_missing_one() {
 #[test]
 fn every_refusal_says_no_span_is_available() {
     let (values, state) = indexed_pointer_site();
-    let expression = ProgramExpression::Variable("index".to_string());
+    let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::ConditionIs(
@@ -265,7 +265,7 @@ fn every_refusal_says_no_span_is_available() {
 #[test]
 fn an_assumable_obligation_is_not_refused() {
     let (values, state) = indexed_pointer_site();
-    let expression = ProgramExpression::Variable("index".to_string());
+    let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumable = vec![crate::kernel::ProofObligation::new(
         Proposition::MemoryLoadable {
@@ -283,16 +283,16 @@ fn an_assumable_obligation_is_not_refused() {
 fn fold_defining_equation() -> ClickProposition {
     let read = ContractExpression::ArrayIndex {
         base: Box::new(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("p".to_string()),
+            ProgramExpression::Variable(("p".to_string()).into()),
         )),
         indexes: vec![ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("k".to_string()),
+            ProgramExpression::Variable(("k".to_string()).into()),
         )],
         dimensions: vec![1],
         lowered: ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::Add(
-                Box::new(ProgramExpression::Variable("p".to_string())),
-                Box::new(ProgramExpression::Variable("k".to_string())),
+                Box::new(ProgramExpression::Variable(("p".to_string()).into())),
+                Box::new(ProgramExpression::Variable(("k".to_string()).into())),
             )),
             value_type: ProgramType::Int32,
             volatile: false,
@@ -305,10 +305,12 @@ fn fold_defining_equation() -> ClickProposition {
         left: ContractExpression::Call {
             name: "icount".to_string(),
             arguments: vec![
-                ContractExpression::ProgramExpression(ProgramExpression::Variable("p".to_string())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    ("p".to_string()).into(),
+                )),
                 ContractExpression::IntegerLiteral("0".to_string()),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    "index".to_string(),
+                    ("index".to_string()).into(),
                 )),
             ],
         },
@@ -316,7 +318,7 @@ fn fold_defining_equation() -> ClickProposition {
         right: ContractExpression::RangeFold {
             start: Box::new(ContractExpression::IntegerLiteral("0".to_string())),
             end: Box::new(ContractExpression::ProgramExpression(
-                ProgramExpression::Variable("index".to_string()),
+                ProgramExpression::Variable(("index".to_string()).into()),
             )),
             initial: Box::new(ContractExpression::IntegerLiteral("0".to_string())),
             accumulator: "acc".to_string(),
@@ -411,22 +413,24 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
 #[test]
 fn one_outer_parenthesis_pair_is_dropped_and_a_composed_one_is_kept() {
     let sum = ContractExpression::ProgramExpression(ProgramExpression::Add(
-        Box::new(ProgramExpression::Variable("a".to_string())),
-        Box::new(ProgramExpression::Variable("b".to_string())),
+        Box::new(ProgramExpression::Variable(("a".to_string()).into())),
+        Box::new(ProgramExpression::Variable(("b".to_string()).into())),
     ));
     assert_eq!(spelled_alone(&sum), "a + b");
     let nested = ContractExpression::ProgramExpression(ProgramExpression::Add(
         Box::new(ProgramExpression::Add(
-            Box::new(ProgramExpression::Variable("a".to_string())),
-            Box::new(ProgramExpression::Variable("b".to_string())),
+            Box::new(ProgramExpression::Variable(("a".to_string()).into())),
+            Box::new(ProgramExpression::Variable(("b".to_string()).into())),
         )),
         Box::new(ProgramExpression::Add(
-            Box::new(ProgramExpression::Variable("c".to_string())),
-            Box::new(ProgramExpression::Variable("d".to_string())),
+            Box::new(ProgramExpression::Variable(("c".to_string()).into())),
+            Box::new(ProgramExpression::Variable(("d".to_string()).into())),
         )),
     ));
     assert_eq!(spelled_alone(&nested), "(a + b) + (c + d)");
-    let bare = ContractExpression::ProgramExpression(ProgramExpression::Variable("a".to_string()));
+    let bare = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        ("a".to_string()).into(),
+    ));
     assert_eq!(spelled_alone(&bare), "a");
 }
 

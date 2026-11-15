@@ -24,5 +24,5 @@ int32 updated_parameter(int32 n) {
 ```
 
 ```expect
-fail: termination measure `n` is reassigned
+fail: termination measure `"c_decreases_rejects_updated_parameter.c"::updated_parameter.parameter(0)` is reassigned
 ```

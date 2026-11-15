@@ -462,7 +462,10 @@ pub(super) fn selected_instance_resource_load_values(
                     else {
                         return None;
                     };
-                    if !arm.bindings.contains(name) {
+                    if !name
+                        .named()
+                        .is_some_and(|name| arm.bindings.contains(&name.to_owned()))
+                    {
                         return None;
                     }
                     let value = evaluation.locals.get(name)?.clone().into_native();

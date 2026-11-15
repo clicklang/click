@@ -127,7 +127,9 @@ impl AlgebraicVariables {
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => {
                 if let Some(nominal) = self.nominal_types.get(name) {
                     return Ok(Some(nominal.clone()));
                 }
@@ -598,7 +600,9 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 ContractExpression::Binding(variable)
                 | ContractExpression::CBinding(variable)
                 | ContractExpression::AlgebraicVariable { name: variable, .. }
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(variable)) => {
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Named(variable),
+                )) => {
                     let (index, _) = constructor_bindings
                         .get(variable.as_str())
                         .filter(|(_, ty)| *ty == field.click_type())
@@ -2982,20 +2986,22 @@ fn validate_algebraic_expression_node(
         // A C name of a Rust enum's type holds that enum's value.
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Ok(variables.get(name).and_then(|interface_type| {
-                AlgebraicTypeApplication::of_enum_interface_type(*interface_type)
-            }))
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Ok(variables.get(name).and_then(|interface_type| {
+            AlgebraicTypeApplication::of_enum_interface_type(*interface_type)
+        })),
         // So does `*r` for a reference `r` to one.
         ContractExpression::ProgramExpression(ProgramExpression::Load(pointer))
             if matches!(pointer.as_ref(), ProgramExpression::Variable(name)
-                if matches!(variables.get(name), Some(InterfaceType::ParameterPointer(_)))) =>
+                if matches!(name.named().and_then(|name| variables.get(name)), Some(InterfaceType::ParameterPointer(_)))) =>
         {
             let ProgramExpression::Variable(name) = pointer.as_ref() else {
                 unreachable!()
             };
-            let Some(InterfaceType::ParameterPointer(enum_type)) = variables.get(name) else {
+            let Some(InterfaceType::ParameterPointer(enum_type)) =
+                name.named().and_then(|name| variables.get(name))
+            else {
                 unreachable!()
             };
             Ok(AlgebraicTypeApplication::of_enum_interface_type(
@@ -3568,9 +3574,9 @@ fn infer_generic_expression_type(
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Ok(variables.get(name).cloned())
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Ok(variables.get(name).cloned()),
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
         | ContractExpression::ProgramExpression(_) => infer_contract_expression_type(

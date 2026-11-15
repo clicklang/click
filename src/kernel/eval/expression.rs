@@ -1300,7 +1300,7 @@ pub(super) fn evaluate_native_expression_paths(
                         pointee_constant,
                     ))
                 } else {
-                    ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(name.clone()))
+                    ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(name.to_string()))
                 },
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
@@ -2852,7 +2852,9 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                 Some(LocalBinding::AggregateObject { layout, .. }) => LValueOutcome::LValue(
                     LValue::local(name.clone(), ProgramType::UInt8Array(layout.size_bytes())),
                 ),
-                None => LValueOutcome::RuntimeError(RuntimeError::UnboundVariable(name.clone())),
+                None => {
+                    LValueOutcome::RuntimeError(RuntimeError::UnboundVariable(name.to_string()))
+                }
             },
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -3378,9 +3380,9 @@ fn read_retained_lvalue_paths_without_ranges(
                     {
                         ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
                     }
-                    None => {
-                        ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(name.clone()))
-                    }
+                    None => ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(
+                        name.to_string(),
+                    )),
                 };
                 let mut facts = facts;
                 if lvalue.is_volatile()

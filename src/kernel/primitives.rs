@@ -13,6 +13,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
+mod bindings;
+pub use bindings::{
+    BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId, LocalStorageInstance,
+};
+
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
 
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
@@ -2505,7 +2510,10 @@ impl PointerValue {
         let known_root = is_function
             || matches!(
                 pointer.block,
-                PointerBlock::Concrete(_) | PointerBlock::Heap(_) | PointerBlock::Temporary(_)
+                PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::Concrete(_)
+                    | PointerBlock::Heap(_)
+                    | PointerBlock::Temporary(_)
             );
         let root = if is_function {
             Pointer::null()
@@ -3013,6 +3021,10 @@ pub enum PointerBlock {
     /// temporaries are never confused, and a fresh identity is never the
     /// identity of storage that already existed.
     Temporary(u64),
+    AutomaticLocal {
+        binding: LocalBindingId,
+        instance: LocalStorageInstance,
+    },
 }
 
 impl std::hash::Hash for PointerBlock {
@@ -3021,6 +3033,11 @@ impl std::hash::Hash for PointerBlock {
         // Pointer hashes feed deterministic load-variable identities, so
         // inserting a new enum variant must not renumber existing blocks.
         match self {
+            Self::AutomaticLocal { binding, instance } => {
+                11u64.hash(state);
+                binding.hash(state);
+                instance.hash(state);
+            }
             Self::PureFunctionApplication(application) => {
                 10u64.hash(state);
                 application.hash(state);
@@ -3130,6 +3147,15 @@ impl PointerBlock {
 
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         match self {
+            Self::AutomaticLocal { instance, .. } => {
+                prefix == "local:"
+                    || match instance {
+                        LocalStorageInstance::ValueParameter => prefix == "local:value-parameter:",
+                        LocalStorageInstance::Lifetime(_) => prefix == "local:lifetime:",
+                        LocalStorageInstance::Frame(_) => prefix == "local:frame:",
+                        LocalStorageInstance::Implicit => false,
+                    }
+            }
             Self::Concrete(name) => name.starts_with(prefix),
             Self::StringLiteral { .. } => prefix == "string:",
             _ => false,
@@ -3139,7 +3165,8 @@ impl PointerBlock {
     pub(crate) fn strip_prefix<'a>(&'a self, prefix: &str) -> Option<&'a str> {
         match self {
             Self::Concrete(name) => name.strip_prefix(prefix),
-            Self::StringLiteral { .. }
+            Self::AutomaticLocal { .. }
+            | Self::StringLiteral { .. }
             | Self::Function(_)
             | Self::FunctionSymbolic(_)
             | Self::ExternalArgument
@@ -3244,7 +3271,10 @@ impl PointerBlock {
         // is never a declared object or a function.
         let literal_versus_declared = |left: &Self, right: &Self| {
             matches!(left, Self::StringLiteral { .. })
-                && matches!(right, Self::Concrete(_) | Self::Function(_))
+                && matches!(
+                    right,
+                    Self::AutomaticLocal { .. } | Self::Concrete(_) | Self::Function(_)
+                )
         };
         self != other
             && (matches!(self, Self::Heap(_) | Self::Temporary(_))
@@ -3260,6 +3290,10 @@ impl PointerBlock {
                     (self, other),
                     (Self::Concrete(left), Self::Concrete(right)) if left != right
                 )
+                || (matches!(self, Self::AutomaticLocal { .. })
+                    && matches!(other, Self::AutomaticLocal { .. } | Self::Concrete(_)))
+                || (matches!(other, Self::AutomaticLocal { .. })
+                    && matches!(self, Self::Concrete(_)))
                 || literal_versus_declared(self, other)
                 || literal_versus_declared(other, self)
                 || local_versus_argument(self, other)
@@ -3317,6 +3351,9 @@ impl From<&str> for PointerBlock {
 impl std::fmt::Display for PointerBlock {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::AutomaticLocal { binding, instance } => {
+                write!(formatter, "{binding}.storage({instance})")
+            }
             Self::PureFunctionApplication(application) => write!(
                 formatter,
                 "pure-pointer:{}:{}",
@@ -3631,7 +3668,7 @@ pub struct LValue {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) enum LValueStorage {
-    Local { name: String },
+    Local { name: BindingName },
     Memory { pointer: Pointer },
 }
 
@@ -3679,7 +3716,7 @@ pub enum ProgramExpression {
     /// A literal object installed for this function, never a program local.
     StringLiteral(StringLiteralId),
     Value(ProgramValue),
-    Variable(String),
+    Variable(BindingName),
     FunctionAddress(String),
     Cast {
         expression: Box<ProgramExpression>,
@@ -4105,7 +4142,7 @@ pub enum SpecExpression {
     /// A field of a by-value parameter, not a dereference of a C pointer.
     /// Its logical value remains available after the parameter storage ends.
     AggregateFieldValue {
-        parameter: String,
+        parameter: BindingName,
         pointer: Box<SpecExpression>,
         value_type: ProgramType,
     },
@@ -5404,14 +5441,14 @@ pub enum ProgramStatement {
     /// fallthrough it is the first statement of the update clause.
     ForStep {
         step: Box<ProgramStatement>,
-        exited_locals: Vec<String>,
+        exited_locals: Vec<BindingName>,
         continue_after: bool,
     },
     Declare {
         /// A scalar construction initializer, evaluated after fresh allocation.
         /// This is the only declaration transition permitted to initialize const storage.
         initializer: Option<ProgramExpression>,
-        name: String,
+        name: BindingDeclaration,
         program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
@@ -5430,7 +5467,7 @@ pub enum ProgramStatement {
     /// not runtime `ProgramValue`s; their local binding exposes the block base so
     /// field lowering can continue to use typed memory accesses.
     DeclareAggregate {
-        name: String,
+        name: BindingDeclaration,
         layout: AggregateLayout,
         kind: AggregateDeclarationKind,
         /// The object's class for the strict-aliasing check, a struct's
@@ -5456,7 +5493,7 @@ pub enum ProgramStatement {
         fresh: bool,
     },
     Assign {
-        name: String,
+        name: BindingName,
         expression: ProgramExpression,
         source: super::source_access::StatementAssignSource,
         /// Leaves the target's value from before this assignment as the
@@ -5467,7 +5504,7 @@ pub enum ProgramStatement {
     /// Invoke a construction-return function in an already allocated destination.
     /// The call constructs the object; there is no result assignment or copy.
     CallConstruct {
-        target: String,
+        target: BindingName,
         function_name: String,
         arguments: Vec<ProgramExpression>,
     },
@@ -5514,7 +5551,7 @@ pub enum ProgramStatement {
     /// Allocate a runtime-sized heap block and assign either null or its fresh
     /// base pointer to `target`.
     HeapAllocate {
-        target: String,
+        target: BindingName,
         bytes: ProgramExpression,
         zeroed: bool,
         /// A directly bound struct object: class, complete size, and alignment.
@@ -5637,7 +5674,7 @@ pub enum ProgramStatement {
     /// including a full expression's materialized temporaries. This retires
     /// their storage and ownership, never the allocations their fields name.
     EndAutomaticLifetimes {
-        names: Vec<String>,
+        names: Vec<BindingName>,
         steps: Vec<u32>,
     },
 }
@@ -5826,7 +5863,7 @@ pub enum RangeIndexKind {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ProgramParameter {
-    pub(super) name: String,
+    pub(super) name: BindingDeclaration,
     pub(super) program_type: ProgramType,
     pub(super) aggregate_layout: Option<AggregateLayout>,
     pub(super) volatile: bool,
@@ -6494,7 +6531,7 @@ pub struct ProgramFunction {
 /// function's arguments. It is derived from `body`, so equality, hashing and
 /// ordering ignore it.
 #[derive(Clone, Debug, Default)]
-pub(super) struct AddressTakenLocals(Arc<std::sync::OnceLock<BTreeSet<String>>>);
+pub(super) struct AddressTakenLocals(Arc<std::sync::OnceLock<BTreeSet<BindingName>>>);
 
 /// Derived source-loop shapes and eligibility data, shared by function clones.
 #[derive(Clone, Debug, Default)]
@@ -6543,7 +6580,7 @@ impl Ord for AddressTakenLocals {
 
 impl ProgramFunction {
     /// The locals whose address the body takes.
-    pub(crate) fn address_taken_locals(&self) -> &BTreeSet<String> {
+    pub(crate) fn address_taken_locals(&self) -> &BTreeSet<BindingName> {
         self.address_taken_locals.0.get_or_init(|| {
             let mut names = BTreeSet::new();
             crate::kernel::loops::collect_address_taken_locals(&self.body, &mut names);
@@ -6735,11 +6772,11 @@ pub(crate) const C_CONTRACT_RESULT_NAME: &str = "@click:result";
 
 /// The Click spelling of the C local `name`: the contract result's internal
 /// local is `result`; every other local is its own name.
-pub(crate) fn program_local_source_name(name: &str) -> &str {
-    if name == C_CONTRACT_RESULT_NAME {
-        "result"
-    } else {
-        name
+pub(crate) fn program_local_source_name(name: impl Into<BindingName>) -> BindingName {
+    let name = name.into();
+    match &name {
+        BindingName::Named(name) if name == C_CONTRACT_RESULT_NAME => "result".into(),
+        _ => name.clone(),
     }
 }
 
@@ -8267,18 +8304,19 @@ impl FunctionOutcome {
 pub struct LocalEnvironment {
     /// Persistent, so binding one name copies one search path rather than
     /// every binding: a frame of N locals bound one at a time costs N log N.
-    pub(super) bindings: crate::persistent::PersistentMap<String, LocalBinding>,
-    pub(super) slots: crate::persistent::PersistentMap<Pointer, String>,
+    pub(super) bindings: crate::persistent::PersistentMap<BindingName, LocalBinding>,
+    pub(super) slots: crate::persistent::PersistentMap<Pointer, BindingName>,
     /// Each scalar object's name under a fingerprint of the integer term it
     /// holds, kept with `bindings`: naming a value looks up the objects that
     /// may hold it instead of comparing it with every binding.
-    pub(super) held_terms: crate::persistent::PersistentMap<(u64, String), ()>,
+    pub(super) held_terms: crate::persistent::PersistentMap<(u64, BindingName), ()>,
     /// Pointer-valued objects by their held pointer's block, then name.
     /// Source synthesis visits only possible bases of the selected pointer.
     pub(super) pointer_objects_by_block: crate::persistent::PersistentMap<
         PointerBlock,
-        crate::persistent::PersistentMap<String, ()>,
+        crate::persistent::PersistentMap<BindingName, ()>,
     >,
+    pub(super) visible_names: PersistentMap<String, PersistentMap<(u32, bool, u32), BindingName>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -12424,7 +12462,7 @@ impl ResourceSpec {
                     {
                         if *state_source == ResourceStateSource::Entry
                             && let ProgramExpression::Variable(name) = argument
-                            && let Some(value) = entry_values.get(name)
+                            && let Some(value) = name.named_in(entry_values)
                         {
                             *argument = ProgramExpression::Value(value.clone());
                         }

@@ -359,7 +359,7 @@ impl PureTheoremContext {
                     click_type: click_type.clone(),
                     value: Box::new(value),
                     body: Box::new(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(name.clone()),
+                        ProgramExpression::Variable((name.clone()).into()),
                     )),
                 }
             } else {
@@ -411,7 +411,9 @@ pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&
     match argument {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Some(name),
         _ => None,
     }
 }
@@ -2236,9 +2238,9 @@ fn verify_contract_refinement_theorem(
     let concrete_target = contract_expression_function_address(argument);
     let symbolic_binding = match argument {
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Some(name.as_str())
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Some(name.as_str()),
         _ => None,
     };
     if concrete_target.is_none() && symbolic_binding.is_none() {
@@ -3426,8 +3428,9 @@ pub(super) fn induction_application_surface_premises(
     argument: &ContractExpression,
 ) -> Result<Vec<ClickProposition>, ClickError> {
     let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
-    let current =
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(setup.parameter.clone()));
+    let current = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        (setup.parameter.clone()).into(),
+    ));
     let mut premises = vec![
         ClickProposition::Comparison {
             left: zero,

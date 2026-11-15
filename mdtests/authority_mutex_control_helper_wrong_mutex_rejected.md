@@ -79,5 +79,5 @@ int32 run() {
 ```
 
 ```expect
-fail: Requires owns mutex_use(&obj->mu, control(obj))
+fail: Requires owns mutex_use(&"authority_mutex_control_helper_wrong_mutex_rejected.c"::run.local(0)->mu, control("authority_mutex_control_helper_wrong_mutex_rejected.c"::run.local(0)))
 ```

@@ -44,10 +44,10 @@ impl StatementAssignSource {
         &self,
         before: &ExecutionState,
         after: &ExecutionState,
-        assigned: &str,
+        assigned: &BindingName,
     ) -> Option<ExecutionPureFact> {
         let source = self.0.as_ref()?;
-        if assigned != source.child.as_ref() {
+        if assigned.named() != Some(source.child.as_ref()) {
             return None;
         }
         let ProgramValue::Pointer(parent) = before.locals.get(&source.parent)?.native_payload()?
@@ -348,7 +348,7 @@ mod tests {
             parent: "parent".into(),
             child: "child".into(),
         })
-        .completed(&before, &after, "child")
+        .completed(&before, &after, &("child").into())
         .unwrap()
     }
     #[test]
@@ -399,7 +399,7 @@ mod tests {
         );
         assert!(
             source
-                .completed(&before, &different_pointer, "child")
+                .completed(&before, &different_pointer, &("child").into())
                 .is_none()
         );
         let different_type = before.clone().with_local(
@@ -408,17 +408,21 @@ mod tests {
         );
         assert!(
             source
-                .completed(&before, &different_type, "child")
+                .completed(&before, &different_type, &("child").into())
                 .is_none()
         );
         let after = before.clone().with_local(
             "child",
             ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
         );
-        assert!(source.completed(&before, &after, "other").is_none());
         assert!(
             source
-                .completed(&ExecutionState::new(), &after, "child")
+                .completed(&before, &after, &("other").into())
+                .is_none()
+        );
+        assert!(
+            source
+                .completed(&ExecutionState::new(), &after, &("child").into())
                 .is_none()
         );
     }

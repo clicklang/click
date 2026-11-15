@@ -1,5 +1,6 @@
 //! C syntax import for the executable C model.
 
+use crate::kernel::{BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId};
 use crate::languages::interface::pointer_array_element_type;
 use crate::languages::interface::record_value_type;
 
@@ -1571,15 +1572,16 @@ impl CZeroFill {
     /// store of a literal at a constant byte offset from that base, so the
     /// fill stands for exactly the stores the caller would otherwise emit.
     fn from_element_stores(
-        base: &str,
+        base: impl Into<BindingName>,
         stride: u32,
         count: u32,
         stores: &[CStatement],
     ) -> Option<Self> {
+        let base = base.into();
         let mut cells = stores
             .iter()
             .map(|store| {
-                let (offset, value_type, pointee_constant, value) = typed_store_at(base, store)?;
+                let (offset, value_type, pointee_constant, value) = typed_store_at(&base, store)?;
                 (offset < stride
                     && matches!(
                         value.to_kernel_expression(),
@@ -1601,10 +1603,15 @@ impl CZeroFill {
     /// at that offset within its element, which would leave the cell the
     /// fill left. A store at an offset another of `stores` also writes is
     /// kept, so the order of the two is kept too.
-    fn without_its_own_stores(&self, base: &str, stores: Vec<CStatement>) -> Vec<CStatement> {
+    fn without_its_own_stores(
+        &self,
+        base: impl Into<BindingName>,
+        stores: Vec<CStatement>,
+    ) -> Vec<CStatement> {
+        let base = base.into();
         let mut writes = BTreeMap::<u32, usize>::new();
         for store in &stores {
-            if let Some((offset, ..)) = typed_store_at(base, store) {
+            if let Some((offset, ..)) = typed_store_at(&base, store) {
                 *writes.entry(offset).or_default() += 1;
             }
         }
@@ -1612,7 +1619,7 @@ impl CZeroFill {
             .into_iter()
             .filter(|store| {
                 let Some((offset, value_type, pointee_constant, value)) =
-                    typed_store_at(base, store)
+                    typed_store_at(&base, store)
                 else {
                     return true;
                 };
@@ -1659,9 +1666,10 @@ impl CZeroFill {
 /// from it: the offset, the stored type, its pointee qualification and the
 /// stored expression. `None` for any other statement.
 fn typed_store_at<'a>(
-    base: &str,
+    base: impl Into<BindingName>,
     store: &'a CStatement,
 ) -> Option<(u32, InterfaceType, bool, &'a CExpression)> {
+    let base = base.into();
     let CStatement::Store {
         pointer,
         value,
@@ -1676,7 +1684,7 @@ fn typed_store_at<'a>(
     let mut pointer = pointer;
     loop {
         match pointer {
-            CExpression::Variable(name) if name == base => break,
+            CExpression::Variable(name) if name == &base => break,
             CExpression::PointerOffsetBytes {
                 pointer: inner,
                 bytes,
@@ -1687,7 +1695,7 @@ fn typed_store_at<'a>(
             CExpression::Subobject { pointer: inner, .. } => pointer = inner,
             // Only the element store `base + index` of a scalar array, whose
             // index scales by the stored element type.
-            CExpression::Add(inner, index) if matches!(inner.as_ref(), CExpression::Variable(name) if name == base) =>
+            CExpression::Add(inner, index) if matches!(inner.as_ref(), CExpression::Variable(name) if name == &base) =>
             {
                 let CExpression::Int32Literal(index) = index.as_ref() else {
                     return None;
@@ -1705,14 +1713,15 @@ fn typed_store_at<'a>(
 /// being initialized, so none can observe whether an element it does not
 /// write is zero yet. The declaration's zero fill then stands for the zero
 /// stores whatever order they are made in.
-fn stores_do_not_read_the_object(base: &str, stores: &[CStatement]) -> bool {
+fn stores_do_not_read_the_object(base: impl Into<BindingName>, stores: &[CStatement]) -> bool {
+    let base = base.into();
     stores.iter().all(|store| {
         let CStatement::Store { value, .. } = store else {
             return false;
         };
         let mut names = BTreeSet::new();
         super::address_taken::mentioned_names(value, &mut names);
-        !names.contains(base)
+        !names.contains(&base)
     })
 }
 
@@ -2390,7 +2399,7 @@ impl CSwitchCase {
 pub struct CSite(Option<std::sync::Arc<CStatementSite>>);
 
 /// The first source line of a statement and its position.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStatementSite {
     position: SourcePosition,
     text: Box<str>,
@@ -2400,7 +2409,11 @@ pub struct CStatementSite {
     /// `statement(2).statement(0)` resolve through it. Statements a
     /// statement's lowering moved ahead of it carry the same path.
     source_path: Option<std::sync::Arc<[u32]>>,
+    source_bindings: Option<std::sync::Arc<CSourceBindings>>,
 }
+
+/// Persistent lexical declaration index captured at a C loop head.
+pub(crate) type CSourceBindings = imbl::OrdMap<String, (usize, BindingName)>;
 
 /// The longest statement excerpt a site keeps, in characters.
 const SITE_TEXT_LIMIT: usize = 100;
@@ -2423,6 +2436,7 @@ impl CSite {
                 position: site.position.clone(),
                 text: site.text.clone(),
                 source_path: Some(path),
+                source_bindings: site.source_bindings.clone(),
             }))),
             (site, _) => Self(site),
         }
@@ -2445,6 +2459,9 @@ impl std::fmt::Debug for CSite {
 }
 
 impl CStatementSite {
+    pub(crate) fn source_bindings(&self) -> Option<&CSourceBindings> {
+        self.source_bindings.as_deref()
+    }
     pub fn position(&self) -> &SourcePosition {
         &self.position
     }
@@ -2495,7 +2512,7 @@ pub enum CStatement {
     Declare {
         initializer: Option<CExpression>,
         interface_type: InterfaceType,
-        name: String,
+        name: BindingDeclaration,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -2512,13 +2529,13 @@ pub enum CStatement {
         site: CSite,
     },
     DeclareStructValue {
-        name: String,
+        name: BindingDeclaration,
         layout: RecordLayout,
         /// Where the source statement was written; see [`CSite`].
         site: CSite,
     },
     Assign {
-        name: String,
+        name: BindingName,
         expression: CExpression,
         /// Leaves the target's value from before this assignment as the
         /// result of step N: the value of a postfix `p++`.
@@ -2564,7 +2581,7 @@ pub enum CStatement {
         site: CSite,
     },
     HeapAllocate {
-        target: String,
+        target: BindingName,
         bytes: CExpression,
         zeroed: bool,
         object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
@@ -2758,7 +2775,7 @@ impl CCallee {
 /// through it: `fp`, `s->cb`, `s.cb` or `*fp`.
 fn callee_source_text(expression: &CExpression) -> String {
     match expression {
-        CExpression::Variable(name) => name.clone(),
+        CExpression::Variable(name) => name.source_name().to_owned(),
         CExpression::Field {
             pointer,
             source: Some(source),
@@ -2797,7 +2814,7 @@ pub struct COperator {
 pub enum CExpression {
     StringLiteral(std::sync::Arc<CStringLiteral>),
     Void,
-    Variable(String),
+    Variable(BindingName),
     /// The result of a step this expression's statement made: the term a
     /// call step (`CStatement::CallResult`) returned, or the value an
     /// assignment step with `prior_result` replaced, with its C type.
@@ -2834,7 +2851,7 @@ pub enum CExpression {
     /// deliberately keeps the lvalue boundary narrow: only a named scalar
     /// object is accepted here, not memory lvalues or update operators.
     Assignment {
-        name: String,
+        name: BindingName,
         value: Box<CExpression>,
         interface_type: InterfaceType,
         struct_name: Option<String>,
@@ -2845,7 +2862,7 @@ pub enum CExpression {
     /// once, preserves the expression value, and emits an ordinary checked
     /// typed assignment before the enclosing expression proceeds.
     ScalarUpdate {
-        name: String,
+        name: BindingName,
         increment: bool,
         prefix: bool,
         interface_type: InterfaceType,
@@ -3214,7 +3231,7 @@ impl ImportedFunction {
                 constant: false,
                 extent: None,
             }),
-            CExpression::Variable(name) => self.static_object_address(name),
+            CExpression::Variable(name) => self.static_object_address(name.named()?),
             CExpression::Field {
                 pointer,
                 field_type,
@@ -7149,6 +7166,72 @@ impl ErrorContext {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct CVariableTypes(BTreeMap<BindingName, InterfaceType>);
+impl std::ops::Deref for CVariableTypes {
+    type Target = BTreeMap<BindingName, InterfaceType>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for CVariableTypes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl CVariableTypes {
+    fn insert(&mut self, name: BindingName, ty: InterfaceType) -> Option<InterfaceType> {
+        if let Some(id) = name.local_id() {
+            id.initialize_program_type(ty.to_kernel_type());
+        }
+        self.0.insert(name, ty)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct CVariableArrayShapes(BTreeMap<BindingName, Vec<u32>>);
+impl std::ops::Deref for CVariableArrayShapes {
+    type Target = BTreeMap<BindingName, Vec<u32>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for CVariableArrayShapes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl CVariableArrayShapes {
+    fn insert(&mut self, name: BindingName, value: Vec<u32>) -> Option<Vec<u32>> {
+        if let Some(id) = name.local_id() {
+            id.initialize_array_shape(&value);
+        }
+        self.0.insert(name, value)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct CVariableStructs(BTreeMap<BindingName, String>);
+impl std::ops::Deref for CVariableStructs {
+    type Target = BTreeMap<BindingName, String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for CVariableStructs {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl CVariableStructs {
+    fn insert(&mut self, name: BindingName, value: String) -> Option<String> {
+        if let Some(id) = name.local_id() {
+            id.initialize_struct_name(&value);
+        }
+        self.0.insert(name, value)
+    }
+}
+
 #[derive(Clone)]
 struct Parser {
     tokens: Vec<Token>,
@@ -7167,23 +7250,23 @@ struct Parser {
     parsing_function_header: bool,
     opaque_function_signature: bool,
     opaque_signature_types: Vec<(bool, bool)>,
-    variable_structs: BTreeMap<String, String>,
+    variable_structs: CVariableStructs,
     /// The struct name of each automatic struct-pointer local declared in the
     /// function currently being parsed, keyed by its C spelling. `None` marks
     /// a spelling declared twice with different struct types, which is
     /// dropped rather than guessed.
-    local_struct_pointers: BTreeMap<String, Option<String>>,
-    local_struct_values: BTreeMap<String, Option<String>>,
+    local_struct_pointers: BTreeMap<BindingName, Option<String>>,
+    local_struct_values: BTreeMap<BindingName, Option<String>>,
     /// Whether each automatic local spelling declared in the function being
     /// parsed has pointer type in every declaration.
-    local_pointers: BTreeMap<String, bool>,
-    variable_struct_values: BTreeMap<String, String>,
-    variable_array_shapes: BTreeMap<String, Vec<u32>>,
-    incomplete_array_names: BTreeSet<String>,
-    variable_types: BTreeMap<String, InterfaceType>,
-    variable_function_pointers: BTreeMap<String, CallbackInterface>,
-    variable_constants: BTreeSet<String>,
-    variable_pointee_constants: BTreeSet<String>,
+    local_pointers: BTreeMap<BindingName, bool>,
+    variable_struct_values: BTreeMap<BindingName, String>,
+    variable_array_shapes: CVariableArrayShapes,
+    incomplete_array_names: BTreeSet<BindingName>,
+    variable_types: CVariableTypes,
+    variable_function_pointers: BTreeMap<BindingName, CallbackInterface>,
+    variable_constants: BTreeSet<BindingName>,
+    variable_pointee_constants: BTreeSet<BindingName>,
     unions: DeclarationMap<CUnionLayout>,
     /// The names declared in each open lexical scope, innermost last. The
     /// source name is retained for lookup, while `kernel_name` is the
@@ -7192,6 +7275,12 @@ struct Parser {
     /// instead of silently overwriting the outer object. Sibling scopes may
     /// reuse a name because the earlier object is dead.
     scopes: Vec<Vec<ScopeBinding>>,
+    visible_bindings: CSourceBindings,
+    loop_source_bindings: BTreeMap<usize, std::sync::Arc<CSourceBindings>>,
+    binding_function: Option<LocalFunctionId>,
+    parsing_binding_parameters: bool,
+    next_parameter_binding: u32,
+    next_local_binding: u32,
     /// Names declared in a `for` initializer whose loop scope has closed.
     /// C-source parsing intentionally permits unresolved cross-file calls and
     /// object names for later validation, so this records only the specific
@@ -7200,13 +7289,13 @@ struct Parser {
     /// Mutable scalar locals whose address is formed anywhere in the current
     /// function. A call can only change an automatic scalar through such an
     /// escaped address; static-storage scalars are handled separately.
-    address_taken_variables: BTreeSet<String>,
+    address_taken_variables: BTreeSet<BindingName>,
     next_scoped_name: u32,
     /// The number the next call inside an expression gets: its result is
     /// `CExpression::StepResult` with that number.
     next_call_result: u32,
     aggregate_expression_steps: Vec<u32>,
-    callback_statement_sources: imbl::OrdMap<String, CExpression>,
+    callback_statement_sources: imbl::OrdMap<BindingName, CExpression>,
     next_field_source_ordinal: u32,
     loop_contexts: Vec<CLoopContext>,
     function_declarations: BTreeMap<String, CFunctionHeader>,
@@ -7281,9 +7370,10 @@ struct Parser {
 
 #[derive(Clone, Debug)]
 struct ScopeBinding {
-    source_name: String,
-    kernel_name: String,
+    source_name: Option<String>,
+    kernel_name: BindingName,
     shadowed: Option<VariableMetadata>,
+    previous_visible: Option<(usize, BindingName)>,
 }
 
 #[derive(Clone, Debug)]
@@ -7765,19 +7855,25 @@ impl Parser {
             parsing_function_header: false,
             opaque_function_signature: false,
             opaque_signature_types: Vec::new(),
-            variable_structs: BTreeMap::new(),
+            variable_structs: Default::default(),
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
             local_pointers: BTreeMap::new(),
             variable_struct_values: BTreeMap::new(),
-            variable_array_shapes: BTreeMap::new(),
+            variable_array_shapes: Default::default(),
             incomplete_array_names: BTreeSet::new(),
-            variable_types: BTreeMap::new(),
+            variable_types: CVariableTypes::default(),
             variable_function_pointers: BTreeMap::new(),
             variable_constants: BTreeSet::new(),
             variable_pointee_constants: BTreeSet::new(),
             unions: DeclarationMap::new(),
             scopes: Vec::new(),
+            visible_bindings: CSourceBindings::new(),
+            loop_source_bindings: BTreeMap::new(),
+            binding_function: None,
+            parsing_binding_parameters: false,
+            next_parameter_binding: 0,
+            next_local_binding: 0,
             out_of_scope_names: BTreeSet::new(),
             address_taken_variables: BTreeSet::new(),
             next_scoped_name: 0,
@@ -7846,7 +7942,15 @@ impl Parser {
                 self.function_source_names.remove(&header.name);
             }
         }
-        for binding in self.scopes.pop().unwrap_or_default() {
+        for binding in self.scopes.pop().unwrap_or_default().into_iter().rev() {
+            if let Some(source_name) = &binding.source_name {
+                if let Some(previous) = &binding.previous_visible {
+                    self.visible_bindings
+                        .insert(source_name.clone(), previous.clone());
+                } else {
+                    self.visible_bindings.remove(source_name);
+                }
+            }
             self.variable_structs.remove(&binding.kernel_name);
             self.variable_struct_values.remove(&binding.kernel_name);
             self.variable_array_shapes.remove(&binding.kernel_name);
@@ -7890,14 +7994,11 @@ impl Parser {
             .last()
             .into_iter()
             .flat_map(|scope| scope.iter())
-            .map(|binding| binding.source_name.clone())
+            .filter_map(|binding| binding.source_name.clone())
             .collect::<Vec<_>>();
         self.pop_scope();
         for name in names {
-            let remains_visible = self
-                .scopes
-                .iter()
-                .any(|scope| scope.iter().any(|binding| binding.source_name == name))
+            let remains_visible = self.visible_bindings.contains_key(&name)
                 || self.globals.contains_key(&name)
                 || self.global_arrays.contains_key(&name)
                 || self.global_aggregates.contains_key(&name)
@@ -7910,34 +8011,31 @@ impl Parser {
         }
     }
 
-    fn resolve_name(&self, source_name: &str) -> String {
-        self.scopes
-            .iter()
-            .rev()
-            .flat_map(|scope| scope.iter().rev())
-            .find(|binding| binding.source_name == source_name)
-            .map(|binding| binding.kernel_name.clone())
+    fn resolve_name(&self, source_name: &str) -> BindingName {
+        self.visible_bindings
+            .get(source_name)
+            .map(|(_, binding)| binding.clone())
             .or_else(|| {
                 self.globals
                     .get(source_name)
-                    .map(|global| global.kernel_name().to_string())
+                    .map(|global| global.kernel_name().into())
             })
             .or_else(|| {
                 self.global_arrays
                     .get(source_name)
-                    .map(|global| global.kernel_name().to_string())
+                    .map(|global| global.kernel_name().into())
             })
             .or_else(|| {
                 self.global_aggregates
                     .get(source_name)
-                    .map(|global| global.kernel_name().to_string())
+                    .map(|global| global.kernel_name().into())
             })
             .or_else(|| {
                 self.global_aggregate_arrays
                     .get(source_name)
-                    .map(|global| global.kernel_name().to_string())
+                    .map(|global| global.kernel_name().into())
             })
-            .unwrap_or_else(|| source_name.to_string())
+            .unwrap_or_else(|| source_name.into())
     }
 
     /// Whether `name`, already resolved by [`Self::resolve_name`], is an
@@ -7946,29 +8044,29 @@ impl Parser {
     /// declared object from an undeclared identifier is to look the resolved
     /// name back up. This walks every declaration, so call it only on a path
     /// that is already reporting an error.
-    fn declares_resolved_object(&self, name: &str) -> bool {
+    fn declares_resolved_object(&self, name: &BindingName) -> bool {
         self.variable_types.contains_key(name)
             || self
                 .scopes
                 .iter()
                 .flat_map(|scope| scope.iter())
-                .any(|binding| binding.kernel_name == name)
+                .any(|binding| binding.kernel_name == (name).into())
             || self
                 .globals
                 .values()
-                .any(|global| global.kernel_name() == name)
+                .any(|global| name.is_named(global.kernel_name()))
             || self
                 .global_arrays
                 .values()
-                .any(|global| global.kernel_name() == name)
+                .any(|global| name.is_named(global.kernel_name()))
             || self
                 .global_aggregates
                 .values()
-                .any(|global| global.kernel_name() == name)
+                .any(|global| name.is_named(global.kernel_name()))
             || self
                 .global_aggregate_arrays
                 .values()
-                .any(|global| global.kernel_name() == name)
+                .any(|global| name.is_named(global.kernel_name()))
     }
 
     /// Whether `source_name`, as spelled in the source, names an object this
@@ -7976,10 +8074,7 @@ impl Parser {
     /// every visible name on their own; the resolved-name walk runs only when
     /// they all miss, which is the path that is about to report an error.
     fn declares_source_object(&self, source_name: &str) -> bool {
-        self.scopes
-            .iter()
-            .flat_map(|scope| scope.iter())
-            .any(|binding| binding.source_name == source_name)
+        self.visible_bindings.contains_key(source_name)
             || self.globals.contains_key(source_name)
             || self.global_arrays.contains_key(source_name)
             || self.global_aggregates.contains_key(source_name)
@@ -7995,29 +8090,30 @@ impl Parser {
         &mut self,
         source_name: &str,
         position: Option<SourcePosition>,
-    ) -> Result<String, CSyntaxError> {
+    ) -> Result<BindingName, CSyntaxError> {
         let name = self.resolve_name(source_name);
         if !self.out_of_scope_names.contains(source_name)
             && self.declares_source_object(source_name)
         {
             if self
                 .globals
-                .get(&name)
+                .get(source_name)
                 .is_some_and(|object| !object.is_file_static())
                 || self
                     .global_arrays
-                    .get(&name)
+                    .get(source_name)
                     .is_some_and(|object| !object.is_file_static())
                 || self
                     .global_aggregates
-                    .get(&name)
+                    .get(source_name)
                     .is_some_and(|object| !object.is_file_static())
                 || self
                     .global_aggregate_arrays
-                    .get(&name)
+                    .get(source_name)
                     .is_some_and(|object| !object.is_file_static())
             {
-                self.referenced_external_objects.insert(name.clone());
+                self.referenced_external_objects
+                    .insert(source_name.to_owned());
             }
             Ok(name)
         } else {
@@ -8028,44 +8124,47 @@ impl Parser {
         }
     }
 
-    fn variable_is_constant(&self, name: &str) -> bool {
+    fn variable_is_constant(&self, name: &BindingName) -> bool {
         self.variable_constants.contains(name)
-            || self.globals.get(name).is_some_and(CGlobal::is_constant)
+            || name
+                .named()
+                .and_then(|name| self.globals.get(name))
+                .is_some_and(CGlobal::is_constant)
             || self
                 .globals
                 .values()
-                .find(|global| global.kernel_name() == name)
+                .find(|global| name.is_named(global.kernel_name()))
                 .is_some_and(CGlobal::is_constant)
-            || self
-                .global_arrays
-                .get(name)
+            || name
+                .named()
+                .and_then(|name| self.global_arrays.get(name))
                 .is_some_and(CGlobalArray::is_constant)
             || self
                 .global_arrays
                 .values()
-                .find(|global| global.kernel_name() == name)
+                .find(|global| name.is_named(global.kernel_name()))
                 .is_some_and(CGlobalArray::is_constant)
-            || self
-                .global_aggregates
-                .get(name)
+            || name
+                .named()
+                .and_then(|name| self.global_aggregates.get(name))
                 .is_some_and(CGlobalAggregate::is_constant)
             || self
                 .global_aggregates
                 .values()
-                .find(|global| global.kernel_name() == name)
+                .find(|global| name.is_named(global.kernel_name()))
                 .is_some_and(CGlobalAggregate::is_constant)
-            || self
-                .global_aggregate_arrays
-                .get(name)
+            || name
+                .named()
+                .and_then(|name| self.global_aggregate_arrays.get(name))
                 .is_some_and(CGlobalAggregateArray::is_constant)
             || self
                 .global_aggregate_arrays
                 .values()
-                .find(|global| global.kernel_name() == name)
+                .find(|global| name.is_named(global.kernel_name()))
                 .is_some_and(CGlobalAggregateArray::is_constant)
     }
 
-    fn variable_pointee_is_constant(&self, name: &str) -> bool {
+    fn variable_pointee_is_constant(&self, name: &BindingName) -> bool {
         self.variable_pointee_constants.contains(name)
     }
 
@@ -8165,9 +8264,7 @@ impl Parser {
             CExpression::Index(base, _, _) => matches!(
                 base.as_ref(),
                 CExpression::Variable(name)
-                    if self
-                        .static_arrays
-                        .get(name)
+                    if name.named_in(&self.static_arrays)
                         .is_some_and(CStaticArray::pointee_is_constant)
             ),
             _ => false,
@@ -8230,7 +8327,8 @@ impl Parser {
         Ok(())
     }
 
-    fn static_object_type(&self, name: &str) -> Option<(InterfaceType, bool)> {
+    fn static_object_type(&self, name: &BindingName) -> Option<(InterfaceType, bool)> {
+        let name = name.named()?;
         if let Some(global) = self
             .globals
             .values()
@@ -8576,11 +8674,27 @@ impl Parser {
         )))
     }
 
+    fn new_automatic_binding(&mut self, spelling: Option<String>) -> BindingName {
+        let Some(function) = self.binding_function.clone() else {
+            return BindingName::Named(spelling.expect("a standalone binding has a source name"));
+        };
+        let counter = if self.parsing_binding_parameters {
+            &mut self.next_parameter_binding
+        } else {
+            &mut self.next_local_binding
+        };
+        let ordinal = *counter;
+        *counter = counter.checked_add(1).expect("binding ordinal fits u32");
+        LocalBindingId::new(function, self.parsing_binding_parameters, ordinal, spelling)
+            .with_scope_depth(self.scopes.len() as u32)
+            .into()
+    }
+
     /// Records a parameter or local declaration in the innermost scope. A
     /// shadowing declaration gets a kernel-only identity; source references
     /// continue to resolve by their ordinary C spelling. Call right after
     /// consuming the name token so a duplicate diagnostic points at it.
-    fn declare_name(&mut self, name: &str) -> Result<String, CSyntaxError> {
+    fn declare_name(&mut self, name: &str) -> Result<BindingName, CSyntaxError> {
         if matches!(name, "pthread_create" | "pthread_join") {
             self.shadowed_pthread_names.insert(name.to_string());
         }
@@ -8590,26 +8704,20 @@ impl Parser {
             );
         }
         if self
-            .scopes
-            .last()
-            .is_some_and(|scope| scope.iter().any(|binding| binding.source_name == name))
+            .visible_bindings
+            .get(name)
+            .is_some_and(|(depth, _)| *depth == self.scopes.len().saturating_sub(1))
         {
             return Err(
                 self.error_at_previous(format!("`{name}` is already declared in this scope"))
             );
         }
         self.out_of_scope_names.remove(name);
-        let kernel_name = if self
-            .scopes
-            .iter()
-            .any(|scope| scope.iter().any(|binding| binding.source_name == name))
-        {
-            let kernel_name = format!("{name}#scope{}", self.next_scoped_name);
-            self.next_scoped_name = self.next_scoped_name.saturating_add(1);
-            kernel_name
-        } else {
-            name.to_string()
-        };
+        let kernel_name = self.new_automatic_binding(Some(name.to_owned()));
+        let previous_visible = self.visible_bindings.insert(
+            name.to_owned(),
+            (self.scopes.len().saturating_sub(1), kernel_name.clone()),
+        );
         // A parameter may keep the source spelling of a file-scope object.
         // Save only that object's metadata, not the translation-unit tables.
         let shadowed = self
@@ -8627,14 +8735,16 @@ impl Parser {
             });
         match self.scopes.last_mut() {
             Some(scope) => scope.push(ScopeBinding {
-                source_name: name.to_string(),
+                source_name: Some(name.to_string()),
                 kernel_name: kernel_name.clone(),
                 shadowed,
+                previous_visible: previous_visible.clone(),
             }),
             None => self.scopes.push(vec![ScopeBinding {
-                source_name: name.to_string(),
+                source_name: Some(name.to_string()),
                 kernel_name: kernel_name.clone(),
                 shadowed,
+                previous_visible: previous_visible.clone(),
             }]),
         }
         Ok(kernel_name)
@@ -8653,27 +8763,36 @@ impl Parser {
             );
         }
         if self
-            .scopes
-            .last()
-            .is_some_and(|scope| scope.iter().any(|binding| binding.source_name == name))
+            .visible_bindings
+            .get(name)
+            .is_some_and(|(depth, _)| *depth == self.scopes.len().saturating_sub(1))
         {
             return Err(
                 self.error_at_previous(format!("`{name}` is already declared in this scope"))
             );
         }
         self.out_of_scope_names.remove(name);
-        let kernel_name = format!("{name}#static{}", self.next_scoped_name);
+        let kernel_name: String = format!("{name}#static{}", self.next_scoped_name).into();
         self.next_scoped_name = self.next_scoped_name.saturating_add(1);
+        let previous_visible = self.visible_bindings.insert(
+            name.to_owned(),
+            (
+                self.scopes.len().saturating_sub(1),
+                kernel_name.clone().into(),
+            ),
+        );
         match self.scopes.last_mut() {
             Some(scope) => scope.push(ScopeBinding {
-                source_name: name.to_string(),
-                kernel_name: kernel_name.clone(),
+                source_name: Some(name.to_string()),
+                kernel_name: kernel_name.clone().into(),
                 shadowed: None,
+                previous_visible: previous_visible.clone(),
             }),
             None => self.scopes.push(vec![ScopeBinding {
-                source_name: name.to_string(),
-                kernel_name: kernel_name.clone(),
+                source_name: Some(name.to_string()),
+                kernel_name: kernel_name.clone().into(),
                 shadowed: None,
+                previous_visible: previous_visible.clone(),
             }]),
         }
         Ok(kernel_name)
@@ -9340,8 +9459,16 @@ impl Parser {
         self.expect(Token::LParen)?;
         self.push_scope();
         let empty_parameter_list = self.peek() == Some(&Token::RParen);
+        self.binding_function = Some(LocalFunctionId::new(
+            self.source_identity.clone(),
+            source_name.clone(),
+        ));
+        self.parsing_binding_parameters = true;
+        self.next_parameter_binding = 0;
+        self.next_local_binding = 0;
         let unnamed_before = self.unnamed_parameters;
         let parameters = self.parse_parameters()?;
+        self.parsing_binding_parameters = false;
         let has_unnamed_parameter = self.unnamed_parameters != unnamed_before;
         let variadic = self.peek() == Some(&Token::Ellipsis);
         if variadic {
@@ -9875,16 +10002,26 @@ impl Parser {
                 }
                 return Err(self.error_here("function parameters cannot have type `void`"));
             }
-            // A prototype may leave a parameter unnamed. The placeholder
-            // cannot be spelled in C, and a definition that has one is
-            // rejected by the caller.
-            let name = if matches!(self.peek(), Some(Token::Comma | Token::RParen)) {
+            // An unnamed prototype parameter still has its own declaration
+            // identity. Definitions must spell every parameter's source name.
+            let kernel_name = if matches!(self.peek(), Some(Token::Comma | Token::RParen)) {
                 self.unnamed_parameters += 1;
-                format!("#unnamed{}", parameters.len())
+                let binding = self.new_automatic_binding(None);
+                self.scopes
+                    .last_mut()
+                    .expect("parameter scope")
+                    .push(ScopeBinding {
+                        source_name: None,
+                        kernel_name: binding.clone(),
+                        shadowed: None,
+                        previous_visible: None,
+                    });
+                binding
             } else {
-                self.expect_ident("parameter name")?
+                let name = self.expect_ident("parameter name")?;
+                let binding = self.declare_name(&name)?;
+                binding
             };
-            let kernel_name = self.declare_name(&name)?;
             if parsed_type.is_volatile && self.peek() == Some(&Token::LBracket) {
                 return Err(self.error_here(
                     "the small volatile model does not support volatile array parameters",
@@ -9942,10 +10079,11 @@ impl Parser {
                     .insert(kernel_name.clone(), signature.clone());
             }
             if object_constant {
-                self.variable_constants.insert(kernel_name.clone());
+                self.variable_constants.insert(kernel_name.clone().into());
             }
             if pointee_constant {
-                self.variable_pointee_constants.insert(kernel_name.clone());
+                self.variable_pointee_constants
+                    .insert(kernel_name.clone().into());
             }
             let struct_name = parsed_type.struct_name;
             if struct_name.is_some() {
@@ -11305,6 +11443,16 @@ impl Parser {
     /// that token to its last token or to the end of that line, whichever is
     /// first. Comments and anything past the length limit are left out.
     fn site_between(&self, start: usize, end: usize) -> CSite {
+        let mut site = self.site_between_without_bindings(start, end);
+        if let Some(bindings) = self.loop_source_bindings.get(&start)
+            && let Some(inner) = &mut site.0
+        {
+            std::sync::Arc::make_mut(inner).source_bindings = Some(bindings.clone());
+        }
+        site
+    }
+
+    fn site_between_without_bindings(&self, start: usize, end: usize) -> CSite {
         let Some(first) = self.positions.get(start) else {
             return CSite::NONE;
         };
@@ -11494,8 +11642,20 @@ impl Parser {
                 self.error_here("expected a function declaration after block-scope `extern`")
             );
         }
+        let binding_context = (
+            self.binding_function.clone(),
+            self.parsing_binding_parameters,
+            self.next_parameter_binding,
+            self.next_local_binding,
+        );
         let mut header = self.parse_function_header(false)?;
         self.pop_scope();
+        (
+            self.binding_function,
+            self.parsing_binding_parameters,
+            self.next_parameter_binding,
+            self.next_local_binding,
+        ) = binding_context;
         let (suffix_inline, suffix_weak, suffix_returns_twice, suffix_opaque) =
             self.consume_function_attributes()?;
         header.opaque_attributes = prefix_opaque || suffix_opaque;
@@ -11697,6 +11857,10 @@ impl Parser {
                     })
                 }
                 Some("while") => {
+                    self.loop_source_bindings.insert(
+                        self.position,
+                        std::sync::Arc::new(self.visible_bindings.clone()),
+                    );
                     self.position += 1;
                     self.expect(Token::LParen)?;
                     let condition = self.parse_expression()?;
@@ -11725,6 +11889,10 @@ impl Parser {
                     })
                 }
                 Some("do") => {
+                    self.loop_source_bindings.insert(
+                        self.position,
+                        std::sync::Arc::new(self.visible_bindings.clone()),
+                    );
                     self.position += 1;
                     self.loop_contexts.push(CLoopContext::DoWhile);
                     let body = self.parse_controlled_statement("do")?;
@@ -11744,12 +11912,17 @@ impl Parser {
                     })
                 }
                 Some("for") => {
+                    let loop_start = self.position;
                     self.position += 1;
                     self.expect(Token::LParen)?;
                     // A `for` declaration is scoped to the statement, so two
                     // consecutive loops may each declare `int32 i`.
                     self.push_scope();
                     let init = self.parse_for_initializer()?;
+                    self.loop_source_bindings.insert(
+                        loop_start,
+                        std::sync::Arc::new(self.visible_bindings.clone()),
+                    );
                     self.expect(Token::Semicolon)?;
                     let condition = if self.peek() == Some(&Token::Semicolon) {
                         CExpression::Int32Literal(1)
@@ -11883,7 +12056,7 @@ impl Parser {
                 .insert(kernel_name.clone(), signature.clone());
             let declaration = CStatement::Declare {
                 interface_type,
-                name: kernel_name.clone(),
+                name: kernel_name.clone().into(),
                 volatile: false,
                 pointee_volatile: false,
                 constant: false,
@@ -11975,7 +12148,7 @@ impl Parser {
                 self.variable_struct_values
                     .insert(name.clone(), struct_name.clone());
                 self.local_struct_values
-                    .entry(source_name.clone())
+                    .entry(name.clone())
                     .and_modify(|existing| {
                         if existing.as_deref() != Some(struct_name.as_str()) {
                             *existing = None;
@@ -11983,7 +12156,7 @@ impl Parser {
                     })
                     .or_insert_with(|| Some(struct_name.clone()));
                 let declaration = CStatement::DeclareStructValue {
-                    name: name.clone(),
+                    name: name.clone().into(),
                     layout: layout.clone(),
                     site: CSite::NONE,
                 };
@@ -12067,7 +12240,7 @@ impl Parser {
             self.variable_types.insert(name.clone(), interface_type);
             let pointer = interface_type.is_pointer() && array_shape.is_none();
             self.local_pointers
-                .entry(source_name.clone())
+                .entry(name.clone())
                 .and_modify(|existing| *existing &= pointer)
                 .or_insert(pointer);
             if let Some(signature) = &parsed_type.function_pointer_signature {
@@ -12119,7 +12292,7 @@ impl Parser {
                     )
                 {
                     self.local_struct_pointers
-                        .entry(source_name.clone())
+                        .entry(name.clone())
                         .and_modify(|existing| {
                             if existing.as_deref() != Some(struct_name.as_str()) {
                                 *existing = None;
@@ -12130,7 +12303,7 @@ impl Parser {
             }
             let declaration = CStatement::Declare {
                 interface_type,
-                name: name.clone(),
+                name: name.clone().into(),
                 volatile: object_volatile,
                 pointee_volatile,
                 constant: object_constant,
@@ -12373,13 +12546,13 @@ impl Parser {
                         .checked_mul(layout.size_bytes())
                         .ok_or_else(|| self.error_here("static aggregate array size overflows"))?;
                     self.variable_types
-                        .insert(kernel_name.clone(), InterfaceType::UInt8Array(bytes));
+                        .insert(kernel_name.clone().into(), InterfaceType::UInt8Array(bytes));
                     self.variable_array_shapes
-                        .insert(kernel_name.clone(), vec![length]);
+                        .insert(kernel_name.clone().into(), vec![length]);
                     self.variable_structs
-                        .insert(kernel_name.clone(), struct_name.clone());
+                        .insert(kernel_name.clone().into(), struct_name.clone());
                     if parsed_type.is_constant {
-                        self.variable_constants.insert(kernel_name.clone());
+                        self.variable_constants.insert(kernel_name.clone().into());
                     }
                     self.static_aggregate_arrays.insert(
                         kernel_name.clone(),
@@ -12406,11 +12579,11 @@ impl Parser {
                     Vec::new()
                 };
                 self.variable_types
-                    .insert(kernel_name.clone(), record_value_type(layout));
+                    .insert(kernel_name.clone().into(), record_value_type(layout));
                 self.variable_structs
-                    .insert(kernel_name.clone(), struct_name.clone());
+                    .insert(kernel_name.clone().into(), struct_name.clone());
                 if parsed_type.is_constant {
-                    self.variable_constants.insert(kernel_name.clone());
+                    self.variable_constants.insert(kernel_name.clone().into());
                 }
                 self.static_aggregates.insert(
                     kernel_name.clone(),
@@ -12501,14 +12674,14 @@ impl Parser {
                     .try_fold(1u32, |n, d| n.checked_mul(*d))
                     .ok_or_else(|| self.error_here("static array size overflows"))?;
                 self.variable_array_shapes
-                    .insert(kernel_name.clone(), shape.clone());
+                    .insert(kernel_name.clone().into(), shape.clone());
                 self.variable_types.insert(
-                    kernel_name.clone(),
+                    kernel_name.clone().into(),
                     array_type_for_element(parsed_type.interface_type, length)
                         .expect("validated static array element type"),
                 );
                 if parsed_type.is_constant {
-                    self.variable_constants.insert(kernel_name.clone());
+                    self.variable_constants.insert(kernel_name.clone().into());
                 }
                 self.static_arrays.insert(
                     kernel_name.clone(),
@@ -12525,12 +12698,13 @@ impl Parser {
                 );
             } else {
                 self.variable_types
-                    .insert(kernel_name.clone(), parsed_type.interface_type);
+                    .insert(kernel_name.clone().into(), parsed_type.interface_type);
                 if parsed_type.is_constant {
-                    self.variable_constants.insert(kernel_name.clone());
+                    self.variable_constants.insert(kernel_name.clone().into());
                 }
                 if parsed_type.pointee_constant {
-                    self.variable_pointee_constants.insert(kernel_name.clone());
+                    self.variable_pointee_constants
+                        .insert(kernel_name.clone().into());
                 }
                 let initializer = if self.peek() == Some(&Token::Equal) {
                     self.position += 1;
@@ -12585,7 +12759,7 @@ impl Parser {
 
     fn struct_value_copy_statement(
         &mut self,
-        target: &str,
+        target: &BindingName,
         expression: CExpression,
     ) -> Result<CStatement, CSyntaxError> {
         let target_struct = self
@@ -12594,7 +12768,7 @@ impl Parser {
             .cloned()
             .ok_or_else(|| self.error_here(format!("`{target}` is not a struct value")))?;
         self.aggregate_copy_statement(
-            CExpression::Variable(target.to_string()),
+            CExpression::Variable(target.clone().into()),
             &target_struct,
             expression,
         )
@@ -12841,7 +13015,7 @@ impl Parser {
             initializers.push(CStatement::Seq(
                 Box::new(CStatement::Declare {
                     interface_type: parsed_type.interface_type,
-                    name: name.clone(),
+                    name: name.clone().into(),
                     volatile: object_volatile,
                     pointee_volatile,
                     constant: object_constant,
@@ -12885,7 +13059,7 @@ impl Parser {
         let expression = self.parse_expression()?;
         self.validate_function_pointer_assignment(&name, &expression)?;
         Ok(CStatement::Assign {
-            name,
+            name: (name).into(),
             expression,
             site: CSite::NONE,
             prior_result: None,
@@ -13007,51 +13181,51 @@ impl Parser {
                 }
             }
             Token::PlusPlus => CExpression::Add(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(CExpression::Int32Literal(1)),
             ),
             Token::MinusMinus => CExpression::Subtract(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(CExpression::Int32Literal(1)),
             ),
             Token::PlusEqual => CExpression::Add(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::MinusEqual => CExpression::Subtract(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::StarEqual => CExpression::Multiply(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::SlashEqual => CExpression::Divide(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::PercentEqual => CExpression::Remainder(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::ShiftLeftEqual => CExpression::ShiftLeft(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::ShiftRightEqual => CExpression::ShiftRight(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::AmpEqual => CExpression::BitwiseAnd(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::PipeEqual => CExpression::BitwiseOr(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             Token::CaretEqual => CExpression::BitwiseXor(
-                Box::new(CExpression::Variable(name.clone())),
+                Box::new(CExpression::Variable((name.clone()).into())),
                 Box::new(self.parse_expression()?),
             ),
             token => {
@@ -13083,7 +13257,7 @@ impl Parser {
             self.validate_function_pointer_assignment(&name, &expression)?;
         }
         Ok(CStatement::Assign {
-            name,
+            name: (name).into(),
             expression,
             site: CSite::NONE,
             prior_result: None,
@@ -13334,7 +13508,7 @@ impl Parser {
 
     fn call_assignment_statement(
         &mut self,
-        target: String,
+        target: BindingName,
         function_name: String,
         arguments: Vec<CExpression>,
     ) -> Result<CStatement, CSyntaxError> {
@@ -13376,7 +13550,7 @@ impl Parser {
                         site: CSite::NONE,
                     }),
                     Box::new(CStatement::Assign {
-                        name: target.clone(),
+                        name: (target.clone()).into(),
                         expression: CExpression::StepResult {
                             step: call,
                             origin: crate::kernel::StepOrigin::Call(function_name),
@@ -13408,7 +13582,7 @@ impl Parser {
                 // embedded call, which lowering assigns to a temporary.
                 if value != call {
                     return Ok(CStatement::Assign {
-                        name: target,
+                        name: (target).into(),
                         expression: value,
                         site: CSite::NONE,
                         prior_result: None,
@@ -13430,7 +13604,7 @@ impl Parser {
                 let (mut prefix, source) =
                     self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
                 prefix.push(CStatement::AggregateCopy {
-                    target: CExpression::Variable(target),
+                    target: CExpression::Variable((target).into()),
                     source,
                     layout,
                     site: CSite::NONE,
@@ -13443,7 +13617,7 @@ impl Parser {
                 return Ok(balanced_statement_sequence(prefix).expect("call and aggregate copy"));
             }
             return Ok(CStatement::Assign {
-                name: target,
+                name: (target).into(),
                 expression: CExpression::Call {
                     function_name,
                     arguments,
@@ -13604,7 +13778,7 @@ impl Parser {
                 })
             });
         Ok(CStatement::HeapAllocate {
-            target,
+            target: (target).into(),
             bytes,
             zeroed,
             object_type,
@@ -14280,15 +14454,19 @@ impl Parser {
         }
     }
 
-    fn variable_has_static_storage(&self, name: &str) -> bool {
-        self.static_locals.contains_key(name)
+    fn variable_has_static_storage(&self, name: &BindingName) -> bool {
+        name.named_in(&self.static_locals).is_some()
             || self
                 .globals
                 .values()
-                .any(|global| global.kernel_name() == name)
+                .any(|global| name.is_named(global.kernel_name()))
     }
 
-    fn convert_struct_array_decay(&self, target: &str, expression: CExpression) -> CExpression {
+    fn convert_struct_array_decay(
+        &self,
+        target: &BindingName,
+        expression: CExpression,
+    ) -> CExpression {
         let Some(interface_type) = self
             .variable_types
             .get(target)
@@ -14733,7 +14911,7 @@ impl Parser {
                 // source writes it.
                 let function_name = callee_source_text(&function);
                 self.callback_statement_sources
-                    .insert(function_name.clone(), function.clone());
+                    .insert((function_name.clone()).into(), function.clone());
                 prefix.push(CStatement::Call {
                     function_name,
                     arguments,
@@ -14969,7 +15147,11 @@ impl Parser {
     /// static object, and no aggregate value. Such an evaluation cannot
     /// read or write any object an assignment to a name in `assigned`
     /// modifies, whatever the program's aliasing.
-    fn reads_only_locals_other_than(&self, expression: &CExpression, assigned: &[String]) -> bool {
+    fn reads_only_locals_other_than(
+        &self,
+        expression: &CExpression,
+        assigned: &[BindingName],
+    ) -> bool {
         match expression {
             CExpression::Int32Literal(_)
             | CExpression::UInt8Literal(_)
@@ -15095,7 +15277,7 @@ impl Parser {
     /// non-volatile, non-floating scalar objects, so a second read has no
     /// effect and the same value means the same result. Locals the call
     /// cannot reach need no state. `None` keeps the existing refusal.
-    fn reread_storage_names(&self, expression: &CExpression) -> Option<Vec<String>> {
+    fn reread_storage_names(&self, expression: &CExpression) -> Option<Vec<BindingName>> {
         match expression {
             CExpression::Int32Literal(_)
             | CExpression::UInt8Literal(_)
@@ -15128,10 +15310,10 @@ impl Parser {
                 let volatile = if let Some(global) = self
                     .globals
                     .values()
-                    .find(|global| global.kernel_name() == name)
+                    .find(|global| name.is_named(global.kernel_name()))
                 {
                     global.is_volatile()
-                } else if let Some(static_local) = self.static_locals.get(name) {
+                } else if let Some(static_local) = name.named_in(&self.static_locals) {
                     static_local.is_volatile()
                 } else if self.address_taken_variables.contains(name) {
                     // An address-taken local's qualifiers are not tracked here.
@@ -15168,7 +15350,7 @@ impl Parser {
     /// the call, as the lowering always has.
     fn sequence_reread_around_call(
         &mut self,
-        names: &[String],
+        names: &[BindingName],
         call_prefix: Vec<CStatement>,
     ) -> Vec<CStatement> {
         let mut prefix = Vec::new();
@@ -15181,14 +15363,14 @@ impl Parser {
             prefix.push(CStatement::StepValue {
                 aggregate_layout: None,
                 steps: vec![step],
-                expression: CExpression::Variable(name.clone()),
+                expression: CExpression::Variable((name.clone()).into()),
                 interface_type: Some(interface_type),
                 pointee_constant,
                 site: CSite::NONE,
             });
             checks.push(CStatement::Assert {
                 condition: CExpression::Equal(
-                    Box::new(CExpression::Variable(name.clone())),
+                    Box::new(CExpression::Variable((name.clone()).into())),
                     Box::new(CExpression::StepResult {
                         step,
                         origin: crate::kernel::StepOrigin::Value("the read before the call"),
@@ -15262,7 +15444,7 @@ impl Parser {
                 let value = match step {
                     Some(step) => CExpression::StepResult {
                         step,
-                        origin: crate::kernel::StepOrigin::Prior(name.clone()),
+                        origin: crate::kernel::StepOrigin::Prior(name.source_name().to_owned()),
                         interface_type: Some(interface_type),
                         pointee_constant,
                         struct_name,
@@ -15345,27 +15527,28 @@ impl Parser {
                 // reads the term it returns by the call's number.
                 let call = self.next_call_result;
                 self.next_call_result = self.next_call_result.saturating_add(1);
-                let (interface_type, pointee_constant, struct_name) = if let Some(function) =
-                    self.function_declaration_for_call(&function_name)
-                {
-                    (
-                        Some(function.return_type),
-                        function.return_pointee_constant,
-                        function.return_pointer_struct_name.clone(),
-                    )
-                } else if let Some(signature) = self.variable_function_pointers.get(&function_name)
-                {
-                    (
-                        Some(signature.return_type),
-                        signature.return_pointee_constant,
-                        signature.return_struct_name.clone(),
-                    )
-                } else if function_name == CONSTANT_P_UNKNOWN {
-                    // `__builtin_constant_p` has type `int`.
-                    (Some(InterfaceType::Int32), false, None)
-                } else {
-                    (None, false, None)
-                };
+                let (interface_type, pointee_constant, struct_name) =
+                    if let Some(function) = self.function_declaration_for_call(&function_name) {
+                        (
+                            Some(function.return_type),
+                            function.return_pointee_constant,
+                            function.return_pointer_struct_name.clone(),
+                        )
+                    } else if let Some(signature) = self
+                        .variable_function_pointers
+                        .get(&self.resolve_name(&function_name))
+                    {
+                        (
+                            Some(signature.return_type),
+                            signature.return_pointee_constant,
+                            signature.return_struct_name.clone(),
+                        )
+                    } else if function_name == CONSTANT_P_UNKNOWN {
+                        // `__builtin_constant_p` has type `int`.
+                        (Some(InterfaceType::Int32), false, None)
+                    } else {
+                        (None, false, None)
+                    };
                 prefix.push(CStatement::CallResult {
                     aggregate_layout: None,
                     call,
@@ -15833,7 +16016,7 @@ impl Parser {
         // writes it; the rest of the expression reads its result.
         let function_name = callee_source_text(&function);
         self.callback_statement_sources
-            .insert(function_name.clone(), function.clone());
+            .insert((function_name.clone()).into(), function.clone());
         let call = self.next_call_result;
         self.next_call_result = self.next_call_result.saturating_add(1);
         let (interface_type, pointee_constant, struct_name) = (
@@ -16114,7 +16297,10 @@ impl Parser {
             let argument_index = arguments.len();
             let mut expression = self.parse_expression_allow_direct_aggregate()?;
             if let Some(parameter) = function_name
-                .and_then(|name| self.variable_function_pointers.get(name))
+                .and_then(|name| {
+                    self.variable_function_pointers
+                        .get(&self.resolve_name(name))
+                })
                 .and_then(|signature| signature.parameters.get(argument_index))
             {
                 self.reject_discarded_const_pointer(
@@ -16419,7 +16605,10 @@ impl Parser {
         argument_index: usize,
     ) -> Option<(InterfaceType, Option<String>, Option<CallbackInterface>)> {
         let function_name = function_name?;
-        if let Some(signature) = self.variable_function_pointers.get(function_name) {
+        if let Some(signature) = self
+            .variable_function_pointers
+            .get(&self.resolve_name(function_name))
+        {
             return signature.parameters.get(argument_index).map(|parameter| {
                 (
                     parameter.interface_type,
@@ -16441,13 +16630,15 @@ impl Parser {
     }
 
     fn call_return_pointee_is_constant(&self, name: &str) -> bool {
-        self.variable_function_pointers.get(name).map_or_else(
-            || {
-                self.function_declaration_for_call(name)
-                    .is_some_and(|function| function.return_pointee_constant)
-            },
-            |signature| signature.return_pointee_constant,
-        )
+        self.variable_function_pointers
+            .get(&self.resolve_name(name))
+            .map_or_else(
+                || {
+                    self.function_declaration_for_call(name)
+                        .is_some_and(|function| function.return_pointee_constant)
+                },
+                |signature| signature.return_pointee_constant,
+            )
     }
 
     fn function_pointer_signature(&self, expression: &CExpression) -> Option<CallbackInterface> {
@@ -16512,7 +16703,7 @@ impl Parser {
 
     fn validate_function_pointer_assignment(
         &self,
-        target: &str,
+        target: &BindingName,
         expression: &CExpression,
     ) -> Result<(), CSyntaxError> {
         let Some(expected) = self.variable_function_pointers.get(target) else {
@@ -17327,7 +17518,7 @@ impl Parser {
                         continue;
                     }
                     let source_name = match &expression {
-                        CExpression::Variable(name) => name.clone(),
+                        CExpression::Variable(name) => name.source_name().to_owned(),
                         _ => {
                             return Err(self.error_here(
                                 "function calls currently require an identifier or function pointer",
@@ -17474,8 +17665,12 @@ impl Parser {
                     let incomplete_array = match &expression {
                         CExpression::Variable(name)
                             if self.incomplete_array_names.contains(name)
-                                && (self.global_arrays.contains_key(name)
-                                    || self.global_aggregate_arrays.contains_key(name)) =>
+                                && (name
+                                    .named()
+                                    .is_some_and(|name| self.global_arrays.contains_key(name))
+                                    || name.named().is_some_and(|name| {
+                                        self.global_aggregate_arrays.contains_key(name)
+                                    })) =>
                         {
                             Some(name.clone())
                         }
@@ -17521,9 +17716,9 @@ impl Parser {
                             )));
                         }
                         let unbounded_outer = self.incomplete_array_names.contains(name)
-                            || self
-                                .global_arrays
-                                .get(name)
+                            || name
+                                .named()
+                                .and_then(|name| self.global_arrays.get(name))
                                 .is_some_and(CGlobalArray::is_incomplete);
                         let offset = flatten_array_indices(indexes, &shape, unbounded_outer);
                         let struct_array = self.variable_structs.contains_key(name);
@@ -17842,7 +18037,7 @@ impl Parser {
                 .map(|function| function.return_pointer_struct_name.clone())
                 .or_else(|| {
                     self.variable_function_pointers
-                        .get(function_name)
+                        .get(&self.resolve_name(function_name))
                         .map(|signature| signature.return_struct_name.clone())
                 })
                 .flatten(),
@@ -17961,7 +18156,7 @@ impl Parser {
                 .map(|function| function.return_pointer_struct_name.clone())
                 .or_else(|| {
                     self.variable_function_pointers
-                        .get(function_name)
+                        .get(&self.resolve_name(function_name))
                         .map(|signature| signature.return_struct_name.clone())
                 })
                 .flatten(),
@@ -19000,7 +19195,7 @@ impl Parser {
                     .ok_or_else(|| self.error_here(format!("unknown struct declaration `{name}`")))?
                     .size_bytes;
                 return Ok(CExpression::SizeOfStruct {
-                    name: name.clone(),
+                    name: (name.clone()).into(),
                     bytes,
                 });
             }
@@ -19013,7 +19208,7 @@ impl Parser {
                     .ok_or_else(|| self.error_here(format!("unknown union declaration `{name}`")))?
                     .size_bytes;
                 return Ok(CExpression::SizeOfUnion {
-                    name: name.clone(),
+                    name: (name.clone()).into(),
                     bytes,
                 });
             }
@@ -19041,7 +19236,7 @@ impl Parser {
                     Ok(address)
                 } else {
                     Ok(CExpression::Variable(
-                        self.resolve_object_name(&name, at.position)?,
+                        (self.resolve_object_name(&name, at.position)?).into(),
                     ))
                 }
             }
@@ -19931,6 +20126,7 @@ fn statement_site(position: &SourcePosition, text: &str, continues: bool) -> CSi
         position: position.clone(),
         text: excerpt.into_boxed_str(),
         source_path: None,
+        source_bindings: None,
     })))
 }
 
@@ -20329,7 +20525,7 @@ fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePositi
 
 /// The names a chain of simple assignments `a = b = value` assigns, when
 /// `expression` is such a chain and `value` holds no further assignment.
-fn assignment_chain_targets(expression: &CExpression) -> Option<Vec<String>> {
+fn assignment_chain_targets(expression: &CExpression) -> Option<Vec<BindingName>> {
     // A load through a post-updated automatic pointer writes only that pointer
     // cell. This permits unrelated scalar accumulators in `sum += *p++`.
     match expression {
@@ -20689,7 +20885,7 @@ mod scope_metadata_tests {
             let mut parser = Parser::new("", CAbi::SUPPORTED).unwrap();
             for index in 0..count {
                 parser.variable_types.insert(
-                    format!("global{index}"),
+                    format!("global{index}").into(),
                     InterfaceType::UInt64(LongRank::Long),
                 );
             }
@@ -20699,7 +20895,7 @@ mod scope_metadata_tests {
             parser.variable_array_shapes.insert("p".into(), vec![2]);
             parser.variable_constants.insert("p".into());
             parser.push_scope();
-            assert_eq!(parser.declare_name("p").unwrap(), "p");
+            assert_eq!(parser.declare_name("p").unwrap(), ("p").into());
             assert_eq!(parser.scopes.last().unwrap().len(), 1);
             let saved = parser.scopes.last().unwrap()[0].shadowed.as_ref().unwrap();
             assert_eq!(saved.interface_type, InterfaceType::UInt32Array(2));
@@ -20711,9 +20907,12 @@ mod scope_metadata_tests {
                 .insert("p".into(), InterfaceType::Int32Pointer);
             parser.pop_scope();
             assert_eq!(parser.variable_types.len(), count + 1);
-            assert_eq!(parser.variable_types["p"], InterfaceType::UInt32Array(2));
-            assert_eq!(parser.variable_array_shapes["p"], vec![2]);
-            assert!(parser.variable_constants.contains("p"));
+            assert_eq!(
+                parser.variable_types[&("p").into()],
+                InterfaceType::UInt32Array(2)
+            );
+            assert_eq!(parser.variable_array_shapes[&("p").into()], vec![2]);
+            assert!(parser.variable_constants.contains(&("p").into()));
         }
     }
 

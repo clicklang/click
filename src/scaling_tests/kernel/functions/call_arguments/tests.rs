@@ -103,7 +103,7 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
                     );
                     crate::kernel::loops::assign_call_result(
                         &mut state,
-                        "received",
+                        &("received").into(),
                         value,
                         &mut obligations,
                         &PureFactContext::new(),

@@ -2772,7 +2772,7 @@ fn c_accepts_incomplete_outer_dimension_extern_scalar_arrays() {
     assert!(matches!(
         function.body(),
         syntax::CStatement::Return(syntax::CExpression::Index(base, index, _), _)
-            if matches!(base.as_ref(), syntax::CExpression::Variable(name) if name == "values")
+            if matches!(base.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "values")
                 && matches!(index.as_ref(), syntax::CExpression::Add(left, right)
                     if matches!(left.as_ref(), syntax::CExpression::Multiply(multiplier, stride)
                         if matches!(multiplier.as_ref(), syntax::CExpression::Int32Literal(1))
@@ -3927,7 +3927,7 @@ fn c_typeof_preserves_pointer_tags_and_const_qualification() {
                 name: declared_name,
                 pointee_constant,
                 ..
-            } if declared_name == name => Some((*interface_type, *pointee_constant)),
+            } if declared_name.source_name() == name => Some((*interface_type, *pointee_constant)),
             syntax::CStatement::Seq(first, second) => {
                 find_declaration(first, name).or_else(|| find_declaration(second, name))
             }
@@ -4002,7 +4002,7 @@ fn c_builtin_expect_is_an_identity_and_unknown_builtins_fail() {
             .expect("__builtin_expect should preserve the first operand");
     assert!(matches!(
         functions[0].body(),
-        syntax::CStatement::Return(syntax::CExpression::Variable(name), _) if name == "value"
+        syntax::CStatement::Return(syntax::CExpression::Variable(name), _) if name.source_name() == "value"
     ));
 
     let error = syntax::parse_functions(
@@ -4474,14 +4474,14 @@ fn c_syntax_lowers_scalar_declaration_initializers_in_source_order() {
                             interface_type: crate::languages::interface::InterfaceType::Int32,
                             name,
                             ..
-                        } if name == "value"
+                        } if name.source_name() == "value"
                     )
                     && matches!(
                         assignment.as_ref(),
                         syntax::CStatement::Assign {
                             name,
                             expression: syntax::CExpression::Int32Literal(7), ..
-                        } if name == "value"
+                        } if name.source_name() == "value"
                     )
             )
     ));
@@ -4802,7 +4802,9 @@ fn c_syntax_accepts_switch_cases_and_nested_loop_control() {
     else {
         panic!("expected native switch statement");
     };
-    assert!(matches!(expression, syntax::CExpression::Variable(name) if name == "kind"));
+    assert!(
+        matches!(expression, syntax::CExpression::Variable(name) if name.source_name() == "kind")
+    );
     assert_eq!(cases.len(), 3);
     assert_eq!(cases[0].value(), Some(0));
     assert_eq!(cases[1].value(), Some(u32::from(b'1')));
@@ -5054,19 +5056,19 @@ fn c_syntax_accepts_scalar_casts_and_conditional_expressions() {
             condition,
             then_branch,
             else_branch,
-        }, _) if matches!(condition.as_ref(), syntax::CExpression::Variable(name) if name == "condition")
+        }, _) if matches!(condition.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "condition")
             && matches!(
                 then_branch.as_ref(),
                 syntax::CExpression::Cast {
                     interface_type: crate::languages::interface::InterfaceType::Int32,
                     expression,
                     ..
-                } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name == "left")
+                } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "left")
             )
             && matches!(
                 else_branch.as_ref(),
                 syntax::CExpression::Add(left, right)
-                    if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name == "right")
+                    if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "right")
                         && matches!(right.as_ref(), syntax::CExpression::Int32Literal(1))
             )
     ));
@@ -5352,7 +5354,7 @@ fn c_syntax_parses_negative_literals_and_unary_minus() {
                 syntax::CExpression::Int32Literal(0)
             ) && matches!(
                 right.as_ref(),
-                syntax::CExpression::Variable(name) if name == "value"
+                syntax::CExpression::Variable(name) if name.source_name() == "value"
             )
     ));
 }
@@ -5506,7 +5508,12 @@ fn c_unary_minus_preserves_signed_overflow_semantics() {
     )
     .expect("unary minus function should parse");
     let state = crate::kernel::ExecutionState::new().with_local(
-        "value",
+        function
+            .parameters()
+            .iter()
+            .find(|parameter| parameter.name() == "value")
+            .unwrap()
+            .binding_name(),
         crate::kernel::int32(crate::kernel::MachineTerm::constant(0x8000_0000)),
     );
     let theorem = crate::kernel::prove_symbolic_program_execution(
@@ -6371,7 +6378,7 @@ fn c_syntax_lowers_struct_malloc_sizeof_and_free() {
                 zeroed,
                 ..
             } => {
-                assert_eq!(target, "item");
+                assert_eq!(target.source_name(), "item");
                 assert!(!zeroed);
                 assert_eq!(
                     *bytes,
@@ -6383,7 +6390,9 @@ fn c_syntax_lowers_struct_malloc_sizeof_and_free() {
                 (true, false)
             }
             syntax::CStatement::HeapFree { pointer, .. } => {
-                assert_eq!(pointer, &syntax::CExpression::Variable("item".to_string()));
+                assert!(
+                    matches!(pointer, syntax::CExpression::Variable(name) if name.source_name() == "item")
+                );
                 (false, true)
             }
             syntax::CStatement::Seq(first, second) => {
@@ -6492,7 +6501,7 @@ fn c_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
                 bytes,
                 zeroed,
                 ..
-            } => Some((target, bytes, *zeroed)),
+            } => Some((target.source_name(), bytes, *zeroed)),
             syntax::CStatement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
             }
@@ -6523,7 +6532,9 @@ fn c_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
     assert_eq!(
         bytes,
         &syntax::CExpression::Multiply(
-            Box::new(syntax::CExpression::Variable("count".to_string())),
+            Box::new(syntax::CExpression::Variable(
+                function.parameters()[0].binding_name().clone()
+            )),
             Box::new(syntax::CExpression::SizeOfType {
                 interface_type: crate::languages::interface::InterfaceType::Int32,
                 struct_name: None,
@@ -6555,7 +6566,7 @@ fn c_syntax_accepts_matching_struct_calloc() {
                 bytes,
                 zeroed,
                 ..
-            } => Some((target, bytes, *zeroed)),
+            } => Some((target.source_name(), bytes, *zeroed)),
             syntax::CStatement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
             }
@@ -6570,7 +6581,9 @@ fn c_syntax_accepts_matching_struct_calloc() {
     assert_eq!(
         bytes,
         &syntax::CExpression::Multiply(
-            Box::new(syntax::CExpression::Variable("count".to_string())),
+            Box::new(syntax::CExpression::Variable(
+                function.parameters()[0].binding_name().clone()
+            )),
             Box::new(syntax::CExpression::SizeOfStruct {
                 name: "item".to_string(),
                 bytes: 4,
@@ -6595,7 +6608,7 @@ fn c_syntax_accepts_matching_pointer_array_calloc() {
                     bytes,
                     zeroed,
                     ..
-                } if allocation_target == target => {
+                } if allocation_target.source_name() == target => {
                     assert!(*zeroed);
                     Some(bytes)
                 }
@@ -6738,7 +6751,15 @@ fn c_chained_field_load_executes_through_typed_pointer_memory() {
             leaf, 0, 1,
         )));
     let state = crate::kernel::ExecutionState::new()
-        .with_local("root", crate::kernel::ProgramValue::pointer(root))
+        .with_local(
+            function
+                .parameters()
+                .iter()
+                .find(|parameter| parameter.name() == "root")
+                .unwrap()
+                .binding_name(),
+            crate::kernel::ProgramValue::pointer(root),
+        )
         .with_memory(memory)
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_program_execution(
@@ -6842,17 +6863,37 @@ fn c_syntax_targets_kernel_max_body() {
     .expect("max should parse");
     let statement = function.body_kernel_statement();
 
-    assert_eq!(statement, crate::kernel::program_max_body());
+    let parameter = |index: usize| {
+        crate::kernel::ProgramExpression::Variable(
+            function.parameters()[index].binding_name().clone(),
+        )
+    };
+    assert_eq!(
+        statement,
+        crate::kernel::ProgramStatement::If {
+            condition: crate::kernel::ProgramExpression::LessThan(
+                Box::new(parameter(0)),
+                Box::new(parameter(1))
+            ),
+            then_branch: Box::new(crate::kernel::ProgramStatement::Return(parameter(1))),
+            else_branch: Box::new(crate::kernel::ProgramStatement::Return(parameter(0))),
+        }
+    );
 
     let a = crate::kernel::Variable(30);
     let b = crate::kernel::Variable(31);
     let a_bits = crate::kernel::MachineTerm::Variable(a);
     let b_bits = crate::kernel::MachineTerm::Variable(b);
     let condition = crate::kernel::program_max_lt_condition(a_bits.clone(), b_bits.clone());
-    let state = crate::kernel::program_max_state(
-        crate::kernel::int32(a_bits),
-        crate::kernel::int32(b_bits),
-    );
+    let state = crate::kernel::ExecutionState::new()
+        .with_local(
+            function.parameters()[0].binding_name(),
+            crate::kernel::int32(a_bits),
+        )
+        .with_local(
+            function.parameters()[1].binding_name(),
+            crate::kernel::int32(b_bits),
+        );
     let assumptions =
         crate::kernel::PureFactContext::new().assume_condition(condition.clone(), true);
     let theorem = crate::kernel::prove_symbolic_program_execution(
@@ -6894,7 +6935,13 @@ fn c_syntax_targets_kernel_max_function_call() {
     .expect("max should parse");
     let function = function.to_kernel_function();
 
-    assert_eq!(function, crate::kernel::program_max_function());
+    assert_eq!(function.name(), "max");
+    assert!(
+        function
+            .parameters()
+            .iter()
+            .all(|parameter| parameter.binding_name().local_id().is_some())
+    );
 
     let state = crate::kernel::ExecutionState::new();
     let arguments = vec![
@@ -6935,8 +6982,24 @@ fn c_syntax_targets_kernel_assignment_and_sequence() {
     )
     .expect("assignment function should parse");
     let statement = function.body_kernel_statement();
-    let initial = crate::kernel::ExecutionState::new().with_local("x", crate::kernel::int32(1));
-    let final_state = crate::kernel::ExecutionState::new().with_local("x", crate::kernel::int32(2));
+    let initial = crate::kernel::ExecutionState::new().with_local(
+        function
+            .parameters()
+            .iter()
+            .find(|parameter| parameter.name() == "x")
+            .unwrap()
+            .binding_name(),
+        crate::kernel::int32(1),
+    );
+    let final_state = crate::kernel::ExecutionState::new().with_local(
+        function
+            .parameters()
+            .iter()
+            .find(|parameter| parameter.name() == "x")
+            .unwrap()
+            .binding_name(),
+        crate::kernel::int32(2),
+    );
     let theorem = crate::kernel::prove_symbolic_program_execution(
         initial.clone(),
         statement.clone(),
@@ -7017,10 +7080,26 @@ fn c_syntax_targets_kernel_store_and_load() {
     let statement = function.body_kernel_statement();
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let initial = crate::kernel::ExecutionState::new()
-        .with_local("p", crate::kernel::ProgramValue::pointer(pointer.clone()))
+        .with_local(
+            function
+                .parameters()
+                .iter()
+                .find(|parameter| parameter.name() == "p")
+                .unwrap()
+                .binding_name(),
+            crate::kernel::ProgramValue::pointer(pointer.clone()),
+        )
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
-        .with_local("p", crate::kernel::ProgramValue::pointer(pointer.clone()))
+        .with_local(
+            function
+                .parameters()
+                .iter()
+                .find(|parameter| parameter.name() == "p")
+                .unwrap()
+                .binding_name(),
+            crate::kernel::ProgramValue::pointer(pointer.clone()),
+        )
         .with_memory(crate::kernel::Memory::new().store(pointer.clone(), crate::kernel::int32(9)))
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_program_execution(
@@ -7073,7 +7152,15 @@ fn c_syntax_targets_kernel_struct_field_load() {
         .with_block("object", 4)
         .store(pointer.clone(), crate::kernel::int32(3));
     let initial = crate::kernel::ExecutionState::new()
-        .with_local("obj", crate::kernel::ProgramValue::pointer(pointer.clone()))
+        .with_local(
+            function
+                .parameters()
+                .iter()
+                .find(|parameter| parameter.name() == "obj")
+                .unwrap()
+                .binding_name(),
+            crate::kernel::ProgramValue::pointer(pointer.clone()),
+        )
         .with_memory(memory)
         .with_resource_context(view_memory_context(pointer, 0, 1));
     let theorem = crate::kernel::prove_symbolic_program_execution(
@@ -7123,7 +7210,15 @@ fn c_syntax_targets_kernel_float64_struct_field_load() {
         .with_block("object", 8)
         .store(pointer.clone(), value.clone());
     let initial = crate::kernel::ExecutionState::new()
-        .with_local("obj", crate::kernel::ProgramValue::pointer(pointer.clone()))
+        .with_local(
+            function
+                .parameters()
+                .iter()
+                .find(|parameter| parameter.name() == "obj")
+                .unwrap()
+                .binding_name(),
+            crate::kernel::ProgramValue::pointer(pointer.clone()),
+        )
         .with_memory(memory)
         .with_resource_context(view_memory_context(pointer, 0, 2));
     let theorem = crate::kernel::prove_symbolic_program_execution(
@@ -7594,8 +7689,9 @@ fn c_syntax_targets_kernel_address_of_array_index() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
+    let local_q_block = automatic_test_block(function.name(), 0);
     let local_q = crate::kernel::Pointer {
-        block: "local:q".into(),
+        block: local_q_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let memory = crate::kernel::Memory::new()
@@ -7609,7 +7705,7 @@ fn c_syntax_targets_kernel_address_of_array_index() {
         .with_memory(
             crate::kernel::Memory::new()
                 .with_block("block", 16)
-                .with_block("local:q", 8)
+                .with_block(local_q_block.clone(), 8)
                 .store(second.clone(), crate::kernel::int32(23))
                 .store(
                     local_q,
@@ -7621,7 +7717,7 @@ fn c_syntax_targets_kernel_address_of_array_index() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:q".into()),
+            .without_local_block(&local_q_block),
     );
     let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
@@ -7830,21 +7926,22 @@ fn c_syntax_targets_kernel_local_address_of() {
     .expect("local address-of function should parse")
     .to_kernel_function();
 
+    let local_x_block = automatic_test_block(function.name(), 0);
     let local_pointer = crate::kernel::Pointer {
-        block: "local:x".into(),
+        block: local_x_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:x", 4)
+            .with_block(local_x_block.clone(), 4)
             .store(local_pointer, crate::kernel::int32(5)),
     );
     let final_state = final_state.clone().with_memory(
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:x".into()),
+            .without_local_block(&local_x_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -7883,18 +7980,19 @@ fn c_syntax_targets_kernel_local_array_storage() {
     .expect("local array function should parse")
     .to_kernel_function();
 
+    let local_a_block = automatic_test_block(function.name(), 0);
     let a0 = crate::kernel::Pointer {
-        block: "local:a".into(),
+        block: local_a_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let a1 = crate::kernel::Pointer {
-        block: "local:a".into(),
+        block: local_a_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:a", 12)
+            .with_block(local_a_block.clone(), 12)
             .store(a0, crate::kernel::int32(5))
             .store(a1, crate::kernel::int32(7)),
     );
@@ -7902,7 +8000,7 @@ fn c_syntax_targets_kernel_local_array_storage() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:a".into()),
+            .without_local_block(&local_a_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -7939,22 +8037,23 @@ fn c_syntax_lowers_local_array_initializer_stores() {
     .expect("local array initializer should parse")
     .to_kernel_function();
 
+    let local_a_block = automatic_test_block(function.name(), 0);
     let a0 = crate::kernel::Pointer {
-        block: "local:a".into(),
+        block: local_a_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let a1 = crate::kernel::Pointer {
-        block: "local:a".into(),
+        block: local_a_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
     let a2 = crate::kernel::Pointer {
-        block: "local:a".into(),
+        block: local_a_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(8),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:a", 12)
+            .with_block(local_a_block.clone(), 12)
             .store(a0, crate::kernel::int32(1))
             .store(a1, crate::kernel::int32(2))
             .store(a2, crate::kernel::int32(0)),
@@ -7963,7 +8062,7 @@ fn c_syntax_lowers_local_array_initializer_stores() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:a".into()),
+            .without_local_block(&local_a_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -8002,18 +8101,19 @@ fn c_syntax_flattens_multidimensional_local_array_indices() {
     .expect("multidimensional local array should parse")
     .to_kernel_function();
 
+    let local_values_block = automatic_test_block(function.name(), 0);
     let first = crate::kernel::Pointer {
-        block: "local:values".into(),
+        block: local_values_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let last = crate::kernel::Pointer {
-        block: "local:values".into(),
+        block: local_values_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(20),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:values", 24)
+            .with_block(local_values_block.clone(), 24)
             .store(first, crate::kernel::int32(1))
             .store(last, crate::kernel::int32(7)),
     );
@@ -8021,7 +8121,7 @@ fn c_syntax_flattens_multidimensional_local_array_indices() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:values".into()),
+            .without_local_block(&local_values_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -8059,47 +8159,48 @@ fn c_syntax_lowers_nested_multidimensional_array_initializers() {
     .to_kernel_function();
 
     let state = crate::kernel::ExecutionState::new();
+    let local_values_block = automatic_test_block(function.name(), 0);
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:values", 24)
+            .with_block(local_values_block.clone(), 24)
             .store(
                 crate::kernel::Pointer {
-                    block: "local:values".into(),
+                    block: local_values_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(0),
                 },
                 crate::kernel::int32(1),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:values".into(),
+                    block: local_values_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(4),
                 },
                 crate::kernel::int32(2),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:values".into(),
+                    block: local_values_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(8),
                 },
                 crate::kernel::int32(3),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:values".into(),
+                    block: local_values_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(12),
                 },
                 crate::kernel::int32(4),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:values".into(),
+                    block: local_values_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(16),
                 },
                 crate::kernel::int32(5),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:values".into(),
+                    block: local_values_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(20),
                 },
                 crate::kernel::int32(6),
@@ -8109,7 +8210,7 @@ fn c_syntax_lowers_nested_multidimensional_array_initializers() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:values".into()),
+            .without_local_block(&local_values_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -8153,18 +8254,19 @@ fn c_syntax_lowers_local_struct_array_fields_with_abi_stride() {
     .expect("local arrays of structs should parse")
     .to_kernel_function();
 
+    let local_items_block = automatic_test_block(function.name(), 0);
     let tag = crate::kernel::Pointer {
-        block: "local:items".into(),
+        block: local_items_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let value = crate::kernel::Pointer {
-        block: "local:items".into(),
+        block: local_items_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(12),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:items", 16)
+            .with_block(local_items_block.clone(), 16)
             .store(tag, crate::kernel::uint8(3))
             .store(value, crate::kernel::int32(7)),
     );
@@ -8172,7 +8274,7 @@ fn c_syntax_lowers_local_struct_array_fields_with_abi_stride() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:items".into()),
+            .without_local_block(&local_items_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -8228,75 +8330,76 @@ fn c_syntax_lowers_local_struct_array_initializers() {
     .to_kernel_function();
 
     let state = crate::kernel::ExecutionState::new();
+    let local_items_block = automatic_test_block(function.name(), 0);
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:items", 40)
+            .with_block(local_items_block.clone(), 40)
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(0),
                 },
                 crate::kernel::uint8(1),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(4),
                 },
                 crate::kernel::int32(10),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(8),
                 },
                 crate::kernel::uint8(1),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(12),
                 },
                 crate::kernel::int32(2),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(16),
                 },
                 crate::kernel::int32(0),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(20),
                 },
                 crate::kernel::uint8(2),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(24),
                 },
                 crate::kernel::int32(20),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(28),
                 },
                 crate::kernel::uint8(0),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(32),
                 },
                 crate::kernel::int32(3),
             )
             .store(
                 crate::kernel::Pointer {
-                    block: "local:items".into(),
+                    block: local_items_block.clone(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(36),
                 },
                 crate::kernel::int32(4),
@@ -8306,7 +8409,7 @@ fn c_syntax_lowers_local_struct_array_initializers() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:items".into()),
+            .without_local_block(&local_items_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -8414,20 +8517,22 @@ fn c_syntax_local_array_decays_to_pointer_argument() {
     .expect("caller function should parse")
     .to_kernel_function();
 
+    let local_a_block = automatic_test_block(caller.name(), 0);
+    let local_result_block = automatic_test_block(caller.name(), 1);
     let a0 = crate::kernel::Pointer {
-        block: "local:a".into(),
+        block: local_a_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let result_pointer = crate::kernel::Pointer {
-        block: "local:result".into(),
+        block: local_result_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let environment = crate::kernel::ExecutionEnvironment::new().with_function(read_first);
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:a", 8)
-            .with_block("local:result", 4)
+            .with_block(local_a_block.clone(), 8)
+            .with_block(local_result_block.clone(), 4)
             .store(a0, crate::kernel::int32(11))
             .store(result_pointer, crate::kernel::int32(11)),
     );
@@ -8435,8 +8540,8 @@ fn c_syntax_local_array_decays_to_pointer_argument() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:a".into())
-            .without_local_block(&"local:result".into()),
+            .without_local_block(&local_a_block)
+            .without_local_block(&local_result_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         state.clone(),
@@ -9792,8 +9897,9 @@ fn c_struct_scalar_array_element_address_executes_at_element_width() {
         block: "packet".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(24),
     };
+    let local_value_pointer_block = automatic_test_block(function.name(), 0);
     let local_value_pointer = crate::kernel::Pointer {
-        block: "local:value_pointer".into(),
+        block: local_value_pointer_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
@@ -9807,7 +9913,7 @@ fn c_struct_scalar_array_element_address_executes_at_element_width() {
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::Memory::new()
-                .with_block("local:value_pointer", 8)
+                .with_block(local_value_pointer_block.clone(), 8)
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -9824,7 +9930,7 @@ fn c_struct_scalar_array_element_address_executes_at_element_width() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:value_pointer".into()),
+            .without_local_block(&local_value_pointer_block),
     );
     let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
@@ -9876,8 +9982,9 @@ fn c_struct_byte_array_element_address_executes_at_byte_width() {
         block: "packet".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(6),
     };
+    let local_byte_pointer_block = automatic_test_block(function.name(), 0);
     let local_byte_pointer = crate::kernel::Pointer {
-        block: "local:byte_pointer".into(),
+        block: local_byte_pointer_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 2);
@@ -9891,7 +9998,7 @@ fn c_struct_byte_array_element_address_executes_at_byte_width() {
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::Memory::new()
-                .with_block("local:byte_pointer", 8)
+                .with_block(local_byte_pointer_block.clone(), 8)
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(
                     local_byte_pointer,
@@ -9907,7 +10014,7 @@ fn c_struct_byte_array_element_address_executes_at_byte_width() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:byte_pointer".into()),
+            .without_local_block(&local_byte_pointer_block),
     );
     let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
@@ -10795,7 +10902,7 @@ fn c_equality_binds_looser_than_relational_comparison() {
     assert!(matches!(
         mixed.body(),
         syntax::CStatement::Return(syntax::CExpression::Equal(left, right), _)
-            if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name == "a")
+            if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "a")
                 && matches!(right.as_ref(), syntax::CExpression::LessThan(_, _))
     ));
 
@@ -10827,14 +10934,13 @@ fn c_syntax_accepts_a_declaration_that_shadows_an_enclosing_local() {
         "#,
     )
     .expect("an inner `int32 y` gets a distinct kernel identity");
-    assert!(
-        format!("{:?}", function.body()).contains("y#scope0"),
-        "the shadowed declaration should be renamed in the lowered C body"
-    );
-    assert!(
-        format!("{:?}", function.body()).contains("y#scope1"),
-        "sibling shadowed declarations should receive distinct identities"
-    );
+    let declarations = automatic_declarations(function.body());
+    let ys = declarations
+        .iter()
+        .filter(|id| id.spelling() == Some("y"))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(ys.len(), 3, "each declaration has a distinct identity");
+    assert!(ys.iter().all(|id| id.function() == "shadow"));
 }
 
 #[test]
@@ -10850,10 +10956,16 @@ fn c_syntax_accepts_a_declaration_that_shadows_a_parameter() {
         "#,
     )
     .expect("an inner `struct T *p` gets a distinct kernel identity");
-    assert!(
-        format!("{:?}", function.body()).contains("p#scope0"),
-        "the shadowed pointer declaration should be renamed in the lowered C body"
+    let declarations = automatic_declarations(function.body());
+    let local = declarations
+        .iter()
+        .find(|id| id.spelling() == Some("p"))
+        .unwrap();
+    assert_ne!(
+        local,
+        function.parameters()[0].binding_name().local_id().unwrap()
     );
+    assert!(!local.is_parameter());
 }
 
 #[test]
@@ -10979,22 +11091,23 @@ fn c_syntax_targets_kernel_known_function_call_assignment() {
     .expect("caller function should parse")
     .to_kernel_function();
 
+    let local_result_block = automatic_test_block(caller.name(), 0);
     let local_pointer = crate::kernel::Pointer {
-        block: "local:result".into(),
+        block: local_result_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let environment = crate::kernel::ExecutionEnvironment::new().with_function(increment);
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::Memory::new()
-            .with_block("local:result", 4)
+            .with_block(local_result_block.clone(), 4)
             .store(local_pointer, crate::kernel::int32(42)),
     );
     let final_state = final_state.clone().with_memory(
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:result".into()),
+            .without_local_block(&local_result_block),
     );
     let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         state.clone(),
@@ -11769,10 +11882,20 @@ fn c_function_pointers_preserve_signature_and_dispatch_callback() {
         Default::default(),
         crate::kernel::ExecutionEnvironment::new()
             .with_function(callback)
-            .with_function(apply),
+            .with_function(apply.clone()),
         crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("compatible callback should execute");
+    let local_result_block = automatic_test_block(caller.name(), 0);
+    let crate::kernel::PointerBlock::AutomaticLocal { binding, .. } =
+        automatic_test_block(apply.name(), 0)
+    else {
+        unreachable!()
+    };
+    let local_lifetime_0_result_block = crate::kernel::PointerBlock::AutomaticLocal {
+        binding,
+        instance: crate::kernel::LocalStorageInstance::Lifetime(0),
+    };
     assert_eq!(
         theorem.proposition(),
         &crate::kernel::Proposition::ProgramFunctionExecutes {
@@ -11781,33 +11904,29 @@ fn c_function_pointers_preserve_signature_and_dispatch_callback() {
             arguments: Vec::new(),
             outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(38).into(),
-                // `caller` and `apply` each declare a `result`, and they are
-                // two objects. `apply` runs on the caller's memory with its
-                // own names, so its declaration takes the next generation
-                // rather than the caller's block; both happen to end at 38,
-                // which is exactly why one block for both went unnoticed.
+                // The two declarations have distinct identities and storage blocks.
                 state: Box::new(
                     crate::kernel::ExecutionState::new()
                         .with_memory(
                             crate::kernel::Memory::new()
-                                .with_block("local:result", 4)
-                                .with_block("local:lifetime:0:result", 4)
+                                .with_block(local_result_block.clone(), 4)
+                                .with_block(local_lifetime_0_result_block.clone(), 4)
                                 .store(
                                     crate::kernel::Pointer {
-                                        block: "local:lifetime:0:result".into(),
+                                        block: local_lifetime_0_result_block.clone(),
                                         offset: crate::kernel::PointerOffsetTerm::Constant(0),
                                     },
                                     crate::kernel::int32(38),
                                 )
                                 .store(
                                     crate::kernel::Pointer {
-                                        block: "local:result".into(),
+                                        block: local_result_block.clone(),
                                         offset: crate::kernel::PointerOffsetTerm::Constant(0),
                                     },
                                     crate::kernel::int32(38),
                                 )
-                                .without_local_block(&"local:result".into())
-                                .without_local_block(&"local:lifetime:0:result".into())
+                                .without_local_block(&local_result_block)
+                                .without_local_block(&local_lifetime_0_result_block)
                         )
                         .with_next_local_lifetime(1)
                 ),
@@ -12335,8 +12454,9 @@ fn c_memory_safety_demo_fill_three_ints() {
         block: "buf".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(8),
     };
+    let local_i_block = automatic_test_block(function.name(), 0);
     let local_i = crate::kernel::Pointer {
-        block: "local:i".into(),
+        block: local_i_block.clone(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let initial_memory = crate::kernel::Memory::new().with_block("buf", 12);
@@ -12346,12 +12466,12 @@ fn c_memory_safety_demo_fill_three_ints() {
         .with_resource_context(resources.clone());
     let final_memory = crate::kernel::Memory::new()
         .with_block("buf", 12)
-        .with_block("local:i", 4)
+        .with_block(local_i_block.clone(), 4)
         .store(first, crate::kernel::int32(0))
         .store(second, crate::kernel::int32(1))
         .store(third, crate::kernel::int32(2))
         .store(local_i, crate::kernel::int32(3));
-    let final_memory = final_memory.without_local_block(&"local:i".into());
+    let final_memory = final_memory.without_local_block(&local_i_block);
     let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
@@ -12560,7 +12680,7 @@ fn c_floating_point_conditions_accept_symbolic_operands() {
     assert!(matches!(
         functions[0].body(),
         syntax::CStatement::Return(syntax::CExpression::LessThan(left, right), _)
-            if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name == "value")
+            if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "value")
                 && matches!(right.as_ref(), syntax::CExpression::Float32Literal(bits) if *bits == 1.0f32.to_bits())
     ));
     assert!(matches!(
@@ -12569,12 +12689,12 @@ fn c_floating_point_conditions_accept_symbolic_operands() {
             if matches!(left.as_ref(), syntax::CExpression::FloatClassification {
                 expression,
                 classification: syntax::CFloatClassification::Finite,
-            } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name == "value"))
+            } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "value"))
                 && matches!(right.as_ref(), syntax::CExpression::Not(inner)
                     if matches!(inner.as_ref(), syntax::CExpression::FloatClassification {
                         expression,
                         classification: syntax::CFloatClassification::Nan,
-                    } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name == "value")))
+                    } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name.source_name() == "value")))
     ));
 
     let compare = functions[0].to_kernel_function();
@@ -12732,10 +12852,11 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
                 .store(replacement.clone(), crate::kernel::int32(42)),
         )
         .with_resource_context(resources.clone());
+    let local_link_block = automatic_test_block(function.name(), 0);
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::Memory::new()
-                .with_block("local:link", 8)
+                .with_block(local_link_block.clone(), 8)
                 .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
                 .with_classed_block(
                     "replacement".into(),
@@ -12744,7 +12865,7 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
                 )
                 .store(
                     crate::kernel::Pointer {
-                        block: "local:link".into(),
+                        block: local_link_block.clone(),
                         offset: crate::kernel::PointerOffsetTerm::Constant(0),
                     },
                     crate::kernel::ProgramValue::typed_pointer(
@@ -12766,7 +12887,7 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
         final_state
             .memory()
             .clone()
-            .without_local_block(&"local:link".into()),
+            .without_local_block(&local_link_block),
     );
     let arguments = vec![
         crate::kernel::program_expression::pointer_value(root),
@@ -15158,4 +15279,33 @@ fn c_sizeof_string_literal_uses_the_array_extent_without_a_variable() {
     };
     assert_eq!(value.native().as_ref(), &crate::kernel::int32(5));
     assert_eq!(function.string_literals().len(), 1);
+}
+
+fn automatic_declarations(body: &syntax::CStatement) -> Vec<crate::kernel::LocalBindingId> {
+    let mut pending = vec![body];
+    let mut declarations = Vec::new();
+    while let Some(statement) = pending.pop() {
+        match statement {
+            syntax::CStatement::Declare { name, .. }
+            | syntax::CStatement::DeclareStructValue { name, .. } => {
+                declarations.push(name.local_id().expect("C automatic declaration").clone());
+            }
+            _ => {}
+        }
+        super::address_taken::child_statements(statement, &mut Vec::new(), &mut pending);
+    }
+    declarations
+}
+
+/// Expected declaration identity, independent of source spelling metadata.
+fn automatic_test_block(function: &str, ordinal: u32) -> crate::kernel::PointerBlock {
+    crate::kernel::PointerBlock::AutomaticLocal {
+        binding: crate::kernel::LocalBindingId::new(
+            crate::kernel::LocalFunctionId::new(None, function.to_owned()),
+            false,
+            ordinal,
+            None,
+        ),
+        instance: crate::kernel::LocalStorageInstance::Implicit,
+    }
 }

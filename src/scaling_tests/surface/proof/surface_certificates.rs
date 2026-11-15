@@ -6,7 +6,7 @@ fn sequence_child_spelling_visits_only_the_written_elements() {
     for length in [32, 128, 512] {
         let singleton = |index| {
             ContractExpression::SequenceLiteral(vec![ContractExpression::ProgramExpression(
-                ProgramExpression::Variable(format!("v{index}")),
+                ProgramExpression::Variable(format!("v{index}").into()),
             )])
         };
         // Deliberately skewed source concatenation must not make flattening

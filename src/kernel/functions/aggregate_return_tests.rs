@@ -1387,7 +1387,7 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
         }
         if !names.is_empty() {
             statements.push(program_end_automatic_lifetimes(
-                names.iter().rev().cloned().collect(),
+                names.iter().rev().cloned().map(Into::into).collect(),
             ));
         }
         // Ordinary local storage has implicit authority rather than a range fact.

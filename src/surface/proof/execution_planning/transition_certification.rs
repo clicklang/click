@@ -1179,7 +1179,10 @@ mod condition_transition_tests {
         .expect("field getter should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
         let state = ExecutionState::new()
-            .with_local("owner", ProgramValue::pointer(pointer.clone()))
+            .with_local(
+                parsed[0].parameters()[0].binding_name(),
+                ProgramValue::pointer(pointer.clone()),
+            )
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
@@ -1262,7 +1265,10 @@ mod condition_transition_tests {
         .expect("compound field update should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
         let state = ExecutionState::new()
-            .with_local("counter", ProgramValue::pointer(pointer.clone()))
+            .with_local(
+                parsed[0].parameters()[0].binding_name(),
+                ProgramValue::pointer(pointer.clone()),
+            )
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),

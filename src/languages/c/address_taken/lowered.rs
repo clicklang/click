@@ -7,7 +7,7 @@ use crate::kernel::{
     ProgramExpression, ProgramFunction, ProgramStatement, ProgramType, ProgramValue,
 };
 
-fn declare(summary: &mut AddressTakenSummary, name: &str, ty: ProgramType) {
+fn declare(summary: &mut AddressTakenSummary, name: &crate::kernel::BindingName, ty: ProgramType) {
     if ty.is_pointer()
         || matches!(
             ty,
@@ -34,9 +34,9 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
     for parameter in function.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if parameter.aggregate_layout().is_some() {
-            summary.taken.insert(parameter.name().to_owned());
+            summary.taken.insert(parameter.binding_name().to_owned());
         } else {
-            declare(summary, parameter.name(), parameter.program_type());
+            declare(summary, parameter.binding_name(), parameter.program_type());
         }
     }
     let mut statements = vec![function.body()];
@@ -54,7 +54,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 expressions.extend(initializer.iter().map(|expression| (expression, false)));
             }
             ProgramStatement::DeclareAggregate { name, .. } => {
-                summary.taken.insert(name.clone());
+                summary.taken.insert(name.clone().into());
             }
             ProgramStatement::Skip
             | ProgramStatement::EndScalarReference(_)
@@ -109,7 +109,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 handler,
                 ..
             } => {
-                declare(summary, binding, ProgramType::Int32);
+                declare(summary, &binding.clone().into(), ProgramType::Int32);
                 statements.extend([try_body.as_ref(), handler.as_ref()]);
             }
             ProgramStatement::If {
@@ -140,7 +140,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             }
             ProgramExpression::Variable(name) => {
                 if addressed {
-                    summary.taken.insert(name.clone());
+                    summary.taken.insert(name.clone().into());
                 }
             }
             ProgramExpression::StringLiteral(_)
@@ -224,9 +224,9 @@ mod tests {
             ))],
         ));
         let summary = summarize_address_taken([&first, &second]);
-        assert!(summary.never_taken().contains("capture"));
-        assert!(!summary.never_taken().contains("escaped"));
-        assert!(!summary.never_taken().contains("array"));
+        assert!(summary.never_taken().contains(&("capture").into()));
+        assert!(!summary.never_taken().contains(&("escaped").into()));
+        assert!(!summary.never_taken().contains(&("array").into()));
     }
 
     #[test]

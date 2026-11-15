@@ -152,7 +152,7 @@ impl TerminationObligations {
                     requirements.push(TerminationCallObligation::Indirect {
                         object: object.to_string(),
                         diverging_contract: diverging_objects
-                            .get(object)
+                            .get(&object.into())
                             .or_else(|| diverging_objects.values().next())
                             .cloned(),
                     });

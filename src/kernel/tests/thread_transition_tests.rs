@@ -1763,7 +1763,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
             .unwrap()
             .has_active_memory_loans()
     );
-    let names = vec!["job".to_string()];
+    let names = vec!["job".into()];
     assert!(crate::kernel::eval::end_scope_automatic_lifetimes(active.parent(), &names).is_err());
     let state = active.parent();
     for outcome in [

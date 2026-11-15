@@ -3,7 +3,7 @@ use super::*;
 fn selection_work(selected: u32, unrelated: u32) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
     let (mut state, mut values) = aggregate_entry(selected);
-    let names = values.keys().cloned().collect();
+    let names = values.keys().cloned().map(Into::into).collect();
     for index in 0..unrelated {
         let name = format!("unrelated_{index}");
         let value = crate::kernel::int32(index);

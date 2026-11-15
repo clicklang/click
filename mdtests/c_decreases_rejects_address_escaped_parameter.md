@@ -26,5 +26,5 @@ int32 escaped_parameter(int32 n) {
 ```
 
 ```expect
-fail: termination measure `n` in `escaped_parameter` has its address taken
+fail: termination measure `"c_decreases_rejects_address_escaped_parameter.c"::escaped_parameter.parameter(0)` in `escaped_parameter` has its address taken
 ```

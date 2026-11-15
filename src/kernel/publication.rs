@@ -76,7 +76,7 @@ pub(super) fn is_publication_operation(function_name: &str) -> bool {
 
 pub(super) fn execute_publication_paths(
     state: &ExecutionState,
-    target: Option<&str>,
+    target: Option<&BindingName>,
     function_name: &str,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,

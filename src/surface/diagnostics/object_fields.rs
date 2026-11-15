@@ -7,12 +7,9 @@
 //! `g.payload.number`. A union whose members share an offset and width, an
 //! array member, or an access whose width matches no field keeps the offset.
 //!
-//! A struct-typed local is named the same way. Its block carries its kernel
-//! name (`local:s`, `local:lifetime:2:s`, `local:s#scope1` for a shadowing
-//! declaration), and the table is keyed by that name from the declarations
-//! themselves, which carry the layout. Two declarations in sibling scopes
-//! can share a kernel name; when their layouts differ, the name keeps the
-//! offset. A global's block is its unique kernel name.
+//! A struct-typed C local is indexed by its typed declaration identity. Every
+//! lifetime and call-frame instance of that declaration uses the same layout.
+//! Non-C legacy bindings keep their named storage keys.
 //!
 //! Diagnostics only: nothing a check decides reads these spellings. The table
 //! is built when a function's verification starts, from its declarations.
@@ -33,7 +30,10 @@ struct ObjectField {
 #[derive(Default)]
 struct ObjectFields {
     globals: std::collections::HashMap<String, (String, u32, Vec<ObjectField>)>,
-    locals: std::collections::HashMap<String, Option<(String, u32, Vec<ObjectField>)>>,
+    locals: std::collections::HashMap<
+        crate::kernel::BindingName,
+        Option<(String, u32, Vec<ObjectField>)>,
+    >,
     /// The function's struct layouts by name, for the struct a pointer field
     /// points at.
     structs: syntax::DeclarationMap<crate::languages::interface::RecordLayout>,
@@ -75,13 +75,11 @@ pub(crate) fn enter_ambient_object_fields(
         if let syntax::CStatement::DeclareStructValue { name, layout, .. } = statement {
             let mut fields = Vec::new();
             collect_struct_fields(function, layout, "", 0, &mut fields, 0);
-            // A shadowing declaration's kernel name is `s#scope1`; the
-            // reader wrote `s`.
-            let source = name.split('#').next().unwrap_or(name).to_string();
+            let source = name.source_name().to_owned();
             let declared = (source, layout.size_bytes(), fields);
             objects
                 .locals
-                .entry(name.clone())
+                .entry(name.binding().clone())
                 .and_modify(|existing| {
                     if existing.as_ref().is_some_and(|existing| {
                         existing.1 != declared.1 || !same_fields(&existing.2, &declared.2)
@@ -112,8 +110,14 @@ fn same_fields(left: &[ObjectField], right: &[ObjectField]) -> bool {
 /// kernel name its block ends with.
 fn declared_object<'a>(
     objects: &'a ObjectFields,
-    block: &str,
+    block: &PointerBlock,
 ) -> Option<&'a (String, u32, Vec<ObjectField>)> {
+    if let PointerBlock::AutomaticLocal { binding, .. } = block {
+        return objects.locals.get(&binding.clone().into())?.as_ref();
+    }
+    let PointerBlock::Concrete(block) = block else {
+        return None;
+    };
     if PointerBlock::is_local_name(block) {
         // This function's own automatic objects only: a callee's frame
         // (`local:frame:3:s`) can reuse a name for another type.
@@ -125,7 +129,7 @@ fn declared_object<'a>(
         if name.contains(':') {
             return None;
         }
-        return objects.locals.get(name)?.as_ref();
+        return objects.locals.get(&name.into())?.as_ref();
     }
     objects.globals.get(block)
 }
@@ -260,7 +264,11 @@ pub(super) fn ambient_struct_layout(
     })
 }
 
-pub(super) fn object_field_spelling(block: &str, offset: u32, width: u32) -> Option<String> {
+pub(super) fn object_field_spelling(
+    block: &PointerBlock,
+    offset: u32,
+    width: u32,
+) -> Option<String> {
     AMBIENT_OBJECT_FIELDS.with(|slot| {
         let slot = slot.borrow();
         let (name, _, fields) = declared_object(slot.as_ref()?, block)?;
@@ -277,9 +285,7 @@ pub(super) fn object_field_spelling(block: &str, offset: u32, width: u32) -> Opt
 
 /// The declared object's name when a range covers exactly its complete ABI storage.
 pub(super) fn object_range_spelling(range: &MemoryRange) -> Option<String> {
-    let PointerBlock::Concrete(block) = &range.base().block else {
-        return None;
-    };
+    let block = &range.base().block;
     let PointerOffsetTerm::Constant(offset) = &range.base().offset else {
         return None;
     };

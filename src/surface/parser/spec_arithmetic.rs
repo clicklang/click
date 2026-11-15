@@ -132,7 +132,7 @@ impl Parser {
                         ContractExpression::Binding(name)
                         | ContractExpression::CBinding(name)
                         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                            name,
+                            crate::kernel::BindingName::Named(name),
                         )) => matches!(
                             self.specification_binding_kind(name),
                             Some(SpecificationBinding::Function {
@@ -147,9 +147,9 @@ impl Parser {
                 }
                 ContractExpression::Binding(name)
                 | ContractExpression::CBinding(name)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                    self.specification_binding_kind(name)
-                }
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Named(name),
+                )) => self.specification_binding_kind(name),
                 _ => None,
             }),
         };
@@ -258,9 +258,9 @@ impl Parser {
         match value {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-                if self.local_operand(&LocalOperands::new(), name).is_some() =>
-            {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if self.local_operand(&LocalOperands::new(), name).is_some() => {
                 self.local_operand(&LocalOperands::new(), name) == Some(LocalOperand::COnly)
             }
             _ => {
@@ -547,12 +547,12 @@ impl Parser {
             // `c(name)` is the program's binding, never a Click Integer.
             ContractExpression::CBinding(_) => false,
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                match self.local_operand(scope, name) {
-                    Some(operand) => operand == LocalOperand::Integer,
-                    None => self.integer_leaf(expression),
-                }
-            }
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => match self.local_operand(scope, name) {
+                Some(operand) => operand == LocalOperand::Integer,
+                None => self.integer_leaf(expression),
+            },
             leaf => self.integer_leaf(leaf),
         }
     }
@@ -566,7 +566,9 @@ impl Parser {
             }
             ContractExpression::CBinding(_) => false,
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => {
                 self.names.contains_any(NameKind::INTEGERS, name)
                     || crate::surface::is_loop_iterations_spelling(name)
                     || matches!(
@@ -651,18 +653,19 @@ impl Parser {
             }),
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-                if self.local_operand(scope, name).is_some() =>
-            {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if self.local_operand(scope, name).is_some() => {
                 self.local_operand(scope, name) == Some(LocalOperand::COnly)
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-                if matches!(
-                    self.names.arm_binding_types.get(name),
-                    Some(AlgebraicFieldType::C { interface_type, .. }) if interface_type.is_pointer()
-                ) =>
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if matches!(
+                self.names.arm_binding_types.get(name),
+                Some(AlgebraicFieldType::C { interface_type, .. }) if interface_type.is_pointer()
+            ) =>
             {
                 true
             }
@@ -698,7 +701,9 @@ impl Parser {
             } if target_type.is_pointer() => true,
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => {
                 let c_only = |interface_type: &InterfaceType| {
                     interface_type.is_pointer()
                         || matches!(
@@ -829,11 +834,9 @@ impl Parser {
             ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
             ContractExpression::Binding(ref name)
             | ContractExpression::CBinding(ref name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(ref name))
-                if self.local_operand(scope, name) == Some(LocalOperand::Unknown) =>
-            {
-                expression
-            }
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(ref name),
+            )) if self.local_operand(scope, name) == Some(LocalOperand::Unknown) => expression,
             // An Integer operand, including one under `old` or `at`, is
             // already exact.
             leaf if self.integer_operand_in_scope(&leaf, scope) => leaf,
@@ -877,12 +880,11 @@ impl Parser {
             ContractExpression::IntegerLiteral(_) => None,
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-                if self.local_operand(scope, name).is_some() =>
-            {
-                (self.local_operand(scope, name) == Some(LocalOperand::Machine))
-                    .then_some(expression)
-            }
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if self.local_operand(scope, name).is_some() => (self.local_operand(scope, name)
+                == Some(LocalOperand::Machine))
+            .then_some(expression),
             leaf if self.integer_operand_in_scope(leaf, scope)
                 || self.has_c_only_operand_in_scope(leaf, scope) =>
             {
@@ -902,7 +904,9 @@ impl Parser {
             } => self.machine_operand_type(inner),
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .names
                 .program_parameter_types
                 .get(name)
@@ -916,6 +920,9 @@ impl Parser {
                 }),
             ContractExpression::ProgramExpression(lowered)
             | ContractExpression::CUnary { lowered, .. } => match lowered {
+                ProgramExpression::Variable(crate::kernel::BindingName::Local(id)) => id
+                    .program_type()
+                    .map(crate::surface::generics::interface_type_from_program_type),
                 ProgramExpression::Value(value) => {
                     Some(crate::surface::generics::interface_type_from_program_type(
                         value.program_type(),

@@ -2337,7 +2337,9 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let scalar = |index: usize| {
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(format!("offset{index}")))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            format!("offset{index}").into(),
+        ))
     };
     let integer = |index| ContractExpression::Call {
         name: "to_integer".into(),

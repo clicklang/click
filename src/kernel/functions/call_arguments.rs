@@ -38,7 +38,7 @@ pub(super) fn with_contract_interface_argument_views(
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
         state.locals.set_typed_with_all_qualifiers(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
             parameter.is_volatile(),
@@ -822,7 +822,7 @@ fn bind_program_function_arguments_impl(
         // its own object is the access, so it needs an address-backed slot for
         // the volatile event to name.
         .filter(|parameter| {
-            (address_taken.contains(parameter.name()) || parameter.is_volatile())
+            (address_taken.contains(parameter.binding_name()) || parameter.is_volatile())
                 && (parameter.is_volatile() && parameter.program_type().is_pointer()
                     || matches!(
                         parameter.program_type(),
@@ -836,7 +836,7 @@ fn bind_program_function_arguments_impl(
                             | ProgramType::Float64
                     ))
         })
-        .map(|parameter| parameter.name())
+        .map(|parameter| parameter.binding_name())
         .collect::<BTreeSet<_>>();
     let frame = caller_state.next_local_frame();
     let has_aggregate_parameters = function
@@ -898,7 +898,7 @@ fn bind_program_function_arguments_impl(
                 return None;
             }
             let source = pointer.pointer().clone();
-            let slot = Memory::frame_local_pointer(frame, parameter.name());
+            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.block, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
             // is the read of that field before the object is declared, so
@@ -927,7 +927,7 @@ fn bind_program_function_arguments_impl(
                     .with_block(slot.block.clone(), layout.size_bytes()),
             );
             callee_state.locals.set_aggregate_object_at(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 layout.clone(),
                 slot.clone(),
             );
@@ -944,8 +944,8 @@ fn bind_program_function_arguments_impl(
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
-        if address_taken_parameters.contains(parameter.name()) {
-            let slot = Memory::frame_local_pointer(frame, parameter.name());
+        if address_taken_parameters.contains(parameter.binding_name()) {
+            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.block, parameter.program_type().abi_alignment());
             callee_state.set_memory(
                 callee_state
@@ -957,7 +957,7 @@ fn bind_program_function_arguments_impl(
             callee_state
                 .locals
                 .set_retained_typed_qualified_with_all_qualifiers(
-                    parameter.name().to_string(),
+                    parameter.binding_name().clone(),
                     roots.and_then(|roots| roots.get(index)).map_or_else(
                         || ExecutionValue::from(value.clone()),
                         |source| source.retain_coerced_argument(value.clone()),
@@ -973,13 +973,13 @@ fn bind_program_function_arguments_impl(
             callee_state
                 .locals
                 .set_retained_typed_qualified_with_all_qualifiers(
-                    parameter.name().to_string(),
+                    parameter.binding_name().clone(),
                     roots.and_then(|roots| roots.get(index)).map_or_else(
                         || ExecutionValue::from(value.clone()),
                         |source| source.retain_coerced_argument(value.clone()),
                     ),
                     parameter.program_type(),
-                    Memory::value_parameter_pointer(parameter.name()),
+                    Memory::value_parameter_pointer(parameter.binding_name()),
                     parameter.is_volatile(),
                     parameter.pointee_is_volatile(),
                     parameter.is_constant(),
@@ -1073,7 +1073,7 @@ pub(super) fn bind_contract_arguments(
                 return None;
             }
             let source = pointer.pointer().clone();
-            let slot = Memory::frame_local_pointer(frame, parameter.name());
+            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.block, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(
                 callee_state.memory.clone(),
@@ -1088,7 +1088,7 @@ pub(super) fn bind_contract_arguments(
                     .with_block(slot.block.clone(), layout.size_bytes()),
             );
             callee_state.locals.set_aggregate_object_at(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 layout.clone(),
                 slot,
             );
@@ -1101,13 +1101,13 @@ pub(super) fn bind_contract_arguments(
         callee_state
             .locals
             .set_retained_typed_qualified_with_all_qualifiers(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 roots.get(index).map_or_else(
                     || ExecutionValue::from(value.clone()),
                     |source| source.retain_coerced_argument(value.clone()),
                 ),
                 parameter.program_type(),
-                Memory::value_parameter_pointer(parameter.name()),
+                Memory::value_parameter_pointer(parameter.binding_name()),
                 parameter.is_volatile(),
                 parameter.pointee_is_volatile(),
                 parameter.is_constant(),
@@ -1254,7 +1254,7 @@ mod pointer_argument_tests {
         );
         crate::kernel::loops::assign_call_result(
             &mut caller,
-            "received",
+            &("received").into(),
             returned,
             &mut vec![],
             &PureFactContext::new(),
@@ -1306,7 +1306,7 @@ mod pointer_argument_tests {
         );
         crate::kernel::loops::assign_call_result(
             &mut caller,
-            "received",
+            &("received").into(),
             returned,
             &mut vec![],
             &PureFactContext::new(),
@@ -1472,7 +1472,7 @@ mod pointer_return_tests {
         assert!(
             crate::kernel::loops::assign_call_result(
                 &mut state,
-                "mutable",
+                &("mutable").into(),
                 result.clone(),
                 &mut Vec::new(),
                 &PureFactContext::new()
@@ -1481,7 +1481,7 @@ mod pointer_return_tests {
         );
         crate::kernel::loops::assign_call_result(
             &mut state,
-            "fresh",
+            &("fresh").into(),
             result,
             &mut Vec::new(),
             &PureFactContext::new(),

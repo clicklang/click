@@ -1739,7 +1739,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
         .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
-        expanded.contains(" if at(region(3).entry, copied)"),
+        expanded.contains(" if at(region(3).entry, \"pick_cases.c\"::use_pick.local(0))"),
         "{expanded}"
     );
     assert!(
@@ -3903,7 +3903,9 @@ int32 early(int32 x) {
     let expanded = expand_checked_function_claim(click, &verified_for_label, "early.contract")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(
-        expanded.contains("if at(region(3).entry, x) == at(region(3).entry, 1) {"),
+        expanded.contains(
+            "if at(region(3).entry, \"early.c\"::early.parameter(0)) == at(region(3).entry, 1) {"
+        ),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources)
@@ -8117,8 +8119,8 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let corrupted_result = { verify_c_sources(&corrupted, &[("compare_swap2.c", c_source)]) };
     corrupted_result.expect_err("a corrupted branched predicate expansion must be rejected");
 
-    let condition = "at(region(1).entry, p[1]) < at(region(1).entry, p[0])";
-    let wrong_condition = "at(region(1).entry, p[0]) < at(region(1).entry, p[1])";
+    let condition = "at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0])";
+    let wrong_condition = "at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1])";
     let corrupted = expanded.replacen(condition, wrong_condition, 1);
     assert_ne!(
         corrupted, expanded,
@@ -10991,7 +10993,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
                 if outer.then_tactics.iter().any(|tactic| matches!(
                     tactic,
                     ProofTactic::If(inner) if inner.condition == ClickProposition::Comparison {
-                        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+                        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
                         operator: ComparisonOperator::GreaterEqual,
                         right: ContractExpression::IntegerLiteral("0".into()),
                     }
@@ -16504,7 +16506,8 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the automatic preservation should expand");
     assert!(
-        expanded.contains("if x == 0") && expanded.contains("if y == 0"),
+        expanded.contains("::two_ifs.local(1) == 0")
+            && expanded.contains("::two_ifs.local(2) == 0"),
         "both sibling C `if`s should expand to proof cases: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -18343,7 +18346,8 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
         verify_c_sources(&expanded, &c)
             .unwrap_or_else(|error| panic!("{case}: {}\n{expanded}", error.message()));
         if case == "then only" {
-            let file = crate::surface::parse(&expanded).unwrap();
+            let file = crate::surface::verification::parse_click_file_with_c_sources(&expanded, &c)
+                .unwrap();
             let SourceProof::Script(tactics) = file.function_blocks()[0].covering_proof().unwrap()
             else {
                 panic!("expanded grouped proof should be a script");

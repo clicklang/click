@@ -89,5 +89,5 @@ int32 spin_past_a_switch(int32 n) {
 ```
 
 ```expect
-fail: could not certify C termination: recursive call to `spin_past_a_switch` must pass `n - K` for a positive constant K
+fail: could not certify C termination: recursive call to `spin_past_a_switch` must pass `"c_decreases_checks_past_a_switch.c"::spin_past_a_switch.parameter(0) - K` for a positive constant K
 ```

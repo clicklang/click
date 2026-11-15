@@ -2244,7 +2244,7 @@ fn current(expression: ProgramExpression) -> ContractExpression {
 }
 
 fn current_var(name: &str) -> ContractExpression {
-    current(ProgramExpression::Variable(name.to_string()))
+    current(ProgramExpression::Variable((name.to_string()).into()))
 }
 
 fn current_int(value: u32) -> ContractExpression {

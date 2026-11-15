@@ -29,5 +29,5 @@ int32 run() { ensures result == 0; }
 ```
 
 ```expect
-fail: Requires separate(*holder, alias->mu)
+fail: Requires separate(*"mutex_storage_free_symbolic_alias.c"::run.local(0), "mutex_storage_free_symbolic_alias.c"::run.local(1)->mu)
 ```

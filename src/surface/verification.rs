@@ -3835,6 +3835,26 @@ pub(in crate::surface) fn c_statement_calls(
 
 /// [`c_statement_calls`], also recording in `allocator` each allocator
 /// function the body calls, which is not a call dependency.
+fn source_struct_names(
+    bindings: &BTreeMap<crate::kernel::BindingName, String>,
+) -> BTreeMap<String, String> {
+    let mut names: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for (binding, ty) in bindings {
+        names
+            .entry(binding.source_name().to_owned())
+            .and_modify(|previous| {
+                if previous.as_ref() != Some(ty) {
+                    *previous = None;
+                }
+            })
+            .or_insert_with(|| Some(ty.clone()));
+    }
+    names
+        .into_iter()
+        .filter_map(|(name, ty)| Some((name, ty?)))
+        .collect()
+}
+
 fn c_statement_calls_recording(
     function: &crate::languages::interface::ImportedFunction,
     allocator: &mut BTreeSet<&'static str>,
@@ -3849,7 +3869,7 @@ fn c_statement_calls_recording(
                 name,
                 ..
             } => {
-                names.insert(name.clone());
+                names.insert(name.source_name().to_owned());
             }
             syntax::CStatement::Seq(first, second) => {
                 collect_function_pointer_names(first, names);
@@ -4319,7 +4339,9 @@ pub(in crate::surface) fn termination_measure_name(
 ) -> Result<String, ClickError> {
     match expression {
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name) => Ok(name.clone()),
         _ => Err(ClickError::new(format!(
             "{context} must name one int32 C variable; compound ranking expressions are not yet supported"
@@ -4419,7 +4441,9 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     match component {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Some(name),
         _ => None,
     }
 }
@@ -4866,6 +4890,7 @@ impl parser::ProgramLayouts {
             .map(|function| (function.name(), function.source_name()))
             .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
+            tables.register_local_bindings(function);
             tables.register_string_literals(function);
             let captures = function.closure_captures();
             if !captures.is_empty() {
@@ -4887,7 +4912,7 @@ impl parser::ProgramLayouts {
             }
             tables.aggregate_objects.insert(
                 function.source_name().to_string(),
-                function.local_struct_values().clone(),
+                source_struct_names(function.local_struct_values()),
             );
             if let Some(interface) = function.trait_interface()
                 && let Some(interface) = source_names.get(interface)
@@ -4991,9 +5016,17 @@ impl parser::ProgramLayouts {
                 function.source_name().to_string(),
                 parser::FunctionLocals {
                     execution_name: Some(function.name().to_string()),
-                    struct_pointers: function.local_struct_pointers().clone(),
-                    references: function.local_references().clone(),
-                    pointers: function.local_pointers().clone(),
+                    struct_pointers: source_struct_names(function.local_struct_pointers()),
+                    references: function
+                        .local_references()
+                        .iter()
+                        .map(|name| name.source_name().to_owned())
+                        .collect(),
+                    pointers: function
+                        .local_pointers()
+                        .iter()
+                        .map(|name| name.source_name().to_owned())
+                        .collect(),
                     loop_iterators: function.loop_iterators().to_vec(),
                 },
             );
@@ -6046,7 +6079,7 @@ pub(in crate::surface) fn function_resource_summary(
         let result_binding = BTreeMap::from([(
             "result".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
             )),
         )]);
         let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
@@ -6143,7 +6176,7 @@ pub(in crate::surface) fn function_resource_constructors(
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
                 )),
             )]);
             let resource = substitute_resource_clause_for_summary_in(
@@ -7844,7 +7877,7 @@ int32 answer() {
             parsed.values().map(|(_, function)| function),
         );
         assert!(
-            !summary.never_taken().contains("x"),
+            !summary.never_taken().contains(&("x").into()),
             "`&x` is written in v4, so `x` must not be reported: {:?}",
             summary.never_taken()
         );

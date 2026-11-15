@@ -2567,7 +2567,7 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
             let paths = execute_execution_statement_paths(
                 &state,
                 &ProgramStatement::HeapAllocate {
-                    target: "p".to_string(),
+                    target: ("p".to_string()).into(),
                     bytes: crate::kernel::program_expression::int32_literal(bytes),
                     zeroed,
                     object_type: Some((class.clone(), 8, alignment)),
@@ -2628,7 +2628,7 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     let paths = execute_execution_statement_paths(
         &state,
         &ProgramStatement::HeapAllocate {
-            target: "p".to_string(),
+            target: ("p".to_string()).into(),
             bytes: crate::kernel::program_expression::int32_literal(8),
             zeroed: false,
             object_type: None,

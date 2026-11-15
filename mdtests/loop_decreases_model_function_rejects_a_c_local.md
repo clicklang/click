@@ -63,5 +63,5 @@ void countdown(int32 n) {
 ```
 
 ```expect
-fail: reads a resource binder's model and also the C variable `n`
+fail: reads a resource binder's model and also the C variable `"loop_decreases_model_function_rejects_a_c_local.c"::countdown.parameter(0)`
 ```

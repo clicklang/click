@@ -118,6 +118,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                 crate::kernel::set_never_address_taken_locals(
                     std::iter::once("target".to_string())
                         .chain((0..size).map(|index| format!("beside_{index}")))
+                        .map(Into::into)
                         .collect(),
                 );
                 let declare = |state: &ExecutionState, name: &str, interface_type: ProgramType| {
@@ -197,7 +198,10 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
     for size in [16, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..size).map(|index| format!("hidden_{index}")).collect(),
+            (0..size)
+                .map(|index| format!("hidden_{index}"))
+                .map(Into::into)
+                .collect(),
         );
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
@@ -1949,7 +1953,10 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
     for size in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..size).map(|index| format!("hidden_{index}")).collect(),
+            (0..size)
+                .map(|index| format!("hidden_{index}"))
+                .map(Into::into)
+                .collect(),
         );
         let assumptions = PureFactContext::new();
         let base = ResourceContext::new().unchecked_with_facts([
@@ -2058,7 +2065,10 @@ fn observable_projection_shares_first_projection_across_cold_forks() {
     for size in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..size).map(|index| format!("hidden_{index}")).collect(),
+            (0..size)
+                .map(|index| format!("hidden_{index}"))
+                .map(Into::into)
+                .collect(),
         );
         let root =
             ResourceContext::new().unchecked_with_facts(
@@ -2102,7 +2112,10 @@ fn observable_projection_reuses_local_edits_across_sibling_paths() {
     for size in [4usize, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..size).map(|i| format!("hidden_{i}")).collect(),
+            (0..size)
+                .map(|i| format!("hidden_{i}"))
+                .map(Into::into)
+                .collect(),
         );
         let assumptions = PureFactContext::new();
         let mut source = ResourceContext::new().unchecked_with_facts([
@@ -2133,9 +2146,7 @@ fn observable_projection_reuses_local_edits_across_sibling_paths() {
             changed
         );
         assert_eq!(source.facts().len(), size + 2);
-        crate::kernel::withdraw_never_address_taken_locals(&BTreeSet::from(
-            ["hidden_0".to_owned()],
-        ));
+        crate::kernel::withdraw_never_address_taken_locals(&BTreeSet::from(["hidden_0".into()]));
         assert_ne!(
             source.observable_facts_assuming_valid(&assumptions),
             expected
@@ -2150,7 +2161,10 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
     for size in [16usize, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..size).map(|i| format!("hidden_{i}")).collect(),
+            (0..size)
+                .map(|i| format!("hidden_{i}"))
+                .map(Into::into)
+                .collect(),
         );
         let assumptions = PureFactContext::new();
         let owner = owned_range(heap_base(1), 0, 4);
@@ -2369,7 +2383,11 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
         .chain([("p".to_owned(), TARGET_HEAP)])
         .collect::<Vec<_>>();
     crate::kernel::set_never_address_taken_locals(
-        locals.iter().map(|(name, _)| name.clone()).collect(),
+        locals
+            .iter()
+            .map(|(name, _)| name.clone())
+            .map(Into::into)
+            .collect(),
     );
     let (mut memory, mut resources) = locals.iter().fold(
         (Memory::new(), ResourceContext::new()),

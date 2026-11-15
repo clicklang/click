@@ -5623,7 +5623,10 @@ mod tests {
         }
         let mut guards = Vec::new();
         visit(function.body(), &mut guards);
-        assert_eq!(guards, ["LessThan(Variable(\"i\"), Variable(\"n\"))"]);
+        assert_eq!(
+            guards,
+            ["LessThan(Variable(Named(\"i\")), Variable(Named(\"n\")))"]
+        );
     }
 
     #[test]
