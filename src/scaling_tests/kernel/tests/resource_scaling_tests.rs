@@ -2450,6 +2450,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,

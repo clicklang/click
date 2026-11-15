@@ -27,6 +27,9 @@ pub(in crate::surface) fn finish_contract_body_root(
             crate::kernel::ContractCompletionGoal::Boundary { case } => {
                 format!("closing obligations for entry case {case}")
             }
+            crate::kernel::ContractCompletionGoal::RecursiveDescent { case } => {
+                format!("recursive descent for entry case {case}")
+            }
             crate::kernel::ContractCompletionGoal::Claim { case, key } => format!(
                 "{} in entry case {case}",
                 crate::surface::diagnostics::describe_unverified_contract_claims(function, &[key])
@@ -734,7 +737,9 @@ fn prove_claims_by_checked_tactics(
         surface_propositions,
         PersistentSequence::default(),
     );
-    initial.core = opened_entry.into_execution_core();
+    initial.core = opened_entry
+        .into_execution_core_with_environment(function_environment)
+        .map_err(ClickError::new)?;
     // The checked drivers are tried in order: the structural driver owns
     // scopes and branches, and the flat driver owns linear proofs. A decline
     // tries the next checked driver; an error is terminal.

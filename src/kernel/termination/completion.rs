@@ -421,6 +421,7 @@ mod tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, vec![], body),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,

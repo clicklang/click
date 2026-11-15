@@ -293,6 +293,7 @@ mod cached_read_completion_tests {
             program_function_specification(state.clone(), vec![], vec![], outcome.clone());
         let path = SymbolicExecutionPath {
             call_parameters: None,
+            descent_step: None,
             completion_origin: Some(outcome.clone()),
             call_result: None,
             assumptions: PureFactContext::new(),
@@ -3524,6 +3525,7 @@ pub fn program_verified_function_rule(
             proofs.iter().map(|proof| proof.pointer_result.as_deref()),
         ),
         function,
+        descent_completion: None,
         concrete_loop_exits: None,
         loop_semantics,
         checked_callees: crate::kernel::termination::merge_checked_callees(
@@ -3592,6 +3594,7 @@ pub(crate) fn program_recursive_function_contract_hypothesis(
             pointer_result: None,
             function,
             // A hypothesis certified nothing, so it says nothing about loops.
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -3923,6 +3926,7 @@ mod checked_proposition_index_tests {
         let fact = ExecutionPureFact::new(body_fact.clone());
         let path = SymbolicExecutionPath {
             call_parameters: None,
+            descent_step: None,
             completion_origin: None,
             call_result: None,
             assumptions: PureFactContext::new(),
@@ -4307,6 +4311,7 @@ mod contract_closing_tests {
         let paths = (0..path_count)
             .map(|_| SymbolicExecutionPath {
                 call_parameters: None,
+                descent_step: None,
                 completion_origin: None,
                 call_result: None,
                 assumptions: PureFactContext::new(),

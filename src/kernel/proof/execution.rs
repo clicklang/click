@@ -3386,6 +3386,19 @@ impl OpenedContractEntry {
         &self.entry.entry_state
     }
 
+    pub(crate) fn into_execution_core_with_environment(
+        self,
+        environment: &crate::kernel::ExecutionEnvironment,
+    ) -> Result<ExecutionProofCore, String> {
+        let descent = crate::kernel::termination::descent_completion::OpenedDescent::open(
+            &self.entry.function,
+            environment,
+        )?;
+        let mut core = self.into_execution_core();
+        core.descent = descent;
+        Ok(core)
+    }
+
     pub(crate) fn into_execution_core(self) -> ExecutionProofCore {
         let mut core = ExecutionProofCore::at_entry(
             self.entry.caller_state.clone(),
@@ -6174,6 +6187,7 @@ pub(crate) struct PendingLoopReturnPath {
 /// and rules, typed frontier state, and semantic freshness/region flags.
 #[derive(Clone)]
 pub(crate) struct ExecutionProofCore {
+    descent: Option<crate::kernel::termination::descent_completion::OpenedDescent>,
     pub(crate) last_footprint: Option<Arc<crate::kernel::RegionFootprint>>,
     pub(crate) state: SharedValue<ExecutionState>,
     initial_match_scope: SharedValue<ExecutionState>,
@@ -8107,6 +8121,7 @@ impl ExecutionProofCore {
     pub(crate) fn at_entry(state: ExecutionState, frontier: ExecutionFrontier) -> Self {
         let state: SharedValue<ExecutionState> = state.into();
         Self {
+            descent: None,
             last_footprint: None,
             initial_match_scope: state.clone(),
             checked_step_cases: (0, PureFactContext::new()),
@@ -8302,9 +8317,57 @@ impl ExecutionProofCore {
         )
     }
 
+    pub(crate) fn record_statement_transition_with_loan_evidence(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        theorem: Theorem,
+        context: PureFactContext,
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
+        obligations: &[crate::kernel::ProofObligation],
+        loan_evidence: &crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    ) -> Result<(), EvidenceRefusal> {
+        if let Some(opened) = &self.descent {
+            opened.accept(None).map_err(EvidenceRefusal::from)?;
+        }
+        self.record_statement_transition_native(
+            function,
+            arguments,
+            theorem,
+            context,
+            execution_facts,
+            obligations,
+            loan_evidence,
+        )
+    }
+
+    pub(crate) fn record_statement_transition_with_descent(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        native_step: &crate::kernel::SymbolicExecutionPath,
+        context: PureFactContext,
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
+    ) -> Result<(), EvidenceRefusal> {
+        if let Some(opened) = &self.descent {
+            opened
+                .accept(native_step.descent_step.as_ref())
+                .map_err(EvidenceRefusal::from)?;
+        }
+        self.record_statement_transition_native(
+            function,
+            arguments,
+            native_step.theorem.clone(),
+            context,
+            execution_facts,
+            &native_step.obligations,
+            &native_step.loan_evidence,
+        )
+    }
+
     /// Records a statement theorem and appends the exact stable-view evidence
     /// emitted by the checked evaluator for that transition.
-    pub(crate) fn record_statement_transition_with_loan_evidence(
+    fn record_statement_transition_native(
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
@@ -8594,6 +8657,44 @@ impl ExecutionProofCore {
         )],
         context: PureFactContext,
     ) -> Result<(), EvidenceRefusal> {
+        if let Some(opened) = &self.descent {
+            opened.accept(None).map_err(EvidenceRefusal::from)?;
+        }
+        self.record_statement_outcomes_native(function, arguments, outcomes, context)
+    }
+
+    pub(crate) fn record_statement_outcomes_with_descent(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        outcomes: &[(&crate::kernel::SymbolicExecutionPath, &ExecutionFacts)],
+        context: PureFactContext,
+    ) -> Result<(), EvidenceRefusal> {
+        if let Some(opened) = &self.descent {
+            for (step, _) in outcomes {
+                opened
+                    .accept(step.descent_step.as_ref())
+                    .map_err(EvidenceRefusal::from)?;
+            }
+        }
+        let native = outcomes
+            .iter()
+            .map(|(step, facts)| (step.theorem.clone(), *facts, step.obligations.as_slice()))
+            .collect::<Vec<_>>();
+        self.record_statement_outcomes_native(function, arguments, &native, context)
+    }
+
+    fn record_statement_outcomes_native(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        outcomes: &[(
+            Theorem,
+            &(impl ExecutionFactSource + ?Sized),
+            &[crate::kernel::ProofObligation],
+        )],
+        context: PureFactContext,
+    ) -> Result<(), EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
         for (theorem, _, _) in outcomes {
             let (outcome, _) =
@@ -8637,7 +8738,7 @@ impl ExecutionProofCore {
         parent: &Self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
-        theorem: &Theorem,
+        native_step: &crate::kernel::SymbolicExecutionPath,
         context: &PureFactContext,
         _execution_facts: &(impl ExecutionFactSource + ?Sized),
         _obligations: &[crate::kernel::ProofObligation],
@@ -8649,6 +8750,12 @@ impl ExecutionProofCore {
         loop_index: Option<usize>,
         return_index: usize,
     ) -> Result<(), EvidenceRefusal> {
+        if let Some(opened) = &parent.descent {
+            opened
+                .accept(native_step.descent_step.as_ref())
+                .map_err(EvidenceRefusal::from)?;
+        }
+        let theorem = &native_step.theorem;
         if parent.execution_evidence.len() != 1
             || self.execution_evidence.len() != 1
             || parent.evidence_completed
@@ -10315,6 +10422,11 @@ impl ExecutionProofCore {
     ) -> Result<(ExecutionState, ProofFacts), crate::kernel::functions::TacticApplicationRefusal>
     {
         use crate::kernel::functions::TacticApplicationRefusal::Refused;
+        if let Some(opened) = &self.descent {
+            opened
+                .accept_environment(environment)
+                .map_err(|message| Refused(message.into()))?;
+        }
         if self.evidence_completed {
             return Err(Refused(
                 "a tactic must be applied before execution reaches function exit".into(),
@@ -11458,9 +11570,10 @@ impl ExecutionProofCore {
         // environment it publishes here, so refusing an environment without
         // the anchor refuses exactly the executions in which those
         // obligations were never raised.
-        if checked_function
-            .contract_interface()
-            .has_call_ranked_recursion()
+        if self.descent.is_none()
+            && checked_function
+                .contract_interface()
+                .has_call_ranked_recursion()
             && environment
                 .recursion_anchor()
                 .is_none_or(|anchor| anchor.function() != checked_function.name())
@@ -11476,7 +11589,7 @@ impl ExecutionProofCore {
         // anchor is a summary that swallowed the descent. Applying such a
         // rule is already refused; naming it here says why, instead of
         // leaving a step that found no applicable rule.
-        if !environment.verified_loop_rules_answer_for_recursion() {
+        if self.descent.is_none() && !environment.verified_loop_rules_answer_for_recursion() {
             return Err(
                 "a verified loop rule of a function with a `decreases` measure calls that \
                  function but was certified without its recursion anchor",
@@ -11505,6 +11618,7 @@ impl ExecutionProofCore {
         )?;
         let path_count = paths.len();
         Ok(crate::kernel::CheckedFunctionExecution {
+            retained_descent: self.descent.is_some(),
             published_outcomes: published_outcomes.into(),
             contract_completion: None,
             entry_authority: has_checked_entry
@@ -11897,6 +12011,7 @@ impl ExecutionProofCore {
             ));
             let path = crate::kernel::SymbolicExecutionPath {
                 call_parameters: None,
+                descent_step: None,
                 completion_origin: Some(candidate.outcome().clone()),
                 call_result: None,
                 assumptions: assumptions.clone(),

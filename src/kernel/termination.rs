@@ -3,6 +3,7 @@ pub(crate) use ordinary::{
     OrdinaryTerminationScope, TerminationAtomKind, TerminationCause, TerminationCheck,
     TerminationCheckReport, termination_predicate_spelling,
 };
+pub(in crate::kernel) mod descent_completion;
 mod execution;
 pub(in crate::kernel) mod loop_evidence;
 mod recursion_authority;
@@ -1679,8 +1680,12 @@ fn statement_calls(statement: &ProgramStatement, calls: &mut BTreeSet<String>) {
 /// The functions `function`'s body calls by name: the call graph of a body a
 /// typed frontend lowered itself, which has no C syntax to read calls from.
 pub fn program_function_callees(function: &ProgramFunction) -> BTreeSet<String> {
+    statement_callees(&function.source_body)
+}
+
+pub(in crate::kernel) fn statement_callees(statement: &ProgramStatement) -> BTreeSet<String> {
     let mut calls = BTreeSet::new();
-    statement_calls(&function.source_body, &mut calls);
+    statement_calls(statement, &mut calls);
     calls
 }
 
@@ -5732,6 +5737,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -5926,6 +5932,7 @@ mod local_descent_tests {
             }
             VerifiedFunctionRule {
                 pointer_result: None,
+                descent_completion: None,
                 concrete_loop_exits: None,
                 loop_semantics: LoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
@@ -6086,6 +6093,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, parameters, body),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6304,6 +6312,7 @@ mod local_descent_tests {
     fn a_loop_certification_executed_to_its_exit_owes_no_measure() {
         let bare = |name: &str| VerifiedFunctionRule {
             pointer_result: None,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6552,6 +6561,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6589,6 +6599,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6777,6 +6788,7 @@ mod local_descent_tests {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body)
                 .with_recursion_measure(vec![declared_component()]),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -7098,6 +7110,7 @@ mod termination_scaling_tests {
                 Vec::new(),
                 calls_body(callees),
             ),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -7203,6 +7216,7 @@ mod checked_callee_certification_tests {
                 vec![],
                 crate::kernel::program_call("callee", vec![]),
             ),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             applied_tactics: Default::default(),

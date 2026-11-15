@@ -194,6 +194,7 @@ impl From<&ProgramStatement> for StatementProofInput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct LoopEvidence {
+    pub(in crate::kernel) calls: Arc<BTreeSet<String>>,
     pub index: usize,
     pub measure: Option<LoopTerminationMeasure>,
     end: usize,
@@ -351,9 +352,12 @@ impl ProgramFunction {
         );
         bare_descendants.remove(&index);
         framed_descendants.remove(&index);
+        let mut calls = BTreeSet::new();
+        statement_calls(&statement, &mut calls);
         Ok(StatementProofInput {
             statement,
             loop_evidence: Some(LoopEvidence {
+                calls: Arc::new(calls),
                 index,
                 measure,
                 end,
@@ -509,7 +513,7 @@ impl PreparedLoopExits {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::kernel::program_expression::{int32_literal, variable};
 
@@ -555,6 +559,7 @@ mod tests {
         assert_eq!(
             rule.loop_evidence,
             Some(LoopEvidence {
+                calls: Arc::new(BTreeSet::new()),
                 index: 0,
                 measure: None,
                 end: 1,
@@ -672,6 +677,17 @@ mod tests {
     }
 
     fn concrete_body(size: usize) -> (crate::kernel::WholeContractRoot, CheckedFunctionExecution) {
+        body(size, false)
+    }
+    pub(in crate::kernel::termination) fn ranked_body(
+        size: usize,
+    ) -> (crate::kernel::WholeContractRoot, CheckedFunctionExecution) {
+        body(size, true)
+    }
+    fn body(
+        size: usize,
+        ranked: bool,
+    ) -> (crate::kernel::WholeContractRoot, CheckedFunctionExecution) {
         use crate::kernel::proof::*;
         let returning = crate::kernel::program_return(int32_literal(0));
         let tail = if size == 0 {
@@ -698,8 +714,20 @@ mod tests {
             vec![FunctionContractClaim::body_safety()],
             true,
         );
+        let function = if ranked {
+            function
+                .with_recursion_measure(vec![RankingComponent::ProgramExpression(int32_literal(0))])
+        } else {
+            function
+        };
         let caller = ExecutionState::new();
-        let environment = ExecutionEnvironment::new();
+        let environment = crate::kernel::program_execution_environment_with_recursion_anchor(
+            ExecutionEnvironment::new(),
+            &function,
+            &caller,
+            &[],
+        )
+        .unwrap();
         let opened = OpenedContractEntry::open(
             &caller,
             &function,
@@ -713,7 +741,13 @@ mod tests {
         let root = opened.contract_root().unwrap().clone();
         let entry = opened.entry_state().clone();
         let facts = opened.facts().assumptions().clone();
-        let mut core = opened.into_execution_core();
+        let mut core = if ranked {
+            opened
+                .into_execution_core_with_environment(&environment)
+                .unwrap()
+        } else {
+            opened.into_execution_core()
+        };
         core.record_condition_transition(
             &function,
             &[],
@@ -731,19 +765,35 @@ mod tests {
             value: crate::kernel::api::int32(0).into(),
             state: Box::new(entry.clone()),
         };
-        core.record_statement_transition(
-            &function,
-            &[],
-            Theorem::new(Proposition::ProgramStatementVerifies {
-                state: Box::new(entry),
-                statement: Box::new(returning),
-                outcome: outcome.clone(),
-            }),
-            facts.clone(),
-            &Vec::<ExecutionPureFact>::new(),
-            &[],
-        )
-        .unwrap();
+        if ranked {
+            let (execution, _) = crate::kernel::api::prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+                entry, returning, facts.clone(), environment.clone(), ExecutionSemantics::APPLY_VERIFIED_RULES,
+                &mut ExecutionBudget::default(),
+            );
+            let path = &execution.paths[0];
+            core.record_statement_transition_with_descent(
+                &function,
+                &[],
+                path,
+                facts.clone(),
+                &Vec::<ExecutionPureFact>::new(),
+            )
+            .unwrap();
+        } else {
+            core.record_statement_transition(
+                &function,
+                &[],
+                Theorem::new(Proposition::ProgramStatementVerifies {
+                    state: Box::new(entry),
+                    statement: Box::new(returning),
+                    outcome: outcome.clone(),
+                }),
+                facts.clone(),
+                &Vec::<ExecutionPureFact>::new(),
+                &[],
+            )
+            .unwrap();
+        }
         let (outcome, obligations) = crate::kernel::program_function_outcome_from_statement_outcome(
             &caller,
             &function,
@@ -770,7 +820,7 @@ mod tests {
         (root, execution)
     }
 
-    fn completed_body(
+    pub(in crate::kernel::termination) fn completed_body(
         root: &crate::kernel::WholeContractRoot,
         execution: CheckedFunctionExecution,
         rules: Vec<VerifiedLoopRule>,

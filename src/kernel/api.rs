@@ -4697,6 +4697,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
+                descent_step: None,
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),
@@ -5001,6 +5002,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
+                descent_step: crate::kernel::DescentStep::under(environment),
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),
@@ -5244,6 +5246,7 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
             ));
             SymbolicExecutionPath {
                 call_parameters: None,
+                descent_step: None,
                 completion_origin: None,
                 call_result: None,
                 assumptions: assumptions.clone(),
@@ -5354,6 +5357,7 @@ pub fn prove_checked_program_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CheckedFunctionExecution {
+        retained_descent: false,
         published_outcomes: Default::default(),
         contract_completion: None,
         entry_authority: None,
@@ -6386,6 +6390,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
         };
         paths.push(SymbolicExecutionPath {
             call_parameters: None,
+            descent_step: path.descent_step.clone(),
             completion_origin: None,
             call_result: None,
             assumptions: path.assumptions.clone(),

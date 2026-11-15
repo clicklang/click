@@ -555,10 +555,21 @@ add them, without reopening a completed body's declaration interface. Independen
 termination APIs open the same inventory from their explicit inputs before
 executing termination proofs.
 
-Local descent execution consumes the captured authority. The remaining
-expression-recursion source/loop-anchor coverage walk and the numeric/structural
-body analyses are still proof execution, and have not yet migrated to call and
-summary producers.
+Call-ranked recursion also opens a descent cell for every entry case in the
+ordinary contract root. The execution core captures its recursion context before
+the body begins. Each native statement transition carries its own context beside
+its theorem and ordinary premises; the recorder consumes the opaque native path,
+so Surface cannot splice a context onto another theorem. Tactic application uses
+the same opened context. Loop opening retains its call footprint, and summary
+application answers for recursive peers as well as self-calls.
+
+The trace retains this descent context while its outcome obligations remain open.
+Ordinary outcome completion retires the captured descent cells; failed attempts
+publish nothing. A completed root packages native descent completion, which local
+termination consumes directly without a source/loop-anchor coverage walk.
+Independent termination inputs without an ordinary root retain their separate
+coverage analysis. Numeric/structural body analyses remain proof execution and
+have not yet migrated to call producers.
 
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.

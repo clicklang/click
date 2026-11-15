@@ -915,14 +915,12 @@ fn execute_concrete_loop_head_step(
             };
             execution
                 .core
-                .record_statement_transition_with_loan_evidence(
+                .record_statement_transition_with_descent(
                     function,
                     arguments,
-                    transition.theorem.clone(),
+                    &transition.native_step,
                     transition.context.clone(),
                     &transition.execution_facts,
-                    &transition.obligations,
-                    &transition.loan_evidence,
                 )
                 .map_err(|refusal| {
                     ClickError::new(format!(
@@ -1614,13 +1612,12 @@ pub(super) fn route_throw_to_handler(
             )));
         };
         let next_state = next_state.clone();
-        execution.core.record_statement_transition(
+        execution.core.record_statement_transition_with_descent(
             function,
             parameter_binding.arguments,
-            transition.theorem.clone(),
+            &transition.native_step,
             transition.context.clone(),
             &transition.execution_facts,
-            &transition.obligations,
         ).map_err(|refusal| {
             ClickError::new(format!(
                 "{transition_label}: recorded handler binding evidence the proof object rejected: {}",
@@ -1970,14 +1967,12 @@ pub(super) fn apply_prepared_call_outcome_transition(
         .record_generated_load_source_events(&transition.generated_load_source_events);
     execution
         .core
-        .record_statement_transition_with_loan_evidence(
+        .record_statement_transition_with_descent(
             function,
             arguments,
-            transition.theorem.clone(),
+            &transition.native_step,
             transition.context.clone(),
             &transition.execution_facts,
-            &transition.obligations,
-            &transition.loan_evidence,
         )
         .map_err(|refusal| {
             ClickError::new(format!(
@@ -2728,16 +2723,15 @@ fn execute_step_from_frontier_position_selecting_path(
         });
         execution
             .core
-            .record_statement_outcomes(
+            .record_statement_outcomes_with_descent(
                 function,
                 arguments,
                 &transitions
                     .iter()
                     .map(|transition| {
                         (
-                            transition.theorem.clone(),
+                            transition.native_step.as_ref(),
                             &transition.execution_facts,
-                            transition.obligations.as_slice(),
                         )
                     })
                     .collect::<Vec<_>>(),
@@ -3201,14 +3195,12 @@ fn execute_step_from_frontier_position_selecting_path(
 
     execution
         .core
-        .record_statement_transition_with_loan_evidence(
+        .record_statement_transition_with_descent(
             function,
             arguments,
-            transition.theorem.clone(),
+            &transition.native_step,
             transition.context.clone(),
             &transition.execution_facts,
-            &transition.obligations,
-            &transition.loan_evidence,
         )
         .map_err(|refusal| {
             ClickError::new(format!(
@@ -3259,7 +3251,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     &parent,
                     function,
                     arguments,
-                    &returned.theorem,
+                    &returned.native_step,
                     &returned.context,
                     &returned.execution_facts,
                     &returned.obligations,

@@ -7086,6 +7086,8 @@ impl<'a> ExecutionContext<'a> {
 pub struct VerifiedFunctionRule {
     /// Producer-owned concrete/avoided loop coverage. Independent legacy
     /// inputs have no ordinary body owner and use their separate adapter.
+    pub(super) descent_completion:
+        Option<Arc<crate::kernel::termination::descent_completion::DescentCompletion>>,
     pub(super) concrete_loop_exits:
         Option<Arc<crate::kernel::termination::loop_evidence::ConcreteLoopExits>>,
     /// Only the positive object-type premises consumed by the checked proof.
@@ -14956,6 +14958,7 @@ pub struct FunctionContractExecution {
 /// and retain their separate validation route.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedFunctionExecution {
+    pub(super) retained_descent: bool,
     pub(super) published_outcomes:
         super::proof::PersistentVector<Arc<super::PublishedFunctionOutcome>>,
     /// Obligations retired directly by ordinary proof operations for this strategy.
@@ -15267,6 +15270,7 @@ pub struct SymbolicExecutionPath {
     /// The body outcome checked against a retained Proof trace before the
     /// same producer applies the contract exit rule. Ordinary symbolic paths
     /// have no separate proof-completion origin.
+    pub(super) descent_step: Option<crate::kernel::DescentStep>,
     pub(super) completion_origin: Option<FunctionOutcome>,
     pub(super) call_result: Option<StoredExecutionValue>,
     pub(super) call_parameters: Option<CallParameters>,

@@ -1590,6 +1590,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -1713,6 +1714,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -1793,6 +1795,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -1859,6 +1862,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -1944,6 +1948,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -2025,6 +2030,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -3614,6 +3620,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
     };
     let path = SymbolicExecutionPath {
         call_parameters: None,
+        descent_step: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),
@@ -3702,6 +3709,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     ));
     let failing = SymbolicExecutionPath {
         call_parameters: None,
+        descent_step: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),
@@ -3720,6 +3728,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     };
     let clean = SymbolicExecutionPath {
         call_parameters: None,
+        descent_step: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),
@@ -3819,6 +3828,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     };
     let path = SymbolicExecutionPath {
         call_parameters: None,
+        descent_step: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),
@@ -5230,6 +5240,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -5319,6 +5330,7 @@ fn opaque_rule_environment(function: ProgramFunction) -> ExecutionEnvironment {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -5450,6 +5462,7 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
             .with_verified_function_rule(VerifiedFunctionRule {
                 pointer_result: None,
                 function: other,
+                descent_completion: None,
                 concrete_loop_exits: None,
                 loop_semantics: LoopSemantics::Verify,
                 checked_callees: None,

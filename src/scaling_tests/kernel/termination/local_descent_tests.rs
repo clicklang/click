@@ -54,6 +54,7 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         body = ProgramStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
         [VerifiedFunctionRule {
             pointer_result: None,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
