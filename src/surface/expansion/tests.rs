@@ -3972,3 +3972,34 @@ fn common_machine_call_expansion_rechecks_selected_call_premises() {
         .is_err()
     );
 }
+
+#[test]
+#[ignore = "nightly: aggregate call and conditional results expand and independently recheck"]
+fn aggregate_step_result_fields_expand_and_recheck_without_generated_locals() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/aggregate_expression_results_are_named_by_their_source_steps.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c_sources(source, &sources).expect("aggregate result source proof");
+    for label in [
+        "call_field.contract",
+        "constant_conditional.contract",
+        "conditional_field.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &sources, label).expect(label);
+        assert!(!expanded.contains("__click_aggregate_result"), "{expanded}");
+        verify_c_sources(&expanded, &sources).expect("aggregate result expansion rechecks");
+    }
+    let changed = fixture
+        .c_sources
+        .iter()
+        .map(|(name, text)| {
+            (
+                name.clone(),
+                text.replace("return make(input).right;", "return make(input).left;"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(verify_c_sources(source, &crate::cli::source_refs(&changed)).is_err());
+}

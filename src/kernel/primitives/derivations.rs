@@ -2032,7 +2032,7 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 cost.add_expression(program_expression_source_steps(pointer));
             }
             ProgramStatement::Assert { condition, .. }
-            | ProgramStatement::LoopTest { condition }
+            | ProgramStatement::LoopTest { condition, .. }
             | ProgramStatement::StepValue {
                 expression: condition,
                 ..

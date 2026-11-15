@@ -19993,6 +19993,25 @@ fn end_function_body_automatic_lifetimes(
             blocks.push(slot.block.clone());
         }
     }
+    for (_, pointer) in state.aggregate_step_objects.iter() {
+        crate::instrumentation::record_deterministic_work(1);
+        if !caller.has_block(&pointer.block)
+            && memory.has_block(&pointer.block)
+            && selected.insert(pointer.block.clone())
+        {
+            if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
+                return Err(error);
+            }
+            if let Some(error) = super::mutexes::automatic_storage_refusal(
+                state,
+                "aggregate expression result",
+                &pointer.block,
+            ) {
+                return Err(error);
+            }
+            blocks.push(pointer.block.clone());
+        }
+    }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
 }
 

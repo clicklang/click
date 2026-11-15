@@ -80,7 +80,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),
             ProgramStatement::HeapFree { pointer } => expressions.push((pointer, false)),
             ProgramStatement::Assert { condition, .. }
-            | ProgramStatement::LoopTest { condition }
+            | ProgramStatement::LoopTest { condition, .. }
             | ProgramStatement::StepValue {
                 expression: condition,
                 ..

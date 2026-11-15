@@ -6812,7 +6812,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::If { condition, .. } => {
             format!("if ({})", describe_c_guard(condition))
         }
-        ProgramStatement::LoopTest { condition } => {
+        ProgramStatement::LoopTest { condition, .. } => {
             format!("the loop's test ({})", describe_c_guard(condition))
         }
         ProgramStatement::While {
@@ -7139,11 +7139,13 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         {
             accessor
         }
-        // A call's copy of an aggregate argument is an object: its fields
-        // are read with `.`, as Rust and a C struct value both write them.
+        // A call's aggregate argument copy or expression result is an object:
+        // its fields are read with `.`, as Rust and C struct values write them.
         ContractExpression::Field { base, field, .. }
-            if matches!(base.as_ref(), ContractExpression::RegionParameter { .. })
-                || matches!(base.as_ref(), ContractExpression::At {
+            if matches!(
+                base.as_ref(),
+                ContractExpression::RegionParameter { .. } | ContractExpression::RegionResult(_)
+            ) || matches!(base.as_ref(), ContractExpression::At {
                     selector: SnapshotSelector::ProgramPoint(point),
                     ..
                 } if point.kind == ProgramPointKind::Parameters) =>

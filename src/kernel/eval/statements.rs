@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel::StatementStoreSource;
 use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_evidence_sequence};
+#[cfg(test)]
+mod aggregate_results;
 mod scalar_arrays;
 
 #[cfg(test)]
@@ -1136,6 +1138,108 @@ fn write_program_lvalue_paths_without_local_reference(
             )])
         }
     }
+}
+
+/// End only the anonymous objects explicitly selected by this expression boundary.
+fn end_aggregate_step_lifetimes(
+    state: &ExecutionState,
+    steps: &[u32],
+) -> Result<ExecutionState, RuntimeError> {
+    let mut next = state.clone();
+    for step in steps {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(pointer) = next.aggregate_step_objects.get(step).cloned() else {
+            continue;
+        };
+        next.aggregate_step_objects.remove(step);
+        if let Some(error) = next.population_storage_retirement_refusal(&pointer.block) {
+            return Err(error);
+        }
+        if let Some(error) = crate::kernel::mutexes::automatic_storage_refusal(
+            &next,
+            "aggregate expression result",
+            &pointer.block,
+        ) {
+            return Err(error);
+        }
+        let Some(bytes) = next.memory.block_size(&pointer.block).cloned() else {
+            continue;
+        };
+        let range = MemoryRange::new_with_element_width(pointer.clone(), 0.into(), bytes, 1);
+        if let Some(refusal) = next.stable_loan_memory_access_refusal(
+            &range,
+            &PureFactContext::default(),
+            crate::kernel::LoanRefusalOperation::MemoryAccess,
+        ) {
+            return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
+        }
+        retire_automatic_storage_owner(&mut next, &range);
+        next.set_memory(next.memory.without_local_block(&pointer.block));
+        next.retire_population_storage(&pointer.block)?;
+    }
+    next.end_step_results(steps);
+    Ok(next)
+}
+
+/// Materialize an aggregate step in typed anonymous storage, with no local binding.
+fn execute_program_aggregate_step_paths(
+    state: &ExecutionState,
+    steps: &[u32],
+    expression: &ProgramExpression,
+    result_layout: &AggregateResultLayout,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let layout = &result_layout.layout;
+    let pointer = Pointer {
+        block: PointerBlock::Temporary(budget.allocate_kernel_variable()?.0),
+        offset: PointerOffsetTerm::constant(0),
+    };
+    register_block_alignment(&pointer.block, layout.alignment_bytes());
+    let mut allocated = state.clone();
+    allocated.set_memory(allocated.memory.clone().with_classed_block(
+        pointer.block.clone(),
+        result_layout.declared_class.clone(),
+        layout.size_bytes(),
+    ));
+    allocated.resources =
+        allocated
+            .resources
+            .clone()
+            .unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
+                    pointer.clone(),
+                    0.into(),
+                    layout.size_bytes().into(),
+                    1,
+                ),
+            ));
+    let result = ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer);
+    let mut paths = execute_program_aggregate_copy_paths(
+        &allocated,
+        &ProgramExpression::Value(result.clone()),
+        expression,
+        layout,
+        assumptions,
+        budget,
+    )?;
+    for path in &mut paths {
+        if let StatementOutcome::Normal(next) = &mut path.outcome {
+            next.set_memory(
+                next.memory
+                    .clone()
+                    .freeze_aggregate_result(&pointer.block, None),
+            );
+            for step in steps {
+                next.set_retained_step_result(
+                    *step,
+                    ExecutionValue::from(result.clone()).retain_pointer_result(),
+                );
+                next.aggregate_step_objects.insert(*step, pointer.clone());
+            }
+        }
+    }
+    Ok(paths)
 }
 
 fn execute_program_aggregate_copy_paths(
@@ -3902,18 +4006,30 @@ fn execute_execution_statement_leaf_paths(
         // A loop's test continues the pass when its condition holds and
         // leaves the loop when it does not. Leaving is the loop's exit, the
         // outcome a `break` also has; the frontier records which one it was.
-        ProgramStatement::LoopTest { condition } => execute_execution_statement_leaf_paths(
-            state,
-            &ProgramStatement::If {
-                condition: condition.clone(),
-                then_branch: Box::new(ProgramStatement::Skip),
-                else_branch: Box::new(ProgramStatement::Break),
-            },
-            assumptions,
-            execution_context,
-            budget,
-            judgment,
-        )?,
+        ProgramStatement::LoopTest {
+            condition,
+            aggregate_steps,
+        } => {
+            let cleanup = ProgramStatement::EndAutomaticLifetimes {
+                names: Vec::new(),
+                steps: aggregate_steps.clone(),
+            };
+            execute_execution_statement_leaf_paths(
+                state,
+                &ProgramStatement::If {
+                    condition: condition.clone(),
+                    then_branch: Box::new(cleanup.clone()),
+                    else_branch: Box::new(crate::kernel::program_seq(
+                        cleanup,
+                        ProgramStatement::Break,
+                    )),
+                },
+                assumptions,
+                execution_context,
+                budget,
+                judgment,
+            )?
+        }
         ProgramStatement::Continue => vec![StatementExecutionPath::new(
             StatementOutcome::Continue(Box::new(state.clone())),
             Vec::new().into(),
@@ -3927,14 +4043,18 @@ fn execute_execution_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
-        ProgramStatement::EndAutomaticLifetimes { names } => vec![StatementExecutionPath::new(
-            match end_scope_automatic_lifetimes(state, names) {
-                Ok(state) => StatementOutcome::Normal(Box::new(state)),
-                Err(refusal) => StatementOutcome::RuntimeError(refusal),
-            },
-            Vec::new().into(),
-            Vec::new(),
-        )],
+        ProgramStatement::EndAutomaticLifetimes { names, steps } => {
+            vec![StatementExecutionPath::new(
+                match end_scope_automatic_lifetimes(state, names)
+                    .and_then(|next| end_aggregate_step_lifetimes(&next, steps))
+                {
+                    Ok(state) => StatementOutcome::Normal(Box::new(state)),
+                    Err(refusal) => StatementOutcome::RuntimeError(refusal),
+                },
+                Vec::new().into(),
+                Vec::new(),
+            )]
+        }
         ProgramStatement::ForStep {
             step,
             exited_locals,
@@ -4274,12 +4394,14 @@ fn execute_execution_statement_leaf_paths(
         // A call inside the expression of the statement that follows: the
         // term it returned is that statement's `CallResult { call }`.
         ProgramStatement::CallResult {
+            aggregate_layout,
             call,
             function_name,
             arguments,
             result_type,
             result_pointee_constant,
             callee,
+            ..
         } => {
             let mut paths = execute_program_call_paths(
                 state,
@@ -4317,6 +4439,38 @@ fn execute_execution_statement_leaf_paths(
                     }
                     None => value,
                 };
+                if let Some(result_layout) = aggregate_layout {
+                    if let StatementOutcome::Normal(state) = &mut path.outcome {
+                        let ProgramValue::Pointer(pointer) = &value else {
+                            path.outcome =
+                                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch);
+                            continue;
+                        };
+                        let pointer = pointer.pointer().clone();
+                        let size = result_layout.layout.size_bytes();
+                        // The call already materialized its by-value result in caller storage.
+                        // Keep that object as the step's result, with its C lifetime and type.
+                        state.set_memory(state.memory.clone().freeze_aggregate_result(
+                            &pointer.block,
+                            result_layout.declared_class.clone(),
+                        ));
+                        let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                            pointer.clone(),
+                            0.into(),
+                            size.into(),
+                            1,
+                        ));
+                        if state.resources.exact_count(&owner) == 0 {
+                            state.resources = state.resources.clone().unchecked_with_fact(owner);
+                        }
+                        state.aggregate_step_objects.insert(*call, pointer);
+                        state.set_retained_step_result(
+                            *call,
+                            retained_value.retain_checked_pointer(value),
+                        );
+                    }
+                    continue;
+                }
                 if let StatementOutcome::Normal(state) = &mut path.outcome {
                     state.set_retained_step_result(
                         *call,
@@ -4351,22 +4505,35 @@ fn execute_execution_statement_leaf_paths(
         // The operator's value on this path is the step's result, with the
         // operator's type as an assignment would give it.
         ProgramStatement::StepValue {
+            aggregate_layout,
             steps,
             expression,
             value_type,
             pointee_constant,
+            ..
         } => {
-            let mut paths = Vec::new();
-            for mut path in evaluate_expression_value_paths(state, expression, assumptions, budget)?
-            {
-                let outcome = match path.outcome {
-                    ExpressionOutcome::Value(value) => {
-                        let retained_pointer = value
-                            .shared()
-                            .filter(|root| root.pointer_payload().is_some())
-                            .cloned();
-                        let value = value.into_native();
-                        let value = match value_type {
+            if let Some(layout) = aggregate_layout {
+                execute_program_aggregate_step_paths(
+                    state,
+                    steps,
+                    expression,
+                    layout,
+                    assumptions,
+                    budget,
+                )?
+            } else {
+                let mut paths = Vec::new();
+                for mut path in
+                    evaluate_expression_value_paths(state, expression, assumptions, budget)?
+                {
+                    let outcome = match path.outcome {
+                        ExpressionOutcome::Value(value) => {
+                            let retained_pointer = value
+                                .shared()
+                                .filter(|root| root.pointer_payload().is_some())
+                                .cloned();
+                            let value = value.into_native();
+                            let value = match value_type {
                             Some(value_type) => {
                                 crate::kernel::functions::coerce_program_value_with_pointee_constant(
                                     value,
@@ -4378,35 +4545,37 @@ fn execute_execution_statement_leaf_paths(
                             }
                             None => Some(value),
                         };
-                        match value {
-                            Some(value) => {
-                                let mut next = state.clone();
-                                let value = match retained_pointer {
-                                    Some(root) => {
-                                        ExecutionValue::Shared(root).retain_checked_pointer(value)
+                            match value {
+                                Some(value) => {
+                                    let mut next = state.clone();
+                                    let value = match retained_pointer {
+                                        Some(root) => ExecutionValue::Shared(root)
+                                            .retain_checked_pointer(value),
+                                        None => ExecutionValue::from(value).retain_pointer_result(),
+                                    };
+                                    for step in steps {
+                                        next.set_retained_step_result(*step, value.clone());
                                     }
-                                    None => ExecutionValue::from(value).retain_pointer_result(),
-                                };
-                                for step in steps {
-                                    next.set_retained_step_result(*step, value.clone());
+                                    StatementOutcome::Normal(Box::new(next))
                                 }
-                                StatementOutcome::Normal(Box::new(next))
+                                None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                             }
-                            None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         }
-                    }
-                    ExpressionOutcome::UndefinedBehavior(error) => {
-                        StatementOutcome::UndefinedBehavior(error)
-                    }
-                    ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
-                };
-                paths.push(StatementExecutionPath::new(
-                    outcome,
-                    path.facts,
-                    path.obligations,
-                ));
+                        ExpressionOutcome::UndefinedBehavior(error) => {
+                            StatementOutcome::UndefinedBehavior(error)
+                        }
+                        ExpressionOutcome::RuntimeError(error) => {
+                            StatementOutcome::RuntimeError(error)
+                        }
+                    };
+                    paths.push(StatementExecutionPath::new(
+                        outcome,
+                        path.facts,
+                        path.obligations,
+                    ));
+                }
+                paths
             }
-            paths
         }
         ProgramStatement::Seq(_) => unreachable!("sequences dispatch before leaf execution"),
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)) => {

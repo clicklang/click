@@ -109,6 +109,8 @@ struct SourceExecutionLayoutData {
     /// result is the state's call result of that number while its statement
     /// runs.
     call_numbers: BTreeMap<usize, u32>,
+    aggregate_results: BTreeMap<usize, BTreeMap<String, crate::kernel::AggregateField>>,
+    full_expression_ends: BTreeSet<usize>,
     /// The region of each step whose result its statement reads, by the
     /// step's number: a call step, or an assignment step keeping its
     /// target's prior value.
@@ -627,6 +629,9 @@ impl SourceExecutionLayout {
                 .and_then(syntax::CSite::get)
                 .and_then(|site| site.source_path())
             {
+                if matches!(statement, syntax::CStatement::EndAggregateLifetimes { .. }) {
+                    layout.full_expression_ends.insert(index);
+                }
                 layout
                     .source_statements
                     .entry(path.to_vec())
@@ -636,6 +641,34 @@ impl SourceExecutionLayout {
             }
             if let syntax::CStatement::LoopTest { .. } = statement {
                 layout.loop_tests.insert(index);
+            }
+            if let syntax::CStatement::CallResult {
+                aggregate_layout: Some(result_layout),
+                ..
+            }
+            | syntax::CStatement::StepValue {
+                aggregate_layout: Some(result_layout),
+                ..
+            } = statement
+            {
+                let value_layout = result_layout.to_kernel_aggregate_layout();
+                // The operator region owns the arm's result spelling.
+                let owner = match statement {
+                    syntax::CStatement::StepValue { steps, .. } => steps
+                        .first()
+                        .and_then(|step| layout.step_regions.get(step))
+                        .copied()
+                        .unwrap_or(index),
+                    _ => index,
+                };
+                layout.aggregate_results.insert(
+                    owner,
+                    value_layout
+                        .fields()
+                        .iter()
+                        .map(|field| (field.name().to_string(), field.clone()))
+                        .collect(),
+                );
             }
             if let syntax::CStatement::CallResult { call, .. } = statement {
                 layout.call_numbers.insert(index, *call);
@@ -1098,6 +1131,14 @@ impl SourceExecutionLayout {
     }
 
     /// The number of the call inside an expression that `region` is.
+    pub(in crate::surface) fn aggregate_result_field(
+        &self,
+        region: usize,
+        field: &str,
+    ) -> Option<&crate::kernel::AggregateField> {
+        self.data.aggregate_results.get(&region)?.get(field)
+    }
+
     pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {
         self.data.call_numbers.get(&region).copied()
     }
@@ -1372,6 +1413,12 @@ impl SourceExecutionLayout {
     fn source_statement_exit(&self, path: &[u32]) -> usize {
         let data = &self.data;
         if let Some(regions) = data.source_statements.get(path) {
+            if let Some(last) = regions
+                .last()
+                .filter(|last| data.full_expression_ends.contains(last))
+            {
+                return *last;
+            }
             let compound = regions.iter().find(|region| {
                 data.statements
                     .get(region)
@@ -1828,6 +1875,40 @@ mod source_execution_layout_tests {
     use super::*;
 
     #[test]
+    fn source_statement_exit_includes_aggregate_temporary_retirement() {
+        use crate::surface::{ProgramPointKind, SourcePathStep};
+        let functions = syntax::parse_functions(
+            r#"
+            struct box { int32 value; int32 items[1]; };
+            struct box make() { struct box out = {0, {7}}; return out; }
+            int32 plain() { int32* p = make().items; return 0; }
+            int32 conditional(struct box input) { struct box out = 0 ? make() : input; return 0; }
+            int32 choose() { switch (make().value) { case 0: break; } return 0; }
+        "#,
+        )
+        .unwrap();
+        for function in &functions[1..] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let exit = layout
+                .source_path_region(&[SourcePathStep::Statement(0)], ProgramPointKind::Exit)
+                .unwrap();
+            let next = layout
+                .source_path_region(&[SourcePathStep::Statement(1)], ProgramPointKind::Entry)
+                .unwrap();
+            assert_eq!(
+                exit + 1,
+                next,
+                "{} exits before its lifetime boundary",
+                function.name()
+            );
+            assert_eq!(
+                layout.source_path_spelling(exit, ProgramPointKind::Exit),
+                Some(vec![SourcePathStep::Statement(0)])
+            );
+        }
+    }
+
+    #[test]
     fn allocation_regions_are_named_for_source_and_typed_execution() {
         let function = syntax::parse_function("void f() { int32* p; p = malloc(4); }").unwrap();
         let typed = function
@@ -2045,6 +2126,8 @@ mod source_execution_layout_tests {
                 calls: BTreeSet::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),
+                aggregate_results: BTreeMap::new(),
+                full_expression_ends: BTreeSet::new(),
                 step_regions: BTreeMap::new(),
                 prior_steps: BTreeMap::new(),
                 operator_regions: BTreeMap::new(),

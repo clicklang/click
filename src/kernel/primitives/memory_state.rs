@@ -3534,14 +3534,38 @@ impl Memory {
     /// Complete scalar construction without changing its extent, type, cells,
     /// ownership, or allocation generation. Checked declaration execution is
     /// the only caller; later alias writes see the block's read-only status.
-    pub(in crate::kernel) fn freeze_declared_scalar(mut self, block: &PointerBlock) -> Self {
+    pub(in crate::kernel) fn freeze_declared_scalar(self, block: &PointerBlock) -> Self {
+        assert!(
+            self.blocks
+                .get(block)
+                .expect("declared scalar block")
+                .declared_scalar_type
+                .is_some()
+        );
+        self.freeze_declared_object(block, None)
+    }
+
+    /// An aggregate with temporary lifetime cannot be modified (C11 6.2.4p8).
+    pub(in crate::kernel) fn freeze_aggregate_result(
+        self,
+        block: &PointerBlock,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.freeze_declared_object(block, declared_class)
+    }
+
+    fn freeze_declared_object(
+        mut self,
+        block: &PointerBlock,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
         let base = intern_derivation_base(&mut self);
         let mut declaration = self
             .blocks
             .get(block)
-            .expect("freshly allocated scalar block")
+            .expect("declared object block")
             .clone();
-        assert!(declaration.declared_scalar_type.is_some());
+        declaration.declared_class = declared_class.or(declaration.declared_class);
         declaration.read_only = true;
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
         record_memory_derivation(

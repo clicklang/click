@@ -14721,7 +14721,10 @@ impl Parser {
         &mut self,
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        if let ContractExpression::RegionParameter { .. } = &expression {
+        if matches!(&expression, ContractExpression::RegionParameter { .. })
+            || (matches!(&expression, ContractExpression::RegionResult(_))
+                && self.peek() == Some(&Token::Dot))
+        {
             return self.parse_region_parameter_suffix(expression);
         }
         expression = self.resolve_reference_parameter(expression)?;

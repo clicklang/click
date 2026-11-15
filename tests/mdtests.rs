@@ -43,6 +43,8 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "aggregate_expression_results_are_named_by_their_source_steps.md", // 1.61s focused
+    "aggregate_result_storage_ends_at_the_statement_exit.md",          // 0.82s focused in parallel
     // 0.78s focused, 0.57s in the parallel gate; the automatic-array refusal
     // below has the same store-search miss line.
     "a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md",

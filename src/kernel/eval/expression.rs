@@ -2008,9 +2008,22 @@ pub(super) fn evaluate_native_expression_paths(
                 | ProgramType::Int64Array(_)
                 | ProgramType::UInt128Array(_)
                 | ProgramType::UInt64Array(_)
+                | ProgramType::Float32Array(_)
+                | ProgramType::Float64Array(_)
                 | ProgramType::PointerArray(_, _),
             ..
-        } => evaluate_program_expression_paths(state, pointer, assumptions, budget)?,
+        } => {
+            let target_type = program_expression_pointee_type(state, expression)
+                .and_then(ProgramType::pointer_to)
+                .expect("supported array field has an element pointer type");
+            let mut paths = evaluate_program_expression_paths(state, pointer, assumptions, budget)?;
+            for path in &mut paths {
+                if let ExpressionOutcome::Value(value) = &mut path.outcome {
+                    *value = value.clone().retag_pointer(target_type);
+                }
+            }
+            paths
+        }
         ProgramExpression::Load(_)
         | ProgramExpression::TypedLoad { .. }
         | ProgramExpression::Index(_, _) => {
@@ -3915,6 +3928,8 @@ pub(in crate::kernel) fn program_expression_pointee_type(
             ProgramType::Int128Array(_) => Some(ProgramType::Int128),
             ProgramType::UInt64Array(_) => Some(ProgramType::UInt64),
             ProgramType::UInt128Array(_) => Some(ProgramType::UInt128),
+            ProgramType::Float32Array(_) => Some(ProgramType::Float32),
+            ProgramType::Float64Array(_) => Some(ProgramType::Float64),
             ProgramType::PointerArray(element, _) => Some(element.pointer_type()),
             value_type => value_type.pointee_type(),
         },

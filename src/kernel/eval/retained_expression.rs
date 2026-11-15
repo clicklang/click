@@ -1722,6 +1722,7 @@ mod tests {
             false,
         );
         let statement = ProgramStatement::StepValue {
+            aggregate_layout: None,
             steps: vec![11],
             expression: ProgramExpression::Add(
                 Box::new(ProgramExpression::Variable("p".into())),
