@@ -435,16 +435,19 @@ still enter through their existing nonzero test, and comparisons with integers
 or ordering operations keep their refusals. Equality's proposition output remains
 an explicit native boundary.
 
-Retained casts participate in the existing conversion readers, dependency and
-rewrite policies, and semantic observation normalization. Reading a retained
+Retained casts participate in the existing conversion readers, graph registration,
+dependency and rewrite policies, and semantic observation normalization. Pointer
+discovery keeps native cast opacity, and exact source matching keeps native
+argument equality. Reading a retained
 local cast emits its original certified range facts through the selected native
 cast descriptor. General output spelling and later local/storage handoffs retain
 their assigned slices; no search or budget policy changes.
 
-Validation: all 1,895 selected tests passed, including every scaling test,
+Validation: all 1,900 selected tests passed, including every scaling test,
 constructor reductions, all integer cast formats, producer parity, observation
-identity, local range-fact preservation, equality rewrites and dependencies.
-The CI-quality check passed.
+identity, local range-fact preservation, equality rewrites, dependencies and the
+modeled-binary-tree example. The C/C++/Rust integer-language examples and focused
+cast-dispatch regressions passed separately. The CI-quality check passed.
 
 ### 8a inventory
 
