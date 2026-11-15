@@ -96,7 +96,8 @@ What happens:
 The kernel does prove the equality with facts. An explicit
 `transport(at(transplant, child->rb_right) == at(transplant, child->rb_right), child->rb_right == at(transplant, child->rb_right)) using { };`
 closes line 694. The same refusal then appears at line 738
-(`have child->rb_right == at(transplant, child->rb_right) by auto();`).
+(`have child->rb_right == at(transplant, child->rb_right) by solve();`
+in current syntax; the recorded reproduction used the removed `auto()`).
 
 The same cause probably explains two rbtree-augmented sidecars that already
 failed before #1806 but now fail earlier:

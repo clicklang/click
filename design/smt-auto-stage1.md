@@ -1,5 +1,12 @@
 # SMT auto, stage 1: in-house arithmetic and equality
 
+> Historical design record. Tactic names and proof snippets below describe
+> the recorded baseline, not the current interface. `auto`, `simp`,
+> `arithmetic`, `execute` and `execute_until` are no longer public tactic
+> spellings. Use `solve()` for goal search, `solve() using { ... }` for
+> selected premises, and `step_until(target)` or the implicit tail for
+> execution. See the [current tactic reference](../docs/reference/tactics/index.md).
+
 Design for stage 1 of the SMT-backed `auto`, which has landed; the results
 are at the end. Click gets its own
 SMT-style decision procedure for linear integer arithmetic, machine-integer

@@ -1626,8 +1626,9 @@ that class to prescribe the next action:
   no successful proof; normally decompose the proof, or write the argument a
   search miss of an elided form names. An interrupted search is a tooling bug
   only when it ignores or badly overshoots its enforced bound. A smart site is
-  one of the four smart tactics, or a simple tactic written with an elided
-  argument (see [`click profile`](../reference/cli/profile.md#report-interpretation)).
+  a written `solve` or `step_until`, the implicit tail or closer, or a
+  simple tactic written with an elided argument (see
+  [`click profile`](../reference/cli/profile.md#report-interpretation)).
 - `SIMPLE` steps are deterministic checked operations. Do not expand them;
   reduce and fix the verifier bottleneck first.
 - `CONTROL` steps are proof containers. Inspect their nested smart and simple

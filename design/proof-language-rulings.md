@@ -98,8 +98,8 @@ only by the tests that read them.
   covers a whole struct; a cell a contract only views needs no frame.
 - Program points stay named by source position (`region(N)`, `read(N)`,
   `loop(N)`). Closed 2026-10-14: neither source-named points nor a
-  `click migrate` renumbering tool is planned; `execute()` and `step()`
-  already avoid positions in most proofs.
+  `click migrate` renumbering tool is planned; the implicit tail and `step()`
+  avoid positions in most proofs.
 - The repository root keeps `design/`, `roadmap/` and `bugs/` beside the
   product. Closed 2026-10-14: the maintainer judged the mix not a real
   problem.
