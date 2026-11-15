@@ -137,30 +137,13 @@ pub(super) fn collect_common_memory_loads(
                 );
             }
             KernelTermNode::PointerOffsetEqual { arguments } => {
-                let mut offsets: Vec<_> = arguments.iter().rev().collect();
-                let mut seen_offsets = std::collections::HashSet::new();
-                let mut indices = Vec::new();
-                while let Some(offset) = offsets.pop() {
-                    if !seen_offsets.insert(offset) {
-                        continue;
-                    }
-                    if crate::instrumentation::deadline_exceeded_with_work(1) {
-                        return Err("memory-load collection exceeded its checking budget".into());
-                    }
-                    match offset.node() {
-                        crate::kernel::KernelPointerOffset::Add(children) => {
-                            offsets.extend(children.iter().rev())
-                        }
-                        crate::kernel::KernelPointerOffset::Int32Scaled { value, .. } => {
-                            indices.push((value, Some(4)))
-                        }
-                        crate::kernel::KernelPointerOffset::Int64Scaled { value, .. } => {
-                            indices.push((value, Some(8)))
-                        }
-                        _ => {}
-                    }
-                }
-                pending.extend(indices.into_iter().rev());
+                push_offset_memory_loads(arguments.iter(), &mut pending)?;
+            }
+            KernelTermNode::PointerEqual { arguments } => {
+                push_offset_memory_loads(
+                    arguments.iter().map(|address| &address.node().offset),
+                    &mut pending,
+                )?;
             }
             KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => {
@@ -213,6 +196,38 @@ pub(super) fn collect_common_memory_loads(
             _ => pending.extend(term.children().iter().rev().map(|child| (child, width))),
         }
     }
+    Ok(())
+}
+
+fn push_offset_memory_loads<'a>(
+    roots: impl IntoIterator<Item = &'a crate::kernel::SharedPointerOffset>,
+    pending: &mut Vec<(&'a KernelTerm, Option<u32>)>,
+) -> Result<(), String> {
+    let mut offsets: Vec<_> = roots.into_iter().collect();
+    offsets.reverse();
+    let mut seen_offsets = std::collections::HashSet::new();
+    let mut indices = Vec::new();
+    while let Some(offset) = offsets.pop() {
+        if !seen_offsets.insert(offset) {
+            continue;
+        }
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return Err("memory-load collection exceeded its checking budget".into());
+        }
+        match offset.node() {
+            crate::kernel::KernelPointerOffset::Add(children) => {
+                offsets.extend(children.iter().rev())
+            }
+            crate::kernel::KernelPointerOffset::Int32Scaled { value, .. } => {
+                indices.push((value, Some(4)))
+            }
+            crate::kernel::KernelPointerOffset::Int64Scaled { value, .. } => {
+                indices.push((value, Some(8)))
+            }
+            _ => {}
+        }
+    }
+    pending.extend(indices.into_iter().rev());
     Ok(())
 }
 

@@ -65,3 +65,71 @@ fn named_pointer_admission_cost_is_independent_of_prior_imports() {
         assert!(retained.windows(2).all(|pair| pair[0] == pair[1]));
     }
 }
+
+#[test]
+fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transport() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut offset = KernelPointerOffset::Int32Scaled {
+            value: KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999701)),
+            byte_width: 4,
+        }
+        .into_shared()
+        .unwrap();
+        for _ in 0..size {
+            offset = KernelPointerOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        let address = SharedPointerAddress::new(
+            SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(999700))),
+            offset.clone(),
+        );
+        let source = KernelTerm::pointer_equal_raw([address.clone(), address]);
+        let nested = KernelTerm::boolean_equal_raw([
+            source.clone(),
+            KernelTerm::intern(KernelType::Bool, KernelTermNode::BoolLiteral(false)),
+        ]);
+        let exports = KernelTermExport::machine_export_count();
+        let ((bits, pointers, transported), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                let bits =
+                    crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
+                        &source,
+                        Variable(999702),
+                        &MachineTerm::constant(1),
+                    )
+                    .unwrap();
+                let pointers =
+                    crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
+                        &nested,
+                        Variable(999700),
+                        &Pointer::symbolic(Variable(999703)),
+                    )
+                    .unwrap();
+                let transported =
+                    crate::kernel::memory_provenance::transport_framed_common_condition(
+                        &source,
+                        &crate::kernel::Memory::new(),
+                        None,
+                    )
+                    .unwrap();
+                (bits, pointers, transported)
+            });
+        assert_eq!(bits, source);
+        assert_eq!(transported, source);
+        let KernelTermNode::BoolEqual { arguments } = pointers.node() else {
+            panic!("Boolean equality")
+        };
+        let KernelTermNode::PointerEqual { arguments } = arguments[0].node() else {
+            panic!("raw address equality")
+        };
+        assert_eq!(arguments[0].node().offset, offset);
+        assert_eq!(
+            arguments[0].node().block.native_atom(),
+            &PointerBlock::Symbolic(Variable(999703))
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= 100 * size + 1000, "size={size}, work={work}");
+    }
+}

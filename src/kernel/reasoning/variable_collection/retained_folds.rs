@@ -171,6 +171,16 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
+            KernelTermNode::PointerEqual { arguments } => {
+                for address in arguments {
+                    super::retained_pointers::collect_address_variables_with_summaries(
+                        address,
+                        mode,
+                        &mut leaf_variables,
+                        summaries,
+                    );
+                }
+            }
             KernelTermNode::PointerOffsetEqual { arguments } => {
                 super::retained_pointers::collect_offset_variables_with_summaries(
                     arguments,
@@ -442,6 +452,28 @@ mod tests {
                     8,
                     true,
                 )),
+            ),
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                        "raw_pointer_dependency".into(),
+                        vec![PureFunctionArgument::Integer(
+                            IntegerTerm::Variable(Variable(970_008)).into(),
+                        )],
+                    )),
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::Variable(Variable(970_009)),
+                        4,
+                    ),
+                }),
+                Box::new(Pointer {
+                    block: PointerBlock::ExternalObject(Variable(970_010)),
+                    offset: PointerOffsetTerm::scaled_int64_node(
+                        MachineTerm::Variable(Variable(970_011)),
+                        8,
+                        false,
+                    ),
+                }),
             ),
             comparison.clone(),
             ConditionTerm::BoolIf {

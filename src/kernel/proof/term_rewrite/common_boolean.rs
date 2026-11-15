@@ -14,6 +14,10 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
             for operand in operands {
                 collect_machine_operand_carriers(operand, &mut variables);
             }
+        } else if let Some(addresses) = leaf.pointer_addresses() {
+            for address in addresses {
+                collect_common_address_carriers(&address, &mut variables);
+            }
         } else if let Some(offsets) = leaf.pointer_offsets() {
             crate::kernel::SharedPointerOffset::visit_pair(&offsets, |node| {
                 if !variables.visit() {
@@ -57,6 +61,12 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 }
             }
             return Ok(KernelTerm::boolean_comparison_raw(*format, *relation, arguments));
+        }
+        if let KernelTermNode::PointerEqual { arguments } = leaf.node() {
+            return Ok(KernelTerm::pointer_equal_raw([
+                rewrite.boolean_address(&arguments[0]).ok_or(())?,
+                rewrite.boolean_address(&arguments[1]).ok_or(())?,
+            ]));
         }
         if let KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
             use crate::kernel::{KernelPointerOffset as O, SharedPointerOffset as S};
@@ -110,4 +120,120 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
         }
     }).ok();
     result.filter(|_| rewrite.refusal().is_none())
+}
+
+fn collect_common_address_carriers(
+    address: &crate::kernel::SharedPointerAddress,
+    variables: &mut CarrierVariables,
+) {
+    if !variables.visit() {
+        return;
+    }
+    // These entry points substitute variables, not exact pointer terms.
+    debug_assert!(variables.pointer_terms.is_none());
+    collect_pointer_block_carriers(address.node().block.native_atom(), variables);
+    address.node().offset.visit_root_in_order(false, |node| {
+        if !variables.visit() {
+            return;
+        }
+        match node {
+            crate::kernel::KernelPointerOffset::Variable(variable) => {
+                variables.program_values.insert(*variable);
+                collect_registered_load_carriers(*variable, variables);
+            }
+            node => {
+                if let Some(value) = node.index() {
+                    collect_machine_operand_carriers(MachineOperandView::Shared(value), variables);
+                }
+            }
+        }
+    });
+}
+
+impl TermRewrite<'_> {
+    /// The raw address policy used by pointer-variable Boolean values and by
+    /// native pointer-call substitution. The numeric callback owns binder scope;
+    /// this outer entry has no fact-driven or registered-load normalization.
+    fn boolean_address(
+        &mut self,
+        source: &crate::kernel::SharedPointerAddress,
+    ) -> Option<crate::kernel::SharedPointerAddress> {
+        use crate::kernel::{
+            KernelPointerOffset as O, SharedPointerAddress as A, SharedPointerBlock,
+            SharedPointerOffset as S,
+        };
+        debug_assert!(!self.resolve_registered_loads && self.conditions.is_none());
+        let original = &source.node().offset;
+        let offsets = S::try_map_pair(&[original.clone(), original.clone()], |_, node| {
+            if self.checked_work_exhausted() {
+                return Err(());
+            }
+            let (value, width, wide) = match node {
+                O::Int32Scaled { value, byte_width } => (value, byte_width, None),
+                O::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => (value, byte_width, Some(unsigned)),
+                node => return node.into_shared().map_err(|_| ()),
+            };
+            let mapped = self.index_bits(&S::exact_index(&value));
+            Ok(O::import(&self.rebuilt_index(mapped, width, wide)))
+        })
+        .ok()?;
+        let offset = offsets[0].clone();
+        let block = source.node().block.native_atom();
+        let replacement = self.pointer_variable.and_then(|(from, to)| match block {
+            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)
+                if *variable == from =>
+            {
+                Some(to.clone())
+            }
+            PointerBlock::ExternalObject(variable) if *variable == from => {
+                Some(to.object_identity())
+            }
+            _ => None,
+        });
+        let result = if let Some(replacement) = replacement {
+            self.changed = true;
+            A::new(
+                SharedPointerBlock::import(&replacement.block),
+                S::add(O::import(&replacement.offset), offset),
+            )
+        } else {
+            // Only the opaque block atom crosses its existing native rewrite
+            // boundary. The original shared displacement is handled above.
+            let atom = self.pointer(&Pointer {
+                block: block.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            });
+            A::new(SharedPointerBlock::import(&atom.block), offset)
+        };
+        self.refusal().is_none().then_some(result)
+    }
+}
+
+pub(in crate::kernel) fn substitute_application_address_bits(
+    source: &crate::kernel::SharedPointerAddress,
+    from: Variable,
+    to: &MachineTerm,
+) -> Option<crate::kernel::SharedPointerAddress> {
+    let from = MachineTerm::Variable(from);
+    let mut rewrite = TermRewrite::for_bits(&from, to);
+    let mut variables = rewrite.new_carrier_variables();
+    collect_common_address_carriers(source, &mut variables);
+    rewrite.reserve_source_variables(variables);
+    rewrite.boolean_address(source)
+}
+
+pub(in crate::kernel) fn substitute_application_address_pointer(
+    source: &crate::kernel::SharedPointerAddress,
+    from: Variable,
+    to: &Pointer,
+) -> Option<crate::kernel::SharedPointerAddress> {
+    let mut rewrite = TermRewrite::for_pointer_variable(from, to);
+    let mut variables = rewrite.new_carrier_variables();
+    collect_common_address_carriers(source, &mut variables);
+    rewrite.reserve_source_variables(variables);
+    rewrite.boolean_address(source)
 }

@@ -6294,6 +6294,23 @@ fn collect_condition_operand_memories(
             for operand in operands {
                 collect_operand_memories(operand, memories, &mut seen);
             }
+        } else if let Some(addresses) = leaf.pointer_addresses() {
+            for address in addresses {
+                collect_equality_pointer_block_memories(
+                    address.node().block.native_atom(),
+                    memories,
+                );
+                let mut seen = BTreeSet::new();
+                address.node().offset.visit_root_in_order(false, |node| {
+                    if let Some(index) = node.index() {
+                        collect_operand_memories(
+                            crate::kernel::MachineOperandView::Shared(index),
+                            memories,
+                            &mut seen,
+                        );
+                    }
+                });
+            }
         } else if let Some(offsets) = leaf.pointer_offsets() {
             let mut seen = BTreeSet::new();
             crate::kernel::SharedPointerOffset::visit_pair(&offsets, |node| {
@@ -6350,18 +6367,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         }
         ConditionTerm::PointerEqual(left, right) => {
             for pointer in [left, right] {
-                if let PointerBlock::PureFunctionApplication(application) = &pointer.block
-                    && let Some(bits) = application.integer_address_bits()
-                {
-                    collect_bitvector_memories(bits, memories);
-                }
-                if let PointerBlock::Symbolic(variable) = &pointer.block
-                    && let Some((origin, _)) =
-                        crate::kernel::eval::registered_load_origin_for_variable(variable)
-                    && !memories.contains(&origin)
-                {
-                    memories.push(origin);
-                }
+                collect_equality_pointer_block_memories(&pointer.block, memories);
                 collect_pointer_offset_memories(&pointer.offset, memories);
             }
         }
@@ -6397,6 +6403,21 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             }
             collect_pointer_offset_memories(&pointer.offset, memories);
         }
+    }
+}
+
+fn collect_equality_pointer_block_memories(block: &PointerBlock, memories: &mut Vec<SharedMemory>) {
+    if let PointerBlock::PureFunctionApplication(application) = block
+        && let Some(bits) = application.integer_address_bits()
+    {
+        collect_bitvector_memories(bits, memories);
+    }
+    if let PointerBlock::Symbolic(variable) = block
+        && let Some((origin, _)) =
+            crate::kernel::eval::registered_load_origin_for_variable(variable)
+        && !memories.contains(&origin)
+    {
+        memories.push(origin);
     }
 }
 
@@ -6532,6 +6553,9 @@ pub(in crate::kernel) fn transport_framed_common_condition(
         | Node::BoolIf { .. }
         | Node::BoolEqual { .. }
         | Node::Call { .. } => None,
+        Node::PointerEqual { arguments } => Some(crate::kernel::KernelTerm::pointer_equal(
+            shared_pointer_transport::transport_addresses(arguments, after, assumptions)?,
+        )),
         Node::PointerOffsetEqual { arguments } => {
             Some(crate::kernel::KernelTerm::pointer_offset_equal(
                 shared_pointer_transport::transport_offsets(arguments, after, assumptions)?,
@@ -9152,6 +9176,20 @@ mod common_boolean_transport_tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         for source in [
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block: PointerBlock::Symbolic(Variable(972_003)),
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::MemoryLoad(
+                            memory.clone(),
+                            Box::new(address.clone()),
+                            LoadKind::Int32,
+                        ),
+                        4,
+                    ),
+                }),
+                Box::new(Pointer::null()),
+            ),
             ConditionTerm::PointerOffsetEqual(
                 Box::new(PointerOffsetTerm::Add(
                     Box::new(PointerOffsetTerm::Constant(0)),

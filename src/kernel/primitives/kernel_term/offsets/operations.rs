@@ -97,8 +97,20 @@ impl SharedPointerOffset {
     pub(crate) fn visit_pair_in_order(
         roots: &[Self; 2],
         right_first: bool,
-        mut visit: impl FnMut(&KernelPointerOffset),
+        visit: impl FnMut(&KernelPointerOffset),
     ) {
+        Self::visit_roots(roots, right_first, visit);
+    }
+
+    pub(crate) fn visit_root_in_order(
+        &self,
+        right_first: bool,
+        visit: impl FnMut(&KernelPointerOffset),
+    ) {
+        Self::visit_roots(std::slice::from_ref(self), right_first, visit);
+    }
+
+    fn visit_roots(roots: &[Self], right_first: bool, mut visit: impl FnMut(&KernelPointerOffset)) {
         let mut pending: Vec<_> = roots.iter().rev().collect();
         let mut seen = std::collections::HashSet::new();
         while let Some(root) = pending.pop() {

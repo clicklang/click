@@ -482,6 +482,12 @@ fn snapshot_blind_boolean_operand_key(
             pointer_keys::snapshot_offset(&b),
         );
     }
+    if let Some([a, b]) = condition.pointer_addresses() {
+        return SnapshotBlindConditionKey::PointerEqual(
+            pointer_keys::snapshot_address(&a),
+            pointer_keys::snapshot_address(&b),
+        );
+    }
     snapshot_blind_condition_key(&condition.native())
 }
 
@@ -5102,6 +5108,40 @@ mod offset_condition_tests {
                 assert!(!keys.contains(&actual));
                 keys.push(actual);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod raw_pointer_condition_tests {
+    use super::*;
+    #[test]
+    fn raw_pointer_condition_keys_match_native_and_keep_block_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut keys = Vec::new();
+        for block in [
+            PointerBlock::Symbolic(Variable(998610)),
+            PointerBlock::ExternalObject(Variable(998610)),
+            PointerBlock::FunctionSymbolic(Variable(998610)),
+        ] {
+            let source = ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block,
+                    offset: PointerOffsetTerm::scaled_int64_node(
+                        MachineTerm::Variable(Variable(998611)),
+                        8,
+                        true,
+                    ),
+                }),
+                Box::new(Pointer::null()),
+            );
+            let root = crate::kernel::KernelTermImport::default().condition(&source);
+            let actual = snapshot_blind_boolean_operand_key(
+                crate::kernel::BooleanOperandView::Shared(&root),
+            );
+            assert_eq!(actual, snapshot_blind_condition_key(&source));
+            assert!(!keys.contains(&actual));
+            keys.push(actual);
         }
     }
 }

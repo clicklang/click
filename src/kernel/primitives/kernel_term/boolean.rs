@@ -2,6 +2,7 @@
 //! written comparison format, even when fact equality identifies formats.
 use super::*;
 mod comparison;
+mod pointer_comparison;
 
 /// Borrow a Boolean root or an exact native compatibility payload. Inspecting
 /// this view never exports children, consults facts, or selects a branch.
@@ -117,6 +118,16 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
+            match (left.pointer_addresses(), right.pointer_addresses()) {
+                (Some(a), Some(b)) => {
+                    if !a.iter().zip(&b).all(|(a, b)| a.syntax_equal(b)) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
             if left.identity_leaf() != right.identity_leaf() {
                 return false;
             }
@@ -183,6 +194,21 @@ impl<'a> BooleanOperandView<'a> {
             unreachable!()
         };
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
+    }
+
+    pub(crate) fn pointer_addresses(self) -> Option<[SharedPointerAddress; 2]> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::PointerEqual { arguments } = root.node()
+        {
+            return Some(arguments.clone());
+        }
+        let ConditionTerm::PointerEqual(a, b) = self.native_leaf()? else {
+            return None;
+        };
+        Some([
+            SharedPointerAddress::import(a),
+            SharedPointerAddress::import(b),
+        ])
     }
 
     pub(crate) fn pointer_offsets(self) -> Option<[SharedPointerOffset; 2]> {
@@ -396,6 +422,12 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
+            Old::PointerEqual(a, b) => Node::PointerEqual {
+                arguments: [
+                    SharedPointerAddress::import(a),
+                    SharedPointerAddress::import(b),
+                ],
+            },
             Old::PointerOffsetEqual(a, b) => Node::PointerOffsetEqual {
                 arguments: [
                     KernelPointerOffset::import(a),
@@ -494,6 +526,9 @@ impl KernelTermExport {
         }
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::PointerEqual { arguments: [a, b] } => {
+                Old::PointerEqual(Box::new(a.export()?), Box::new(b.export()?))
+            }
             Node::PointerOffsetEqual { arguments: [a, b] } => Old::PointerOffsetEqual(
                 Box::new(KernelPointerOffset::export(a)?),
                 Box::new(KernelPointerOffset::export(b)?),
@@ -792,7 +827,21 @@ mod tests {
             Box::new(Pointer::symbolic(Variable(964_091))),
             Box::new(Pointer::symbolic(Variable(964_092))),
         );
-        let root = KernelTermImport::default().condition(&source);
+        // Test the explicit adapter independently of which condition families
+        // have migrated to common producer nodes.
+        let native = KernelTerm::legacy(PureFunctionArgument::Value(ProgramValue::Bool(
+            MachineTerm::BoolCast {
+                to: MachineIntegerType::UInt8,
+                value: Box::new(source.clone()),
+            },
+        )));
+        let KernelTermNode::Legacy(payload) = native.node() else {
+            panic!("legacy payload")
+        };
+        let root = KernelTerm::intern(
+            KernelType::Bool,
+            KernelTermNode::LegacyBool(payload.clone()),
+        );
         let view = BooleanOperandView::Shared(&root);
         assert!(matches!(view.native(), std::borrow::Cow::Borrowed(_)));
         assert_eq!(view.native_leaf(), Some(&source));

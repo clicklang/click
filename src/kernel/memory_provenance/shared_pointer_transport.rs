@@ -153,6 +153,18 @@ impl PointerRewrite for Transport<'_> {
     }
 }
 
+pub(super) fn transport_addresses(
+    source: &[SharedPointerAddress; 2],
+    after: &Memory,
+    assumptions: Option<(&PureFactContext, bool)>,
+) -> Option<[SharedPointerAddress; 2]> {
+    let mut transport = Transport::new(after, assumptions, false);
+    Some([
+        transport.address(&source[0])?,
+        transport.address(&source[1])?,
+    ])
+}
+
 pub(super) fn transport_offsets(
     source: &[SharedPointerOffset; 2],
     after: &Memory,
