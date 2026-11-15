@@ -428,7 +428,7 @@ including every scaling test, contract completion, Boolean call result productio
 semantic observation identity, shared call argument rewrites, Boolean spelling,
 and existing numeric/pointer call producers. The CI-quality check passed.
 
-8m retains Boolean composition and casts through production. Conditional and
+8m (merged [PR #2828](https://github.com/clicklang/click/pull/2828)) retains Boolean composition and casts through production. Conditional and
 equality constructors preserve the native root reductions; Boolean-to-machine
 casts retain their logical operand and written destination. Raw C Bool words
 still enter through their existing nonzero test, and comparisons with integers
@@ -449,6 +449,23 @@ constructor reductions, all integer cast formats, producer parity, observation
 identity, local range-fact preservation, equality rewrites, dependencies and the
 modeled-binary-tree example. The C/C++/Rust integer-language examples and focused
 cast-dispatch regressions passed separately. The CI-quality check passed.
+
+8o retains Boolean roots in local/outcome storage, memory cells and statement
+results, preceding 8n because its local/call handoffs need this storage support.
+Storage identity still uses the original native equality, hash and order rules,
+including comparisons with other value families. The selected Boolean native
+view reuses the existing argument cache; raw C Boolean words remain exact native
+values. Ordinary pointer queries do not materialize Boolean compatibility views.
+
+Same-type Boolean assignments, temporary-result handoffs and memory receipts
+preserve the producer root. A byte write that assembles a wider integer keeps
+that integer result, and changed-type conversions keep their existing behavior.
+General native output and replacement of compatibility keys remain later work.
+Validation: all 1,805 selected tests passed, including every scaling test,
+Boolean storage key agreement, actual statement stores and memory reloads,
+temporary result receipts, byte-view cases and existing pointer handoffs.
+Growing-prefix storage and retrieval perform no operand traversal or numeric
+export. The ordinary example projects and CI-quality check passed.
 
 ### 8a inventory
 

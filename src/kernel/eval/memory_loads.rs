@@ -4,7 +4,14 @@ use crate::kernel::MachineCastSpelling;
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
 fn retained_cell_conversion(source: &ExecutionValue, value: ProgramValue) -> ExecutionValue {
-    if source.shared().is_some() {
+    if source
+        .shared()
+        .is_some_and(|root| root.ty() == &KernelType::Bool)
+        && value.program_type() == ProgramType::Bool
+    {
+        // Same-type cell reads and word completion leave a Bool unchanged.
+        source.clone()
+    } else if source.shared().is_some() {
         source.retain_checked_pointer(value)
     } else {
         value.into()

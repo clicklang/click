@@ -7,6 +7,7 @@ mod complete_pointer;
 mod composition;
 mod overflow;
 mod read;
+mod storage;
 pub use complete_pointer::KernelPointerEquality;
 pub use read::KernelBooleanRead;
 mod pointer_comparison;

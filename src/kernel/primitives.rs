@@ -10294,9 +10294,9 @@ impl ExecutionState {
         self.set_retained_step_result(call, value.into());
     }
 
-    /// Keep an executed pointer producer through its statement-local handoff.
+    /// Keep an executed pointer or Boolean producer through its statement-local handoff.
     /// This uses the same native-key carrier as memory, without changing the
-    /// key or admitting other value families into common storage.
+    /// key; other value families retain their existing storage boundaries.
     pub(super) fn set_retained_step_result(
         &mut self,
         call: u32,
