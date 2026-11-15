@@ -346,7 +346,7 @@ snapshot keys and doubled/growing offset DAGs without numeric exports. Integrati
 validation against the subsequent pointer-read/snapshot-control changes is recorded
 with the PR. Boolean execution handoffs and the other package-8 families remain open.
 
-8h retains raw pointer equality as a typed pair of shared addresses. Block
+8h (merged [PR #2816](https://github.com/clicklang/click/pull/2816)) retains raw pointer equality as a typed pair of shared addresses. Block
 identity, shared displacement, exact producer metadata and semantic observation
 identity remain separate. Dependency readers preserve native admission and
 ordering, including loaded-pointer defining reads and right-first resource
@@ -366,6 +366,18 @@ Validation: all 1,716 selected tests passed, including every scaling test,
 raw-pointer constructor/substitution parity, block and snapshot identity,
 load authority, read ordering, dependency modes and frame transport. The
 CI-quality check passed.
+
+8i retains complete-pointer equality operands, including designation, opaque
+extent, explicit extent and exact qualifiers/evidence. Its observation identity
+uses the native logical fields without changing the producer payload. Snapshot
+selectors and dependency readers use shared address roles directly; extent widths
+retain each reader's existing admission policy. Load matching still accepts exact
+identity only, and framed condition transport retains its native refusal.
+
+Bitvector substitution maps addresses while preserving extent widths. Formal
+pointer substitution keeps the native complete-value designation and opaque-domain
+replacement rules, followed by the existing address canonicalization and equality
+constructor reductions. Surface output keeps its explicit compatibility adapter.
 
 ### 8a inventory
 

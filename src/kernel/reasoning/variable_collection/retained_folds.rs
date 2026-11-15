@@ -171,6 +171,18 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
+            KernelTermNode::PointerValueEqual(pair) => {
+                for value in pair.arguments() {
+                    for address in value.addresses() {
+                        super::retained_pointers::collect_address_variables_with_summaries(
+                            address,
+                            mode,
+                            &mut leaf_variables,
+                            summaries,
+                        );
+                    }
+                }
+            }
             KernelTermNode::PointerEqual { arguments } => {
                 for address in arguments {
                     super::retained_pointers::collect_address_variables_with_summaries(
@@ -436,6 +448,22 @@ mod tests {
             IntegerTerm::Variable(Variable(970_002)).into(),
         );
         for source in [
+            ConditionTerm::PointerValueEqual(
+                Box::new(
+                    PointerValue::new(
+                        Pointer::symbolic(Variable(970_010)),
+                        ProgramType::Int32Pointer,
+                    )
+                    .with_extent(Some(SubobjectExtent {
+                        start: Pointer::symbolic(Variable(970_011)),
+                        width: MachineTerm::Variable(Variable(970_012)),
+                    })),
+                ),
+                Box::new(PointerValue::new(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer,
+                )),
+            ),
             ConditionTerm::PointerOffsetEqual(
                 Box::new(PointerOffsetTerm::Add(
                     Box::new(PointerOffsetTerm::Variable(Variable(970_005))),

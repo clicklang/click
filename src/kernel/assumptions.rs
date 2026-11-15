@@ -446,6 +446,9 @@ pub(in crate::kernel) fn boolean_operands_equal_with_load_atoms(
         (None, None) => {}
         _ => return false,
     }
+    if left.pointer_values().is_some() || right.pointer_values().is_some() {
+        return false;
+    }
     conditions_equal_with_load_atoms(&left.native(), &right.native(), loads_match)
 }
 

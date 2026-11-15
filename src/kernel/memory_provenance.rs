@@ -6294,6 +6294,27 @@ fn collect_condition_operand_memories(
             for operand in operands {
                 collect_operand_memories(operand, memories, &mut seen);
             }
+        } else if let Some(values) = leaf.pointer_values() {
+            for value in values {
+                for address in value.addresses() {
+                    if let PointerBlock::PureFunctionApplication(call) =
+                        address.node().block.native_atom()
+                        && let Some(bits) = call.integer_address_bits()
+                    {
+                        collect_bitvector_memories(bits, memories);
+                    }
+                    let mut seen = BTreeSet::new();
+                    address.node().offset.visit_root_in_order(false, |node| {
+                        if let Some(index) = node.index() {
+                            collect_operand_memories(
+                                crate::kernel::MachineOperandView::Shared(index),
+                                memories,
+                                &mut seen,
+                            );
+                        }
+                    });
+                }
+            }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {
                 collect_equality_pointer_block_memories(
@@ -6552,7 +6573,8 @@ pub(in crate::kernel) fn transport_framed_common_condition(
         | Node::Variable(_)
         | Node::BoolIf { .. }
         | Node::BoolEqual { .. }
-        | Node::Call { .. } => None,
+        | Node::Call { .. }
+        | Node::PointerValueEqual(_) => None,
         Node::PointerEqual { arguments } => Some(crate::kernel::KernelTerm::pointer_equal(
             shared_pointer_transport::transport_addresses(arguments, after, assumptions)?,
         )),
