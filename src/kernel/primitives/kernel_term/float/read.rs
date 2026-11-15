@@ -1,4 +1,4 @@
-//! Typed float reads keep the producer's snapshot and shared address.
+//! Typed float reads keep the producer's state and shared address.
 use super::*;
 
 impl KernelFloatType {
@@ -18,12 +18,12 @@ impl KernelTerm {
     ) -> Self {
         Self::intern(
             KernelType::Program(format.program_type()),
-            KernelTermNode::FloatRead(KernelSnapshotRead::new(memory, address)),
+            KernelTermNode::FloatRead(KernelMemoryRead::new(memory, address)),
         )
     }
 
     /// Selected native read descriptor for remaining native readers. It never
-    /// exports an enclosing expression or chooses a different snapshot.
+    /// exports an enclosing expression or chooses a different state.
     pub(crate) fn float_read_native(&self) -> Option<&MachineTerm> {
         let KernelTermNode::FloatRead(read) = self.node() else {
             return None;
@@ -44,7 +44,7 @@ impl KernelTerm {
 mod tests {
     use super::*;
     #[test]
-    fn float_reads_keep_exact_snapshots_widths_and_shared_addresses() {
+    fn float_reads_keep_exact_states_widths_and_shared_addresses() {
         let first = {
             let _session = crate::kernel::VerificationSession::enter();
             intern_memory(Memory::new())

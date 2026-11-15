@@ -368,7 +368,7 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
             crate::kernel::program_expression::int32_literal(1),
         ))
         .with_role(ResourceTransferRole::Produce)
-        .with_snapshot(ResourceSnapshot::Post);
+        .with_state_source(ResourceStateSource::Post);
         let function = program_function(
             ProgramType::Void,
             "produce_one_cell",

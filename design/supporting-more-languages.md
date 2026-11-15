@@ -8,7 +8,7 @@ and open delivery requirements are owned by the
 
 ## Shared engine, language-specific admission
 
-Frontends share proof objects, logical terms, immutable memory snapshots,
+Frontends share proof objects, logical terms, immutable memory states,
 resources, execution and tool orchestration wherever semantics agree.
 Each frontend retains its own rules for valid values, object creation,
 aliasing, moves, lifetime, cleanup and exceptional outcomes. A parser accepting
@@ -28,10 +28,10 @@ Adopting Charon does not adopt Aeneas's functional memory interpretation.
 
 ## Authority, values and cleanup
 
-Access mode, transfer role and snapshot are distinct. `owns` at a call borrows
+Access mode, transfer role and state are distinct. `owns` at a call borrows
 and returns authority; `consumes`/`produces` can describe a move. `views` is a
 stable shared loan backed by suspended write authority. An old observation
-stays a fact about its snapshot, not necessarily the current value.
+stays a fact about its state, not necessarily the current value.
 
 A mutable reborrow cannot duplicate ownership. Recovery must return updated
 contents once, preserve disjoint access, and reject expired or wrong child

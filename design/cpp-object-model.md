@@ -13,7 +13,7 @@ This record does not require recovery of PR #646 or its retired implementation.
 2. Distinguish storage, object/type validity, initialized bytes, values and
    access authority. None substitutes for another.
 3. Keep efficient typed cells with coherent typed/byte observations at one
-   snapshot, rather than introducing an independent byte memory.
+   state, rather than introducing an independent byte memory.
 4. Establish output initialization from checked body effects, independently of
    value postconditions and ownership.
 5. Keep allocation, destination-directed construction, copying, assignment
@@ -36,13 +36,13 @@ The [C++ coverage item](../roadmap/cpp-support.md) owns feature expansion.
 The following are distinct facts the model must represent or derive from checked
 evidence. They need not become six new maps or one large mutable object record.
 Static importer evidence is sufficient for facts that cannot change within the
-admitted profile; dynamic facts belong in snapshots or checked execution state.
+admitted profile; dynamic facts belong in states or checked execution state.
 
 | Component | Meaning | Does not establish |
 | --- | --- | --- |
 | Storage | Allocation identity/generation, extent, alignment, and live storage | An object of an arbitrary requested type |
 | Object | Declared/admitted type, layout, containing object and subobject, lifecycle phase | Initialized contents or permission |
-| Representation | Typed values and byte fragments describing that storage at a snapshot | Legal access by every source-language type |
+| Representation | Typed values and byte fragments describing that storage at a state | Legal access by every source-language type |
 | Definite initialization | The selected bytes have been written or otherwise validly initialized | A particular value, or validity for every type |
 | Value availability and validity | A language-level value may be used in this phase with this type | Ownership of all reachable storage |
 | Authority | Permission to read/write or a checked loan/resource over a range | Freshness, initialization, or object lifetime |
@@ -87,7 +87,7 @@ The kernel then applies their shared effects consistently, including at calls.
 | Select construction destination | Exact pointer, layout, range and authority | Bind that destination before execution; no extra freshness assumption |
 | Begin object/subobject use | Admitted declaration or construction rule | Record/validate type and lifecycle phase; no arbitrary reinterpretation |
 | Initialize scalar/field | Valid destination, conversion, phase and write permission | Store the converted value and mark the written range initialized |
-| Read typed value | Valid object/access type, phase, alignment, initialized representation and read permission | Observe the value at that snapshot |
+| Read typed value | Valid object/access type, phase, alignment, initialized representation and read permission | Observe the value at that state |
 | Assign/store | Existing writable object and valid converted value | Update affected representation; preserve object identity |
 | Copy a value | Valid initialized source and destination operation | Copy modeled values, including pointer provenance; no pointer rebasing |
 | Copy representation | A checked representation-copy rule and covered source/destination | Transport supported representation and initialization under that rule |
@@ -113,11 +113,11 @@ lifetime of independently owned span backing storage.
 
 ## Typed and byte observations
 
-For a supported declared uint32 at one snapshot, byte `k` denotes bits
+For a supported declared uint32 at one state, byte `k` denotes bits
 `8*k` through `8*k+7` of its word. Four initialized bytes determine the same
 little-endian word whether written inline or by a checked modular helper.
 A partial update preserves other initialized bytes; incomplete initialization
-or bytes from an older snapshot cannot determine a current complete word.
+or bytes from an older state cannot determine a current complete word.
 A byte array, cast, requested load width or ownership claim does not create a
 uint32 object.
 
@@ -184,7 +184,7 @@ safe-Rust import evidence.
 
 The bounded milestone's pointer-field fold, entry/call matrix and exact modular
 byte-output composition are checked in the current audit, including
-initialization, authority, stale-snapshot and forged-type controls. Keep these
+initialization, authority, stale-state and forged-type controls. Keep these
 compositions as regressions when extending a source profile. Use the named
 current witnesses rather than historical example counts.
 

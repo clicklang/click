@@ -11,7 +11,7 @@ proves the four-lane helper bodies and the unchanged general computation.
 For every input length from any canonical initial state, `Adler32::compute`
 terminates, preserves input bytes, and stores both fields equal to the shared
 `uint64` checksum specification (`adler_spec_a_u64`/`adler_spec_b_u64` at
-`bytes.len()`) on the entry snapshot. The proof follows actual native remaining
+`bytes.len()`) on the entry state. The proof follows actual native remaining
 counts, `uint64` iterator cursors and shared input views through all original
 loops, reductions and final stores; no length bound is required. The unchanged
 `adler32_slice` entry point composes the checked constructor, general update

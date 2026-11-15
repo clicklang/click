@@ -31,7 +31,7 @@ fn float_atom_views_do_constant_work_beside_growing_arenas() {
 }
 
 #[test]
-fn float_read_construction_keeps_growing_shared_addresses_and_snapshots() {
+fn float_read_construction_keeps_growing_shared_addresses_and_states() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut index =

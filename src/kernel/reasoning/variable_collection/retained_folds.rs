@@ -1,5 +1,5 @@
 //! Scoped readers for common fold operands. Native leaves retain their
-//! existing registry, snapshot, call-connection and capture rules.
+//! existing registry, state, call-connection and capture rules.
 use super::*;
 use crate::kernel::{KernelFold, KernelTerm, KernelTermNode, KernelType};
 
@@ -621,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn float_readers_preserve_snapshot_address_and_native_collection_modes() {
+    fn float_readers_preserve_state_address_and_native_collection_modes() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = intern_memory(Memory::new().with_block("float-read-history", 4).store(
             Memory::global_pointer("float-read-history"),

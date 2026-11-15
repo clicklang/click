@@ -97,8 +97,8 @@ fn float_conversion_index_fingerprints_share_growing_float_prefixes() {
                 .unwrap();
                 for policy in [
                     OperandFingerprintPolicy::MemoryBlind,
-                    OperandFingerprintPolicy::Snapshot(false),
-                    OperandFingerprintPolicy::Snapshot(true),
+                    OperandFingerprintPolicy::MemoryState(false),
+                    OperandFingerprintPolicy::MemoryState(true),
                 ] {
                     let first = operand_fingerprint(MachineOperandView::Shared(&converted), policy);
                     assert_eq!(
