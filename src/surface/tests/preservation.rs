@@ -1682,3 +1682,29 @@ fn loop_ownership_preservation_migrations_expand_and_replay() {
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
     }
 }
+
+#[test]
+#[ignore = "nightly: local-pointer observation expansion and cold replay"]
+fn local_pointer_memory_observation_uses_its_element_type() {
+    for (fixture, claims) in [(
+        "mdtests/observe_local_pointer_element_width.md",
+        &["bytes.contract", "wide.contract"][..],
+    )] {
+        let (mut source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        verify_c_sources(&source, &sources).unwrap();
+        for claim in claims {
+            source = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        }
+        assert!(!source.contains("transport("), "{fixture}: {source}");
+        for claim in claims {
+            without_implicit_solve_for_claim(claim, || {
+                verify_c_sources(&source, &sources).map_err(|error| error.report())
+            })
+            .unwrap();
+        }
+    }
+}

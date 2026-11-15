@@ -2788,8 +2788,8 @@ fn synthesize_surface_atomic_proposition(
     }
     if let ConditionTerm::PointerValueEqual(left, right) = condition {
         return Some(ClickProposition::Comparison {
-            left: synthesize_surface_pointer_expression(
-                left.pointer(),
+            left: synthesize_pointer_equality_operand(
+                left,
                 parameter_binding,
                 state,
                 bound_variables,
@@ -2799,8 +2799,8 @@ fn synthesize_surface_atomic_proposition(
             } else {
                 ComparisonOperator::NotEqual
             },
-            right: synthesize_surface_pointer_expression(
-                right.pointer(),
+            right: synthesize_pointer_equality_operand(
+                right,
                 parameter_binding,
                 state,
                 bound_variables,
@@ -3867,16 +3867,16 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
         ),
         ConditionTerm::PointerValueEqual(left, right) => (
             anchored(&|state| {
-                synthesize_surface_pointer_expression(
-                    left.pointer(),
+                synthesize_pointer_equality_operand(
+                    left,
                     parameter_binding,
                     state,
                     &bound_variables,
                 )
             })?,
             anchored(&|state| {
-                synthesize_surface_pointer_expression(
-                    right.pointer(),
+                synthesize_pointer_equality_operand(
+                    right,
                     parameter_binding,
                     state,
                     &bound_variables,
@@ -6119,6 +6119,42 @@ fn state_call_result(
         matches(&value.native())
     })?;
     crate::surface::diagnostics::step_result_expression(*step)
+}
+
+/// A pointer equality already fixes its operands' types. Preserve that type
+/// for arithmetic source operands, whose bare C `Add` otherwise carries no
+/// type for its named base and can be misprinted as integer arithmetic.
+/// Keep this at the value-comparison boundary: resource addresses retain
+/// their existing source places and frontend layout information.
+fn synthesize_pointer_equality_operand(
+    value: &crate::kernel::PointerValue,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let expression = synthesize_surface_pointer_expression(
+        value.pointer(),
+        parameter_binding,
+        state,
+        bound_variables,
+    )?;
+    let mut inner = &expression;
+    while let ContractExpression::At { expression, .. } | ContractExpression::Old(expression) =
+        inner
+    {
+        inner = expression;
+    }
+    if matches!(
+        inner,
+        ContractExpression::ProgramExpression(
+            ProgramExpression::Add(..) | ProgramExpression::Subtract(..)
+        ) | ContractExpression::Add(..)
+            | ContractExpression::Subtract(..)
+    ) {
+        synthesize_observation_operand(expression, value.program_type())
+    } else {
+        Some(expression)
+    }
 }
 
 fn synthesize_surface_pointer_expression(

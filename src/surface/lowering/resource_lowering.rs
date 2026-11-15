@@ -2995,6 +2995,22 @@ fn lower_resource_segment_with_values(
             "could not lower `{resource_name}` resource: segment base did not evaluate to a pointer"
         )));
     };
+    // A local pointer has no function-parameter entry. Its evaluated typed
+    // value still supplies the element width; do not use the legacy int32
+    // default for ranges selected through a byte or wide-integer local.
+    // Only a named pointer base uses this path. Field/address expressions
+    // retain their explicitly supplied frontend layout widths.
+    let element_width = if matches!(segment.surface, ContractSegmentSurface::Range { .. })
+        && matches!(segment.base, ProgramExpression::Variable(_))
+        && segment.field_element_width().is_none()
+    {
+        base.program_type()
+            .pointee_type()
+            .map(ProgramType::byte_width)
+            .unwrap_or(element_width)
+    } else {
+        element_width
+    };
     let base_value = base;
     // A clause through a member pointer may not claim past the member
     // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
