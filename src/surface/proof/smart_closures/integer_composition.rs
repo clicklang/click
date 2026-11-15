@@ -749,7 +749,7 @@ fn with_argument_domains(step: ProofStep, domains: &[ClickProposition]) -> Proof
     }
 }
 
-fn observed_argument(expression: &ContractExpression) -> Option<ContractExpression> {
+pub(super) fn observed_argument(expression: &ContractExpression) -> Option<ContractExpression> {
     match expression {
         ContractExpression::Call { name, arguments }
             if name == "to_integer" && arguments.len() == 1 =>
@@ -1349,6 +1349,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(query) =
                 crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
             else {
+                // Reads can carry a separate domain as well. Retain that
+                // exact established fact for theorem-argument checking.
+                if !normalizes_context_free(&kernel)
+                    && proof.facts().listed_premise_available(&kernel, &[], false)
+                    && !domains.contains(&domain)
+                {
+                    domain_proofs.push(have(domain.clone(), vec![ProofStep::Known]));
+                    domains.push(domain);
+                }
                 continue;
             };
             if domains.contains(&domain) {

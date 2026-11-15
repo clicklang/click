@@ -214,6 +214,22 @@ pub(crate) fn normalize_using_conditions(
             .then_some(())
             .ok_or(ConditionalNormalizationError::DoesNotNormalize);
     }
+    // Validate every explicit citation before a local interval reduction.
+    // Successful endpoint checks need no general rewriting context or its
+    // mirrored condition forms over each increasingly large machine term.
+    for (index, premise) in premises.iter().enumerate() {
+        if !crate::kernel::proposition_holds_without_facts(premise)
+            && !facts.available(premise)
+            && !order_claim_forms(premise)
+                .iter()
+                .any(|form| facts.available(form))
+        {
+            return Err(ConditionalNormalizationError::UnavailablePremise(index));
+        }
+    }
+    if intervals::reduces_one_operation(goal, premises) {
+        return Ok(());
+    }
     let mut conditions = std::collections::HashMap::new();
     // Keep graph admission in source order. Its bounded pointer fragment may
     // retain different coordinates after a block merge; hash iteration must
@@ -229,14 +245,6 @@ pub(crate) fn normalize_using_conditions(
         Vec<(super::fact_keys::IntegerEqualityAlphaKey, bool)>,
     > = std::collections::HashMap::new();
     for (index, premise) in premises.iter().enumerate() {
-        if !crate::kernel::proposition_holds_without_facts(premise)
-            && !facts.available(premise)
-            && !order_claim_forms(premise)
-                .iter()
-                .any(|form| facts.available(form))
-        {
-            return Err(ConditionalNormalizationError::UnavailablePremise(index));
-        }
         // A complete arithmetic domain supplies its two ordinary bounds.
         // Keep shared operands intact; no private overflow spelling is needed.
         let leaves =
@@ -376,9 +384,6 @@ pub(crate) fn normalize_using_conditions(
         {
             return Ok(());
         }
-    }
-    if intervals::reduces_one_operation(goal, premises) {
-        return Ok(());
     }
     // Rule L-Eq through a cited `Bool` equality (Stage 5): `a == b` with
     // truth `t` and `a` cited or constant gives `b`, and the other way. One

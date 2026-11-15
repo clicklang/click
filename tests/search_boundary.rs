@@ -1297,12 +1297,12 @@ fn match_arm_exclusion_primitives_cannot_dispatch_steps() {
 }
 
 #[test]
-fn signed_definedness_certificate_attempts_stay_in_search() {
+fn signed_definedness_composition_attempts_stay_in_search() {
     let path = "src/surface/proof/signed_definedness.rs";
     for source in [
-        "impl Proof { fn try_signed_definedness_certificate(&self) {} }",
-        "impl Proof { fn apply_signed_definedness_certificate(&self) { self.driver().apply_step(certificate); } }",
-        "impl Proof { fn apply_certificate(&self) { ProofSearch::try_signed_definedness_certificate(self, width, premises); } }",
+        "impl Proof { fn try_signed_definedness_bounds(&self) {} }",
+        "impl Proof { fn apply_signed_definedness_bounds(&self) { self.driver().apply_step(certificate); } }",
+        "impl Proof { fn apply_certificate(&self) { ProofSearch::try_signed_definedness_bounds(self, width, premises); } }",
     ] {
         let file = syn::parse_file(source).unwrap();
         assert!(

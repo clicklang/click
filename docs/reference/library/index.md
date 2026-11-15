@@ -963,16 +963,397 @@ theorem int32_increment_upper_bound(value: int32, upper: int32) {
     requires value < upper;
 
     ensures to_integer(value + 1) <= to_integer(upper) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (value as int32) < (upper as int32) => (value as int32) < (upper as int32);
-            int32_range => to_integer(upper as int32) <= to_integer(2147483647 as int32);
-            add 0, 1 => (to_integer(value as int32) + to_integer(upper as int32)) < (to_integer(upper as int32) + to_integer(2147483647 as int32));
-            interval_from_affine 2 (value) (-2147483648) (2147483646);
-            interval_atom (1) (1) (1);
-            interval_add_bounded 3, 4 (-2147483647) (2147483647);
-            affine_conclusion 0 5 => ((value + 1) as int32) <= (upper as int32);
-            conclusion 6;
+        have to_integer((upper as int32)) <= to_integer((2147483647 as int32)) by {
+            normalize() using {};
         }
+        have (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) < (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+            have (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) < (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) <= 0 by {
+                    have to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((value as int32) as int32) < ((upper as int32) as int32);
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper as int32) as int32) as int32)) by {
+                        apply(click::integer::lt_step_le(to_integer((((value as int32) as int32) as int32)), to_integer((((upper as int32) as int32) as int32)))) using {
+                            to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as
+                                int32) as int32) as int32));
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer((((value as int32) as int32) as int32)) + 1), to_integer((((upper as int32) as int32) as int32)), (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1))) using {
+                        (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper
+                            as int32) as int32) as int32));
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as
+                            int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as
+                            int32)));
+                    };
+                }
+                have (to_integer((((upper as int32) as int32) as int32)) + -2147483647) <= 0 by {
+                    have (to_integer((((upper as int32) as int32) as int32)) + -2147483647) == (to_integer((upper as int32)) - to_integer((2147483647 as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((upper as int32)), to_integer((2147483647 as int32)), (to_integer((((upper as int32) as int32) as int32)) + -2147483647))) using {
+                        to_integer((upper as int32)) <= to_integer((2147483647 as int32));
+                        (to_integer((((upper as int32) as int32) as int32)) + -2147483647) ==
+                            (to_integer((upper as int32)) - to_integer((2147483647 as int32)));
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + -2147483646) <= 0 by {
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1), 0, (to_integer((((upper as int32) as int32) as int32)) + -2147483647), 0)) using {
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                                to_integer((((upper as int32) as int32) as int32))) + 1) <= 0;
+                            (to_integer((((upper as int32) as int32) as int32)) + -2147483647) <= 0;
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + -2147483646) == (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)), (0 + 0), (to_integer((((value as int32) as int32) as int32)) + -2147483646), 0)) using {
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as
+                            int32) as int32)) + -2147483647)) <= (0 + 0);
+                        (to_integer((((value as int32) as int32) as int32)) + -2147483646) ==
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                            to_integer((((upper as int32) as int32) as int32))) + 1 +
+                            (to_integer((((upper as int32) as int32) as int32)) + -2147483647));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + -2147483646) == ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))), (to_integer((((value as int32) as int32) as int32)) + -2147483646))) using {
+                    (to_integer((((value as int32) as int32) as int32)) + -2147483646) <= 0;
+                    (to_integer((((value as int32) as int32) as int32)) + -2147483646) ==
+                        ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) -
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))));
+                };
+                apply(click::integer::step_le_lt((to_integer(((value as int32) as int32)) + to_integer((upper as int32))), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))))) using {
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <=
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+                };
+            }
+            normalize() using {
+                (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                    (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+            };
+        }
+        have -2147483648 <= to_integer((value as int32)) by {
+            normalize() using {
+                (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                    (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+            };
+        }
+        have to_integer((value as int32)) <= 2147483646 by {
+            have to_integer((value as int32)) <= 2147483646 by {
+                have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) <= 0 by {
+                    have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <= (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+                        apply(click::integer::lt_step_le((to_integer(((value as int32) as int32)) + to_integer((upper as int32))), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))))) using {
+                            (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                                (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                                int32)));
+                        };
+                    }
+                    have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) == ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))), (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1))) using {
+                        (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <=
+                            (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                            int32)));
+                        (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                            (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                            int32)))) + 1) == ((to_integer(((value as int32) as int32)) +
+                            to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32))
+                            + to_integer((2147483647 as int32))));
+                    };
+                }
+                have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) == (to_integer((value as int32)) - 2147483646) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(to_integer((value as int32)), 2147483646, (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1))) using {
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) +
+                        1) <= 0;
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) +
+                        1) == (to_integer((value as int32)) - 2147483646);
+                };
+            }
+            normalize() using {
+                to_integer((value as int32)) <= 2147483646;
+            };
+        }
+        have 1 <= to_integer((1 as int32)) by {
+            normalize() using {};
+        }
+        have to_integer((1 as int32)) <= 1 by {
+            normalize() using {};
+        }
+        have -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32))) by {
+            have -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32))) by {
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) == (-2147483648 - to_integer((value as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(-2147483648, to_integer((value as int32)), ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)))) using {
+                        -2147483648 <= to_integer((value as int32));
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) ==
+                            (-2147483648 - to_integer((value as int32)));
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                        };
+                    }
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)), 0)) using {
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let
+                            integer_constant: Integer = -1; integer_constant)) <= (0 + 0);
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == ((-1 *
+                            to_integer((value as int32))) + -to_integer(2147483648u64) + (let
+                            integer_constant: Integer = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == (-2147483648 - (to_integer((value as int32)) + to_integer((1 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(-2147483648, (to_integer((value as int32)) + to_integer((1 as int32))), ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)))) using {
+                    ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) <= 0;
+                    ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == (-2147483648 -
+                        (to_integer((value as int32)) + to_integer((1 as int32))));
+                };
+            }
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32)));
+            };
+        }
+        have (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647 by {
+            have (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647 by {
+                have (to_integer((value as int32)) + -2147483646) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483646) == (to_integer((value as int32)) - 2147483646) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((value as int32)), 2147483646, (to_integer((value as int32)) + -2147483646))) using {
+                        to_integer((value as int32)) <= 2147483646;
+                        (to_integer((value as int32)) + -2147483646) == (to_integer((value as int32)) -
+                            2147483646);
+                    };
+                }
+                have (to_integer((value as int32)) + -2147483646) == ((to_integer((value as int32)) + to_integer((1 as int32))) - 2147483647) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer((value as int32)) + to_integer((1 as int32))), 2147483647, (to_integer((value as int32)) + -2147483646))) using {
+                    (to_integer((value as int32)) + -2147483646) <= 0;
+                    (to_integer((value as int32)) + -2147483646) == ((to_integer((value as int32)) +
+                        to_integer((1 as int32))) - 2147483647);
+                };
+            }
+            normalize() using {
+                (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have defined((value + 1)) by {
+            known();
+        }
+        have to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as int32))) by {
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32)));
+                (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have -2147483647 <= to_integer(((value + 1) as int32)) by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have to_integer(((value + 1) as int32)) <= 2147483647 by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have ((value + 1) as int32) <= (upper as int32) by {
+            have defined(((value + 1) as int32)) by {
+                known();
+            }
+            have defined((value + 1)) by {
+                known();
+            }
+            have defined(old(((value + 1) as int32))) by {
+                known();
+            }
+            have defined(old((value + 1))) by {
+                known();
+            }
+            have to_integer((((value + 1) as int32) as int32)) <= to_integer(((upper as int32) as int32)) by {
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) <= 0 by {
+                    have to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((value as int32) as int32) < ((upper as int32) as int32);
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper as int32) as int32) as int32)) by {
+                        apply(click::integer::lt_step_le(to_integer((((value as int32) as int32) as int32)), to_integer((((upper as int32) as int32) as int32)))) using {
+                            to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as
+                                int32) as int32) as int32));
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer((((value as int32) as int32) as int32)) + 1), to_integer((((upper as int32) as int32) as int32)), (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1))) using {
+                        (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper
+                            as int32) as int32) as int32));
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as
+                            int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as
+                            int32)));
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) == 0 by {
+                    have (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))) == 0 by {
+                        apply(click::integer::equal_difference(to_integer(((value + 1) as int32)), (to_integer((value as int32)) + to_integer((1 as int32))))) using {
+                            to_integer(((value + 1) as int32)) == (to_integer((value as int32)) +
+                                to_integer((1 as int32)));
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) == (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::equal_substitute((to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))), 0, ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))), 0)) using {
+                        (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) +
+                            to_integer((1 as int32)))) == 0;
+                        ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                            to_integer(((value + 1) as int32))) == (to_integer(((value + 1) as int32)) -
+                            (to_integer((value as int32)) + to_integer((1 as int32))));
+                        (let integer_value: Integer = 0; integer_value) == 0;
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) <= 0 by {
+                    apply(click::integer::equal_le(((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))), 0)) using {
+                        ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                            to_integer(((value + 1) as int32))) == 0;
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as int32) as int32) as int32))) + to_integer(((value + 1) as int32)) + 1) <= 0 by {
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32)))) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1), 0, ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))), 0)) using {
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                                to_integer((((upper as int32) as int32) as int32))) + 1) <= 0;
+                            ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                                to_integer(((value + 1) as int32))) <= 0;
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as int32) as int32) as int32))) + to_integer(((value + 1) as int32)) + 1) == (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32)))) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32)))), (0 + 0), (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as int32) as int32) as int32))) + to_integer(((value + 1) as int32)) + 1), 0)) using {
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1 + ((-1 * (to_integer((value as int32)) +
+                            to_integer((1 as int32)))) + to_integer(((value + 1) as int32)))) <= (0 +
+                            0);
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value
+                            as int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as
+                            int32) as int32) as int32))) + to_integer(((value + 1) as int32)) + 1) ==
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                            to_integer((((upper as int32) as int32) as int32))) + 1 + ((-1 *
+                            (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                            to_integer(((value + 1) as int32))));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as int32) as int32) as int32))) + to_integer(((value + 1) as int32)) + 1) == (to_integer((((value + 1) as int32) as int32)) - to_integer(((upper as int32) as int32))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(to_integer((((value + 1) as int32) as int32)), to_integer(((upper as int32) as int32)), (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as int32) as int32) as int32))) + to_integer(((value + 1) as int32)) + 1))) using {
+                    (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value as
+                        int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as int32) as
+                        int32) as int32))) + to_integer(((value + 1) as int32)) + 1) <= 0;
+                    (to_integer((((value as int32) as int32) as int32)) + (-1 * (to_integer((value as
+                        int32)) + to_integer((1 as int32)))) + (-1 * to_integer((((upper as int32) as
+                        int32) as int32))) + to_integer(((value + 1) as int32)) + 1) ==
+                        (to_integer((((value + 1) as int32) as int32)) - to_integer(((upper as int32) as
+                        int32)));
+                    defined(((value + 1) as int32));
+                    defined((value + 1));
+                    defined(old(((value + 1) as int32)));
+                    defined(old((value + 1)));
+                };
+            }
+            normalize() using {
+                to_integer((((value + 1) as int32) as int32)) <= to_integer(((upper as int32) as
+                    int32));
+            };
+        }
+        have to_integer((value + 1)) <= to_integer(upper) by {
+            normalize() using {
+                ((value + 1) as int32) <= (upper as int32);
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        known();
     }
 }
 ```
@@ -990,17 +1371,368 @@ theorem int32_increment_strictly_increases(value: int32, upper: int32) {
     requires value < upper;
 
     ensures to_integer(value) < to_integer(value + 1) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (value as int32) < (upper as int32) => (value as int32) < (upper as int32);
-            int32_range => to_integer(upper as int32) <= to_integer(2147483647 as int32);
-            add 0, 1 => (to_integer(value as int32) + to_integer(upper as int32)) < (to_integer(upper as int32) + to_integer(2147483647 as int32));
-            interval_from_affine 2 (value) (-2147483648) (2147483646);
-            interval_atom (1) (1) (1);
-            interval_add_bounded 3, 4 (-2147483647) (2147483647);
-            trivial => 0 <= 0;
-            affine_conclusion 6 5 => (value as int32) < ((value + 1) as int32);
-            conclusion 7;
+        have to_integer((upper as int32)) <= to_integer((2147483647 as int32)) by {
+            normalize() using {};
         }
+        have (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) < (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+            have (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) < (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) <= 0 by {
+                    have to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((value as int32) as int32) < ((upper as int32) as int32);
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper as int32) as int32) as int32)) by {
+                        apply(click::integer::lt_step_le(to_integer((((value as int32) as int32) as int32)), to_integer((((upper as int32) as int32) as int32)))) using {
+                            to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as
+                                int32) as int32) as int32));
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer((((value as int32) as int32) as int32)) + 1), to_integer((((upper as int32) as int32) as int32)), (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1))) using {
+                        (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper
+                            as int32) as int32) as int32));
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as
+                            int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as
+                            int32)));
+                    };
+                }
+                have (to_integer((((upper as int32) as int32) as int32)) + -2147483647) <= 0 by {
+                    have (to_integer((((upper as int32) as int32) as int32)) + -2147483647) == (to_integer((upper as int32)) - to_integer((2147483647 as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((upper as int32)), to_integer((2147483647 as int32)), (to_integer((((upper as int32) as int32) as int32)) + -2147483647))) using {
+                        to_integer((upper as int32)) <= to_integer((2147483647 as int32));
+                        (to_integer((((upper as int32) as int32) as int32)) + -2147483647) ==
+                            (to_integer((upper as int32)) - to_integer((2147483647 as int32)));
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + -2147483646) <= 0 by {
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1), 0, (to_integer((((upper as int32) as int32) as int32)) + -2147483647), 0)) using {
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                                to_integer((((upper as int32) as int32) as int32))) + 1) <= 0;
+                            (to_integer((((upper as int32) as int32) as int32)) + -2147483647) <= 0;
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + -2147483646) == (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)), (0 + 0), (to_integer((((value as int32) as int32) as int32)) + -2147483646), 0)) using {
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as
+                            int32) as int32)) + -2147483647)) <= (0 + 0);
+                        (to_integer((((value as int32) as int32) as int32)) + -2147483646) ==
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                            to_integer((((upper as int32) as int32) as int32))) + 1 +
+                            (to_integer((((upper as int32) as int32) as int32)) + -2147483647));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + -2147483646) == ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))), (to_integer((((value as int32) as int32) as int32)) + -2147483646))) using {
+                    (to_integer((((value as int32) as int32) as int32)) + -2147483646) <= 0;
+                    (to_integer((((value as int32) as int32) as int32)) + -2147483646) ==
+                        ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) -
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))));
+                };
+                apply(click::integer::step_le_lt((to_integer(((value as int32) as int32)) + to_integer((upper as int32))), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))))) using {
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <=
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+                };
+            }
+            normalize() using {
+                (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                    (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+            };
+        }
+        have -2147483648 <= to_integer((value as int32)) by {
+            normalize() using {
+                (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                    (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+            };
+        }
+        have to_integer((value as int32)) <= 2147483646 by {
+            have to_integer((value as int32)) <= 2147483646 by {
+                have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) <= 0 by {
+                    have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <= (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+                        apply(click::integer::lt_step_le((to_integer(((value as int32) as int32)) + to_integer((upper as int32))), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))))) using {
+                            (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                                (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                                int32)));
+                        };
+                    }
+                    have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) == ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))), (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1))) using {
+                        (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <=
+                            (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                            int32)));
+                        (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                            (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                            int32)))) + 1) == ((to_integer(((value as int32) as int32)) +
+                            to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32))
+                            + to_integer((2147483647 as int32))));
+                    };
+                }
+                have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) == (to_integer((value as int32)) - 2147483646) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(to_integer((value as int32)), 2147483646, (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1))) using {
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) +
+                        1) <= 0;
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) +
+                        1) == (to_integer((value as int32)) - 2147483646);
+                };
+            }
+            normalize() using {
+                to_integer((value as int32)) <= 2147483646;
+            };
+        }
+        have 1 <= to_integer((1 as int32)) by {
+            normalize() using {};
+        }
+        have to_integer((1 as int32)) <= 1 by {
+            normalize() using {};
+        }
+        have -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32))) by {
+            have -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32))) by {
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) == (-2147483648 - to_integer((value as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(-2147483648, to_integer((value as int32)), ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)))) using {
+                        -2147483648 <= to_integer((value as int32));
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) ==
+                            (-2147483648 - to_integer((value as int32)));
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                        };
+                    }
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)), 0)) using {
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let
+                            integer_constant: Integer = -1; integer_constant)) <= (0 + 0);
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == ((-1 *
+                            to_integer((value as int32))) + -to_integer(2147483648u64) + (let
+                            integer_constant: Integer = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == (-2147483648 - (to_integer((value as int32)) + to_integer((1 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(-2147483648, (to_integer((value as int32)) + to_integer((1 as int32))), ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)))) using {
+                    ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) <= 0;
+                    ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == (-2147483648 -
+                        (to_integer((value as int32)) + to_integer((1 as int32))));
+                };
+            }
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32)));
+            };
+        }
+        have (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647 by {
+            have (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647 by {
+                have (to_integer((value as int32)) + -2147483646) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483646) == (to_integer((value as int32)) - 2147483646) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((value as int32)), 2147483646, (to_integer((value as int32)) + -2147483646))) using {
+                        to_integer((value as int32)) <= 2147483646;
+                        (to_integer((value as int32)) + -2147483646) == (to_integer((value as int32)) -
+                            2147483646);
+                    };
+                }
+                have (to_integer((value as int32)) + -2147483646) == ((to_integer((value as int32)) + to_integer((1 as int32))) - 2147483647) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer((value as int32)) + to_integer((1 as int32))), 2147483647, (to_integer((value as int32)) + -2147483646))) using {
+                    (to_integer((value as int32)) + -2147483646) <= 0;
+                    (to_integer((value as int32)) + -2147483646) == ((to_integer((value as int32)) +
+                        to_integer((1 as int32))) - 2147483647);
+                };
+            }
+            normalize() using {
+                (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have defined((value + 1)) by {
+            known();
+        }
+        have to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as int32))) by {
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32)));
+                (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have -2147483647 <= to_integer(((value + 1) as int32)) by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have to_integer(((value + 1) as int32)) <= 2147483647 by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have 0 <= 0 by {
+            normalize() using {
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have (value as int32) < ((value + 1) as int32) by {
+            have defined(((value + 1) as int32)) by {
+                known();
+            }
+            have defined((value + 1)) by {
+                known();
+            }
+            have defined(old(((value + 1) as int32))) by {
+                known();
+            }
+            have defined(old((value + 1))) by {
+                known();
+            }
+            have to_integer(((value as int32) as int32)) < to_integer((((value + 1) as int32) as int32)) by {
+                have ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) == 0 by {
+                    have (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))) == 0 by {
+                        apply(click::integer::equal_difference(to_integer(((value + 1) as int32)), (to_integer((value as int32)) + to_integer((1 as int32))))) using {
+                            to_integer(((value + 1) as int32)) == (to_integer((value as int32)) +
+                                to_integer((1 as int32)));
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) == (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::equal_substitute((to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))), 0, ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))), 0)) using {
+                        (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) +
+                            to_integer((1 as int32)))) == 0;
+                        ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                            to_integer(((value + 1) as int32))) == (to_integer(((value + 1) as int32)) -
+                            (to_integer((value as int32)) + to_integer((1 as int32))));
+                        (let integer_value: Integer = 0; integer_value) == 0;
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))) <= 0 by {
+                    have (((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) * -1) == (0 * -1) by {
+                        apply(click::integer::equal_multiply(((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))), 0, -1)) using {
+                            ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                                to_integer(((value + 1) as int32))) == 0;
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))) == 0 by {
+                        have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))) == (((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) * -1) by {
+                            normalize();
+                        }
+                        have (let integer_value: Integer = 0; integer_value) == (0 * -1) by {
+                            normalize();
+                        }
+                        apply(click::integer::equal_substitute((((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) * -1), (0 * -1), (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))), 0)) using {
+                            (((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                                to_integer(((value + 1) as int32))) * -1) == (0 * -1);
+                            (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 *
+                                to_integer(((value + 1) as int32)))) == (((-1 * (to_integer((value as
+                                int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as
+                                int32))) * -1);
+                            (let integer_value: Integer = 0; integer_value) == (0 * -1);
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    apply(click::integer::equal_le((to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))), 0)) using {
+                        (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 *
+                            to_integer(((value + 1) as int32)))) == 0;
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))) == ((to_integer(((value as int32) as int32)) + 1) - to_integer((((value + 1) as int32) as int32))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer(((value as int32) as int32)) + 1), to_integer((((value + 1) as int32) as int32)), (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))))) using {
+                    (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value
+                        + 1) as int32)))) <= 0;
+                    (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value
+                        + 1) as int32)))) == ((to_integer(((value as int32) as int32)) + 1) -
+                        to_integer((((value + 1) as int32) as int32)));
+                    defined(((value + 1) as int32));
+                    defined((value + 1));
+                    defined(old(((value + 1) as int32)));
+                    defined(old((value + 1)));
+                };
+                apply(click::integer::step_le_lt(to_integer(((value as int32) as int32)), to_integer((((value + 1) as int32) as int32)))) using {
+                    (to_integer(((value as int32) as int32)) + 1) <= to_integer((((value + 1) as int32)
+                        as int32));
+                    defined(((value + 1) as int32));
+                    defined((value + 1));
+                    defined(old(((value + 1) as int32)));
+                    defined(old((value + 1)));
+                };
+            }
+            normalize() using {
+                to_integer(((value as int32) as int32)) < to_integer((((value + 1) as int32) as int32));
+            };
+        }
+        have to_integer(value) < to_integer((value + 1)) by {
+            normalize() using {
+                (value as int32) < ((value + 1) as int32);
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        known();
     }
 }
 ```
@@ -1019,23 +1751,611 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
     requires value < upper;
 
     ensures to_integer(lower) <= to_integer(value + 1) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (lower as int32) <= (value as int32) => (lower as int32) <= (value as int32);
-            premise 1: (value as int32) < (upper as int32) => (value as int32) < (upper as int32);
-            int32_range => to_integer(-2147483648 as int32) <= to_integer(lower as int32);
-            add 0, 2 => (to_integer(lower as int32) + to_integer(-2147483648 as int32)) <= (to_integer(value as int32) + to_integer(lower as int32));
-            int32_range => to_integer(upper as int32) <= to_integer(2147483647 as int32);
-            add 1, 4 => (to_integer(value as int32) + to_integer(upper as int32)) < (to_integer(upper as int32) + to_integer(2147483647 as int32));
-            interval_from_affine 3 (value) (-2147483648) (2147483647);
-            interval_from_affine 5 (value) (-2147483648) (2147483646);
-            interval_intersect 6, 7 (-2147483648) (2147483646);
-            interval_atom (1) (1) (1);
-            interval_add_bounded 8, 9 (-2147483647) (2147483647);
-            trivial => -1 <= 0;
-            add 0, 11 => (to_integer(lower as int32) + -1) <= (to_integer(value as int32) + 0);
-            affine_conclusion 12 10 => (lower as int32) <= ((value + 1) as int32);
-            conclusion 13;
+        have to_integer((-2147483648 as int32)) <= to_integer((lower as int32)) by {
+            normalize() using {};
         }
+        have (to_integer(((lower as int32) as int32)) + to_integer((-2147483648 as int32))) <= (to_integer(((value as int32) as int32)) + to_integer((lower as int32))) by {
+            have (to_integer(((lower as int32) as int32)) + to_integer((-2147483648 as int32))) <= (to_integer(((value as int32) as int32)) + to_integer((lower as int32))) by {
+                have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))) <= 0 by {
+                    have to_integer((((lower as int32) as int32) as int32)) <= to_integer((((value as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((lower as int32) as int32) <= ((value as int32) as int32);
+                        };
+                    }
+                    have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))) == (to_integer((((lower as int32) as int32) as int32)) - to_integer((((value as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((((lower as int32) as int32) as int32)), to_integer((((value as int32) as int32) as int32)), ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))))) using {
+                        to_integer((((lower as int32) as int32) as int32)) <= to_integer((((value as
+                            int32) as int32) as int32));
+                        ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower
+                            as int32) as int32) as int32))) == (to_integer((((lower as int32) as int32)
+                            as int32)) - to_integer((((value as int32) as int32) as int32)));
+                    };
+                }
+                have ((-1 * to_integer((((lower as int32) as int32) as int32))) + -to_integer(2147483648u64)) <= 0 by {
+                    have ((-1 * to_integer((((lower as int32) as int32) as int32))) + -to_integer(2147483648u64)) == (to_integer((-2147483648 as int32)) - to_integer((lower as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((-2147483648 as int32)), to_integer((lower as int32)), ((-1 * to_integer((((lower as int32) as int32) as int32))) + -to_integer(2147483648u64)))) using {
+                        to_integer((-2147483648 as int32)) <= to_integer((lower as int32));
+                        ((-1 * to_integer((((lower as int32) as int32) as int32))) +
+                            -to_integer(2147483648u64)) == (to_integer((-2147483648 as int32)) -
+                            to_integer((lower as int32)));
+                    };
+                }
+                have ((-1 * to_integer((((value as int32) as int32) as int32))) + -to_integer(2147483648u64)) <= 0 by {
+                    have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + ((-1 * to_integer((((lower as int32) as int32) as int32))) + -to_integer(2147483648u64))) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))), 0, ((-1 * to_integer((((lower as int32) as int32) as int32))) + -to_integer(2147483648u64)), 0)) using {
+                            ((-1 * to_integer((((value as int32) as int32) as int32))) +
+                                to_integer((((lower as int32) as int32) as int32))) <= 0;
+                            ((-1 * to_integer((((lower as int32) as int32) as int32))) +
+                                -to_integer(2147483648u64)) <= 0;
+                        };
+                    }
+                    have ((-1 * to_integer((((value as int32) as int32) as int32))) + -to_integer(2147483648u64)) == ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + ((-1 * to_integer((((lower as int32) as int32) as int32))) + -to_integer(2147483648u64))) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + ((-1 * to_integer((((lower as int32) as int32) as int32))) + -to_integer(2147483648u64))), (0 + 0), ((-1 * to_integer((((value as int32) as int32) as int32))) + -to_integer(2147483648u64)), 0)) using {
+                        ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower
+                            as int32) as int32) as int32)) + ((-1 * to_integer((((lower as int32) as
+                            int32) as int32))) + -to_integer(2147483648u64))) <= (0 + 0);
+                        ((-1 * to_integer((((value as int32) as int32) as int32))) +
+                            -to_integer(2147483648u64)) == ((-1 * to_integer((((value as int32) as
+                            int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) +
+                            ((-1 * to_integer((((lower as int32) as int32) as int32))) +
+                            -to_integer(2147483648u64)));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have ((-1 * to_integer((((value as int32) as int32) as int32))) + -to_integer(2147483648u64)) == ((to_integer(((lower as int32) as int32)) + to_integer((-2147483648 as int32))) - (to_integer(((value as int32) as int32)) + to_integer((lower as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer(((lower as int32) as int32)) + to_integer((-2147483648 as int32))), (to_integer(((value as int32) as int32)) + to_integer((lower as int32))), ((-1 * to_integer((((value as int32) as int32) as int32))) + -to_integer(2147483648u64)))) using {
+                    ((-1 * to_integer((((value as int32) as int32) as int32))) +
+                        -to_integer(2147483648u64)) <= 0;
+                    ((-1 * to_integer((((value as int32) as int32) as int32))) +
+                        -to_integer(2147483648u64)) == ((to_integer(((lower as int32) as int32)) +
+                        to_integer((-2147483648 as int32))) - (to_integer(((value as int32) as int32)) +
+                        to_integer((lower as int32))));
+                };
+            }
+            normalize() using {
+                (to_integer(((lower as int32) as int32)) + to_integer((-2147483648 as int32))) <=
+                    (to_integer(((value as int32) as int32)) + to_integer((lower as int32)));
+            };
+        }
+        have to_integer((upper as int32)) <= to_integer((2147483647 as int32)) by {
+            normalize() using {};
+        }
+        have (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) < (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+            have (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) < (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) <= 0 by {
+                    have to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((value as int32) as int32) < ((upper as int32) as int32);
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper as int32) as int32) as int32)) by {
+                        apply(click::integer::lt_step_le(to_integer((((value as int32) as int32) as int32)), to_integer((((upper as int32) as int32) as int32)))) using {
+                            to_integer((((value as int32) as int32) as int32)) < to_integer((((upper as
+                                int32) as int32) as int32));
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer((((value as int32) as int32) as int32)) + 1), to_integer((((upper as int32) as int32) as int32)), (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1))) using {
+                        (to_integer((((value as int32) as int32) as int32)) + 1) <= to_integer((((upper
+                            as int32) as int32) as int32));
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1) == ((to_integer((((value as int32) as
+                            int32) as int32)) + 1) - to_integer((((upper as int32) as int32) as
+                            int32)));
+                    };
+                }
+                have (to_integer((((upper as int32) as int32) as int32)) + -2147483647) <= 0 by {
+                    have (to_integer((((upper as int32) as int32) as int32)) + -2147483647) == (to_integer((upper as int32)) - to_integer((2147483647 as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((upper as int32)), to_integer((2147483647 as int32)), (to_integer((((upper as int32) as int32) as int32)) + -2147483647))) using {
+                        to_integer((upper as int32)) <= to_integer((2147483647 as int32));
+                        (to_integer((((upper as int32) as int32) as int32)) + -2147483647) ==
+                            (to_integer((upper as int32)) - to_integer((2147483647 as int32)));
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + -2147483646) <= 0 by {
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1), 0, (to_integer((((upper as int32) as int32) as int32)) + -2147483647), 0)) using {
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                                to_integer((((upper as int32) as int32) as int32))) + 1) <= 0;
+                            (to_integer((((upper as int32) as int32) as int32)) + -2147483647) <= 0;
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + -2147483646) == (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as int32) as int32)) + -2147483647)), (0 + 0), (to_integer((((value as int32) as int32) as int32)) + -2147483646), 0)) using {
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((upper
+                            as int32) as int32) as int32))) + 1 + (to_integer((((upper as int32) as
+                            int32) as int32)) + -2147483647)) <= (0 + 0);
+                        (to_integer((((value as int32) as int32) as int32)) + -2147483646) ==
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                            to_integer((((upper as int32) as int32) as int32))) + 1 +
+                            (to_integer((((upper as int32) as int32) as int32)) + -2147483647));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + -2147483646) == ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))), (to_integer((((value as int32) as int32) as int32)) + -2147483646))) using {
+                    (to_integer((((value as int32) as int32) as int32)) + -2147483646) <= 0;
+                    (to_integer((((value as int32) as int32) as int32)) + -2147483646) ==
+                        ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) -
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))));
+                };
+                apply(click::integer::step_le_lt((to_integer(((value as int32) as int32)) + to_integer((upper as int32))), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))))) using {
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <=
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+                };
+            }
+            normalize() using {
+                (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                    (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+            };
+        }
+        have -2147483648 <= to_integer((value as int32)) by {
+            normalize() using {
+                (to_integer(((lower as int32) as int32)) + to_integer((-2147483648 as int32))) <=
+                    (to_integer(((value as int32) as int32)) + to_integer((lower as int32)));
+            };
+        }
+        have to_integer((value as int32)) <= 2147483647 by {
+            normalize() using {
+                (to_integer(((lower as int32) as int32)) + to_integer((-2147483648 as int32))) <=
+                    (to_integer(((value as int32) as int32)) + to_integer((lower as int32)));
+            };
+        }
+        have -2147483648 <= to_integer((value as int32)) by {
+            normalize() using {
+                (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                    (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)));
+            };
+        }
+        have to_integer((value as int32)) <= 2147483646 by {
+            have to_integer((value as int32)) <= 2147483646 by {
+                have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) <= 0 by {
+                    have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <= (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))) by {
+                        apply(click::integer::lt_step_le((to_integer(((value as int32) as int32)) + to_integer((upper as int32))), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))))) using {
+                            (to_integer(((value as int32) as int32)) + to_integer((upper as int32))) <
+                                (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                                int32)));
+                        };
+                    }
+                    have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) == ((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1), (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32))), (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1))) using {
+                        (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + 1) <=
+                            (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                            int32)));
+                        (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                            (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as
+                            int32)))) + 1) == ((to_integer(((value as int32) as int32)) +
+                            to_integer((upper as int32)) + 1) - (to_integer(((upper as int32) as int32))
+                            + to_integer((2147483647 as int32))));
+                    };
+                }
+                have (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1) == (to_integer((value as int32)) - 2147483646) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(to_integer((value as int32)), 2147483646, (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 * (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) + 1))) using {
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) +
+                        1) <= 0;
+                    (to_integer(((value as int32) as int32)) + to_integer((upper as int32)) + (-1 *
+                        (to_integer(((upper as int32) as int32)) + to_integer((2147483647 as int32)))) +
+                        1) == (to_integer((value as int32)) - 2147483646);
+                };
+            }
+            normalize() using {
+                to_integer((value as int32)) <= 2147483646;
+            };
+        }
+        have -2147483648 <= to_integer((value as int32)) by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+            };
+        }
+        have to_integer((value as int32)) <= 2147483646 by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+            };
+        }
+        have 1 <= to_integer((1 as int32)) by {
+            normalize() using {};
+        }
+        have to_integer((1 as int32)) <= 1 by {
+            normalize() using {};
+        }
+        have -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32))) by {
+            have -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32))) by {
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) == (-2147483648 - to_integer((value as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(-2147483648, to_integer((value as int32)), ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)))) using {
+                        -2147483648 <= to_integer((value as int32));
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) ==
+                            (-2147483648 - to_integer((value as int32)));
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64)) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                        };
+                    }
+                    have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)), 0)) using {
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483648u64) + (let
+                            integer_constant: Integer = -1; integer_constant)) <= (0 + 0);
+                        ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == ((-1 *
+                            to_integer((value as int32))) + -to_integer(2147483648u64) + (let
+                            integer_constant: Integer = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == (-2147483648 - (to_integer((value as int32)) + to_integer((1 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(-2147483648, (to_integer((value as int32)) + to_integer((1 as int32))), ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)))) using {
+                    ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) <= 0;
+                    ((-1 * to_integer((value as int32))) + -to_integer(2147483649u64)) == (-2147483648 -
+                        (to_integer((value as int32)) + to_integer((1 as int32))));
+                };
+            }
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32)));
+            };
+        }
+        have (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647 by {
+            have (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647 by {
+                have (to_integer((value as int32)) + -2147483646) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483646) == (to_integer((value as int32)) - 2147483646) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((value as int32)), 2147483646, (to_integer((value as int32)) + -2147483646))) using {
+                        to_integer((value as int32)) <= 2147483646;
+                        (to_integer((value as int32)) + -2147483646) == (to_integer((value as int32)) -
+                            2147483646);
+                    };
+                }
+                have (to_integer((value as int32)) + -2147483646) == ((to_integer((value as int32)) + to_integer((1 as int32))) - 2147483647) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer((value as int32)) + to_integer((1 as int32))), 2147483647, (to_integer((value as int32)) + -2147483646))) using {
+                    (to_integer((value as int32)) + -2147483646) <= 0;
+                    (to_integer((value as int32)) + -2147483646) == ((to_integer((value as int32)) +
+                        to_integer((1 as int32))) - 2147483647);
+                };
+            }
+            normalize() using {
+                (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have defined((value + 1)) by {
+            known();
+        }
+        have to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as int32))) by {
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) + to_integer((1 as int32)));
+                (to_integer((value as int32)) + to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have -2147483647 <= to_integer(((value + 1) as int32)) by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have to_integer(((value + 1) as int32)) <= 2147483647 by {
+            normalize() using {
+                -2147483648 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483646;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have -1 <= 0 by {
+            normalize() using {
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        have (to_integer(((lower as int32) as int32)) + -1) <= (to_integer(((value as int32) as int32)) + 0) by {
+            have defined(((value + 1) as int32)) by {
+                known();
+            }
+            have defined((value + 1)) by {
+                known();
+            }
+            have defined(old(((value + 1) as int32))) by {
+                known();
+            }
+            have defined(old((value + 1))) by {
+                known();
+            }
+            have (to_integer(((lower as int32) as int32)) + -1) <= (to_integer(((value as int32) as int32)) + 0) by {
+                have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))) <= 0 by {
+                    have to_integer((((lower as int32) as int32) as int32)) <= to_integer((((value as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((lower as int32) as int32) <= ((value as int32) as int32);
+                        };
+                    }
+                    have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))) == (to_integer((((lower as int32) as int32) as int32)) - to_integer((((value as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((((lower as int32) as int32) as int32)), to_integer((((value as int32) as int32) as int32)), ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))))) using {
+                        to_integer((((lower as int32) as int32) as int32)) <= to_integer((((value as
+                            int32) as int32) as int32));
+                        ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower
+                            as int32) as int32) as int32))) == (to_integer((((lower as int32) as int32)
+                            as int32)) - to_integer((((value as int32) as int32) as int32)));
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + -1) <= 0 by {
+                    have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32))), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            ((-1 * to_integer((((value as int32) as int32) as int32))) +
+                                to_integer((((lower as int32) as int32) as int32))) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + -1) == ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + -1), 0)) using {
+                        ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower
+                            as int32) as int32) as int32)) + (let integer_constant: Integer = -1;
+                            integer_constant)) <= (0 + 0);
+                        ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower
+                            as int32) as int32) as int32)) + -1) == ((-1 * to_integer((((value as int32)
+                            as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) +
+                            (let integer_constant: Integer = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + -1) == ((to_integer(((lower as int32) as int32)) + -1) - (to_integer(((value as int32) as int32)) + 0)) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer(((lower as int32) as int32)) + -1), (to_integer(((value as int32) as int32)) + 0), ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as int32) as int32) as int32)) + -1))) using {
+                    ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as
+                        int32) as int32) as int32)) + -1) <= 0;
+                    ((-1 * to_integer((((value as int32) as int32) as int32))) + to_integer((((lower as
+                        int32) as int32) as int32)) + -1) == ((to_integer(((lower as int32) as int32)) +
+                        -1) - (to_integer(((value as int32) as int32)) + 0));
+                    defined(((value + 1) as int32));
+                    defined((value + 1));
+                    defined(old(((value + 1) as int32)));
+                    defined(old((value + 1)));
+                };
+            }
+            normalize() using {
+                (to_integer(((lower as int32) as int32)) + -1) <= (to_integer(((value as int32) as
+                    int32)) + 0);
+            };
+        }
+        have (lower as int32) <= ((value + 1) as int32) by {
+            have defined(((value + 1) as int32)) by {
+                known();
+            }
+            have defined((value + 1)) by {
+                known();
+            }
+            have defined(old(((value + 1) as int32))) by {
+                known();
+            }
+            have defined(old((value + 1))) by {
+                known();
+            }
+            have to_integer(((lower as int32) as int32)) <= to_integer((((value + 1) as int32) as int32)) by {
+                have (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as int32) as int32)) + 0))) <= 0 by {
+                    have (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as int32) as int32)) + 0))) == ((to_integer(((lower as int32) as int32)) + -1) - (to_integer(((value as int32) as int32)) + 0)) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer(((lower as int32) as int32)) + -1), (to_integer(((value as int32) as int32)) + 0), (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as int32) as int32)) + 0))))) using {
+                        (to_integer(((lower as int32) as int32)) + -1) <= (to_integer(((value as int32)
+                            as int32)) + 0);
+                        (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as
+                            int32) as int32)) + 0))) == ((to_integer(((lower as int32) as int32)) + -1)
+                            - (to_integer(((value as int32) as int32)) + 0));
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) == 0 by {
+                    have (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))) == 0 by {
+                        apply(click::integer::equal_difference(to_integer(((value + 1) as int32)), (to_integer((value as int32)) + to_integer((1 as int32))))) using {
+                            to_integer(((value + 1) as int32)) == (to_integer((value as int32)) +
+                                to_integer((1 as int32)));
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) == (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::equal_substitute((to_integer(((value + 1) as int32)) - (to_integer((value as int32)) + to_integer((1 as int32)))), 0, ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))), 0)) using {
+                        (to_integer(((value + 1) as int32)) - (to_integer((value as int32)) +
+                            to_integer((1 as int32)))) == 0;
+                        ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                            to_integer(((value + 1) as int32))) == (to_integer(((value + 1) as int32)) -
+                            (to_integer((value as int32)) + to_integer((1 as int32))));
+                        (let integer_value: Integer = 0; integer_value) == 0;
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))) <= 0 by {
+                    have (((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) * -1) == (0 * -1) by {
+                        apply(click::integer::equal_multiply(((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))), 0, -1)) using {
+                            ((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                                to_integer(((value + 1) as int32))) == 0;
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))) == 0 by {
+                        have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))) == (((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) * -1) by {
+                            normalize();
+                        }
+                        have (let integer_value: Integer = 0; integer_value) == (0 * -1) by {
+                            normalize();
+                        }
+                        apply(click::integer::equal_substitute((((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as int32))) * -1), (0 * -1), (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))), 0)) using {
+                            (((-1 * (to_integer((value as int32)) + to_integer((1 as int32)))) +
+                                to_integer(((value + 1) as int32))) * -1) == (0 * -1);
+                            (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 *
+                                to_integer(((value + 1) as int32)))) == (((-1 * (to_integer((value as
+                                int32)) + to_integer((1 as int32)))) + to_integer(((value + 1) as
+                                int32))) * -1);
+                            (let integer_value: Integer = 0; integer_value) == (0 * -1);
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    apply(click::integer::equal_le((to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))), 0)) using {
+                        (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 *
+                            to_integer(((value + 1) as int32)))) == 0;
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))) + (to_integer(((lower as int32) as int32)) + -1) + (-1 * (to_integer(((value as int32) as int32)) + 0))) <= 0 by {
+                    have (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as int32) as int32)) + 0)) + (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))))) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as int32) as int32)) + 0))), 0, (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32)))), 0)) using {
+                            (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as
+                                int32) as int32)) + 0))) <= 0;
+                            (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 *
+                                to_integer(((value + 1) as int32)))) <= 0;
+                            defined(((value + 1) as int32));
+                            defined((value + 1));
+                            defined(old(((value + 1) as int32)));
+                            defined(old((value + 1)));
+                        };
+                    }
+                    have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))) + (to_integer(((lower as int32) as int32)) + -1) + (-1 * (to_integer(((value as int32) as int32)) + 0))) == (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as int32) as int32)) + 0)) + (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))))) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as int32) as int32)) + 0)) + (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))))), (0 + 0), (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))) + (to_integer(((lower as int32) as int32)) + -1) + (-1 * (to_integer(((value as int32) as int32)) + 0))), 0)) using {
+                        (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as
+                            int32) as int32)) + 0)) + (to_integer((value as int32)) + to_integer((1 as
+                            int32)) + (-1 * to_integer(((value + 1) as int32))))) <= (0 + 0);
+                        (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 *
+                            to_integer(((value + 1) as int32))) + (to_integer(((lower as int32) as
+                            int32)) + -1) + (-1 * (to_integer(((value as int32) as int32)) + 0))) ==
+                            (to_integer(((lower as int32) as int32)) + -1 + (-1 * (to_integer(((value as
+                            int32) as int32)) + 0)) + (to_integer((value as int32)) + to_integer((1 as
+                            int32)) + (-1 * to_integer(((value + 1) as int32)))));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                        defined(((value + 1) as int32));
+                        defined((value + 1));
+                        defined(old(((value + 1) as int32)));
+                        defined(old((value + 1)));
+                    };
+                }
+                have (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))) + (to_integer(((lower as int32) as int32)) + -1) + (-1 * (to_integer(((value as int32) as int32)) + 0))) == (to_integer(((lower as int32) as int32)) - to_integer((((value + 1) as int32) as int32))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(to_integer(((lower as int32) as int32)), to_integer((((value + 1) as int32) as int32)), (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value + 1) as int32))) + (to_integer(((lower as int32) as int32)) + -1) + (-1 * (to_integer(((value as int32) as int32)) + 0))))) using {
+                    (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value
+                        + 1) as int32))) + (to_integer(((lower as int32) as int32)) + -1) + (-1 *
+                        (to_integer(((value as int32) as int32)) + 0))) <= 0;
+                    (to_integer((value as int32)) + to_integer((1 as int32)) + (-1 * to_integer(((value
+                        + 1) as int32))) + (to_integer(((lower as int32) as int32)) + -1) + (-1 *
+                        (to_integer(((value as int32) as int32)) + 0))) == (to_integer(((lower as int32)
+                        as int32)) - to_integer((((value + 1) as int32) as int32)));
+                    defined(((value + 1) as int32));
+                    defined((value + 1));
+                    defined(old(((value + 1) as int32)));
+                    defined(old((value + 1)));
+                };
+            }
+            normalize() using {
+                to_integer(((lower as int32) as int32)) <= to_integer((((value + 1) as int32) as
+                    int32));
+            };
+        }
+        have to_integer(lower) <= to_integer((value + 1)) by {
+            normalize() using {
+                (lower as int32) <= ((value + 1) as int32);
+                to_integer(((value + 1) as int32)) == (to_integer((value as int32)) + to_integer((1 as
+                    int32)));
+            };
+        }
+        known();
     }
 }
 ```
@@ -2851,14 +4171,172 @@ theorem int32_positive_predecessor_is_nonnegative(value: int32) {
     requires 0 < value;
 
     ensures 0 <= to_integer(value - 1) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (0 as int32) < (value as int32) => (0 as int32) < (value as int32);
-            interval_from_affine 0 (value) (1) (2147483647);
-            interval_atom (1) (1) (1);
-            interval_subtract 1, 2 1 (0) (2147483646);
-            affine_conclusion 0 3 => (0 as int32) <= ((value - 1) as int32);
-            conclusion 4;
+        have 1 <= to_integer((value as int32)) by {
+            normalize() using {
+                ((0 as int32) as int32) < ((value as int32) as int32);
+            };
         }
+        have to_integer((value as int32)) <= 2147483647 by {
+            normalize() using {
+                ((0 as int32) as int32) < ((value as int32) as int32);
+            };
+        }
+        have 1 <= to_integer((1 as int32)) by {
+            normalize() using {};
+        }
+        have to_integer((1 as int32)) <= 1 by {
+            normalize() using {};
+        }
+        have -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32))) by {
+            have -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32))) by {
+                have ((-1 * to_integer((value as int32))) + 1) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + 1) == (1 - to_integer((value as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(1, to_integer((value as int32)), ((-1 * to_integer((value as int32))) + 1))) using {
+                        1 <= to_integer((value as int32));
+                        ((-1 * to_integer((value as int32))) + 1) == (1 - to_integer((value as int32)));
+                    };
+                }
+                have (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant) <= 0 by {
+                    normalize();
+                }
+                have ((-1 * to_integer((value as int32))) + -2147483647) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer((value as int32))) + 1), 0, (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant), 0)) using {
+                            ((-1 * to_integer((value as int32))) + 1) <= 0;
+                            (let integer_constant: Integer = -to_integer(2147483648u64);
+                                integer_constant) <= 0;
+                        };
+                    }
+                    have ((-1 * to_integer((value as int32))) + -2147483647) == ((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant)), (0 + 0), ((-1 * to_integer((value as int32))) + -2147483647), 0)) using {
+                        ((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer =
+                            -to_integer(2147483648u64); integer_constant)) <= (0 + 0);
+                        ((-1 * to_integer((value as int32))) + -2147483647) == ((-1 * to_integer((value
+                            as int32))) + 1 + (let integer_constant: Integer =
+                            -to_integer(2147483648u64); integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have ((-1 * to_integer((value as int32))) + -2147483647) == (-2147483648 - (to_integer((value as int32)) - to_integer((1 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(-2147483648, (to_integer((value as int32)) - to_integer((1 as int32))), ((-1 * to_integer((value as int32))) + -2147483647))) using {
+                    ((-1 * to_integer((value as int32))) + -2147483647) <= 0;
+                    ((-1 * to_integer((value as int32))) + -2147483647) == (-2147483648 -
+                        (to_integer((value as int32)) - to_integer((1 as int32))));
+                };
+            }
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32)));
+            };
+        }
+        have (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647 by {
+            have (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647 by {
+                have (to_integer((value as int32)) + -2147483647) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483647) == (to_integer((value as int32)) - 2147483647) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((value as int32)), 2147483647, (to_integer((value as int32)) + -2147483647))) using {
+                        to_integer((value as int32)) <= 2147483647;
+                        (to_integer((value as int32)) + -2147483647) == (to_integer((value as int32)) -
+                            2147483647);
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have (to_integer((value as int32)) + -to_integer(2147483648u64)) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((value as int32)) + -2147483647), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            (to_integer((value as int32)) + -2147483647) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                        };
+                    }
+                    have (to_integer((value as int32)) + -to_integer(2147483648u64)) == (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), (to_integer((value as int32)) + -to_integer(2147483648u64)), 0)) using {
+                        (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer =
+                            -1; integer_constant)) <= (0 + 0);
+                        (to_integer((value as int32)) + -to_integer(2147483648u64)) ==
+                            (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer
+                            = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have (to_integer((value as int32)) + -to_integer(2147483648u64)) == ((to_integer((value as int32)) - to_integer((1 as int32))) - 2147483647) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer((value as int32)) - to_integer((1 as int32))), 2147483647, (to_integer((value as int32)) + -to_integer(2147483648u64)))) using {
+                    (to_integer((value as int32)) + -to_integer(2147483648u64)) <= 0;
+                    (to_integer((value as int32)) + -to_integer(2147483648u64)) == ((to_integer((value
+                        as int32)) - to_integer((1 as int32))) - 2147483647);
+                };
+            }
+            normalize() using {
+                (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have defined((value - 1)) by {
+            known();
+        }
+        have to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as int32))) by {
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32)));
+                (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have 0 <= to_integer(((value - 1) as int32)) by {
+            normalize() using {
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have to_integer(((value - 1) as int32)) <= 2147483646 by {
+            normalize() using {
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have (0 as int32) <= ((value - 1) as int32) by {
+            normalize() using {
+                ((0 as int32) as int32) < ((value as int32) as int32);
+                0 <= to_integer(((value - 1) as int32));
+                to_integer(((value - 1) as int32)) <= 2147483646;
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have 0 <= to_integer((value - 1)) by {
+            normalize() using {
+                (0 as int32) <= ((value - 1) as int32);
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        known();
     }
 }
 ```
@@ -2876,15 +4354,247 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
     requires 0 < value;
 
     ensures to_integer(value - 1) < to_integer(value) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (0 as int32) < (value as int32) => (0 as int32) < (value as int32);
-            interval_from_affine 0 (value) (1) (2147483647);
-            interval_atom (1) (1) (1);
-            interval_subtract 1, 2 1 (0) (2147483646);
-            trivial => 0 <= 0;
-            affine_conclusion 4 3 => ((value - 1) as int32) < (value as int32);
-            conclusion 5;
+        have 1 <= to_integer((value as int32)) by {
+            normalize() using {
+                ((0 as int32) as int32) < ((value as int32) as int32);
+            };
         }
+        have to_integer((value as int32)) <= 2147483647 by {
+            normalize() using {
+                ((0 as int32) as int32) < ((value as int32) as int32);
+            };
+        }
+        have 1 <= to_integer((1 as int32)) by {
+            normalize() using {};
+        }
+        have to_integer((1 as int32)) <= 1 by {
+            normalize() using {};
+        }
+        have -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32))) by {
+            have -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32))) by {
+                have ((-1 * to_integer((value as int32))) + 1) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + 1) == (1 - to_integer((value as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(1, to_integer((value as int32)), ((-1 * to_integer((value as int32))) + 1))) using {
+                        1 <= to_integer((value as int32));
+                        ((-1 * to_integer((value as int32))) + 1) == (1 - to_integer((value as int32)));
+                    };
+                }
+                have (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant) <= 0 by {
+                    normalize();
+                }
+                have ((-1 * to_integer((value as int32))) + -2147483647) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer((value as int32))) + 1), 0, (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant), 0)) using {
+                            ((-1 * to_integer((value as int32))) + 1) <= 0;
+                            (let integer_constant: Integer = -to_integer(2147483648u64);
+                                integer_constant) <= 0;
+                        };
+                    }
+                    have ((-1 * to_integer((value as int32))) + -2147483647) == ((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer = -to_integer(2147483648u64); integer_constant)), (0 + 0), ((-1 * to_integer((value as int32))) + -2147483647), 0)) using {
+                        ((-1 * to_integer((value as int32))) + 1 + (let integer_constant: Integer =
+                            -to_integer(2147483648u64); integer_constant)) <= (0 + 0);
+                        ((-1 * to_integer((value as int32))) + -2147483647) == ((-1 * to_integer((value
+                            as int32))) + 1 + (let integer_constant: Integer =
+                            -to_integer(2147483648u64); integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have ((-1 * to_integer((value as int32))) + -2147483647) == (-2147483648 - (to_integer((value as int32)) - to_integer((1 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(-2147483648, (to_integer((value as int32)) - to_integer((1 as int32))), ((-1 * to_integer((value as int32))) + -2147483647))) using {
+                    ((-1 * to_integer((value as int32))) + -2147483647) <= 0;
+                    ((-1 * to_integer((value as int32))) + -2147483647) == (-2147483648 -
+                        (to_integer((value as int32)) - to_integer((1 as int32))));
+                };
+            }
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32)));
+            };
+        }
+        have (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647 by {
+            have (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647 by {
+                have (to_integer((value as int32)) + -2147483647) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483647) == (to_integer((value as int32)) - 2147483647) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((value as int32)), 2147483647, (to_integer((value as int32)) + -2147483647))) using {
+                        to_integer((value as int32)) <= 2147483647;
+                        (to_integer((value as int32)) + -2147483647) == (to_integer((value as int32)) -
+                            2147483647);
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have (to_integer((value as int32)) + -to_integer(2147483648u64)) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((value as int32)) + -2147483647), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            (to_integer((value as int32)) + -2147483647) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                        };
+                    }
+                    have (to_integer((value as int32)) + -to_integer(2147483648u64)) == (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), (to_integer((value as int32)) + -to_integer(2147483648u64)), 0)) using {
+                        (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer =
+                            -1; integer_constant)) <= (0 + 0);
+                        (to_integer((value as int32)) + -to_integer(2147483648u64)) ==
+                            (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer
+                            = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have (to_integer((value as int32)) + -to_integer(2147483648u64)) == ((to_integer((value as int32)) - to_integer((1 as int32))) - 2147483647) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer((value as int32)) - to_integer((1 as int32))), 2147483647, (to_integer((value as int32)) + -to_integer(2147483648u64)))) using {
+                    (to_integer((value as int32)) + -to_integer(2147483648u64)) <= 0;
+                    (to_integer((value as int32)) + -to_integer(2147483648u64)) == ((to_integer((value
+                        as int32)) - to_integer((1 as int32))) - 2147483647);
+                };
+            }
+            normalize() using {
+                (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have defined((value - 1)) by {
+            known();
+        }
+        have to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as int32))) by {
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32)));
+                (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have 0 <= to_integer(((value - 1) as int32)) by {
+            normalize() using {
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have to_integer(((value - 1) as int32)) <= 2147483646 by {
+            normalize() using {
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                1 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have 0 <= 0 by {
+            normalize() using {
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have ((value - 1) as int32) < (value as int32) by {
+            have defined(((value - 1) as int32)) by {
+                known();
+            }
+            have defined((value - 1)) by {
+                known();
+            }
+            have defined(old(((value - 1) as int32))) by {
+                known();
+            }
+            have defined(old((value - 1))) by {
+                known();
+            }
+            have to_integer((((value - 1) as int32) as int32)) < to_integer(((value as int32) as int32)) by {
+                have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))) == 0 by {
+                    have (to_integer(((value - 1) as int32)) - (to_integer((value as int32)) - to_integer((1 as int32)))) == 0 by {
+                        apply(click::integer::equal_difference(to_integer(((value - 1) as int32)), (to_integer((value as int32)) - to_integer((1 as int32))))) using {
+                            to_integer(((value - 1) as int32)) == (to_integer((value as int32)) -
+                                to_integer((1 as int32)));
+                            defined(((value - 1) as int32));
+                            defined((value - 1));
+                            defined(old(((value - 1) as int32)));
+                            defined(old((value - 1)));
+                        };
+                    }
+                    have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))) == (to_integer(((value - 1) as int32)) - (to_integer((value as int32)) - to_integer((1 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::equal_substitute((to_integer(((value - 1) as int32)) - (to_integer((value as int32)) - to_integer((1 as int32)))), 0, ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))), 0)) using {
+                        (to_integer(((value - 1) as int32)) - (to_integer((value as int32)) -
+                            to_integer((1 as int32)))) == 0;
+                        ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                            to_integer(((value - 1) as int32))) == (to_integer(((value - 1) as int32)) -
+                            (to_integer((value as int32)) - to_integer((1 as int32))));
+                        (let integer_value: Integer = 0; integer_value) == 0;
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))) <= 0 by {
+                    apply(click::integer::equal_le(((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))), 0)) using {
+                        ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                            to_integer(((value - 1) as int32))) == 0;
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))) == ((to_integer((((value - 1) as int32) as int32)) + 1) - to_integer(((value as int32) as int32))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer((((value - 1) as int32) as int32)) + 1), to_integer(((value as int32) as int32)), ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))))) using {
+                    ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                        to_integer(((value - 1) as int32))) <= 0;
+                    ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                        to_integer(((value - 1) as int32))) == ((to_integer((((value - 1) as int32) as
+                        int32)) + 1) - to_integer(((value as int32) as int32)));
+                    defined(((value - 1) as int32));
+                    defined((value - 1));
+                    defined(old(((value - 1) as int32)));
+                    defined(old((value - 1)));
+                };
+                apply(click::integer::step_le_lt(to_integer((((value - 1) as int32) as int32)), to_integer(((value as int32) as int32)))) using {
+                    (to_integer((((value - 1) as int32) as int32)) + 1) <= to_integer(((value as int32)
+                        as int32));
+                    defined(((value - 1) as int32));
+                    defined((value - 1));
+                    defined(old(((value - 1) as int32)));
+                    defined(old((value - 1)));
+                };
+            }
+            normalize() using {
+                to_integer((((value - 1) as int32) as int32)) < to_integer(((value as int32) as int32));
+            };
+        }
+        have to_integer((value - 1)) < to_integer(value) by {
+            normalize() using {
+                ((value - 1) as int32) < (value as int32);
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        known();
     }
 }
 ```
@@ -3679,17 +5389,386 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     requires value <= bound;
 
     ensures to_integer(value - 1) <= to_integer(bound) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (0 as int32) <= (value as int32) => (0 as int32) <= (value as int32);
-            premise 1: (value as int32) <= (bound as int32) => (value as int32) <= (bound as int32);
-            interval_from_affine 0 (value) (0) (2147483647);
-            interval_atom (1) (1) (1);
-            interval_subtract 2, 3 2 (-1) (2147483646);
-            trivial => -1 <= 0;
-            add 1, 5 => (to_integer(value as int32) + -1) <= (to_integer(bound as int32) + 0);
-            affine_conclusion 6 4 => ((value - 1) as int32) <= (bound as int32);
-            conclusion 7;
+        have 0 <= to_integer((value as int32)) by {
+            normalize() using {
+                ((0 as int32) as int32) <= ((value as int32) as int32);
+            };
         }
+        have to_integer((value as int32)) <= 2147483647 by {
+            normalize() using {
+                ((0 as int32) as int32) <= ((value as int32) as int32);
+            };
+        }
+        have 1 <= to_integer((1 as int32)) by {
+            normalize() using {};
+        }
+        have to_integer((1 as int32)) <= 1 by {
+            normalize() using {};
+        }
+        have -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32))) by {
+            have -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32))) by {
+                have (-1 * to_integer((value as int32))) <= 0 by {
+                    have (-1 * to_integer((value as int32))) == (0 - to_integer((value as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(0, to_integer((value as int32)), (-1 * to_integer((value as int32))))) using {
+                        0 <= to_integer((value as int32));
+                        (-1 * to_integer((value as int32))) == (0 - to_integer((value as int32)));
+                    };
+                }
+                have (let integer_constant: Integer = -2147483647; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have ((-1 * to_integer((value as int32))) + -2147483647) <= 0 by {
+                    have ((-1 * to_integer((value as int32))) + (let integer_constant: Integer = -2147483647; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le((-1 * to_integer((value as int32))), 0, (let integer_constant: Integer = -2147483647; integer_constant), 0)) using {
+                            (-1 * to_integer((value as int32))) <= 0;
+                            (let integer_constant: Integer = -2147483647; integer_constant) <= 0;
+                        };
+                    }
+                    have ((-1 * to_integer((value as int32))) + -2147483647) == ((-1 * to_integer((value as int32))) + (let integer_constant: Integer = -2147483647; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer((value as int32))) + (let integer_constant: Integer = -2147483647; integer_constant)), (0 + 0), ((-1 * to_integer((value as int32))) + -2147483647), 0)) using {
+                        ((-1 * to_integer((value as int32))) + (let integer_constant: Integer =
+                            -2147483647; integer_constant)) <= (0 + 0);
+                        ((-1 * to_integer((value as int32))) + -2147483647) == ((-1 * to_integer((value
+                            as int32))) + (let integer_constant: Integer = -2147483647;
+                            integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have ((-1 * to_integer((value as int32))) + -2147483647) == (-2147483648 - (to_integer((value as int32)) - to_integer((1 as int32)))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(-2147483648, (to_integer((value as int32)) - to_integer((1 as int32))), ((-1 * to_integer((value as int32))) + -2147483647))) using {
+                    ((-1 * to_integer((value as int32))) + -2147483647) <= 0;
+                    ((-1 * to_integer((value as int32))) + -2147483647) == (-2147483648 -
+                        (to_integer((value as int32)) - to_integer((1 as int32))));
+                };
+            }
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32)));
+            };
+        }
+        have (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647 by {
+            have (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647 by {
+                have (to_integer((value as int32)) + -2147483647) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483647) == (to_integer((value as int32)) - 2147483647) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((value as int32)), 2147483647, (to_integer((value as int32)) + -2147483647))) using {
+                        to_integer((value as int32)) <= 2147483647;
+                        (to_integer((value as int32)) + -2147483647) == (to_integer((value as int32)) -
+                            2147483647);
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have (to_integer((value as int32)) + -to_integer(2147483648u64)) <= 0 by {
+                    have (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((value as int32)) + -2147483647), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            (to_integer((value as int32)) + -2147483647) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                        };
+                    }
+                    have (to_integer((value as int32)) + -to_integer(2147483648u64)) == (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), (to_integer((value as int32)) + -to_integer(2147483648u64)), 0)) using {
+                        (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer =
+                            -1; integer_constant)) <= (0 + 0);
+                        (to_integer((value as int32)) + -to_integer(2147483648u64)) ==
+                            (to_integer((value as int32)) + -2147483647 + (let integer_constant: Integer
+                            = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                have (to_integer((value as int32)) + -to_integer(2147483648u64)) == ((to_integer((value as int32)) - to_integer((1 as int32))) - 2147483647) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer((value as int32)) - to_integer((1 as int32))), 2147483647, (to_integer((value as int32)) + -to_integer(2147483648u64)))) using {
+                    (to_integer((value as int32)) + -to_integer(2147483648u64)) <= 0;
+                    (to_integer((value as int32)) + -to_integer(2147483648u64)) == ((to_integer((value
+                        as int32)) - to_integer((1 as int32))) - 2147483647);
+                };
+            }
+            normalize() using {
+                (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have defined((value - 1)) by {
+            known();
+        }
+        have to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as int32))) by {
+            normalize() using {
+                -2147483648 <= (to_integer((value as int32)) - to_integer((1 as int32)));
+                (to_integer((value as int32)) - to_integer((1 as int32))) <= 2147483647;
+            };
+        }
+        have -1 <= to_integer(((value - 1) as int32)) by {
+            normalize() using {
+                0 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                0 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have to_integer(((value - 1) as int32)) <= 2147483646 by {
+            normalize() using {
+                0 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                1 <= to_integer((1 as int32));
+                to_integer((1 as int32)) <= 1;
+                0 <= to_integer((value as int32));
+                to_integer((value as int32)) <= 2147483647;
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have -1 <= 0 by {
+            normalize() using {
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        have (to_integer(((value as int32) as int32)) + -1) <= (to_integer(((bound as int32) as int32)) + 0) by {
+            have defined(((value - 1) as int32)) by {
+                known();
+            }
+            have defined((value - 1)) by {
+                known();
+            }
+            have defined(old(((value - 1) as int32))) by {
+                known();
+            }
+            have defined(old((value - 1))) by {
+                known();
+            }
+            have (to_integer(((value as int32) as int32)) + -1) <= (to_integer(((bound as int32) as int32)) + 0) by {
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32)))) <= 0 by {
+                    have to_integer((((value as int32) as int32) as int32)) <= to_integer((((bound as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((value as int32) as int32) <= ((bound as int32) as int32);
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32)))) == (to_integer((((value as int32) as int32) as int32)) - to_integer((((bound as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((((value as int32) as int32) as int32)), to_integer((((bound as int32) as int32) as int32)), (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32)))))) using {
+                        to_integer((((value as int32) as int32) as int32)) <= to_integer((((bound as
+                            int32) as int32) as int32));
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound
+                            as int32) as int32) as int32)))) == (to_integer((((value as int32) as int32)
+                            as int32)) - to_integer((((bound as int32) as int32) as int32)));
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
+                    normalize();
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + -1) <= 0 by {
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32)))), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
+                            (to_integer((((value as int32) as int32) as int32)) + (-1 *
+                                to_integer((((bound as int32) as int32) as int32)))) <= 0;
+                            (let integer_constant: Integer = -1; integer_constant) <= 0;
+                            defined(((value - 1) as int32));
+                            defined((value - 1));
+                            defined(old(((value - 1) as int32)));
+                            defined(old((value - 1)));
+                        };
+                    }
+                    have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + -1) == (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + (let integer_constant: Integer = -1; integer_constant)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + -1), 0)) using {
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound
+                            as int32) as int32) as int32))) + (let integer_constant: Integer = -1;
+                            integer_constant)) <= (0 + 0);
+                        (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound
+                            as int32) as int32) as int32))) + -1) == (to_integer((((value as int32) as
+                            int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as
+                            int32))) + (let integer_constant: Integer = -1; integer_constant));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + -1) == ((to_integer(((value as int32) as int32)) + -1) - (to_integer(((bound as int32) as int32)) + 0)) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le((to_integer(((value as int32) as int32)) + -1), (to_integer(((bound as int32) as int32)) + 0), (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as int32) as int32) as int32))) + -1))) using {
+                    (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as
+                        int32) as int32) as int32))) + -1) <= 0;
+                    (to_integer((((value as int32) as int32) as int32)) + (-1 * to_integer((((bound as
+                        int32) as int32) as int32))) + -1) == ((to_integer(((value as int32) as int32))
+                        + -1) - (to_integer(((bound as int32) as int32)) + 0));
+                    defined(((value - 1) as int32));
+                    defined((value - 1));
+                    defined(old(((value - 1) as int32)));
+                    defined(old((value - 1)));
+                };
+            }
+            normalize() using {
+                (to_integer(((value as int32) as int32)) + -1) <= (to_integer(((bound as int32) as
+                    int32)) + 0);
+            };
+        }
+        have ((value - 1) as int32) <= (bound as int32) by {
+            have defined(((value - 1) as int32)) by {
+                known();
+            }
+            have defined((value - 1)) by {
+                known();
+            }
+            have defined(old(((value - 1) as int32))) by {
+                known();
+            }
+            have defined(old((value - 1))) by {
+                known();
+            }
+            have to_integer((((value - 1) as int32) as int32)) <= to_integer(((bound as int32) as int32)) by {
+                have (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as int32) as int32)) + 0))) <= 0 by {
+                    have (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as int32) as int32)) + 0))) == ((to_integer(((value as int32) as int32)) + -1) - (to_integer(((bound as int32) as int32)) + 0)) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer(((value as int32) as int32)) + -1), (to_integer(((bound as int32) as int32)) + 0), (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as int32) as int32)) + 0))))) using {
+                        (to_integer(((value as int32) as int32)) + -1) <= (to_integer(((bound as int32)
+                            as int32)) + 0);
+                        (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as
+                            int32) as int32)) + 0))) == ((to_integer(((value as int32) as int32)) + -1)
+                            - (to_integer(((bound as int32) as int32)) + 0));
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))) == 0 by {
+                    have (to_integer(((value - 1) as int32)) - (to_integer((value as int32)) - to_integer((1 as int32)))) == 0 by {
+                        apply(click::integer::equal_difference(to_integer(((value - 1) as int32)), (to_integer((value as int32)) - to_integer((1 as int32))))) using {
+                            to_integer(((value - 1) as int32)) == (to_integer((value as int32)) -
+                                to_integer((1 as int32)));
+                            defined(((value - 1) as int32));
+                            defined((value - 1));
+                            defined(old(((value - 1) as int32)));
+                            defined(old((value - 1)));
+                        };
+                    }
+                    have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))) == (to_integer(((value - 1) as int32)) - (to_integer((value as int32)) - to_integer((1 as int32)))) by {
+                        normalize();
+                    }
+                    apply(click::integer::equal_substitute((to_integer(((value - 1) as int32)) - (to_integer((value as int32)) - to_integer((1 as int32)))), 0, ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))), 0)) using {
+                        (to_integer(((value - 1) as int32)) - (to_integer((value as int32)) -
+                            to_integer((1 as int32)))) == 0;
+                        ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                            to_integer(((value - 1) as int32))) == (to_integer(((value - 1) as int32)) -
+                            (to_integer((value as int32)) - to_integer((1 as int32))));
+                        (let integer_value: Integer = 0; integer_value) == 0;
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))) <= 0 by {
+                    apply(click::integer::equal_le(((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))), 0)) using {
+                        ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                            to_integer(((value - 1) as int32))) == 0;
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as int32)) + -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))) <= 0 by {
+                    have (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as int32) as int32)) + 0)) + ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)))) <= (0 + 0) by {
+                        apply(click::integer::add_le((to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as int32) as int32)) + 0))), 0, ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32))), 0)) using {
+                            (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as
+                                int32) as int32)) + 0))) <= 0;
+                            ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                                to_integer(((value - 1) as int32))) <= 0;
+                            defined(((value - 1) as int32));
+                            defined((value - 1));
+                            defined(old(((value - 1) as int32)));
+                            defined(old((value - 1)));
+                        };
+                    }
+                    have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as int32)) + -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))) == (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as int32) as int32)) + 0)) + ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)))) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute((to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as int32) as int32)) + 0)) + ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)))), (0 + 0), ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as int32)) + -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))), 0)) using {
+                        (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as
+                            int32) as int32)) + 0)) + ((-1 * (to_integer((value as int32)) -
+                            to_integer((1 as int32)))) + to_integer(((value - 1) as int32)))) <= (0 +
+                            0);
+                        ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                            to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as
+                            int32)) + -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))) ==
+                            (to_integer(((value as int32) as int32)) + -1 + (-1 * (to_integer(((bound as
+                            int32) as int32)) + 0)) + ((-1 * (to_integer((value as int32)) -
+                            to_integer((1 as int32)))) + to_integer(((value - 1) as int32))));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                        defined(((value - 1) as int32));
+                        defined((value - 1));
+                        defined(old(((value - 1) as int32)));
+                        defined(old((value - 1)));
+                    };
+                }
+                have ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as int32)) + -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))) == (to_integer((((value - 1) as int32) as int32)) - to_integer(((bound as int32) as int32))) by {
+                    normalize();
+                }
+                apply(click::integer::difference_le(to_integer((((value - 1) as int32) as int32)), to_integer(((bound as int32) as int32)), ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) + to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as int32)) + -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))))) using {
+                    ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                        to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as int32)) +
+                        -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))) <= 0;
+                    ((-1 * (to_integer((value as int32)) - to_integer((1 as int32)))) +
+                        to_integer(((value - 1) as int32)) + (to_integer(((value as int32) as int32)) +
+                        -1) + (-1 * (to_integer(((bound as int32) as int32)) + 0))) ==
+                        (to_integer((((value - 1) as int32) as int32)) - to_integer(((bound as int32) as
+                        int32)));
+                    defined(((value - 1) as int32));
+                    defined((value - 1));
+                    defined(old(((value - 1) as int32)));
+                    defined(old((value - 1)));
+                };
+            }
+            normalize() using {
+                to_integer((((value - 1) as int32) as int32)) <= to_integer(((bound as int32) as
+                    int32));
+            };
+        }
+        have to_integer((value - 1)) <= to_integer(bound) by {
+            normalize() using {
+                ((value - 1) as int32) <= (bound as int32);
+                to_integer(((value - 1) as int32)) == (to_integer((value as int32)) - to_integer((1 as
+                    int32)));
+            };
+        }
+        known();
     }
 }
 ```
@@ -3989,12 +6068,126 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
     requires left != right;
 
     ensures left < right by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (left as int32) <= (right as int32) => (left as int32) <= (right as int32);
-            premise 1: (left as int32) != (right as int32) => (left as int32) != (right as int32);
-            less_than_from_not_equal 0, 1 => to_integer(left as int32) < to_integer(right as int32);
-            conclusion 2;
+        have to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32)) by {
+            have not not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32)) by {
+                intro();
+                have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))) <= 0 by {
+                    have to_integer(((right as int32) as int32)) <= to_integer(((left as int32) as int32)) by {
+                        normalize() using {
+                            not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as
+                                int32));
+                        };
+                    }
+                    have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))) == (to_integer(((right as int32) as int32)) - to_integer(((left as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer(((right as int32) as int32)), to_integer(((left as int32) as int32)), ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))))) using {
+                        to_integer(((right as int32) as int32)) <= to_integer(((left as int32) as
+                            int32));
+                        ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
+                            int32))) == (to_integer(((right as int32) as int32)) - to_integer(((left as
+                            int32) as int32)));
+                    };
+                }
+                have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) <= 0 by {
+                    have to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((left as int32) as int32) <= ((right as int32) as int32);
+                        };
+                    }
+                    have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) == (to_integer((((left as int32) as int32) as int32)) - to_integer((((right as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))))) using {
+                        to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as
+                            int32) as int32) as int32));
+                        (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as
+                            int32)))) == (to_integer((((left as int32) as int32) as int32)) -
+                            to_integer((((right as int32) as int32) as int32)));
+                    };
+                }
+                have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1) <= 0 by {
+                    have to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as int32) as int32) as int32)) by {
+                        have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) == (to_integer((((left as int32) as int32) as int32)) - to_integer((((right as int32) as int32) as int32))) by {
+                            normalize();
+                        }
+                        apply(click::integer::difference_le(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))))) using {
+                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
+                                as int32)))) <= 0;
+                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
+                                as int32)))) == (to_integer((((left as int32) as int32) as int32)) -
+                                to_integer((((right as int32) as int32) as int32)));
+                        };
+                    }
+                    have to_integer((((left as int32) as int32) as int32)) != to_integer((((right as int32) as int32) as int32)) by {
+                        normalize() using {
+                            ((left as int32) as int32) != ((right as int32) as int32);
+                        };
+                    }
+                    have to_integer((((left as int32) as int32) as int32)) < to_integer((((right as int32) as int32) as int32)) by {
+                        apply(click::integer::le_ne_lt(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)))) using {
+                            to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as
+                                int32) as int32) as int32));
+                            to_integer((((left as int32) as int32) as int32)) != to_integer((((right as
+                                int32) as int32) as int32));
+                        };
+                    }
+                    have (to_integer((((left as int32) as int32) as int32)) + 1) <= to_integer((((right as int32) as int32) as int32)) by {
+                        apply(click::integer::lt_step_le(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)))) using {
+                            to_integer((((left as int32) as int32) as int32)) < to_integer((((right as
+                                int32) as int32) as int32));
+                        };
+                    }
+                    have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1) == ((to_integer((((left as int32) as int32) as int32)) + 1) - to_integer((((right as int32) as int32) as int32))) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_difference((to_integer((((left as int32) as int32) as int32)) + 1), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1))) using {
+                        (to_integer((((left as int32) as int32) as int32)) + 1) <= to_integer((((right
+                            as int32) as int32) as int32));
+                        (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as
+                            int32))) + 1) == ((to_integer((((left as int32) as int32) as int32)) + 1) -
+                            to_integer((((right as int32) as int32) as int32)));
+                    };
+                }
+                have (let integer_constant: Integer = 1; integer_constant) <= 0 by {
+                    have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)) <= (0 + 0) by {
+                        apply(click::integer::add_le(((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))), 0, (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1), 0)) using {
+                            ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as
+                                int32) as int32))) <= 0;
+                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
+                                as int32))) + 1) <= 0;
+                        };
+                    }
+                    have (let integer_constant: Integer = 1; integer_constant) == ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)) by {
+                        normalize();
+                    }
+                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
+                        normalize();
+                    }
+                    apply(click::integer::le_substitute(((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)), (0 + 0), (let integer_constant: Integer = 1; integer_constant), 0)) using {
+                        ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
+                            int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right
+                            as int32) as int32))) + 1)) <= (0 + 0);
+                        (let integer_constant: Integer = 1; integer_constant) == ((-1 *
+                            to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
+                            int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right
+                            as int32) as int32))) + 1));
+                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
+                    };
+                }
+                contradiction((let integer_constant: Integer = 1; integer_constant) <= 0);
+            }
+            normalize() using {
+                not not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as
+                    int32));
+            };
         }
+        have left < right by {
+            normalize() using {
+                to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32));
+            };
+        }
+        known();
     }
 }
 ```

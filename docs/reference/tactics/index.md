@@ -1358,11 +1358,12 @@ goal operand is used once a nested `solve` proves the guard: the closer extracts
 the consequent and rewrites the goal with an equality or closes from the new
 fact.
 
-An `int32` or `int64` definedness goal `defined(a + b)` or `defined(a - b)` is
-closed by the checked `int32_defined` or `int64_defined` certificate rule,
-citing the constant order and equality facts of that width indexed under each
-operand; the rule, not the selection, decides whether the operands' ranges
-exclude overflow.
+An `int32` or `int64` definedness goal `defined(a + b)` or `defined(a - b)`
+selects the constant order and equality facts of that width indexed under each
+operand. It states intrinsic operand ranges and proves both ordinary bounds on
+the exact result, using local interval normalization or Integer laws. Expansion
+retains those `have` proofs and closes the domain with `known()`; it emits no
+signed-definedness arithmetic certificate.
 
 A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
@@ -1393,8 +1394,8 @@ its bounds
 ([`solve_defined_count_after_a_zero_summand.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_count_after_a_zero_summand.md)).
 
 When the goal also carries an operand's own definedness, such as a field read
-through a resource, `solve` proves `defined(operand)` as a `have` and cites it in
-the `int32_defined` step
+through a resource, `solve` proves `defined(operand)` as a `have`, separately
+from the exact-result bounds
 ([`solve_defined_read_through_a_produced_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_read_through_a_produced_resource.md)).
 
 A goal that reads one cell at two version points, such as `owner->cell[0] ==
@@ -1463,12 +1464,12 @@ transition.
 
 A listed guarded equality whose definedness guard is not listed has the guard
 proved first, from the other listed facts when they suffice, and is then used as
-its consequent. An `int32` or `int64` definedness goal cites the listed premises
-that bound an operand by a constant in one `int32_defined` or `int64_defined`
-certificate. For an Integer goal observing a machine sum or difference,
+its consequent. An `int32` or `int64` definedness goal uses the listed operand
+bounds and intrinsic type ranges to prove the two exact-result bounds through
+ordinary normalization and Integer laws. For an Integer goal observing a machine sum or difference,
 listed bounds and the machine type's range can establish the in-range
 identity, such as `to_integer(x + 1) == to_integer(x) + 1`. Expansion writes
-the range proofs and an `integer_operation_identity` certificate. An
+the range proofs and an explicit normalization step. An
 unsigned operation is used this way only when those bounds prove it does not wrap.
 
 **Failure, checking, and tools:**
@@ -1768,6 +1769,17 @@ cited premise is accepted:
   conditions on that term decide it, in every family, the 8- and 16-bit
   types included: `a <= 5` or `a < 5` gives `a <= 10`, and `n == 0` gives
   `n != 1`.
+- A signed `int32` operation's constant interval follows from the cited
+  endpoints of its opaque operands: addition, subtraction, multiplication,
+  constant remainder and shifts, a nonnegative constant bit mask, and an
+  in-range cast. Exact addition/subtraction over bounded machine observations
+  uses the same endpoint calculation without machine wrapping. Nested
+  operations need explicit intermediate bounds. A bounded nonnegative
+  remainder also transports through a stated constant addition when its
+  translated interval crosses no divisor boundary. No operand interval is
+  recursively searched. A separately stated exact domain can intersect an
+  operation's result with its signed type range
+  ([`signed_interval_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_interval_normalization.md)).
 - Two addresses in one block whose offsets differ, after their shared
   addends cancel, by two element indices on one side and one on the other at
   one element width are equal when a cited premise states the one index's
@@ -1853,9 +1865,10 @@ follows the selected expression and premises.
 **Specialized.** Write it only for a bound that follows from the goal's own
 terms, such as `(x & 255) <= 255`; it reads no fact. `solve() using {}` tries
 the engine this section describes after its other closers, over no premises.
-The engine plans and checks a bounded
-arithmetic certificate for the current comparison or equality, in the signed
-`int32` family or in the mathematical `Integer` linear family.
+The engine plans a bounded proof of the current comparison or equality over
+signed `int32` values or mathematical `Integer` expressions. Signed interval
+plans expand into ordinary `have` steps, normalization, and Integer law
+applications, with explicit operation domains and observation identities.
 
 The family is decided by the goal's own checked terms, never guessed from its
 spelling, and the two never coerce into each other. For `int32`, affine terms
@@ -1879,8 +1892,9 @@ unsupported operator, a possibly overflowing goal expression, or a
 nonconsequence fails locally.
 
 A goal recognized as `Integer` linear reports that fragment, not the `int32`
-precondition. The planner runs once and expansion retains its checked structural
-certificate.
+precondition. Expansion retains the ordinary checked operations selected by the
+plan. Specialized rule families that have not migrated may still emit explicit
+arithmetic certificates.
 
 **Checked examples:** [`pure_arithmetic_affine.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_affine.md), [`pure_arithmetic_bounded_operations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_bounded_operations.md), [`arithmetic_on_an_unfold_refreshed_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_on_an_unfold_refreshed_goal.md)
 
@@ -2153,14 +2167,16 @@ other refutations open a negated-goal scope with `intro` and close its contradic
 ranges normalize directly, as do constant-divisor quotient, shift, and
 remainder bounds. Rounding and endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities normalize from their explicit Integer
-bounds. Signed intervals and the other specialized rules still use the
-certificate forms below when needed. The [library reference](../library/index.md#foundational-integer-order-axioms)
+bounds. Signed intervals expand to ordinary bounds and observation identities;
+the remaining specialized rules use the certificate forms below when needed. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
 
 **Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
 
-**Expansion output.** `click expand` writes it; a person writes `solve()
-using` instead and lets expansion produce the certificate. Check a typed
+**Compatibility and specialized expansion output.** Existing authored
+certificates remain accepted. `click expand` emits certificates for the
+specialized families that still require them; ordinary Integer composition,
+signed intervals, and signed add/subtract domains expand to ordinary tactics. Check a typed
 arithmetic-certificate envelope against the current goal; it closes the goal
 or refuses.
 
@@ -2216,6 +2232,10 @@ under these envelope rules common to the three forms:
 - A premise comparing exact observations of one machine type is also
   available from its native comparison, and an Integer bound of a signed
   result from the corresponding definedness fact.
+
+The explicit signed and signed-definedness forms remain readable for existing
+proofs. Current signed interval and add/subtract definedness search expands to
+ordinary tactics instead of emitting these certificate forms.
 
 **`signed_int32`** is checked signed-machine arithmetic over 32-bit words:
 
@@ -3153,13 +3173,13 @@ without changing its execution frontier. `have P;` without a proof is `have P by
 solve();`, and a one-step proof may drop the braces: `have P by T(args);`. A
 `have` executes no C. On a linear `Integer` bound `solve`
 refutes the integer negation from the facts connected to `P` and applies the
-result as one `arithmetic_certificate`
+result as ordinary Integer law applications
 ([`have_by_solve_refutes_a_linear_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/have_by_solve_refutes_a_linear_bound.md)).
 
 Connected `int32`, `int64` and `uint64` order facts are carried to `Integer` by
 `known()`, since a comparison of observations is the native comparison,
-and `uint64` values get their type range from a `type_range` certificate; only
-the carried facts the certificate cites are kept
+and `uint64` values get their type range by normalization; only
+the selected carried facts are kept
 ([`solve_carries_machine_orders_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_carries_machine_orders_to_integer.md)).
 
 A `uint64` or `int64` order goal, or an `int32` `<=` goal, is proved through its
@@ -3174,12 +3194,12 @@ definedness fact
 ([`solve_proves_signed_addition_defined.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_signed_addition_defined.md)),
 and each `to_integer(a + b)` or `to_integer(a - b)` in the goal is observed term
 by term: a signed operation once it is defined, and a `uint64` one once it
-does not wrap, by an `integer_operation_identity` certificate citing both
+does not wrap, by normalization citing both
 constant bounds of its exact value
 ([`solve_observes_an_operation_term_by_term.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_an_operation_term_by_term.md)).
 
 Machine equality facts are carried by rewriting, each observed value gets its
-type range from a `type_range` certificate, an `int32`, `int64` or `uint64`
+type range by normalization, an `int32`, `int64` or `uint64`
 equality goal is
 proved as its observed reading once both sides are shown defined, splitting an
 equality into its two bounds when needed, and a conjunction goal is split

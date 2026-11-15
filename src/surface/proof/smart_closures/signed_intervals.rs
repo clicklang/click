@@ -62,14 +62,49 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Ok(closed) = scope
             .driver()
             .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))
+            && closed.is_complete()
         {
-            if closed.is_complete() {
-                return Ok(Some(closed.join()?));
+            return Ok(Some(closed.join()?));
+        }
+        // A visible initialized read is not necessarily a stored pure fact.
+        // Publish its domain through the simple normalizer before lowering
+        // arithmetic premises or using the read as a theorem argument.
+        let mut prepared = proof.clone();
+        for written in written_integer_observations_with_entry(
+            std::iter::once(&target).chain(premises.iter()),
+            false,
+        ) {
+            let Some(expression) = integer_composition::observed_argument(&written) else {
+                continue;
+            };
+            let domain = ClickProposition::Defined { expression };
+            let Ok(kernel) =
+                prepared.lower_cited_surface_proposition(&domain, "Integer read domain")
+            else {
+                continue;
+            };
+            if matches!(kernel, Proposition::MemoryReadDefined { .. })
+                && !prepared
+                    .facts()
+                    .listed_premise_available(&kernel, &[], false)
+            {
+                let scope = prepared.driver().open_have(domain)?;
+                let Ok(closed) = scope.driver().apply_step(ProofStep::Normalize) else {
+                    return Ok(None);
+                };
+                prepared = closed.join()?;
             }
         }
-        let Some(closed) = scope.driver().try_integer_composition_using(premises)? else {
-            #[cfg(test)]
-            eprintln!("ordinary interval link missing: {target:?}; from {premises:?}");
+        let scope = prepared.driver().open_have(target.clone())?;
+        if let Ok(closed) = scope
+            .driver()
+            .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))
+            && closed.is_complete()
+        {
+            return Ok(Some(closed.join()?));
+        }
+        let result = scope.driver().try_integer_composition_using(premises);
+        let Some(closed) = result? else {
             return Ok(None);
         };
         Ok(Some(closed.join()?))
@@ -84,6 +119,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut proof = proof.clone();
         let mut values = Vec::<Value>::new();
         let mut identities = Vec::new();
+        let mut pending_identities =
+            Vec::<(ClickProposition, [ClickProposition; 2], ClickProposition)>::new();
         for node in &certificate.nodes {
             crate::instrumentation::record_deterministic_work(1);
             let mut inputs = Vec::new();
@@ -347,6 +384,34 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 inputs.extend(values[index].facts());
             }
             if let Some(claim) = claim {
+                let scope = proof.driver().open_have(claim.clone())?;
+                if let Ok(closed) = scope
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(inputs.clone()))
+                    && closed.is_complete()
+                {
+                    proof = closed.join()?;
+                    values.push(Value::Claim(claim));
+                    continue;
+                }
+                // Observation identities are needed only when a claim crosses
+                // an operation boundary. Endpoint-only plans use their stated
+                // intervals directly, without expanding unused affine bridges.
+                for (domain, bounds, identity) in pending_identities.drain(..) {
+                    let scope = proof.driver().open_have(domain)?;
+                    proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
+                    for bound in &bounds {
+                        let scope = proof.driver().open_have(bound.clone())?;
+                        proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
+                    }
+                    let Some(next) =
+                        Self::ordinary_integer_fact(&proof, identity.clone(), &bounds)?
+                    else {
+                        return Ok(None);
+                    };
+                    proof = next;
+                    identities.push(identity);
+                }
                 inputs.extend(identities.iter().cloned());
                 let Some(next) = Self::ordinary_integer_fact(&proof, claim.clone(), &inputs)?
                 else {
@@ -355,6 +420,40 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 proof = next;
                 values.push(Value::Claim(claim));
             } else if let Some((term, lo, hi)) = interval {
+                if let IntervalNarrowedCast { operand, .. } = node {
+                    let identity = eq(observed(&term), observed(&values[*operand].term().unwrap()));
+                    let Some(next) = Self::ordinary_integer_fact(
+                        &proof,
+                        identity.clone(),
+                        &values[*operand].facts(),
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    proof = next;
+                    inputs.push(identity.clone());
+                    identities.push(identity);
+                }
+                if let IntervalRemainderAdd {
+                    operand, addend, ..
+                } = node
+                {
+                    let exact = ContractExpression::Add(
+                        Box::new(observed(&values[*operand].term().unwrap())),
+                        Box::new(number(i64::from(*addend))),
+                    );
+                    for bound in [
+                        le(number(i64::from(i32::MIN)), exact.clone()),
+                        le(exact, number(i64::from(i32::MAX))),
+                    ] {
+                        let Some(next) =
+                            Self::ordinary_integer_fact(&proof, bound, &values[*operand].facts())?
+                        else {
+                            return Ok(None);
+                        };
+                        proof = next;
+                    }
+                }
                 // Materialize the exact operation's bounds before observing
                 // it, so no implicit solver can supply an overflow guard.
                 let exact = match &term {
@@ -377,9 +476,47 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         le(number(i64::from(i32::MIN)), exact.clone()),
                         le(exact.clone(), number(i64::from(i32::MAX))),
                     ];
-                    // Existing definedness is already these exact two bounds;
-                    // otherwise Integer composition establishes them.
-                    for bound in &bounds {
+                    let domain = ClickProposition::Defined {
+                        expression: term.clone(),
+                    };
+                    // State only the outer operation's ordinary range pair.
+                    // Rebuilding definedness of every nested operand here
+                    // repeats the growing domain tree at each interval node.
+                    let range = ClickProposition::And(
+                        Box::new(bounds[0].clone()),
+                        Box::new(bounds[1].clone()),
+                    );
+                    let scope = proof.driver().open_have(range)?;
+                    if let Ok(closed) = scope
+                        .driver()
+                        .apply_step(ProofStep::NormalizeUsing(inputs.clone()))
+                        && closed.is_complete()
+                    {
+                        proof = closed.join()?;
+                    } else {
+                        for bound in &bounds {
+                            let Some(next) =
+                                Self::ordinary_integer_fact(&proof, bound.clone(), &inputs)?
+                            else {
+                                return Ok(None);
+                            };
+                            proof = next;
+                        }
+                    }
+                    pending_identities.push((domain, bounds, eq(observed(&term), exact)));
+                }
+                let lower = le(number(lo), observed(&term));
+                let upper = le(observed(&term), number(hi));
+                let pair = ClickProposition::And(Box::new(lower.clone()), Box::new(upper.clone()));
+                let scope = proof.driver().open_have(pair)?;
+                if let Ok(closed) = scope
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(inputs.clone()))
+                    && closed.is_complete()
+                {
+                    proof = closed.join()?;
+                } else {
+                    for bound in [&lower, &upper] {
                         let Some(next) =
                             Self::ordinary_integer_fact(&proof, bound.clone(), &inputs)?
                         else {
@@ -387,24 +524,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         };
                         proof = next;
                     }
-                    let identity = eq(observed(&term), exact);
-                    let Some(next) =
-                        Self::ordinary_integer_fact(&proof, identity.clone(), &bounds)?
-                    else {
-                        return Ok(None);
-                    };
-                    proof = next;
-                    identities.push(identity.clone());
-                    inputs.push(identity);
-                }
-                let lower = le(number(lo), observed(&term));
-                let upper = le(observed(&term), number(hi));
-                for bound in [&lower, &upper] {
-                    let Some(next) = Self::ordinary_integer_fact(&proof, bound.clone(), &inputs)?
-                    else {
-                        return Ok(None);
-                    };
-                    proof = next;
                 }
                 values.push(Value::Interval { term, lower, upper });
             }
@@ -413,7 +532,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let Some(target) = proof.surface_goal().cloned() else {
-            return Ok(None);
+            return Ok(Some(proof.driver().apply_step(ProofStep::Known)?));
         };
         let mut premises = values[certificate.conclusion].facts();
         premises.extend(identities);
@@ -466,6 +585,106 @@ mod tests {
         check("x: int32", "", "(x & 255) <= 255");
     }
     #[test]
+    fn native_interval_observations_survive_fresh_replay() {
+        check(
+            "x: int32",
+            "requires 0 <= x; requires x <= 100; requires defined(x << 2);",
+            "to_integer((x << 2) as int32) <= 400",
+        );
+        check(
+            "x: int32",
+            "requires -100 <= x; requires x <= -1;",
+            "to_integer((x >> 2) as int32) <= -1",
+        );
+    }
+    #[test]
+    #[ignore = "nightly: complete signed interval expansion and fresh replay"]
+    fn signed_interval_operations_expand_and_replay_without_certificates() {
+        for (requirements, goal) in [
+            (
+                "requires 0 <= x; requires x <= 100;",
+                "to_integer(x + 1) <= to_integer(x + 2)",
+            ),
+            ("requires 0 <= x;", "to_integer(x - 1) < to_integer(x)"),
+            (
+                "requires 0 <= x; requires x <= 10;",
+                "to_integer((x + x) as int32) <= 20",
+            ),
+            (
+                "requires 0 <= x; requires x <= 100; requires defined(x % 7);",
+                "to_integer((x % 7) as int32) <= 6",
+            ),
+            (
+                "requires 0 <= x; requires x <= 100; requires 0 <= x % 8; requires x % 8 <= 2;",
+                "to_integer(((x + 1) % 8) as int32) <= 3",
+            ),
+            (
+                "requires -10 <= x; requires x <= 10;",
+                "to_integer(x as int8) == to_integer(x)",
+            ),
+            (
+                "requires 0 <= x; requires x <= 100;",
+                "(x as uint32) <= 100u32",
+            ),
+        ] {
+            check("x: int32", requirements, goal);
+        }
+        check(
+            "a: int32, b: int32",
+            "requires a == b + 1; requires 0 <= b; requires b <= 100;",
+            "to_integer(a - 1) == to_integer(b)",
+        );
+    }
+    #[test]
+    fn signed_interval_migration_rejects_missing_evidence_and_undefined_operations() {
+        for source in [
+            "theorem rejected(x: int32,y: int32) {requires 0<=x; requires x<=10; requires 0<=y; requires y<=10; ensures defined(x+y) by {solve() using {0<=x;0<=y;};}}",
+            "theorem rejected(x: int32,y: int32) {requires defined(x+y); ensures defined(x+y) by {solve() using {};}}",
+            "theorem rejected(a: int32,b: int32) {requires 0<=a; requires 0<=b; requires defined(a+b); ensures 0<=to_integer(a+b) by {solve() using {0<=a;0<=b;};}}",
+            "theorem rejected(x: int32) {requires x==1; ensures defined(x+1) by {solve() using {x==1;defined(x+2147483647);};}}",
+            "theorem rejected(x: int32,y: int32) {requires x<=y; ensures to_integer(x+1)<=to_integer(y) by {solve() using {x<=y;};}}",
+            "theorem rejected(x: int64) {requires x==9223372036854775807i64; ensures defined(x+1i64) by {solve() using {x==9223372036854775807i64;};}}",
+            "theorem rejected(x: int32) {requires x == -1; ensures defined(x << 1) by {solve() using {x == -1;};}}",
+            "theorem rejected(x: int32) {requires x == -2147483648; ensures defined(x % -1) by {solve() using {x == -2147483648;};}}",
+        ] {
+            crate::surface::parse(source).unwrap();
+            assert!(
+                verify_c_sources(source, &[]).is_err(),
+                "accepted missing evidence: {source}"
+            );
+        }
+    }
+    #[test]
+    #[ignore = "nightly: C field-read definedness expansion and replay"]
+    fn signed_definedness_over_a_produced_read_expands_ordinary() {
+        let c = "struct pool { int32 used; int32 capacity; }; void init(struct pool* pool, int32 capacity) { pool->capacity = capacity; } void f(struct pool* pool) { init(pool, 1); }";
+        let source = r#"
+resource control(pool: struct pool*) { owns *pool; }
+verifying "read.c";
+void init(struct pool* pool,int32 capacity) {
+    consumes *pool;
+    produces control(pool);
+    ensures pool->capacity == capacity;
+    ensures defined(pool->capacity);
+} by {step(); fold(control(pool));}
+void f(struct pool* pool) {consumes *pool; produces control(pool);}
+by {step(); have defined(pool->capacity - 1) by solve();}
+"#;
+        let mut expanded = source.to_owned();
+        for function in ["init", "f"] {
+            expanded = crate::surface::expand_c_claim_source(
+                &expanded,
+                &[("read.c", c)],
+                function,
+                crate::surface::ContractProofClaim::Grouped,
+            )
+            .unwrap();
+        }
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[("read.c", c)]))
+            .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
+    }
+    #[test]
     fn signed_definedness_32_expands_ordinary() {
         check(
             "x: int32, y: int32",
@@ -481,64 +700,4 @@ mod tests {
             "defined(x - y)",
         );
     }
-}
-
-#[cfg(test)]
-#[test]
-#[ignore = "temporary migration driver"]
-fn generate_signed_library_proofs() {
-    use crate::surface::expand_c_claim_source_by_label;
-    let original = std::fs::read_to_string("library/integer.click").unwrap();
-    let mut result = original.clone();
-    let mut spans = Vec::new();
-    for (start, _) in original.match_indices("arithmetic_certificate signed_int32 {") {
-        let decl = original[..start].rfind("\ntheorem ").unwrap() + 1;
-        let name = original[decl + 8..].split('(').next().unwrap();
-        let mut end = start + original[start..].find('{').unwrap() + 1;
-        let mut depth = 1;
-        while depth > 0 {
-            match original.as_bytes()[end] {
-                b'{' => depth += 1,
-                b'}' => depth -= 1,
-                _ => {}
-            }
-            end += 1;
-        }
-        let premises = original[start..end]
-            .split(';')
-            .filter_map(|line| {
-                line.split_once("premise ")
-                    .and_then(|(_, s)| s.split_once(':'))
-                    .and_then(|(_, s)| s.split_once("=>"))
-                    .map(|(s, _)| s.trim())
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        let mut decl_end = decl + original[decl..].find('{').unwrap() + 1;
-        depth = 1;
-        while depth > 0 {
-            match original.as_bytes()[decl_end] {
-                b'{' => depth += 1,
-                b'}' => depth -= 1,
-                _ => {}
-            }
-            decl_end += 1;
-        }
-        let source = format!(
-            "{}solve() using {{ {premises}; }};{}",
-            &original[decl..start],
-            &original[end..decl_end]
-        );
-        let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
-            .unwrap_or_else(|e| panic!("{name}: {}", e.message()));
-        assert!(
-            !expanded.contains("arithmetic_certificate"),
-            "{name}: {expanded}"
-        );
-        spans.push((decl, decl_end, expanded));
-    }
-    for (start, end, replacement) in spans.into_iter().rev() {
-        result.replace_range(start..end, &replacement);
-    }
-    std::fs::write("/workspace/work/signed-integer-library.click", result).unwrap();
 }

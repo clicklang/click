@@ -1,15 +1,14 @@
 //! Discovery adapters over the existing persistent proof.
 use super::*;
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
-    /// Build and try the selected signed-definedness certificate inside search.
-    /// The driver applies the same explicit certificate primitive used by replay.
-    fn try_signed_definedness_certificate(
+    /// Prove the exact result bounds through ordinary Integer laws.
+    pub(in crate::surface::proof) fn try_signed_definedness_bounds(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
         premises: Vec<ClickProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_signed_definedness_certificate");
+        crate::kernel::search::record_discovery("try_signed_definedness_bounds");
         let Some((left, right)) = search_input.signed_definedness_surface_operands() else {
             return Ok(None);
         };
@@ -37,6 +36,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let mut proof = search_input.clone();
         let mut listed = premises;
+        // Establish both read operands before deriving bounds: initialized
+        // resource reads have explicit domains independent of overflow.
+        for operand in [left, right] {
+            let domain = ClickProposition::Defined {
+                expression: operand.clone(),
+            };
+            let kernel = proof.lower_cited_surface_proposition(&domain, "signed operand domain")?;
+            if matches!(kernel, Proposition::MemoryReadDefined { .. }) {
+                let scope = proof.driver().open_have(domain.clone())?;
+                let closed = scope.driver().apply_step(ProofStep::Normalize)?;
+                proof = closed.join()?;
+                listed.push(domain);
+            }
+        }
         for operand in [left, right] {
             for range in [
                 le(signed_literal(minimum), observe(operand)),
@@ -103,9 +116,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             width,
             [(left, surface_left), (right, surface_right)],
         );
-        if let Some(closed) =
-            Self::try_signed_definedness_certificate(search_input, width, premises)?
-        {
+        if let Some(closed) = Self::try_signed_definedness_bounds(search_input, width, premises)? {
             return Ok(Some(closed));
         }
         crate::kernel::search::ProofSearch::try_signed_definedness_after_operand_substitution(
@@ -143,8 +154,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// own definedness, such as `defined(pool->capacity - 1)` over a read
     /// through a resource view: each written operand's `defined(..)` is
     /// proved as a `have` by `solve` and cited beside the operands' bounds,
-    /// which the `int32_defined` / `int64_defined` rule accepts for the
-    /// conjuncts beyond the operation's overflow.
+    /// which also discharge the read requirements beyond the exact-result
+    /// range of the outer operation.
     pub(in crate::surface::proof) fn try_signed_definedness_with_operand_definedness(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
@@ -180,7 +191,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             proof = scope.join()?;
             premises.push(defined);
         }
-        Self::try_signed_definedness_certificate(&proof, width, premises)
+        Self::try_signed_definedness_bounds(&proof, width, premises)
     }
 
     /// An operand whose summands are fixed by exact constant equalities,
@@ -295,6 +306,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             })
             .map(|(_, surface)| surface.clone())
             .collect::<Vec<_>>();
-        Self::try_signed_definedness_certificate(search_input, width, premises)
+        Self::try_signed_definedness_bounds(search_input, width, premises)
     }
 }

@@ -1179,6 +1179,9 @@ impl<'a> Proof<'a> {
             for plan in arithmetic_plans(goal, &premises, true) {
                 match plan {
                     ArithmeticPlan::Special(plan) => {
+                        // Signed domains are ordinary Integer-bound proofs in
+                        // the smart dispatcher, never replacement certificates.
+                        if plan.nodes.iter().any(|node|matches!(node,crate::kernel::proof::arithmetic_special::SpecialArithmeticNode::SignedDefined {..})) {continue;}
                         let Some(surface_goal) = surface_goal else {
                             continue;
                         };
@@ -1257,57 +1260,9 @@ impl<'a> Proof<'a> {
                             }
                         }
                     }
-                    ArithmeticPlan::SignedInt32(plan) => {
-                        let surface_goal = surface_goal
-                            .cloned()
-                            .or_else(|| self.structural_proposition_candidate(goal));
-                        if let Some(surface_goal) = surface_goal.as_ref() {
-                            let converted = self.signed_plan_to_surface_certificate(
-                                &plan,
-                                &premises
-                                    .iter()
-                                    .cloned()
-                                    .zip(anchored_surface_premises.iter().cloned())
-                                    .collect::<Vec<_>>(),
-                                surface_goal,
-                            );
-                            if let Some(certificate) = converted {
-                                let cited_premise = certificate.nodes.iter().find_map(|node| {
-                                    let SignedArithmeticStep::Premise { index, .. } = node else {
-                                        return None;
-                                    };
-                                    Some(*index)
-                                });
-                                let handle =
-                                self.apply_signed_int32_certificate(&certificate)
-                                    .map_err(|error| {
-                                        if let Some(index) = cited_premise
-                                            && error.message().contains("not exactly available")
-                                        {
-                                            return self.step_error(format!(
-                                            "`solve() using` premise {index} is not exactly available"
-                                        ));
-                                        }
-                                        error
-                                    })?;
-                                return Ok((
-                                    handle,
-                                    Some(ArithmeticCertificate {
-                                        family: ArithmeticCertificateFamily::SignedInt32(
-                                            certificate,
-                                        ),
-                                    }),
-                                ));
-                            }
-                            // The plan exists, so the premises were sufficient; what
-                            // failed is spelling one of its steps in source form. Say
-                            // so, rather than reporting the premises as insufficient.
-                            return Err(self.step_error(format!(
-                            "arithmetic proved the goal from the listed premises with a {}-node signed_int32 certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
-                            plan.nodes.len()
-                        )));
-                        }
-                    }
+                    // Signed plans are expanded by the smart dispatcher;
+                    // this compatibility leaf must not emit new certificates.
+                    ArithmeticPlan::SignedInt32(_) => {}
                 }
             }
         }

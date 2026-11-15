@@ -1200,6 +1200,13 @@ fn with_operation_operands(written: &[ContractExpression]) -> Vec<ContractExpres
 fn written_integer_observations<'s>(
     surfaces: impl Iterator<Item = &'s ClickProposition>,
 ) -> Vec<ContractExpression> {
+    written_integer_observations_with_entry(surfaces, true)
+}
+
+fn written_integer_observations_with_entry<'s>(
+    surfaces: impl Iterator<Item = &'s ClickProposition>,
+    include_entry: bool,
+) -> Vec<ContractExpression> {
     let mut written: Vec<ContractExpression> = Vec::new();
     for surface in surfaces {
         // A native comparison such as `amount <= count(...)` spells the
@@ -1295,6 +1302,9 @@ fn written_integer_observations<'s>(
             }
         }
         index += 1;
+    }
+    if !include_entry {
+        return written;
     }
     // A value the proof has since replaced, such as a population count
     // before a consumption, is often spelled only at function entry.

@@ -58,7 +58,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .map(|k| (k, p.clone()))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            if let Some(closed) =
+            if pairs.iter().all(|(kernel, _)| {
+                search_input
+                    .facts()
+                    .listed_premise_available(kernel, &[], false)
+            }) && let Some(closed) =
                 Self::try_restricted_signed_definedness_closure(search_input, &pairs)?
             {
                 return Ok(closed);
@@ -112,6 +116,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
+        if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            goal,
+            &kernels,
+            &crate::kernel::proof::ProofFacts::from_ordered(&kernels),
+        )
+        .is_ok()
+        {
+            let closed = search_input
+                .driver()
+                .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))?;
+            if closed.focused_discharged() {
+                return Ok(Some(closed));
+            }
+        }
         let Some(plan) =
             plan_arithmetic(ArithmeticEngine::SignedInt32WithWeakening, goal, &kernels)
                 .and_then(ArithmeticPlan::signed_int32)
@@ -140,6 +158,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         #[cfg(test)]
         integer_composition::note_refusal("entered selected Integer route");
+        // Plan the same Integer observation that the ordinary emitter checks.
+        // A native operation goal and its observed source can have distinct
+        // representations even though the observation is their exact reading.
+        let observed = observed_native_surface_comparison(goal, surface_goal);
+        let observed_goal =
+            search_input.lower_cited_surface_proposition(&observed, "Integer composition goal")?;
+        let goal = &observed_goal;
         if integer_affine_claim(goal).is_none() {
             return Ok(None);
         }
@@ -147,12 +172,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for surface in premises {
             let kernel = search_input
                 .lower_cited_surface_proposition(surface, "Integer arithmetic premise")?;
-            if integer_affine_claim(&kernel).is_none()
-                && crate::kernel::proof::integer_arithmetic::integer_disequality_claims(&kernel)
-                    .is_empty()
-            {
-                return Ok(None);
-            }
             // A declined route leaves the original tactic's diagnostic and
             // native definedness/observation handling authoritative.
             if !search_input
@@ -163,6 +182,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 integer_composition::note_refusal(format!(
                     "unavailable Integer source: {surface:?} => {kernel:?}"
                 ));
+                return Ok(None);
+            }
+            if integer_affine_claim(&kernel).is_none()
+                && crate::kernel::proof::integer_arithmetic::integer_disequality_claims(&kernel)
+                    .is_empty()
+            {
+                if matches!(surface, ClickProposition::Defined { .. }) {
+                    continue;
+                }
                 return Ok(None);
             }
             pairs.push((kernel, surface.clone()));
@@ -182,15 +210,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            if let Some(closed) = attempt::candidate_outcome(Self::apply_integer_composition(
-                search_input,
-                &plan,
-                &pairs,
-                surface_goal,
-                &[],
-            ))?
-            .flatten()
-            {
+            let candidate =
+                Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal, &[]);
+            if let Some(closed) = attempt::candidate_outcome(candidate)?.flatten() {
                 return Ok(Some(closed));
             }
         }
@@ -3510,7 +3532,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 let certificate =
                     special_plan_to_surface_certificate(&plan, &surfaces, surface_goal);
-                if let Ok(proof) = search_input
+                let signed_width = match &certificate.family {
+                    ArithmeticCertificateFamily::Special(c) => c.nodes.iter().find_map(|n| {
+                        if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
+                            Some(*width)
+                        } else {
+                            None
+                        }
+                    }),
+                    _ => None,
+                };
+                if let Some(width) = signed_width {
+                    if let Some(proof) =
+                        Self::try_signed_definedness_bounds(search_input, width, surfaces)?
+                    {
+                        return Ok(Some(proof));
+                    }
+                } else if let Ok(proof) = search_input
                     .driver()
                     .apply_step(ProofStep::ArithmeticCertificate(certificate))
                 {
@@ -3541,11 +3579,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &anchored_pairs,
                 surface_goal,
             )
-            && let Ok(proof) = search_input
-                .driver()
-                .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
-                    family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                }))
+            && let Ok(Some(proof)) =
+                Self::apply_signed_interval_composition(search_input, &certificate)
         {
             return Ok(Some(proof));
         }
@@ -4005,17 +4040,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let certificate =
             search_input.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
-        if let Ok(Some(closed)) =
-            Self::apply_signed_interval_composition(search_input, &certificate)
-        {
-            return Some(closed);
-        }
-        search_input
-            .driver()
-            .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
-                family: ArithmeticCertificateFamily::SignedInt32(certificate),
-            }))
+        Self::apply_signed_interval_composition(search_input, &certificate)
             .ok()
+            .flatten()
     }
 
     /// [`Self::try_indexed_signed_arithmetic`]'s route for a `uint32` order
@@ -8335,15 +8362,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     (nonnegative_kernel, nonnegative_surface.clone()),
                     (upper_kernel.clone(), upper_surface.clone()),
                 ];
-                let Some(ProofTactic::ArithmeticCertificate(certificate)) =
-                    joined.arithmetic_certificate_from_recorded(goal, &listed, &pairs)
-                else {
+                let spelled = spell_signed_goal(goal, &pairs)?;
+                let scope = joined.driver().open_have(spelled).ok()?;
+                let Some(body) = scope.driver().try_restricted_solve_closure(&listed) else {
                     continue;
                 };
-                let Ok(applied) = joined
-                    .driver()
-                    .apply_step(ProofStep::ArithmeticCertificate(certificate))
-                else {
+                let Ok(applied) = body.join() else {
                     continue;
                 };
                 if applied.is_complete() {
@@ -9799,20 +9823,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
-        if arithmetic_domain {
-            if let Ok(Some(closed)) =
+        if arithmetic_domain
+            && let Ok(Some(closed)) =
                 Self::try_restricted_signed_definedness_closure(&proof, &premise_pairs)
-            {
-                return Some(closed);
-            }
+        {
+            return Some(closed);
         }
-        if typed_first {
-            match Self::try_signed_interval_using(&proof, surfaces) {
-                Ok(Some(closed)) => return Some(closed),
-                #[cfg(test)]
-                Err(error) => eprintln!("signed interval candidate: {}", error.raw_summary()),
-                _ => {}
-            }
+        if typed_first && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces) {
+            return Some(closed);
         }
         if typed_first && let Some(closed) = try_typed_derivation() {
             return Some(closed);
@@ -9869,12 +9887,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .collect::<Vec<_>>(),
                 surface_goal,
             );
-            if let Ok(closed) = proof
-                .driver()
-                .apply_step(ProofStep::ArithmeticCertificate(certificate))
-                && closed.is_complete()
-            {
-                return Some(closed);
+            let signed_width = match &certificate.family {
+                ArithmeticCertificateFamily::Special(c) => c.nodes.iter().find_map(|n| {
+                    if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
+                        Some(*width)
+                    } else {
+                        None
+                    }
+                }),
+                _ => None,
+            };
+            if let Some(width) = signed_width {
+                if let Ok(Some(closed)) =
+                    Self::try_signed_definedness_bounds(&proof, width, surfaces.to_vec())
+                {
+                    return Some(closed);
+                }
+            } else {
+                if let Ok(closed) = proof
+                    .driver()
+                    .apply_step(ProofStep::ArithmeticCertificate(certificate))
+                    && closed.is_complete()
+                {
+                    return Some(closed);
+                }
             }
         }
         if let Some(surface_goal) = proof.surface_goal()
@@ -10019,6 +10055,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("check_typed_atomic_solve_candidate");
+        // Fixed-state obligations can lack a source presentation. Retain a
+        // spelled have first; its ordinary child proof has a source goal and
+        // follows the same selected-premise path as an authored proof.
+        if search_input.surface_goal().is_none()
+            && crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some()
+            && let Some(spelled) = spell_signed_goal(goal, premise_pairs)
+        {
+            let scope = search_input.driver().open_have(spelled).ok()?;
+            let selected = premise_pairs
+                .iter()
+                .map(|(_, p)| p.clone())
+                .collect::<Vec<_>>();
+            let closed = scope.driver().try_restricted_solve_closure(&selected)?;
+            return closed
+                .join()
+                .ok()?
+                .driver()
+                .apply_step(ProofStep::Known)
+                .ok();
+        }
         // A direct loadability derivation already selected its source range.
         // Expand that selection through ordinary observation and containment
         // before the legacy transport planner can consume the derivation.
@@ -10373,16 +10429,67 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
             && let Some(certificate) =
                 search_input.arithmetic_certificate_from_recorded(goal, listed, premise_pairs)
-        {
-            if search_input.surface_goal().is_none()
+            && (search_input.surface_goal().is_none()
                 || !matches!(
                     &certificate,
                     ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
                         family: ArithmeticCertificateFamily::Integer(_)
                     })
-                )
+                ))
+        {
+            *tactics.last_mut()? = certificate;
+        }
+        if let Some(ProofTactic::ArithmeticCertificate(certificate)) = tactics.last() {
+            let signed = matches!(
+                &certificate.family,
+                ArithmeticCertificateFamily::SignedInt32(_)
+            );
+            let spelled_integer = if search_input.surface_goal().is_none()
+                && matches!(&certificate.family, ArithmeticCertificateFamily::Integer(_))
             {
-                *tactics.last_mut()? = certificate;
+                spell_signed_goal(goal, premise_pairs)
+            } else {
+                None
+            };
+            let defined = matches!(&certificate.family,ArithmeticCertificateFamily::Special(c) if c.nodes.iter().any(|n|matches!(n,SpecialArithmeticNode::SignedDefined {..})));
+            if signed || defined || spelled_integer.is_some() {
+                let base = if tactics.len() == 1 {
+                    search_input.clone()
+                } else {
+                    search_input
+                        .driver()
+                        .try_generated_linear_script(&tactics[..tactics.len() - 1])
+                        .ok()??
+                };
+                if let Some(spelled) = spelled_integer {
+                    let scope = base.driver().open_have(spelled).ok()?;
+                    let listed = premise_pairs
+                        .iter()
+                        .map(|(_, p)| p.clone())
+                        .collect::<Vec<_>>();
+                    let body = scope.driver().try_restricted_solve_closure(&listed)?;
+                    return body.join().ok()?.driver().apply_step(ProofStep::Known).ok();
+                }
+                return match &certificate.family {
+                    ArithmeticCertificateFamily::SignedInt32(certificate) => {
+                        Self::apply_signed_interval_composition(&base, certificate)
+                            .ok()
+                            .flatten()
+                    }
+                    ArithmeticCertificateFamily::Special(c) => {
+                        let width = c.nodes.iter().find_map(|n| {
+                            if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
+                                Some(*width)
+                            } else {
+                                None
+                            }
+                        })?;
+                        Self::try_signed_definedness_bounds(&base, width, c.premises.clone())
+                            .ok()
+                            .flatten()
+                    }
+                    _ => None,
+                };
             }
         }
         // The planner selects only Surface-expressible explicit operations.

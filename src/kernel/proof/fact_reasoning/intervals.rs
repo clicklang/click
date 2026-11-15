@@ -27,11 +27,14 @@ fn readings(p: &Proposition) -> Vec<Proposition> {
     result.push(p.clone());
     result
 }
-fn bounds(value: &SharedIntegerTerm, selected: &HashMap<u64, Bounds>) -> Option<Bounds> {
+fn bounds(
+    value: &SharedIntegerTerm,
+    selected: &HashMap<SharedIntegerTerm, Bounds>,
+) -> Option<Bounds> {
     if let Some(n) = value.as_const().and_then(ToPrimitive::to_i128) {
         return Some((n, n));
     }
-    if let Some(range) = selected.get(&value.id()) {
+    if let Some(range) = selected.get(value) {
         return Some(*range);
     }
     let IntegerTerm::Machine(machine) = value.as_ref() else {
@@ -43,19 +46,41 @@ fn bounds(value: &SharedIntegerTerm, selected: &HashMap<u64, Bounds>) -> Option<
 fn child(
     value: MachineOperandView<'_>,
     ty: MachineIntegerType,
-    selected: &HashMap<u64, Bounds>,
+    selected: &HashMap<SharedIntegerTerm, Bounds>,
 ) -> Option<Bounds> {
     bounds(&value.observe(ty)?.into(), selected)
 }
 fn operation(
     value: &SharedIntegerTerm,
-    selected: &HashMap<u64, Bounds>,
+    selected: &HashMap<SharedIntegerTerm, Bounds>,
     premises: &[Proposition],
 ) -> Option<Bounds> {
+    // Exact arithmetic over two bounded observations is the same local
+    // endpoint calculation, without a machine-range intersection.
+    match value.as_ref() {
+        IntegerTerm::Add(a, b) => {
+            let (al, ah) = bounds(a, selected)?;
+            let (bl, bh) = bounds(b, selected)?;
+            return Some((al.checked_add(bl)?, ah.checked_add(bh)?));
+        }
+        IntegerTerm::Subtract(a, b) => {
+            let (al, ah) = bounds(a, selected)?;
+            let (bl, bh) = bounds(b, selected)?;
+            return Some((al.checked_sub(bh)?, ah.checked_sub(bl)?));
+        }
+        _ => {}
+    }
     let IntegerTerm::Machine(machine) = value.as_ref() else {
         return None;
     };
-    let view = machine.operand_view();
+    let mut view = machine.operand_view();
+    while let Some((_, source, destination, operand)) = view.cast() {
+        if source != destination || destination != machine.ty() {
+            break;
+        }
+        view = operand;
+    }
+
     if let Some((_, source, destination, operand)) = view.cast() {
         let range = child(operand, source, selected)?;
         let (lo, hi) = destination.format().bounds();
@@ -65,7 +90,7 @@ fn operation(
         return None;
     }
     let (ty, op, [a, b]) = view.binary()?;
-    if ty != MachineIntegerType::Int32 {
+    if !matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
         return None;
     }
     let (al, ah) = child(a, ty, selected)?;
@@ -82,6 +107,44 @@ fn operation(
                 ah.checked_mul(bh)?,
             ];
             (*values.iter().min()?, *values.iter().max()?)
+        }
+        Remainder
+            if bl == bh
+                && bl > 0
+                && a.binary()
+                    .is_some_and(|(format, op, _)| format == ty && op == Add) =>
+        {
+            let (_, _, [base, offset]) = a.binary()?;
+            let (offset_lo, offset_hi) = child(offset, ty, selected)?;
+            if offset_lo != offset_hi {
+                return None;
+            }
+            let (base_lo, base_hi) = child(base, ty, selected)?;
+            if base_lo < 0 || base_lo + offset_lo < 0 || base_hi + offset_lo > i128::from(i32::MAX)
+            {
+                return None;
+            }
+            let root = KernelTerm::machine_binary_shared(
+                ty,
+                Remainder,
+                [
+                    KernelTerm::retained_machine_operand(ty, base),
+                    KernelTerm::retained_machine_operand(ty, b),
+                ],
+            );
+            let original: SharedIntegerTerm =
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root)?).into();
+            // This is the stated original remainder, not a recursively
+            // inferred interval or a scan for a matching expression.
+            let &(lo, hi) = selected.get(&original)?;
+            if lo < 0 || hi >= bl {
+                return None;
+            }
+            let (lo, hi) = (lo + offset_lo, hi + offset_lo);
+            if lo.div_euclid(bl) != hi.div_euclid(bl) {
+                return None;
+            }
+            (lo.rem_euclid(bl), hi.rem_euclid(bl))
         }
         Remainder if bl == bh && bl != 0 => {
             if bl == -1 && al == i128::from(i32::MIN) {
@@ -130,7 +193,37 @@ fn operation(
 }
 
 pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]) -> bool {
-    let mut selected = HashMap::<u64, Bounds>::new();
+    if let Proposition::And(left, right) = goal {
+        // One explicit pair (a domain or two endpoints), never a recursive
+        // conjunction walk rebuilding selection for an unbounded goal.
+        if matches!(left.as_ref(), Proposition::And(..))
+            || matches!(right.as_ref(), Proposition::And(..))
+        {
+            return false;
+        }
+        return reduces_one_operation(left, premises) && reduces_one_operation(right, premises);
+    }
+    if parts(goal).is_none() {
+        let Proposition::ConditionIs(condition, truth) = goal else {
+            return false;
+        };
+        if !crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
+            .is_some_and(|view| {
+                matches!(
+                    view.relation,
+                    crate::kernel::machine_integer::Relation::Less
+                        | crate::kernel::machine_integer::Relation::LessEqual
+                )
+            })
+        {
+            return false;
+        }
+    }
+    let goal_readings = readings(goal);
+    if !goal_readings.iter().any(|reading| parts(reading).is_some()) {
+        return false;
+    }
+    let mut selected = HashMap::<SharedIntegerTerm, Bounds>::new();
     for p in premises {
         for reading in readings(p) {
             crate::instrumentation::record_deterministic_work(1);
@@ -139,16 +232,22 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
             };
             let (term, bound, lower) = if let Some(n) = a.as_const().and_then(ToPrimitive::to_i128)
             {
-                (b, n + i128::from(strict), true)
+                let Some(bound) = n.checked_add(i128::from(strict)) else {
+                    continue;
+                };
+                (b, bound, true)
             } else if let Some(n) = b.as_const().and_then(ToPrimitive::to_i128) {
-                (a, n - i128::from(strict), false)
+                let Some(bound) = n.checked_sub(i128::from(strict)) else {
+                    continue;
+                };
+                (a, bound, false)
             } else {
                 continue;
             };
             let Some(intrinsic) = bounds(term, &HashMap::new()) else {
                 continue;
             };
-            let range = selected.entry(term.id()).or_insert(intrinsic);
+            let range = selected.entry(term.clone()).or_insert(intrinsic);
             if lower {
                 range.0 = range.0.max(bound);
             } else {
@@ -159,7 +258,7 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
             }
         }
     }
-    for reading in readings(goal) {
+    for reading in goal_readings {
         let Some((a, b, strict)) = parts(&reading) else {
             continue;
         };
@@ -167,10 +266,10 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
         // children must be cited; nested arithmetic requires another have.
         let left = operation(a, &selected, premises).or_else(|| bounds(a, &selected));
         let right = operation(b, &selected, premises).or_else(|| bounds(b, &selected));
-        if let (Some((_, ah)), Some((bl, _))) = (left, right) {
-            if if strict { ah < bl } else { ah <= bl } {
-                return true;
-            }
+        if let (Some((_, ah)), Some((bl, _))) = (left, right)
+            && if strict { ah < bl } else { ah <= bl }
+        {
+            return true;
         }
     }
     false
@@ -213,6 +312,21 @@ mod tests {
         assert!(normalize_using_conditions(&goal, &bounds[..1], &facts).is_err());
         let wrong = le(literal(0), literal(1));
         assert!(normalize_using_conditions(&goal, &[wrong], &facts).is_err());
+    }
+    #[test]
+    fn extreme_strict_endpoints_refuse_without_panicking() {
+        let (goal, _) = inputs(MachineBinaryOp::Add, 1);
+        let x = observe(MachineTerm::Variable(Variable(987_701)));
+        for (value, lower) in [(i128::MAX, true), (i128::MIN, false)] {
+            let endpoint: SharedIntegerTerm = IntegerTerm::Constant(BigInt::from(value)).into();
+            let (a, b) = if lower {
+                (endpoint, x.clone())
+            } else {
+                (x.clone(), endpoint)
+            };
+            let premise = Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a, b), true);
+            assert!(!reduces_one_operation(&goal, &[premise]));
+        }
     }
     #[test]
     fn interval_reduction_refuses_overflow_and_invalid_shifts() {

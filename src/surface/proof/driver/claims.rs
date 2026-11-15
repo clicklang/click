@@ -2054,6 +2054,15 @@ fn apply_post_execution_arithmetic_using<'a>(
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
+        if crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some() {
+            return crate::kernel::search::ProofSearch::try_restricted_signed_definedness_closure(
+                focused, &pairs,
+            )?
+            .ok_or_else(|| {
+                focused
+                    .step_error("post-execution signed definedness needs explicit operand bounds")
+            });
+        }
         use crate::surface::checking::ArithmeticPlan;
         let plan = crate::surface::checking::arithmetic_plans(goal, &kernel_premises, false)
             .next()
@@ -2062,6 +2071,9 @@ fn apply_post_execution_arithmetic_using<'a>(
             })?;
         let certificate = match plan {
             ArithmeticPlan::Special(plan) => {
+                if let Some(width)=plan.nodes.iter().find_map(|node|if let crate::kernel::proof::arithmetic_special::SpecialArithmeticNode::SignedDefined {width,..}=node {Some(*width)} else {None}) {
+                    return crate::kernel::search::ProofSearch::try_signed_definedness_bounds(focused,width,surface_premises.to_vec())?.ok_or_else(||focused.step_error("post-execution signed definedness needs explicit operand bounds"));
+                }
                 crate::surface::checking::special_plan_to_surface_certificate(
                     &plan,
                     surface_premises,
@@ -2120,9 +2132,15 @@ fn apply_post_execution_arithmetic_using<'a>(
                             "post-execution signed arithmetic certificate could not be transcribed",
                         )
                     })?;
-                ArithmeticCertificate {
-                    family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                }
+                return crate::kernel::search::ProofSearch::apply_signed_interval_composition(
+                    focused,
+                    &certificate,
+                )?
+                .ok_or_else(|| {
+                    focused.step_error(
+                        "post-execution signed arithmetic needs explicit intermediate bounds",
+                    )
+                });
             }
         };
         focused

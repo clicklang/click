@@ -1724,6 +1724,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 {
                     base = next;
                 }
+            } else {
+                let defined = ClickProposition::Defined {
+                    expression: operand.clone(),
+                };
+                let kernel =
+                    base.lower_cited_surface_proposition(&defined, "signed read domain")?;
+                if matches!(kernel, Proposition::MemoryReadDefined { .. }) {
+                    let scope = base.driver().open_have(defined)?;
+                    base = scope.driver().apply_step(ProofStep::Normalize)?.join()?;
+                }
             }
         }
         // The formats a definedness fact can be stated at, each by its
