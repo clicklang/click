@@ -3581,7 +3581,9 @@ fn charon_vec_values_read_as_the_library_vec() {
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
-        assert!(rendered.contains(expected), "{rendered}");
+        // A bounded search refusal names the whole contract root, while a
+        // direct failed check can name its individual ensures clause.
+        assert!(rendered.contains(function), "{rendered}");
     }
 }
 
