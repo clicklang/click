@@ -5931,3 +5931,63 @@ fn common_float_predicates_round_trip_existing_spelling() {
         }
     }
 }
+
+#[test]
+fn common_float_calls_round_trip_existing_function_syntax() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for (format, spelling) in [
+        (crate::kernel::KernelFloatType::Float32, "float"),
+        (crate::kernel::KernelFloatType::Float64, "double"),
+    ] {
+        let variable = MachineTerm::Variable(Variable(1008204));
+        let names = BTreeMap::from([(Variable(1008204), "x".to_string())]);
+        let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
+        let source = MachineTerm::ClickFunctionApplication {
+            name: "step".into(),
+            arguments: vec![crate::kernel::PureFunctionArgument::Value(format.value(
+                MachineTerm::ClickFunctionApplication {
+                    name: "step".into(),
+                    arguments: vec![crate::kernel::PureFunctionArgument::Value(
+                        format.value(variable),
+                    )],
+                },
+            ))],
+        };
+        let root = crate::kernel::KernelTermImport::default().float(format, &source);
+        let surface =
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+        let text = diagnostics::describe_contract_expression(&surface);
+        let parsed = parser::parse(&format!("function step(x: {spelling}) -> {spelling} {{ x }} function probe(x: {spelling}) -> {spelling} {{ {text} }}")).unwrap();
+        let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+            parsed
+                .click_function_definitions()
+                .last()
+                .unwrap()
+                .body()
+                .unwrap(),
+            BTreeMap::new(),
+            &state,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            None,
+            &RecordedStates::new(),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(parsed.click_function_definitions()),
+            ),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let (value, obligations) =
+            crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                &state,
+                &spec,
+                Some(&state),
+                &PureFactContext::new(),
+            )
+            .unwrap();
+        assert_eq!(value, format.value(source), "{text}");
+        assert!(obligations.is_empty());
+    }
+}

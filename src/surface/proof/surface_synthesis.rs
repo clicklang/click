@@ -3164,7 +3164,7 @@ fn raise_algebraic_if<'a>(
 
 // Keep the float-only temporaries out of the recursive shared renderer's
 // frame, which is also used for deeply nested integer expressions.
-fn raise_float_arithmetic(
+fn raise_float_expression(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -3192,7 +3192,15 @@ fn raise_float_arithmetic(
                 crate::kernel::FloatBinaryOperator::Divide => SurfaceTerm::Divide(left, right),
             }
         }
-        _ => unreachable!("float arithmetic dispatch"),
+        Node::FloatCall(call) => SurfaceTerm::Call {
+            name: generic_instance_source_name(&call.name).into(),
+            arguments: call
+                .arguments
+                .iter()
+                .map(recurse)
+                .collect::<Option<Vec<_>>>()?,
+        },
+        _ => unreachable!("float expression dispatch"),
     })
 }
 
@@ -3490,8 +3498,11 @@ pub(super) fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
-        Node::FloatConvert { .. } | Node::FloatNegate { .. } | Node::FloatBinary { .. } => {
-            raise_float_arithmetic(term, parameter_binding, state, bound_variables)?
+        Node::FloatConvert { .. }
+        | Node::FloatNegate { .. }
+        | Node::FloatBinary { .. }
+        | Node::FloatCall(_) => {
+            raise_float_expression(term, parameter_binding, state, bound_variables)?
         }
         Node::FloatRead(_) => raise_float_read(term, parameter_binding, state, bound_variables)?,
         Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(

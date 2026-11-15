@@ -2,6 +2,8 @@
 //! conversion nor constant evaluation changes a written carrier or its bits.
 use super::*;
 mod arithmetic;
+mod call;
+pub use call::KernelFloatCall;
 mod condition;
 mod conversion;
 mod read;
@@ -148,7 +150,15 @@ impl KernelTermImport {
         }
     }
 }
+#[cfg(test)]
+thread_local! {
+    static FLOAT_EXPORT_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 impl KernelTermExport {
+    #[cfg(test)]
+    pub(crate) fn float_export_count() -> usize {
+        FLOAT_EXPORT_COUNT.with(std::cell::Cell::get)
+    }
     pub(crate) fn float(term: &KernelTerm) -> Result<ProgramValue, &'static str> {
         let view = FloatOperandView::from_shared(term).ok_or("expected float term")?;
         Ok(view.format().value(Self::float_machine(term)?))

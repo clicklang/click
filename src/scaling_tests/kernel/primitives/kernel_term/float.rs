@@ -284,3 +284,61 @@ fn float_predicate_readers_keep_growing_shared_prefixes() {
         assert_eq!(KernelTermExport::machine_export_count(), before);
     }
 }
+
+#[test]
+fn float_call_construction_retains_growing_duplicate_arguments() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let exports = KernelTermExport::float_export_count();
+            let mut root = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(1008201),
+            );
+            for _ in 0..size {
+                let child = root.clone();
+                let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    KernelTerm::float_call(
+                        format,
+                        "float_step".into(),
+                        vec![(root.clone(), None), (root.clone(), None)],
+                    )
+                });
+                assert!(work <= 4, "size={size}, work={work}");
+                assert_eq!(next.children(), &[child.clone(), child]);
+                root = next;
+            }
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+        }
+    }
+}
+
+#[test]
+fn float_call_import_and_export_scale_with_explicit_native_output() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let mut native = MachineTerm::Variable(Variable(1008202));
+        for _ in 0..size {
+            native = MachineTerm::ClickFunctionApplication {
+                name: "step".into(),
+                arguments: vec![PureFunctionArgument::Value(format.value(native))],
+            };
+        }
+        let (root, import_work) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermImport::default().float(format, &native)
+        });
+        let (output, export_work) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermExport::float(&root).unwrap()
+        });
+        assert_eq!(output, format.value(native));
+        assert!(
+            import_work <= 8 * size + 8,
+            "size={size}, work={import_work}"
+        );
+        assert!(
+            export_work <= 8 * size + 8,
+            "size={size}, work={export_work}"
+        );
+    }
+}

@@ -4223,7 +4223,9 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
         }
         crate::instrumentation::record_deterministic_work(1);
         match term.node() {
-            KernelTermNode::FloatRead(_) | KernelTermNode::MemoryLoad { .. } => return true,
+            KernelTermNode::FloatRead(_)
+            | KernelTermNode::MemoryLoad { .. }
+            | KernelTermNode::FloatCall(_) => return true,
             KernelTermNode::Legacy(value) => {
                 let crate::kernel::PureFunctionArgument::Value(value) = value.value() else {
                     unreachable!("numeric conversion operand");
