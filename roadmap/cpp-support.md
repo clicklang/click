@@ -97,9 +97,11 @@ and arithmetic are preserved, not retagged.
 
 ### Sequencing
 
-New C++ feature admission waits on [object-model.md](object-model.md). The
-[object-model design](../design/cpp-object-model.md) records the accepted
-laws; it is not an upstream support claim.
+Each new C++ slice must preserve the invariants and satisfy the relevant
+entry/call checks in [object-model.md](object-model.md); there is no blanket
+feature freeze. The [object-model design](../design/cpp-object-model.md)
+records accepted laws and historical implementation notes, not upstream
+support claims.
 
 ### Remaining coverage
 
@@ -149,11 +151,12 @@ implementation:
   Bitcoin's `SpanReader`, which reports malformed input by throwing
   `std::ios_base::failure`; that exception model is
   [cpp-exceptions.md](cpp-exceptions.md). `ser_readdata32` is a later
-  candidate. It still needs two things:
-  - writable byte-span construction;
-  - an ordinary modular output-buffer contract whose body establishes that
-    initially unwritten bytes become initialized. An `owns` contract alone
-    does not guarantee that.
+  candidate. It needs the selected writable byte-span path and a modular
+  byte-output composition witness. The shared output-buffer contract already
+  supports `consumes uninitialized(...)` and initialized `produces`; check
+  its C++ byte/word composition under [object-model.md](object-model.md).
+  Plain `owns` still requires initialized input and does not express an
+  initializer.
 
   The four-write uint32 representation rule, the authenticated `std::byte`
   pointers and the one-way `reinterpret_cast` are delivered (see the

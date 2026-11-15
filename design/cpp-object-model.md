@@ -9,16 +9,18 @@
 > Files the notes name without a link existed only on that branch.
 
 This is the consolidated design target for the bounded C++ object model, with
-the shared semantics required by C and Rust. It answers when the current
-foundation is stable enough to resume C++ feature work. It does not claim full
-C++ semantics or change the implementation by documenting a rule.
+the shared semantics required by C and Rust. Its semantic laws guide current
+C++ work; its archived implementation is not a delivery requirement. It does
+not claim full C++ semantics or change the implementation by documenting a rule.
 
 The implementation baseline includes the construction work recorded in
 [Aggregate construction](aggregate-construction.md) and the explicit output
 initialization work in [PR 646](https://github.com/clicklang/click/pull/646).
 The [byte representation record](../docs/internals/byte-representation.md)
 describes current byte behavior; the [shared object-model issue](../roadmap/object-model.md)
-owns the recovery plan, baseline audit and delivery sequence. The
+owns the remaining current-master gaps and acceptance checks. The
+[current-master audit](object-model-current-audit.md) separates delivered
+mechanisms from historical implementation claims. The
 [C++ issue](../roadmap/cpp-support.md) owns subsequent feature coverage and source
 profiles. This document owns the combined semantic target and stabilization
 criteria. Its implementation notes describe their recorded checkpoints and
@@ -46,9 +48,10 @@ resolve lifetime, provenance, or language validity and is not the proposed work.
 5. Preserve destination-directed construction, ordinary value copying, and
    explicit lifetime events as distinct operations. A callee's destination is
    not fresh unless the caller's allocation and contract establish that fact.
-6. Stabilize the already selected profile before adding owning containers or
-   broader object-lifetime features. The acceptance matrix below defines that
-   milestone; verifying one more helper alone does not.
+6. Require each new source slice to preserve the selected profile and justify
+   its added object/lifetime behavior. The active roadmap scopes the remaining
+   milestone; the historical matrix below does not impose a blanket feature
+   freeze or require recovery of the retired implementation.
 
 These consolidate the accepted direction. The bounded declared-uint32
 observation rule is delivered through the existing checked application syntax.

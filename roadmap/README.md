@@ -167,7 +167,7 @@ C language coverage:
 
 Additional languages:
 
-- [Stabilize and deliver the shared object model](object-model.md)
+- [Close object-model gaps in supported C++](object-model.md)
 - [C++ coverage toward Bitcoin Core](cpp-support.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
 - [Support unsafe Rust](unsafe-rust.md)
