@@ -37,6 +37,19 @@ impl<'a> BooleanOperandView<'a> {
     /// Exact native Boolean identity, without exporting connective trees or
     /// primitive comparison operands. Load authority is never consulted here.
     pub(crate) fn syntax_equal(self, other: Self) -> bool {
+        self.syntax_equal_by(other, |a, b| {
+            crate::kernel::machine_operand_syntax_cmp(a, b).is_eq()
+        })
+    }
+
+    /// The callback supplies exact native machine syntax equality. Callers
+    /// outside the machine correspondence traversal may reuse its syntax memo;
+    /// callers inside it use the non-reentrant reader above.
+    pub(crate) fn syntax_equal_by(
+        self,
+        other: Self,
+        mut machine_equal: impl FnMut(MachineOperandView<'a>, MachineOperandView<'a>) -> bool,
+    ) -> bool {
         use crate::kernel::machine_integer::comparison::{FactOperand, fact_operand_identity};
         let mut pending = vec![(self, other)];
         let mut seen = std::collections::HashSet::new();
@@ -82,9 +95,7 @@ impl<'a> BooleanOperandView<'a> {
                     for (a, b) in a.into_iter().zip(b) {
                         let equal = match (a, b) {
                             (FactOperand::Value(a), FactOperand::Value(b)) => a == b,
-                            (FactOperand::Term(a), FactOperand::Term(b)) => {
-                                crate::kernel::machine_operand_syntax_cmp(a, b).is_eq()
-                            }
+                            (FactOperand::Term(a), FactOperand::Term(b)) => machine_equal(a, b),
                             _ => false,
                         };
                         if !equal {

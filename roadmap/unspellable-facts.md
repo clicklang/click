@@ -284,7 +284,7 @@ refusal, linear shared-connective identity and growing arithmetic comparison
 prefixes without machine exports. No proof rules, search indexes or budgets
 changed. The following 8d/8e slices reuse this identity support.
 
-8d prepares common Boolean bitvector/pointer substitution for the producer and
+8d (merged [PR #2810](https://github.com/clicklang/click/pull/2810)) prepares common Boolean bitvector/pointer substitution for the producer and
 handoff slices. Bitvector substitution preserves raw Boolean connectives and
 uses the existing shared arithmetic normalization mapper; one local memo shares
 numeric work across comparison atoms. Pointer substitution preserves its distinct
@@ -315,8 +315,12 @@ readers. Other index mappers keep their explicit native guard adapter; the
 numeric Boolean-cast compatibility boundary remains assigned to 8m.
 Native/common transport agreement, snapshots, comparison-constructor behavior,
 constant-work refusal and accepted shared arithmetic transport without exports
-are covered. All 1,673 selected tests passed, including every scaling test and
-the memory-provenance selections, with exit status 0.
+are covered. The shared Boolean matcher also restores the native exact-equality
+precedence before load authority: an identical guard, including comparison-format
+equivalences, does not need permission to match its own read. That preliminary
+check reuses the existing immutable machine syntax memo. All 1,679 selected tests
+passed, including every scaling test, memory provenance and shared load-atom
+comparison selections, with exit status 0. The CI-quality check passed.
 
 ### 8a inventory
 
