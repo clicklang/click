@@ -105,6 +105,7 @@ fn substitute_program_expression_variables(
             expression: unary(body),
             classification: *classification,
         },
+        Negate(body) => Negate(unary(body)),
         FloatNegate(body) => FloatNegate(unary(body)),
         EnumConstruct {
             enum_type,
@@ -1188,7 +1189,8 @@ fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut B
     match expression {
         Value(_) | Variable(_) | FunctionAddress(_) | StepResult { .. } => {}
         Cast { expression, .. } => inner(expression),
-        FloatNegate(expression)
+        Negate(expression)
+        | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | EnumField {
             value: expression, ..
@@ -1259,6 +1261,7 @@ fn collect_program_expression_variables(
         }
         StepResult { .. } => {}
         Cast { expression, .. }
+        | Negate(expression)
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | EnumField {
@@ -1585,6 +1588,7 @@ fn collect_spec_program_variables(
                     | crate::kernel::binary_spec_expression!(_, _)
                     | SpecExpression::Subobject { .. }
                     | SpecExpression::PointerOffset { .. }
+                    | SpecExpression::Negate(_)
                     | SpecExpression::BitwiseNot(_)
                     | SpecExpression::NarrowArithmetic(_, _)
                     | SpecExpression::Cast(_, _)
@@ -2281,6 +2285,7 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
         NotEqual(left, right) => binary(left, right, "!="),
         And(left, right) => binary(left, right, "&&"),
         Or(left, right) => binary(left, right, "||"),
+        Negate(operand) => unary(operand, "-"),
         BitwiseNot(operand) => unary(operand, "~"),
         Not(operand) => unary(operand, "!"),
         AddressOf(operand) => unary(operand, "&"),
@@ -2864,6 +2869,18 @@ fn ranking_measure_term_unfolded(
                 MachineTerm::add,
                 MachineTerm::uint64_add,
                 MachineTerm::int64_add,
+            ),
+        ),
+        Negate(right) => binary(
+            &Value(ProgramValue::Int32(MachineTerm::constant(0))),
+            right,
+            state,
+            reader,
+            (
+                MachineTerm::subtract,
+                MachineTerm::subtract,
+                MachineTerm::uint64_subtract,
+                MachineTerm::int64_subtract,
             ),
         ),
         Subtract(left, right) => binary(
@@ -4177,6 +4194,7 @@ fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTr
         }
         Variable(_) | StepResult { .. } => {}
         Cast { expression, .. }
+        | Negate(expression)
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | EnumField {

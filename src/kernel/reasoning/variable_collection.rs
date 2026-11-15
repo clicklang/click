@@ -880,7 +880,8 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
             collect_program_expression_bitvector_variables(then_branch, variables);
             collect_program_expression_bitvector_variables(else_branch, variables);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..
@@ -1378,6 +1379,7 @@ fn collect_program_expression_bound_identities(
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {

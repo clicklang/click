@@ -2881,7 +2881,8 @@ pub(crate) fn collect_program_expression_variables(
         ProgramExpression::Cast { expression, .. } => {
             collect_program_expression_variables(expression, names);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..

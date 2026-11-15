@@ -3654,6 +3654,8 @@ pub enum ProgramExpression {
         then_branch: Box<ProgramExpression>,
         else_branch: Box<ProgramExpression>,
     },
+    /// Click unary minus: float sign negation, otherwise existing zero subtraction.
+    Negate(Box<ProgramExpression>),
     FloatNegate(Box<ProgramExpression>),
     FloatClassification {
         expression: Box<ProgramExpression>,
@@ -3986,6 +3988,8 @@ pub enum SpecExpression {
     BitwiseAnd(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseOr(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseXor(Box<SpecExpression>, Box<SpecExpression>),
+    /// Unary minus retains float sign semantics until the operand is evaluated.
+    Negate(Box<SpecExpression>),
     BitwiseNot(Box<SpecExpression>),
     Cast(Box<SpecExpression>, ProgramType),
     /// The operator at the root of the expression, one of `+ - * & | ^ ~`,
@@ -10271,6 +10275,7 @@ impl ProgramExpression {
                 else_branch.collect_step_results_read(steps);
             }
             ProgramExpression::Cast { expression, .. }
+            | ProgramExpression::Negate(expression)
             | ProgramExpression::FloatNegate(expression)
             | ProgramExpression::FloatClassification { expression, .. }
             | ProgramExpression::EnumField {

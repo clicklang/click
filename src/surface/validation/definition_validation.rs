@@ -2839,7 +2839,8 @@ fn collect_resource_fact_reads_from_program_expression(
         ProgramExpression::Cast { expression, .. } => {
             collect_resource_fact_reads_from_program_expression(expression, reads);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..

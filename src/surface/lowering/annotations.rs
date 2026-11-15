@@ -6777,10 +6777,9 @@ impl AnnotationLowerer<'_> {
                         MachineTerm::constant(0u32.wrapping_sub(value as u32)),
                     )));
                 }
-                Ok(SpecExpression::Subtract(
-                    Box::new(SpecExpression::Value(int32(0))),
-                    Box::new(self.lower_contract_expression_to_spec(expression, environment)?),
-                ))
+                Ok(SpecExpression::Negate(Box::new(
+                    self.lower_contract_expression_to_spec(expression, environment)?,
+                )))
             }
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             ContractExpression::Add(left, right) => {
@@ -8978,6 +8977,9 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.lower_program_expression_to_spec(left, environment)?),
                 Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
+            ProgramExpression::Negate(expression) => Ok(SpecExpression::Negate(Box::new(
+                self.lower_program_expression_to_spec(expression, environment)?,
+            ))),
             ProgramExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_program_expression_to_spec(expression, environment)?,
             ))),

@@ -9180,7 +9180,8 @@ pub(super) fn collect_address_taken_in_expression(
             collect_address_taken_in_expression(then_branch, names);
             collect_address_taken_in_expression(else_branch, names);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..
@@ -9231,7 +9232,8 @@ pub(super) fn collect_variable_names(expression: &ProgramExpression, names: &mut
             collect_variable_names(then_branch, names);
             collect_variable_names(else_branch, names);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..

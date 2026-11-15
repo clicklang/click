@@ -151,6 +151,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramExpression::Cast {
                 expression: value, ..
             }
+            | ProgramExpression::Negate(value)
             | ProgramExpression::FloatNegate(value)
             | ProgramExpression::FloatClassification {
                 expression: value, ..

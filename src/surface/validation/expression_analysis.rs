@@ -15,7 +15,8 @@ pub(in crate::surface) fn program_expression_uses_variable(
         ProgramExpression::Cast { expression, .. } => {
             program_expression_uses_variable(expression, variable)
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..

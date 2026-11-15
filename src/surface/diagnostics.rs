@@ -5996,7 +5996,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                 click_cast(&describe_program_expression(expression), spelling)
             )
         }
-        ProgramExpression::FloatNegate(expression) => {
+        ProgramExpression::Negate(expression) | ProgramExpression::FloatNegate(expression) => {
             format!("-{}", describe_program_expression(expression))
         }
         ProgramExpression::EnumConstruct {

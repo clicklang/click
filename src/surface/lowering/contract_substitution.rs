@@ -4534,6 +4534,9 @@ pub(in crate::surface) fn substitute_program_expression_in(
             pointee_constant: *pointee_constant,
             explicit_qualification: *explicit_qualification,
         }),
+        ProgramExpression::Negate(expression) => Ok(ProgramExpression::Negate(Box::new(
+            substitute_program_expression_in(expression, substitutions)?,
+        ))),
         ProgramExpression::FloatNegate(expression) => Ok(ProgramExpression::FloatNegate(Box::new(
             substitute_program_expression_in(expression, substitutions)?,
         ))),

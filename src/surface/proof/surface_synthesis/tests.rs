@@ -5231,3 +5231,168 @@ fn common_float_reads_retain_old_and_recorded_snapshots() {
         }
     }
 }
+#[test]
+fn click_float_unary_negation_preserves_positive_zero_sign() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut actual = Vec::new();
+    for (ty, bits) in [
+        ("float", "float32_from_bits"),
+        ("double", "float64_from_bits"),
+    ] {
+        let parsed =
+            parser::parse(&format!("function negate_zero() -> {ty} {{ -{bits}(0) }}")).unwrap();
+        let state = ExecutionState::new();
+        let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+            parsed.click_function_definitions()[0].body().unwrap(),
+            BTreeMap::new(),
+            &state,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            None,
+            &RecordedSnapshots::new(),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let (value, _) =
+            crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                &state,
+                &spec,
+                Some(&state),
+                &PureFactContext::new(),
+            )
+            .unwrap();
+        actual.push(value);
+    }
+    assert_eq!(
+        actual,
+        vec![
+            ProgramValue::Float32(MachineTerm::constant(0x80000000)),
+            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000))
+        ]
+    );
+}
+
+#[test]
+fn click_float_unary_negation_preserves_bits_and_symbolic_operands() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for wide in [false, true] {
+        let ty = if wide { "double" } else { "float" };
+        let parsed = parser::parse(&format!("function negate(x: {ty}) -> {ty} {{ -x }}")).unwrap();
+        let body = parsed.click_function_definitions()[0].body().unwrap();
+        let program =
+            crate::surface::lowering::resource_argument_to_program_expression(body).unwrap();
+        let patterns: &[u64] = if wide {
+            &[
+                0,
+                0x8000000000000000,
+                0x3ff0000000000000,
+                0x7ff0000000000000,
+                0x7ff8000000000123,
+                0xfff0000000000123,
+                1,
+            ]
+        } else {
+            &[
+                0, 0x80000000, 0x3f800000, 0x7f800000, 0x7fc00123, 0xff800123, 1,
+            ]
+        };
+        for term in patterns
+            .iter()
+            .map(|&bits| {
+                if wide {
+                    MachineTerm::uint64_constant(bits)
+                } else {
+                    MachineTerm::constant(bits as u32)
+                }
+            })
+            .chain(std::iter::once(MachineTerm::Variable(Variable(981001))))
+        {
+            let (value, expected) = if wide {
+                (
+                    ProgramValue::Float64(term.clone()),
+                    ProgramValue::Float64(MachineTerm::float64_negate(term)),
+                )
+            } else {
+                (
+                    ProgramValue::Float32(term.clone()),
+                    ProgramValue::Float32(MachineTerm::float32_negate(term)),
+                )
+            };
+            let state = ExecutionState::new().with_local("x", value);
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                body,
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            for expression in [spec, SpecExpression::ProgramExpression(program.clone())] {
+                let (actual, obligations) =
+                    crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                        &state, &expression, Some(&state), &PureFactContext::new(),
+                    ).unwrap();
+                assert_eq!(actual, expected);
+                assert!(obligations.is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn click_integer_unary_negation_keeps_subtraction_semantics() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new();
+    for value in [
+        ProgramValue::Int32(MachineTerm::constant(0)),
+        ProgramValue::Int32(MachineTerm::constant(0x80000000)),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(981002))),
+        ProgramValue::UInt32(MachineTerm::constant(1)),
+        ProgramValue::UInt32(MachineTerm::Variable(Variable(981003))),
+        ProgramValue::UInt64(MachineTerm::Variable(Variable(981004))),
+        ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+    ] {
+        let zero = SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)));
+        let operand = SpecExpression::Value(value.clone());
+        let expressions = [
+            SpecExpression::Negate(Box::new(operand.clone())),
+            SpecExpression::ProgramExpression(ProgramExpression::Negate(Box::new(
+                ProgramExpression::Value(value.clone()),
+            ))),
+        ];
+        let previous = [
+            SpecExpression::Subtract(Box::new(zero), Box::new(operand)),
+            SpecExpression::ProgramExpression(ProgramExpression::Subtract(
+                Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                    MachineTerm::constant(0),
+                ))),
+                Box::new(ProgramExpression::Value(value)),
+            )),
+        ];
+        let evaluate = |expression: &SpecExpression| {
+            crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                &state,
+                expression,
+                Some(&state),
+                &PureFactContext::new(),
+            )
+        };
+        for (expression, previous) in expressions.into_iter().zip(previous) {
+            assert_eq!(evaluate(&expression), evaluate(&previous));
+        }
+    }
+}
