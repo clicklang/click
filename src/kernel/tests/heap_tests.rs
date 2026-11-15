@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::VerificationSession;
 use crate::kernel::loans::LoanLedger;
 
 #[test]

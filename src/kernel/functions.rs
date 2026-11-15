@@ -4567,8 +4567,7 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         }
 
-        let return_assumptions =
-            assumptions_with_path_context(&effective_assumptions, &facts, &[]);
+        let return_assumptions = assumptions_with_path_context(&effective_assumptions, &facts, &[]);
         let (
             return_resources,
             return_ledger,
