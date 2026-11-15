@@ -1199,7 +1199,7 @@ path = "reference/language/index.md#at"
 
 [[item]]
 id = "language.fold"
-path = "reference/language/index.md#pure-click-functions"
+path = "reference/language/grammar.md#range-folds"
 
 [[item]]
 id = "language.if-expression"
