@@ -1,19 +1,8 @@
-# A separation over a reversed range is refused
+# Separation may name a reversed range without granting access
 
-Naming a range in a contract says the same thing in every clause that can
-name one: that `s..t` is a valid 32-bit byte extent. `owns a[s..t]` and
-`viewable(a[s..t])` have carried that meaning both ways since a stated range
-began carrying its byte extent. `separate(memory(a[s..t]), …)` did not, and
-that made it the one clause where a range running backwards was accepted.
-
-The endpoints here are pinned to `s = i32::MAX` and `t = -i32::MAX`. Their
-*wrapping* difference is a tidy `2`, which is why the extent arithmetic alone
-raises no objection — read as a residue the range looks like two elements.
-Their true difference is `2 - 2^32`: the range's end is nearly the whole index
-space before its start, so it denotes no bytes at all, and relating it to
-another range states nothing. A separation clause is refused when the
-surrounding facts already decide that, exactly as an `owns` clause over the
-same endpoints is.
+The endpoints make a reversed range whose wrapped difference is two. Naming
+it in separation adds no extent fact or access permission. The independent
+ownership clause authorizes the read of `b[0]`.
 
 ```c filename=a_separation_over_a_reversed_range_is_refused.c
 int32 separate_over_reversed_range(int32 a[], int32 b[], int32 s, int32 t) {
@@ -35,5 +24,5 @@ int32 separate_over_reversed_range(int32 a[], int32 b[], int32 s, int32 t) {
 ```
 
 ```expect
-fail: it relates a memory range this context already proves is not a byte extent
+pass
 ```
