@@ -4406,19 +4406,18 @@ fn execute_execution_statement_leaf_paths(
                 let Some(retained_value) = path.call_result.as_ref() else {
                     continue;
                 };
-                let value = retained_value.native().into_owned();
                 // The result has the callee's declared type, as it would
                 // assigned to a local of that type.
                 let value = match result_type {
                     Some(program_type) => {
                         match crate::kernel::functions::coerce_program_value_with_pointee_constant(
-                            value,
+                            retained_value.native().into_owned(),
                             *program_type,
                             *result_pointee_constant,
                             &mut path.obligations,
                             assumptions,
                         ) {
-                            Some(value) => value,
+                            Some(value) => retained_value.retain_checked_pointer(value),
                             None => {
                                 path.outcome =
                                     StatementOutcome::RuntimeError(RuntimeError::TypeMismatch);
@@ -4426,13 +4425,10 @@ fn execute_execution_statement_leaf_paths(
                             }
                         }
                     }
-                    None => value,
+                    None => retained_value.clone(),
                 };
                 if let StatementOutcome::Normal(state) = &mut path.outcome {
-                    state.set_retained_step_result(
-                        *call,
-                        retained_value.retain_checked_pointer(value),
-                    );
+                    state.set_retained_step_result(*call, value);
                 }
             }
             paths
