@@ -372,6 +372,23 @@ pub(super) fn common_variables(
                     );
                 }
             }
+            KernelTermNode::FloatRead(read) => match mode {
+                FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
+                    super::retained_pointers::collect_address_variables_with_summaries(
+                        read.parts().1,
+                        mode,
+                        &mut leaf_variables,
+                        summaries,
+                    );
+                }
+                FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
+                FoldVariableRead::ExpressionFree => collect_machine_leaf(
+                    term.float_read_native().expect("float read"),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                ),
+            },
             KernelTermNode::AlgebraicRead(read) => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
                     super::retained_pointers::collect_address_variables_with_summaries(
@@ -601,6 +618,49 @@ mod tests {
             }
         }
         result
+    }
+
+    #[test]
+    fn float_readers_preserve_snapshot_address_and_native_collection_modes() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_memory(Memory::new().with_block("float-read-history", 4).store(
+            Memory::global_pointer("float-read-history"),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(999811))),
+        ));
+        let pointer = Pointer {
+            block: PointerBlock::Symbolic(Variable(999812)),
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(999813)),
+                4,
+            ),
+        };
+        for format in [
+            crate::kernel::KernelFloatType::Float32,
+            crate::kernel::KernelFloatType::Float64,
+        ] {
+            let argument = PureFunctionArgument::Value(format.value(MachineTerm::MemoryLoad(
+                memory.clone(),
+                Box::new(pointer.clone()),
+                format.load_kind(),
+            )));
+            let root = KernelTermImport::default().argument(&argument);
+            assert!(matches!(root.node(), KernelTermNode::FloatRead(_)));
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::ExpressionFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let mut expected = BTreeSet::new();
+                collect_argument(&argument, mode, &mut expected, &mut SeenTerms::default());
+                let actual = common_variables(&root, mode, &mut Default::default())
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(actual, expected, "{format:?} {mode:?}");
+            }
+        }
     }
 
     #[test]

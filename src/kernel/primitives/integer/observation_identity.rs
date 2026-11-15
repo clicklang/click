@@ -176,6 +176,12 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 } => KernelTerm::bool_cast(*destination, get(operand))
                     .expect("Boolean conversion")
                     .with_machine_observation_type(format),
+                KernelTermNode::FloatRead(read) => {
+                    let (_, address) = read.parts();
+                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatRead(read.observe(
+                        crate::kernel::SharedPointerAddress::new(address.node().block.observation(), normalize_offset(&address.node().offset)),
+                    )))
+                }
                 KernelTermNode::AlgebraicRead(read) => {
                     let (_, address) = read.parts();
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::AlgebraicRead(read.observe(
