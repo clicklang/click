@@ -1349,6 +1349,9 @@ fn annotate_surface_at_snapshot(
     ) -> ClickProposition {
         let mut child = || Box::new(completed.pop().expect("visited snapshot child"));
         match proposition {
+            ClickProposition::Value(expression) => {
+                ClickProposition::Value(expression_at_snapshot(expression))
+            }
             ClickProposition::Comparison {
                 left,
                 operator,
@@ -1490,6 +1493,7 @@ pub(in crate::surface) fn surface_snapshot_selector(
         _ => None,
     };
     match surface {
+        ClickProposition::Value(expression) => expression_site(expression),
         ClickProposition::Comparison { left, right, .. } => {
             expression_site(left).or_else(|| expression_site(right))
         }

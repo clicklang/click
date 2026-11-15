@@ -873,6 +873,7 @@ fn describe_unreachable_fact_transport(
 
 fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
     match proposition {
+        ClickProposition::Value(_) => None,
         ClickProposition::PredicateCall { name, .. } => Some(name),
         ClickProposition::At { proposition, .. }
         | ClickProposition::Not(proposition)

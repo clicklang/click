@@ -54,6 +54,7 @@ pub(crate) struct PropositionObligation<S, O> {
     /// The contract claim this obligation states, when it was opened from
     /// the kernel's goal for that claim.
     claim: Option<crate::kernel::FunctionContractClaimTarget>,
+    source_claim: Option<FunctionContractClaimKey>,
 }
 
 impl<S, O> PropositionObligation<S, O> {
@@ -63,6 +64,7 @@ impl<S, O> PropositionObligation<S, O> {
             presentation,
             outcome: None,
             claim: None,
+            source_claim: None,
         }
     }
 
@@ -72,6 +74,7 @@ impl<S, O> PropositionObligation<S, O> {
             presentation,
             outcome: Some(outcome),
             claim: None,
+            source_claim: None,
         }
     }
 
@@ -88,7 +91,27 @@ impl<S, O> PropositionObligation<S, O> {
             presentation,
             outcome,
             claim: Some(goal.target().clone()),
+            source_claim: None,
         }
+    }
+
+    pub(super) fn for_source_claim(
+        proposition: Proposition,
+        presentation: S,
+        outcome: O,
+        key: FunctionContractClaimKey,
+    ) -> Self {
+        Self {
+            proposition: Arc::new(proposition),
+            presentation,
+            outcome: Some(outcome),
+            claim: None,
+            source_claim: Some(key),
+        }
+    }
+
+    pub(super) fn source_claim(&self) -> Option<&FunctionContractClaimKey> {
+        self.source_claim.as_ref()
     }
 
     pub(crate) fn claim(&self) -> Option<&crate::kernel::FunctionContractClaimTarget> {
@@ -106,6 +129,7 @@ impl<S, O> PropositionObligation<S, O> {
             presentation,
             outcome: self.outcome.clone(),
             claim: self.claim.clone(),
+            source_claim: self.source_claim.clone(),
         }
     }
 
@@ -224,6 +248,7 @@ pub(crate) struct CheckedProposition {
     root_assumptions: super::ProofFacts,
     outcome: Option<OutcomeProofCore>,
     claim: Option<crate::kernel::FunctionContractClaimTarget>,
+    source_claim: Option<FunctionContractClaimKey>,
 }
 
 impl CheckedProposition {
@@ -232,12 +257,14 @@ impl CheckedProposition {
         root_assumptions: super::ProofFacts,
         outcome: Option<OutcomeProofCore>,
         claim: Option<crate::kernel::FunctionContractClaimTarget>,
+        source_claim: Option<FunctionContractClaimKey>,
     ) -> Self {
         Self {
             proposition: Arc::new(proposition),
             root_assumptions,
             outcome,
             claim,
+            source_claim,
         }
     }
 
@@ -280,6 +307,7 @@ impl CheckedProposition {
             outcome: self.outcome.clone(),
             // The derived implication is not the claim's own goal.
             claim: None,
+            source_claim: None,
         })
     }
 
@@ -493,8 +521,8 @@ pub(crate) struct OutcomeClaimGoals {
 
 struct OutcomeClaimGoal {
     position: usize,
-    /// The kernel claim the goal stands for. A clause the kernel files no
-    /// claim for (a `consumes` transition) has none.
+    /// A reusable kernel target, or `None` for a source-only clause whose
+    /// ordinary proof retains its declaration key instead.
     target: Option<FunctionContractClaimTarget>,
     state: ClaimGoalState,
 }
@@ -520,14 +548,14 @@ enum ClaimGoalState {
 }
 
 impl OutcomeClaimGoals {
-    pub(in crate::kernel) fn completed_proposition_keys(
+    pub(in crate::kernel) fn completed_outcome_claim_keys(
         &self,
     ) -> impl Iterator<Item = &FunctionContractClaimKey> {
         self.claims.iter().filter_map(|(key, goal)| {
             crate::instrumentation::record_deterministic_work(1);
             matches!(
                 goal.target,
-                Some(
+                None | Some(
                     FunctionContractClaimTarget::EnsureProposition(_)
                         | FunctionContractClaimTarget::ExceptionalEnsureProposition(_)
                 )
@@ -573,6 +601,21 @@ impl OutcomeClaimGoals {
             );
         }
         result
+    }
+
+    pub(super) fn require_source_claim(
+        &self,
+        key: &FunctionContractClaimKey,
+    ) -> Result<(), String> {
+        crate::instrumentation::record_deterministic_work(1);
+        let goal = self
+            .claims
+            .get(key)
+            .ok_or("source clause has no declared outcome cell")?;
+        if goal.target.is_some() || !matches!(goal.state, ClaimGoalState::Open) {
+            return Err("the selected cell is not an open source-only clause".into());
+        }
+        Ok(())
     }
 
     fn first_open_goal(&self) -> Option<(usize, &FunctionContractClaimKey)> {
@@ -634,7 +677,9 @@ impl OutcomeClaimGoals {
                     | FunctionContractClaimTarget::ExceptionalEnsureProposition(_)
             )
         );
-        if proposition_claim && matches!(evidence, ClaimGoalEvidence::Resource(_)) {
+        if (proposition_claim || goal.target.is_none())
+            && matches!(evidence, ClaimGoalEvidence::Resource(_))
+        {
             return Err(ClaimGoalError::WrongClaim);
         }
         if let ClaimGoalEvidence::Proposition(completion) = &evidence {
@@ -643,6 +688,9 @@ impl OutcomeClaimGoals {
                 .is_none_or(|core| !core.identity.same_as(outcome))
             {
                 return Err(ClaimGoalError::WrongOutcome);
+            }
+            if goal.target.is_none() && completion.source_claim.as_ref() != Some(key) {
+                return Err(ClaimGoalError::WrongClaim);
             }
             if (proposition_claim && completion.claim() != goal.target.as_ref())
                 || completion
@@ -698,7 +746,10 @@ mod outcome_claim_goal_tests {
             },
             super::super::ProofFacts::default(),
             Some(outcome.clone()),
-            claim,
+            claim.clone(),
+            claim
+                .is_none()
+                .then_some(FunctionContractClaimKey::Ensure(2)),
         ))
     }
 
@@ -786,6 +837,32 @@ mod outcome_claim_goal_tests {
         assert_eq!(
             throwing.first_open(),
             Some(&FunctionContractClaimKey::ExceptionalEnsure(0))
+        );
+    }
+
+    #[test]
+    fn source_claim_refuses_an_unbound_proposition_or_resource_receipt() {
+        let outcome = outcome();
+        let goals = goals(false);
+        let key = FunctionContractClaimKey::Ensure(2);
+        let mut generic = match completion(&outcome, None) {
+            ClaimGoalEvidence::Proposition(proof) => proof,
+            _ => unreachable!(),
+        };
+        generic.source_claim = None;
+        assert_eq!(
+            goals
+                .close(
+                    &key,
+                    ClaimGoalEvidence::Proposition(generic),
+                    &outcome.identity
+                )
+                .err(),
+            Some(ClaimGoalError::WrongClaim)
+        );
+        assert_eq!(
+            goals.close(&key, receipt(), &outcome.identity).err(),
+            Some(ClaimGoalError::WrongClaim)
         );
     }
 

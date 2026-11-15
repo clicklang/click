@@ -1,3 +1,13 @@
+// The dynamic pointer/count constructor initializes its own descriptor.
+// This contract supplies no permission or initialization for the backing.
+// The authenticated dynamic layouts have no padding: pointer and size.
+template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count) {
+    consumes uninitialized(this[0..1]);
+    produces this[0..1];
+    ensures std_span_data(this) == first;
+    ensures std_span_size(this) == count;
+}
+
 // `std::span<T>` with dynamic extent: a view of `[data, data + size)`, its
 // state named by the model accessors `std_span_data` and `std_span_size`.
 // The element accessors require an index inside the view, which the

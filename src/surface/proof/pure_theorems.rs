@@ -286,6 +286,11 @@ impl PureTheoremContext {
             let is_integer = match click_type.as_ref() {
                 Some(ClickType::Integer) => true,
                 Some(_) => false,
+                None if matches!(value, ContractExpression::Lambda { .. })
+                    || lambdas::is_proposition_value(&value) =>
+                {
+                    false
+                }
                 None => contract_expression_referenced_names(&promoted)
                     .iter()
                     .any(|name| context.integer_values.get(name).is_some()),
@@ -3233,6 +3238,9 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
+            ContractExpression::Proposition(proposition) => {
+                proposition_inner(proposition, known_facts, applications)
+            }
             ContractExpression::Resource(_) => {}
             ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
@@ -3358,6 +3366,7 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match proposition {
+            ClickProposition::Value(value) => expression(value, known_facts, applications),
             ClickProposition::Comparison { left, right, .. } => {
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);

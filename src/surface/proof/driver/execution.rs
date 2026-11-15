@@ -5480,6 +5480,7 @@ fn proof_case_is_stable_program_point_condition(proposition: &ClickProposition) 
         expression_is_stable: &impl Fn(&ContractExpression) -> bool,
     ) -> bool {
         match proposition {
+            ClickProposition::Value(expression) => expression_is_stable(expression),
             ClickProposition::Comparison { left, right, .. } => {
                 expression_is_stable(left) && expression_is_stable(right)
             }

@@ -62,7 +62,6 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         );
     }
 
-    let memory_independent = memory_independent_click_functions(&click_function_definitions);
     let mut click_function_types = BTreeMap::new();
     for definition in &click_function_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
@@ -82,7 +81,6 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 type_parameters: definition.type_parameters().to_vec(),
                 parameters: definition.parameters().to_vec(),
                 return_type: definition.return_type_with_object_class(),
-                memory_independent: memory_independent.contains(definition.name()),
             },
         );
     }
@@ -322,6 +320,13 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             function_signature_type_environment(function.signature(), false);
         let ensures_type_environment =
             function_signature_type_environment(function.signature(), true);
+        validate_declaration_lambda_bindings(
+            function.ensures(),
+            &requires_type_environment,
+            &BTreeSet::new(),
+            &click_function_types,
+            &format!("declaration bindings in `{}`", function.signature().name()),
+        )?;
 
         reject_duplicate_owned_declared_resource_clauses(
             function
@@ -759,6 +764,7 @@ fn validate_contract_applications_in_proposition_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(_) => Ok(()),
         ClickProposition::PredicateCall { name, arguments } => {
             if name == "held" {
                 let [mutex] = arguments.as_slice() else {
@@ -906,7 +912,7 @@ fn validate_contract_applications_in_proposition_one(
                 ClickType::Algebraic(_) => {
                     variables.remove(name);
                 }
-                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
                     return Err(ClickError::new(
                         "this quantifier binder type is not supported",
                     ));
@@ -1013,6 +1019,18 @@ fn validate_theorem_definition(
     }
 
     let variables = theorem_type_environment(theorem);
+    validate_declaration_lambda_bindings(
+        theorem.ensures(),
+        &variables,
+        &theorem
+            .parameters()
+            .iter()
+            .filter(|parameter| matches!(parameter.click_type(), ClickType::Integer))
+            .map(|parameter| parameter.name().to_string())
+            .collect(),
+        click_function_types,
+        &format!("declaration bindings in theorem `{}`", theorem.name()),
+    )?;
     for requirement in theorem.requires() {
         let Some(proposition) = requirement.theorem_proposition() else {
             return Err(ClickError::new(theorem_resource_clause_refusal(
@@ -1707,6 +1725,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(_) => Ok(()),
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Loadable { .. }
@@ -1828,6 +1847,17 @@ fn collect_resource_fact_reads_from_proposition(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::Value(expression) => {
+            collect_resource_fact_reads_from_contract_expression(
+                expression,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
         ClickProposition::ChangesOnly { resources, .. } => {
             for r in resources {
                 collect_resource_fact_reads_from_resource_subject(
@@ -2356,6 +2386,17 @@ fn collect_resource_fact_reads_from_contract_expression(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match expression {
+        ContractExpression::Proposition(proposition) => {
+            collect_resource_fact_reads_from_proposition(
+                proposition,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
         ContractExpression::Resource(_) => Ok(()),
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)

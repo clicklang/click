@@ -1317,6 +1317,7 @@ fn required_outcome<'p, 'a>(root: &'p Option<Proof<'a>>) -> Result<&'p Proof<'a>
 fn focus_claim_goal<'a>(
     root: &Proof<'a>,
     kernel_goal: Option<crate::kernel::ContractClaimGoal>,
+    source_key: &FunctionContractClaimKey,
     surface_goal: &ClickProposition,
 ) -> Result<Proof<'a>, ClickError> {
     match kernel_goal {
@@ -1324,7 +1325,7 @@ fn focus_claim_goal<'a>(
         // Structural claims and proof-local clauses have no reusable kernel
         // postcondition. A failed registered postcondition construction is an
         // Err and cannot reach this path.
-        None => root.focus_fixed_state_surface_goal(surface_goal),
+        None => root.focus_source_contract_claim(source_key, surface_goal),
     }
 }
 
@@ -1359,6 +1360,7 @@ struct ClaimStepMiss {
 fn apply_claim_step<'a>(
     rewritten: Option<&(Proof<'a>, ProofCheckpoint<'a>)>,
     root: Option<&Proof<'a>>,
+    source_key: &FunctionContractClaimKey,
     surface_goal: &ClickProposition,
     candidates: impl FnOnce() -> Result<Vec<Option<crate::kernel::ContractClaimGoal>>, ClickError>,
     step: impl Fn(&Proof<'a>, ClaimProofOrigin) -> Result<Result<Proof<'a>, ClickError>, ClickError>,
@@ -1393,7 +1395,7 @@ fn apply_claim_step<'a>(
     for goal in candidates {
         let focused = match goal {
             Some(goal) => root.driver().open_contract_claim(&goal, surface_goal)?,
-            None => root.focus_fixed_state_surface_goal(surface_goal)?,
+            None => root.focus_source_contract_claim(source_key, surface_goal)?,
         };
         match step(&focused, ClaimProofOrigin::Fresh)? {
             Ok(proof) => {
@@ -1470,7 +1472,12 @@ fn begin_outcome_existence_proof<'a>(
         &[],
         &mut None,
     )?;
-    let mut proof = focus_claim_goal(&root, kernel_goal, &surface_goal)?;
+    let mut proof = focus_claim_goal(
+        &root,
+        kernel_goal,
+        &claims[claim_index].key(),
+        &surface_goal,
+    )?;
     for equality in &rewrite_claim_equalities[claim_index] {
         proof = proof
             .driver()
@@ -1574,7 +1581,7 @@ fn close_claim_directly_from_outcome<'a>(
     let mut proof = if let Some(failed) = failed_attempt {
         failed.clone()
     } else {
-        match focus_claim_goal(&root, kernel_goal, surface_goal) {
+        match focus_claim_goal(&root, kernel_goal, &claim.key(), surface_goal) {
             Ok(proof) => proof,
             Err(error) => {
                 check_verification_deadline()?;
@@ -2782,6 +2789,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     &direct_base,
                     &surface_goals,
                     &claim_goals,
+                    &direct_claims.iter().map(|(index, _, _)| claims[*index].key()).collect::<Vec<_>>(),
                 )?
             };
             // Keep the checked authority for the original claims,
@@ -4796,6 +4804,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     let applied = apply_claim_step(
                                         rewritten_claim_proofs[claim_index].as_ref(),
                                         fixed_state_root.as_ref(),
+                                        &claim.key(),
                                         surface_goal,
                                         || Ok(kernel_goals),
                                         |focused, origin| {
@@ -4970,6 +4979,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     let applied = apply_claim_step(
                                         rewritten_claim_proofs[claim_index].as_ref(),
                                         Some(required_outcome(&outcome_proof)?),
+                                        &claim.key(),
                                         surface_goal,
                                         || Ok(kernel_goals),
                                         |proof, _| {

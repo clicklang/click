@@ -2377,6 +2377,11 @@ contract:
   as `template<class T> extern unsigned long std::span<T>::size() const { ... }`
   and the static-extent ones as `template<class T, std::size_t N> extern
   unsigned long std::span<T, N>::size() const { ensures result == N; }`.
+  The dynamic pointer/count constructor is also a library model,
+  `template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count)`.
+  It consumes unwritten descriptor storage, produces it initialized and
+  establishes the data pointer and count, without granting backing authority.
+  Static-extent constructors and iterator-pair overloads are outside that model.
   `library/cpp/array.click` states `std::array<T, N>`, whose element
   accessors are each a mutable and a `const` overload written as two
   template methods, `T& std::array<T, N>::front()` and `const T&

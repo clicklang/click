@@ -544,6 +544,16 @@ closed native proof, retained bodies, and termination rules into
 retry proofs, or discover requirements. Source formats proof-execution failures
 before calling this packaging operation.
 
+Every declared claim owns a root cell for every entry case, including source-only
+snapshot clauses and other nonmodular postconditions. Reusable-rule eligibility
+is separate from this obligation inventory. Opening a source-only proposition
+proof captures its selected declaration key from the outcome's claim table;
+ordinary proof completion retains that key and outcome identity. A generic
+proposition completion, another clause's proof, or a resource receipt cannot
+close it. Completed outcomes retire these captured cells through the same
+persistent progress counters as reusable claims. Completing only the boundary
+leaves omitted source clauses open, even if the frontend skips them.
+
 Startup and source-only contracts retain native termination subjects without
 gaining unsupported modular rules; rule eligibility is fixed at body opening.
 Source-only clauses keep their existing ordinary outcome scopes. Explicit
