@@ -5435,6 +5435,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     ))
                 }
             };
+            if let crate::kernel::KernelTermNode::BoolRead(read) = leaf.node() {
+                let (memory, address) = read.parts();
+                return Ok(KernelTerm::boolean_read(
+                    substitute_bitvector_variable_in_shared_memory(memory, from, to),
+                    map_address(address)?,
+                ));
+            }
             if let crate::kernel::KernelTermNode::PointerValueEqual(pair) = leaf.node() {
                 let [a, b] = pair.arguments();
                 return Ok(KernelTerm::pointer_value_equal_raw([
