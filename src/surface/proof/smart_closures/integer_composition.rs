@@ -49,6 +49,26 @@ struct Node {
 }
 
 fn literal(value: &BigInt) -> ContractExpression {
+    // A fixed-width literal already carries its parsed bits. Observing it
+    // keeps repeated large endpoints exact without repeatedly parsing an
+    // arbitrary-precision decimal in every theorem argument.
+    if value.bits() > 31
+        && let Some(magnitude) = num_traits::ToPrimitive::to_u64(&value.abs())
+    {
+        let observed = ContractExpression::Call {
+            name: "to_integer".into(),
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Value(crate::kernel::uint64(MachineTerm::uint64_constant(
+                    magnitude,
+                ))),
+            )],
+        };
+        return if value.is_negative() {
+            ContractExpression::Negate(Box::new(observed))
+        } else {
+            observed
+        };
+    }
     surface_signed_integer_literal(value)
 }
 fn zero() -> ContractExpression {
@@ -316,40 +336,35 @@ fn prepare_relation(
         ordered = shifted;
     }
     let target = compare(expression(&form, atoms), relation.equal, zero());
-    let shifted = if relation.equal {
-        let fact = compare(
-            ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
+    if !relation.equal {
+        let value = expression(&form, atoms);
+        let identity = compare(
+            value.clone(),
             true,
-            zero(),
+            ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         );
-        body.push(have(
-            fact.clone(),
-            vec![application(
-                "equal_difference",
-                vec![left, right],
-                vec![ordered],
-            )],
+        body.push(normalization(identity.clone()));
+        body.push(application(
+            "le_difference",
+            vec![left, right, value],
+            vec![ordered, identity],
         ));
-        fact
-    } else {
-        let negative = ContractExpression::Negate(Box::new(right.clone()));
-        let reflexive = compare(negative.clone(), false, negative.clone());
-        body.push(normalization(reflexive.clone()));
-        let fact = compare(
-            add(left.clone(), negative.clone()),
-            false,
-            add(right.clone(), negative.clone()),
-        );
-        body.push(have(
-            fact.clone(),
-            vec![application(
-                "add_le",
-                vec![left, right, negative.clone(), negative],
-                vec![ordered, reflexive],
-            )],
-        ));
-        fact
-    };
+        return (form, false, body);
+    }
+
+    let shifted = compare(
+        ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
+        true,
+        zero(),
+    );
+    body.push(have(
+        shifted.clone(),
+        vec![application(
+            "equal_difference",
+            vec![left, right],
+            vec![ordered],
+        )],
+    ));
     body.extend(transfer(&target, &shifted));
     (form, relation.equal, body)
 }
@@ -357,6 +372,23 @@ fn prepare_relation(
 fn restore(target: &ClickProposition, node: &Node, atoms: &BTreeMap<u64, Atom>) -> Vec<ProofStep> {
     let (_, operator, right) = integer_surface_non_strict_parts(target).expect("ordered target");
     let equal = operator == ComparisonOperator::Equal;
+    if !equal {
+        let (left, _, right) = integer_surface_non_strict_parts(target).expect("ordered target");
+        let value = expression(&node.form, atoms);
+        let identity = compare(
+            value.clone(),
+            true,
+            ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
+        );
+        return vec![
+            normalization(identity.clone()),
+            application(
+                "difference_le",
+                vec![left, right, value],
+                vec![node.claim.clone(), identity],
+            ),
+        ];
+    }
     let value = expression(&node.form, atoms);
     let reflexive = compare(right.clone(), equal, right.clone());
     let fact = compare(
@@ -364,26 +396,21 @@ fn restore(target: &ClickProposition, node: &Node, atoms: &BTreeMap<u64, Atom>) 
         equal,
         add(zero(), right.clone()),
     );
-    let mut body = vec![
-        normalization(reflexive.clone()),
-        have(
-            fact.clone(),
-            vec![application(
-                if equal { "equal_add" } else { "add_le" },
-                vec![value, zero(), right.clone(), right],
-                vec![node.claim.clone(), reflexive],
-            )],
-        ),
-    ];
+    let mut body = vec![have(
+        fact.clone(),
+        vec![application(
+            if equal { "equal_add" } else { "add_le" },
+            vec![value, zero(), right.clone(), right],
+            vec![node.claim.clone(), reflexive],
+        )],
+    )];
     let (left, _, right) = integer_surface_non_strict_parts(target).expect("ordered target");
     let non_strict = compare(left, equal, right);
     body.extend(transfer(&non_strict, &fact));
     body
 }
 
-fn disequality_operands(
-    proposition: &Proposition,
-) -> Option<(SharedIntegerTerm, SharedIntegerTerm)> {
+fn disequality_operands(proposition: &Proposition) -> Vec<(SharedIntegerTerm, SharedIntegerTerm)> {
     let mut p = proposition;
     let mut negative = false;
     while let Proposition::Not(body) = p {
@@ -391,12 +418,20 @@ fn disequality_operands(
         p = body;
     }
     let Proposition::ConditionIs(c, v) = p else {
-        return None;
+        return Vec::new();
     };
+    if matches!(c, ConditionTerm::Compare { .. }) {
+        return crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+            &Proposition::ConditionIs(c.clone(), *v != negative),
+        )
+        .iter()
+        .flat_map(disequality_operands)
+        .collect();
+    }
     match (c, *v != negative) {
         (ConditionTerm::IntegerNotEqual(a, b), true)
-        | (ConditionTerm::IntegerEqual(a, b), false) => Some((a.clone(), b.clone())),
-        _ => None,
+        | (ConditionTerm::IntegerEqual(a, b), false) => vec![(a.clone(), b.clone())],
+        _ => Vec::new(),
     }
 }
 
@@ -408,8 +443,22 @@ fn strict_node(
 ) -> Result<(Form, bool, Vec<ProofStep>), ClickError> {
     let observed = observed_native_surface_comparison(&disequal.0, &disequal.1);
     let lowered = proof.lower_cited_surface_proposition(&observed, "Integer disequality")?;
-    let (mut a, mut b) = disequality_operands(&lowered)
-        .ok_or_else(|| proof.step_error("Integer strictness requires a disequality"))?;
+    let (a, b, reverse) = disequality_operands(&lowered)
+        .into_iter()
+        .find_map(|(a, b)| {
+            for reverse in [false, true] {
+                let (left, right) = if reverse { (&b, &a) } else { (&a, &b) };
+                let forward = Proposition::ConditionIs(
+                    ConditionTerm::IntegerLessEqual(left.clone(), right.clone()),
+                    true,
+                );
+                if integer_affine_claim(&forward).as_ref() == Some(&bound.semantic) {
+                    return Some(if reverse { (b, a, true) } else { (a, b, false) });
+                }
+            }
+            None
+        })
+        .ok_or_else(|| proof.step_error("Integer strictness requires its bound's disequality"))?;
     let canonical = canonical_surface(&observed)
         .ok_or_else(|| proof.step_error("Integer disequality has no comparison spelling"))?;
     let ClickProposition::Comparison {
@@ -421,10 +470,7 @@ fn strict_node(
         return Err(proof.step_error("Integer strictness requires a disequality spelling"));
     };
     let (mut left, mut right) = (left, right);
-    let forward =
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.clone(), b.clone()), true);
-    if integer_affine_claim(&forward).as_ref() != Some(&bound.semantic) {
-        std::mem::swap(&mut a, &mut b);
+    if reverse {
         std::mem::swap(&mut left, &mut right);
     }
     let ordered = compare(left.clone(), false, right.clone());
@@ -468,6 +514,158 @@ fn strict_node(
     Ok((form, equal, body))
 }
 
+// When a linear refutation uses the negated goal once, cancel that
+// assumption in the plan itself. The remaining selected facts prove the
+// goal directly; there is no reason to construct a double-negation proof.
+fn direct_refutation(
+    plan: &IntegerArithmeticCertificate,
+    goal: &IntegerAffineClaim,
+) -> Option<IntegerArithmeticCertificate> {
+    if goal.relation != IntegerAffineRelation::LessEqual
+        || !contradiction_claim(node_claim(plan.nodes.get(plan.conclusion)?))
+    {
+        return None;
+    }
+    let mut weights: Vec<BigInt> = Vec::with_capacity(plan.nodes.len());
+    let mut negated = None;
+    for node in &plan.nodes {
+        crate::instrumentation::record_deterministic_work(1);
+        let weight = match node {
+            IntegerArithmeticNode::NegatedGoal { result } => {
+                if negated.replace(result.clone()).is_some() {
+                    return None;
+                }
+                BigInt::one()
+            }
+            IntegerArithmeticNode::Scale {
+                source,
+                coefficient,
+                ..
+            } => {
+                let weight = weights.get(*source)?;
+                if crate::instrumentation::deadline_exceeded_with_work(
+                    (weight.bits() as usize + 1).saturating_mul(coefficient.bits() as usize + 1),
+                ) {
+                    return None;
+                }
+                weight * coefficient
+            }
+            IntegerArithmeticNode::Add { left, right, .. } => {
+                weights.get(*left)? + weights.get(*right)?
+            }
+            IntegerArithmeticNode::EqualityToLessEqual {
+                source, reverse, ..
+            } => {
+                let weight = weights.get(*source)?.clone();
+                if *reverse { -weight } else { weight }
+            }
+            IntegerArithmeticNode::Premise { .. }
+            | IntegerArithmeticNode::TypeRange { .. }
+            | IntegerArithmeticNode::OperationBound { .. }
+            | IntegerArithmeticNode::ExcludedTypeBound { .. }
+            | IntegerArithmeticNode::Trivial { .. } => BigInt::zero(),
+            _ => return None,
+        };
+        weights.push(weight);
+    }
+    if !weights.get(plan.conclusion)?.is_one() {
+        return None;
+    }
+    let negated = negated?;
+    let mut mapping = Vec::with_capacity(plan.nodes.len());
+    let mut nodes = Vec::with_capacity(plan.nodes.len());
+    for (index, node) in plan.nodes.iter().enumerate() {
+        let mut result = node_claim(node).clone();
+        for (atom, coefficient) in &negated.terms {
+            if crate::instrumentation::deadline_exceeded_with_work(
+                (coefficient.bits() as usize + 1)
+                    .saturating_mul(weights[index].bits() as usize + 1),
+            ) {
+                return None;
+            }
+            *result.terms.entry(atom.clone()).or_default() -= coefficient * &weights[index];
+        }
+        result.terms.retain(|_, coefficient| !coefficient.is_zero());
+        result.constant -= &negated.constant * &weights[index];
+        let new_node = match node {
+            IntegerArithmeticNode::NegatedGoal { .. } => {
+                mapping.push(None);
+                continue;
+            }
+            IntegerArithmeticNode::Scale {
+                source,
+                coefficient,
+                ..
+            } => {
+                let Some(source) = mapping[*source] else {
+                    mapping.push(None);
+                    continue;
+                };
+                IntegerArithmeticNode::Scale {
+                    source,
+                    coefficient: coefficient.clone(),
+                    result,
+                }
+            }
+            IntegerArithmeticNode::Add { left, right, .. } => {
+                match (mapping[*left], mapping[*right]) {
+                    (Some(left), Some(right)) => IntegerArithmeticNode::Add {
+                        left,
+                        right,
+                        result,
+                    },
+                    (left, right) => {
+                        mapping.push(left.or(right));
+                        continue;
+                    }
+                }
+            }
+            IntegerArithmeticNode::EqualityToLessEqual {
+                source, reverse, ..
+            } => {
+                let Some(source) = mapping[*source] else {
+                    mapping.push(None);
+                    continue;
+                };
+                IntegerArithmeticNode::EqualityToLessEqual {
+                    source,
+                    reverse: *reverse,
+                    result,
+                }
+            }
+            other => other.clone(),
+        };
+        mapping.push(Some(nodes.len()));
+        nodes.push(new_node);
+    }
+    let mut conclusion = mapping[plan.conclusion]?;
+    let actual = node_claim(&nodes[conclusion]);
+    if actual.terms != goal.terms || actual.relation != goal.relation {
+        return None;
+    }
+    let slack = &actual.constant - &goal.constant;
+    if slack.is_negative() {
+        return None;
+    }
+    if !slack.is_zero() {
+        let trivial = nodes.len();
+        nodes.push(IntegerArithmeticNode::Trivial {
+            result: IntegerAffineClaim {
+                relation: IntegerAffineRelation::LessEqual,
+                terms: BTreeMap::new(),
+                constant: -slack,
+            },
+        });
+        nodes.push(IntegerArithmeticNode::Add {
+            left: conclusion,
+            right: trivial,
+            result: goal.clone(),
+        });
+        conclusion = nodes.len() - 1;
+    }
+    Some(IntegerArithmeticCertificate { nodes, conclusion })
+}
+
 fn node_claim(node: &IntegerArithmeticNode) -> &IntegerAffineClaim {
     match node {
         IntegerArithmeticNode::Premise { result, .. }
@@ -501,19 +699,75 @@ fn transfer(target: &ClickProposition, fact: &ClickProposition) -> Vec<ProofStep
     let (c, _, d) = integer_surface_ordered_parts(fact).expect("composition fact");
     let left = compare(a.clone(), true, c.clone());
     let right = compare(b.clone(), true, d.clone());
-    vec![
-        normalization(left.clone()),
-        normalization(right.clone()),
-        application(
-            if operator == ComparisonOperator::Equal {
-                "equal_substitute"
-            } else {
-                "le_substitute"
-            },
-            vec![c, d, a, b],
-            vec![fact.clone(), left, right],
+    let mut body = Vec::new();
+    if a != c {
+        body.push(normalization(left.clone()));
+    }
+    if b != d {
+        body.push(normalization(right.clone()));
+    }
+    body.push(application(
+        if operator == ComparisonOperator::Equal {
+            "equal_substitute"
+        } else {
+            "le_substitute"
+        },
+        vec![c, d, a, b],
+        vec![fact.clone(), left, right],
+    ));
+    body
+}
+
+fn with_argument_domains(step: ProofStep, domains: &[ClickProposition]) -> ProofStep {
+    match step {
+        ProofStep::Have { proposition, proof } => have(
+            proposition,
+            proof
+                .steps()
+                .iter()
+                .cloned()
+                .map(|step| with_argument_domains(step, domains))
+                .collect(),
         ),
-    ]
+        ProofStep::ApplyTheoremUsing {
+            application,
+            mut premises,
+        } => {
+            premises.extend(
+                domains
+                    .iter()
+                    .filter(|domain| !premises.contains(domain))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+            ProofStep::ApplyTheoremUsing {
+                application,
+                premises,
+            }
+        }
+        other => other,
+    }
+}
+
+fn observed_argument(expression: &ContractExpression) -> Option<ContractExpression> {
+    match expression {
+        ContractExpression::Call { name, arguments }
+            if name == "to_integer" && arguments.len() == 1 =>
+        {
+            Some(arguments[0].clone())
+        }
+        ContractExpression::At {
+            selector,
+            expression,
+        } => Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(observed_argument(expression)?),
+        }),
+        ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
+            observed_argument(expression)?,
+        ))),
+        _ => None,
+    }
 }
 
 fn run_scope<'a>(
@@ -569,6 +823,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(expected) = integer_affine_claim(&goal_kernel) else {
             return Ok(None);
         };
+        let direct = direct_refutation(plan, &expected);
+        let plan = direct.as_ref().unwrap_or(plan);
         let contradictory = contradiction_claim(node_claim(&plan.nodes[plan.conclusion]));
         if node_claim(&plan.nodes[plan.conclusion]) != &expected && !contradictory {
             #[cfg(test)]
@@ -1019,7 +1275,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     result.relation == IntegerAffineRelation::Equal,
                     vec![ProofStep::Normalize],
                 ),
-                _ => unreachable!("unsupported rules are excluded before constructing any proof"),
             };
             let claim = compare(expression(&form, &atoms), equal, zero());
             steps.push(have(claim.clone(), body));
@@ -1072,6 +1327,64 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ProofStep::NormalizeUsing(vec![double_negation]),
             ];
         }
+        // The theorem's arguments can contain partial native operations.
+        // Cite their already established domains explicitly, so the simple
+        // using checker sees the same argument evidence during replay.
+        let written = written_integer_observations(
+            std::iter::once(surface_goal).chain(pairs.iter().map(|(_, surface)| surface)),
+        );
+        let mut domains = Vec::new();
+        let mut domain_proofs = Vec::new();
+        for expression in &written {
+            let Some(expression) = observed_argument(expression) else {
+                continue;
+            };
+            let domain = ClickProposition::Defined { expression };
+            // Synthetic observations of an Integer are not native domains.
+            let Ok(kernel) =
+                proof.lower_cited_surface_proposition(&domain, "Integer argument domain")
+            else {
+                continue;
+            };
+            let Some(query) =
+                crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
+            else {
+                continue;
+            };
+            if domains.contains(&domain) {
+                continue;
+            }
+            if proof.facts().listed_premise_available(&kernel, &[], false) {
+                domain_proofs.push(have(domain.clone(), vec![ProofStep::Known]));
+            } else if query
+                .bounds()
+                .iter()
+                .all(|bound| proof.facts().listed_premise_available(bound, &[], false))
+            {
+                domain_proofs.push(have(
+                    domain.clone(),
+                    vec![ProofStep::Both {
+                        left_proof: Box::new(ProofCertificate::from_validated_steps(vec![
+                            ProofStep::Known,
+                        ])),
+                        right_proof: Box::new(ProofCertificate::from_validated_steps(vec![
+                            ProofStep::Known,
+                        ])),
+                    }],
+                ));
+            } else {
+                continue;
+            }
+            domains.push(domain);
+        }
+        if !domains.is_empty() {
+            domain_proofs.extend(
+                steps
+                    .into_iter()
+                    .map(|step| with_argument_domains(step, &domains)),
+            );
+            steps = domain_proofs;
+        }
         let mut result = proof.clone();
         for step in steps {
             if result.focused_discharged() {
@@ -1087,7 +1400,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             #[cfg(test)]
             if let Err(error) = &next {
                 LAST_FAILURE
-                    .with(|failure| *failure.borrow_mut() = Some(error.message().to_owned()));
+                    .with(|failure| *failure.borrow_mut() = Some(error.raw_summary().to_owned()));
             }
             result = next?;
         }

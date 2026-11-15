@@ -5034,3 +5034,11 @@ path = "reference/language/grammar.md#specification-lambdas"
 [[item]]
 id = "language.word.fn"
 path = "reference/language/grammar.md#specification-lambdas"
+
+[[item]]
+id = "library.theorem.integer::le_difference"
+path = "reference/library/index.md#integerle_difference"
+
+[[item]]
+id = "library.theorem.integer::difference_le"
+path = "reference/library/index.md#integerdifference_le"

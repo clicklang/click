@@ -123,8 +123,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            if let Some(closed) =
-                Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal, &[])?
+            if let Some(closed) = attempt::candidate_outcome(Self::apply_integer_composition(
+                search_input,
+                &plan,
+                &pairs,
+                surface_goal,
+                &[],
+            ))?
+            .flatten()
             {
                 return Ok(Some(closed));
             }
@@ -1232,8 +1238,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 surface_goal,
                 &spellings,
             )
-            && let Some(proof) =
-                Self::apply_integer_composition(search_input, &direct, &pairs, surface_goal, &[])?
+            && let Some(proof) = attempt::candidate_outcome(Self::apply_integer_composition(
+                search_input,
+                &direct,
+                &pairs,
+                surface_goal,
+                &[],
+            ))?
+            .flatten()
         {
             return Ok(Some(proof));
         }
@@ -1307,13 +1319,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
             }
         };
-        if let Some(closed) = Self::apply_integer_composition(
+        if let Some(closed) = attempt::candidate_outcome(Self::apply_integer_composition(
             search_input,
             &certificate,
             &pairs,
             surface_goal,
             &ranges,
-        )? {
+        ))?
+        .flatten()
+        {
             return Ok(Some(closed));
         }
         let Some(surface) = integer_plan_to_surface_certificate_with_ranges(
@@ -1638,8 +1652,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
             let step = ProofStep::NormalizeUsing(vec![lower, upper]);
-            let Ok(closed) = scope.driver().apply_step(step) else {
-                return Ok(Err(failed.clone()));
+            let closed = match scope.driver().apply_step(step) {
+                Ok(closed) => closed,
+                Err(_) => return Ok(Err(failed.clone())),
             };
             proof = closed.join()?;
             established.extend(
@@ -3140,13 +3155,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 else {
                     continue;
                 };
-                if let Some(proof) = Self::apply_integer_composition(
+                if let Some(proof) = attempt::candidate_outcome(Self::apply_integer_composition(
                     search_input,
                     &plan,
                     &anchored_pairs,
                     surface_goal,
                     &[],
-                )? {
+                ))?
+                .flatten()
+                {
                     return Ok(Some(proof));
                 }
                 if let Some(certificate) =
@@ -10237,15 +10254,51 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             return None;
         };
+        // Reuse the selected recorded premises and plan directly. Sending
+        // this back through ArithmeticUsing would lower and plan it again.
+        if tactics.len() == 1
+            && let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
+            && let Some(surface_goal) = search_input.surface_goal()
+            && let Some(pairs) = listed
+                .iter()
+                .map(|surface| {
+                    premise_pairs
+                        .iter()
+                        .find(|(_, written)| written == surface)
+                        .cloned()
+                })
+                .collect::<Option<Vec<_>>>()
+        {
+            let kernels = pairs
+                .iter()
+                .map(|(kernel, _)| kernel.clone())
+                .collect::<Vec<_>>();
+            if let Some(plan) = crate::surface::checking::arithmetic_plans(goal, &kernels, true)
+                .find_map(ArithmeticPlan::integer_affine)
+                && let Ok(Some(Some(closed))) = attempt::candidate_outcome(
+                    Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal, &[]),
+                )
+            {
+                return Some(closed);
+            }
+        }
         // A rule closing with Integer arithmetic names the premises it reads;
         // its certificate is planned from their recorded kernel forms, as
         // `arithmetic() using` would plan it from their lowered spellings.
-        if search_input.surface_goal().is_none()
-            && let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
+        if let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
             && let Some(certificate) =
                 search_input.arithmetic_certificate_from_recorded(goal, listed, premise_pairs)
         {
-            *tactics.last_mut()? = certificate;
+            if search_input.surface_goal().is_none()
+                || !matches!(
+                    &certificate,
+                    ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
+                        family: ArithmeticCertificateFamily::Integer(_)
+                    })
+                )
+            {
+                *tactics.last_mut()? = certificate;
+            }
         }
         // The planner selects only Surface-expressible explicit operations.
         // Apply those through the same recursive Proof driver used by

@@ -449,16 +449,12 @@ pub(super) fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> Proo
     }
 }
 
-/// The explicit arithmetic certificate proving `bound`, `MIN <=
-/// to_integer(v)` or `to_integer(v) <= MAX`, from the type range of the
-/// machine value `v` it observes.
+/// Context-free normalization of the observed machine value's type range.
 pub(super) fn type_range(_bound: ClickProposition) -> ProofStep {
     ProofStep::Normalize
 }
 
-/// The explicit arithmetic certificate proving `identity`, `to_integer(a op
-/// b) == to_integer(a) op to_integer(b)`, from the two available constant
-/// bounds `lower` and `upper` on its exact value.
+/// Normalize the machine identity using the two stated exact-result bounds.
 pub(super) fn operation_identity(
     lower: ClickProposition,
     upper: ClickProposition,

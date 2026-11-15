@@ -333,19 +333,48 @@ pub(crate) fn normalize_using_conditions(
             }
         }
     }
-    // Both bounds are written input and have been checked available above.
-    // These are single intrinsic machine/Integer identities, using the same
-    // bounded semantic rules as execution, without planning a certificate.
-    if premises.len() == 2
-        && (super::integer_operation_identity::check(0, &[0, 1], premises, goal).is_ok()
-            || super::integer_cast_identity::check(0, &[0, 1], premises, goal).is_ok())
-    {
-        return Ok(());
-    }
-    if premises.len() == 4
-        && super::integer_product_bounds::check(0, &[0, 1, 2, 3], premises, goal).is_ok()
-    {
-        return Ok(());
+    // Native orders can be the lowered form of written Integer observations.
+    // Use their unique order reading, retaining the actual operand handles.
+    // No fact selection is involved: at most four explicit bounds are read.
+    if matches!(
+        (premises.len(), goal),
+        (
+            2,
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
+        ) | (
+            4,
+            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(..), true)
+        )
+    ) {
+        let bounds = premises
+            .iter()
+            .map(|premise| {
+                let reading =
+                    crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                        premise,
+                    )
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| premise.clone());
+                match reading {
+                    Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true) => {
+                        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(b, a), true)
+                    }
+                    other => other,
+                }
+            })
+            .collect::<Vec<_>>();
+        if bounds.len() == 2
+            && (super::integer_operation_identity::check(0, &[0, 1], &bounds, goal).is_ok()
+                || super::integer_cast_identity::check(0, &[0, 1], &bounds, goal).is_ok())
+        {
+            return Ok(());
+        }
+        if bounds.len() == 4
+            && super::integer_product_bounds::check(0, &[0, 1, 2, 3], &bounds, goal).is_ok()
+        {
+            return Ok(());
+        }
     }
     // Rule L-Eq through a cited `Bool` equality (Stage 5): `a == b` with
     // truth `t` and `a` cited or constant gives `b`, and the other way. One

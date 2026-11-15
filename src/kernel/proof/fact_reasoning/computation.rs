@@ -353,7 +353,11 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
             IntegerTerm::Add(a, b) | IntegerTerm::Subtract(a, b) | IntegerTerm::Multiply(a, b) => {
                 match (constants.get(&a.id()), constants.get(&b.id())) {
                     (Some(a), Some(b)) => {
-                        let bits = (a.bits() as usize + 1).saturating_mul(b.bits() as usize + 1);
+                        let bits = if matches!(term.as_ref(), IntegerTerm::Multiply(..)) {
+                            (a.bits() as usize + 1).saturating_mul(b.bits() as usize + 1)
+                        } else {
+                            a.bits().max(b.bits()) as usize + 1
+                        };
                         if crate::instrumentation::deadline_exceeded_with_work(bits) {
                             return None;
                         }
@@ -468,6 +472,20 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
         ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
         _ => return None,
     };
+    // Exact type ranges inspect just the observation and its stated endpoint.
+    // Unrelated constant comparisons should not construct affine range claims.
+    if let (IntegerTerm::Constant(endpoint), IntegerTerm::Machine(value)) =
+        (left.as_ref(), right.as_ref())
+        && endpoint == &crate::kernel::machine_integer::range::observation_range(value).0
+    {
+        return Some(true);
+    }
+    if let (IntegerTerm::Machine(value), IntegerTerm::Constant(endpoint)) =
+        (left.as_ref(), right.as_ref())
+        && endpoint == &crate::kernel::machine_integer::range::observation_range(value).1
+    {
+        return Some(true);
+    }
     let mut expected = None;
     for value in [observation(left), observation(right)]
         .into_iter()

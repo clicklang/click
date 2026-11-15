@@ -665,3 +665,4 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_integer_compo
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	apply_integer_composition	1
 src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	2
 src/surface/proof/driver/claims.rs	driver	::apply_post_execution_arithmetic_using	apply_integer_composition	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	apply_integer_composition	1

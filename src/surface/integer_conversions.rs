@@ -379,7 +379,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             verify_c_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
             let expanded =
                 expand_c_claim_source_by_label(&source, &[], "round_trip.ensures_0").unwrap();
-            assert!(expanded.contains("integer_cast_identity"), "{expanded}");
+            assert!(!expanded.contains("integer_cast_identity"), "{expanded}");
+            assert!(expanded.contains("normalize() using"), "{expanded}");
             crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
                 .unwrap();
             for missing in [
@@ -1735,14 +1736,21 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
             let expanded =
                 expand_c_claim_source_by_label(&source, &[], "pinned.ensures_0").unwrap();
-            assert!(expanded.contains("equal_from_bounds"), "{expanded}");
+            assert!(
+                expanded.contains("click::integer::le_antisymmetric"),
+                "{expanded}"
+            );
             verify_c_sources(&expanded, &[]).unwrap();
             assert!(
                 verify_c_sources(&source.replace("ensures x == b", "ensures x == b + 1"), &[])
                     .is_err()
             );
             assert!(
-                verify_c_sources(&expanded.replace("=> x == b;", "=> x == b + 1;"), &[]).is_err()
+                verify_c_sources(
+                    &expanded.replace("ensures x == b", "ensures x == b + 1"),
+                    &[]
+                )
+                .is_err()
             );
         }
     }

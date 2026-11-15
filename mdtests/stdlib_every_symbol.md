@@ -2025,6 +2025,18 @@ theorem check_integer_disequal_strict(a: Integer, b: Integer) {
     }
 }
 
+theorem composition_differences(a: Integer, b: Integer) {
+    requires a <= b;
+    ensures a - b <= 0 by {
+        apply(integer::le_difference(a, b, a - b)) using { a <= b; a - b == a - b; };
+    }
+    ensures a <= b by {
+        have a - b <= 0 by {
+            apply(integer::le_difference(a, b, a - b)) using { a <= b; a - b == a - b; };
+        }
+        apply(integer::difference_le(a, b, a - b)) using { a - b <= 0; a - b == a - b; };
+    }
+}
 ```
 
 ```expect

@@ -66,6 +66,31 @@ theorem equal_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
     ensures c == d by { normalize() using { a == b; c == a; d == b; }; }
 }
 
+theorem le_difference(a:Integer,b:Integer,value:Integer) {
+ requires a<=b;
+ requires value==a-b;
+ ensures value<=0 by {
+  have a + -b <= b + -b by {
+   apply(click::integer::add_le(a,b,-b,-b)) using {a<=b;-b<=-b;};
+  }
+  have value == a + -b by { rewrite(value,a-b); normalize(); }
+  have 0 == b + -b by normalize();
+  apply(click::integer::le_substitute(a + -b,b + -b,value,0)) using {a + -b <= b + -b; value==a + -b;0==b + -b;};
+ }
+}
+theorem difference_le(a:Integer,b:Integer,value:Integer) {
+ requires value<=0;
+ requires value==a-b;
+ ensures a<=b by {
+  have value + b <= 0 + b by {
+   apply(click::integer::add_le(value,0,b,b)) using {value<=0;b<=b;};
+  }
+  have a == value + b by { rewrite(value,a-b); normalize(); }
+  have b == 0 + b by normalize();
+  apply(click::integer::le_substitute(value+b,0+b,a,b)) using {value+b<=0+b;a==value+b;b==0+b;};
+ }
+}
+
 theorem equal_difference(a: Integer, b: Integer) {
     requires a == b;
     ensures a - b == 0 by { rewrite(a, b); normalize(); }
