@@ -5022,3 +5022,15 @@ path = "reference/library/index.md#integerstep_le_lt"
 [[item]]
 id = "library.theorem.integer::le_ne_lt"
 path = "reference/library/index.md#integerle_ne_lt"
+
+[[item]]
+id = "language.lambda"
+path = "reference/language/grammar.md#specification-lambdas"
+
+[[item]]
+id = "language.lambda-application"
+path = "reference/language/grammar.md#specification-lambdas"
+
+[[item]]
+id = "language.word.fn"
+path = "reference/language/grammar.md#specification-lambdas"

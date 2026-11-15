@@ -652,8 +652,11 @@ view, and no memory access. Ordinary call sites never use this assumption rule
 to satisfy a missing requirement. A preserving return requires the exact input
 resource, its complete share, the checked loan transitions connecting that
 call's entry to its returned ledger, and no outstanding guard or child scope.
-Missing authority is reported as `Requires owns mutex_use(mu)`. Thread
-confinement rejects use resources.
+Missing authority is reported as `Requires owns mutex_use(mu)`. The
+unary opaque-use path does not grant worker payload transfer. Typed
+`mutex_use(mu, R(args))` permissions use the separately implemented
+[shared-worker protocol](mutex-resource-contracts.md), including checked
+create/join recovery.
 
 When the caller has a concrete mutex ledger, the transfer also selects the
 initialization-bound protected interface for the callee's permission; a
@@ -727,23 +730,18 @@ the supported subset.
 
 ## Remaining gaps
 
-Broader concurrency support is tracked in
-[the concurrency and atomics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/concurrency-and-atomics.md).
-Within this design:
+The typed shared-worker counter and one-shot release/acquire publication
+examples have landed. The [counter overview](https://github.com/clicklang/click/blob/master/design/concurrency-probes/README.md)
+records exact contribution/credit accounting and hostile controls;
+[publication](https://github.com/clicklang/click/blob/master/design/concurrency-publication/README.md)
+records its release/acquire boundary. They are conditional on the modeled
+runtime, not verification of pthread or a general atomic memory model.
 
-- `mutex_use` has no transport hidden inside declared wrappers, worker transfer
-  or join recovery, or escaping guards that retain the loan.
-- `consumes`/`produces` guard and lifecycle clauses, guard outputs, and
-  replacing an entry acquisition are unsupported.
-- Abstract helper acquisition exposes no protected payload: independent entry
-  has no contract association between a use permission and its invariant, and
-  acquisition does not yet create fresh protected observations.
-- Loop assertions support only the empty-mutex, direct-conditional-guard,
-  locally owned lifetime case above; payload-bearing and use-loan-backed loop
-  assertions and the shared-counter demonstration remain open.
-- Symbolic mutex pointers that might designate local storage are refused
-  conservatively at scope exit.
-- Exact concurrent counter results need conserved contribution accounting
-  connected to the invariant; `Count` does not supply thread safety or a
-  global-population observation. Atomic publication is a separate memory-model
-  extension.
+Unary opaque-use helper restrictions above must not be read as restrictions
+on every typed mutex permission. Current typed payload, helper, authority and
+transfer rules belong to [Mutex resource contracts](mutex-resource-contracts.md).
+Named storage transfer and destruction's named state output remain proposals.
+Broader loop/escaping-guard and synchronization coverage belongs to the
+[concurrency roadmap](https://github.com/clicklang/click/blob/master/roadmap/concurrency-and-atomics.md).
+A future extension still needs exact acquisition/lifetime identity, current
+protected observations, checked authority recovery and bounded selected work.

@@ -3237,6 +3237,17 @@ pub(super) fn click_function_applications(
             ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
             | ContractExpression::RegionParameter { .. } => {}
+            ContractExpression::Lambda { .. } => {}
+            ContractExpression::Apply {
+                function,
+                arguments,
+            } => {
+                expression(function, known_facts, applications);
+                for argument in arguments {
+                    expression(argument, known_facts, applications);
+                }
+            }
+
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner) => expression(inner, known_facts, applications),

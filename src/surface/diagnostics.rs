@@ -5983,7 +5983,11 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                     describe_program_expression(expression)
                 );
             }
-            let spelling = crate::kernel::program_type_spelling(*target_type);
+            let spelling = match target_type {
+                ProgramType::Float32Pointer => "float*",
+                ProgramType::Float64Pointer => "double*",
+                _ => crate::kernel::program_type_spelling(*target_type),
+            };
             // Contract expressions use the `expression as type` cast syntax.
             // Wrap the complete cast so it remains a single term when it is
             // embedded in a generated comparison or another proposition.
@@ -7012,6 +7016,33 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         ContractExpression::RegionParameter { region, name } => {
             format!("{}.parameter({name})", describe_code_region_ref(region))
         }
+        ContractExpression::Lambda {
+            parameters,
+            result,
+            body,
+        } => format!(
+            "(|{}| -> {} {{ {} }})",
+            parameters
+                .iter()
+                .map(|(name, ty)| format!("{name}: {}", validation::describe_click_type(ty)))
+                .collect::<Vec<_>>()
+                .join(", "),
+            validation::describe_click_type(result),
+            describe_contract_expression(body)
+        ),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => format!(
+            "({})({})",
+            describe_contract_expression(function),
+            arguments
+                .iter()
+                .map(describe_contract_expression)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+
         ContractExpression::IntegerLiteral(value) => value.clone(),
         ContractExpression::ResourceField(access) => {
             // A body names its own fields bare; `__body` is the parser's

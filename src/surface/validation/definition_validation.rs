@@ -62,6 +62,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         );
     }
 
+    let memory_independent = memory_independent_click_functions(&click_function_definitions);
     let mut click_function_types = BTreeMap::new();
     for definition in &click_function_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
@@ -81,6 +82,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 type_parameters: definition.type_parameters().to_vec(),
                 parameters: definition.parameters().to_vec(),
                 return_type: definition.return_type_with_object_class(),
+                memory_independent: memory_independent.contains(definition.name()),
             },
         );
     }
@@ -904,7 +906,7 @@ fn validate_contract_applications_in_proposition_one(
                 ClickType::Algebraic(_) => {
                     variables.remove(name);
                 }
-                ClickType::Parameter(_) => {
+                ClickType::Function { .. } | ClickType::Parameter(_) => {
                     return Err(ClickError::new(
                         "this quantifier binder type is not supported",
                     ));
@@ -2358,6 +2360,44 @@ fn collect_resource_fact_reads_from_contract_expression(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(()),
+        ContractExpression::Lambda { body, .. } => {
+            collect_resource_fact_reads_from_contract_expression(
+                body,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            collect_resource_fact_reads_from_contract_expression(
+                function,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )?;
+            for argument in arguments {
+                collect_resource_fact_reads_from_contract_expression(
+                    argument,
+                    predicate_definitions,
+                    click_function_definitions,
+                    visited_predicates,
+                    visited_functions,
+                    reads,
+                    resource_name,
+                )?;
+            }
+            Ok(())
+        }
+
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             collect_resource_fact_reads_from_contract_expression(

@@ -142,6 +142,15 @@ fn collect_signed_surface_terms<'a>(
         terms.push(expression);
         match expression {
             ContractExpression::Resource(_) => {}
+            ContractExpression::Lambda { .. } => {}
+            ContractExpression::Apply {
+                function,
+                arguments,
+            } => {
+                pending.push(function);
+                pending.extend(arguments);
+            }
+
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)

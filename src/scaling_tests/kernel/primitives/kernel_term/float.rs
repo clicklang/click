@@ -29,3 +29,48 @@ fn float_atom_views_do_constant_work_beside_growing_arenas() {
         }
     }
 }
+
+#[test]
+fn float_read_construction_keeps_growing_shared_addresses_and_snapshots() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut index =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999920));
+        let mut memory = Memory::new();
+        for i in 0..size {
+            index = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [index.clone(), index],
+            );
+            memory = memory.with_block(format!("float-unrelated-{i}"), 8);
+        }
+        let memory = intern_memory(memory);
+        let address = SharedPointerAddress::new(
+            SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(999921))),
+            KernelPointerOffset::Int32Scaled {
+                value: index,
+                byte_width: 4,
+            }
+            .into_shared()
+            .unwrap(),
+        );
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let root = KernelTerm::float_read(format, memory.clone(), address.clone());
+                let KernelTermNode::FloatRead(read) = root.node() else {
+                    panic!("read")
+                };
+                assert_eq!(read.parts().0.arena_id(), memory.arena_id());
+                assert_eq!(read.parts().1, &address);
+                assert_eq!(
+                    root,
+                    KernelTerm::float_read(format, memory.clone(), address.clone())
+                );
+            });
+            assert!(work <= 16, "size={size}, work={work}");
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+}

@@ -73,6 +73,7 @@ mod generics;
 pub(crate) use generics::primitive_instance_type;
 mod integer_conversions;
 mod integer_truncation;
+mod lambdas;
 mod lowering;
 mod modules;
 mod names;
@@ -263,6 +264,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "field",
     "fold",
     "forall",
+    "fn",
     "function",
     "gather",
     "give",
@@ -387,6 +389,8 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "import",
     "iterated-ownership",
     "implies",
+    "lambda",
+    "lambda-application",
     "let-where",
     "match-expression",
     "not",
@@ -1090,6 +1094,11 @@ pub enum ClickType {
     /// An exact, specification-only signed integer with no C representation.
     Integer,
     Algebraic(AlgebraicTypeApplication),
+    /// A pure specification function; never a C function pointer.
+    Function {
+        parameters: Vec<ClickType>,
+        result: Box<ClickType>,
+    },
 }
 
 impl ClickType {
@@ -1101,7 +1110,7 @@ impl ClickType {
                 Some(*interface_type)
             }
             Self::Integer => None,
-            Self::Algebraic(_) => None,
+            Self::Algebraic(_) | Self::Function { .. } => None,
         }
     }
 }
@@ -1678,6 +1687,7 @@ struct ClickFunctionType {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
+    memory_independent: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3013,6 +3023,26 @@ pub(crate) fn collect_current_contract_expression_variables(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => {}
+        ContractExpression::Lambda {
+            parameters, body, ..
+        } => {
+            let mut captures = BTreeSet::new();
+            collect_current_contract_expression_variables(body, &mut captures);
+            for (name, _) in parameters {
+                captures.remove(name);
+            }
+            names.extend(captures);
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            collect_current_contract_expression_variables(function, names);
+            for argument in arguments {
+                collect_current_contract_expression_variables(argument, names);
+            }
+        }
+
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
             names.insert(name.clone());
@@ -3344,6 +3374,17 @@ pub enum SurfaceTerm {
         condition: Box<ClickProposition>,
         then_branch: Box<ContractExpression>,
         else_branch: Box<ContractExpression>,
+    },
+    /// A typed, lexically scoped pure specification function.
+    Lambda {
+        parameters: Vec<(String, ClickType)>,
+        result: ClickType,
+        body: Box<ContractExpression>,
+    },
+    /// Application of an expression whose value is a specification function.
+    Apply {
+        function: Box<ContractExpression>,
+        arguments: Vec<ContractExpression>,
     },
     RangeFold {
         start: Box<ContractExpression>,
@@ -7901,6 +7942,17 @@ fn contract_expression_reads_memory(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { body, .. } => contract_expression_reads_memory(body, callees),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            contract_expression_reads_memory(function, callees)
+                || arguments
+                    .iter()
+                    .any(|argument| contract_expression_reads_memory(argument, callees))
+        }
+
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -8014,7 +8066,14 @@ fn contract_expression_reads_memory(
                     .any(|argument| contract_expression_reads_memory(argument, callees))
         }
         ContractExpression::Call { name, arguments } => {
-            callees.push(name.clone());
+            // Numeric conversions and exact integer operations are pure;
+            // any memory read remains visible in their explicit arguments.
+            if !integer_conversions::is_integer_conversion(name)
+                && !integer_truncation::is_integer_truncation(name)
+                && name != "to_nat"
+            {
+                callees.push(name.clone());
+            }
             arguments
                 .iter()
                 .any(|argument| contract_expression_reads_memory(argument, callees))
@@ -9649,6 +9708,7 @@ impl FunctionParameter {
             ClickType::Program(interface_type)
             | ClickType::CObjectPointer { interface_type, .. } => *interface_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
+            ClickType::Function { .. } => panic!("a specification function has no C type"),
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
             }
@@ -10462,27 +10522,29 @@ impl ClickError {
     pub fn report(&self) -> String {
         let _accessors = self.report_model_accessor_scope();
         // A requested proof trace keeps its typed notation throughout.
-        let _typed = self
+        let typed_trace = self
             .diagnostic
             .as_ref()
             .is_some_and(|diagnostic| proof_trace::enabled_for(&diagnostic.claim_label))
             .then(proof_diagnostics::render::TypedNotationScope::enter);
         let mut snapshot_labels = proof_diagnostics::render::SnapshotLabels::ambient();
-        let traced_message = self.diagnostic.as_ref().and_then(|diagnostic| {
-            (self.kind == ClickErrorKind::Proof
-                && proof_trace::enabled_for(&diagnostic.claim_label))
-            .then(|| {
-                proof_diagnostics::render_terminal_message_labeled(
-                    &self.message,
-                    diagnostic,
-                    self.search_failures
-                        .as_deref()
-                        .map_or(&[][..], Vec::as_slice),
-                    &mut snapshot_labels,
-                )
-            })
+        // The prerequisite and the rest of this report share the captured
+        // proof's names, in ordinary reports as well as typed traces. A fresh
+        // renderer here loses match binders even though the diagnostic state
+        // still retains their exact values.
+        let rendered_message = self.diagnostic.as_ref().map(|diagnostic| {
+            proof_diagnostics::render_terminal_message_labeled(
+                &self.message,
+                diagnostic,
+                self.search_failures
+                    .as_deref()
+                    .map_or(&[][..], Vec::as_slice),
+                &mut snapshot_labels,
+            )
         });
-        let message = traced_message.as_deref().unwrap_or_else(|| self.message());
+        let message = rendered_message
+            .as_deref()
+            .unwrap_or_else(|| self.message());
         let (summary, context) = message.split_once('\n').unwrap_or((message, ""));
         let mut report = format!("{summary}\n  error kind: {}", self.kind.label());
         if let Some(tactic) = self.failed_tactic {
@@ -10491,14 +10553,10 @@ impl ClickError {
         }
         if let Some(requirement) = &self.unresolved_requirement {
             report.push_str("\n  goal: ");
-            report.push_str(&if traced_message.is_some() {
-                proof_diagnostics::render::render_proposition_labeled(
-                    &requirement.proposition,
-                    &mut snapshot_labels,
-                )
-            } else {
-                proof_diagnostics::render::render_proposition(&requirement.proposition)
-            });
+            report.push_str(&proof_diagnostics::render::render_proposition_labeled(
+                &requirement.proposition,
+                &mut snapshot_labels,
+            ));
             if let Some(context) = &requirement.context {
                 report.push_str("\n  check: ");
                 report.push_str(context);
@@ -10524,7 +10582,7 @@ impl ClickError {
             report.push('\n');
             report.push_str(&trace);
         }
-        if traced_message.is_some() {
+        if typed_trace.is_some() {
             report
         } else {
             bound_diagnostic_message(report)
