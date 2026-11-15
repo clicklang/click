@@ -9,7 +9,7 @@ theorem nonzero_address_after_null_rewrite(p: void*, q: void*) {
     requires q == 0;
     requires address(p) != 0u64;
     ensures address(q) != address(p) by {
-        rewrite(q == 0);
+        rewrite(q, 0);
         solve();
     }
 }
@@ -18,7 +18,7 @@ theorem zero_address_after_null_rewrite(p: void*, q: void*) {
     requires p == 0;
     requires q == 0;
     ensures address(q) == address(p) by {
-        rewrite(p == 0);
+        rewrite(p, 0);
         normalize() using { q == 0; };
     }
 }

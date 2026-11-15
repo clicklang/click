@@ -50,7 +50,7 @@ void keep(const uint8* p, int32 n, int32 i) {
                 };
             }
             have viewable(q[0..4]) by {
-                rewrite(q == p + i);
+                rewrite(q, p + i);
                 have contains(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i])) by {
                     apply(click::separation::contains_rebase(p, i, i + 4)) using {
                         0 <= i;

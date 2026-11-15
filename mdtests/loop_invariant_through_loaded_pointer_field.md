@@ -93,7 +93,7 @@ int32 probe_contract(struct job *j) {
                     solve();
                 } else {
                     have k == i;
-                    rewrite(k == i);
+                    rewrite(k, i);
                     solve();
                 }
             }

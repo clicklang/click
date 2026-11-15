@@ -12,7 +12,7 @@ impl adler2::Adler32 {
      apply(adler_pack_fields(self.a, self.b));
      step_until(function.exit);
      have result == old(((self.b as u32) << 16) | (self.a as u32));
-     rewrite(result == old(((self.b as u32) << 16) | (self.a as u32)));
+     rewrite(result, old(((self.b as u32) << 16) | (self.a as u32)));
      solve();
     }
 }

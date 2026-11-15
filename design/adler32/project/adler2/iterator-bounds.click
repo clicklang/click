@@ -81,7 +81,7 @@ theorem adler_lane_iterator_initial(total: int32) {
     ensures adler_lane_vectors_consumed(total, total) == 0 by {
         have to_integer(total) - to_integer(total) == 0 by solve() using {};
         unfold(adler_lane_vectors_consumed(total, total));
-        rewrite(to_integer(total) - to_integer(total) == 0); normalize();
+        rewrite(to_integer(total) - to_integer(total), 0); normalize();
     }
 }
 
@@ -152,8 +152,8 @@ theorem adler_lane_iterator_successor(total: int32, remaining: int32) {
         have to_integer(total) - (to_integer(remaining) - 4) == (to_integer(total) - to_integer(remaining)) + 4 * 1 by solve() using {};
         unfold(adler_lane_vectors_consumed(total, remaining - 4));
         unfold(adler_lane_vectors_consumed(total, remaining));
-        rewrite(to_integer(remaining - 4) == to_integer(remaining) - 4);
-        rewrite(to_integer(total) - (to_integer(remaining) - 4) == (to_integer(total) - to_integer(remaining)) + 4 * 1);
+        rewrite(to_integer(remaining - 4), to_integer(remaining) - 4);
+        rewrite(to_integer(total) - (to_integer(remaining) - 4), (to_integer(total) - to_integer(remaining)) + 4 * 1);
         apply(adler_lane_iterator_quotient_shift(to_integer(total) - to_integer(remaining), 1)) using { 0 <= to_integer(total) - to_integer(remaining); };
     }
 }
@@ -223,7 +223,7 @@ theorem adler_lane_iterator_successor_ceilings(total: int32, remaining: int32) {
         have adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1 by apply(adler_lane_iterator_successor(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; defined(remaining - 4); };
         unfold(adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining - 4)));
         unfold(adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining) + 1));
-        rewrite(adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1); normalize();
+        rewrite(adler_lane_vectors_consumed(total, remaining - 4), adler_lane_vectors_consumed(total, remaining) + 1); normalize();
     }
     ensures adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining - 4)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1) by {
         have adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1 by apply(adler_lane_iterator_successor(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; defined(remaining - 4); };
@@ -231,7 +231,7 @@ theorem adler_lane_iterator_successor_ceilings(total: int32, remaining: int32) {
         unfold(adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1));
         unfold(adler_lane_triangle(adler_lane_vectors_consumed(total, remaining - 4)));
         unfold(adler_lane_triangle(adler_lane_vectors_consumed(total, remaining) + 1));
-        rewrite(adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1); normalize();
+        rewrite(adler_lane_vectors_consumed(total, remaining - 4), adler_lane_vectors_consumed(total, remaining) + 1); normalize();
     }
 }
 
@@ -255,7 +255,7 @@ theorem adler_lane_iterator_native_preservation(total: int32, remaining: int32, 
             };
         have defined(remaining - 4) by apply(adler_lane_iterator_next_defined(total, remaining)) using { 4 <= remaining; remaining <= total; total <= 22208; };
         have adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining - 4)) == adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining) + 1) by apply(adler_lane_iterator_successor_ceilings(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; defined(remaining - 4); };
-        rewrite(adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining - 4)) == adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining) + 1)); solve();
+        rewrite(adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining - 4)), adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining) + 1)); solve();
     }
     ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining - 4)) by {
         have to_integer(b + (a + byte)) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1) by apply(adler_lane_iterator_native_step(total, remaining, a, b, byte)) using {
@@ -266,7 +266,7 @@ theorem adler_lane_iterator_native_preservation(total: int32, remaining: int32, 
             };
         have defined(remaining - 4) by apply(adler_lane_iterator_next_defined(total, remaining)) using { 4 <= remaining; remaining <= total; total <= 22208; };
         have adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining - 4)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1) by apply(adler_lane_iterator_successor_ceilings(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; defined(remaining - 4); };
-        rewrite(adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining - 4)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1)); solve();
+        rewrite(adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining - 4)), adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1)); solve();
     }
 }
 
@@ -287,14 +287,14 @@ theorem adler_lane_iterator_reduced_initial(total: int32, a: uint32, b: uint32) 
     ensures to_integer(a) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(total, total)) by {
         apply(adler_lane_iterator_initial(total));
         apply(adler_lane_initial_ceiling());
-        rewrite(adler_lane_vectors_consumed(total, total) == 0);
-        rewrite(adler_lane_a_ceiling(0) == 65520); solve();
+        rewrite(adler_lane_vectors_consumed(total, total), 0);
+        rewrite(adler_lane_a_ceiling(0), 65520); solve();
     }
     ensures to_integer(b) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, total)) by {
         apply(adler_lane_iterator_initial(total));
         apply(adler_lane_initial_ceiling());
-        rewrite(adler_lane_vectors_consumed(total, total) == 0);
-        rewrite(adler_lane_b_ceiling(0) == 65520); solve();
+        rewrite(adler_lane_vectors_consumed(total, total), 0);
+        rewrite(adler_lane_b_ceiling(0), 65520); solve();
     }
 }
 

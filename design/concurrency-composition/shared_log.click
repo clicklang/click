@@ -266,7 +266,7 @@ int32 vector_grow(struct vector* owner) {
         have old_capacity == owner->cap by {
             normalize();
         }
-        rewrite(old_capacity == owner->cap);
+        rewrite(old_capacity, owner->cap);
         apply(integer::int32_less_equal_transitive(0, 1, owner->cap)) using {
             1 <= owner->cap;
         };
@@ -282,7 +282,7 @@ int32 vector_grow(struct vector* owner) {
         have old_capacity == owner->cap by {
             normalize();
         }
-        rewrite(old_capacity == owner->cap);
+        rewrite(old_capacity, owner->cap);
         solve() using {
             1 <= owner->cap;
             owner->cap <= 536870910;
@@ -504,7 +504,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             step();
             have not old(owner->len) < old(owner->cap) by {
-                rewrite(at(function.entry, owner->len == owner->cap));
+                rewrite(at(function.entry, owner->len), at(function.entry, owner->cap));
                 normalize();
             }
             have result == 0 by {
@@ -557,7 +557,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have owner->cap <= old(owner->cap) by {
-                rewrite(owner->cap == old(owner->cap));
+                rewrite(owner->cap, old(owner->cap));
                 normalize();
             }
             have old(owner->cap) <= 536870910;
@@ -617,9 +617,9 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 at(function.entry, owner->cap) < 2147483647;
             };
             have owner->len < owner->cap by {
-                rewrite(owner->len == old(owner->len));
-                rewrite(owner->cap == (old(owner->cap) + 1));
-                rewrite(at(function.entry, owner->len == owner->cap));
+                rewrite(owner->len, old(owner->len));
+                rewrite(owner->cap, (old(owner->cap) + 1));
+                rewrite(at(function.entry, owner->len), at(function.entry, owner->cap));
                 known();
             }
             fold(vector_storage(owner));
@@ -644,17 +644,17 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have 1 <= owner->cap by {
-                rewrite(owner->cap == at(region(8).entry, owner->cap));
+                rewrite(owner->cap, at(region(8).entry, owner->cap));
                 known();
             }
             have owner->cap <= 536870911 by {
-                rewrite(owner->cap == at(region(8).entry, owner->cap));
+                rewrite(owner->cap, at(region(8).entry, owner->cap));
                 known();
             }
             let after = fold(allocated_vector(owner), { cap: owner->cap });
             step();
             have not old(owner->len) < old(owner->cap) by {
-                rewrite(at(function.entry, owner->len == owner->cap));
+                rewrite(at(function.entry, owner->len), at(function.entry, owner->cap));
                 normalize();
             }
             have result == 0 or result == 1 by {
@@ -674,8 +674,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have owner->len == (old(owner->len) + 1) by {
-                rewrite(owner->len == (at(region(8).entry, owner->len) + 1));
-                rewrite(at(region(8).entry, owner->len) == old(owner->len));
+                rewrite(owner->len, (at(region(8).entry, owner->len) + 1));
+                rewrite(at(region(8).entry, owner->len), old(owner->len));
                 normalize();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
@@ -700,7 +700,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have owner->data[old(owner->len)] == value by {
-                rewrite(old(owner->len) == at(region(8).entry, owner->len));
+                rewrite(old(owner->len), at(region(8).entry, owner->len));
                 known();
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
@@ -733,11 +733,11 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 contradiction(old(owner->len) < old(owner->cap));
             }
             have owner->cap == old(owner->cap) + 1 by {
-                rewrite(owner->cap == at(region(8).entry, owner->cap));
+                rewrite(owner->cap, at(region(8).entry, owner->cap));
                 known();
             }
             have owner->cap <= old(owner->cap) + 1 by {
-                rewrite(owner->cap == old(owner->cap) + 1);
+                rewrite(owner->cap, old(owner->cap) + 1);
                 normalize();
             }
             known();
@@ -785,11 +785,11 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             known();
         }
         have 1 <= owner->cap by {
-            rewrite(owner->cap == at(region(0).entry, owner->cap));
+            rewrite(owner->cap, at(region(0).entry, owner->cap));
             known();
         }
         have owner->cap <= 536870911 by {
-            rewrite(owner->cap == at(region(0).entry, owner->cap));
+            rewrite(owner->cap, at(region(0).entry, owner->cap));
             known();
         }
         let after = fold(allocated_vector(owner), { cap: owner->cap });
@@ -860,7 +860,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             known();
         }
         have owner->cap <= old(owner->cap) by {
-            rewrite(owner->cap == old(owner->cap));
+            rewrite(owner->cap, old(owner->cap));
             normalize();
         }
         have old(owner->cap) <= 536870910;
@@ -945,8 +945,8 @@ void* producer(void* argument) {
     have pushed_cap == log->items->cap;
     have cap == at(region(3).entry, log->items->cap);
     have pushed_cap <= cap + 1 by {
-        rewrite(pushed_cap == log->items->cap);
-        rewrite(cap == at(region(3).entry, log->items->cap));
+        rewrite(pushed_cap, log->items->cap);
+        rewrite(cap, at(region(3).entry, log->items->cap));
         known();
     }
     have defined(cap + 1);

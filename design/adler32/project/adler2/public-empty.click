@@ -21,18 +21,18 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  unfold(adler_spec_checksum_u64(data, 0u64, 1, 0));
  step_until(assignment(__rust_mir_0, 0));
  have to_integer(h.a) == old(adler_spec_a_u64(data, 0u64, 1)) by {
-  rewrite(old(adler_spec_a_u64(data, 0u64, 1)) == 1);
-  rewrite(h.a == 1);
+  rewrite(old(adler_spec_a_u64(data, 0u64, 1)), 1);
+  rewrite(h.a, 1);
   solve();
  }
  have to_integer(h.b) == old(adler_spec_b_u64(data, 0u64, 1, 0)) by {
-  rewrite(old(adler_spec_b_u64(data, 0u64, 1, 0)) == 0);
-  rewrite(h.b == 0);
+  rewrite(old(adler_spec_b_u64(data, 0u64, 1, 0)), 0);
+  rewrite(h.b, 0);
   solve();
  }
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 0u64, 1, 0)) by {
-  rewrite(to_integer(h.a) == old(adler_spec_a_u64(data, 0u64, 1)));
-  rewrite(to_integer(h.b) == old(adler_spec_b_u64(data, 0u64, 1, 0)));
+  rewrite(to_integer(h.a), old(adler_spec_a_u64(data, 0u64, 1)));
+  rewrite(to_integer(h.b), old(adler_spec_b_u64(data, 0u64, 1, 0)));
   solve();
  }
  step();

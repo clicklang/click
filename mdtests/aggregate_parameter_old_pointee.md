@@ -21,7 +21,7 @@ void dispose(struct packet input) {
     have old(input.data[0]) == 7 by { known(); }
     have at(copied_entry, input.data) == old(input.data);
     have at(copied_entry, input.data[0]) == old(input.data[0]) by {
-        rewrite(at(copied_entry, input.data) == old(input.data));
+        rewrite(at(copied_entry, input.data), old(input.data));
         normalize();
     }
     have at(copied_entry, input.data[0]) == 7;

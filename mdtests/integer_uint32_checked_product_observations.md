@@ -25,9 +25,9 @@ theorem known_zero_factor(a: uint32, b: uint32) {
             known();
         }
         apply(integer::uint32_multiply_to_integer(a, b));
-        rewrite(to_integer(a * b) == to_integer(a) * to_integer(b));
+        rewrite(to_integer(a * b), to_integer(a) * to_integer(b));
         have to_integer(b) == 0;
-        rewrite(to_integer(b) == 0);
+        rewrite(to_integer(b), 0);
         solve() using {};
     }
 }

@@ -90,13 +90,13 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
             have result == 0 or result == 1 by known();
             have after.model == WriteOutcome::Skipped by known();
             have not (enabled == 1) by {
-                rewrite(enabled == 0);
+                rewrite(enabled, 0);
                 normalize();
             }
             have selected_index(old(before.shape)) == index by {
-                rewrite(old(before.shape) == WriteShape::Skip);
+                rewrite(old(before.shape), WriteShape::Skip);
                 unfold(selected_index(WriteShape::Skip));
-                rewrite(index == 0);
+                rewrite(index, 0);
                 normalize();
             }
             have enabled == 0 implies after.model == WriteOutcome::Skipped by {
@@ -123,15 +123,15 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
                 model: WriteOutcome::Written(index)
             });
             have selected_index(old(before.shape)) == index by {
-                rewrite(old(before.shape) == WriteShape::At(position));
+                rewrite(old(before.shape), WriteShape::At(position));
                 unfold(selected_index(WriteShape::At(position)));
-                rewrite(index == position);
+                rewrite(index, position);
                 normalize();
             }
             have enabled == 1 implies
                 result == cells[selected_index(old(before.shape))] by {
                 intro();
-                rewrite(selected_index(old(before.shape)) == index);
+                rewrite(selected_index(old(before.shape)), index);
                 normalize();
             }
             solve();

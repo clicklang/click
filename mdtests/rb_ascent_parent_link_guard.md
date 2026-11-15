@@ -208,11 +208,10 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                         unfold(plug(Context::Left(identity, grandparent, color,
                                                   sibling_model, up_model), t.model));
                         rewrite(plug(up_model,
-                                     RbTree::Node(identity, color, t.model, sibling_model))
-                            == plug(Context::Left(identity, grandparent, color,
+                                     RbTree::Node(identity, color, t.model, sibling_model)), plug(Context::Left(identity, grandparent, color,
                                                   sibling_model, up_model), t.model));
                         rewrite(Context::Left(identity, grandparent, color,
-                                              sibling_model, up_model) == c.model);
+                                              sibling_model, up_model), c.model);
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);
@@ -229,11 +228,10 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                         unfold(plug(Context::Right(identity, grandparent, color,
                                                    sibling_model, up_model), t.model));
                         rewrite(plug(up_model,
-                                     RbTree::Node(identity, color, sibling_model, t.model))
-                            == plug(Context::Right(identity, grandparent, color,
+                                     RbTree::Node(identity, color, sibling_model, t.model)), plug(Context::Right(identity, grandparent, color,
                                                    sibling_model, up_model), t.model));
                         rewrite(Context::Right(identity, grandparent, color,
-                                               sibling_model, up_model) == c.model);
+                                               sibling_model, up_model), c.model);
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);

@@ -8,8 +8,8 @@ theorem carried_nonzero(u: int64, v: {ty}, z: Integer) {{
  requires z == to_integer(v);
  requires v != 0{suffix};
  ensures u != 0i64 by {{
-  rewrite(to_integer(u) == z);
-  rewrite(z == to_integer(v));
+  rewrite(to_integer(u), z);
+  rewrite(z, to_integer(v));
   known();
  }}
 }}"#
@@ -48,7 +48,7 @@ fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
         requires y <= 10;
         requires y <= 20;
         ensures x <= 10{suffix} and x <= 20{suffix} by {{
-            rewrite(to_integer(x) == y);
+            rewrite(to_integer(x), y);
             both {{ known(); }} and {{ known(); }}
         }}
     }}"#
@@ -92,7 +92,7 @@ theorem prefix_bound(n: uint64) {
  requires 0 <= prefix(to_integer(n));
  requires prefix(to_integer(n)) <= 22204;
  ensures 0 <= to_integer(n - n % 4u64) and to_integer(n - n % 4u64) <= 22204 by {
-  rewrite(to_integer(n - n % 4u64) == to_integer(n) - truncating_remainder(to_integer(n), 4));
+  rewrite(to_integer(n - n % 4u64), to_integer(n) - truncating_remainder(to_integer(n), 4));
   unfold(prefix(to_integer(n)));
   both {
    solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
@@ -735,7 +735,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
             theorem rewritten(x: int32, y: int32) {
                 requires x == y;
                 ensures x == y by {
-                    rewrite(x == y);
+                    rewrite(x, y);
                     normalize();
                 }
             }

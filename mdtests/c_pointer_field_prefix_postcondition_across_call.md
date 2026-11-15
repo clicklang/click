@@ -66,7 +66,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         have old(owner->len) != k by {
             intro();
             have not (k < old(owner->len)) by {
-                rewrite(old(owner->len) == k);
+                rewrite(old(owner->len), k);
                 normalize();
             }
             contradiction(k < old(owner->len));

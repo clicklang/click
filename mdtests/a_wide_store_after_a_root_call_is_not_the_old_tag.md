@@ -88,7 +88,7 @@ void probe(struct node *p, struct root *root) {
   }
   have separate(c, memory(near->right));
   have nid == near;
-  have separate(c, memory(nid->right)) by { rewrite(nid == near); known(); }
+  have separate(c, memory(nid->right)) by { rewrite(nid, near); known(); }
   mark before_call;
   let { after: c } = step(helper, { before: c });
   have contains(at(before_call, c), statement(3).footprint) by { known(); }

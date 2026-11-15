@@ -74,7 +74,7 @@ fn ordinary_equalities_compose_without_search() {
             requires x == y;
             requires y == z;
             ensures x == z by {
-                rewrite(x == y);
+                rewrite(x, y);
                 known();
             }
         }
@@ -114,7 +114,7 @@ fn preserve_checks_signed_and_unsigned_64_bit_reads() {
                         have separate(statement(1).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
                         preserve(separate(statement(1).footprint, memory(*kept)));
                     }}
-                    rewrite(*kept == at(after, *kept));
+                    rewrite(*kept, at(after, *kept));
                     known();
                 }}
                 step();

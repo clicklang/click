@@ -17,7 +17,10 @@ mod algebraic_if;
 mod algebraic_read;
 pub(crate) use algebraic_call::KernelAlgebraicCall;
 mod algebraic_equality;
+mod float;
 mod machine;
+pub(crate) use float::FloatOperandView;
+pub use float::KernelFloatType;
 #[allow(dead_code)]
 mod matches;
 pub(crate) use matches::KernelMatchArm;
@@ -120,6 +123,10 @@ pub enum KernelTermNode {
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    FloatLiteral {
+        carrier: MachineIntegerType,
+        bits: u128,
+    },
     IntegerToMachine {
         destination: MachineIntegerType,
         operand: KernelTerm,
@@ -1060,6 +1067,13 @@ impl KernelTermImport {
                 };
                 self.machine(format, bits)
             }
+            PureFunctionArgument::Value(value) if FloatOperandView::from_value(value).is_some() => {
+                let view = FloatOperandView::from_value(value).expect("float argument");
+                self.float(
+                    view.format(),
+                    view.native_compat().expect("native float argument"),
+                )
+            }
             _ => KernelTerm::legacy(value.clone()),
         }
     }
@@ -1487,6 +1501,9 @@ impl KernelTermExport {
         &mut self,
         term: &KernelTerm,
     ) -> Result<PureFunctionArgument, &'static str> {
+        if FloatOperandView::from_shared(term).is_some() {
+            return Self::float(term).map(PureFunctionArgument::Value);
+        }
         if let Some(value) = term.boolean_argument_native() {
             return Ok(value.clone());
         }

@@ -999,7 +999,7 @@ fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
  requires length == 4294967296u64;
  ensures adler_byte_sum_u64(bytes, length) == 0 by {
   have length == 0u64 by solve();
-  rewrite(length == 0u64);
+  rewrite(length, 0u64);
   apply(adler_sum_empty_u64(bytes, 0));
   solve();
  }

@@ -1255,6 +1255,11 @@ pub(in crate::surface) fn synthesize_surface_value(
         return Some(ContractExpression::RegionResult(region));
     }
     let _scope = SurfaceSynthesisScope::enter();
+    if crate::surface::diagnostics::exact_float_literal_spelling(value).is_some() {
+        return Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(value.clone()),
+        ));
+    }
     match value {
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
             pointer.pointer(),
@@ -3349,6 +3354,9 @@ pub(super) fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
+        Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+            crate::kernel::KernelTermExport::float(term).ok()?,
+        )),
         Node::MachineLiteral(literal) => {
             let KernelType::Program(ty) = term.ty() else {
                 return None;
@@ -4918,6 +4926,11 @@ fn synthesize_legacy_call_argument(
                 state,
                 bound_variables,
             )?
+        }
+        crate::kernel::PureFunctionArgument::Value(
+            value @ (ProgramValue::Float32(_) | ProgramValue::Float64(_)),
+        ) if crate::surface::diagnostics::exact_float_literal_spelling(value).is_some() => {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone()))
         }
         // A word argument's term carries its own width; the candidate's
         // round trip confirms the call lowers it at the parameter's type.

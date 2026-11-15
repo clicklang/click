@@ -1005,7 +1005,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
         )
     };
     // Substituting a constant can leave a two-constant operation
-    // (`0 + 1` after `rewrite(len == 0)` in a `len + 1` goal); folding
+    // (`0 + 1` after `rewrite(len, 0)` in a `len + 1` goal); folding
     // it is deterministic arithmetic on the rewritten node only, so the
     // rewritten goal states the value the substitution denotes.
     match term {

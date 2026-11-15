@@ -10,9 +10,9 @@ theorem sized_valid_node(identity: struct rb_node*, parent: struct rb_node*, col
     requires to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right));
     ensures sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)) == 1 by {
         unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left, right)));
-        rewrite(to_integer(value) == 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)));
-        rewrite(sized_counts_valid(left) == 1);
-        rewrite(sized_counts_valid(right) == 1);
+        rewrite(to_integer(value), 1 + to_integer(sized_value(left)) + to_integer(sized_value(right)));
+        rewrite(sized_counts_valid(left), 1);
+        rewrite(sized_counts_valid(right), 1);
         normalize();
     }
 }

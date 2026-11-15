@@ -56,7 +56,7 @@ void probe(struct node *p, struct node *q) {
                 preserve(separate(statement(2).footprint, memory(p->other)));
             }
             have p->other == at(before, p->other) by {
-                rewrite(p->other == at(after_call, p->other));
+                rewrite(p->other, at(after_call, p->other));
                 known();
             }
             step_until(function.exit); solve();

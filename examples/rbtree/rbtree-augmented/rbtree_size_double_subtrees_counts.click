@@ -125,14 +125,14 @@ theorem sized_double_subtrees_inner_valid(p: struct rb_node*, node: struct rb_no
         apply(sized_reparent_observations(middle, p));
         apply(sized_recolor_observations(sized_reparent(middle, p), Color::Black));
         have sized_counts_valid(sized_recolor(sized_reparent(middle, p), Color::Black)) == 1 by {
-            rewrite(sized_counts_valid(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_counts_valid(sized_reparent(middle, p)));
-            rewrite(sized_counts_valid(sized_reparent(middle, p)) == sized_counts_valid(middle));
+            rewrite(sized_counts_valid(sized_recolor(sized_reparent(middle, p), Color::Black)), sized_counts_valid(sized_reparent(middle, p)));
+            rewrite(sized_counts_valid(sized_reparent(middle, p)), sized_counts_valid(middle));
             known();
         }
         have to_integer(pv - 1 - sized_value(other)) == 1 + to_integer(sized_value(far))
                 + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black))) by {
-            rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));
-            rewrite(sized_value(sized_reparent(middle, p)) == sized_value(middle));
+            rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)), sized_value(sized_reparent(middle, p)));
+            rewrite(sized_value(sized_reparent(middle, p)), sized_value(middle));
             known();
         }
         apply(sized_valid_node(p, node, Color::Red, pv - 1 - sized_value(other), far,

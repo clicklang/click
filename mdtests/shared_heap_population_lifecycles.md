@@ -283,7 +283,7 @@ void parent_detach(struct parent* p) {
             } else {
                 have to_integer(old(count(child_ref(p->kid)))) == to_integer(entry_child->refs);
                 have to_integer(old(count(child_ref(p->kid)))) <= 1 by {
-                    rewrite(to_integer(old(count(child_ref(p->kid)))) == to_integer(entry_child->refs));
+                    rewrite(to_integer(old(count(child_ref(p->kid)))), to_integer(entry_child->refs));
                     solve();
                 }
                 step_until(function.exit);
@@ -322,16 +322,16 @@ int32 run_first_destroyed(int32 payload) {
     open(child_control(kid)) {
         have to_integer(count(child_ref(kid))) > 1;
         have 2 <= to_integer(kid->refs) by {
-            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             solve();
         }
     }
-    have first->kid->payload == payload by { rewrite(first->kid == kid); solve(); }
+    have first->kid->payload == payload by { rewrite(first->kid, kid); solve(); }
     have first->kid->refs == kid->refs by {
         normalize() using { first->kid == kid; };
     }
     have first->kid->refs > 1 by {
-        rewrite(first->kid->refs == kid->refs);
+        rewrite(first->kid->refs, kid->refs);
         solve() using { 2 <= to_integer(kid->refs); };
     }
     mark detaching;
@@ -350,12 +350,12 @@ int32 run_first_destroyed(int32 payload) {
     }
     have kid->payload == payload by {
         have kid == at(detaching, first->kid) by { solve() using { at(detaching, first->kid) == kid; }; }
-        rewrite(kid == at(detaching, first->kid));
+        rewrite(kid, at(detaching, first->kid));
         known();
     }
     step();
     have second->kid == kid;
-    have second->kid->payload == payload by { rewrite(second->kid == kid); solve(); }
+    have second->kid->payload == payload by { rewrite(second->kid, kid); solve(); }
     mark reading;
     step(parent_read_payload, { link: second_link });
     have at(reading, second->kid->payload) == payload by known();
@@ -364,7 +364,7 @@ int32 run_first_destroyed(int32 payload) {
     have second->kid == kid;
     open(child_control(kid)) {
         have 1 <= to_integer(kid->refs) by {
-            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             solve();
         }
     }
@@ -400,16 +400,16 @@ int32 run_second_destroyed(int32 payload) {
     open(child_control(kid)) {
         have to_integer(count(child_ref(kid))) > 1;
         have 2 <= to_integer(kid->refs) by {
-            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             solve();
         }
     }
-    have second->kid->payload == payload by { rewrite(second->kid == kid); solve(); }
+    have second->kid->payload == payload by { rewrite(second->kid, kid); solve(); }
     have second->kid->refs == kid->refs by {
         normalize() using { second->kid == kid; };
     }
     have second->kid->refs > 1 by {
-        rewrite(second->kid->refs == kid->refs);
+        rewrite(second->kid->refs, kid->refs);
         solve() using { 2 <= to_integer(kid->refs); };
     }
     mark detaching;
@@ -428,12 +428,12 @@ int32 run_second_destroyed(int32 payload) {
     }
     have kid->payload == payload by {
         have kid == at(detaching, second->kid) by { solve() using { at(detaching, second->kid) == kid; }; }
-        rewrite(kid == at(detaching, second->kid));
+        rewrite(kid, at(detaching, second->kid));
         known();
     }
     step();
     have first->kid == kid;
-    have first->kid->payload == payload by { rewrite(first->kid == kid); solve(); }
+    have first->kid->payload == payload by { rewrite(first->kid, kid); solve(); }
     mark reading;
     step(parent_read_payload, { link: first_link });
     have at(reading, first->kid->payload) == payload by known();
@@ -442,7 +442,7 @@ int32 run_second_destroyed(int32 payload) {
     have first->kid == kid;
     open(child_control(kid)) {
         have 1 <= to_integer(kid->refs) by {
-            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             solve();
         }
     }

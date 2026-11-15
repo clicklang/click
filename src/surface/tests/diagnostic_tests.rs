@@ -1958,11 +1958,11 @@ theorem split(x: int32) {
     ensures x >= 1 by {
         cases {
             x == 1 => {
-                rewrite(x == 1);
+                rewrite(x, 1);
                 normalize();
             }
             x == 2 => {
-                rewrite(x == 2);
+                rewrite(x, 2);
                 normalize();
             }
         }
@@ -2982,7 +2982,7 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
         );
         for index in 0..size {
             source.push_str(&format!(
-                " have x <= {index} by {{ rewrite(x == 0); normalize(); }}\n"
+                " have x <= {index} by {{ rewrite(x, 0); normalize(); }}\n"
             ));
         }
         source.push_str(" known();\n }\n}\n");

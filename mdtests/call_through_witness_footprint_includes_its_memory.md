@@ -100,11 +100,11 @@ void overwrite(struct node* p, struct node* q) {
 
     have aligned(saved_next, 8) by known();
     have p->word == address(saved_next) + (p->word & 1) by {
-        rewrite(p->word == at(before_word_0, p->word));
+        rewrite(p->word, at(before_word_0, p->word));
         known();
     }
     have ((p->word & ~1) as (struct node *)) == saved_next by {
-        rewrite(p->word == at(before_word_0, p->word));
+        rewrite(p->word, at(before_word_0, p->word));
         known();
     }
     fold(hop(p));
@@ -156,11 +156,11 @@ int32 caller(struct node* p, struct node* q) {
     have next->value == 0 by solve();
     have aligned(saved_next, 8) by known();
     have p->word == address(saved_next) + (p->word & 1) by {
-        rewrite(p->word == at(before_word_0, p->word));
+        rewrite(p->word, at(before_word_0, p->word));
         known();
     }
     have ((p->word & ~1) as (struct node *)) == saved_next by {
-        rewrite(p->word == at(before_word_0, p->word));
+        rewrite(p->word, at(before_word_0, p->word));
         known();
     }
     fold(hop(p));
@@ -177,11 +177,11 @@ int32 caller(struct node* p, struct node* q) {
     step();
     have aligned(saved_next, 8) by known();
     have p->word == address(saved_next) + (p->word & 1) by {
-        rewrite(p->word == at(before_word_0, p->word));
+        rewrite(p->word, at(before_word_0, p->word));
         known();
     }
     have ((p->word & ~1) as (struct node *)) == saved_next by {
-        rewrite(p->word == at(before_word_0, p->word));
+        rewrite(p->word, at(before_word_0, p->word));
         known();
     }
     fold(hop(p));

@@ -220,7 +220,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 } else {
                     have k <= at(opened, i);
                     have k == at(opened, i);
-                    rewrite(k == at(opened, i));
+                    rewrite(k, at(opened, i));
                     normalize();
                 }
             }
@@ -301,9 +301,9 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have arena->occupied == old(arena->occupied);
             have arena->capacity == old(arena->capacity);
             have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
-                rewrite(arena->data == old(arena->data));
-                rewrite(arena->occupied == old(arena->occupied));
-                rewrite(arena->capacity == old(arena->capacity));
+                rewrite(arena->data, old(arena->data));
+                rewrite(arena->occupied, old(arena->occupied));
+                rewrite(arena->capacity, old(arena->capacity));
                 known();
             }
             let w = fold(arena_clear_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), {
@@ -315,7 +315,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     let { next: n } = unfold(w);
     have n <= end;
     have n == i;
-    have not (n < end) by { rewrite(n == i); known(); }
+    have not (n < end) by { rewrite(n, i); known(); }
     have n == end;
     step_until(function.exit);
     have arena->data == old(arena->data);

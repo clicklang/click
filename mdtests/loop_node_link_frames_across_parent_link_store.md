@@ -119,7 +119,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(4).footprint, memory(sid->right)));
                                     }
                                     have sid->right == at(inner_inputs, sid->right) by {
-                                        rewrite(sid->right == at(before_link_1, sid->right));
+                                        rewrite(sid->right, at(before_link_1, sid->right));
                                         known();
                                     }
                                     have separate(loop(0).statement(4).footprint, memory(iid->left)) by {
@@ -129,7 +129,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(4).footprint, memory(iid->left)));
                                     }
                                     have iid->left == at(inner_inputs, iid->left) by {
-                                        rewrite(iid->left == at(before_link_1, iid->left));
+                                        rewrite(iid->left, at(before_link_1, iid->left));
                                         known();
                                     }
                                     have separate(loop(0).statement(4).footprint, memory(parent->left)) by {
@@ -139,7 +139,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(4).footprint, memory(parent->left)));
                                     }
                                     have parent->left == at(inner_inputs, parent->left) by {
-                                        rewrite(parent->left == at(before_link_1, parent->left));
+                                        rewrite(parent->left, at(before_link_1, parent->left));
                                         known();
                                     }
                                     have separate(loop(0).statement(4).footprint, memory(sid->left)) by {
@@ -149,7 +149,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(4).footprint, memory(sid->left)));
                                     }
                                     have iid->right == sid;
-                                    have defined(iid->right) by { rewrite(iid == tmp2); normalize(); }
+                                    have defined(iid->right) by { rewrite(iid, tmp2); normalize(); }
                                     mark before_parent_store;
                                     have separate(memory(parent->right), memory(sid->right)) by known();
                                     have separate(memory(parent->right), memory(iid->left)) by known();
@@ -164,7 +164,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(5).footprint, memory(sid->right)));
                                     }
                                     have sid->right == at(inner_inputs, sid->right) by {
-                                        rewrite(sid->right == at(before_parent_store, sid->right));
+                                        rewrite(sid->right, at(before_parent_store, sid->right));
                                         known();
                                     }
                                     have separate(loop(0).statement(5).footprint, memory(iid->left)) by {
@@ -174,7 +174,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(5).footprint, memory(iid->left)));
                                     }
                                     have iid->left == at(inner_inputs, iid->left) by {
-                                        rewrite(iid->left == at(before_parent_store, iid->left));
+                                        rewrite(iid->left, at(before_parent_store, iid->left));
                                         known();
                                     }
                                     have separate(loop(0).statement(5).footprint, memory(parent->left)) by {
@@ -184,7 +184,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(5).footprint, memory(parent->left)));
                                     }
                                     have parent->left == at(inner_inputs, parent->left) by {
-                                        rewrite(parent->left == at(before_parent_store, parent->left));
+                                        rewrite(parent->left, at(before_parent_store, parent->left));
                                         known();
                                     }
                                     have separate(loop(0).statement(5).footprint, memory(sid->left)) by {
@@ -194,7 +194,7 @@ void rotate(struct node* parent) {
                                         preserve(separate(loop(0).statement(5).footprint, memory(sid->left)));
                                     }
                                     have sid->left == at(before_link_1, sid->left) by {
-                                        rewrite(sid->left == at(before_parent_store, sid->left));
+                                        rewrite(sid->left, at(before_parent_store, sid->left));
                                         known();
                                     }
                                     have separate(loop(0).statement(5).footprint, memory(iid->right)) by {

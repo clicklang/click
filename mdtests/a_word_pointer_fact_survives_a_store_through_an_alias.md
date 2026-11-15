@@ -31,7 +31,7 @@ void update(struct node *g, struct node *p) {
         have *((&g->word) as (int32 **)) == at(before, *((&g->word) as (int32 **))) by {
             preserve(separate(statement(0).footprint, memory(g->word)));
         }
-        rewrite(g->word == at(before, g->word));
+        rewrite(g->word, at(before, g->word));
         known();
     }
     step();

@@ -17,7 +17,7 @@ theorem derived_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: In
         } else {
             have q == lower by { solve() using { lower <= q; not (lower + 1 <= q); }; }
             have n == lower * d + r by {
-                rewrite(lower == q);
+                rewrite(lower, q);
                 known();
             }
             have not (r < 0) by { solve() using { lower * d <= n; n == lower * d + r; }; }
@@ -37,7 +37,7 @@ theorem derived_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: In
         } else {
             have q == upper by { solve() using { q <= upper; not (q <= upper + -1); }; }
             have n == upper * d + r by {
-                rewrite(upper == q);
+                rewrite(upper, q);
                 known();
             }
             have not (0 < r) by { solve() using { n <= upper * d; n == upper * d + r; }; }

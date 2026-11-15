@@ -13,7 +13,7 @@ theorem rewritten_pointer_argument(p: int32*, q: int32*) {
     requires tag(p) == 1;
     requires p == q;
     ensures tag(p) == 1 by {
-        rewrite(p == q);
+        rewrite(p, q);
         known();
     }
 }

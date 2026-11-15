@@ -41,7 +41,7 @@ theorem append_nil(xs: IntList) {
             IntList::Cons(head, tail) => {
                 apply(ih(tail));
                 unfold(append(IntList::Cons(head, tail), IntList::Nil));
-                rewrite(append(tail, IntList::Nil) == tail);
+                rewrite(append(tail, IntList::Nil), tail);
                 normalize();
             }
         }

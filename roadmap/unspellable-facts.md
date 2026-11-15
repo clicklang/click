@@ -601,7 +601,7 @@ abstract/parameter/memory checks, algebraic and Boolean behavior, readers,
 rewrites, Surface synthesis and full ordinary example projects. The quality
 gate exited 0.
 
-8t retains algebraic roots through specification bindings, constructors and
+8t ([PR #2841](https://github.com/clicklang/click/pull/2841)) retains algebraic roots through specification bindings, constructors and
 selected match fields, algebraic-valued program matches, execution locals,
 arguments, returns, assignments, temporary results and memory cells. Runtime
 enum construction and field selection use common fields directly. Native key
@@ -622,6 +622,30 @@ constant-work construction around growing shared fields. All 2,540 broader tests
 passed, including argument/return/caller-result retention, program-call result
 parity, every scaling test and the full ordinary example corpus. The quality
 gate exited 0.
+
+Before 8u, the approved float-spelling prerequisite ([PR #2844](https://github.com/clicklang/click/pull/2844)) adds literal-only
+`float32_from_bits` and `float64_from_bits` forms. These preserve exact IEEE
+bits and the existing native carrier identity across printing and parsing,
+including signed zero and NaN payloads. They add no arithmetic or proof rules.
+The common float representation remains the separate 8u slice. The 241-test
+parser, Surface, diagnostic and documentation selection passed, as did the
+final 75-test float/documentation selection including the float proof fixtures.
+Fact-stability instrumentation reported zero changed lowerings.
+
+8u imports Float32/Float64 constants and variables as typed common atoms.
+Literal nodes keep the exact native carrier and bits; borrowed views expose
+width, literal and variable shape without exporting a prefix. Native export
+and Surface raising preserve signed zero, NaN payloads and carrier identity.
+The five variable-reader policies remain unchanged. Compound float operations
+remain explicit native boundaries for 8v–8z, and execution/storage activation
+remains 8aa–8ab. The mixed argument adapter retains native float descriptors
+until 8ac. Six focused float tests passed. The broader 1,936-test selection
+passed 1,934 tests, including the full ordinary example corpus and all but
+one scaling test. The new scoped-variable test needed its binder supplied;
+after correcting that setup it passed. The existing conjunction-selection
+scaling test timed out under the broad load, then passed alone in 11.6 seconds
+under the unchanged 30-second limit. The final seven-test selection passed;
+quality checks passed. No limits or budgets changed.
 
 ### 8a inventory
 

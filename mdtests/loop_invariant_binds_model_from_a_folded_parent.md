@@ -56,8 +56,8 @@ int32 count_down(struct node* p, int32 n) {
     match w.model {
         Wrap::Wrap(entry_model) => {
             have Wrap::Wrap(entry_model) == Wrap::Wrap(old(c.model)) by {
-                rewrite(Wrap::Wrap(entry_model) == w.model);
-                rewrite(w.model == Wrap::Wrap(old(c.model)));
+                rewrite(Wrap::Wrap(entry_model), w.model);
+                rewrite(w.model, Wrap::Wrap(old(c.model)));
                 normalize();
             }
             have entry_model == old(c.model) by extract(entry_model == old(c.model));

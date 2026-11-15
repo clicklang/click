@@ -25,7 +25,7 @@ import click::rust::slice;
 theorem length_after_rewrite(s: Slice<uint8>, p: uint8*, n: uint64) {
     requires s == Slice<uint8>::Slice(p, n);
     ensures slice::len(s) == n by {
-        rewrite(s == Slice<uint8>::Slice(p, n));
+        rewrite(s, Slice<uint8>::Slice(p, n));
         unfold(slice::len(Slice<uint8>::Slice(p, n)));
         normalize();
     }
@@ -53,7 +53,7 @@ theorem length_direct(p: uint8*, n: uint64) {
 In a function proof the `unfold` step's trace line is `adds: true`, and a
 following `solve()` fails with "could not establish an internal 64-bit
 equality goal with no Click spelling". It was met with a library iterator,
-after `rewrite(loop(0).iter.as_slice() == Slice<u8>::Slice(bytes,
+after `rewrite(loop(0).iter.as_slice(), Slice<u8>::Slice(bytes,
 bytes.len()))`.
 
 ## Acceptance criteria

@@ -14,7 +14,7 @@ proposition can appear:
 
 - `have p == identity`, a proposition mixing a C parameter with an arm
   binding, lowered against C state on one path;
-- `rewrite(identity == p)`, which replaces the payload with the C pointer
+- `rewrite(identity, p)`, which replaces the payload with the C pointer
   inside a goal, leaving a same-block pointer equality the listed premise
   `address(p) == address(q)` closes;
 - `normalize() using { address(identity) == address(q); }` inside a nested `branch` arm, where
@@ -83,9 +83,9 @@ int cell_same(struct cell* p, struct cell* q) {
             branch {
                 step();
                 let c = fold(cell_at(p), { model: old(c.model) });
-                have address(identity) == address(q) by { rewrite(identity == p); normalize() using { address(p) == address(q); }; }
+                have address(identity) == address(q) by { rewrite(identity, p); normalize() using { address(p) == address(q); }; }
                 have result == cell_member(old(c.model), q) by {
-                    rewrite(old(c.model) == CellModel::Present(identity, value));
+                    rewrite(old(c.model), CellModel::Present(identity, value));
                     unfold(cell_member(CellModel::Present(identity, value), q));
                     normalize() using { address(identity) == address(q); };
                 }
@@ -93,9 +93,9 @@ int cell_same(struct cell* p, struct cell* q) {
             } else {}
             step();
             let c = fold(cell_at(p), { model: old(c.model) });
-            have not(address(identity) == address(q)) by { rewrite(identity == p); normalize() using { not(address(p) == address(q)); }; }
+            have not(address(identity) == address(q)) by { rewrite(identity, p); normalize() using { not(address(p) == address(q)); }; }
             have result == cell_member(old(c.model), q) by {
-                rewrite(old(c.model) == CellModel::Present(identity, value));
+                rewrite(old(c.model), CellModel::Present(identity, value));
                 unfold(cell_member(CellModel::Present(identity, value), q));
                 normalize() using { not(address(identity) == address(q)); };
             }

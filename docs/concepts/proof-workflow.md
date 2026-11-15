@@ -221,7 +221,7 @@ expansion output.
 - `known();`: close a goal already present as the same semantic fact; it
   does not normalize, extract, or transport a new fact.
 - `normalize();`: close a pure goal by context-free computation.
-- `rewrite(equality);`: rewrite the current proposition once using an exact
+- `rewrite(from, to);`: rewrite the current proposition once using an exact
   available equality; the [tactic reference](../reference/tactics/index.md)
   lists the supported integer, pointer, and native unsigned forms.
 - `transport(source, target);`: require an exact source fact and apply one

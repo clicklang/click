@@ -60,7 +60,7 @@ void with_fresh_map(int32* data, int32 capacity) {
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {
-        rewrite(capacity == i);
+        rewrite(capacity, i);
         known();
     }
     gather(arena_cells(data, occupied, capacity));

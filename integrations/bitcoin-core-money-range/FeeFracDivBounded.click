@@ -124,8 +124,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         integer_relation_transport bounds [0, 1] => to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)); conclusion 0;
     } }
     have to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod) by {
-        rewrite(to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)));
-        rewrite(to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)));
+        rewrite(to_integer(quot), truncating_quotient(to_integer(n), to_integer(d)));
+        rewrite(to_integer(mod), truncating_remainder(to_integer(n), to_integer(d)));
         solve();
     }
 
@@ -140,7 +140,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         -9223372036854775808 <= to_integer(quot); to_integer(quot) <= 9223372036854775807;
     }; }
     have to_integer(quot + 0i64) == truncating_quotient(to_integer(n), to_integer(d)) by {
-        rewrite(to_integer(quot + 0i64) == to_integer(quot) + 0);
+        rewrite(to_integer(quot + 0i64), to_integer(quot) + 0);
         known();
     }
     if 0 < mod {
@@ -156,25 +156,25 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             -9223372036854775808 <= to_integer(quot); to_integer(quot) <= 9223372036854775806;
         }; }
         have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-            rewrite(to_integer(quot + 1i64) == to_integer(quot) + 1);
-            rewrite(to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)));
+            rewrite(to_integer(quot + 1i64), to_integer(quot) + 1);
+            rewrite(to_integer(quot), truncating_quotient(to_integer(n), to_integer(d)));
             solve();
         }
 
         have not (truncating_remainder(to_integer(n), to_integer(d)) < 0) by {
-            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
             solve() using { 0 < to_integer(mod); };
         }
         have 0 <= truncating_remainder(to_integer(n), to_integer(d)) by {
-            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
             solve() using { 0 < to_integer(mod); };
         }
         have 0 < truncating_remainder(to_integer(n), to_integer(d)) by {
-            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
             solve() using { 0 < to_integer(mod); };
         }
         have not (truncating_remainder(to_integer(n), to_integer(d)) <= 0) by {
-            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
             solve() using { 0 < to_integer(mod); };
         }
         if round_down == false {
@@ -286,25 +286,25 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 -9223372036854775807 <= to_integer(quot); to_integer(quot) <= 9223372036854775807;
             }; }
             have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                rewrite(to_integer(quot + -1i64) == to_integer(quot) + -1);
-                rewrite(to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)));
+                rewrite(to_integer(quot + -1i64), to_integer(quot) + -1);
+                rewrite(to_integer(quot), truncating_quotient(to_integer(n), to_integer(d)));
                 solve();
             }
 
             have truncating_remainder(to_integer(n), to_integer(d)) < 0 by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { to_integer(mod) < 0; };
             }
             have not (0 <= truncating_remainder(to_integer(n), to_integer(d))) by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { to_integer(mod) < 0; };
             }
             have not (0 < truncating_remainder(to_integer(n), to_integer(d))) by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { to_integer(mod) < 0; };
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { to_integer(mod) < 0; };
             }
             if round_down == false {
@@ -404,19 +404,19 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             }
         } else {
             have not (truncating_remainder(to_integer(n), to_integer(d)) < 0) by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             have 0 <= truncating_remainder(to_integer(n), to_integer(d)) by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             have not (0 < truncating_remainder(to_integer(n), to_integer(d))) by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 by {
-                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
                 solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             if round_down == false {

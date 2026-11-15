@@ -26,7 +26,7 @@ theorem preserves(b: Box, n: Integer) {
     requires b == Box::Box(n);
     ensures identity(b) == Box::Box(n) by {
         unfold(identity(b));
-        rewrite(b == Box::Box(n));
+        rewrite(b, Box::Box(n));
         normalize();
     }
 }
@@ -41,8 +41,8 @@ theorem nested_fields(b: Box, other: Box, n: Integer, m: Integer) {
     requires other == Box::Box(m);
     ensures nested(b, other) == Pair::Pair(n, m) by {
         unfold(nested(b, other));
-        rewrite(b == Box::Box(n));
-        rewrite(other == Box::Box(m));
+        rewrite(b, Box::Box(n));
+        rewrite(other, Box::Box(m));
         normalize();
     }
 }
@@ -51,8 +51,8 @@ theorem shadows(b: Box, other: Box, n: Integer, m: Integer, ambient: Integer) {
     requires other == Box::Box(m);
     ensures shadow(b, other, ambient) == Box::Box(m) by {
         unfold(shadow(b, other, ambient));
-        rewrite(b == Box::Box(n));
-        rewrite(other == Box::Box(m));
+        rewrite(b, Box::Box(n));
+        rewrite(other, Box::Box(m));
         normalize();
     }
 }
@@ -60,7 +60,7 @@ theorem swaps(p: Pair, a: Integer, b: Integer) {
     requires p == Pair::Pair(a, b);
     ensures swap(p) == Pair::Pair(b, a) by {
         unfold(swap(p));
-        rewrite(p == Pair::Pair(a, b));
+        rewrite(p, Pair::Pair(a, b));
         normalize();
     }
 }
@@ -68,7 +68,7 @@ theorem captures(b: Box, payload: Integer, ambient: Integer) {
     requires b == Box::Box(payload);
     ensures capture(b, ambient) == Pair::Pair(payload, ambient) by {
         unfold(capture(b, ambient));
-        rewrite(b == Box::Box(payload));
+        rewrite(b, Box::Box(payload));
         normalize();
     }
 }

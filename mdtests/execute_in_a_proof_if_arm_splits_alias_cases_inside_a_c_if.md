@@ -51,13 +51,13 @@ int32 f(int32 u, int32 w) {
             have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::separate_elements(buf, 3 as uint64, 0 as uint64)) using {}; }
             have separate(memory(buf[u]), memory(buf[0])) by {
                 if u == 1 {
-                    rewrite(u == 1); known();
+                    rewrite(u, 1); known();
                 } else {
                     if u == 2 {
-                        rewrite(u == 2); known();
+                        rewrite(u, 2); known();
                     } else {
                         have u == 3 by { solve() using { 1 <= u; u < 4; u != 1; u != 2; }; }
-                        rewrite(u == 3); known();
+                        rewrite(u, 3); known();
                     }
                 }
             }
@@ -68,7 +68,7 @@ int32 f(int32 u, int32 w) {
                 preserve(separate(statement(5).footprint, memory(buf[0])));
             }
             have buf[0] == 3 by {
-                rewrite(buf[0] == at(before_store, buf[0]));
+                rewrite(buf[0], at(before_store, buf[0]));
                 normalize();
             }
             if w > 0 { step_until(function.exit); } else { step_until(function.exit); }

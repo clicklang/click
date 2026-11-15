@@ -16,7 +16,7 @@ theorem packed_parent(p: int32*, word: uint64) {
         have (((word & 1) | address(p)) & 1) == (word & 1) by {
             solve() using { aligned(p, 8); };
         }
-        rewrite((((word & 1) | address(p)) & 1) == (word & 1));
+        rewrite((((word & 1) | address(p)) & 1), (word & 1));
         solve() using { aligned(p, 8); };
     }
 }

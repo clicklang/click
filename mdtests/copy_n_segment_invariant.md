@@ -100,7 +100,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                 at(loop(0).exit, k) < at(loop(0).exit, n) implies
                 at(loop(0).exit, dst[k]) == old(src[k])
         } by {
-            rewrite(at(loop(0).exit, n) == at(loop(0).exit, i));
+            rewrite(at(loop(0).exit, n), at(loop(0).exit, i));
             known();
         }
         transport(

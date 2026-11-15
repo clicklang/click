@@ -33,7 +33,7 @@ theorem selector(p: int32*, q: int32*) {
 }
 theorem nested(p: int32*, q: int32*) {
     requires p == q;
-    ensures identity(p) == identity(q) by { rewrite(p == q); normalize(); }
+    ensures identity(p) == identity(q) by { rewrite(p, q); normalize(); }
     ensures identity(identity(p)) == p by {
         unfold(identity(identity(p))); unfold(identity(p)); normalize();
     }
@@ -44,7 +44,7 @@ theorem nested(p: int32*, q: int32*) {
 theorem rewrite_application(p: int32*, q: int32*) {
     requires identity(p) == q;
     ensures holds(identity(p)) == holds(q) by {
-        rewrite(identity(p) == q); normalize();
+        rewrite(identity(p), q); normalize();
     }
 }
 theorem applied_identity(p: int32*) {

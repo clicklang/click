@@ -65,7 +65,7 @@ int read_parent_value(struct node* n) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(identity, node_parent, value) => {
             have parent_is(t.model, node_parent) == 1 by {
-                rewrite(t.model == Tree::Node(identity, node_parent, value));
+                rewrite(t.model, Tree::Node(identity, node_parent, value));
                 unfold(parent_is(Tree::Node(identity, node_parent, value), node_parent));
                 normalize();
             }

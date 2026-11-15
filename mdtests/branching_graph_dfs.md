@@ -123,7 +123,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         intro();
         intro();
         if k == cur {
-            rewrite(k == cur);
+            rewrite(k, cur);
             solve();
         } else {
             transport(old(visited[k]) != 0, visited[k] != 0) using { old(visited[k]) != 0; };
@@ -370,14 +370,14 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             }, k);
             if k == cur {
                 have at(before_right, visited[old(left[k])]) != 0 by {
-                    rewrite(k == cur);
+                    rewrite(k, cur);
                     known();
                 }
                 instantiate(forall (k: int32) {
                     0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
                 }, old(left[k]));
                 have visited[old(right[k])] != 0 by {
-                    rewrite(k == cur);
+                    rewrite(k, cur);
                     transport(visited[at(before_right, right[cur])] != 0, visited[old(right[cur])] != 0) using {
                         visited[at(before_right, right[cur])] != 0;
                     };
