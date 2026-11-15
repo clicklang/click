@@ -268,7 +268,7 @@ struct TermData {
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
     machine_leaf: MachineLeafCache,
-    pointer_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
+    argument_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
 }
 
 struct NodeKeyData {
@@ -614,7 +614,7 @@ impl Interner {
             key: key.clone(),
             integer: Mutex::default(),
             machine_leaf: Default::default(),
-            pointer_leaf: Default::default(),
+            argument_leaf: Default::default(),
         });
         self.terms.insert(key.clone(), Arc::downgrade(&value));
         self.cleanup.push_back(key);

@@ -634,7 +634,8 @@ fn write_program_lvalue_paths_without_local_reference(
         && value.program_type() == lvalue.value_type
         && matches!(
             value.program_type(),
-            ProgramType::Int8
+            ProgramType::Bool
+                | ProgramType::Int8
                 | ProgramType::UInt8
                 | ProgramType::Int16
                 | ProgramType::UInt16
@@ -797,6 +798,10 @@ fn write_program_lvalue_paths_without_local_reference(
             )])
         }
         LValueStorage::Memory { pointer } => {
+            let retained_boolean = value
+                .shared()
+                .filter(|root| root.ty() == &KernelType::Bool)
+                .cloned();
             let retained_pointer = value
                 .shared()
                 .filter(|root| root.pointer_payload().is_some())
@@ -1055,11 +1060,19 @@ fn write_program_lvalue_paths_without_local_reference(
                     }
                     None => effective_assumptions,
                 };
-            let retained_written = match retained_pointer {
-                Some(root) => {
-                    ExecutionValue::Shared(root).retain_checked_pointer(written_value.clone())
+            let retained_written = if written_value.program_type() == ProgramType::Bool
+                && let Some(root) = retained_boolean
+            {
+                // Byte assembly produces an integer; a remaining Bool is the
+                // original selected value, with its producer root intact.
+                ExecutionValue::Shared(root)
+            } else {
+                match retained_pointer {
+                    Some(root) => {
+                        ExecutionValue::Shared(root).retain_checked_pointer(written_value.clone())
+                    }
+                    None => ExecutionValue::from(written_value.clone()).retain_pointer_result(),
                 }
-                None => ExecutionValue::from(written_value.clone()).retain_pointer_result(),
             };
             let next_memory = state.memory.clone().store_retained_classed_with_context(
                 written_pointer.clone(),
@@ -4361,6 +4374,10 @@ fn execute_execution_statement_leaf_paths(
             {
                 let outcome = match path.outcome {
                     ExpressionOutcome::Value(value) => {
+                        let retained_boolean = value
+                            .shared()
+                            .filter(|root| root.ty() == &KernelType::Bool)
+                            .cloned();
                         let retained_pointer = value
                             .shared()
                             .filter(|root| root.pointer_payload().is_some())
@@ -4381,11 +4398,16 @@ fn execute_execution_statement_leaf_paths(
                         match value {
                             Some(value) => {
                                 let mut next = state.clone();
-                                let value = match retained_pointer {
-                                    Some(root) => {
-                                        ExecutionValue::Shared(root).retain_checked_pointer(value)
+                                let value = if value.program_type() == ProgramType::Bool
+                                    && let Some(root) = retained_boolean
+                                {
+                                    ExecutionValue::Shared(root)
+                                } else {
+                                    match retained_pointer {
+                                        Some(root) => ExecutionValue::Shared(root)
+                                            .retain_checked_pointer(value),
+                                        None => ExecutionValue::from(value).retain_pointer_result(),
                                     }
-                                    None => ExecutionValue::from(value).retain_pointer_result(),
                                 };
                                 for step in steps {
                                     next.set_retained_step_result(*step, value.clone());

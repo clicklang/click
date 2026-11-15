@@ -704,7 +704,7 @@ fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
                 assert_eq!(carried.shared(), Some(&root));
                 root
             });
-            assert!(root.0.pointer_leaf.get().is_none());
+            assert!(root.0.argument_leaf.get().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(work <= 32, "size={size} unrelated={unrelated} work={work}");
         }
@@ -750,7 +750,7 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
                 assert_eq!(value.shared(), Some(&root));
                 root
             });
-            assert!(root.0.pointer_leaf.get().is_none());
+            assert!(root.0.argument_leaf.get().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(work <= 32, "size={size} unrelated={unrelated} work={work}");
         }
@@ -824,7 +824,7 @@ fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
                 panic!("arithmetic");
             };
             assert_eq!(operands[1], index);
-            assert!(root.0.pointer_leaf.get().is_none());
+            assert!(root.0.argument_leaf.get().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(work <= 32, "size={size} unrelated={unrelated} work={work}");
         }
@@ -922,7 +922,7 @@ fn pointer_call_handoffs_retain_prepared_argument_dags() {
                 panic!("call")
             };
             assert_eq!(arguments[0], argument);
-            assert!(root.0.pointer_leaf.get().is_none());
+            assert!(root.0.argument_leaf.get().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(work <= 48, "size={size} unrelated={unrelated} work={work}");
             let (reference, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -932,8 +932,8 @@ fn pointer_call_handoffs_retain_prepared_argument_dags() {
                 panic!("array argument")
             };
             assert_eq!(pointer, &root);
-            assert!(reference.0.pointer_leaf.get().is_none());
-            assert!(root.0.pointer_leaf.get().is_none());
+            assert!(reference.0.argument_leaf.get().is_none());
+            assert!(root.0.argument_leaf.get().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(
                 work <= 16,

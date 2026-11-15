@@ -273,7 +273,7 @@ impl KernelTerm {
             element_type,
         } = self.node()
         {
-            return Some(self.0.pointer_leaf.get_or_init(|| {
+            return Some(self.0.argument_leaf.get_or_init(|| {
                 Box::new(PureFunctionArgument::ArrayRef {
                     memory: memory.memory().clone(),
                     pointer: pointer.pointer_native().expect("array pointer").clone(),
@@ -282,7 +282,7 @@ impl KernelTerm {
             }));
         }
         let value = self.pointer_payload()?;
-        Some(self.0.pointer_leaf.get_or_init(|| {
+        Some(self.0.argument_leaf.get_or_init(|| {
             Box::new(PureFunctionArgument::Value(ProgramValue::Pointer(
                 value.export().expect("retained pointer result"),
             )))

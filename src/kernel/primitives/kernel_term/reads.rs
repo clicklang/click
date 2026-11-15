@@ -186,7 +186,7 @@ mod tests {
             );
             assert_eq!(cell, &SharedPointerAddress::import(&address));
             assert!(value.same_source_payload(&expected));
-            assert!(root.0.pointer_leaf.get().is_none());
+            assert!(root.0.argument_leaf.get().is_none());
             let ProgramValue::Pointer(restored) = result.native_payload().unwrap() else {
                 panic!("compatibility value");
             };
