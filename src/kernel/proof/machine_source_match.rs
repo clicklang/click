@@ -154,7 +154,9 @@ impl<'a> MachineSourceMatcher<'a> {
                     destination,
                     operand,
                 } => Shape::Cast(*encoding, *source, *destination, self.nodes[&operand.id()]),
-                KernelTermNode::Legacy(_) | KernelTermNode::Call { .. } => {
+                KernelTermNode::Legacy(_)
+                | KernelTermNode::Call { .. }
+                | KernelTermNode::BoolCast { .. } => {
                     let value = term
                         .machine_conversion_leaf()
                         .expect("retained native machine leaf");
@@ -186,6 +188,35 @@ impl<'a> MachineSourceMatcher<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boolean_cast_sources_keep_native_argument_equality() {
+        let _session = VerificationSession::enter();
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(999464)),
+            ProgramType::Int32Pointer,
+        );
+        let values = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+            MachineTerm::bool_cast(
+                MachineIntegerType::Int32,
+                ConditionTerm::BoolApplication(SharedPureApplication::intern(
+                    "bool_source".into(),
+                    vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))],
+                )),
+            )
+        });
+        assert_eq!(values[0], values[1]);
+        let root = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, &values[1])
+            .unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(
+            MachineSourceMatcher::new(MachineOperandView::Legacy(&values[0]))
+                .matches(MachineIntegerType::Int32, &root),
+            Some(true)
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
 
     #[test]
     fn selected_opaque_sources_keep_types_snapshots_and_refusals() {

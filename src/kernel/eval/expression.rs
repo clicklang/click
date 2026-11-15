@@ -3375,6 +3375,17 @@ fn add_retained_local_range_facts(
     if let Some(native) = value.native_payload() {
         return add_narrow_integer_range_execution_pure_facts(facts, assumptions, native);
     }
+    if let Some(root) = value.shared()
+        && matches!(root.node(), KernelTermNode::BoolCast { .. })
+        && let Some(format) = MachineIntegerType::from_program_type(value.program_type())
+    {
+        let native = format.value_from_term(
+            root.machine_conversion_leaf()
+                .expect("Boolean cast")
+                .clone(),
+        );
+        add_narrow_integer_range_execution_pure_facts(facts, assumptions, &native);
+    }
 }
 
 fn read_retained_lvalue_paths_without_ranges(

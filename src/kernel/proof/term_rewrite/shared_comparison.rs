@@ -249,7 +249,7 @@ impl TermRewrite<'_> {
                     let value = self.bits(original);
                     term.rewritten_machine_leaf(format, original, &value)
                 }
-                KernelTermNode::IntegerToMachine { .. } => {
+                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => {
                     let value = self.bits(term.machine_conversion_leaf().expect("conversion leaf"));
                     KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&value))
                 }

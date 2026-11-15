@@ -165,6 +165,18 @@ impl ExecutionValue {
         }
     }
 
+    /// Read the logical truth carried by a Bool value. Raw C words keep the
+    /// existing nonzero test; already logical roots remain shared.
+    pub(in crate::kernel) fn boolean(&self) -> Option<KernelTerm> {
+        match self {
+            Self::Shared(root) if root.ty() == &KernelType::Bool => Some(root.clone()),
+            Self::Native(ProgramValue::Bool(word)) => Some(
+                KernelTermImport::default().condition(&ConditionTerm::truth_of_bool_word(word)),
+            ),
+            _ => None,
+        }
+    }
+
     pub fn into_native(self) -> ProgramValue {
         match self {
             Self::Native(value) => value,

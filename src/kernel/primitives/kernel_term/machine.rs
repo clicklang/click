@@ -96,11 +96,15 @@ impl KernelTerm {
             operand,
         } = self.node()
         {
-            return Some(self.0.machine_leaf.get_or_init(|| MachineTerm::BoolCast {
-                to: *destination,
-                value: Box::new(
-                    KernelTermExport::condition(operand).expect("Bool conversion operand"),
-                ),
+            return Some(self.0.machine_leaf.get_or_init(|| {
+                MachineTerm::BoolCast {
+                    to: *destination,
+                    value: Box::new(
+                        BooleanOperandView::Shared(operand)
+                            .identity_leaf()
+                            .into_owned(),
+                    ),
+                }
             }));
         }
         let KernelTermNode::IntegerToMachine {
@@ -509,6 +513,10 @@ impl KernelTermImport {
                     self.machine_arithmetic(result, then_term)?,
                     self.machine_arithmetic(result, else_term)?,
                 ],
+            },
+            Old::BoolCast { to, value } => KernelTermNode::BoolCast {
+                destination: *to,
+                operand: self.condition(value),
             },
             Old::IntegerToMachine { value, destination } => {
                 let operand = self.integer(value);

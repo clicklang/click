@@ -400,7 +400,7 @@ load authority, exact format/operation keys, dependencies and frame transport.
 Shared arithmetic DAGs remain retained without numeric exports. The CI-quality
 check passed.
 
-8k retains Boolean reads as typed snapshot/shared-address nodes. Producer keys
+8k (merged [PR #2822](https://github.com/clicklang/click/pull/2822)) retains Boolean reads as typed snapshot/shared-address nodes. Producer keys
 keep exact snapshot arenas and address spelling; observation identity preserves
 native memory and address equality. Substitution retains the existing snapshot
 and raw/smart address policies. Variable, capture, binder and memory-dependency
@@ -415,7 +415,7 @@ scaling test, Boolean-read substitution and identity parity, dependency widths
 and ordering, resource diagnostics and the intervening MIR temporary tests.
 The CI-quality check passed.
 
-8l produces Boolean pure-call results as common Bool roots. Numeric arguments
+8l (merged [PR #2824](https://github.com/clicklang/click/pull/2824)) produces Boolean pure-call results as common Bool roots. Numeric arguments
 remain shared, and opaque argument descriptors retain exact producer identities.
 A cached selected call reading preserves shared numeric arguments at native
 handoffs. Observation normalization uses native semantic argument identity while
@@ -427,6 +427,28 @@ Validation: all 1,869 selected tests passed on the integrated upstream tree,
 including every scaling test, contract completion, Boolean call result production and native handoff parity, exact descriptor and
 semantic observation identity, shared call argument rewrites, Boolean spelling,
 and existing numeric/pointer call producers. The CI-quality check passed.
+
+8m retains Boolean composition and casts through production. Conditional and
+equality constructors preserve the native root reductions; Boolean-to-machine
+casts retain their logical operand and written destination. Raw C Bool words
+still enter through their existing nonzero test, and comparisons with integers
+or ordering operations keep their refusals. Equality's proposition output remains
+an explicit native boundary.
+
+Retained casts participate in the existing conversion readers, graph registration,
+dependency and rewrite policies, and semantic observation normalization. Pointer
+discovery keeps native cast opacity, and exact source matching keeps native
+argument equality. Reading a retained
+local cast emits its original certified range facts through the selected native
+cast descriptor. General output spelling and later local/storage handoffs retain
+their assigned slices; no search or budget policy changes.
+
+Validation: all 2,410 integration tests passed, including every scaling test,
+C frontend and fact-reasoning selections,
+constructor reductions, all integer cast formats, producer parity, observation
+identity, local range-fact preservation, equality rewrites, dependencies and the
+modeled-binary-tree example. The C/C++/Rust integer-language examples and focused
+cast-dispatch regressions passed separately. The CI-quality check passed.
 
 ### 8a inventory
 

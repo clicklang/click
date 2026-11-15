@@ -1937,9 +1937,9 @@ impl EqualityGraph {
                             pointers.push(address.as_ref().clone());
                         }
                         N::MachineLiteral(_) => {}
-                        // Native pointer discovery treats conditionals and folds as
-                        // opaque; registering one does not inspect its children.
-                        N::MachineIf { .. } | N::Fold(_) | N::Match(_) => {}
+                        // Native pointer discovery treats conditionals, Boolean
+                        // casts and folds as opaque; do not inspect their children.
+                        N::MachineIf { .. } | N::BoolCast { .. } | N::Fold(_) | N::Match(_) => {}
                         N::IntegerToMachine { .. }
                         | N::Legacy(_)
                         | N::Call { .. }
@@ -4447,5 +4447,46 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../scaling_tests/kernel/equality_graph/tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod boolean_cast_dependency_tests {
+    use super::*;
+    #[test]
+    fn shared_boolean_cast_pointer_discovery_keeps_native_opacity() {
+        use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::bool_cast(
+            MachineIntegerType::Int32,
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer::symbolic(Variable(999462))),
+                Box::new(Pointer::symbolic(Variable(999463))),
+            ),
+        );
+        let root = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, &native)
+            .unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        for argument in [
+            PureFunctionArgument::Value(ProgramValue::Int32(native)),
+            PureFunctionArgument::SharedMachine(
+                SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            ),
+        ] {
+            let application =
+                SharedPureApplication::intern("boolean_pointer_discovery".into(), vec![argument]);
+            assert!(
+                EqualityGraph::expression_pointer_operands(
+                    [],
+                    [],
+                    [],
+                    [&application],
+                    &mut Default::default()
+                )
+                .is_empty()
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
