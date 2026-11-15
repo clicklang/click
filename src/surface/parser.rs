@@ -5451,12 +5451,19 @@ impl Parser {
         self.refuse_bool_literal_binder(&name)?;
         let mut click_type = if self.peek() == Some(&Token::Colon) {
             self.position += 1;
-            let (click_type, parsed_type) = self.parse_click_type()?;
+            let (mut click_type, parsed_type) = self.parse_click_type()?;
             if let Some(parsed_type) = parsed_type
-                && parsed_type.struct_name.is_some()
-                && !parsed_type.struct_pointer
+                && let Some(struct_name) = parsed_type.struct_name
             {
-                return Err(self.error("only pointer-to-struct types are supported"));
+                if !parsed_type.struct_pointer {
+                    return Err(self.error("only pointer-to-struct types are supported"));
+                }
+                click_type = ClickType::CObjectPointer {
+                    interface_type: click_type
+                        .interface_type()
+                        .expect("a parsed struct pointer has a C interface type"),
+                    struct_name,
+                };
             }
             Some(click_type)
         } else {
