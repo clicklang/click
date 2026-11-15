@@ -72,7 +72,7 @@ pub(crate) fn enter_ambient_object_fields(
     }
     let mut pending = vec![function.body()];
     while let Some(statement) = pending.pop() {
-        if let syntax::C0Statement::DeclareStructValue { name, layout, .. } = statement {
+        if let syntax::CStatement::DeclareStructValue { name, layout, .. } = statement {
             let mut fields = Vec::new();
             collect_struct_fields(function, layout, "", 0, &mut fields, 0);
             // A shadowing declaration's kernel name is `s#scope1`; the
@@ -204,7 +204,7 @@ fn collect_struct_fields(
 
 fn collect_union_fields(
     function: &crate::languages::interface::ImportedFunction,
-    layout: &syntax::C0UnionLayout,
+    layout: &syntax::CUnionLayout,
     prefix: &str,
     base: u32,
     out: &mut Vec<ObjectField>,

@@ -6289,7 +6289,21 @@ fn collect_condition_operand_memories(
             return;
         }
 
-        if let Some((_, operands)) = leaf.machine_arguments() {
+        if let Some((memory, address)) = leaf.read() {
+            if !memories.contains(&memory) {
+                memories.push(memory);
+            }
+            let mut seen = BTreeSet::new();
+            address.node().offset.visit_root_in_order(false, |node| {
+                if let Some(index) = node.index() {
+                    collect_operand_memories(
+                        crate::kernel::MachineOperandView::Shared(index),
+                        memories,
+                        &mut seen,
+                    );
+                }
+            });
+        } else if let Some((_, operands)) = leaf.machine_arguments() {
             let mut seen = BTreeSet::new();
             for operand in operands {
                 collect_operand_memories(operand, memories, &mut seen);
@@ -6573,7 +6587,8 @@ pub(in crate::kernel) fn transport_framed_common_condition(
         | Node::Variable(_)
         | Node::BoolIf { .. }
         | Node::BoolEqual { .. }
-        | Node::Call { .. } => None,
+        | Node::Call { .. }
+        | Node::BoolRead(_) => None,
         Node::PointerValueEqual(pair) => {
             let [a, b] = pair.arguments();
             let mapped = crate::kernel::KernelTerm::pointer_value_equal_raw([
@@ -7679,7 +7694,7 @@ fn directly_matched_effect_endpoint(
 mod opaque_pointer_frame_tests {
     use super::*;
 
-    // Exercise the same explicit primitive as a Surface preserve node: observe
+    // Exercise the same explicit primitive as a Surface preserve tactic: observe
     // both endpoints, narrow the supplied separation, and apply one effect.
     fn explicit_pointer_store_frame(
         before: &Memory,
@@ -7688,7 +7703,6 @@ mod opaque_pointer_frame_tests {
         write: &Pointer,
         facts: &PureFactContext,
     ) -> Option<(PointerValue, Proposition)> {
-        use crate::kernel::proof::transport_certificate::{TransportCertificate, TransportNode};
         let resource = |p: Pointer, bytes| {
             Resource::Memory(MemoryRange::new_with_element_width(
                 p,
@@ -7725,38 +7739,21 @@ mod opaque_pointer_frame_tests {
             ConditionTerm::pointer_value_equal(after_value.clone(), before_value),
             true,
         );
-        let effect = Proposition::MemoryMutatesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            writes: vec![(write.clone(), 4)],
-        };
+        let entry = ExecutionState::new().with_memory(before.clone());
+        let exit = entry.clone().with_memory(after.clone());
+        let footprint = crate::kernel::RegionFootprint::transition(
+            "selected".into(),
+            &entry,
+            &exit,
+            &Vec::<ExecutionPureFact>::new(),
+        );
         let separation = Proposition::ResourceSeparate {
-            left: Box::new(changed),
+            left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(kept),
         };
-        let premise = |p: &Proposition| TransportNode::Premise {
-            proposition: p.clone(),
-            result: p.clone(),
-        };
-        let certificate = TransportCertificate {
-            nodes: vec![
-                premise(&effect),
-                premise(&separation),
-                TransportNode::Preserve {
-                    field: None,
-                    effect: Some(0),
-                    separation: 1,
-                    result,
-                },
-            ],
-            conclusion: 2,
-        };
-        Some((
-            after_value,
-            certificate
-                .apply(|p| p == &effect || p == &separation)
-                .unwrap(),
-        ))
+        crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
+            .unwrap();
+        Some((after_value, result))
     }
 
     #[test]
@@ -9321,5 +9318,47 @@ mod common_boolean_transport_tests {
             let root = KernelTermImport::default().condition(&source);
             assert!(transport_framed_common_condition(&root, &Memory::new(), None).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod common_boolean_read_tests {
+    use super::*;
+    #[test]
+    fn boolean_reads_keep_snapshot_dependency_order() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = Memory::new()
+            .with_block("bool-memory-index", 4)
+            .with_block("bool-memory-other", 4);
+        let after = before.clone().store(
+            Memory::global_pointer("bool-memory-other"),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
+        let old = crate::kernel::intern_memory(before);
+        let new = crate::kernel::intern_memory(after);
+        let source = ConditionTerm::BoolLoad(
+            new.clone(),
+            Box::new(Pointer {
+                block: PointerBlock::Symbolic(Variable(999370)),
+                offset: PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::MemoryLoad(
+                        old.clone(),
+                        Box::new(Memory::global_pointer("bool-memory-index")),
+                        LoadKind::Int32,
+                    ),
+                    4,
+                ),
+            }),
+        );
+        let root = crate::kernel::KernelTermImport::default().condition(&source);
+        let mut expected = Vec::new();
+        let mut actual = Vec::new();
+        collect_condition_memories(&source, &mut expected);
+        collect_condition_operand_memories(
+            crate::kernel::BooleanOperandView::Shared(&root),
+            &mut actual,
+        );
+        assert_eq!(actual, expected);
+        assert_eq!(actual, vec![new, old]);
     }
 }

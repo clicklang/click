@@ -1,10 +1,10 @@
+mod computation;
+pub(crate) use computation::computes_leaf;
+
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
-use crate::kernel::{
-    constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, uint64_constant,
-};
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = goal {
@@ -49,12 +49,13 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
         return true;
     }
     if let Proposition::ConditionIs(condition, value) = goal
-        && let Some(equal) = machine_affine_equality(condition)
+        && let Some(equal) =
+            computation::machine_affine_equality(condition, crate::kernel::eval::canonical_term)
     {
         return equal == *value;
     }
     if let Proposition::ConditionIs(condition, value) = goal
-        && let Some(holds) = integer_affine_comparison(condition)
+        && let Some(holds) = computation::integer_affine_comparison(condition)
     {
         return holds == *value;
     }
@@ -72,247 +73,6 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     // singleton substitution, the inconsistency fallback -- are vacuous
     // here by construction.
     SelectedFacts::from_propositions(&[]).proves_atomic_for_derivation(goal, false)
-}
-
-/// Decide a C machine equality whose sides are sums and differences, at
-/// either width, by their affine forms over `Z/2^width`. Each side flattens
-/// into signed atoms and a constant; the two are equal exactly when every
-/// atom cancels and the constants agree, and differ in every model when
-/// every atom cancels and the constants do not. The identities used --
-/// reordering, regrouping, and cancellation -- hold for exact and for
-/// wrapping arithmetic alike, so a C signed overflow, which is a separate
-/// definedness obligation, does not affect the verdict. Atoms are keyed by
-/// their canonical form; anything else, including a product, is an atom.
-/// The walk visits each node of the goal once.
-fn machine_affine_equality(condition: &ConditionTerm) -> Option<bool> {
-    let (left, right, wide) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => (left, right, false),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => (left, right, true),
-        _ => return None,
-    };
-    let mask = if wide { u64::MAX } else { u64::from(u32::MAX) };
-    let mut atoms = std::collections::BTreeMap::new();
-    let mut constant = 0u64;
-    collect_machine_affine_atoms(left, 1, wide, &mut atoms, &mut constant);
-    collect_machine_affine_atoms(right, u64::MAX, wide, &mut atoms, &mut constant);
-    atoms
-        .values()
-        .all(|coefficient| coefficient & mask == 0)
-        .then_some(constant & mask == 0)
-}
-
-fn collect_machine_affine_atoms(
-    term: &MachineTerm,
-    coefficient: u64,
-    wide: bool,
-    atoms: &mut std::collections::BTreeMap<MachineTerm, u64>,
-    constant: &mut u64,
-) {
-    crate::instrumentation::record_deterministic_work(1);
-    match (term, wide) {
-        (binary_term!(Int32, Add, left, right), false)
-        | (
-            MachineTerm::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::Add,
-                left,
-                right,
-            },
-            true,
-        )
-        | (
-            MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Add,
-                left,
-                right,
-            },
-            true,
-        ) => {
-            collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
-            collect_machine_affine_atoms(right, coefficient, wide, atoms, constant);
-        }
-        (binary_term!(Int32, Subtract, left, right), false)
-        | (
-            MachineTerm::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::Subtract,
-                left,
-                right,
-            },
-            true,
-        )
-        | (
-            MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Subtract,
-                left,
-                right,
-            },
-            true,
-        ) => {
-            collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
-            collect_machine_affine_atoms(right, coefficient.wrapping_neg(), wide, atoms, constant);
-        }
-        (int32_constant!(value), false) => {
-            *constant =
-                constant.wrapping_add(coefficient.wrapping_mul(u64::from(constant_u32(*value))));
-        }
-        (int64_constant!(value), true) => {
-            *constant =
-                constant.wrapping_add(coefficient.wrapping_mul(constant_i64(*value) as u64));
-        }
-        (uint64_constant!(value), true) => {
-            *constant = constant.wrapping_add(coefficient.wrapping_mul(constant_u64(*value)));
-        }
-        (atom, _) => {
-            let entry = atoms
-                .entry(crate::kernel::eval::canonical_term(atom))
-                .or_insert(0);
-            *entry = entry.wrapping_add(coefficient);
-        }
-    }
-}
-
-/// The exact `Integer` counterpart of [`machine_affine_equality`]: sums,
-/// differences, and negations flatten into signed atoms and a constant over
-/// the integers, with no modulus. When every atom cancels, the sides differ
-/// by that constant, which decides equality and, because `Integer` has no
-/// overflow, order as well. Atoms are interned terms, keyed by their shared
-/// identity. The walk visits each node of the goal once.
-fn integer_affine_comparison(condition: &ConditionTerm) -> Option<bool> {
-    use num_traits::Zero;
-    let (left, right) = match condition {
-        ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right)
-        | ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
-        _ => return None,
-    };
-    let (atoms, difference) = integer_affine_difference(left, right);
-    if atoms.values().any(|coefficient| !coefficient.is_zero()) {
-        return None;
-    }
-    let zero = num_bigint::BigInt::zero();
-    Some(match condition {
-        ConditionTerm::IntegerEqual(..) => difference == zero,
-        ConditionTerm::IntegerNotEqual(..) => difference != zero,
-        ConditionTerm::IntegerLessThan(..) => difference < zero,
-        ConditionTerm::IntegerLessEqual(..) => difference <= zero,
-        ConditionTerm::IntegerGreaterThan(..) => difference > zero,
-        _ => difference >= zero,
-    })
-}
-
-fn integer_product_identity(term: &IntegerTerm) -> Option<&SharedIntegerTerm> {
-    use num_traits::{One, Zero};
-    let IntegerTerm::Multiply(a, b) = term else {
-        return None;
-    };
-    if matches!(a.as_ref(), IntegerTerm::Constant(n) if n.is_zero())
-        || matches!(b.as_ref(), IntegerTerm::Constant(n) if n.is_one())
-    {
-        Some(a)
-    } else if matches!(b.as_ref(), IntegerTerm::Constant(n) if n.is_zero())
-        || matches!(a.as_ref(), IntegerTerm::Constant(n) if n.is_one())
-    {
-        Some(b)
-    } else {
-        None
-    }
-}
-
-/// The affine form of `left - right`: each atom's coefficient and the
-/// constant. Interned terms share subterms, so a sum such as
-/// `a + a` over `a = b + b` reaches one node along many paths; coefficients
-/// are propagated over the term DAG in topological order, visiting each node
-/// once, rather than walking every path.
-fn integer_affine_difference(
-    left: &SharedIntegerTerm,
-    right: &SharedIntegerTerm,
-) -> (
-    std::collections::BTreeMap<u64, num_bigint::BigInt>,
-    num_bigint::BigInt,
-) {
-    use num_traits::Zero;
-    // Postorder over the arithmetic nodes, so reversing it puts every node
-    // before the operands it passes its coefficient to.
-    let mut order = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let mut stack = vec![(left.clone(), false), (right.clone(), false)];
-    while let Some((term, expanded)) = stack.pop() {
-        crate::instrumentation::record_deterministic_work(1);
-        if expanded {
-            order.push(term);
-            continue;
-        }
-        if !seen.insert(term.id()) {
-            continue;
-        }
-        stack.push((term.clone(), true));
-        match term.as_ref() {
-            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
-                stack.push((right.clone(), false));
-                stack.push((left.clone(), false));
-            }
-            IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
-            other => {
-                if let Some(value) = integer_product_identity(other) {
-                    stack.push((value.clone(), false));
-                }
-            }
-        }
-    }
-    let mut coefficients = std::collections::HashMap::<u64, num_bigint::BigInt>::new();
-    *coefficients.entry(left.id()).or_default() += 1;
-    *coefficients.entry(right.id()).or_default() -= 1;
-    let mut atoms = std::collections::BTreeMap::new();
-    let mut constant = num_bigint::BigInt::zero();
-    for term in order.iter().rev() {
-        crate::instrumentation::record_deterministic_work(1);
-        let Some(coefficient) = coefficients.remove(&term.id()) else {
-            continue;
-        };
-        if coefficient.is_zero() {
-            continue;
-        }
-        match term.as_ref() {
-            IntegerTerm::Add(left, right) => {
-                *coefficients.entry(left.id()).or_default() += &coefficient;
-                *coefficients.entry(right.id()).or_default() += &coefficient;
-            }
-            IntegerTerm::Subtract(left, right) => {
-                *coefficients.entry(left.id()).or_default() += &coefficient;
-                *coefficients.entry(right.id()).or_default() -= &coefficient;
-            }
-            IntegerTerm::Negate(value) => {
-                *coefficients.entry(value.id()).or_default() -= &coefficient;
-            }
-            IntegerTerm::Constant(value) => constant += value * coefficient,
-            other if integer_product_identity(other).is_some() => {
-                let value = integer_product_identity(other).unwrap();
-                *coefficients.entry(value.id()).or_default() += coefficient;
-            }
-            _ => {
-                *atoms
-                    .entry(term.id())
-                    .or_insert_with(num_bigint::BigInt::zero) += coefficient;
-            }
-        }
-    }
-    (atoms, constant)
 }
 
 fn vacuously_guarded(goal: &Proposition) -> bool {

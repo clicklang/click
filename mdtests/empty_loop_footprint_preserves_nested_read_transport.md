@@ -109,12 +109,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
                 };
             }
             have arena->occupied == at(opened, arena->occupied) by {
-                transport_certificate {
-                    premise 0: separate(loop(0).statement(0).footprint, memory(arena->occupied))
-                        => separate(loop(0).statement(0).footprint, memory(arena->occupied));
-                    preserve 0 => arena->occupied == at(opened, arena->occupied);
-                    conclusion 1;
-                }
+                preserve(separate(loop(0).statement(0).footprint, memory(arena->occupied)));
             }
             have arena->occupied == old(arena->occupied) by {
                 normalize() using {

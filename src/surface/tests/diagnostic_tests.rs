@@ -1815,7 +1815,7 @@ fn split_statement_sites(message: &str) -> (String, Vec<String>) {
 }
 
 /// A statement's site is diagnostics only. The same C written at other
-/// lines and columns, with other comments, parses to equal C0 and kernel
+/// lines and columns, with other comments, parses to equal C and kernel
 /// functions and verifies with the same work and the same messages, apart
 /// from the `C statement at` line each refusal gains, which names the line
 /// and column the statement moved to and quotes it without its comment.
@@ -4067,7 +4067,7 @@ fn a_failed_retain_names_the_population_count_requirement() {
 fn have_failure_trace_retains_checked_call_prefix() {
     let c = "int helper(void) { return 1; } int f(void) { int x; x = helper(); return x; }";
     let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } \
-                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2; step_until(function.exit); solve(); }";
+                  int32 f() { ensures result == 1; } by { step(); step(); step(); have x == 2; step_until(function.exit); solve(); }";
     with_proof_trace("f", || {
         let error =
             verify_c_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");

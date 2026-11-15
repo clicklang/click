@@ -2743,7 +2743,7 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     assert!(edges.iter().any(|(try_body, _)| {
         matches!(try_body, ProgramStatement::Seq(sequence)
             if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), ProgramStatement::Declare { name, .. } if name == "ignored")
-                && matches!(call.as_ref(), ProgramStatement::CallAssign { function_name, .. } if function_name == "helper") })
+                && contains_call(call, "helper") })
     }));
 }
 
@@ -3766,7 +3766,8 @@ fn contains_if(statement: &ProgramStatement) -> bool {
 fn contains_call(statement: &ProgramStatement, expected: &str) -> bool {
     match statement {
         ProgramStatement::Call { function_name, .. }
-        | ProgramStatement::CallAssign { function_name, .. } => {
+        | ProgramStatement::CallResult { function_name, .. }
+        | ProgramStatement::CallConstruct { function_name, .. } => {
             function_name == expected
                 || click::surface::source_display_name(function_name).as_deref() == Some(expected)
         }
@@ -3891,11 +3892,9 @@ fn contains_scalar_local_pipeline(
                 program_type: ProgramType::Int32,
                 ..
             } if name == call_local => found[0] = true,
-            ProgramStatement::CallAssign {
-                target,
-                function_name,
-                ..
-            } if target == call_local && function_name == callee => found[1] = true,
+            ProgramStatement::CallResult { function_name, .. } if function_name == callee => {
+                found[1] = true
+            }
             ProgramStatement::Declare {
                 name,
                 program_type: ProgramType::Int32,
@@ -4954,7 +4953,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
         )[..2]
             .iter()
             .all(|found| *found),
-        "the captured call must remain a checked kernel call assignment"
+        "the captured call must retain its result before assigning it"
     );
 
     let click_project = read_click_project(&sidecar, RESTORE_CALLER_SIDECAR).unwrap();

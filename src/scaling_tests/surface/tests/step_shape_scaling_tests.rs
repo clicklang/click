@@ -477,6 +477,7 @@ int32 caller() {{
     let make_proof = lines(n, |i| {
         format!(
             "    step();
+    step();
     unfold(boxed(p{i}));
     step();
     fold(boxed(p{i}));"
@@ -565,6 +566,16 @@ fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
                 }
             }
             role
+        })
+        .flat_map(|role| {
+            // The heap-object fixture's factory expression is two checked
+            // operations. Compare calls with calls and assignments with
+            // assignments, rather than mixing their work in one role.
+            if role.ends_with(" = make_box();") {
+                vec![format!("call {role}"), format!("assign {role}")]
+            } else {
+                vec![role]
+            }
         })
         .collect::<Vec<_>>();
     let in_order = |name: &str| {

@@ -48,6 +48,7 @@ void v4() {
     step();
     step();
     step();
+    step();
     have q[0] == 5;
 }
 ```

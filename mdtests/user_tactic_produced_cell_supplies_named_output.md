@@ -29,10 +29,11 @@ tactic expose(root: struct slot*) {
     consumes state: bundle(root);
     produces root->p;
     produces out: leaf(root->p);
+    ensures defined(root->p);
 } by {
     match state.shape {
-        Shape::A => { let { child: out } = unfold(state); },
-        Shape::B => { let { child: out } = unfold(state); },
+        Shape::A => { let { child: out } = unfold(state); have defined(root->p) by { normalize(); } },
+        Shape::B => { let { child: out } = unfold(state); have defined(root->p) by { normalize(); } },
     }
 }
 void user(struct slot* root) {
@@ -47,10 +48,11 @@ tactic expose_reversed(root: struct slot*) {
     consumes state: bundle(root);
     produces out: leaf(root->p);
     produces root->p;
+    ensures defined(root->p);
 } by {
     match state.shape {
-        Shape::A => { let { child: out } = unfold(state); },
-        Shape::B => { let { child: out } = unfold(state); },
+        Shape::A => { let { child: out } = unfold(state); have defined(root->p) by { normalize(); } },
+        Shape::B => { let { child: out } = unfold(state); have defined(root->p) by { normalize(); } },
     }
 }
 void reversed(struct slot* root) {
@@ -65,6 +67,7 @@ void expose_c(struct slot* root) {
     consumes state: bundle(root);
     produces out: leaf(root->p);
     produces root->p;
+    ensures defined(root->p);
 } by {
     match state.shape {
         Shape::A => { let { child: out } = unfold(state); step_until(function.exit); },
@@ -102,10 +105,12 @@ tactic expose_chain(root: struct slot*) {
     produces out: leaf(root->next->p);
     produces root->next->p;
     produces root->next;
+    ensures defined(root->next);
+    ensures defined(root->next->p);
 } by {
     match state.shape {
-        Shape::A => { let { child: out } = unfold(state); },
-        Shape::B => { let { child: out } = unfold(state); },
+        Shape::A => { let { child: out } = unfold(state); have defined(root->next) by { normalize(); } have defined(root->next->p) by { solve(); } },
+        Shape::B => { let { child: out } = unfold(state); have defined(root->next) by { normalize(); } have defined(root->next->p) by { solve(); } },
     }
 }
 void chained(struct slot* root) {

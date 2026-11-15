@@ -614,23 +614,24 @@ int32 vector_grow(struct vector* owner) {
         step();
         step();
         step();
+        step();
         have owner->cap == at(region(9).entry, new_capacity);
-        have owner->data == at(region(13).entry, new_data);
+        have owner->data == at(region(14).entry, new_data);
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            instantiate(forall (__click_q0: int32) { at(region(13).entry, 0) <= at(region(13).entry, __click_q0) and at(region(13).entry, __click_q0) < at(region(13).entry, owner->len) implies at(region(13).entry, new_data[__click_q0]) == at(region(13).entry, old_data[__click_q0]) }, k) using {
+            instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k) using {
                 0 <= k and k < old(owner->len);
                 owner->data == owner->data;
             };
-            have &owner->data[k] == at(region(13).entry, &new_data[k]) by {
-                normalize() using { owner->data == at(region(13).entry, new_data); };
+            have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
+                normalize() using { owner->data == at(region(14).entry, new_data); };
             }
             have separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
-            transport(at(region(13).entry, new_data[k]) == at(region(13).entry, old_data[k]), owner->data[k] == old(owner->data[k])) using {
-                &owner->data[k] == at(region(13).entry, &new_data[k]);
+            transport(at(region(14).entry, new_data[k]) == at(region(14).entry, old_data[k]), owner->data[k] == old(owner->data[k])) using {
+                &owner->data[k] == at(region(14).entry, &new_data[k]);
                 separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
-                at(region(13).entry, new_data[k]) == at(region(13).entry, old_data[k]);
+                at(region(14).entry, new_data[k]) == at(region(14).entry, old_data[k]);
                 0 <= k and k < old(owner->len);
                 owner->data == owner->data;
             };
@@ -842,24 +843,17 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             have separate(statement(0).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(0).entry, owner->data) by {
-                transport_certificate {
-                    premise 0: separate(statement(0).footprint, memory(owner->data)) => separate(statement(0).footprint, memory(owner->data));
-                    preserve 0 => owner->data == at(statement(0).entry, owner->data);
-                    conclusion 1;
-                }
+                preserve(separate(statement(0).footprint, memory(owner->data)));
             }
             step();
             have separate(statement(1).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(1).entry, owner->data) by {
-                transport_certificate {
-                    premise 0: separate(statement(1).footprint, memory(owner->data)) => separate(statement(1).footprint, memory(owner->data));
-                    preserve 0 => owner->data == at(statement(1).entry, owner->data);
-                    conclusion 1;
-                }
+                preserve(separate(statement(1).footprint, memory(owner->data)));
             }
             step();
         }
         mark before_grow;
+        step();
         step();
         have c(grown) == 0 implies owner->data == at(before_grow, owner->data) by { known(); }
         if c(grown) == 0 {
@@ -882,12 +876,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
                 intro();
-                extract(at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap));
+                extract(at(region(5).entry, owner->cap) == at(region(3).entry, owner->cap));
                 known();
             }
             have result == 0 implies owner->data == old(owner->data) by {
                 intro();
-                extract(at(region(4).entry, owner->data) == at(region(3).entry, owner->data));
+                extract(at(region(5).entry, owner->data) == at(region(3).entry, owner->data));
                 known();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
@@ -948,7 +942,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have owner->len < owner->cap;
             fold(vector_storage(owner));
             step();
-            have at(region(8).exit, owner->data[at(region(8).entry, owner->len)]) == at(region(8).exit, value) by {
+            step();
+            have at(statement(3).exit, owner->data[at(statement(3).entry, owner->len)]) == at(statement(3).exit, value) by {
                 known();
             }
             unfold(vector_storage(owner));
@@ -958,21 +953,21 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have owner->len <= owner->cap by {
                 known();
             }
-            have owner->cap == at(region(8).entry, owner->cap) by {
+            have owner->cap == at(statement(3).entry, owner->cap) by {
                 known();
             }
-            have 1 <= at(region(8).entry, owner->cap) by {
+            have 1 <= at(statement(3).entry, owner->cap) by {
                 known();
             }
-            have at(region(8).entry, owner->cap) <= 536870911 by {
+            have at(statement(3).entry, owner->cap) <= 536870911 by {
                 known();
             }
             have 1 <= owner->cap by {
-                rewrite(owner->cap == at(region(8).entry, owner->cap));
+                rewrite(owner->cap == at(statement(3).entry, owner->cap));
                 known();
             }
             have owner->cap <= 536870911 by {
-                rewrite(owner->cap == at(region(8).entry, owner->cap));
+                rewrite(owner->cap == at(statement(3).entry, owner->cap));
                 known();
             }
             fold(allocated_vector(owner));
@@ -994,25 +989,25 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have result == 0 implies owner->data == old(owner->data) by {
                 solve();
             }
-            have at(region(8).entry, owner->len) == old(owner->len) by {
+            have at(statement(3).entry, owner->len) == old(owner->len) by {
                 known();
             }
             have owner->len == (old(owner->len) + 1) by {
-                rewrite(owner->len == (at(region(8).entry, owner->len) + 1));
-                rewrite(at(region(8).entry, owner->len) == old(owner->len));
+                rewrite(owner->len == (at(statement(3).entry, owner->len) + 1));
+                rewrite(at(statement(3).entry, owner->len) == old(owner->len));
                 normalize();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
                 intro();
                 known();
             }
-            have at(region(8).entry, owner->len) < at(region(8).entry, owner->cap) by {
+            have at(statement(3).entry, owner->len) < at(statement(3).entry, owner->cap) by {
                 known();
             }
-            have at(region(8).entry, owner->len) == old(owner->len) by {
+            have at(statement(3).entry, owner->len) == old(owner->len) by {
                 known();
             }
-            have owner->cap == at(region(8).entry, owner->cap) by {
+            have owner->cap == at(statement(3).entry, owner->cap) by {
                 known();
             }
             have old(owner->len) < owner->cap by {
@@ -1020,7 +1015,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have owner->data[old(owner->len)] == value by {
-                rewrite(old(owner->len) == at(region(8).entry, owner->len));
+                rewrite(old(owner->len) == at(statement(3).entry, owner->len));
                 known();
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
@@ -1032,30 +1027,30 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 intro();
                 extract(0 <= k);
                 extract(k < old(owner->len));
-                instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(4).entry, owner->data[j]) == old(owner->data[j]) }, k);
-                have k < at(region(8).entry, owner->len) by {
-                    rewrite(at(region(8).entry, owner->len) == old(owner->len));
+                instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(5).entry, owner->data[j]) == old(owner->data[j]) }, k);
+                have k < at(statement(3).entry, owner->len) by {
+                    rewrite(at(statement(3).entry, owner->len) == old(owner->len));
                     known();
                 }
-                instantiate(forall (j: int32) { 0 <= j and j < at(region(8).entry, owner->len) implies at(region(8).exit, owner->data[j]) == at(region(8).entry, owner->data[j]) }, k) using {
+                instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k) using {
                     0 <= k;
-                    k < at(region(8).entry, owner->len);
+                    k < at(statement(3).entry, owner->len);
                 };
-                have owner->data[k] == at(region(8).entry, owner->data[k]) by {
+                have owner->data[k] == at(statement(3).entry, owner->data[k]) by {
                     normalize() using {
-                        at(region(8).exit, owner->data[k]) == at(region(8).entry, owner->data[k]);
+                        at(statement(3).exit, owner->data[k]) == at(statement(3).entry, owner->data[k]);
                         0 <= k;
-                        k < at(region(8).entry, owner->len);
+                        k < at(statement(3).entry, owner->len);
                     };
                 }
-                have at(region(8).entry, owner->data[k]) == old(owner->data[k]) by {
+                have at(statement(3).entry, owner->data[k]) == old(owner->data[k]) by {
                     normalize() using {
-                        at(region(4).entry, owner->data[k]) == old(owner->data[k]);
+                        at(region(5).entry, owner->data[k]) == old(owner->data[k]);
                         0 <= k;
                         k < old(owner->len);
                     };
                 }
-                rewrite(owner->data[k] == at(region(8).entry, owner->data[k]));
+                rewrite(owner->data[k] == at(statement(3).entry, owner->data[k]));
                 known();
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
@@ -1103,6 +1098,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         step();
         unfold(allocated_vector(owner));
         fold(vector_storage(owner));
+        step();
         step();
         unfold(vector_storage(owner));
         have 0 <= owner->len by {
@@ -1296,12 +1292,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
                 };
             }
             have owner->data == at(before_fill, owner->data) by {
-                transport_certificate {
-                    premise 0: separate(loop(0).statement(0).footprint, memory(owner->data))
-                        => separate(loop(0).statement(0).footprint, memory(owner->data));
-                    preserve 0 => owner->data == at(before_fill, owner->data);
-                    conclusion 1;
-                }
+                preserve(separate(loop(0).statement(0).footprint, memory(owner->data)));
             }
             have owner->data == old(owner->data) by {
                 normalize() using {
@@ -1343,10 +1334,13 @@ int32 vector_replace_if(
     step();
     step();
     step();
+    step();
     branch {
+        step();
         step();
         have replace != 0 implies selected == replacement;
     } else {
+        step();
         step();
         have replace != 0 implies selected == replacement by {
             intro();
@@ -1394,19 +1388,25 @@ int32 vector_pipeline(
     step();
     step();
     step();
+    step();
     unfold(empty_vector(owner));
     fold(vector_storage(owner));
+    step();
     step();
     unfold(vector_storage(owner));
     fold(nonempty_vector(owner));
     step();
     step();
+    step();
+    step();
     observe(nonempty_vector(owner));
+    step();
     step();
     apply(int32_equality_transitive(observed, owner->data[0], replacement)) using {
         observed == owner->data[0];
         owner->data[0] == replacement;
     };
+    step();
     step();
     step();
     known();

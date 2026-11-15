@@ -5,20 +5,26 @@ use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
 pub(crate) use boolean::BooleanOperandView;
-pub use boolean::KernelPointerEquality;
+pub use boolean::{KernelBooleanRead, KernelPointerEquality};
 // Scoped payloads shared by evaluation, checking, and Surface synthesis.
 #[allow(dead_code)]
 mod folds;
 pub use folds::KernelFold;
 pub(crate) use folds::KernelFoldIndex;
 mod algebraic;
+mod algebraic_call;
+mod algebraic_if;
+mod algebraic_read;
+pub(crate) use algebraic_call::KernelAlgebraicCall;
+mod algebraic_equality;
 mod machine;
 #[allow(dead_code)]
 mod matches;
-pub(crate) use matches::KernelMatch;
 pub(crate) use matches::KernelMatchArm;
+pub(crate) use matches::{KernelConstructor, KernelMatch};
 mod pointer_observations;
 mod reads;
+pub use reads::KernelSnapshotRead;
 // Prepared pointer payloads; producer activation follows scoped consumers and spelling.
 #[allow(dead_code)]
 mod addresses;
@@ -58,7 +64,14 @@ pub enum KernelTermNode {
     /// Scoped range iteration. Only the body is under its two binders.
     Fold(KernelFold),
     Match(KernelMatch),
+    Constructor(KernelConstructor),
+    AlgebraicCall(KernelAlgebraicCall),
+    AlgebraicIf {
+        arguments: [KernelTerm; 3],
+    },
     BoolLiteral(bool),
+    BoolRead(KernelBooleanRead),
+    AlgebraicRead(KernelSnapshotRead),
     BoolCast {
         destination: MachineIntegerType,
         operand: KernelTerm,
@@ -82,6 +95,9 @@ pub enum KernelTermNode {
     },
     IntegerCompare {
         operator: IntegerComparisonOperator,
+        arguments: [KernelTerm; 2],
+    },
+    AlgebraicEqual {
         arguments: [KernelTerm; 2],
     },
     BoolEqual {
@@ -267,7 +283,7 @@ struct TermData {
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
     machine_leaf: MachineLeafCache,
-    pointer_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
+    argument_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
 }
 
 struct NodeKeyData {
@@ -345,11 +361,19 @@ impl NodeKey {
         // outside shared observations until their scoped consumers migrate.
         // Inspect immediate children only; retain the result across growing DAGs.
         let opaque_observation_boundary = match &node {
-            KernelTermNode::Match(matched) if matches!(ty, KernelType::Program(_)) => matched
-                .arguments
+            KernelTermNode::Constructor(constructor) => constructor
+                .fields
                 .iter()
-                .chain(matched.arms.iter().flat_map(|arm| &arm.bindings))
                 .any(KernelTerm::has_opaque_observation_boundary),
+            KernelTermNode::Match(matched)
+                if matches!(ty, KernelType::Program(_) | KernelType::Algebraic(_)) =>
+            {
+                matched
+                    .arguments
+                    .iter()
+                    .chain(matched.arms.iter().flat_map(|arm| &arm.bindings))
+                    .any(KernelTerm::has_opaque_observation_boundary)
+            }
             KernelTermNode::Fold(fold) if matches!(ty, KernelType::Program(_)) => fold
                 .arguments
                 .iter()
@@ -358,16 +382,24 @@ impl NodeKey {
             | KernelTermNode::PointerAddress { .. }
             | KernelTermNode::PointerOffsetEqual { .. }
             | KernelTermNode::PointerEqual { .. }
-            | KernelTermNode::PointerValueEqual(_) => true,
+            | KernelTermNode::PointerValueEqual(_)
+            | KernelTermNode::BoolRead(_)
+            | KernelTermNode::AlgebraicRead(_) => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,
-                    LegacyIdentity::Fresh(_) | LegacyIdentity::Machine(_)
+                    LegacyIdentity::Fresh(_)
+                        | LegacyIdentity::Machine(_)
+                        | LegacyIdentity::ExactApplicationArgument { .. }
                 )
             }
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
+            KernelTermNode::AlgebraicCall(call) => call
+                .arguments
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::Call { arguments, .. }
             | KernelTermNode::IntegerOperation { arguments, .. } => arguments
                 .iter()
@@ -376,6 +408,7 @@ impl NodeKey {
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
+            | KernelTermNode::AlgebraicEqual { arguments }
             | KernelTermNode::BoolEqual { arguments } => arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
@@ -387,6 +420,9 @@ impl NodeKey {
             // Integer conditionals already had retained Integer identity before
             // becoming common nodes. Conversion consumers visit their branches
             // with the source width and current snapshot; keep that boundary.
+            KernelTermNode::AlgebraicIf { arguments } => arguments
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
@@ -420,6 +456,7 @@ impl NodeKey {
             KernelTermNode::MachineLiteral(_)
             | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
@@ -443,7 +480,7 @@ impl NodeKey {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
-            KernelTermNode::IntegerToMachine { .. } => true,
+            KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
                 LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
@@ -471,7 +508,9 @@ impl NodeKey {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
-            KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MachineCast { .. } => true,
+            KernelTermNode::IntegerToMachine { .. }
+            | KernelTermNode::MachineCast { .. }
+            | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::MachineBinary {
                 operator,
                 arguments,
@@ -607,7 +646,7 @@ impl Interner {
             key: key.clone(),
             integer: Mutex::default(),
             machine_leaf: Default::default(),
-            pointer_leaf: Default::default(),
+            argument_leaf: Default::default(),
         });
         self.terms.insert(key.clone(), Arc::downgrade(&value));
         self.cleanup.push_back(key);
@@ -719,14 +758,18 @@ impl KernelTerm {
         match self.node() {
             KernelTermNode::Fold(fold) => &fold.arguments,
             KernelTermNode::Match(matched) => &matched.arguments,
+            KernelTermNode::Constructor(constructor) => &constructor.fields,
+            KernelTermNode::AlgebraicCall(call) => &call.arguments,
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
+            | KernelTermNode::AlgebraicEqual { arguments }
             | KernelTermNode::BoolEqual { arguments } => arguments,
             KernelTermNode::BoolIf { arguments }
+            | KernelTermNode::AlgebraicIf { arguments }
             | KernelTermNode::IntegerIf { arguments }
             | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
@@ -1004,6 +1047,7 @@ pub(crate) struct KernelTermImport {
 impl KernelTermImport {
     pub(crate) fn argument(&mut self, value: &PureFunctionArgument) -> KernelTerm {
         match value {
+            PureFunctionArgument::Algebraic(value) => self.algebraic(value),
             PureFunctionArgument::Integer(value) => self.integer(value),
             PureFunctionArgument::SharedMachine(value) => value
                 .shared_operand()
@@ -1443,6 +1487,32 @@ impl KernelTermExport {
         &mut self,
         term: &KernelTerm,
     ) -> Result<PureFunctionArgument, &'static str> {
+        if let Some(value) = term.boolean_argument_native() {
+            return Ok(value.clone());
+        }
+        // A typed variable is already a complete native leaf descriptor.
+        // Reading it does not invoke an expression-tree exporter.
+        if let KernelTermNode::Variable(variable) = term.node() {
+            match term.ty() {
+                KernelType::Program(ty) => {
+                    if let Some(format) = MachineIntegerType::from_program_type(*ty) {
+                        crate::instrumentation::record_deterministic_work(1);
+                        return Ok(PureFunctionArgument::Value(machine::wrap_exact(
+                            format,
+                            MachineTerm::Variable(*variable),
+                        )));
+                    }
+                }
+                KernelType::Algebraic(ty) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    return Ok(PureFunctionArgument::Algebraic(AlgebraicTerm {
+                        algebraic_type: ty.clone(),
+                        node: AlgebraicTermNode::Variable(*variable),
+                    }));
+                }
+                _ => {}
+            }
+        }
         if let Some(value) = term.legacy_integer() {
             return Ok(PureFunctionArgument::Integer(value));
         }
@@ -1458,7 +1528,15 @@ impl KernelTermExport {
             )));
         }
         if matches!(term.ty(), KernelType::Algebraic(_))
-            && matches!(term.node(), KernelTermNode::Match(_))
+            && matches!(
+                term.node(),
+                KernelTermNode::Match(_)
+                    | KernelTermNode::AlgebraicCall(_)
+                    | KernelTermNode::AlgebraicIf { .. }
+                    | KernelTermNode::AlgebraicRead(_)
+                    | KernelTermNode::Constructor(_)
+                    | KernelTermNode::Variable(_)
+            )
         {
             return self.algebraic(term).map(PureFunctionArgument::Algebraic);
         }

@@ -3,7 +3,7 @@
 use super::*;
 
 impl Parser {
-    pub(super) fn global_declaration_ahead(&mut self) -> Result<bool, C0SyntaxError> {
+    pub(super) fn global_declaration_ahead(&mut self) -> Result<bool, CSyntaxError> {
         let saved_position = self.position;
         if self.peek_ident() == Some("extern") {
             self.position += 1;
@@ -22,7 +22,7 @@ impl Parser {
         Ok(is_global)
     }
 
-    pub(super) fn parse_global_declaration(&mut self) -> Result<(), C0SyntaxError> {
+    pub(super) fn parse_global_declaration(&mut self) -> Result<(), CSyntaxError> {
         let is_file_static = if self.peek_ident() == Some("static") {
             self.position += 1;
             true
@@ -147,7 +147,7 @@ impl Parser {
                             let tentative = !has_initializer && !is_extern;
                             initializer
                                 .map(|initializer| {
-                                    C0GlobalAggregateArray::definition(
+                                    CGlobalAggregateArray::definition(
                                         name.clone(),
                                         kernel_name.clone(),
                                         struct_name.clone(),
@@ -158,7 +158,7 @@ impl Parser {
                                     )
                                 })
                                 .unwrap_or_else(|| {
-                                    C0GlobalAggregateArray::declaration(
+                                    CGlobalAggregateArray::declaration(
                                         name.clone(),
                                         kernel_name.clone(),
                                         struct_name.clone(),
@@ -186,7 +186,7 @@ impl Parser {
                                     "incomplete external aggregate array declarations may not have an initializer",
                                 ));
                             }
-                            C0GlobalAggregateArray::declaration(
+                            CGlobalAggregateArray::declaration(
                                 name.clone(),
                                 kernel_name.clone(),
                                 struct_name.clone(),
@@ -201,7 +201,7 @@ impl Parser {
                     if let Some(length) = self
                         .global_aggregate_arrays
                         .get(&name)
-                        .and_then(C0GlobalAggregateArray::array_length)
+                        .and_then(CGlobalAggregateArray::array_length)
                     {
                         let bytes = length
                             .checked_mul(layout.size_bytes())
@@ -244,7 +244,7 @@ impl Parser {
                 };
                 let tentative = !has_initializer && !is_extern;
                 let declaration = if let Some(initializer) = initializer {
-                    C0GlobalAggregate::definition(
+                    CGlobalAggregate::definition(
                         name.clone(),
                         kernel_name.clone(),
                         struct_name.clone(),
@@ -253,7 +253,7 @@ impl Parser {
                         is_file_static,
                     )
                 } else {
-                    C0GlobalAggregate::declaration(
+                    CGlobalAggregate::declaration(
                         name.clone(),
                         kernel_name.clone(),
                         struct_name.clone(),
@@ -380,7 +380,7 @@ impl Parser {
                         } else if is_extern {
                             None
                         } else {
-                            Some(C0ArrayInitializer::zeroed(
+                            Some(CArrayInitializer::zeroed(
                                 length,
                                 parsed_type.interface_type,
                             ))
@@ -391,7 +391,7 @@ impl Parser {
                             parsed_type.interface_type,
                             initializer
                                 .map(|initializer| {
-                                    C0GlobalArray::definition(
+                                    CGlobalArray::definition(
                                         name.clone(),
                                         kernel_name.clone(),
                                         parsed_type.interface_type,
@@ -403,7 +403,7 @@ impl Parser {
                                     .with_tentative(tentative)
                                 })
                                 .unwrap_or_else(|| {
-                                    C0GlobalArray::declaration(
+                                    CGlobalArray::declaration(
                                         name.clone(),
                                         kernel_name.clone(),
                                         parsed_type.interface_type,
@@ -432,7 +432,7 @@ impl Parser {
                         self.register_global_array_declaration(
                             name.clone(),
                             parsed_type.interface_type,
-                            C0GlobalArray::declaration(
+                            CGlobalArray::declaration(
                                 name.clone(),
                                 kernel_name.clone(),
                                 parsed_type.interface_type,
@@ -446,7 +446,7 @@ impl Parser {
                         if let Some(shape) = self
                             .global_arrays
                             .get(&name)
-                            .and_then(C0GlobalArray::index_shape)
+                            .and_then(CGlobalArray::index_shape)
                         {
                             let length = array_shape_element_count(&shape)
                                 .expect("validated global array shape");
@@ -501,7 +501,7 @@ impl Parser {
                     initializer
                         .map(|initializer| {
                             if is_file_static {
-                                C0Global::file_static_definition(
+                                CGlobal::file_static_definition(
                                     name.clone(),
                                     kernel_name.clone(),
                                     parsed_type.interface_type,
@@ -514,7 +514,7 @@ impl Parser {
                                 .with_pointee_constant(parsed_type.pointee_constant)
                                 .with_tentative(tentative)
                             } else {
-                                C0Global::definition(
+                                CGlobal::definition(
                                     name.clone(),
                                     parsed_type.interface_type,
                                     struct_pointer_name.clone(),
@@ -528,7 +528,7 @@ impl Parser {
                             }
                         })
                         .unwrap_or_else(|| {
-                            C0Global::declaration(
+                            CGlobal::declaration(
                                 name.clone(),
                                 parsed_type.interface_type,
                                 struct_pointer_name.clone(),
@@ -564,7 +564,7 @@ impl Parser {
         name: &str,
         element_type: InterfaceType,
         pointee_constant: bool,
-    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
+    ) -> Result<CArrayInitializer, CSyntaxError> {
         self.expect(Token::LBrace)?;
         // A designator positions the next value; the array's length is one
         // past its largest initialized index (C11 6.7.9p22), and an element
@@ -628,7 +628,7 @@ impl Parser {
         let length = values
             .last_key_value()
             .map_or(0, |(index, _)| index.saturating_add(1));
-        Ok(C0ArrayInitializer::new(length, element_type, values))
+        Ok(CArrayInitializer::new(length, element_type, values))
     }
 
     pub(super) fn parse_inferred_multidimensional_global_array_initializer(
@@ -636,7 +636,7 @@ impl Parser {
         name: &str,
         element_type: InterfaceType,
         inner_shape: &[u32],
-    ) -> Result<(Vec<u32>, C0ArrayInitializer), C0SyntaxError> {
+    ) -> Result<(Vec<u32>, CArrayInitializer), CSyntaxError> {
         self.expect(Token::LBrace)?;
         let mut values = Vec::new();
         let mut next = 0u32;
@@ -704,7 +704,7 @@ impl Parser {
     pub(super) fn parse_global_array_length(
         &mut self,
         name: &str,
-    ) -> Result<Option<GlobalArrayLength>, C0SyntaxError> {
+    ) -> Result<Option<GlobalArrayLength>, CSyntaxError> {
         if self.peek() != Some(&Token::LBracket) {
             return Ok(None);
         }
@@ -799,7 +799,7 @@ impl Parser {
         name: &str,
         element_type: InterfaceType,
         shape: &[u32],
-    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
+    ) -> Result<CArrayInitializer, CSyntaxError> {
         let length = array_shape_element_count(shape).expect("validated global array shape");
         if shape.len() == 1 {
             self.parse_scalar_array_initializer(name, element_type, false, length, false)
@@ -818,10 +818,10 @@ impl Parser {
         &self,
         element_type: InterfaceType,
         length: u32,
-        values: Vec<(u32, C0Expression)>,
+        values: Vec<(u32, CExpression)>,
         storage: &str,
         static_local: bool,
-    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
+    ) -> Result<CArrayInitializer, CSyntaxError> {
         let values = values
             .into_iter()
             .map(|(index, value)| {
@@ -836,7 +836,7 @@ impl Parser {
                 .map(|value| (index, value))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(C0ArrayInitializer::new(length, element_type, values))
+        Ok(CArrayInitializer::new(length, element_type, values))
     }
 
     pub(super) fn parse_scalar_array_initializer(
@@ -846,7 +846,7 @@ impl Parser {
         pointee_constant: bool,
         length: u32,
         static_local: bool,
-    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
+    ) -> Result<CArrayInitializer, CSyntaxError> {
         let context = if static_local {
             "static local scalar array"
         } else {
@@ -926,7 +926,7 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace)?;
-        Ok(C0ArrayInitializer::new(length, element_type, values))
+        Ok(CArrayInitializer::new(length, element_type, values))
     }
 
     pub(super) fn parse_scalar_array_designator(
@@ -934,7 +934,7 @@ impl Parser {
         name: &str,
         length: u32,
         context: &str,
-    ) -> Result<u32, C0SyntaxError> {
+    ) -> Result<u32, CSyntaxError> {
         let index = self.parse_constant_designator_index(context)?;
         self.expect(Token::RBracket)?;
         if index >= length {
@@ -951,7 +951,7 @@ impl Parser {
     pub(super) fn parse_constant_designator_index(
         &mut self,
         context: &str,
-    ) -> Result<u32, C0SyntaxError> {
+    ) -> Result<u32, CSyntaxError> {
         let expression = self.parse_conditional()?;
         let index = match evaluate_static_integer_expression(&expression) {
             Ok(StaticIntegerValue::Signed { value, .. }) => u32::try_from(value).ok(),
@@ -973,8 +973,8 @@ impl Parser {
         &mut self,
         name: String,
         interface_type: InterfaceType,
-        declaration: C0Global,
-    ) -> Result<(), C0SyntaxError> {
+        declaration: CGlobal,
+    ) -> Result<(), CSyntaxError> {
         if self.function_declarations.contains_key(&name)
             || self.global_arrays.contains_key(&name)
             || self.global_aggregates.contains_key(&name)
@@ -1030,8 +1030,8 @@ impl Parser {
         &mut self,
         name: String,
         element_type: InterfaceType,
-        declaration: C0GlobalArray,
-    ) -> Result<(), C0SyntaxError> {
+        declaration: CGlobalArray,
+    ) -> Result<(), CSyntaxError> {
         if self.function_declarations.contains_key(&name)
             || self.globals.contains_key(&name)
             || self.global_aggregates.contains_key(&name)
@@ -1073,8 +1073,8 @@ impl Parser {
     pub(super) fn register_global_aggregate_declaration(
         &mut self,
         name: String,
-        declaration: C0GlobalAggregate,
-    ) -> Result<(), C0SyntaxError> {
+        declaration: CGlobalAggregate,
+    ) -> Result<(), CSyntaxError> {
         if self.function_declarations.contains_key(&name)
             || self.globals.contains_key(&name)
             || self.global_arrays.contains_key(&name)
@@ -1121,8 +1121,8 @@ impl Parser {
     pub(super) fn register_global_aggregate_array_declaration(
         &mut self,
         name: String,
-        declaration: C0GlobalAggregateArray,
-    ) -> Result<(), C0SyntaxError> {
+        declaration: CGlobalAggregateArray,
+    ) -> Result<(), CSyntaxError> {
         if self.function_declarations.contains_key(&name)
             || self.globals.contains_key(&name)
             || self.global_arrays.contains_key(&name)

@@ -14,7 +14,10 @@ impl SpecValue {
     ) -> ExecutionResult<Option<Self>> {
         if then_value == else_value {
             return Ok(Some(if retain {
-                then_value.clone().retain_pointer_result()
+                then_value
+                    .clone()
+                    .retain_pointer_result()
+                    .retain_algebraic_result()
             } else {
                 then_value.clone()
             }));
@@ -32,6 +35,26 @@ impl SpecValue {
                 else_value.clone().into_native(),
             )
             .map(Self::Native));
+        }
+        if let (Some(left), Some(right)) = (then_value.boolean(), else_value.boolean()) {
+            let Some((condition, expected)) = proposition_as_single_condition(proposition)
+                .or_else(|| compound_spec_value_condition(proposition))
+            else {
+                return Ok(None);
+            };
+            let (left, right) = if expected {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            return Ok(Some(
+                KernelTerm::boolean_if([
+                    KernelTermImport::default().condition(&condition),
+                    left,
+                    right,
+                ])
+                .into(),
+            ));
         }
         if let (Some((left_format, left)), Some((right_format, right))) =
             (then_value.machine(), else_value.machine())
@@ -84,6 +107,9 @@ impl SpecValue {
                 // The native constructor accepts pointer arms only when equal,
                 // selecting the complete left payload. Keep its original root.
                 then_value.clone().retain_pointer_result()
+            } else if matches!(value, ProgramValue::Parameter(_)) {
+                // Program-carried algebraic arms join only when equal.
+                then_value.clone().retain_algebraic_result()
             } else {
                 Self::Native(value)
             }
@@ -170,6 +196,29 @@ impl SpecValue {
                 op != ComparisonOperator::NotEqual,
             )));
         }
+        // Logical Bool equality builds its common operands before the explicit
+        // proposition output boundary. Raw C words retain their nonzero policy.
+        let logical = |value: &Self| match value {
+            Self::Shared(root)
+                if root.ty() == &KernelType::Bool
+                    && !matches!(root.node(), KernelTermNode::BoolLiteral(_)) =>
+            {
+                Some(root.clone())
+            }
+            Self::Native(ProgramValue::Bool(word)) => word
+                .bool_cast_operand()
+                .map(|condition| KernelTermImport::default().condition(condition)),
+            _ => None,
+        };
+        if matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual)
+            && let (Some(left), Some(right)) = (logical(self), logical(right))
+        {
+            let root = KernelTerm::boolean_equal([left, right]);
+            return Ok(Some(Proposition::ConditionIs(
+                KernelTermExport::condition(&root).expect("Boolean equality"),
+                op == ComparisonOperator::Equal,
+            )));
+        }
         let left = self.native();
         let right = right.native();
         Ok(bool_comparison_proposition(&left, op, &right)
@@ -190,6 +239,11 @@ impl SpecCallArgument {
     pub(super) fn from_value(value: SpecValue) -> Self {
         match value {
             SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
+            SpecValue::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+                Self::Native(PureFunctionArgument::Value(
+                    SpecValue::Shared(root).into_native(),
+                ))
+            }
             SpecValue::Shared(value)
                 if matches!(value.node(), KernelTermNode::PointerAddress { .. }) =>
             {
@@ -214,7 +268,37 @@ impl SpecCallArgument {
     pub(super) fn native_descriptor(&self) -> Option<&PureFunctionArgument> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(value) => value.pointer_argument_native(),
+            Self::Shared(value) => value
+                .pointer_argument_native()
+                .or_else(|| value.boolean_argument_native()),
+        }
+    }
+
+    pub(super) fn into_algebraic_call_operand(
+        self,
+    ) -> (KernelTerm, Option<SharedMachineIntegerTerm>) {
+        match self {
+            Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => (root, None),
+            Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) =>
+            {
+                let KernelType::Program(ty) = root.ty() else {
+                    unreachable!()
+                };
+                let format = MachineIntegerType::from_program_type(*ty).expect("numeric argument");
+                let carrier = SharedMachineIntegerTerm::from_shared(format, root.clone())
+                    .expect("retained argument");
+                (root, Some(carrier))
+            }
+            // Mixed-family descriptor adapters retain their existing exact forms
+            // until their shared argument migration.
+            value => {
+                let argument = value.into_payload();
+                let shared = match &argument {
+                    PureFunctionArgument::SharedMachine(value) => Some(value.clone()),
+                    _ => None,
+                };
+                (KernelTermImport::default().argument(&argument), shared)
+            }
         }
     }
 
@@ -222,7 +306,17 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
-                if let Some(descriptor) = value.pointer_argument_native() {
+                if matches!(value.ty(), KernelType::Algebraic(_)) {
+                    return PureFunctionArgument::Algebraic(
+                        KernelTermExport::default()
+                            .algebraic(&value)
+                            .expect("algebraic argument compatibility boundary"),
+                    );
+                }
+                if let Some(descriptor) = value
+                    .pointer_argument_native()
+                    .or_else(|| value.boolean_argument_native())
+                {
                     return descriptor.clone();
                 }
                 let KernelType::Program(ty) = value.ty() else {

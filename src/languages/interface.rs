@@ -5,9 +5,9 @@
 
 use super::c::syntax::CAbi;
 use super::c::syntax::{
-    C0EnumDefinition, C0Expression, C0Global, C0GlobalAggregate, C0GlobalAggregateArray,
-    C0GlobalArray, C0Statement, C0StaticAggregate, C0StaticAggregateArray, C0StaticArray,
-    C0StaticLocal, C0StringLiteral, C0UnionLayout, DeclarationMap,
+    CEnumDefinition, CExpression, CGlobal, CGlobalAggregate, CGlobalAggregateArray, CGlobalArray,
+    CStatement, CStaticAggregate, CStaticAggregateArray, CStaticArray, CStaticLocal,
+    CStringLiteral, CUnionLayout, DeclarationMap,
 };
 use super::c::target::{LongRank, PlainChar};
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,25 +56,25 @@ pub struct ImportedFunction {
     /// the receiver is, or `None` for `this`.
     pub(super) receiver_calls: Vec<(String, Option<String>)>,
     pub(super) parameters: Vec<ImportedParameter>,
-    pub(super) body: C0Statement,
+    pub(super) body: CStatement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
     /// their origins explicit distinguishes them from user declarations with
     /// similar names and lets diagnostics name the written callback pointer.
-    pub(super) callback_statement_sources: std::sync::Arc<BTreeMap<String, C0Expression>>,
+    pub(super) callback_statement_sources: std::sync::Arc<BTreeMap<String, CExpression>>,
     /// Function-scope C label spellings resolved to kernel identities and
     /// executable statement indices after the complete body is parsed.
     pub(super) control_targets: BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     pub(super) structs: DeclarationMap<RecordLayout>,
-    pub(super) enums: DeclarationMap<C0EnumDefinition>,
-    pub(super) unions: DeclarationMap<C0UnionLayout>,
-    pub(super) globals: DeclarationMap<C0Global>,
-    pub(super) global_arrays: DeclarationMap<C0GlobalArray>,
-    pub(super) global_aggregates: DeclarationMap<C0GlobalAggregate>,
-    pub(super) global_aggregate_arrays: DeclarationMap<C0GlobalAggregateArray>,
-    pub(super) static_locals: BTreeMap<String, C0StaticLocal>,
-    pub(super) static_arrays: BTreeMap<String, C0StaticArray>,
-    pub(super) static_aggregates: BTreeMap<String, C0StaticAggregate>,
-    pub(super) static_aggregate_arrays: BTreeMap<String, C0StaticAggregateArray>,
+    pub(super) enums: DeclarationMap<CEnumDefinition>,
+    pub(super) unions: DeclarationMap<CUnionLayout>,
+    pub(super) globals: DeclarationMap<CGlobal>,
+    pub(super) global_arrays: DeclarationMap<CGlobalArray>,
+    pub(super) global_aggregates: DeclarationMap<CGlobalAggregate>,
+    pub(super) global_aggregate_arrays: DeclarationMap<CGlobalAggregateArray>,
+    pub(super) static_locals: BTreeMap<String, CStaticLocal>,
+    pub(super) static_arrays: BTreeMap<String, CStaticArray>,
+    pub(super) static_aggregates: BTreeMap<String, CStaticAggregate>,
+    pub(super) static_aggregate_arrays: BTreeMap<String, CStaticAggregateArray>,
     /// The struct name of each automatic local of struct-pointer type, keyed
     /// by its C spelling. A sidecar names a local by that spelling, so this is
     /// what gives `have p->value == root->value` a layout for `p`; globals,
@@ -93,7 +93,7 @@ pub struct ImportedFunction {
     /// comparison doing arithmetic on one keeps its C meaning. A spelling
     /// declared both as a pointer and not is left out.
     pub(super) local_pointers: BTreeSet<String>,
-    pub(super) string_literals: Vec<C0StringLiteral>,
+    pub(super) string_literals: Vec<CStringLiteral>,
     /// For a Rust function, the iterator each loop advances, by loop index
     /// (the loops in preorder): the state a proof names `iter` in that loop
     /// and `loop(i).iter` elsewhere.
@@ -122,7 +122,7 @@ pub struct ImportedParameter {
     pub(super) pointee_struct_layout: Option<RecordLayout>,
     pub(super) function_pointer_signature: Option<CallbackInterface>,
     /// The ABI width of one element when the source parameter was declared as
-    /// an array of structs. The public C0 type remains the compatible
+    /// an array of structs. The imported type remains the compatible
     /// struct-pointer placeholder, while the kernel uses byte addressing for
     /// the lowered indexed field accesses.
     pub(super) array_element_width: Option<u32>,
@@ -223,7 +223,7 @@ pub enum InterfaceType {
 
 /// The nominal part of a callback signature that the kernel's structural
 /// `ProgramType::FunctionPointer` deliberately does not carry.  The ABI signature
-/// remains structural; these tags are checked while parsing C0 expressions so
+/// remains structural; these tags are checked while parsing C expressions so
 /// `struct left *` and `struct right *` cannot silently become interchangeable
 /// callback arguments.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -272,7 +272,7 @@ pub struct RecordField {
     pub(super) union_name: Option<String>,
     pub(super) function_pointer_signature: Option<CallbackInterface>,
     /// The ABI width of one element when this is an inline array of embedded
-    /// structs. The public C0 type remains a byte-array placeholder, while
+    /// structs. The imported type remains a byte-array placeholder, while
     /// member selection uses this metadata to preserve struct indexing.
     pub(super) array_element_width: Option<u32>,
     /// The fixed dimensions of a multidimensional inline array, in C's
@@ -453,7 +453,7 @@ impl InterfaceType {
 
 impl ImportedFunction {
     /// An explicitly declared one-call proof, represented with ordinary C AST nodes.
-    pub(crate) fn with_proof_body(mut self, body: C0Statement) -> Self {
+    pub(crate) fn with_proof_body(mut self, body: CStatement) -> Self {
         self.body = body;
         self
     }
@@ -605,7 +605,7 @@ impl ImportedFunction {
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
-            body: C0Statement::Skip,
+            body: CStatement::Skip,
             callback_statement_sources: std::sync::Arc::default(),
             control_targets: BTreeMap::new(),
             structs: DeclarationMap::new(),
@@ -634,7 +634,7 @@ impl ImportedFunction {
 
     pub(crate) fn callback_statement_sources(
         &self,
-    ) -> &std::sync::Arc<BTreeMap<String, C0Expression>> {
+    ) -> &std::sync::Arc<BTreeMap<String, CExpression>> {
         &self.callback_statement_sources
     }
 
@@ -671,7 +671,7 @@ impl ImportedFunction {
         self.return_pointer_struct_name.as_deref()
     }
 
-    pub fn body(&self) -> &C0Statement {
+    pub fn body(&self) -> &CStatement {
         &self.body
     }
 
@@ -755,27 +755,27 @@ impl ImportedFunction {
         &self.structs
     }
 
-    pub fn enums(&self) -> &DeclarationMap<C0EnumDefinition> {
+    pub fn enums(&self) -> &DeclarationMap<CEnumDefinition> {
         &self.enums
     }
 
-    pub fn unions(&self) -> &DeclarationMap<C0UnionLayout> {
+    pub fn unions(&self) -> &DeclarationMap<CUnionLayout> {
         &self.unions
     }
 
-    pub fn globals(&self) -> &DeclarationMap<C0Global> {
+    pub fn globals(&self) -> &DeclarationMap<CGlobal> {
         &self.globals
     }
 
-    pub fn global_arrays(&self) -> &DeclarationMap<C0GlobalArray> {
+    pub fn global_arrays(&self) -> &DeclarationMap<CGlobalArray> {
         &self.global_arrays
     }
 
-    pub fn global_aggregates(&self) -> &DeclarationMap<C0GlobalAggregate> {
+    pub fn global_aggregates(&self) -> &DeclarationMap<CGlobalAggregate> {
         &self.global_aggregates
     }
 
-    pub fn global_aggregate_arrays(&self) -> &DeclarationMap<C0GlobalAggregateArray> {
+    pub fn global_aggregate_arrays(&self) -> &DeclarationMap<CGlobalAggregateArray> {
         &self.global_aggregate_arrays
     }
 
@@ -844,18 +844,18 @@ impl ImportedFunction {
         &self.local_pointers
     }
 
-    pub fn string_literals(&self) -> &[C0StringLiteral] {
+    pub fn string_literals(&self) -> &[CStringLiteral] {
         &self.string_literals
     }
 
-    pub(crate) fn with_globals(mut self, globals: DeclarationMap<C0Global>) -> Self {
+    pub(crate) fn with_globals(mut self, globals: DeclarationMap<CGlobal>) -> Self {
         self.globals = globals;
         self
     }
 
     pub(crate) fn with_global_arrays(
         mut self,
-        global_arrays: DeclarationMap<C0GlobalArray>,
+        global_arrays: DeclarationMap<CGlobalArray>,
     ) -> Self {
         self.global_arrays = global_arrays;
         self
@@ -863,7 +863,7 @@ impl ImportedFunction {
 
     pub(crate) fn with_global_aggregates(
         mut self,
-        global_aggregates: DeclarationMap<C0GlobalAggregate>,
+        global_aggregates: DeclarationMap<CGlobalAggregate>,
     ) -> Self {
         self.global_aggregates = global_aggregates;
         self
@@ -871,7 +871,7 @@ impl ImportedFunction {
 
     pub(crate) fn with_global_aggregate_arrays(
         mut self,
-        global_aggregate_arrays: DeclarationMap<C0GlobalAggregateArray>,
+        global_aggregate_arrays: DeclarationMap<CGlobalAggregateArray>,
     ) -> Self {
         self.global_aggregate_arrays = global_aggregate_arrays;
         self

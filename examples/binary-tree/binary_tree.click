@@ -72,6 +72,8 @@ int32 tree_swap_children(struct node* node) {
     owns node->left;
     owns node->right;
 
+    ensures defined(node->left);
+    ensures defined(node->right);
     ensures result == old(node->value);
     ensures node->value == old(node->value);
     ensures node->left == old(node->right);
@@ -88,19 +90,28 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     ensures node->left == 0;
     ensures node->right == 0;
 } by {
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
+    step_until(statement(8));
     unfold(tree(node));
     step();
+    have at(statement(8).call(0).exit, defined(node->left)) by { known(); }
+    have at(statement(8).call(0).exit, defined(node->right)) by { known(); }
+    have separate(memory(swapped), memory(node->left)) by { known(); }
+    have separate(memory(swapped), memory(node->right)) by { known(); }
+    step();
+    have separate(statement(8).assignment(swapped, 0).footprint, memory(node->left)) by {
+        normalize() using { separate(memory(swapped), memory(node->left)); };
+    }
+    have separate(statement(8).assignment(swapped, 0).footprint, memory(node->right)) by {
+        normalize() using { separate(memory(swapped), memory(node->right)); };
+    }
+    have defined(node->left) by {
+        preserve(separate(statement(8).assignment(swapped, 0).footprint, memory(node->left)));
+    }
+    have defined(node->right) by {
+        preserve(separate(statement(8).assignment(swapped, 0).footprint, memory(node->right)));
+    }
     fold(tree(node));
-    step();
-    step();
+    step_until(function.exit);
     known();
     known();
     known();
@@ -264,6 +275,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
+            step();
             known();
         }
     } else {
@@ -280,8 +292,11 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
+            step();
             known();
         } else {
+            step();
+            step();
             step();
             step();
             step();

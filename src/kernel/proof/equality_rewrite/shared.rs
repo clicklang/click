@@ -841,6 +841,7 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 KernelTermNode::MachineLiteral(_) => true,
                 KernelTermNode::MachineIf { .. }
                 | KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::PointerAddress { .. }

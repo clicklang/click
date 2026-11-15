@@ -176,21 +176,11 @@ Stack<int>::~Stack() {
                     step();
                     have separate(region(1).footprint, memory(this->head)) by { normalize() using {}; }
                     have this->head == at(before_node, this->head) by {
-                        transport_certificate {
-                            premise 0: separate(region(1).footprint, memory(this->head))
-                                => separate(region(1).footprint, memory(this->head));
-                            preserve 0 => this->head == at(before_node, this->head);
-                            conclusion 1;
-                        }
+                        preserve(separate(region(1).footprint, memory(this->head)));
                     }
                     have separate(region(1).footprint, memory(this->head->next)) by { normalize() using {}; }
                     have this->head->next == at(before_node, this->head->next) by {
-                        transport_certificate {
-                            premise 0: separate(region(1).footprint, memory(this->head->next))
-                                => separate(region(1).footprint, memory(this->head->next));
-                            preserve 0 => this->head->next == at(before_node, this->head->next);
-                            conclusion 1;
-                        }
+                        preserve(separate(region(1).footprint, memory(this->head->next)));
                     }
                     have node == this->head by { known(); }
                     step();
@@ -203,12 +193,7 @@ Stack<int>::~Stack() {
                         normalize() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
                     }
                     have this->head == at(before_delete, this->head) by {
-                        transport_certificate {
-                            premise 0: separate(region(3).footprint, memory(this->head))
-                                => separate(region(3).footprint, memory(this->head));
-                            preserve 0 => this->head == at(before_delete, this->head);
-                            conclusion 1;
-                        }
+                        preserve(separate(region(3).footprint, memory(this->head)));
                     }
                     have this->head == at(before_node, this->head->next) by { known(); }
                 },
@@ -268,20 +253,12 @@ unsigned long pushed_size(int x) {
     step();
     have separate(region(13).footprint, memory(stack.head)) by { normalize() using {}; }
     have stack.head == at(region(13).entry, stack.head) by {
-        transport_certificate {
-            premise 0: separate(region(13).footprint, memory(stack.head)) => separate(region(13).footprint, memory(stack.head));
-            preserve 0 => stack.head == at(region(13).entry, stack.head);
-            conclusion 1;
-        }
+        preserve(separate(region(13).footprint, memory(stack.head)));
     }
     step();
     have separate(region(14).footprint, memory(stack.head)) by { normalize() using {}; }
     have stack.head == at(region(14).entry, stack.head) by {
-        transport_certificate {
-            premise 0: separate(region(14).footprint, memory(stack.head)) => separate(region(14).footprint, memory(stack.head));
-            preserve 0 => stack.head == at(region(14).entry, stack.head);
-            conclusion 1;
-        }
+        preserve(separate(region(14).footprint, memory(stack.head)));
     }
     mark before_size;
     let { tail: first_tail } = unfold(pushed);
@@ -290,52 +267,28 @@ unsigned long pushed_size(int x) {
     step();
     have separate(region(15).footprint, memory(stack.head)) by { normalize() using {}; }
     have stack.head == at(region(15).entry, stack.head) by {
-        transport_certificate {
-            premise 0: separate(region(15).footprint, memory(stack.head)) => separate(region(15).footprint, memory(stack.head));
-            preserve 0 => stack.head == at(region(15).entry, stack.head);
-            conclusion 1;
-        }
+        preserve(separate(region(15).footprint, memory(stack.head)));
     }
     have separate(region(15).footprint, memory(stack.head->next)) by { normalize() using {}; }
     have stack.head->next == at(region(15).entry, stack.head->next) by {
-        transport_certificate {
-            premise 0: separate(region(15).footprint, memory(stack.head->next)) => separate(region(15).footprint, memory(stack.head->next));
-            preserve 0 => stack.head->next == at(region(15).entry, stack.head->next);
-            conclusion 1;
-        }
+        preserve(separate(region(15).footprint, memory(stack.head->next)));
     }
     have separate(region(15).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
     have stack.head->next->next == at(region(15).entry, stack.head->next->next) by {
-        transport_certificate {
-            premise 0: separate(region(15).footprint, memory(stack.head->next->next)) => separate(region(15).footprint, memory(stack.head->next->next));
-            preserve 0 => stack.head->next->next == at(region(15).entry, stack.head->next->next);
-            conclusion 1;
-        }
+        preserve(separate(region(15).footprint, memory(stack.head->next->next)));
     }
     step();
     have separate(region(16).footprint, memory(stack.head)) by { normalize() using {}; }
     have stack.head == at(region(16).entry, stack.head) by {
-        transport_certificate {
-            premise 0: separate(region(16).footprint, memory(stack.head)) => separate(region(16).footprint, memory(stack.head));
-            preserve 0 => stack.head == at(region(16).entry, stack.head);
-            conclusion 1;
-        }
+        preserve(separate(region(16).footprint, memory(stack.head)));
     }
     have separate(region(16).footprint, memory(stack.head->next)) by { normalize() using {}; }
     have stack.head->next == at(region(16).entry, stack.head->next) by {
-        transport_certificate {
-            premise 0: separate(region(16).footprint, memory(stack.head->next)) => separate(region(16).footprint, memory(stack.head->next));
-            preserve 0 => stack.head->next == at(region(16).entry, stack.head->next);
-            conclusion 1;
-        }
+        preserve(separate(region(16).footprint, memory(stack.head->next)));
     }
     have separate(region(16).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
     have stack.head->next->next == at(region(16).entry, stack.head->next->next) by {
-        transport_certificate {
-            premise 0: separate(region(16).footprint, memory(stack.head->next->next)) => separate(region(16).footprint, memory(stack.head->next->next));
-            preserve 0 => stack.head->next->next == at(region(16).entry, stack.head->next->next);
-            conclusion 1;
-        }
+        preserve(separate(region(16).footprint, memory(stack.head->next->next)));
     }
     let empty_tail = fold(nodes(stack.head->next->next), { items: List<int32>::Nil });
     let first_tail = fold(nodes(stack.head->next), { items: List::Cons(x, List<int32>::Nil) }, { tail: empty_tail });

@@ -339,26 +339,36 @@ pub(super) fn verify_execution_theorem(
     let arguments = execution
         .parameters
         .iter()
-        .map(|p| syntax::C0Expression::Variable(p.name().to_string()))
+        .map(|p| syntax::CExpression::Variable(p.name().to_string()))
         .collect();
     let body = if block.signature().return_type() == InterfaceType::Void {
-        syntax::C0Statement::Call {
+        syntax::CStatement::Call {
             function_name: call_name.to_string(),
             arguments,
-            site: crate::languages::c::syntax::C0Site::NONE,
+            site: crate::languages::c::syntax::CSite::NONE,
             callee: None,
         }
     } else {
-        syntax::C0Statement::Seq(
-            Box::new(syntax::C0Statement::CallAssign {
-                target: "result".into(),
+        syntax::CStatement::Seq(
+            Box::new(syntax::CStatement::CallResult {
+                call: 0,
                 function_name: call_name.to_string(),
                 arguments,
-                site: crate::languages::c::syntax::C0Site::NONE,
+                result_type: None,
+                result_aggregate_layout: None,
+                result_pointee_constant: false,
+                callee: None,
+                site: crate::languages::c::syntax::CSite::NONE,
             }),
-            Box::new(syntax::C0Statement::Return(
-                syntax::C0Expression::Variable("result".into()),
-                crate::languages::c::syntax::C0Site::NONE,
+            Box::new(syntax::CStatement::Return(
+                syntax::CExpression::StepResult {
+                    step: 0,
+                    origin: crate::kernel::StepOrigin::Call(call_name.to_string()),
+                    interface_type: Some(block.signature().return_type()),
+                    pointee_constant: false,
+                    struct_name: None,
+                },
+                crate::languages::c::syntax::CSite::NONE,
             )),
         )
     };
@@ -377,7 +387,7 @@ pub(super) fn verify_execution_theorem(
         Arc::new(function_source_registry.for_contract_proof()),
         tactics,
     )?;
-    let completed = finish_whole_contract_root(&block, &verified)?
+    let completed = finish_contract_body_root(&block, &verified)?
         .ok_or_else(|| error("the one-call proof did not open a whole-contract root"))?;
     let rule = completed
         .into_rule()

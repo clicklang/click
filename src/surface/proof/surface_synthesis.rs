@@ -106,7 +106,7 @@ pub(in crate::surface) fn with_synthesis_binder_names<T>(
 pub(in crate::surface) struct SynthesisStructOwners {
     locals: BTreeMap<String, crate::languages::interface::RecordLayout>,
     cast_parameters: BTreeMap<String, (String, crate::languages::interface::RecordLayout)>,
-    callback_sources: std::sync::Arc<BTreeMap<String, syntax::C0Expression>>,
+    callback_sources: std::sync::Arc<BTreeMap<String, syntax::CExpression>>,
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
     storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
@@ -3126,6 +3126,18 @@ fn synthesize_surface_integer(
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
+// Keep this construction outside the recursive general dispatch frame.
+fn raise_algebraic_if<'a>(
+    arguments: &'a [crate::kernel::KernelTerm; 3],
+    mut raise: impl FnMut(&'a crate::kernel::KernelTerm) -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    Some(SurfaceTerm::If {
+        condition: Box::new(bool_truth(raise(&arguments[0])?)),
+        then_branch: Box::new(raise(&arguments[1])?),
+        else_branch: Box::new(raise(&arguments[2])?),
+    })
+}
+
 /// The shared term-to-surface boundary. Arithmetic and calls have common
 /// children; the legacy leaf dispatch is temporary and never projects away
 /// part of a value. Fold bodies retain their typed lexical scope.
@@ -3159,6 +3171,18 @@ pub(super) fn raise_kernel_term(
         Node::Match(matched) => {
             matches::raise_match(matched, parameter_binding, state, bound_variables)?
         }
+        Node::Constructor(_) | Node::AlgebraicRead(_) => {
+            let argument = crate::kernel::KernelTermExport::default()
+                .argument(term)
+                .ok()?;
+            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
+        }
+        Node::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {
+            let argument = crate::kernel::KernelTermExport::default()
+                .argument(term)
+                .ok()?;
+            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
+        }
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
         }
@@ -3184,6 +3208,7 @@ pub(super) fn raise_kernel_term(
                 )),
             }
         }
+        Node::AlgebraicIf { arguments } => raise_algebraic_if(arguments, recurse)?,
         Node::IntegerIf { arguments } => SurfaceTerm::If {
             condition: Box::new(bool_truth(recurse(&arguments[0])?)),
             then_branch: Box::new(integer_typed_expression(recurse(&arguments[1])?)),
@@ -3215,6 +3240,14 @@ pub(super) fn raise_kernel_term(
                 },
             }
         }
+        Node::AlgebraicCall(call) => SurfaceTerm::Call {
+            name: generic_instance_source_name(&call.name).into(),
+            arguments: call
+                .arguments
+                .iter()
+                .map(recurse)
+                .collect::<Option<Vec<_>>>()?,
+        },
         Node::Call { name, arguments } => {
             let call = SurfaceTerm::Call {
                 name: generic_instance_source_name(name).into(),
@@ -3286,7 +3319,9 @@ pub(super) fn raise_kernel_term(
         }
         // Offset spelling still uses its existing address context at the
         // explicit Surface boundary; no new standalone offset syntax.
-        Node::BoolOverflow { .. }
+        Node::BoolRead(_)
+        | Node::AlgebraicEqual { .. }
+        | Node::BoolOverflow { .. }
         | Node::PointerValueEqual(_)
         | Node::PointerEqual { .. }
         | Node::PointerOffsetEqual { .. }
@@ -6020,7 +6055,7 @@ fn state_call_result(
 ) -> Option<ContractExpression> {
     let (step, _) = state.step_results.as_ref()?.iter().find(|(_, value)| {
         crate::instrumentation::record_deterministic_work(1);
-        matches(value.native())
+        matches(&value.native())
     })?;
     crate::surface::diagnostics::step_result_expression(*step)
 }

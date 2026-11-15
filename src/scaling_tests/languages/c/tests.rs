@@ -12,7 +12,7 @@ use super::*;
 /// expression per declared element, so four million-element arrays cost
 /// seconds before verification began.
 #[test]
-fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
+fn c_static_array_initializers_cost_what_they_write_whatever_the_length() {
     let samples = [100u32, 10_000, 1_000_000].map(|length| {
         let source = format!(
             "int32 buf[{length}];
@@ -27,7 +27,7 @@ fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
         );
         let functions = syntax::parse_functions(&source).expect("large arrays should parse");
         let function = &functions[0];
-        let written = |initializer: &syntax::C0ArrayInitializer| {
+        let written = |initializer: &syntax::CArrayInitializer| {
             assert_eq!(initializer.length(), length);
             initializer.elements().to_vec()
         };
@@ -85,16 +85,16 @@ fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
         &[
             vec![],
             vec![
-                (0, syntax::C0Expression::Int32Literal(1)),
-                (1, syntax::C0Expression::Int32Literal(2)),
-                (99, syntax::C0Expression::Int32Literal(7)),
+                (0, syntax::CExpression::Int32Literal(1)),
+                (1, syntax::CExpression::Int32Literal(2)),
+                (99, syntax::CExpression::Int32Literal(7)),
             ],
             vec![
-                (0, syntax::C0Expression::Int32Literal(4)),
-                (10, syntax::C0Expression::Int32Literal(5)),
-                (11, syntax::C0Expression::Int32Literal(6)),
+                (0, syntax::CExpression::Int32Literal(4)),
+                (10, syntax::CExpression::Int32Literal(5)),
+                (11, syntax::CExpression::Int32Literal(6)),
             ],
-            vec![(7, syntax::C0Expression::UInt32Literal(5))],
+            vec![(7, syntax::CExpression::UInt32Literal(5))],
         ]
     );
     assert!(
@@ -119,7 +119,7 @@ fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
 /// lowering does the same work whatever the length. An automatic array
 /// declared without an initializer carries no zero fill.
 #[test]
-fn c0_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_the_length() {
+fn c_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_the_length() {
     let samples = [100u32, 10_000, 1_000_000].map(|length| {
         let source = format!(
             "struct node {{
@@ -153,18 +153,18 @@ fn c0_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_t
         let mut pending = vec![function.body()];
         while let Some(statement) = pending.pop() {
             match statement {
-                syntax::C0Statement::Seq(first, second) => {
+                syntax::CStatement::Seq(first, second) => {
                     pending.push(first);
                     pending.push(second);
                 }
-                syntax::C0Statement::Declare {
+                syntax::CStatement::Declare {
                     name, zero_fill, ..
                 } => zero_filled.push((name.clone(), zero_fill.is_some())),
                 _ => {}
             }
         }
         zero_filled.sort();
-        let statements = c0_statement_count(function.body());
+        let statements = c_statement_count(function.body());
         let (_, work) =
             crate::instrumentation::measure_deterministic_work(|| function.to_kernel_function());
         (length, pool, slots, zero_filled, statements, work)
@@ -189,4 +189,82 @@ fn c0_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_t
          (length, pool fields, slots fields, zero fills, body statements, lowering work): \
          {samples:?}"
     );
+}
+
+#[test]
+fn scalar_call_assignments_lower_to_linear_explicit_operations() {
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let source = format!(
+            "int32 caller() {{ int32 x; {} return x; }}",
+            "x = other();".repeat(count),
+        );
+        let (function, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let function = syntax::parse_function(&source).expect("scalar calls parse");
+            let _kernel = function.to_kernel_function();
+            function
+        });
+        let mut pending = vec![function.body()];
+        let mut calls = 0;
+        let mut assignments = 0;
+        while let Some(statement) = pending.pop() {
+            match statement {
+                syntax::CStatement::Seq(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                syntax::CStatement::CallResult { .. } => calls += 1,
+                syntax::CStatement::Assign { .. } => assignments += 1,
+                _ => {}
+            }
+        }
+        assert_eq!((calls, assignments), (count, count));
+        assert!(work > 0);
+        samples.push(work);
+    }
+    // Each size quadruples its explicit calls and assignments. Leave room
+    // for indexing, but reject quadratic growth in retained results/history.
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn aggregate_call_assignments_lower_to_linear_explicit_operations() {
+    for declaration in ["struct pair make();", ""] {
+        let mut samples = Vec::new();
+        for count in [16, 64, 256] {
+            let source = format!(
+                "struct pair {{ int32 x; int32 y; }}; {declaration}
+             int32 caller() {{ struct pair p; {} return p.x; }}",
+                "p = make();".repeat(count),
+            );
+            let (functions, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let functions = syntax::parse_functions(&source).expect("aggregate calls parse");
+                let _kernel = functions[0].to_kernel_function();
+                functions
+            });
+            let mut pending = vec![functions[0].body()];
+            let (mut calls, mut copies) = (0, 0);
+            while let Some(statement) = pending.pop() {
+                match statement {
+                    syntax::CStatement::Seq(left, right) => {
+                        pending.push(left);
+                        pending.push(right);
+                    }
+                    syntax::CStatement::CallResult { .. } => calls += 1,
+                    syntax::CStatement::AggregateCopy { .. } => copies += 1,
+                    _ => {}
+                }
+            }
+            assert_eq!((calls, copies), (count, count));
+            assert!(work > 0);
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+            "{samples:?}"
+        );
+    }
 }

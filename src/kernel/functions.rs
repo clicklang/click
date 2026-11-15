@@ -6427,7 +6427,7 @@ fn prepare_verified_function_call<'a>(
     // executed, but a modular call performs its writes abstractly through
     // this footprint. Without the same check, passing read-only storage to
     // a callee that declares it mutable would let the call store there:
-    // string-literal bytes are the reachable case, since C0 models a
+    // string-literal bytes are the reachable case, since C models a
     // literal as an ordinary `uint8*` and no qualifier catches it.
     if let Some(range) = mutable_ranges
         .iter()

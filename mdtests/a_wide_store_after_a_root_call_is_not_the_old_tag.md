@@ -79,14 +79,12 @@ void probe(struct node *p, struct root *root) {
   step();
   mark after_store;
   have nid->right == at(before_store, nid->right) by {
-   transport_certificate {
-    premise 0: changes_only(before_store, after_store, memory(p->right))
-     => changes_only(before_store, after_store, memory(p->right));
-    premise 1: at(before_store, separate(memory(p->right), memory(nid->right)))
-     => at(before_store, separate(memory(p->right), memory(nid->right)));
-    preserve 0, 1 => nid->right == at(before_store, nid->right);
-    conclusion 2;
+   have separate(statement(2).footprint, memory(nid->right)) by {
+       normalize() using {
+           at(before_store, separate(memory(p->right), memory(nid->right)));
+       };
    }
+   preserve(separate(statement(2).footprint, memory(nid->right)));
   }
   have separate(c, memory(near->right));
   have nid == near;
@@ -101,11 +99,7 @@ void probe(struct node *p, struct root *root) {
    contains(memory(nid->right), memory(nid->right));
   };
   have nid->right == at(before_call, nid->right) by {
-   transport_certificate {
-    premise 0: separate(statement(3).footprint, memory(nid->right)) => separate(statement(3).footprint, memory(nid->right));
-    preserve 0 => nid->right == at(before_call, nid->right);
-    conclusion 1;
-   }
+   preserve(separate(statement(3).footprint, memory(nid->right)));
   }
   step();
   have cursor == nid;

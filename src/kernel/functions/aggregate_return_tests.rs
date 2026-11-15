@@ -149,7 +149,7 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
         construction_function(
             name,
             program_seq(
-                program_call_assign(
+                program_call_construct(
                     C_CONTRACT_RESULT_NAME,
                     callee,
                     vec![crate::kernel::program_expression::variable("input")],
@@ -413,7 +413,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             ),
             program_allocate_aggregate_destination("node", node_layout()),
             program_allocate_aggregate_destination("temporary", node_layout()),
-            program_call_assign(
+            program_call_construct(
                 "temporary",
                 "materialize_descriptor",
                 vec![crate::kernel::program_expression::addr_of("backing")],
@@ -1512,4 +1512,47 @@ fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_return_tests.rs");
+}
+
+#[test]
+fn aggregate_return_temporary_copy_requires_its_recorded_extent() {
+    let layout = node_layout();
+    let temporary = Pointer::verifier_temporary(Variable(870_101));
+    let source = PointerValue::new(temporary.clone(), ProgramType::UInt8Pointer);
+    let assumptions = PureFactContext::new();
+    for bytes in [0, 8, 16] {
+        let state = ExecutionState::new()
+            .with_memory(Memory::new().with_block(temporary.block.clone(), bytes));
+        assert_eq!(
+            crate::kernel::eval::missing_aggregate_copy_read_resource(
+                &state,
+                &source,
+                &layout,
+                &assumptions
+            )
+            .is_none(),
+            bytes == 16,
+        );
+    }
+    for block in [
+        PointerBlock::Heap(870_102),
+        PointerBlock::Symbolic(Variable(870_103)),
+    ] {
+        let pointer = Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = PointerValue::new(pointer, ProgramType::UInt8Pointer);
+        let state = ExecutionState::new().with_memory(Memory::new().with_block(block, 16));
+        assert!(
+            crate::kernel::eval::missing_aggregate_copy_read_resource(
+                &state,
+                &source,
+                &layout,
+                &assumptions
+            )
+            .is_some(),
+            "external storage still requires a resource"
+        );
+    }
 }

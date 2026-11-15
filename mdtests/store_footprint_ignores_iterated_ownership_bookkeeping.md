@@ -32,12 +32,7 @@ void claim(int32 *data, int32 *occupied, int32 **kept) {
         normalize() using { separate(memory(occupied[0]), memory(kept[0])); };
     }
     have kept[0] == at(before, kept[0]) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(kept[0]))
-                => separate(statement(0).footprint, memory(kept[0]));
-            preserve 0 => kept[0] == at(before, kept[0]);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(kept[0])));
     }
     fold(available(data, occupied));
     step();

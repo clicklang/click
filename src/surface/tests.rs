@@ -1681,7 +1681,7 @@ fn contract_application_binds_each_handle_by_name() {
             ensures result == 0;
         } by { step(Touch, { cell: first }); step_until(function.exit); solve(); }
     "#;
-    // C0 spells the empty function-pointer parameter list `()`.
+    // C spells the empty function-pointer parameter list `()`.
     let c = [(
         "invoke.c",
         "int32 invoke(int32 (*callback)()) { return callback(); }",
@@ -3147,7 +3147,7 @@ fn named_contract_output_patterns_round_trip_and_check_binders() {
 
 mod resource_parameters;
 
-mod transport_certificates;
+mod preservation;
 
 #[test]
 fn solve_folds_returned_instances_and_expands_to_explicit_folds() {

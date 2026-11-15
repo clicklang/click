@@ -6,7 +6,7 @@
  */
 #pragma once
 typedef unsigned long pthread_t;
-/* An incomplete C0 type deliberately forbids constructing an attribute
+/* An incomplete C type deliberately forbids constructing an attribute
  * object; this first profile accepts only a null attributes argument. */
 typedef struct __click_pthread_attr pthread_attr_t;
 typedef union __click_pthread_mutex {

@@ -21,6 +21,7 @@ void split(struct box* p, int32* q) {
     produces t: cell(old(p->child));
     produces u: cell(p->child);
     ensures p->child == q;
+    ensures defined(p->child);
 } by {
     unfold(h);
     let t = fold(cell(p->child), { model: Model::Empty });

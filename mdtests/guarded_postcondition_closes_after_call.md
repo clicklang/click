@@ -69,6 +69,7 @@ int32 restricted(struct box* b) {
     step();
     mark m;
     step(pick, { st: st });
+    step();
     branch {
         have got == 0 by {
             solve();

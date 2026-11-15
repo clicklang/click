@@ -144,13 +144,14 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
         ));
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
-        assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(
             expanded.len() < 400 * (depth + 1),
             "expansion must retain aliases"
         );
-        let rewritten = source.replace("by { solve(); }", &expanded);
-        verify_click_theorems(&rewritten)
+        let rewritten = source.replace("by { solve() using {}; }", &expanded);
+        assert_ne!(rewritten, source, "the expanded proof must be substituted");
+        without_implicit_solve(|| verify_click_theorems(&rewritten))
             .unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
     }
 }
@@ -531,7 +532,7 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
     let body_error = parser::parse_file_items(&format!(
         "function too_deep_body() -> int32 {{ {body_expression} }}"
     ))
-    .expect_err("over-deep C0 result expressions should fail at the parser boundary");
+    .expect_err("over-deep C result expressions should fail at the parser boundary");
     assert!(
         body_error
             .message()
@@ -3003,7 +3004,7 @@ theorem cited_choice(x: int32) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
-fn smart_context_free_disjunction_retains_explicit_choice() {
+fn smart_context_free_disjunction_retains_known_leaf() {
     let source = r#"
 theorem choose_left() {
     ensures 1 == 1 or 2 == 3 by { solve(); }
@@ -3016,27 +3017,15 @@ theorem choose_right() {
     let verified =
         verify_click_theorems(source).expect("smart context-free disjunction proofs should verify");
 
-    let left = verified[0]
-        .proof_tactics()
-        .expect("expected left certificate");
-    assert!(matches!(
-        left.as_slice(),
-        [ProofTactic::Have(ProofHave {
-            proof: SourceProof::Script(proof),
-            ..
-        }), ProofTactic::Known] if matches!(proof.as_slice(), [ProofTactic::Normalize])
-    ));
-
-    let right = verified[1]
-        .proof_tactics()
-        .expect("expected right certificate");
-    assert!(matches!(
-        right.as_slice(),
-        [ProofTactic::Have(ProofHave {
-            proof: SourceProof::Script(proof),
-            ..
-        }), ProofTactic::Known] if matches!(proof.as_slice(), [ProofTactic::Normalize])
-    ));
+    for theorem in &verified {
+        assert!(matches!(
+            theorem
+                .proof_tactics()
+                .expect("expected a checked certificate")
+                .as_slice(),
+            [ProofTactic::Known]
+        ));
+    }
 }
 
 #[test]
@@ -3109,7 +3098,7 @@ theorem false_guard(x: int32) {
         verified[1]
             .proof_tactics()
             .expect("expected true-consequent certificate"),
-        &[ProofTactic::Intro, ProofTactic::Normalize]
+        &[ProofTactic::Intro, ProofTactic::Known]
     );
     assert!(matches!(
         verified[2]
@@ -6115,7 +6104,7 @@ test_batches! {
     surface_syntax_batch_17: [
         normalization_does_not_hide_context_free_conjunction_derivation,
         normalization_does_not_hide_context_free_disjunction_derivation,
-        smart_context_free_disjunction_retains_explicit_choice,
+        smart_context_free_disjunction_retains_known_leaf,
         normalization_does_not_hide_context_free_implication_derivation,
     ],
     surface_syntax_batch_18: [

@@ -71,8 +71,8 @@ mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
 pub(crate) use kernel_term::{
-    BooleanOperandView, KernelFold, KernelFoldIndex, KernelMatch, KernelTermExport,
-    KernelTermImport, clear_integer_bridge_memo,
+    BooleanOperandView, KernelConstructor, KernelFold, KernelFoldIndex, KernelMatch,
+    KernelTermExport, KernelTermImport, clear_integer_bridge_memo,
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub use kernel_term::{
@@ -5293,7 +5293,7 @@ pub enum SpecResource {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SwitchCase {
     /// `None` is the default case; integer values are represented in the
-    /// promoted int32 bit pattern used by C0.
+    /// promoted int32 bit pattern used by C.
     pub value: Option<u32>,
     pub body: Box<ProgramStatement>,
 }
@@ -5396,7 +5396,9 @@ pub enum ProgramStatement {
         /// value of a postfix `p++`.
         prior_result: Option<u32>,
     },
-    CallAssign {
+    /// Invoke a construction-return function in an already allocated destination.
+    /// The call constructs the object; there is no result assignment or copy.
+    CallConstruct {
         target: String,
         function_name: String,
         arguments: Vec<ProgramExpression>,
@@ -5412,6 +5414,7 @@ pub enum ProgramStatement {
         /// assignment to a local of that type would; `None` keeps the
         /// contract's own.
         result_type: Option<ProgramType>,
+        result_aggregate_layout: Option<AggregateLayout>,
         result_pointee_constant: bool,
         /// The function pointer the call goes through, when it is not a
         /// call of a named function; `function_name` then only describes it.
@@ -10196,7 +10199,7 @@ pub struct ExecutionState {
     /// call step sets one, the rest of the statement reads it, and the
     /// statement's end drops what it read. `None` is the canonical state at
     /// every statement boundary.
-    pub(crate) step_results: Option<Arc<BTreeMap<u32, StoredMemoryValue>>>,
+    pub(crate) step_results: Option<Arc<BTreeMap<u32, StoredExecutionValue>>>,
 }
 
 /// The function pointer a call goes through, with its type.
@@ -10294,9 +10297,9 @@ impl ExecutionState {
         self.set_retained_step_result(call, value.into());
     }
 
-    /// Keep an executed pointer producer through its statement-local handoff.
-    /// This uses the same native-key carrier as memory, without changing the
-    /// key or admitting other value families into common storage.
+    /// Keep the executed value through its statement-local handoff. Results
+    /// are values, like locals and returns, not native memory cells; recording
+    /// one must not export a retained arithmetic expression tree.
     pub(super) fn set_retained_step_result(
         &mut self,
         call: u32,
@@ -10309,11 +10312,8 @@ impl ExecutionState {
 
     /// The term call `call` of the running statement returned, once its call
     /// step has run.
-    pub(crate) fn step_result(&self, call: u32) -> Option<&ProgramValue> {
-        self.step_results
-            .as_ref()?
-            .get(&call)
-            .map(StoredMemoryValue::native)
+    pub(crate) fn step_result(&self, call: u32) -> Option<&StoredExecutionValue> {
+        self.step_results.as_ref()?.get(&call)
     }
 
     /// Ends the results of `steps`: their reader has read them.

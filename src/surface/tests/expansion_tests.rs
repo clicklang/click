@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn computational_solve_expansions_use_known_without_implicit_search() {
+    for (parameters, requirement, goal, tactic) in [
+        ("x: Integer", "", "x + 1 > x", "solve()"),
+        ("x: Integer", "", "x + 1 > x", "solve() using {}"),
+        ("x: Integer, y: Integer", "", "x + y - y == x", "solve()"),
+        ("x: uint32", "", "x - x == 0u32", "solve()"),
+        (
+            "x: Integer, y: Integer",
+            "requires x < y;",
+            "x < y and x + 1 > x",
+            "solve()",
+        ),
+        (
+            "x: Integer",
+            "",
+            "forall (z: Integer) { z == z }",
+            "solve()",
+        ),
+    ] {
+        let source = format!(
+            "theorem computed({parameters}) {{ {requirement} ensures answer: {goal} by {{ {tactic}; }} }}"
+        );
+        let expanded = expand_c_claim_source_by_label(&source, &[], "computed.answer")
+            .unwrap_or_else(|error| panic!("{source}: {}", error.message()));
+        assert!(expanded.contains("known();"), "{tactic}: {expanded}");
+        assert!(!expanded.contains("normalize("), "{tactic}: {expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_click_theorems(&expanded))
+            .unwrap_or_else(|error| panic!("{expanded}: {}", error.message()));
+    }
+    let false_claim = "theorem false_claim(x: Integer) { ensures x + 1 < x by known(); }";
+    assert!(without_implicit_solve(|| verify_click_theorems(false_claim)).is_err());
+}
+
+#[test]
 fn tactic_argument_obligation_expands_and_replays_without_implicit_solve() {
     let (source, sources) = mdtest_sources("mdtests/tactic_argument_obligation.md");
     let sources = sources
@@ -1701,7 +1736,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
         .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
-        expanded.contains(" if at(region(2).entry, copied)"),
+        expanded.contains(" if at(region(3).entry, copied)"),
         "{expanded}"
     );
     assert!(
@@ -2391,7 +2426,7 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
         "intro();\n        ".len(),
     );
     assert!(
-        expanded.contains("intro();\n        intro();\n        normalize();"),
+        expanded.contains("intro();\n        intro();\n        known();"),
         "{expanded}"
     );
     assert!(!expanded.contains("have forall"), "{expanded}");
@@ -2563,7 +2598,7 @@ theorem integer_exists_choose() {
                 "{label}: {expanded}"
             );
         } else if label.ends_with("witnessed") {
-            assert!(expanded.contains("normalize();"), "{label}: {expanded}");
+            assert!(expanded.contains("known();"), "{label}: {expanded}");
         } else if label.ends_with("logical") {
             assert!(expanded.contains("intro();"), "{label}: {expanded}");
             // Equality closure can discharge this reflexive conjunction
@@ -3869,11 +3904,8 @@ fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_19")]
-fn context_free_disjunction_solve_expands_choice_and_rechecks() {
-    for (goal, choice) in [
-        ("1 == 1 or 2 == 3", "known();"),
-        ("2 == 3 or 1 == 1", "known();"),
-    ] {
+fn context_free_disjunction_solve_expands_known_and_rechecks() {
+    for goal in ["1 == 1 or 2 == 3", "2 == 3 or 1 == 1"] {
         let source = format!(
             r#"
 theorem choose_reflexive_arm() {{
@@ -3886,11 +3918,12 @@ theorem choose_reflexive_arm() {{
         let position = expansion::position_at_offset(&source, offset);
         let expanded =
             expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
-        assert!(expanded.contains("have 1 == 1 by"), "{expanded}");
-        assert!(expanded.contains(choice), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(!expanded.contains("solve();"), "{expanded}");
-        verify_c_sources(&expanded, &[])
-            .expect("expanded disjunction choice should independently recheck");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .expect("the computed disjunction should recheck without implicit solving");
+        let false_goal = expanded.replace("1 == 1", "1 == 2");
+        assert!(without_implicit_solve(|| verify_c_sources(&false_goal, &[])).is_err());
     }
 }
 
@@ -5223,7 +5256,7 @@ fn grouped_post_execution_solve_publishes_checked_obligations_through_proof() {
     .expect("the retained grouped solve certificate should expand");
     // The first `solve` acts on the first open goal; the second keeps its own.
     assert_eq!(expanded.matches("have result == result by {").count(), 1);
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized grouped obligation scopes should verify independently");
@@ -5337,7 +5370,7 @@ fn post_execution_solve_builds_disjunction_cases_on_proof() {
         "{expanded}"
     );
     assert_eq!(expanded.matches("rewrite(").count(), 2, "{expanded}");
-    assert_eq!(expanded.matches("normalize();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("known();").count(), 3, "{expanded}");
     verify_c_sources(&expanded, &[("choose.c", c_source)])
         .expect("the retained case split should verify independently");
 }
@@ -5607,9 +5640,9 @@ fn post_execution_existential_solve_retains_its_checked_scope() {
     )
     .expect("the checked existential obligation should expand");
     assert!(expanded.contains("witness { j: result };"), "{expanded}");
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
-        .expect("the retained witness/normalize scope should verify independently");
+        .expect("the retained witness/known scope should verify independently");
 }
 
 #[test]
@@ -5804,7 +5837,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                step_until(region(2));
+                step_until(statement(2));
                 apply(int32_equality_transitive(observed, data[0], expected));
                 step_until(function.exit);
                 solve();
@@ -6512,7 +6545,7 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
         .expect("the solve in the mixed have body should expand");
     let rewritten = body_solve.lines().collect::<Vec<_>>();
     assert_eq!(rewritten[..6], lines[..6], "{body_solve}");
-    assert_eq!(rewritten[6], "        normalize();", "{body_solve}");
+    assert_eq!(rewritten[6], "        known();", "{body_solve}");
     assert!(
         body_solve.ends_with("    }\n    step_until(function.exit);\n    solve();\n}\n"),
         "{body_solve}"
@@ -6532,7 +6565,7 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
     }
     assert!(
         inner_have.contains(
-            "    have x <= x by {\n        have x == x by {\n            normalize();\n        }\n        solve();\n    }\n"
+            "    have x <= x by {\n        have x == x by {\n            known();\n        }\n        solve();\n    }\n"
         ),
         "{inner_have}"
     );
@@ -7156,7 +7189,7 @@ fn restricted_solve_expands_to_graph_normalization() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_35")]
-fn uint64_bit_test_inequality_expands_to_rewrite_and_normalize() {
+fn uint64_bit_test_inequality_expands_to_rewrite_and_known() {
     let click_source = r#"
         theorem set_low_bit_is_nonzero(word: uint64) {
             requires 1u64 == (word & 1u64);
@@ -7177,7 +7210,7 @@ fn uint64_bit_test_inequality_expands_to_rewrite_and_normalize() {
         expanded.contains("rewrite((word & 1u64) as uint64 == 1u64);"),
         "{expanded}"
     );
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the explicit uint64 inequality certificate should independently reverify");
@@ -7936,7 +7969,7 @@ fn post_execution_solve_composes_negated_successor_bound() {
     // the successor bound is an available fact and the chain needs only the
     // transitive step.
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity_at_least_one.c", c_source)])
         .expect("expanded successor lower-bound proof should check");
@@ -8051,7 +8084,7 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
-fn pure_solve_retains_one_selected_equality_rewrite_before_normalize() {
+fn pure_solve_retains_one_selected_equality_rewrite_before_known() {
     let click_source = r#"
         theorem predecessor_of_one_is_nonnegative(value: int32) {
             requires value == 1;
@@ -8069,7 +8102,7 @@ fn pure_solve_retains_one_selected_equality_rewrite_before_normalize() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the retained equality-refinement path should expand");
     assert!(expanded.contains("rewrite(value == 1);"), "{expanded}");
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the expanded rewrite path should check");
 }
@@ -12221,7 +12254,7 @@ fn transformed_resource_branch_interface_retains_its_common_descendant() {
         .expect("select_ready should be the final verified function")
         .expanded_proof_tactics()
         .expect("the transformed interface should retain an expansion");
-    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
+    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
     assert!(
         matches!(
             tactics.as_slice(),
@@ -14394,7 +14427,7 @@ fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
         expanded_have.contains("unfold(reflexive);"),
         "{expanded_have}"
     );
-    assert!(expanded_have.contains("normalize();"), "{expanded_have}");
+    assert!(expanded_have.contains("known();"), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded unfolded smart have should check");
@@ -17506,6 +17539,10 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
     views p[0..n];
     ensures result == 0;
 } by {
+    have defined(p[i]) by {
+        instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, i);
+        known();
+    }
     fold(tag(q[i]));
     step_until(function.exit);
     solve();
@@ -17521,7 +17558,9 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
         assert!(
             error
                 .message()
-                .contains("could not lower resource `tag` argument 0"),
+                .contains("could not lower resource `tag` argument 0")
+                || error.message().contains("instantiate")
+                || error.message().contains("defined(p[i])"),
             "missing {required}: {}",
             error.message()
         );
@@ -21472,7 +21511,7 @@ test_batches! {
         whole_claim_expansion_keeps_a_proof_if_after_execution,
         whole_claim_expansion_closes_a_claim_opened_after_execution,
         whole_claim_expansion_continues_after_a_branch_with_one_reachable_arm,
-        context_free_disjunction_solve_expands_choice_and_rechecks,
+        context_free_disjunction_solve_expands_known_and_rechecks,
     ],
     expansion_batch_20: [
         signed_unsigned_compound_arithmetic_expands_and_rechecks,
@@ -21568,7 +21607,7 @@ test_batches! {
         post_execution_restricted_solve_continues_an_introduced_claim,
         post_execution_restricted_solve_checks_grouped_ownership_and_value_claims,
         restricted_solve_expands_to_graph_normalization,
-        uint64_bit_test_inequality_expands_to_rewrite_and_normalize,
+        uint64_bit_test_inequality_expands_to_rewrite_and_known,
     ],
     expansion_batch_36: [
         uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence,
@@ -21601,7 +21640,7 @@ test_batches! {
         post_execution_solve_unfolds_predicate_goal_explicitly,
     ],
     expansion_batch_41: [
-        pure_solve_retains_one_selected_equality_rewrite_before_normalize,
+        pure_solve_retains_one_selected_equality_rewrite_before_known,
         restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate,
         restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate,
         restricted_solve_expands_positive_predecessor_to_arithmetic_certificate,
@@ -22349,6 +22388,10 @@ fn instantiated_indexed_read_expands_without_transport() {
 #[ignore = "nightly: explicit fold preservation expands and cold replays"]
 fn explicit_fold_preservation_expands_without_legacy_transport() {
     for (fixture, function) in [
+        (
+            "transport_carries_a_kept_slot_cell_across_a_call",
+            "two_puts",
+        ),
         (
             "fold_read_transport_across_a_call_with_a_checked_write_set",
             "caller",

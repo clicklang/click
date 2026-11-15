@@ -65,7 +65,6 @@ pub(in crate::kernel) fn explicit_frame(
     facts: &PureFactContext,
 ) -> Option<(ProgramValue, ProgramValue, Proposition)> {
     use crate::kernel::eval::typed_reads::ReadScope;
-    use crate::kernel::proof::transport_certificate::{TransportCertificate, TransportNode};
     let entry = ExecutionState::new().with_memory(before.clone());
     let exit = entry.clone().with_memory(after.clone());
     let effects = effects
@@ -151,28 +150,9 @@ pub(in crate::kernel) fn explicit_frame(
         other => panic!("unsupported test observation: {other:?}"),
     };
     let result = Proposition::ConditionIs(condition, true);
-    let certificate = TransportCertificate {
-        nodes: vec![
-            TransportNode::Premise {
-                proposition: separation.clone(),
-                result: separation.clone(),
-            },
-            TransportNode::Preserve {
-                field: None,
-                effect: None,
-                separation: 0,
-                result,
-            },
-        ],
-        conclusion: 1,
-    };
-    Some((
-        old,
-        new,
-        certificate
-            .apply(|p| p == &separation)
-            .expect("explicit frame certificate"),
-    ))
+    crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
+        .expect("explicit preservation");
+    Some((old, new, result))
 }
 
 mod canonicalization_tests;

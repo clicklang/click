@@ -738,6 +738,21 @@ fn lower_function(
             declaration.with_positional_parameters()
         });
     }
+    // Reserve the compiler's explicit call-result identities once for this
+    // function. Generated call/assignment pairs must not reuse a later MIR
+    // call's identity, even when the generated call comes first.
+    let next_call_result = f
+        .mir
+        .iter()
+        .flat_map(|mir| &mir.blocks)
+        .filter_map(|block| match &block.terminator {
+            super::schema::MirTerminator::Call { result, .. } => *result,
+            _ => None,
+        })
+        .max()
+        .map(|last| last.checked_add(1).ok_or("too many calls in one function"))
+        .transpose()?
+        .unwrap_or(0);
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
         library_slice_iterators: BTreeMap::new(),
@@ -765,6 +780,7 @@ fn lower_function(
         mir_point: None,
         mir_nodes: BTreeMap::new(),
         next_temporary: 0,
+        next_call_result: std::cell::Cell::new(next_call_result),
         loop_iterators: Vec::new(),
         locals,
         return_type,
@@ -852,6 +868,7 @@ struct Context<'a> {
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
     next_temporary: u32,
+    next_call_result: std::cell::Cell<u32>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
     locals: BTreeSet<String>,
@@ -861,6 +878,27 @@ struct Context<'a> {
     functions: &'a BTreeMap<&'a str, &'a Function>,
 }
 impl Context<'_> {
+    fn call_value(
+        &self,
+        function: impl Into<String>,
+        arguments: Vec<ProgramExpression>,
+    ) -> (ProgramStatement, ProgramExpression) {
+        let id = self.next_call_result.get();
+        self.next_call_result
+            .set(id.checked_add(1).expect("too many calls in one function"));
+        crate::kernel::program_call_value(id, function, arguments)
+    }
+
+    fn call_then_assign(
+        &self,
+        target: impl Into<String>,
+        function: impl Into<String>,
+        arguments: Vec<ProgramExpression>,
+    ) -> ProgramStatement {
+        let (call, value) = self.call_value(function, arguments);
+        program_seq(call, program_assign(target, value))
+    }
+
     fn reference_source(
         &self,
         expr: &E,
@@ -1114,7 +1152,7 @@ impl Context<'_> {
                     program_seq(
                         program_declare(&name, self.return_type.to_kernel_type()),
                         program_seq(
-                            program_call_assign(&name, function, arguments),
+                            self.call_then_assign(&name, function, arguments),
                             program_return(crate::kernel::program_expression::variable(name)),
                         ),
                     ),
@@ -1460,7 +1498,7 @@ impl Context<'_> {
                 let (checks, arguments) = self.prepared_arguments(function, arguments)?;
                 Ok(program_seq(
                     checks,
-                    program_call_assign(name, function, arguments),
+                    self.call_then_assign(name, function, arguments),
                 ))
             }
             _ => {
@@ -1674,7 +1712,7 @@ impl Context<'_> {
                 Ok((
                     program_seq(
                         prefix,
-                        program_seq(declare, program_call_assign(&name, function, arguments)),
+                        program_seq(declare, self.call_then_assign(&name, function, arguments)),
                     ),
                     crate::kernel::program_expression::variable(name),
                 ))
@@ -2253,6 +2291,10 @@ impl Context<'_> {
 
     fn expr(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {
+            E::CallResult { call, function } => Ok(ProgramExpression::StepResult {
+                step: *call,
+                origin: crate::kernel::StepOrigin::Call(function.clone()),
+            }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
             E::SharedArrayOptionTag { option }

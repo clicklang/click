@@ -21,7 +21,7 @@
 
 use std::collections::BTreeSet;
 
-use super::syntax::{C0Expression, C0Statement, C0SwitchCase, ImportedFunction, InterfaceType};
+use super::syntax::{CExpression, CStatement, CSwitchCase, ImportedFunction, InterfaceType};
 
 mod lowered;
 
@@ -164,8 +164,8 @@ fn scalar_or_pointer(interface_type: InterfaceType) -> bool {
 }
 
 /// Walks one statement, recording declarations and address-forming nodes.
-fn walk_statement(statement: &C0Statement, summary: &mut AddressTakenSummary) {
-    if let C0Statement::Declare {
+fn walk_statement(statement: &CStatement, summary: &mut AddressTakenSummary) {
+    if let CStatement::Declare {
         name,
         interface_type,
         ..
@@ -174,7 +174,7 @@ fn walk_statement(statement: &C0Statement, summary: &mut AddressTakenSummary) {
         declare(summary, name, *interface_type);
     }
     // A struct value's name is its address wherever it is used.
-    if let C0Statement::DeclareStructValue { name, .. } = statement {
+    if let CStatement::DeclareStructValue { name, .. } = statement {
         summary.taken.insert(name.clone());
     }
     let mut expressions = Vec::new();
@@ -196,10 +196,10 @@ fn walk_statement(statement: &C0Statement, summary: &mut AddressTakenSummary) {
 /// `&a[i]`, `&s.f` and `&*p` are all caught, and so is the index in `&a[i]`.
 /// The `AddressOf(Variable(_))` test in `src/kernel/termination.rs` catches
 /// only the first of those.
-fn walk_expression(expression: &C0Expression, summary: &mut AddressTakenSummary) {
-    if let C0Expression::AddressOf(inner)
-    | C0Expression::AggregateAddress { pointer: inner, .. }
-    | C0Expression::UnionAddress { pointer: inner, .. } = expression
+fn walk_expression(expression: &CExpression, summary: &mut AddressTakenSummary) {
+    if let CExpression::AddressOf(inner)
+    | CExpression::AggregateAddress { pointer: inner, .. }
+    | CExpression::UnionAddress { pointer: inner, .. } = expression
     {
         mentioned_names(inner, &mut summary.taken);
         return;
@@ -217,11 +217,11 @@ fn walk_expression(expression: &C0Expression, summary: &mut AddressTakenSummary)
 
 /// Every name an expression mentions, at any depth and through any form,
 /// including the names its embedded statements declare and read.
-pub(super) fn mentioned_names(expression: &C0Expression, names: &mut BTreeSet<String>) {
+pub(super) fn mentioned_names(expression: &CExpression, names: &mut BTreeSet<String>) {
     match expression {
-        C0Expression::Variable(name)
-        | C0Expression::Assignment { name, .. }
-        | C0Expression::ScalarUpdate { name, .. } => {
+        CExpression::Variable(name)
+        | CExpression::Assignment { name, .. }
+        | CExpression::ScalarUpdate { name, .. } => {
             names.insert(name.clone());
         }
         _ => {}
@@ -238,13 +238,12 @@ pub(super) fn mentioned_names(expression: &C0Expression, names: &mut BTreeSet<St
 }
 
 /// The same for a statement, used for a statement expression under an `&`.
-fn statement_mentioned_names(statement: &C0Statement, names: &mut BTreeSet<String>) {
+fn statement_mentioned_names(statement: &CStatement, names: &mut BTreeSet<String>) {
     match statement {
-        C0Statement::Declare { name, .. }
-        | C0Statement::DeclareStructValue { name, .. }
-        | C0Statement::Assign { name, .. }
-        | C0Statement::CallAssign { target: name, .. }
-        | C0Statement::HeapAllocate { target: name, .. } => {
+        CStatement::Declare { name, .. }
+        | CStatement::DeclareStructValue { name, .. }
+        | CStatement::Assign { name, .. }
+        | CStatement::HeapAllocate { target: name, .. } => {
             names.insert(name.clone());
         }
         _ => {}
@@ -262,28 +261,28 @@ fn statement_mentioned_names(statement: &C0Statement, names: &mut BTreeSet<Strin
 
 /// The immediate subexpressions and substatements of one expression.
 fn child_expressions<'a>(
-    expression: &'a C0Expression,
-    expressions: &mut Vec<&'a C0Expression>,
-    statements: &mut Vec<&'a C0Statement>,
+    expression: &'a CExpression,
+    expressions: &mut Vec<&'a CExpression>,
+    statements: &mut Vec<&'a CStatement>,
 ) {
     match expression {
-        C0Expression::ScalarUpdate { .. } => {}
-        C0Expression::Void
-        | C0Expression::Variable(_)
-        | C0Expression::StepResult { .. }
-        | C0Expression::FunctionAddress(_)
-        | C0Expression::Int32Literal(_)
-        | C0Expression::UInt8Literal(_)
-        | C0Expression::UInt32Literal(_)
-        | C0Expression::Int64Literal(_)
-        | C0Expression::UInt64Literal(_)
-        | C0Expression::Float32Literal(_)
-        | C0Expression::Float64Literal(_)
-        | C0Expression::SizeOfStruct { .. }
-        | C0Expression::SizeOfUnion { .. }
-        | C0Expression::SizeOfType { .. } => {}
-        C0Expression::Call { arguments, .. } => expressions.extend(arguments.iter()),
-        C0Expression::IndirectCall {
+        CExpression::ScalarUpdate { .. } => {}
+        CExpression::Void
+        | CExpression::Variable(_)
+        | CExpression::StepResult { .. }
+        | CExpression::FunctionAddress(_)
+        | CExpression::Int32Literal(_)
+        | CExpression::UInt8Literal(_)
+        | CExpression::UInt32Literal(_)
+        | CExpression::Int64Literal(_)
+        | CExpression::UInt64Literal(_)
+        | CExpression::Float32Literal(_)
+        | CExpression::Float64Literal(_)
+        | CExpression::SizeOfStruct { .. }
+        | CExpression::SizeOfUnion { .. }
+        | CExpression::SizeOfType { .. } => {}
+        CExpression::Call { arguments, .. } => expressions.extend(arguments.iter()),
+        CExpression::IndirectCall {
             function,
             arguments,
             ..
@@ -291,49 +290,49 @@ fn child_expressions<'a>(
             expressions.push(function);
             expressions.extend(arguments.iter());
         }
-        C0Expression::Assignment { value, .. } => expressions.push(value),
-        C0Expression::StatementExpression { body, value, .. } => {
+        CExpression::Assignment { value, .. } => expressions.push(value),
+        CExpression::StatementExpression { body, value, .. } => {
             statements.push(body);
             expressions.push(value);
         }
-        C0Expression::Cast { expression, .. }
-        | C0Expression::FloatNegate(expression)
-        | C0Expression::FloatClassification { expression, .. }
-        | C0Expression::AddressOf(expression)
-        | C0Expression::PointerOffsetBytes {
+        CExpression::Cast { expression, .. }
+        | CExpression::FloatNegate(expression)
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::AddressOf(expression)
+        | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
         }
-        | C0Expression::Subobject {
+        | CExpression::Subobject {
             pointer: expression,
             ..
         }
-        | C0Expression::Not(expression)
-        | C0Expression::BitwiseNot(expression)
-        | C0Expression::Load(expression, _)
-        | C0Expression::SequentialRead {
+        | CExpression::Not(expression)
+        | CExpression::BitwiseNot(expression)
+        | CExpression::Load(expression, _)
+        | CExpression::SequentialRead {
             target: expression, ..
         }
-        | C0Expression::AggregateAddress {
+        | CExpression::AggregateAddress {
             pointer: expression,
             ..
         }
-        | C0Expression::Field {
+        | CExpression::Field {
             pointer: expression,
             ..
         }
-        | C0Expression::UnionField {
+        | CExpression::UnionField {
             pointer: expression,
             ..
         }
-        | C0Expression::UnionAddress {
+        | CExpression::UnionAddress {
             pointer: expression,
             ..
         }
-        | C0Expression::CheckedArrayIndex {
+        | CExpression::CheckedArrayIndex {
             index: expression, ..
         } => expressions.push(expression),
-        C0Expression::Ternary {
+        CExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -342,11 +341,11 @@ fn child_expressions<'a>(
             expressions.push(then_branch);
             expressions.push(else_branch);
         }
-        C0Expression::SequentialWrite { target, value, .. } => {
+        CExpression::SequentialWrite { target, value, .. } => {
             expressions.push(target);
             expressions.push(value);
         }
-        crate::languages::c::syntax::binary_c0_expression!(left, right) => {
+        crate::languages::c::syntax::binary_c_expression!(left, right) => {
             expressions.push(left);
             expressions.push(right);
         }
@@ -355,31 +354,29 @@ fn child_expressions<'a>(
 
 /// The immediate subexpressions and substatements of one statement.
 pub(crate) fn child_statements<'a>(
-    statement: &'a C0Statement,
-    expressions: &mut Vec<&'a C0Expression>,
-    statements: &mut Vec<&'a C0Statement>,
+    statement: &'a CStatement,
+    expressions: &mut Vec<&'a CExpression>,
+    statements: &mut Vec<&'a CStatement>,
 ) {
     match statement {
-        C0Statement::Skip
-        | C0Statement::Break
-        | C0Statement::Continue
-        | C0Statement::Goto { .. }
-        | C0Statement::Declare {
+        CStatement::Skip
+        | CStatement::Break
+        | CStatement::Continue
+        | CStatement::Goto { .. }
+        | CStatement::Declare {
             initializer: None, ..
         }
-        | C0Statement::DeclareStructValue { .. } => {}
-        C0Statement::Label { statement, .. } => statements.push(statement),
-        C0Statement::Declare {
+        | CStatement::DeclareStructValue { .. } => {}
+        CStatement::Label { statement, .. } => statements.push(statement),
+        CStatement::Declare {
             initializer: Some(expression),
             ..
         }
-        | C0Statement::Assign { expression, .. } => expressions.push(expression),
-        C0Statement::CallAssign { arguments, .. }
-        | C0Statement::Call { arguments, .. }
-        | C0Statement::CallResult { arguments, .. } => {
+        | CStatement::Assign { expression, .. } => expressions.push(expression),
+        CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
             expressions.extend(arguments.iter());
         }
-        C0Statement::IndirectCall {
+        CStatement::IndirectCall {
             function,
             arguments,
             ..
@@ -387,25 +384,25 @@ pub(crate) fn child_statements<'a>(
             expressions.push(function);
             expressions.extend(arguments.iter());
         }
-        C0Statement::HeapAllocate { bytes, .. } => expressions.push(bytes),
-        C0Statement::HeapFree { pointer, .. } => expressions.push(pointer),
-        C0Statement::Assert { condition, .. }
-        | C0Statement::LoopTest { condition, .. }
-        | C0Statement::StepValue {
+        CStatement::HeapAllocate { bytes, .. } => expressions.push(bytes),
+        CStatement::HeapFree { pointer, .. } => expressions.push(pointer),
+        CStatement::Assert { condition, .. }
+        | CStatement::LoopTest { condition, .. }
+        | CStatement::StepValue {
             expression: condition,
             ..
         } => expressions.push(condition),
-        C0Statement::Seq(first, second) => {
+        CStatement::Seq(first, second) => {
             statements.push(first);
             statements.push(second);
         }
-        C0Statement::Return(value, _) => expressions.push(value),
-        C0Statement::Store { pointer, value, .. } => {
+        CStatement::Return(value, _) => expressions.push(value),
+        CStatement::Store { pointer, value, .. } => {
             expressions.push(pointer);
             expressions.push(value);
         }
-        C0Statement::SequentialStore { target, value, .. }
-        | C0Statement::AggregateCopy {
+        CStatement::SequentialStore { target, value, .. }
+        | CStatement::AggregateCopy {
             target,
             source: value,
             ..
@@ -413,13 +410,13 @@ pub(crate) fn child_statements<'a>(
             expressions.push(target);
             expressions.push(value);
         }
-        C0Statement::Update {
+        CStatement::Update {
             target, operand, ..
         } => {
             expressions.push(target);
             expressions.push(operand);
         }
-        C0Statement::If {
+        CStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -429,16 +426,16 @@ pub(crate) fn child_statements<'a>(
             statements.push(then_branch);
             statements.push(else_branch);
         }
-        C0Statement::While {
+        CStatement::While {
             condition, body, ..
         }
-        | C0Statement::DoWhile {
+        | CStatement::DoWhile {
             condition, body, ..
         } => {
             expressions.push(condition);
             statements.push(body);
         }
-        C0Statement::For {
+        CStatement::For {
             initializer,
             condition,
             step,
@@ -450,11 +447,11 @@ pub(crate) fn child_statements<'a>(
             statements.push(step);
             statements.push(body);
         }
-        C0Statement::Switch {
+        CStatement::Switch {
             expression, cases, ..
         } => {
             expressions.push(expression);
-            statements.extend(cases.iter().map(C0SwitchCase::body));
+            statements.extend(cases.iter().map(CSwitchCase::body));
         }
     }
 }

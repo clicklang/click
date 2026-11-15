@@ -3883,7 +3883,7 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 }
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
-    let mut steps = vec![ProofStep::Normalize, ProofStep::Known];
+    let mut steps = vec![ProofStep::Known, ProofStep::Normalize];
     // Without a proposition goal every candidate is refused alike; keep the
     // complete list so the recorded refusals are unchanged.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
@@ -4353,7 +4353,7 @@ fn source_backed_call_requirement_surface(
             arguments,
             ..
         }
-        | ProgramStatement::CallAssign {
+        | ProgramStatement::CallConstruct {
             function_name,
             arguments,
             ..

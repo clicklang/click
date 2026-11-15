@@ -55,14 +55,12 @@ void traverse(int32 *next, int32 *visited) diverges {
             step();
             mark after_visit;
             have next[0] == at(before_visit, next[0]) by {
-                transport_certificate {
-                    premise 0: changes_only(before_visit, after_visit, memory(visited[cur]))
-                        => changes_only(before_visit, after_visit, memory(visited[cur]));
-                    premise 1: at(before_visit, separate(memory(visited[cur]), memory(next[0])))
-                        => at(before_visit, separate(memory(visited[cur]), memory(next[0])));
-                    preserve 0, 1 => next[0] == at(before_visit, next[0]);
-                    conclusion 2;
+                have separate(loop(0).statement(0).footprint, memory(next[0])) by {
+                    normalize() using {
+                        at(before_visit, separate(memory(visited[cur]), memory(next[0])));
+                    };
                 }
+                preserve(separate(loop(0).statement(0).footprint, memory(next[0])));
             }
             have next[0] == 0;
             step();

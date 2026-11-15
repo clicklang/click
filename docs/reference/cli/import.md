@@ -770,8 +770,11 @@ initialization. Explicit initialization may use an already-supported integer
 expression or a supported direct call. Reference and record locals retain their
 initialization requirements. Local
 declaration identity comes from Clang; direct-call initialization lowers to the
-kernel's ordinary `Declare` and `CallAssign` statements, while later reads and
-assignments use the existing scalar rules. This makes call results usable
+kernel's ordinary `Declare`, `CallResult`, and `Assign` statements. The call
+retains its result before a separate assignment updates the local; both program
+points can be named in proofs. Construction-return calls instead use
+`CallConstruct` to initialize the supplied destination directly, without a copy.
+Later reads and assignments use the existing scalar rules. This makes call results usable
 without treating a compiler-resolved C++ expression as C source text.
 
 Native `unsigned char` values use `uint8` contracts, preserving Clang's

@@ -1585,7 +1585,7 @@ pub(super) fn evaluate_native_expression_paths(
                 .as_ref()
                 .and_then(|results| results.get(step))
             {
-                Some(value) => ExpressionOutcome::Value(value.native().clone()),
+                Some(value) => ExpressionOutcome::Value(value.native().into_owned()),
                 None => ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(format!(
                     "the result of step {step}, read before the step ran"
                 ))),
@@ -1646,12 +1646,18 @@ pub(super) fn evaluate_native_expression_paths(
             fields,
             assumptions,
             budget,
-        )?,
+        )?
+        .into_iter()
+        .map(ExpressionPath::into_native)
+        .collect(),
         ProgramExpression::EnumField {
             value,
             variant,
             index,
-        } => evaluate_program_enum_field_paths(state, value, variant, *index, assumptions, budget)?,
+        } => evaluate_program_enum_field_paths(state, value, variant, *index, assumptions, budget)?
+            .into_iter()
+            .map(ExpressionPath::into_native)
+            .collect(),
         ProgramExpression::EnumIs { value, variant } => {
             evaluate_program_enum_is_paths(state, value, variant, assumptions, budget)?
         }
@@ -2544,14 +2550,14 @@ fn evaluate_program_float_negate_paths(
 /// An enum value of `variant` built from `fields`, evaluated in order. Each
 /// field must have its declared type: the frontend's types are checked, not
 /// trusted.
-fn evaluate_program_enum_construct_paths(
+pub(super) fn evaluate_program_enum_construct_paths(
     state: &ExecutionState,
     enum_type: TypeParameterName,
     variant: &str,
     fields: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<ExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath<crate::kernel::execution_value::ExecutionValue>>> {
     let algebraic_type = enum_type.algebraic_type();
     let declared = algebraic_type
         .variants
@@ -2559,7 +2565,7 @@ fn evaluate_program_enum_construct_paths(
         .find(|declared| declared.name == variant)
         .map(|declared| declared.fields.clone());
     let mut paths = Vec::new();
-    for path in crate::kernel::functions::evaluate_program_arguments_paths(
+    for path in crate::kernel::functions::evaluate_retained_program_arguments_paths(
         state,
         fields,
         assumptions,
@@ -2579,16 +2585,18 @@ fn evaluate_program_enum_construct_paths(
                         && let Some(fields) = declared
                             .iter()
                             .zip(path.values)
-                            .map(|(declared, value)| enum_field_value(declared, value))
+                            .map(|(declared, value)| retained_enum_field_value(declared, value))
                             .collect::<Option<Vec<_>>>() =>
                 {
-                    ExpressionOutcome::Value(ProgramValue::Parameter(Box::new(AlgebraicTerm {
-                        algebraic_type: algebraic_type.clone(),
-                        node: AlgebraicTermNode::Constructor {
+                    ExpressionOutcome::Value(
+                        crate::kernel::KernelConstructor {
+                            algebraic_type: algebraic_type.clone(),
                             variant: variant.to_string(),
                             fields,
-                        },
-                    })))
+                        }
+                        .into_term()
+                        .into(),
+                    )
                 }
                 _ => ExpressionOutcome::RuntimeError(RuntimeError::EnumVariant(format!(
                     "`{}::{variant}` is not a variant of these field types",
@@ -2604,6 +2612,29 @@ fn evaluate_program_enum_construct_paths(
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+/// Preserve the selected field's root, while retaining the native distinction
+/// between logical algebraic fields and program-carried type parameters.
+fn retained_enum_field_value(
+    declared: &AlgebraicValueType,
+    value: crate::kernel::execution_value::ExecutionValue,
+) -> Option<KernelTerm> {
+    if let Some(root) = value.shared() {
+        if matches!(declared, AlgebraicValueType::Algebraic { .. })
+            && let KernelType::Algebraic(ty) = root.ty()
+            && ty.value_type() == *declared
+        {
+            return Some(root.clone());
+        }
+        if matches!(declared, AlgebraicValueType::Program(ty)
+            if *ty == value.program_type() && !matches!(ty, ProgramType::Parameter(_)))
+        {
+            return Some(root.clone());
+        }
+    }
+    enum_field_value(declared, value.into_native())
+        .map(|field| KernelTermImport::default().match_field(&field))
 }
 
 /// The field a constructor stores for C value `value` of a field declared
@@ -2627,22 +2658,64 @@ fn enum_field_value(declared: &AlgebraicValueType, value: ProgramValue) -> Optio
 /// `variant`: a `match` arm makes the value it matches one, so a field a
 /// Rust arm reads is always that arm's. Anything else is refused rather than
 /// given an unconstrained value.
-fn evaluate_program_enum_field_paths(
+pub(super) fn evaluate_program_enum_field_paths(
     state: &ExecutionState,
     value: &ProgramExpression,
     variant: &str,
     index: usize,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<ExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath<crate::kernel::execution_value::ExecutionValue>>> {
     let mut paths = Vec::new();
-    for path in evaluate_program_expression_paths(state, value, assumptions, budget)? {
+    for path in super::retained_expression::evaluate_expression_value_paths(
+        state,
+        value,
+        assumptions,
+        budget,
+    )? {
         let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = path;
-        let outcome = match outcome {
+        if let ExpressionOutcome::Value(value) = &outcome
+            && let Some(root) = value.shared()
+            && let KernelTermNode::Constructor(constructor) = root.node()
+        {
+            let outcome = if constructor.variant != variant {
+                ExpressionOutcome::RuntimeError(RuntimeError::EnumVariant(format!(
+                    "a field of `{}::{variant}` is read from a value not known to be that variant",
+                    constructor.algebraic_type.name
+                )))
+            } else if let Some(field) = constructor.field(variant, index) {
+                if field.ty() == &KernelType::Integer {
+                    ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
+                } else if let KernelTermNode::Legacy(value) = field.node() {
+                    let PureFunctionArgument::Value(value) = value.value() else {
+                        unreachable!("program enum field");
+                    };
+                    ExpressionOutcome::Value(
+                        crate::kernel::execution_value::ExecutionValue::retain_native(
+                            value.clone(),
+                        ),
+                    )
+                } else {
+                    ExpressionOutcome::Value(field.clone().into())
+                }
+            } else {
+                ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
+            };
+            paths.push(ExpressionPath {
+                outcome,
+                facts,
+                obligations,
+            });
+            continue;
+        }
+        // Unknown variants retain the existing fact-witness authority boundary.
+        let outcome = match outcome
+            .map_value(crate::kernel::execution_value::ExecutionValue::into_native)
+        {
             ExpressionOutcome::Value(ProgramValue::Parameter(term)) => {
                 match &known_enum_constructor(&term, &facts, assumptions)
                     .unwrap_or_else(|| term.as_ref().clone())
@@ -2674,7 +2747,8 @@ fn evaluate_program_enum_field_paths(
             outcome => outcome,
         };
         paths.push(ExpressionPath {
-            outcome,
+            outcome: outcome
+                .map_value(crate::kernel::execution_value::ExecutionValue::retain_native),
             facts,
             obligations,
         });
@@ -3375,6 +3449,17 @@ fn add_retained_local_range_facts(
     if let Some(native) = value.native_payload() {
         return add_narrow_integer_range_execution_pure_facts(facts, assumptions, native);
     }
+    if let Some(root) = value.shared()
+        && matches!(root.node(), KernelTermNode::BoolCast { .. })
+        && let Some(format) = MachineIntegerType::from_program_type(value.program_type())
+    {
+        let native = format.value_from_term(
+            root.machine_conversion_leaf()
+                .expect("Boolean cast")
+                .clone(),
+        );
+        add_narrow_integer_range_execution_pure_facts(facts, assumptions, &native);
+    }
 }
 
 fn read_retained_lvalue_paths_without_ranges(
@@ -3780,7 +3865,7 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
             LValueOutcome::LValue(lvalue) => match lvalue.pointer(state) {
                 Some(pointer) => {
                     // A struct object is stored as its byte array; its
-                    // address is a struct pointer, which the C0 front end
+                    // address is a struct pointer, which the C front end
                     // spells with the int32-pointer placeholder. Alignment
                     // of any declared object is intrinsic to its block,
                     // recorded when the block was created.

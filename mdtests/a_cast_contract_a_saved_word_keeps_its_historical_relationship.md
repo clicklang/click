@@ -23,12 +23,7 @@ int32 read_packed(unsigned long* slot, struct node* p) {
         normalize() using {};
     }
     have *(slot as (int32 **)) == at(before, *(slot as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(0).footprint, memory(*slot))
-                => separate(statement(0).region(0).footprint, memory(*slot));
-            preserve 0 => *(slot as (int32 **)) == at(before, *(slot as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(0).footprint, memory(*slot)));
     }
     have ((*slot & ~1) as (struct node *)) == p by {
         known();

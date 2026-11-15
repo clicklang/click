@@ -1100,7 +1100,8 @@ fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
         ProgramStatement::seq(
             Arc::new(program_declare("result", ProgramType::Int32)),
             Arc::new(ProgramStatement::seq(
-                Arc::new(program_call_assign(
+                Arc::new(program_call_then_assign(
+                    0,
                     "result",
                     inner.name(),
                     vec![crate::kernel::program_expression::variable("p")],
@@ -1645,12 +1646,16 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
         "candidate_nested_body_outer",
         vec![program_parameter("p", ProgramType::Int32Pointer)],
         program_seq(
-            program_call_assign(
-                "result",
-                inner.name(),
-                vec![crate::kernel::program_expression::variable("p")],
+            program_declare("result", ProgramType::Int32),
+            program_seq(
+                program_call_then_assign(
+                    1,
+                    "result",
+                    inner.name(),
+                    vec![crate::kernel::program_expression::variable("p")],
+                ),
+                program_return(crate::kernel::program_expression::variable("result")),
             ),
-            program_return(crate::kernel::program_expression::variable("result")),
         ),
     )
     .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], Vec::new());

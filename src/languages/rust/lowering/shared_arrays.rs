@@ -25,23 +25,26 @@ pub(super) fn shared_array_position(iterator: &str) -> ProgramExpression {
     )
 }
 
-/// Assigns `target` the result of the slice iterator operation
-/// `operation`, at element type `element`, on `arguments`: one of the Rust
-/// calls `<[T]>::iter` and `Iterator::next`.
-fn slice_iter_call(
-    target: String,
-    operation: &str,
-    element: &Type,
-    arguments: Vec<ProgramExpression>,
-) -> Result<ProgramStatement, String> {
-    let element = element
-        .scalar_name()
-        .ok_or("shared array iterator requires an integer element")?;
-    Ok(program_call_assign(
-        target,
-        super::super::standard_library::slice_iter_function(operation, element),
-        arguments,
-    ))
+impl Context<'_> {
+    /// Assigns `target` the result of the slice iterator operation
+    /// `operation`, at element type `element`, on `arguments`: one of the Rust
+    /// calls `<[T]>::iter` and `Iterator::next`.
+    fn slice_iter_call(
+        &self,
+        target: String,
+        operation: &str,
+        element: &Type,
+        arguments: Vec<ProgramExpression>,
+    ) -> Result<ProgramStatement, String> {
+        let element = element
+            .scalar_name()
+            .ok_or("shared array iterator requires an integer element")?;
+        Ok(self.call_then_assign(
+            target,
+            super::super::standard_library::slice_iter_function(operation, element),
+            arguments,
+        ))
+    }
 }
 
 impl Context<'_> {
@@ -104,17 +107,18 @@ impl Context<'_> {
                 name: iterator.to_string(),
             })
             .ok()?;
-        slice_iter_call(option, "next", &element, vec![address]).ok()
+        self.slice_iter_call(option, "next", &element, vec![address])
+            .ok()
     }
     /// Stores the iterator value `assign` computes into a temporary into the
     /// memory-backed library iterator `target`.
     fn store_library_iterator(
         &mut self,
         target: &str,
-        assign: impl FnOnce(String) -> Result<ProgramStatement, String>,
+        assign: impl FnOnce(&Self, String) -> Result<ProgramStatement, String>,
     ) -> Result<ProgramStatement, String> {
         let Some(&value_type) = self.memory_values.get(target) else {
-            return assign(target.to_string());
+            return assign(self, target.to_string());
         };
         let temporary = self.fresh_temporary()?;
         let address = self.address(&E::Local {
@@ -123,7 +127,7 @@ impl Context<'_> {
         Ok(program_seq(
             program_seq(
                 program_declare(&temporary, value_type),
-                assign(temporary.clone())?,
+                assign(self, temporary.clone())?,
             ),
             program_typed_store(
                 address,
@@ -214,8 +218,8 @@ impl Context<'_> {
         )?;
         let (l_capture, l) = self.capture_operand(length, &Type::Usize)?;
         if let Some(element) = library {
-            let call = |temporary: String| {
-                slice_iter_call(
+            let call = |cx: &Self, temporary: String| {
+                cx.slice_iter_call(
                     temporary,
                     "iter",
                     &element,

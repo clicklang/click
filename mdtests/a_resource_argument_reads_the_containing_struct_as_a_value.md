@@ -45,6 +45,7 @@ void clear_left(struct rb_node* old) {
     produces after: sized_link(old, (old as (void *) as (struct sized_node *))->size);
     ensures after.model == old(before.model);
     ensures old->rb_left == 0;
+    ensures defined((old as (void *) as (struct sized_node *))->size);
     ensures (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size);
 } by {
     unfold(before);

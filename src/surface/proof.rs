@@ -74,7 +74,7 @@ pub(in crate::surface) use crate::kernel::proof::{
 };
 use claim_proofs::finish_ordered_proof;
 pub(super) use claim_proofs::{
-    finish_whole_contract_root, prove_claim_by_tactics, prove_claims_by_grouped_script,
+    finish_contract_body_root, prove_claim_by_tactics, prove_claims_by_grouped_script,
     prove_claims_by_implicit_tail,
 };
 pub(in crate::surface) use cursor_execution::surface_snapshot_selector;
@@ -673,14 +673,14 @@ mod certificate_tests {
         );
         let error = root
             .driver()
-            .apply_step(ProofStep::Known)
+            .apply_step(ProofStep::Intro)
             .err()
             .expect("a rejected candidate must not be reported as success");
-        assert!(error.message().contains("known"), "{}", error.message());
+        assert!(error.message().contains("intro"), "{}", error.message());
         assert!(root.certificate().steps().is_empty());
         let completed = root
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .expect("failed validation must not mutate the retained root");
         assert_eq!(
             completed.completed_proposition().unwrap().proposition(),
@@ -764,7 +764,7 @@ mod certificate_tests {
         );
         assert_eq!(
             verified[1].proof_tactics().as_deref(),
-            Some([ProofTactic::Normalize].as_slice())
+            Some([ProofTactic::Known].as_slice())
         );
         assert!(matches!(
             verified[2].proof_tactics().as_deref(),

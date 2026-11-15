@@ -1109,18 +1109,18 @@ struct LoopAnnotationShape {
     /// no loop declares resources (which are lowered for every loop before
     /// the body) or wraps the whole body as a natural control loop.
     loops_lower_alone: bool,
-    /// What [`c0_loop_by_index`] finds at each loop index of the function's
+    /// What [`c_loop_by_index`] finds at each loop index of the function's
     /// body, from one walk, so lowering one loop alone does not walk the
     /// statements before it.
-    c0_loops: std::sync::OnceLock<Vec<Option<syntax::C0Statement>>>,
+    c_loops: std::sync::OnceLock<Vec<Option<syntax::CStatement>>>,
 }
 
 impl LoopAnnotationShape {
-    /// [`c0_loop_by_index`] of `body` at `target`. `body` is the body of the
+    /// [`c_loop_by_index`] of `body` at `target`. `body` is the body of the
     /// function this shape was recorded from: every call passes it.
-    fn c0_loop(&self, body: &syntax::C0Statement, target: usize) -> Option<&syntax::C0Statement> {
-        self.c0_loops
-            .get_or_init(|| c0_loops_by_index(body))
+    fn c_loop(&self, body: &syntax::CStatement, target: usize) -> Option<&syntax::CStatement> {
+        self.c_loops
+            .get_or_init(|| c_loops_by_index(body))
             .get(target)?
             .as_ref()
     }
@@ -1225,7 +1225,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
     }
     let parsed_function =
         &*crate::surface::verification::witnessed_function(parsed_function, function_block);
-    let Some(loop_statement) = shape.c0_loop(parsed_function.body(), loop_index) else {
+    let Some(loop_statement) = shape.c_loop(parsed_function.body(), loop_index) else {
         return Ok(None);
     };
     let implicit_contract_mutable_segments = if shape.resource_derived_mutable_frame {
@@ -1396,29 +1396,26 @@ pub(in crate::surface) fn annotated_loop_function_extending(
     }))
 }
 
-/// The C0 loop node a whole-function walk gives loop index `target`, found
+/// The C loop node a whole-function walk gives loop index `target`, found
 /// in that walk's order: `while`, `do` and `for` loops number themselves
 /// before their bodies, and only sequences, loops and `if` arms are
 /// descended, as `AnnotationLowerer::lower_statement` descends them.
-/// [`c0_loops_by_index`] answers every index from one walk; this is its
+/// [`c_loops_by_index`] answers every index from one walk; this is its
 /// reference.
 #[cfg(test)]
-fn c0_loop_by_index(
-    statement: &syntax::C0Statement,
-    target: usize,
-) -> Option<&syntax::C0Statement> {
+fn c_loop_by_index(statement: &syntax::CStatement, target: usize) -> Option<&syntax::CStatement> {
     fn find<'s>(
-        statement: &'s syntax::C0Statement,
+        statement: &'s syntax::CStatement,
         target: usize,
         next: &mut usize,
-    ) -> Option<&'s syntax::C0Statement> {
+    ) -> Option<&'s syntax::CStatement> {
         match statement {
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 find(first, target, next).or_else(|| find(second, target, next))
             }
-            syntax::C0Statement::While { body, .. }
-            | syntax::C0Statement::DoWhile { body, .. }
-            | syntax::C0Statement::For { body, .. } => {
+            syntax::CStatement::While { body, .. }
+            | syntax::CStatement::DoWhile { body, .. }
+            | syntax::CStatement::For { body, .. } => {
                 let index = *next;
                 *next += 1;
                 if index == target {
@@ -1427,7 +1424,7 @@ fn c0_loop_by_index(
                     find(body, target, next)
                 }
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -1439,7 +1436,7 @@ fn c0_loop_by_index(
     let found = find(statement, target, &mut next)?;
     matches!(
         found,
-        syntax::C0Statement::While { .. } | syntax::C0Statement::DoWhile { .. }
+        syntax::CStatement::While { .. } | syntax::CStatement::DoWhile { .. }
     )
     .then_some(found)
 }
@@ -1488,7 +1485,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         | ProgramStatement::Declare { .. }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -1512,33 +1509,33 @@ thread_local! {
     static LOOP_LOOKUP_NODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// The statements loop lookups (`kernel_loop_by_index`, and the C0 loop
+/// The statements loop lookups (`kernel_loop_by_index`, and the C loop
 /// index) visited on this thread so far.
 #[cfg(test)]
 pub(in crate::surface) fn loop_lookup_nodes() -> usize {
     LOOP_LOOKUP_NODES.with(std::cell::Cell::get)
 }
 
-/// Every loop index's [`c0_loop_by_index`] answer for `statement`, from
+/// Every loop index's [`c_loop_by_index`] answer for `statement`, from
 /// one walk in the same order.
-fn c0_loops_by_index(statement: &syntax::C0Statement) -> Vec<Option<syntax::C0Statement>> {
-    fn walk(statement: &syntax::C0Statement, found: &mut Vec<Option<syntax::C0Statement>>) {
+fn c_loops_by_index(statement: &syntax::CStatement) -> Vec<Option<syntax::CStatement>> {
+    fn walk(statement: &syntax::CStatement, found: &mut Vec<Option<syntax::CStatement>>) {
         #[cfg(test)]
         LOOP_LOOKUP_NODES.with(|count| count.set(count.get() + 1));
         match statement {
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 walk(first, found);
                 walk(second, found);
             }
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 found.push(Some(statement.clone()));
                 walk(body, found);
             }
-            syntax::C0Statement::For { body, .. } => {
+            syntax::CStatement::For { body, .. } => {
                 found.push(None);
                 walk(body, found);
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -1883,7 +1880,7 @@ fn annotate_function(
             parsed_function
                 .string_literals()
                 .iter()
-                .map(syntax::C0StringLiteral::to_kernel)
+                .map(syntax::CStringLiteral::to_kernel)
                 .collect(),
         )
         .with_resource_summary(resource_requires, resource_ensures)
@@ -1995,7 +1992,7 @@ fn annotate_function(
         records,
         contract_mutable,
         resource_derived_mutable_frame,
-        c0_loops: std::sync::OnceLock::new(),
+        c_loops: std::sync::OnceLock::new(),
     });
     Ok((function, shape))
 }
@@ -3706,18 +3703,18 @@ impl AnnotationLowerer<'_> {
 
     fn lower_statement(
         &mut self,
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
         control_targets: &BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     ) -> Result<ProgramStatement, ClickError> {
         Ok(match statement {
-            syntax::C0Statement::Seq(first, second) => program_seq(
+            syntax::CStatement::Seq(first, second) => program_seq(
                 self.lower_statement(first, control_targets)?,
                 self.lower_statement(second, control_targets)?,
             ),
-            syntax::C0Statement::While {
+            syntax::CStatement::While {
                 condition, body, ..
             }
-            | syntax::C0Statement::DoWhile {
+            | syntax::CStatement::DoWhile {
                 condition, body, ..
             } => {
                 let statement_index = self.next_statement_index();
@@ -3730,7 +3727,7 @@ impl AnnotationLowerer<'_> {
                 let (ranking_measures, structural_measure) =
                     self.loop_measure_clauses(loop_index)?;
                 self.end_loop_record(loop_index, true);
-                if matches!(statement, syntax::C0Statement::DoWhile { .. }) {
+                if matches!(statement, syntax::CStatement::DoWhile { .. }) {
                     program_do_while_with_invariant_and_effect_checks(
                         condition.to_kernel_expression(),
                         invariant_checks,
@@ -3753,7 +3750,7 @@ impl AnnotationLowerer<'_> {
                     .with_loop_structural_measure(structural_measure)
                 }
             }
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 condition,
                 step,
@@ -3786,7 +3783,7 @@ impl AnnotationLowerer<'_> {
                     .with_loop_structural_measure(structural_measure),
                 )
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -5120,11 +5117,11 @@ impl AnnotationLowerer<'_> {
             } => Ok(SpecProposition::FloatClassification {
                 expression: self.lower_contract_expression_to_spec(expression, environment)?,
                 classification: match classification {
-                    syntax::C0FloatClassification::Finite => FloatClassification::Finite,
-                    syntax::C0FloatClassification::Infinite => FloatClassification::Infinite,
-                    syntax::C0FloatClassification::Zero => FloatClassification::Zero,
-                    syntax::C0FloatClassification::Subnormal => FloatClassification::Subnormal,
-                    syntax::C0FloatClassification::Nan => FloatClassification::Nan,
+                    syntax::CFloatClassification::Finite => FloatClassification::Finite,
+                    syntax::CFloatClassification::Infinite => FloatClassification::Infinite,
+                    syntax::CFloatClassification::Zero => FloatClassification::Zero,
+                    syntax::CFloatClassification::Subnormal => FloatClassification::Subnormal,
+                    syntax::CFloatClassification::Nan => FloatClassification::Nan,
                 },
             }),
             ClickProposition::ChangesOnly {
@@ -7492,6 +7489,18 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 self.lower_click_function_call_to_algebraic_spec(name, arguments, environment)
+            }
+            // A region result that is no enum value: say why, as a call the
+            // function does not make.
+            ContractExpression::RegionResult(region) => {
+                let snapshots = self
+                    .snapshots
+                    .ok_or("`.result` names a region of a function body being executed")?;
+                snapshots.region_result_value(region)?;
+                Err(format!(
+                    "`{}.result` is not an algebraic value",
+                    diagnostics::describe_code_region_ref(region)
+                ))
             }
             _ => Err("expected an algebraic value".to_string()),
         }

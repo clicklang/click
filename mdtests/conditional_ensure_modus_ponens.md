@@ -40,6 +40,7 @@ int32 use_five(int32* cell) {
 } by {
     step();
     step();
+    step();
     if c(flag) == 1 {
         have cell[0] == 5 by {
             solve() using {

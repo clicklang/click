@@ -3,7 +3,7 @@
 use super::*;
 
 impl Parser {
-    pub(super) fn parse_typedef_declaration(&mut self) -> Result<(), C0SyntaxError> {
+    pub(super) fn parse_typedef_declaration(&mut self) -> Result<(), CSyntaxError> {
         self.expect_ident_spelling("typedef")?;
         let mut parsed_type = self.parse_type_with_anonymous_struct(true, true, true)?;
         let alias = if let Some((alias, interface_type, signature)) =
@@ -105,7 +105,7 @@ impl Parser {
         Ok(())
     }
 
-    pub(super) fn parse_enum_declaration(&mut self) -> Result<(), C0SyntaxError> {
+    pub(super) fn parse_enum_declaration(&mut self) -> Result<(), CSyntaxError> {
         self.parse_enum_specifier_body()?;
         self.expect(Token::Semicolon)?;
         Ok(())
@@ -113,7 +113,7 @@ impl Parser {
 
     /// Parses `enum [tag] { enumerators }` and records the enumeration,
     /// returning its name: the tag, or a fresh name for an anonymous one.
-    pub(super) fn parse_enum_specifier_body(&mut self) -> Result<String, C0SyntaxError> {
+    pub(super) fn parse_enum_specifier_body(&mut self) -> Result<String, CSyntaxError> {
         self.expect_ident_spelling("enum")?;
         let name = if self.peek() == Some(&Token::LBrace) {
             format!(
@@ -216,7 +216,7 @@ impl Parser {
         }
         self.enums.insert(
             name.clone(),
-            C0EnumDefinition {
+            CEnumDefinition {
                 values,
                 compatible_type,
             },
@@ -224,7 +224,7 @@ impl Parser {
         Ok(name)
     }
 
-    pub(super) fn parse_enum_value(&mut self, enum_name: &str) -> Result<i64, C0SyntaxError> {
+    pub(super) fn parse_enum_value(&mut self, enum_name: &str) -> Result<i64, CSyntaxError> {
         let expression = self.parse_expression()?;
         let value = evaluate_static_integer_expression(&expression).map_err(|_| {
             self.error_here(format!(
@@ -242,7 +242,7 @@ impl Parser {
         })
     }
 
-    pub(super) fn parse_union_declaration(&mut self) -> Result<(), C0SyntaxError> {
+    pub(super) fn parse_union_declaration(&mut self) -> Result<(), CSyntaxError> {
         self.expect_ident_spelling("union")?;
         let name = self.expect_ident("union name")?;
         self.parse_union_body(name)?;
@@ -251,7 +251,7 @@ impl Parser {
 
     // Named declarations and anonymous typedefs share the same ABI layout.
     // The caller consumes the declarator and its trailing semicolon.
-    pub(super) fn parse_union_body(&mut self, name: String) -> Result<(), C0SyntaxError> {
+    pub(super) fn parse_union_body(&mut self, name: String) -> Result<(), CSyntaxError> {
         if self.unions.contains_key(&name) {
             return Err(self.error_at_previous(format!("duplicate union declaration `{name}`")));
         }
@@ -295,7 +295,7 @@ impl Parser {
                 if fields
                     .insert(
                         field_name.clone(),
-                        C0UnionField {
+                        CUnionField {
                             interface_type,
                             long_double: field_type.long_double,
                             pointee_constant: field_type.pointee_constant,
@@ -335,7 +335,7 @@ impl Parser {
             .ok_or_else(|| self.error_here(format!("union `{name}` layout is too large")))?;
         self.unions.insert(
             name,
-            C0UnionLayout {
+            CUnionLayout {
                 fields,
                 size_bytes,
                 alignment_bytes: union_alignment,
@@ -344,7 +344,7 @@ impl Parser {
         Ok(())
     }
 
-    pub(super) fn parse_struct_declaration(&mut self) -> Result<(), C0SyntaxError> {
+    pub(super) fn parse_struct_declaration(&mut self) -> Result<(), CSyntaxError> {
         self.expect_ident_spelling("struct")?;
         let name = self.expect_ident("struct name")?;
         self.parse_struct_body(name)?;
@@ -353,7 +353,7 @@ impl Parser {
 
     // Both named declarations and anonymous typedefs use the same layout and
     // field validation. The caller owns the following declarator/semicolon.
-    pub(super) fn parse_struct_body(&mut self, name: String) -> Result<(), C0SyntaxError> {
+    pub(super) fn parse_struct_body(&mut self, name: String) -> Result<(), CSyntaxError> {
         self.expect(Token::LBrace)?;
 
         let mut fields = BTreeMap::new();
@@ -510,7 +510,7 @@ impl Parser {
             Option<u32>,
             Option<Vec<u32>>,
         ),
-        C0SyntaxError,
+        CSyntaxError,
     > {
         if base_type.long_double {
             if base_type.is_volatile || base_type.is_constant {
@@ -752,7 +752,7 @@ impl Parser {
     /// Struct members cannot have variable-length array types. Reuse the
     /// typed constant evaluator, then check the layout's element-count domain
     /// before multiplication by any other dimensions or the element width.
-    pub(super) fn parse_struct_array_length(&mut self) -> Result<u32, C0SyntaxError> {
+    pub(super) fn parse_struct_array_length(&mut self) -> Result<u32, CSyntaxError> {
         let expression = self.parse_expression()?;
         let value = evaluate_static_integer_expression(&expression).map_err(|error| {
             self.error_here(match error {

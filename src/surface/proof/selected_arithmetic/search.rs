@@ -956,7 +956,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     vec![
                         ProofStep::Rewrite(first_fact.clone()),
                         ProofStep::Rewrite(second_fact.clone()),
-                        ProofStep::Normalize,
+                        ProofStep::Known,
                     ],
                 )) else {
                     continue;
@@ -1434,7 +1434,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // `normalize` after them has nothing left to prove.
                 let mut unfolded = steps.clone();
                 unfolded.pop();
-                let refuted = refute(steps).or_else(|error| refute(unfolded).map_err(|_| error));
+                let mut known = unfolded.clone();
+                known.push(ProofStep::Known);
+                let refuted = refute(known)
+                    .or_else(|_| refute(steps))
+                    .or_else(|error| refute(unfolded).map_err(|_| error));
                 Ok(refuted.ok().filter(Proof::focused_discharged))
             }
             DefinitionPlan::Split {
@@ -1578,7 +1582,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // around it is not complete yet.
         let closes = |proof: &Proof<'a>| proof.focused_discharged() || proof.is_complete();
         if let RewriteClosers::Listed(premise_pairs) = closers {
-            if let Ok(closed) = search_input.driver().apply_step(ProofStep::Normalize)
+            if let Ok(closed) =
+                crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
                 && closes(&closed)
             {
                 return Ok(Some(closed));
@@ -1603,11 +1608,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )
                     })
                     .or_else(|| {
-                        search_input
-                            .driver()
-                            .apply_step(ProofStep::Normalize)
-                            .ok()
-                            .filter(closes)
+                        crate::kernel::search::ProofSearch::apply_normalization_closure(
+                            search_input,
+                            None,
+                        )
+                        .ok()
+                        .filter(closes)
                     })
             {
                 return Ok(Some(closed));
@@ -1630,11 +1636,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )
                     })
                     .or_else(|| {
-                        search_input
-                            .driver()
-                            .apply_step(ProofStep::Normalize)
-                            .ok()
-                            .filter(closes)
+                        crate::kernel::search::ProofSearch::apply_normalization_closure(
+                            search_input,
+                            None,
+                        )
+                        .ok()
+                        .filter(closes)
                     });
             return Ok(closed.filter(closes));
         }
@@ -1643,7 +1650,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        if let Ok(closed) = search_input.driver().apply_step(ProofStep::Normalize)
+        if let Ok(closed) =
+            crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
             && closes(&closed)
         {
             return Ok(Some(closed));
@@ -1961,7 +1969,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // identity.
                 Relation::Equal => {
                     let stated = relate(lower.clone(), upper.clone(), relation);
-                    vec![ProofStep::Rewrite(stated), ProofStep::Normalize]
+                    vec![ProofStep::Rewrite(stated), ProofStep::Known]
                 }
             };
             let steps = vec![have(observed.clone(), carry)];

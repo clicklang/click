@@ -6,7 +6,7 @@ use click::cli::{
     CRASH_CONTAINMENT_TIME_LIMIT, PUBLIC_CLI_BEHAVIORS, PUBLIC_ENVIRONMENT_VARIABLES, RunLimits,
     format_duration,
 };
-use click::languages::c::syntax::C0_PUBLIC_FORMS;
+use click::languages::c::syntax::C_PUBLIC_FORMS;
 use click::surface::{PUBLIC_TACTIC_FORMS, SURFACE_CLICK_FORMS, SURFACE_CLICK_WORDS};
 
 #[path = "support/ai_reference.rs"]
@@ -1091,17 +1091,17 @@ fn surface_click_form_inventory_is_bidirectional() {
 }
 
 #[test]
-fn c0_surface_inventory_is_bidirectional() {
-    let implementation = C0_PUBLIC_FORMS
+fn c_surface_inventory_is_bidirectional() {
+    let implementation = C_PUBLIC_FORMS
         .iter()
         .map(|form| (*form).to_string())
         .collect::<BTreeSet<_>>();
     assert_eq!(
         implementation.len(),
-        C0_PUBLIC_FORMS.len(),
-        "duplicate C0 form in registry"
+        C_PUBLIC_FORMS.len(),
+        "duplicate C form in registry"
     );
-    assert_eq!(implementation, inventory_ids("c0."));
+    assert_eq!(implementation, inventory_ids("c."));
 }
 
 #[test]
@@ -2210,7 +2210,7 @@ fn language_support_summaries_link_to_the_coverage_matrix() {
 }
 
 #[test]
-fn public_pages_say_supported_c_not_c0() {
+fn public_pages_use_current_c_terminology() {
     let docs = root().join("docs");
     let mut pages = vec![docs.join("index.md")];
     markdown_files(&docs.join("concepts"), &mut pages);
@@ -2218,10 +2218,6 @@ fn public_pages_say_supported_c_not_c0() {
     pages.sort();
     let mut failures = Vec::new();
     for page in pages {
-        // The glossary entry explains the historical name.
-        if page.ends_with("reference/glossary.md") {
-            continue;
-        }
         let source = fs::read_to_string(&page).expect("read public page");
         let mut in_code_fence = false;
         for (line, text) in source.lines().enumerate() {

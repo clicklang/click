@@ -2550,7 +2550,8 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
 /// owns both the semantic successor and the exact simple certificate that
 /// produced it, so ordinary operation does not reconstruct and check that
 /// certificate through the legacy gateway.
-/// The ordered int32 equalities a `rewrite ...; normalize` certificate cites.
+/// The ordered int32 equalities a rewrite certificate ending in `known` or
+/// legacy `normalize` cites.
 ///
 /// Returns `None` for any other certificate shape, or when a cited surface
 /// proposition does not lower.
@@ -2562,7 +2563,7 @@ fn certificate_int32_rewrites(
 ) -> Option<Vec<Proposition>> {
     let steps = certificate.steps();
     let (rewrite_steps, closer) = steps.split_at(steps.len().saturating_sub(1));
-    if !matches!(closer, [ProofStep::Normalize]) || rewrite_steps.is_empty() {
+    if !matches!(closer, [ProofStep::Known | ProofStep::Normalize]) || rewrite_steps.is_empty() {
         return None;
     }
     rewrite_steps
@@ -4250,22 +4251,22 @@ mod tests {
     #[test]
     fn pure_instantiate_branch_continuations_keep_checked_sibling_proofs() {
         let source = r#"
-            theorem branched(x: int32) {
-                requires forall (k: int32) { k <= k };
-                requires x == 0 or x != 0;
-                ensures x <= x by {
-                    if x == 0 {
-                        instantiate(forall (k: int32) { k <= k }, x) using {}
+            theorem branched(x: int32, flag: int32) {
+                requires forall (k: int32) { k <= 0 };
+                requires flag == 0 or flag != 0;
+                ensures x <= 0 by {
+                    if flag == 0 {
+                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
                     } else {
-                        instantiate(forall (k: int32) { k <= k }, x) using {}
+                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
                     }
                     known();
                 }
             }
         "#;
         let cases = source
-            .replace("if x == 0 {", "cases {\n x == 0 => {")
-            .replace("} else {", "}\n x != 0 => {")
+            .replace("if flag == 0 {", "cases {\n flag == 0 => {")
+            .replace("} else {", "}\n flag != 0 => {")
             .replace(
                 "using {}\n                    }\n                    known();",
                 "using {}\n                    }\n }\n                    known();",
@@ -4301,7 +4302,7 @@ mod tests {
                     .is_some()
             );
             let wrong_sibling = source.replacen(
-                "instantiate(forall (k: int32) { k <= k }, x) using {}",
+                "instantiate(forall (k: int32) { k <= 0 }, x) using {}",
                 "",
                 1,
             );

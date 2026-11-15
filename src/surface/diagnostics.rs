@@ -54,7 +54,7 @@ thread_local! {
     /// Where each C statement being stepped was written, innermost last; see
     /// [`StatementSiteScope`].
     static C_STATEMENT_SITES: std::cell::RefCell<
-        Vec<Option<std::sync::Arc<crate::languages::c::syntax::C0StatementSite>>>,
+        Vec<Option<std::sync::Arc<crate::languages::c::syntax::CStatementSite>>>,
     > = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -1122,7 +1122,7 @@ pub(super) fn describe_multiple_statement_successors_guidance(
         || !matches!(
             statement,
             ProgramStatement::Call { .. }
-                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
         )
     {
@@ -1418,7 +1418,7 @@ pub(super) fn local_naming_tables(
         values.extend(results.iter().filter_map(|(call, value)| {
             Some((
                 describe_contract_expression(&step_result_expression(*call)?),
-                value.native().clone(),
+                value.native().into_owned(),
             ))
         }));
     }
@@ -2631,7 +2631,7 @@ pub(super) fn describe_memory_range(
                 .and_then(|slot| {
                     slot.interface_type()
                         .pointee_type()
-                        .map(|pointee| diagnostic_c0_type_byte_width(pointee, slot.byte_width()))
+                        .map(|pointee| diagnostic_c_type_byte_width(pointee, slot.byte_width()))
                 })
                 .and_then(|width| u32::try_from(width).ok())
                 .unwrap_or(1);
@@ -5220,7 +5220,7 @@ fn describe_parameter_struct_field_pointer(
     layout.fields().iter().find_map(|(name, field)| {
         let field_type = field.interface_type();
         let pointee_type = field_type.pointee_type()?;
-        let pointee_width = diagnostic_c0_type_byte_width(pointee_type, field.byte_width());
+        let pointee_width = diagnostic_c_type_byte_width(pointee_type, field.byte_width());
         if byte_width.is_some_and(|byte_width| pointee_width != byte_width) {
             return None;
         }
@@ -5322,7 +5322,7 @@ fn describe_struct_member_from(
     (within % width == 0).then(|| format!("{member}[{}]", within / width))
 }
 
-fn diagnostic_c0_type_byte_width(interface_type: InterfaceType, pointer_width: u32) -> i64 {
+fn diagnostic_c_type_byte_width(interface_type: InterfaceType, pointer_width: u32) -> i64 {
     match interface_type {
         InterfaceType::Bool | InterfaceType::Char(_) | InterfaceType::UInt8 => 1,
         InterfaceType::Int8 => 1,
@@ -5741,9 +5741,9 @@ fn name_string_literal_storage(message: &str) -> String {
     )
 }
 
-pub(in crate::surface) fn describe_callback_source(expression: &syntax::C0Expression) -> String {
+pub(in crate::surface) fn describe_callback_source(expression: &syntax::CExpression) -> String {
     match expression {
-        syntax::C0Expression::Field {
+        syntax::CExpression::Field {
             pointer,
             source: Some(source),
             ..
@@ -5751,14 +5751,14 @@ pub(in crate::surface) fn describe_callback_source(expression: &syntax::C0Expres
             // Member lowering narrows the field after adding its offset.
             // Neither operation belongs in the source-level field spelling.
             let mut base = pointer.as_ref();
-            while let syntax::C0Expression::Subobject { pointer, .. } = base {
+            while let syntax::CExpression::Subobject { pointer, .. } = base {
                 base = pointer;
             }
-            if let syntax::C0Expression::PointerOffsetBytes { pointer, .. } = base {
+            if let syntax::CExpression::PointerOffsetBytes { pointer, .. } = base {
                 base = pointer;
             }
             match base {
-                syntax::C0Expression::AddressOf(object) => {
+                syntax::CExpression::AddressOf(object) => {
                     format!(
                         "{}.{}",
                         describe_callback_source(object),
@@ -6722,7 +6722,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         } => {
             format!("{name} = {};", describe_program_expression(expression))
         }
-        ProgramStatement::CallAssign {
+        ProgramStatement::CallConstruct {
             target,
             function_name,
             arguments,

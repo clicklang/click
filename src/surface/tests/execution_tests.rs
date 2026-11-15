@@ -1336,7 +1336,7 @@ fn bounded_execute_resumes_and_explores_symbolic_branches() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_10")]
-fn verifies_fill3_c0_source_with_sidecar_specification() {
+fn verifies_fill3_c_source_with_sidecar_specification() {
     let verified = verify_c_sources(FILL3_CLICK, &[("fill3.c", FILL3_C)])
         .expect("fill3 sidecar should verify");
 
@@ -2565,7 +2565,7 @@ test_batches! {
     ],
     execution_batch_10: [
         bounded_execute_resumes_and_explores_symbolic_branches,
-        verifies_fill3_c0_source_with_sidecar_specification,
+        verifies_fill3_c_source_with_sidecar_specification,
         bounded_solve_loop_expands_without_a_detached_summary,
         signature_mismatch_reports_direct_error,
     ],

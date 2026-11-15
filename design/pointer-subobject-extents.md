@@ -97,7 +97,7 @@ enum PointerExtent {
 | Cast from another pointer type to a character pointer, or any cast to `void*` | `Root` (byte view of the enclosing object; keeps `container_of`, D4) |
 
 The frontend supplies each field's type and ABI size
-(`C0StructField::byte_width`). C member lowering records a `CExpression::Subobject`
+(`CStructField::byte_width`). C member lowering records a `CExpression::Subobject`
 at the selected address; C++ member and checked-object lowering use the same
 kernel bounds rules. The Rust adapter currently refuses raw-pointer types;
 its supported safe slice indexing checks `index < length` independently.

@@ -1,9 +1,8 @@
-# A wide viewable range carries one element's definedness across a frame
+# A wide viewable range does not initialize its elements
 
-A `viewable` range bounded by a `size_t` length is the same evidence as one
-bounded by an `int32`: `transport` carries it from function entry to
-`defined(bytes[k])` for an index inside it. Citing the range also cites its
-object-size guard, which the contract states with it.
+A pure `viewable` premise establishes address validity, not initialized
+contents. Even a bounded element inside that range needs independent
+initialization evidence before `defined(bytes[k])` can be proved.
 
 ```c filename=wide_viewable_element.c
 uint64 f(uint8 bytes[], uint64 n) {
@@ -37,5 +36,5 @@ uint64 f(uint8 bytes[], uint64 n) {
 ```
 
 ```expect
-pass
+fail: found no frame evidence
 ```

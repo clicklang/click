@@ -72,6 +72,7 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
     step(); step(); step();
     fold(Cell(cell));
     step(Buffered);
+    step();
     unfold(Cell(cell));
     if c(status) != 0 {
         have cell[0] == value by { extract(cell[0] == value); known(); }

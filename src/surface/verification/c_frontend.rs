@@ -51,7 +51,7 @@ pub(super) fn link_c_units(
     // Check C source compatibility before kernel lowering erases distinctions
     // such as plain char versus unsigned char. Retain declarations once per
     // translation unit, including prototypes in files without a definition.
-    let mut function_declarations = BTreeMap::<&str, (&str, &syntax::C0FunctionHeader)>::new();
+    let mut function_declarations = BTreeMap::<&str, (&str, &syntax::CFunctionHeader)>::new();
     for (source_path, unit) in &units {
         for declaration in unit.function_declarations.values() {
             let name = declaration.linkage_name();
@@ -71,7 +71,7 @@ pub(super) fn link_c_units(
     // Every kernel function receives the same externally linked global layout.
     // File-scope `static` declarations stay in their own
     // translation unit and are linked below only into that unit's functions.
-    let mut globals_by_source = BTreeMap::<String, BTreeMap<String, syntax::C0Global>>::new();
+    let mut globals_by_source = BTreeMap::<String, BTreeMap<String, syntax::CGlobal>>::new();
     for (source_path, unit) in &units {
         let source_globals = globals_by_source.entry(source_path.clone()).or_default();
         for (name, global) in &unit.globals {
@@ -111,7 +111,7 @@ pub(super) fn link_c_units(
             }
         }
     }
-    let mut globals = syntax::DeclarationMap::<syntax::C0Global>::new();
+    let mut globals = syntax::DeclarationMap::<syntax::CGlobal>::new();
     for source_globals in globals_by_source.values() {
         for (name, global) in source_globals {
             if global.is_file_static() {
@@ -159,7 +159,7 @@ pub(super) fn link_c_units(
         )));
     }
     let mut global_arrays_by_source =
-        BTreeMap::<String, BTreeMap<String, syntax::C0GlobalArray>>::new();
+        BTreeMap::<String, BTreeMap<String, syntax::CGlobalArray>>::new();
     for (source_path, unit) in &units {
         let source_arrays = global_arrays_by_source
             .entry(source_path.clone())
@@ -212,7 +212,7 @@ pub(super) fn link_c_units(
             )));
         }
     }
-    let mut global_arrays = syntax::DeclarationMap::<syntax::C0GlobalArray>::new();
+    let mut global_arrays = syntax::DeclarationMap::<syntax::CGlobalArray>::new();
     for source_arrays in global_arrays_by_source.values() {
         for (name, array) in source_arrays {
             if array.is_file_static() {
@@ -264,7 +264,7 @@ pub(super) fn link_c_units(
         return Err(ClickError::new(message));
     }
     let mut global_aggregates_by_source =
-        BTreeMap::<String, BTreeMap<String, syntax::C0GlobalAggregate>>::new();
+        BTreeMap::<String, BTreeMap<String, syntax::CGlobalAggregate>>::new();
     for (source_path, unit) in &units {
         let source_aggregates = global_aggregates_by_source
             .entry(source_path.clone())
@@ -323,7 +323,7 @@ pub(super) fn link_c_units(
             }
         }
     }
-    let mut global_aggregates = syntax::DeclarationMap::<syntax::C0GlobalAggregate>::new();
+    let mut global_aggregates = syntax::DeclarationMap::<syntax::CGlobalAggregate>::new();
     for source_aggregates in global_aggregates_by_source.values() {
         for (name, aggregate) in source_aggregates {
             if aggregate.is_file_static() {
@@ -377,7 +377,7 @@ pub(super) fn link_c_units(
         )));
     }
     let mut global_aggregate_arrays_by_source =
-        BTreeMap::<String, BTreeMap<String, syntax::C0GlobalAggregateArray>>::new();
+        BTreeMap::<String, BTreeMap<String, syntax::CGlobalAggregateArray>>::new();
     for (source_path, unit) in &units {
         let source_aggregate_arrays = global_aggregate_arrays_by_source
             .entry(source_path.clone())
@@ -444,7 +444,7 @@ pub(super) fn link_c_units(
         }
     }
     let mut global_aggregate_arrays =
-        syntax::DeclarationMap::<syntax::C0GlobalAggregateArray>::new();
+        syntax::DeclarationMap::<syntax::CGlobalAggregateArray>::new();
     for source_aggregate_arrays in global_aggregate_arrays_by_source.values() {
         for (name, aggregate) in source_aggregate_arrays {
             if aggregate.is_file_static() {
@@ -701,17 +701,17 @@ pub(super) fn link_c_units(
 #[allow(clippy::too_many_arguments)]
 fn unit_storage_context(
     source_path: &str,
-    globals_by_source: &BTreeMap<String, BTreeMap<String, syntax::C0Global>>,
-    globals: &syntax::DeclarationMap<syntax::C0Global>,
-    global_arrays_by_source: &BTreeMap<String, BTreeMap<String, syntax::C0GlobalArray>>,
-    global_arrays: &syntax::DeclarationMap<syntax::C0GlobalArray>,
-    global_aggregates_by_source: &BTreeMap<String, BTreeMap<String, syntax::C0GlobalAggregate>>,
-    global_aggregates: &syntax::DeclarationMap<syntax::C0GlobalAggregate>,
+    globals_by_source: &BTreeMap<String, BTreeMap<String, syntax::CGlobal>>,
+    globals: &syntax::DeclarationMap<syntax::CGlobal>,
+    global_arrays_by_source: &BTreeMap<String, BTreeMap<String, syntax::CGlobalArray>>,
+    global_arrays: &syntax::DeclarationMap<syntax::CGlobalArray>,
+    global_aggregates_by_source: &BTreeMap<String, BTreeMap<String, syntax::CGlobalAggregate>>,
+    global_aggregates: &syntax::DeclarationMap<syntax::CGlobalAggregate>,
     global_aggregate_arrays_by_source: &BTreeMap<
         String,
-        BTreeMap<String, syntax::C0GlobalAggregateArray>,
+        BTreeMap<String, syntax::CGlobalAggregateArray>,
     >,
-    global_aggregate_arrays: &syntax::DeclarationMap<syntax::C0GlobalAggregateArray>,
+    global_aggregate_arrays: &syntax::DeclarationMap<syntax::CGlobalAggregateArray>,
 ) -> crate::languages::interface::ImportedFunction {
     fn visible<T: Clone>(
         own: &BTreeMap<String, T>,
@@ -818,7 +818,7 @@ pub(super) fn c_layouts(
                 .entry(name.clone())
                 .or_insert_with(|| typedef.clone());
             if entry != typedef {
-                *entry = syntax::C0HeadTypedef::Other;
+                *entry = syntax::CHeadTypedef::Other;
             }
         }
         for (name, layout) in &unit.unions {
@@ -868,7 +868,7 @@ pub(super) fn c_layouts(
     Ok(tables)
 }
 
-fn c_parse_error_kind(error: &syntax::C0SyntaxError) -> ClickErrorKind {
+fn c_parse_error_kind(error: &syntax::CSyntaxError) -> ClickErrorKind {
     if error.limit_exceeded() {
         ClickErrorKind::Limit
     } else {
@@ -880,7 +880,7 @@ pub(super) fn parse_c_source_unit(
     source_path: &str,
     c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
-) -> Result<syntax::C0TranslationUnit, ClickError> {
+) -> Result<syntax::CTranslationUnit, ClickError> {
     if let Some(import) = c_sources.prepared_c_import(source_path)
         && import.target() != target
     {
@@ -995,7 +995,7 @@ fn qualified_scalar_read(
 /// The globals and function statics of one translation unit a contract may
 /// name: `name`, or `function::name` for a static.
 pub(super) fn unit_qualified_objects(
-    unit: &syntax::C0TranslationUnit,
+    unit: &syntax::CTranslationUnit,
 ) -> BTreeMap<String, parser::QualifiedCObject> {
     let mut objects = BTreeMap::new();
     for (name, global) in &unit.globals {
@@ -1241,15 +1241,15 @@ pub(super) fn record_function_tables(
     let mut pending = vec![function.body()];
     while let Some(statement) = pending.pop() {
         match statement {
-            syntax::C0Statement::Declare { name, .. }
-            | syntax::C0Statement::DeclareStructValue { name, .. } => {
+            syntax::CStatement::Declare { name, .. }
+            | syntax::CStatement::DeclareStructValue { name, .. } => {
                 names.insert(name.clone());
             }
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 pending.push(second);
                 pending.push(first);
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -1257,12 +1257,12 @@ pub(super) fn record_function_tables(
                 pending.push(else_branch);
                 pending.push(then_branch);
             }
-            syntax::C0Statement::While { body, .. }
-            | syntax::C0Statement::DoWhile { body, .. }
-            | syntax::C0Statement::Label {
+            syntax::CStatement::While { body, .. }
+            | syntax::CStatement::DoWhile { body, .. }
+            | syntax::CStatement::Label {
                 statement: body, ..
             } => pending.push(body),
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 body,
                 step,
@@ -1272,8 +1272,8 @@ pub(super) fn record_function_tables(
                 pending.push(body);
                 pending.push(initializer);
             }
-            syntax::C0Statement::Switch { cases, .. } => {
-                pending.extend(cases.iter().map(syntax::C0SwitchCase::body));
+            syntax::CStatement::Switch { cases, .. } => {
+                pending.extend(cases.iter().map(syntax::CSwitchCase::body));
             }
             _ => {}
         }
@@ -1388,7 +1388,7 @@ pub(super) fn record_function_tables(
 }
 
 pub(super) fn validate_modeled_pthread_binding(
-    units: &BTreeMap<String, syntax::C0TranslationUnit>,
+    units: &BTreeMap<String, syntax::CTranslationUnit>,
 ) -> Result<(), ClickError> {
     let header_source = BTreeMap::from([(
         "__click_modeled_pthread_reference.c",

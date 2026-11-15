@@ -220,6 +220,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
             step();
             have count(reference(p)) == 1 by { solve(); }
             step();
+            step();
             have count(reference(p)) == 0 by { solve(); }
             unfold(authority(reference(p)));
             step_until(function.exit);

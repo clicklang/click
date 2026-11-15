@@ -1672,11 +1672,6 @@ fn expand_declared_resource_tactic(
             record_produced_instances(&application, resource_definitions);
             Ok(ProofTactic::UserTactic(application))
         }
-        ProofTactic::TransportCertificate(certificate) => Ok(ProofTactic::TransportCertificate(
-            certificate.map_propositions(|p| {
-                expand_declared_resource_proposition(p.clone(), resource_definitions)
-            })?,
-        )),
         ProofTactic::ArithmeticCertificate(certificate) => Ok(ProofTactic::ArithmeticCertificate(
             expand_declared_resource_certificate(certificate, resource_definitions)?,
         )),

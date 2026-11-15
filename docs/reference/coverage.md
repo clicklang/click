@@ -7,9 +7,9 @@ applies to a codebase before reading the per-language references:
 and [Rust import](rust.md). Those pages define the exact forms; this page is
 the single summary, and other pages link here instead of repeating it.
 
-C is Click's primary language. C++ and Rust support is experimental and covers
-a small subset. `click add cpp` installs the pinned Clang exporter on Linux
-x86-64 and macOS arm64, and `click add rust` installs Charon and its compiler
+Support is incomplete for all three languages. C is Click's primary language;
+C++ and Rust support is experimental and covers a smaller subset. `click add cpp`
+installs the pinned Clang exporter on Linux x86-64 and macOS arm64, and `click add rust` installs Charon and its compiler
 on Linux x86-64; on other hosts C++ extraction needs an exporter built from a
 repository checkout, and Rust extraction is not packaged yet. Committed C++ and Rust locks verify without the frontend.
 

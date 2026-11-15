@@ -147,7 +147,7 @@ pub(super) fn snake_case_contract_name(name: &str) -> String {
     snake
 }
 
-/// The C0 spelling of a parameter's declared type.
+/// The C spelling of a parameter's declared type.
 ///
 /// Struct tags are not part of the kernel interface: an aggregate parameter
 /// keeps its layout, not the tag its source wrote, so a pointer to one is
@@ -162,7 +162,7 @@ pub(super) fn program_parameter_type_spelling(parameter: &ProgramParameter) -> S
     }
 }
 
-/// The C0 spelling of a kernel C type, for a diagnostic that has to say what
+/// The C spelling of a kernel C type, for a diagnostic that has to say what
 /// type a value had. An aggregate pointer is spelled by its pointer type, as
 /// [`program_parameter_type_spelling`] explains.
 pub(crate) fn program_type_spelling(program_type: ProgramType) -> &'static str {

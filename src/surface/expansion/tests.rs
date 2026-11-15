@@ -1027,7 +1027,7 @@ theorem reflexive(xs: TestList<int32>) {
         .expect("the first induction arm should have a source position");
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("a smart tactic in an induction arm should expand");
-    assert!(expanded.contains("TestList::Nil => {\n                normalize();"));
+    assert!(expanded.contains("TestList::Nil => {\n                known();"));
     assert!(expanded.contains("TestList::Cons(head, tail) => {\n                known();"));
     verify_c_sources(&expanded, &[]).expect("the expanded structural proof should re-verify");
 }
@@ -1605,7 +1605,7 @@ int32 caller(int32 x) {
     )
     .expect("the call should expand with its consumed precondition");
     // The call retains an explicit proof of its known precondition.
-    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
     assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the call steps should check");
 }
@@ -1648,7 +1648,7 @@ int32 caller(struct box* p, int32 x) {
     )
     .expect("the memory-reading precondition should expand");
     // The memory-reading prerequisite retains its explicit proof.
-    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
     assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the condition and its ambient view should verify normally");
@@ -1762,10 +1762,10 @@ int32 caller() {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have at(region(2).entry, c(result)) == 0 by {
+    have at(statement(2).entry, c(result)) == 0 by {
         known();
     }
-    have result == at(region(2).entry, c(result)) by {
+    have result == at(statement(2).entry, c(result)) by {
         normalize();
     }
     known();
@@ -2513,8 +2513,10 @@ int32 set_then_read(int32 p[], int32 value) {
         step();
         step();
         step();
+        step();
     }
     ensures result == value by {
+        step();
         step();
         step();
         step();
@@ -3346,7 +3348,7 @@ int32 client(int32 x) {
 }
 
 #[test]
-fn specification_pointer_load_equality_expands_to_checked_normalization() {
+fn specification_pointer_load_equality_expands_to_known() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/egraph_resource_pointer_load_alias.md");
     let fixture = crate::cli::read_mdtest(&path).expect("pointer-load fixture");
@@ -3363,12 +3365,14 @@ fn specification_pointer_load_equality_expands_to_checked_normalization() {
     let position = position_at_offset(source, tactic);
     let expanded = expand_c_tactic_source_at(source, &sources, position.line, position.column)
         .expect("logical load equality should expand");
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(
         !expanded.contains("MemoryLoad") && !expanded.contains("__click_"),
         "{expanded}"
     );
-    verify_c_sources(&expanded, &sources).expect("expanded normalization independently verifies");
+    verify_c_sources(&expanded, &sources)
+        .expect("expanded known certificate independently verifies");
 }
 
 #[test]

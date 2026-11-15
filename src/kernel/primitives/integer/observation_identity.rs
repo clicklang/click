@@ -100,13 +100,17 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 | KernelTermNode::BoolOverflow { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
                 | KernelTermNode::IntegerCompare { arguments, .. }
+                | KernelTermNode::AlgebraicEqual { arguments }
                 | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
-                KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
+                KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } | KernelTermNode::AlgebraicIf { arguments } => {
                     arguments.to_vec()
                 }
                 KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
+                KernelTermNode::Constructor(constructor) => constructor.fields.clone(),
+                KernelTermNode::AlgebraicCall(call) => call.arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
-                KernelTermNode::MachineObservation { operand, .. }
+                KernelTermNode::BoolCast { operand, .. }
+                | KernelTermNode::MachineObservation { operand, .. }
                 | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
                 _ => Vec::new(),
@@ -123,7 +127,10 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     for arm in &mut matched.arms {
                         arm.bindings = arm.bindings.iter().map(|child| get(child)).collect();
                     }
-                    matched.into_term().with_machine_observation_type(format)
+                    let root = matched.into_term();
+                    if matches!(term.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) {
+                        root.with_machine_observation_type(format)
+                    } else { root }
                 }
                 KernelTermNode::Fold(fold) => KernelFold {
                     index: fold.index,
@@ -147,6 +154,45 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
+                }
+                KernelTermNode::AlgebraicIf { arguments } => {
+                    let KernelType::Algebraic(ty) = term.ty() else { unreachable!() };
+                    KernelTerm::algebraic_if_raw(ty.clone(), arguments.each_ref().map(|arg| get(arg)))
+                }
+                KernelTermNode::AlgebraicCall(call) => {
+                    let mut call = call.clone();
+                    call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();
+                    call.into_term()
+                }
+                KernelTermNode::Constructor(constructor) => {
+                    let mut constructor = constructor.clone();
+                    constructor.fields =
+                        constructor.fields.iter().map(|child| get(child)).collect();
+                    constructor.into_term()
+                }
+                KernelTermNode::BoolCast {
+                    destination,
+                    operand,
+                } => KernelTerm::bool_cast(*destination, get(operand))
+                    .expect("Boolean conversion")
+                    .with_machine_observation_type(format),
+                KernelTermNode::AlgebraicRead(read) => {
+                    let (_, address) = read.parts();
+                    KernelTerm::intern(term.ty().clone(), KernelTermNode::AlgebraicRead(read.observe(
+                        crate::kernel::SharedPointerAddress::new(address.node().block.observation(), normalize_offset(&address.node().offset)),
+                    )))
+                }
+                KernelTermNode::BoolRead(read) => {
+                    let (_, address) = read.parts();
+                    KernelTerm::intern(
+                        KernelType::Bool,
+                        KernelTermNode::BoolRead(read.observe(
+                            crate::kernel::SharedPointerAddress::new(
+                                address.node().block.observation(),
+                                normalize_offset(&address.node().offset),
+                            ),
+                        )),
+                    )
                 }
                 KernelTermNode::PointerValueEqual(pair) => KernelTerm::intern(
                     KernelType::Bool,
@@ -181,6 +227,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                         },
                     ));
                     KernelTerm::bool_observation_leaf(condition, identity)
+                }
+                KernelTermNode::AlgebraicEqual { arguments } => {
+                    KernelTerm::algebraic_equal_raw(arguments.each_ref().map(|arg| get(arg)))
                 }
                 KernelTermNode::IntegerCompare {
                     operator,

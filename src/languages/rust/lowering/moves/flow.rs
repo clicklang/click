@@ -542,6 +542,7 @@ mod tests {
                     destination: "marker".into(),
                     target: 1,
                     through_pointer: false,
+                    result: None,
                 }),
                 block(branch(2, 3)),
                 block(T::Goto { target: 0 }),

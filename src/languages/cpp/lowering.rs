@@ -23,7 +23,7 @@ use super::{
 use crate::kernel::{
     AggregateLayout, LoadSourceId, LoadSourceOwnerId, ProgramExpression, ProgramFunction,
     ProgramStatement, ProgramType, int32, program_allocate_aggregate_destination, program_assign,
-    program_call, program_call_assign, program_copy_aggregate, program_declare,
+    program_call, program_call_construct, program_copy_aggregate, program_declare,
     program_declare_aggregate, program_declare_initialized, program_declare_with_all_qualifiers,
     program_end_automatic_lifetimes, program_function, program_if, program_parameter,
     program_return, program_seq, program_skip, program_try_catch_int32,
@@ -258,6 +258,7 @@ fn lower_function(
         names,
         source_names: places.values().map(|place| place.name.as_str()).collect(),
         next_call_capture: 0,
+        next_call_result: std::cell::Cell::new(0),
         places,
         records,
         constants,
@@ -461,6 +462,7 @@ struct LoweringContext<'a> {
     nested_capture_name: String,
     source_names: std::collections::BTreeSet<&'a str>,
     next_call_capture: u64,
+    next_call_result: std::cell::Cell<u32>,
     unwind_exception_name: String,
     unwind_cleanups: bool,
     /// The packs the call being lowered needs, with their unpacks and the
@@ -538,6 +540,19 @@ impl<'a> Polymorphism<'a> {
 }
 
 impl LoweringContext<'_> {
+    fn call_then_assign(
+        &self,
+        target: impl Into<String>,
+        function: impl Into<String>,
+        arguments: Vec<ProgramExpression>,
+    ) -> ProgramStatement {
+        let id = self.next_call_result.get();
+        self.next_call_result
+            .set(id.checked_add(1).expect("too many calls in one function"));
+        let (call, value) = crate::kernel::program_call_value(id, function, arguments);
+        program_seq(call, program_assign(target, value))
+    }
+
     /// `call`, after the packs its arguments need and before their unpacks:
     /// the callee holds the base class's object the derived class's memory
     /// stands for, which the sidecar may declare.
@@ -903,7 +918,7 @@ impl LoweringContext<'_> {
                         prefix,
                         program_seq(
                             program_allocate_aggregate_destination(local.name.clone(), layout),
-                            self.coerced(program_call_assign(
+                            self.coerced(program_call_construct(
                                 local.name.clone(),
                                 self.callee_name(callee)?,
                                 actual,
@@ -1321,7 +1336,7 @@ impl LoweringContext<'_> {
                         program_seq(
                             program_seq(
                                 program_declare(address.clone(), element_pointer_type(element)?),
-                                self.coerced(program_call_assign(
+                                self.coerced(self.call_then_assign(
                                     address.clone(),
                                     target,
                                     arguments,
@@ -1427,7 +1442,7 @@ impl LoweringContext<'_> {
                     program_seq(
                         program_allocate_aggregate_destination(temporary.clone(), layout.clone()),
                         program_seq(
-                            self.coerced(program_call_assign(
+                            self.coerced(program_call_construct(
                                 temporary.clone(),
                                 self.callee_name(callee)?,
                                 actual,
@@ -1472,7 +1487,7 @@ impl LoweringContext<'_> {
                 Ok(evaluate_then(
                     prefix,
                     program_seq(
-                        self.coerced(program_call_assign(
+                        self.coerced(program_call_construct(
                             crate::kernel::C_CONTRACT_RESULT_NAME,
                             self.callee_name(callee)?,
                             arguments,
@@ -1723,7 +1738,7 @@ impl LoweringContext<'_> {
                                 false,
                                 scalar::returns_constant_element(value_type),
                             ),
-                            self.coerced(program_call_assign(capture.clone(), target, arguments)),
+                            self.coerced(self.call_then_assign(capture.clone(), target, arguments)),
                         ),
                     ),
                     value,
@@ -1801,7 +1816,7 @@ impl LoweringContext<'_> {
                                 .pointer_type()
                                 .to_kernel_type(),
                         ),
-                        program_call_assign(
+                        self.call_then_assign(
                             capture.clone(),
                             crate::languages::rust::names::closure_instance_name(closure),
                             values,

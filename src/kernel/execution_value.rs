@@ -14,6 +14,13 @@ impl PartialEq for ExecutionValue {
             (Self::Native(a), Self::Native(b)) => a == b,
             (Self::Shared(a), Self::Shared(b)) => {
                 a == b
+                    || (matches!(a.ty(), KernelType::Algebraic(_))
+                        && a.ty() == b.ty()
+                        && a.algebraic_syntax_equal(b))
+                    || (a.ty() == &KernelType::Bool
+                        && b.ty() == &KernelType::Bool
+                        && BooleanOperandView::Shared(a)
+                            .syntax_equal(BooleanOperandView::Shared(b)))
                     || matches!((a.pointer_payload(), b.pointer_payload()),
                         (Some(a), Some(b)) if a.same_source_payload(b))
                     || match (a.pointer_native(), b.pointer_native()) {
@@ -49,11 +56,22 @@ impl ExecutionValue {
     pub fn native_payload(&self) -> Option<&ProgramValue> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(root) => root.pointer_native(),
+            Self::Shared(root) => root
+                .pointer_native()
+                .or_else(|| root.boolean_native())
+                .or_else(|| {
+                    matches!(root.node(), KernelTermNode::Variable(_))
+                        .then(|| root.algebraic_native_value())
+                        .flatten()
+                }),
         }
     }
     pub fn pointer(&self) -> Option<&PointerValue> {
-        match self.native_payload()? {
+        let value = match self {
+            Self::Native(value) => value,
+            Self::Shared(root) => root.pointer_native()?,
+        };
+        match value {
             ProgramValue::Pointer(pointer) => Some(pointer),
             _ => None,
         }
@@ -64,6 +82,9 @@ impl ExecutionValue {
     /// Retain machine expressions and producer-defined pointer reads at their
     /// execution boundary. Other result families keep their exact native payloads.
     pub(in crate::kernel) fn retain_native(value: ProgramValue) -> Self {
+        if let ProgramValue::Parameter(term) = &value {
+            return KernelTermImport::default().algebraic(term).into();
+        }
         if let ProgramValue::Pointer(pointer) = &value
             && let Some(root) = KernelTerm::retained_pointer_read(pointer)
         {
@@ -146,6 +167,19 @@ impl ExecutionValue {
         }
     }
 
+    /// Argument coercion leaves a logical Bool unchanged when the destination
+    /// is also Bool. Other conversions keep the established pointer policy.
+    pub(in crate::kernel) fn retain_coerced_argument(&self, value: ProgramValue) -> Self {
+        if self.shared().is_some_and(|root| {
+            root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+        }) && self.program_type() == value.program_type()
+        {
+            self.clone()
+        } else {
+            self.retain_checked_pointer(value)
+        }
+    }
+
     /// Retain one selected operand before crossing a native checking boundary.
     pub(in crate::kernel) fn common_operand(&self) -> KernelTerm {
         match self {
@@ -161,10 +195,49 @@ impl ExecutionValue {
         }
     }
 
+    /// Read the logical truth carried by a Bool value. Raw C words keep the
+    /// existing nonzero test; already logical roots remain shared.
+    pub(in crate::kernel) fn boolean(&self) -> Option<KernelTerm> {
+        match self {
+            Self::Shared(root) if root.ty() == &KernelType::Bool => Some(root.clone()),
+            Self::Native(ProgramValue::Bool(word)) => Some(
+                KernelTermImport::default().condition(&ConditionTerm::truth_of_bool_word(word)),
+            ),
+            _ => None,
+        }
+    }
+
+    pub(in crate::kernel) fn algebraic(&self) -> Option<KernelTerm> {
+        match self {
+            Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+                Some(root.clone())
+            }
+            Self::Native(ProgramValue::Parameter(value)) => {
+                Some(KernelTermImport::default().algebraic(value))
+            }
+            _ => None,
+        }
+    }
+
+    pub(in crate::kernel) fn retain_algebraic_result(self) -> Self {
+        match self {
+            Self::Native(ProgramValue::Parameter(value)) => {
+                KernelTermImport::default().algebraic(&value).into()
+            }
+            value => value,
+        }
+    }
+
     pub fn into_native(self) -> ProgramValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
+                if let Some(value) = term.algebraic_native_value() {
+                    return value.clone();
+                }
+                if let Some(value) = term.boolean_native() {
+                    return value.clone();
+                }
                 if let Some(value) = term.pointer_native() {
                     return value.clone();
                 }
@@ -204,6 +277,8 @@ impl ExecutionValue {
             Self::Native(value) => value.program_type(),
             Self::Shared(term) => match term.ty() {
                 KernelType::Program(ty) => *ty,
+                KernelType::Bool => ProgramType::Bool,
+                KernelType::Algebraic(ty) => ProgramType::Parameter(TypeParameterName::of(ty)),
                 _ => unreachable!(),
             },
         }
@@ -246,9 +321,9 @@ impl From<ExpressionPath> for ExpressionPath<ExecutionValue> {
     }
 }
 
-/// A memory cell's common pointer carrier. Its key is exactly the previous
+/// A memory cell's common pointer or Boolean carrier. Its key is exactly the previous
 /// ProgramValue key, including for native numeric cells. Native observations
-/// are explicit and borrow the selected pointer's cached compatibility view.
+/// are explicit and borrow the selected value's cached compatibility view.
 #[derive(Clone)]
 pub struct StoredMemoryValue(ExecutionValue);
 impl std::fmt::Debug for StoredMemoryValue {
@@ -260,7 +335,8 @@ impl StoredMemoryValue {
     pub fn native(&self) -> &ProgramValue {
         self.0
             .native_payload()
-            .expect("native cell or retained complete pointer")
+            .or_else(|| self.0.shared()?.algebraic_native_value())
+            .expect("native cell or retained value")
     }
     pub(crate) fn value(&self) -> &ExecutionValue {
         &self.0
@@ -292,10 +368,11 @@ impl From<ProgramValue> for StoredMemoryValue {
 }
 impl From<ExecutionValue> for StoredMemoryValue {
     fn from(value: ExecutionValue) -> Self {
-        if value
-            .shared()
-            .is_some_and(|root| root.pointer_payload().is_none())
-        {
+        if value.shared().is_some_and(|root| {
+            root.pointer_payload().is_none()
+                && root.ty() != &KernelType::Bool
+                && !matches!(root.ty(), KernelType::Algebraic(_))
+        }) {
             Self(value.into_native().into())
         } else {
             Self(value)
@@ -352,7 +429,13 @@ enum StoredIdentity<'a> {
 impl StoredExecutionValue {
     fn identity(&self) -> StoredIdentity<'_> {
         match self.0.identity.get_or_init(|| match &self.0.value {
-            ExecutionValue::Shared(root) if root.pointer_payload().is_some() => None,
+            ExecutionValue::Shared(root)
+                if root.pointer_payload().is_some()
+                    || root.ty() == &KernelType::Bool
+                    || matches!(root.ty(), KernelType::Algebraic(_)) =>
+            {
+                None
+            }
             ExecutionValue::Shared(root) => Some(
                 SharedMachineIntegerTerm::observe_shared(
                     MachineIntegerType::from_program_type(self.program_type())
@@ -372,7 +455,11 @@ impl StoredExecutionValue {
             }
         }) {
             Some(identity) => StoredIdentity::Machine(identity),
-            None => StoredIdentity::Native(self.native_payload().expect("native storage")),
+            None => StoredIdentity::Native(
+                self.native_payload()
+                    .or_else(|| self.shared()?.algebraic_native_value())
+                    .expect("native storage"),
+            ),
         }
     }
     pub fn matches_native(&self, value: &ProgramValue) -> bool {
@@ -397,7 +484,10 @@ impl std::ops::Deref for StoredExecutionValue {
 impl From<ExecutionValue> for StoredExecutionValue {
     fn from(value: ExecutionValue) -> Self {
         let value = if value.shared().is_some_and(|root| {
-            !root.is_shared_machine_operand() && root.pointer_payload().is_none()
+            !root.is_shared_machine_operand()
+                && root.pointer_payload().is_none()
+                && root.ty() != &KernelType::Bool
+                && !matches!(root.ty(), KernelType::Algebraic(_))
         }) {
             ExecutionValue::Native(value.into_native())
         } else {
@@ -444,6 +534,116 @@ impl Ord for StoredExecutionValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn algebraic_storage_preserves_roots_and_native_key_contracts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = TypeParameterName::intern("StoredAlgebraicT").algebraic_type();
+        let roots = [
+            KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(999764)),
+            KernelTerm::algebraic_read(
+                ty.clone(),
+                intern_memory(Memory::new()),
+                SharedPointerAddress::import(&Pointer::symbolic(Variable(999765))),
+            ),
+        ];
+        fn hash(value: &impl std::hash::Hash) -> u64 {
+            use std::hash::Hasher;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(value, &mut hasher);
+            hasher.finish()
+        }
+        for root in roots {
+            let value = ExecutionValue::Shared(root.clone());
+            let native = value.clone().into_native();
+            let stored = StoredExecutionValue::from(value.clone());
+            let expected = StoredExecutionValue::from(native.clone());
+            assert_eq!(stored, expected);
+            assert_eq!(stored.cmp(&expected), std::cmp::Ordering::Equal);
+            assert_eq!(hash(&stored), hash(&expected));
+            assert_eq!(stored.clone().into_value().shared(), Some(&root));
+            assert_eq!(
+                value.retain_coerced_argument(native.clone()).shared(),
+                Some(&root)
+            );
+            let cell = StoredMemoryValue::from(value);
+            assert_eq!(cell.native(), &native);
+            assert_eq!(hash(&cell), hash(&native));
+            assert_eq!(cell.into_value().shared(), Some(&root));
+        }
+    }
+    #[test]
+    fn boolean_storage_preserves_roots_and_native_keys() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = KernelTerm::variable(KernelType::Bool, Variable(999500));
+        let roots = [
+            KernelTermImport::default().condition(&ConditionTerm::Constant(false)),
+            variable.clone(),
+            KernelTerm::boolean_if([
+                variable.clone(),
+                KernelTerm::variable(KernelType::Bool, Variable(999501)),
+                KernelTermImport::default().condition(&ConditionTerm::Constant(true)),
+            ]),
+            KernelTermImport::default()
+                .boolean_call(&SharedPureApplication::intern("stored_bool".into(), vec![])),
+        ];
+        fn hash(value: &impl std::hash::Hash) -> u64 {
+            use std::hash::Hasher;
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(value, &mut h);
+            h.finish()
+        }
+        for root in roots {
+            let native = ExecutionValue::Shared(root.clone()).into_native();
+            let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            let native_stored = StoredExecutionValue::from(native.clone());
+            assert_eq!(stored, native_stored);
+            assert_eq!(hash(&stored), hash(&native_stored));
+            assert_eq!(stored.clone().into_value().shared(), Some(&root));
+            assert_eq!(stored.into_value().shared(), Some(&root));
+            let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
+            assert_eq!(cell.native(), &native);
+            assert_eq!(hash(&cell), hash(&native));
+            for other in [
+                ProgramValue::Void,
+                ProgramValue::Bool(MachineTerm::Constant {
+                    format: MachineIntegerType::UInt8,
+                    bits: 2,
+                }),
+                native.clone(),
+            ] {
+                assert_eq!(
+                    cell.cmp(&StoredMemoryValue::from(other.clone())),
+                    native.cmp(&other)
+                );
+                assert_eq!(
+                    StoredExecutionValue::from(ExecutionValue::Shared(root.clone()))
+                        .cmp(&StoredExecutionValue::from(other.clone())),
+                    native_stored.cmp(&StoredExecutionValue::from(other))
+                );
+            }
+            let address = Memory::local_pointer("stored_bool");
+            let memory = Memory::new()
+                .with_block(address.block.clone(), 1)
+                .store_retained(address.clone(), cell.into_value());
+            assert_eq!(
+                memory.known_retained_value(&address).unwrap().shared(),
+                Some(&root)
+            );
+            assert_eq!(memory.known_value(&address), Some(native));
+            assert!(std::ptr::eq(
+                root.boolean_native().unwrap(),
+                root.boolean_native().unwrap()
+            ));
+        }
+        let raw = ProgramValue::Bool(MachineTerm::Constant {
+            format: MachineIntegerType::UInt8,
+            bits: 2,
+        });
+        let cell = StoredMemoryValue::from(raw.clone());
+        assert_eq!(cell.native(), &raw);
+        assert!(cell.value().shared().is_none());
+    }
 
     #[test]
     fn local_storage_identity_matches_native_without_changing_producer_equality() {

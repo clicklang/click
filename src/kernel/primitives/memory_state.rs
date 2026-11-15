@@ -2017,7 +2017,15 @@ pub(crate) fn held_term_fingerprint(term: &MachineTerm) -> u64 {
 /// immediate binary children. Dummy children supply only a native variant tag;
 /// no expression subtree is exported or walked to select the index bucket.
 fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
-    use std::hash::Hasher;
+    use std::hash::{Hash, Hasher};
+    if matches!(term.ty(), KernelType::Algebraic(_)) {
+        let KernelTermNode::Variable(variable) = term.node() else {
+            return None;
+        };
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        ("algebraic", variable).hash(&mut hasher);
+        return Some(hasher.finish());
+    }
     fn atom(term: &KernelTerm, hash: &mut impl Hasher) -> Option<()> {
         use KernelTermNode as N;
         let zero = || Box::new(MachineTerm::constant(0));
@@ -10006,7 +10014,7 @@ fn local_block_object_name(block: &PointerBlock) -> Option<&str> {
 /// the object it was derived from is undefined behaviour, which Click enforces
 /// with the bounds obligation on every displaced access
 /// (`MemoryCanStore` / `access_in_bounds`), and an integer cast to a pointer
-/// is outside the supported C0 subset. A `&x` written in a *proof* creates no
+/// is outside the supported C subset. A `&x` written in a *proof* creates no
 /// runtime pointer, so an annotation cannot make an object addressable that
 /// the program never addresses.
 ///

@@ -59,7 +59,7 @@ int32* read_acquired(int32* (*acquire)(), int32* value) {
 } by {
     apply(lift(acquire));
     step();
-    step(Boxed);
+    step(Boxed); step();
     if c(cell) != 0 {
         unfold(MaybeCell(c(cell)));
         unfold(Cell(c(cell)));

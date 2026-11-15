@@ -369,7 +369,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
-fn known_reuses_facts_but_does_not_normalize_or_extract_implications() {
+fn known_computes_leaves_but_does_not_extract_implications() {
     let c_source = r#"
         int32 keep(int32 x, int32 y) {
             x = x;
@@ -407,19 +407,9 @@ fn known_reuses_facts_but_does_not_normalize_or_extract_implications() {
         error.message()
     );
 
-    let implicit_normalize = click_source.replacen("normalize();", "known();", 1);
-    let error = verify_c_sources(&implicit_normalize, &[("keep.c", c_source)])
-        .expect_err("known must not normalize a proposition");
-    assert!(
-        error
-            .message()
-            .contains("`known` found no available fact or held instance for the current goal")
-            || error
-                .message()
-                .contains("`known` requires the current goal as an available semantic fact"),
-        "{}",
-        error.message()
-    );
+    let computed = click_source.replacen("normalize();", "known();", 1);
+    verify_c_sources(&computed, &[("keep.c", c_source)])
+        .expect("known should close a computational leaf after explicit proof steps");
 }
 
 #[test]
@@ -1390,9 +1380,9 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
     assert!(
         matches!(
             body.as_slice(),
-            [ProofTactic::Witness(_), ProofTactic::Normalize]
+            [ProofTactic::Witness(_), ProofTactic::Known]
         ),
-        "the expansion should be the exact checked witness/normalize path: {body:?}"
+        "the expansion should be the exact checked witness/known path: {body:?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the witness/solve have expansion should be a surface certificate");
@@ -1415,7 +1405,7 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
         expand_c_tactic_source_at(click_source, &[("current_have.c", c_source)], line, column)
             .expect("the checked witness/solve path should expand at its source site");
     verify_c_sources(&rewritten, &[("current_have.c", c_source)])
-        .expect("the serialized witness/normalize path should independently verify");
+        .expect("the serialized witness/known path should independently verify");
 }
 
 #[test]
@@ -3460,7 +3450,7 @@ test_batches! {
     ],
     logical_tactics_batch_02: [
         failed_fixed_state_normalize_does_not_dump_internal_memory,
-        known_reuses_facts_but_does_not_normalize_or_extract_implications,
+        known_computes_leaves_but_does_not_extract_implications,
         parses_local_have_proof_tactic,
         contract_lets_do_not_capture_later_quantifier_binders,
     ],

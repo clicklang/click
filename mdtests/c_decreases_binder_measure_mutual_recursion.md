@@ -77,6 +77,7 @@ int32 walk_even(struct node* p) {
             step();
             let x = fold(list_at(p), { model: Links::Cons(rest_model) }, { rest: r });
             step();
+            step();
             solve();
         },
     }
@@ -103,6 +104,7 @@ int32 walk_odd(struct node* p) {
             step();
             step();
             let x = fold(list_at(p), { model: Links::Cons(rest_model) }, { rest: r });
+            step();
             step();
             solve();
         },

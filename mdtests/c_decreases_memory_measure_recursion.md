@@ -44,6 +44,7 @@ int32 drain(int32 box[4]) {
         }
         step();
         step();
+        step();
         solve();
     } else {}
     step();

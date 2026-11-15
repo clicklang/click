@@ -23,6 +23,7 @@ int h() {
     ensures result == 0;
 } by {
     step(); step(); step();
+    step();
     have g < 1000;
 }
 ```

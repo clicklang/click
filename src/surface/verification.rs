@@ -118,7 +118,7 @@ pub(in crate::surface) struct ProgramSourceContext<'a> {
     source: ProgramSource<'a>,
     input_digest: [u8; 32],
     specification_digest: Option<[u8; 32]>,
-    parsed_units: RefCell<BTreeMap<String, Arc<syntax::C0TranslationUnit>>>,
+    parsed_units: RefCell<BTreeMap<String, Arc<syntax::CTranslationUnit>>>,
     /// Bundle sources extracted from a larger file, from the Click project.
     /// Their locations are reported as lines of that file.
     c_source_containers: BTreeMap<String, crate::source::SourceContainer>,
@@ -1010,9 +1010,9 @@ fn with_tactic_procedures(
         ));
         append_on_every_path(&mut script, &suffix);
         block.grouped_proof = Some(std::sync::Arc::new(SourceProof::Script(script)));
-        let procedure = external_c_function(&block).with_proof_body(syntax::C0Statement::Return(
-            syntax::C0Expression::Void,
-            syntax::C0Site::NONE,
+        let procedure = external_c_function(&block).with_proof_body(syntax::CStatement::Return(
+            syntax::CExpression::Void,
+            syntax::CSite::NONE,
         ));
         parsed_sources.insert(name, ("<tactic>".to_string(), procedure));
         file.function_blocks.push(block);
@@ -2302,11 +2302,50 @@ fn verify_program_in_context(
         FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
             .with_execution_names(&termination_kernel_names),
     );
-    let (mut termination_plans, mut requested_termination) = program_function_termination_plans(
+    let (termination_plans, requested_termination) = program_function_termination_plans(
         &file,
         selected_functions.as_ref(),
         &termination_kernel_names,
     )?;
+    let declared_diverging = external_and_user_function_blocks
+        .iter()
+        .filter(|function| function.signature().diverges())
+        .map(|function| {
+            executing_function_name(&termination_kernel_names, function.signature().name())
+        })
+        .collect::<BTreeSet<_>>();
+    let extern_names = external_and_user_function_blocks
+        .iter()
+        .filter(|function| function.is_external())
+        .map(|function| {
+            executing_function_name(&termination_kernel_names, function.signature().name())
+        })
+        .collect::<BTreeSet<_>>();
+    // A whole-contract `sorry` is an explicit dev-only assumption, like an
+    // external declaration. It contributes neither a body goal nor a checked
+    // contract; its existing admission record remains the reported result.
+    let admitted_functions = file
+        .function_blocks()
+        .iter()
+        .filter(|function| {
+            matches!(function.grouped_proof(), Some(SourceProof::Script(tactics))
+            if crate::surface::is_complete_sorry_body(tactics))
+        })
+        .map(|function| {
+            executing_function_name(&termination_kernel_names, function.signature().name())
+        })
+        .collect::<BTreeSet<_>>();
+    let bodyless_declarations = extern_names.union(&admitted_functions).cloned().collect();
+    let program_contracts = crate::kernel::ProgramContractProof::open(
+        requested_termination
+            .iter()
+            .map(|name| executing_function_name(&termination_kernel_names, name))
+            .filter(|name| !admitted_functions.contains(name))
+            .collect(),
+        declared_diverging.clone(),
+        &bodyless_declarations,
+    );
+
     let standard_library_theorems = standard_library_theorem_definitions()?;
     let (
         predicate_environment,
@@ -2640,6 +2679,8 @@ fn verify_program_in_context(
                     .map(|name| executing_function_name(&termination_kernel_names, name))
                     .filter(|name| !declared_diverging.contains(name))
                     .collect::<BTreeSet<_>>();
+                assumed_terminating
+                    .extend(admitted_functions.difference(&declared_diverging).cloned());
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
                 assumed_terminating.extend(object_coercion_names(&parsed_sources));
                 assumed_terminating.extend(modeled_thread_runtime_names());
@@ -2721,7 +2762,11 @@ fn verify_program_in_context(
                 )));
             }
         }
-        let function_source_registry = Arc::new(function_source_registry.for_contract_proof());
+        let function_source_registry = Arc::new(
+            function_source_registry
+                .for_contract_proof()
+                .with_program(program_contracts.bodies()),
+        );
         let mut verification_function_environment = function_environment.clone();
         if function_environment.has_conditional_resource_effects() {
             verification_function_environment =
@@ -2898,97 +2943,34 @@ fn verify_program_in_context(
         }
         // The parent is an ordinary proof root opened with the entry. Child
         // scripts have already joined their own checked completions into it.
-        let completed_contract =
-            crate::surface::proof::finish_whole_contract_root(&function_block, &function_verified)?;
-        let function_termination_loop_rules = termination_loop_rules
-            .entry(executing_function_name(
+        let body_proof =
+            crate::surface::proof::finish_contract_body_root(&function_block, &function_verified)?;
+        if let Some(body_proof) = body_proof {
+            let executing_name = executing_function_name(
                 &termination_kernel_names,
                 function_block.signature().name(),
-            ))
-            .or_default();
-        // Rules for different loops are never equal, so each rule is
-        // compared only with the kept rules for its own loop.
-        let mut kept_by_loop = BTreeMap::<Option<usize>, Vec<usize>>::new();
-        for (position, rule) in function_termination_loop_rules.iter().enumerate() {
-            kept_by_loop
-                .entry(rule.loop_index())
+            );
+            termination_loop_rules
+                .entry(executing_name)
                 .or_default()
-                .push(position);
-        }
-        for rule in function_verified
-            .iter()
-            .flat_map(|theorem| theorem.frontier_loop_rules.iter())
-        {
-            let kept = kept_by_loop.entry(rule.loop_index()).or_default();
-            if !kept
-                .iter()
-                .any(|position| function_termination_loop_rules[*position] == *rule)
-            {
-                kept.push(function_termination_loop_rules.len());
-                function_termination_loop_rules.push(rule.clone());
-            }
-        }
-        // Frontier-local loop measures belong to the separate termination
-        // plan. The completed ordinary contract root already owns its subject
-        // and execution metadata; registration does not reconstruct them.
-        let frontier_loop_artifacts = function_verified
-            .iter()
-            .find(|verified| !verified.frontier_loop_rules.is_empty());
-        if let Some(completed_contract) = completed_contract {
-            if let Some(verified) = frontier_loop_artifacts {
-                let mut loop_measures = BTreeMap::new();
-                for clause in verified.frontier_loop_clauses.iter() {
-                    let CodeRegion::Loop(loop_index) = clause.region() else {
-                        continue;
-                    };
-                    let Some(expressions) = loop_termination_measure(
-                        clause,
-                        &format!(
-                            "frontier-local loop {loop_index} `decreases` in `{}`",
-                            function_block.signature.name()
-                        ),
-                    )?
-                    else {
-                        continue;
-                    };
-                    if let Some(previous) = loop_measures.insert(*loop_index, expressions.clone())
-                        && previous != expressions
-                    {
-                        return Err(ClickError::new(format!(
-                            "frontier-local proofs for `{}` disagree on loop {loop_index} `decreases`",
-                            function_block.signature.name()
-                        )));
-                    }
-                }
-                // As in `program_function_termination_plans`, a `diverges` function
-                // plans its ranked loops, so the check can tell whether the
-                // marker was needed, but never requests whole-function
-                // termination evidence.
-                if !loop_measures.is_empty() {
-                    let executing_name = executing_function_name(
-                        &termination_kernel_names,
-                        function_block.signature.name(),
-                    );
-                    if let Some(plan) = termination_plans
-                        .iter_mut()
-                        .find(|plan| plan.function_name() == executing_name)
-                    {
-                        plan.extend_loop_measures(loop_measures);
-                    } else {
-                        termination_plans.push(program_function_termination_plan(
-                            &executing_name,
-                            None,
-                            loop_measures,
-                        ));
-                    }
-                    if !function_block.signature.diverges() {
-                        requested_termination.insert(function_block.signature.name().to_string());
-                    }
-                }
-            }
-            if let Some(rule) = completed_contract.into_rule() {
+                .extend_from_slice(body_proof.loop_rules());
+            if let Some(rule) = body_proof.into_rule() {
                 function_environment = function_environment.with_verified_function_rule(rule);
             }
+        } else {
+            // Contracts without an ordinary body root still expose their
+            // native loop-proof outputs; no source measure is reconstructed.
+            termination_loop_rules
+                .entry(executing_function_name(
+                    &termination_kernel_names,
+                    function_block.signature().name(),
+                ))
+                .or_default()
+                .extend(
+                    function_verified
+                        .iter()
+                        .flat_map(|theorem| theorem.frontier_loop_rules.iter().cloned()),
+                );
         }
         if instrumentation::enabled() {
             instrumentation::emit(VerificationEvent::FunctionFinished {
@@ -3027,18 +3009,9 @@ fn verify_program_in_context(
         .into_iter()
         .filter(|function| !unselected_executing_names.contains(function.name()))
         .collect::<Vec<_>>();
-    // Heights are a proposal the kernel checks at every call site. A callee
-    // outside the verified set is an assumption, as its postconditions are:
+    // A callee outside the verified set is an assumption, as its postconditions are:
     // an external contract always, and an unselected function because it owes
     // termination evidence to the run that does select it.
-    let termination_heights = program_termination_height_plan(&partial_rules, &inline_bodies);
-    let declared_diverging = external_and_user_function_blocks
-        .iter()
-        .filter(|function| function.signature().diverges())
-        .map(|function| {
-            executing_function_name(&termination_kernel_names, function.signature().name())
-        })
-        .collect::<BTreeSet<_>>();
     let mut assumed_terminating = external_and_user_function_blocks
         .iter()
         .filter(|function| function.is_external())
@@ -3047,6 +3020,7 @@ fn verify_program_in_context(
         .map(|name| executing_function_name(&termination_kernel_names, name))
         .filter(|name| !declared_diverging.contains(name))
         .collect::<BTreeSet<_>>();
+    assumed_terminating.extend(admitted_functions.difference(&declared_diverging).cloned());
     assumed_terminating.extend(closure_instance_names(&parsed_sources));
     assumed_terminating.extend(object_coercion_names(&parsed_sources));
     if selected_thread_runtime
@@ -3054,132 +3028,60 @@ fn verify_program_in_context(
     {
         assumed_terminating.extend(modeled_thread_runtime_names());
     }
-    // A selected function may recurse only through a function this run
-    // assumes, so its declared measure ranks no edge here. That measure is
-    // judged by the run that selects the whole cycle; this run checks the
-    // selected function without it. Each retry drops one measure.
-    let mut run_plans = termination_plans.clone();
-    let verdicts = loop {
-        let verdicts = program_verified_function_termination_rules(
-            &partial_rules,
-            &run_plans,
-            &termination_loop_rules,
-            &inline_bodies,
-            &termination_heights,
-            &assumed_terminating,
-            &declared_diverging,
-            &diverging_contracts,
-        );
-        let Err(error) = &verdicts else {
-            break verdicts;
-        };
-        let retried = !unselected_executing_names.is_empty()
-            && error.is_superfluous_recursive_measure()
-            && error.function().is_some_and(|function| {
-                run_plans
-                    .iter_mut()
-                    .find(|plan| plan.function_name() == function)
-                    .is_some_and(|plan| {
-                        let had = plan.clone();
-                        plan.clear_recursive_measure();
-                        *plan != had
-                    })
-            });
-        if !retried {
-            break verdicts;
-        }
-    };
-    let TerminationVerdicts {
-        rules: termination_rules,
-        refusals: termination_refusals,
-        unjustified_diverging,
-        unsuitable_callbacks,
-    } = verdicts.map_err(|error| {
-        let located = ClickError::new(format!("could not certify C termination: {error}"));
-        match error.function() {
-            Some(function) => {
-                located.at_declaration(function.split_once('#').map_or(function, |(name, _)| name))
+    let completed_program = program_contracts.complete(crate::kernel::ProgramTerminationInputs {
+        partial_rules: &partial_rules,
+        plans: &termination_plans,
+        inline_bodies: &inline_bodies,
+        assumed_terminating: &assumed_terminating,
+        diverging_contracts: &diverging_contracts,
+        has_unselected_functions: !unselected_executing_names.is_empty(),
+    }).map_err(|failure| {
+        use crate::kernel::{ProgramContractFailure, ProgramContractGoal};
+        match failure {
+            ProgramContractFailure::UnfinishedBody(name) => {
+                let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
+                ClickError::new(format!("contract proof for `{name}` still owes its body obligations")).at_declaration(name)
             }
-            None => located,
+            ProgramContractFailure::MissingReturnEvidence(name) => {
+                let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
+                ClickError::new(format!("contract proof for `{name}` still owes its program termination obligation")).at_declaration(name)
+            }
+            ProgramContractFailure::Analysis(error) => {
+                let located = ClickError::new(format!("could not certify C termination: {error}"));
+                match error.function() {
+                    Some(function) => located.at_declaration(function.split_once('#').map_or(function, |(name, _)| name)),
+                    None => located,
+                }
+            }
+            ProgramContractFailure::Obligation { goal, verdicts } => {
+                let spelling = |name: &str| name.split_once('#').map_or(name, |(name, _)| name).to_string();
+                match goal {
+                    ProgramContractGoal::DivergencePolicy(name) => {
+                        let name = spelling(&name);
+                        ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name)
+                    }
+                    ProgramContractGoal::CallbackSafety => {
+                        let unsuitable = &verdicts.unsuitable_callbacks[0];
+                        let taker = spelling(&unsuitable.taker);
+                        let callback = spelling(&unsuitable.callback);
+                        let lacks = match verdicts.refusals.get(&unsuitable.callback) {
+                            Some(refusal) => termination_refusal_report(&callback, refusal, &verdicts.refusals, &declared_diverging, None, &tactic_names),
+                            None => "it has no termination evidence".to_string(),
+                        };
+                        ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker)
+                    }
+                    ProgramContractGoal::Returns(name) => {
+                        let refusal = &verdicts.refusals[&name];
+                        let name = spelling(&name);
+                        ClickError::new(format!("could not certify termination for `{name}`: {}", termination_refusal_report(&name, refusal, &verdicts.refusals, &declared_diverging, verdicts.unsuitable_callbacks.first(), &tactic_names))).at_declaration(&name)
+                    }
+                    ProgramContractGoal::Program | ProgramContractGoal::Body { .. } | ProgramContractGoal::BodyOpening => unreachable!("the program root was opened into its declared goals"),
+                }
+            }
         }
     })?;
-    // An `extern` contract has no body to answer for its marker: the
-    // declaration is the whole of what is known about it.
-    let extern_names = external_and_user_function_blocks
-        .iter()
-        .filter(|function| function.is_external())
-        .map(|function| {
-            executing_function_name(&termination_kernel_names, function.signature().name())
-        })
-        .collect::<BTreeSet<_>>();
-    if let Some(name) = unjustified_diverging
-        .iter()
-        .find(|name| !extern_names.contains(*name))
-    {
-        let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
-        return Err(ClickError::new(format!(
-            "`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker"
-        ))
-        .at_declaration(name));
-    }
-    // A function whose address is taken may be reached through any function
-    // pointer, so it must return without going through one itself; otherwise
-    // no pointer call in the run is known to return. Every function owes
-    // termination, so that is an error where the address is taken, and it
-    // names what the callback lacks.
-    if let Some(unsuitable) = unsuitable_callbacks.first() {
-        let spelling = |name: &str| {
-            name.split_once('#')
-                .map_or(name, |(name, _)| name)
-                .to_string()
-        };
-        let taker = spelling(&unsuitable.taker);
-        let callback = spelling(&unsuitable.callback);
-        let lacks = match termination_refusals.get(&unsuitable.callback) {
-            Some(refusal) => termination_refusal_report(
-                &callback,
-                refusal,
-                &termination_refusals,
-                &declared_diverging,
-                None,
-                &tactic_names,
-            ),
-            None => "it has no termination evidence".to_string(),
-        };
-        return Err(ClickError::new(format!(
-            "could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}"
-        ))
-        .at_declaration(&taker));
-    }
-    // A caller refused for its callee is a consequence, so a function refused
-    // for a defect of its own is reported first when the run has one.
-    let refused = requested_termination
-        .iter()
-        .filter_map(|name| {
-            let executing_name = executing_function_name(&termination_kernel_names, name);
-            Some((name, termination_refusals.get(&executing_name)?))
-        })
-        .collect::<Vec<_>>();
-    if let Some((name, refusal)) = refused
-        .iter()
-        .find(|(_, refusal)| !matches!(refusal, TerminationRefusal::Callee { .. }))
-        .or(refused.first())
-    {
-        return Err(ClickError::new(format!(
-            "could not certify termination for `{name}`: {}",
-            termination_refusal_report(
-                name,
-                refusal,
-                &termination_refusals,
-                &declared_diverging,
-                unsuitable_callbacks.first(),
-                &tactic_names,
-            )
-        ))
-        .at_declaration(name));
-    }
-    function_environment =
-        function_environment.with_verified_function_termination_rules(termination_rules);
+    function_environment = function_environment
+        .with_verified_function_termination_rules(completed_program.into_termination_rules());
 
     if let Some(identity) = c_sources.prepared_project_identity() {
         for theorem in &mut verified {
@@ -3872,17 +3774,12 @@ fn modeled_thread_runtime_names() -> impl Iterator<Item = String> {
 fn modeled_pthread_create_workers(
     function: &crate::languages::interface::ImportedFunction,
 ) -> BTreeSet<String> {
-    use syntax::{C0Expression as E, C0Statement as S};
+    use syntax::{CExpression as E, CStatement as S};
     let mut workers = BTreeSet::new();
     let mut pending = vec![function.body()];
     while let Some(statement) = pending.pop() {
         match statement {
             S::Call {
-                function_name,
-                arguments,
-                ..
-            }
-            | S::CallAssign {
                 function_name,
                 arguments,
                 ..
@@ -3967,22 +3864,22 @@ fn c_statement_calls_recording(
     allocator: &mut BTreeSet<&'static str>,
 ) -> Vec<BTreeSet<String>> {
     fn collect_function_pointer_names(
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
         names: &mut BTreeSet<String>,
     ) {
         match statement {
-            syntax::C0Statement::Declare {
+            syntax::CStatement::Declare {
                 interface_type: crate::languages::interface::InterfaceType::FunctionPointer(_),
                 name,
                 ..
             } => {
                 names.insert(name.clone());
             }
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 collect_function_pointer_names(first, names);
                 collect_function_pointer_names(second, names);
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3990,10 +3887,10 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(then_branch, names);
                 collect_function_pointer_names(else_branch, names);
             }
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 collect_function_pointer_names(body, names);
             }
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 step,
                 body,
@@ -4003,47 +3900,46 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(body, names);
                 collect_function_pointer_names(step, names);
             }
-            syntax::C0Statement::Switch { cases, .. } => {
+            syntax::CStatement::Switch { cases, .. } => {
                 for case in cases {
                     collect_function_pointer_names(case.body(), names);
                 }
             }
-            syntax::C0Statement::Label { statement, .. } => {
+            syntax::CStatement::Label { statement, .. } => {
                 collect_function_pointer_names(statement, names)
             }
-            syntax::C0Statement::Skip
-            | syntax::C0Statement::Break
-            | syntax::C0Statement::Continue
-            | syntax::C0Statement::Goto { .. }
-            | syntax::C0Statement::Declare { .. }
-            | syntax::C0Statement::DeclareStructValue { .. }
-            | syntax::C0Statement::Assign { .. }
-            | syntax::C0Statement::CallAssign { .. }
-            | syntax::C0Statement::Call { .. }
-            | syntax::C0Statement::CallResult { .. }
-            | syntax::C0Statement::IndirectCall { .. }
-            | syntax::C0Statement::HeapAllocate { .. }
-            | syntax::C0Statement::HeapFree { .. }
-            | syntax::C0Statement::Return(_, _)
-            | syntax::C0Statement::Store { .. }
-            | syntax::C0Statement::SequentialStore { .. }
-            | syntax::C0Statement::AggregateCopy { .. }
-            | syntax::C0Statement::Update { .. }
-            | syntax::C0Statement::Assert { .. }
-            | syntax::C0Statement::StepValue { .. }
-            | syntax::C0Statement::LoopTest { .. } => {}
+            syntax::CStatement::Skip
+            | syntax::CStatement::Break
+            | syntax::CStatement::Continue
+            | syntax::CStatement::Goto { .. }
+            | syntax::CStatement::Declare { .. }
+            | syntax::CStatement::DeclareStructValue { .. }
+            | syntax::CStatement::Assign { .. }
+            | syntax::CStatement::Call { .. }
+            | syntax::CStatement::CallResult { .. }
+            | syntax::CStatement::IndirectCall { .. }
+            | syntax::CStatement::HeapAllocate { .. }
+            | syntax::CStatement::HeapFree { .. }
+            | syntax::CStatement::Return(_, _)
+            | syntax::CStatement::Store { .. }
+            | syntax::CStatement::SequentialStore { .. }
+            | syntax::CStatement::AggregateCopy { .. }
+            | syntax::CStatement::Update { .. }
+            | syntax::CStatement::Assert { .. }
+            | syntax::CStatement::StepValue { .. }
+            | syntax::CStatement::LoopTest { .. } => {}
         }
     }
 
-    fn collect_function_addresses(expression: &syntax::C0Expression, names: &mut BTreeSet<String>) {
+    fn collect_function_addresses(expression: &syntax::CExpression, names: &mut BTreeSet<String>) {
         match expression {
-            syntax::C0Expression::ScalarUpdate { .. } => {}
-            syntax::C0Expression::Call { arguments, .. } => {
+            syntax::CExpression::ScalarUpdate { .. } => {}
+            syntax::CExpression::Call { arguments, .. } => {
                 for argument in arguments {
                     collect_function_addresses(argument, names);
                 }
             }
-            syntax::C0Expression::IndirectCall {
+            syntax::CExpression::IndirectCall {
                 function,
                 arguments,
                 ..
@@ -4053,51 +3949,51 @@ fn c_statement_calls_recording(
                     collect_function_addresses(argument, names);
                 }
             }
-            syntax::C0Expression::StatementExpression { value, .. } => {
+            syntax::CExpression::StatementExpression { value, .. } => {
                 collect_function_addresses(value, names);
             }
-            syntax::C0Expression::Assignment { value, .. } => {
+            syntax::CExpression::Assignment { value, .. } => {
                 collect_function_addresses(value, names);
             }
-            syntax::C0Expression::FunctionAddress(name) => {
+            syntax::CExpression::FunctionAddress(name) => {
                 names.insert(name.clone());
             }
-            syntax::C0Expression::Cast { expression, .. }
-            | syntax::C0Expression::FloatNegate(expression)
-            | syntax::C0Expression::FloatClassification { expression, .. }
-            | syntax::C0Expression::AddressOf(expression)
-            | syntax::C0Expression::AggregateAddress {
+            syntax::CExpression::Cast { expression, .. }
+            | syntax::CExpression::FloatNegate(expression)
+            | syntax::CExpression::FloatClassification { expression, .. }
+            | syntax::CExpression::AddressOf(expression)
+            | syntax::CExpression::AggregateAddress {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::UnionAddress {
+            | syntax::CExpression::UnionAddress {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::PointerOffsetBytes {
+            | syntax::CExpression::PointerOffsetBytes {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::Subobject {
+            | syntax::CExpression::Subobject {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::CheckedArrayIndex {
+            | syntax::CExpression::CheckedArrayIndex {
                 index: expression, ..
             }
-            | syntax::C0Expression::Not(expression)
-            | syntax::C0Expression::BitwiseNot(expression)
-            | syntax::C0Expression::Load(expression, _)
-            | syntax::C0Expression::SequentialRead {
+            | syntax::CExpression::Not(expression)
+            | syntax::CExpression::BitwiseNot(expression)
+            | syntax::CExpression::Load(expression, _)
+            | syntax::CExpression::SequentialRead {
                 target: expression, ..
             } => {
                 collect_function_addresses(expression, names);
             }
-            syntax::C0Expression::SequentialWrite { target, value, .. } => {
+            syntax::CExpression::SequentialWrite { target, value, .. } => {
                 collect_function_addresses(target, names);
                 collect_function_addresses(value, names);
             }
-            syntax::C0Expression::Ternary {
+            syntax::CExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -4106,47 +4002,47 @@ fn c_statement_calls_recording(
                 collect_function_addresses(then_branch, names);
                 collect_function_addresses(else_branch, names);
             }
-            syntax::C0Expression::LessThan(left, right)
-            | syntax::C0Expression::LessEqual(left, right)
-            | syntax::C0Expression::GreaterThan(left, right)
-            | syntax::C0Expression::GreaterEqual(left, right)
-            | syntax::C0Expression::Equal(left, right)
-            | syntax::C0Expression::NotEqual(left, right)
-            | syntax::C0Expression::And(left, right)
-            | syntax::C0Expression::Or(left, right)
-            | syntax::C0Expression::Add(left, right)
-            | syntax::C0Expression::Subtract(left, right)
-            | syntax::C0Expression::Multiply(left, right)
-            | syntax::C0Expression::Divide(left, right)
-            | syntax::C0Expression::Remainder(left, right)
-            | syntax::C0Expression::ShiftLeft(left, right)
-            | syntax::C0Expression::ShiftRight(left, right)
-            | syntax::C0Expression::BitwiseAnd(left, right)
-            | syntax::C0Expression::BitwiseOr(left, right)
-            | syntax::C0Expression::BitwiseXor(left, right)
-            | syntax::C0Expression::Index(left, right, _) => {
+            syntax::CExpression::LessThan(left, right)
+            | syntax::CExpression::LessEqual(left, right)
+            | syntax::CExpression::GreaterThan(left, right)
+            | syntax::CExpression::GreaterEqual(left, right)
+            | syntax::CExpression::Equal(left, right)
+            | syntax::CExpression::NotEqual(left, right)
+            | syntax::CExpression::And(left, right)
+            | syntax::CExpression::Or(left, right)
+            | syntax::CExpression::Add(left, right)
+            | syntax::CExpression::Subtract(left, right)
+            | syntax::CExpression::Multiply(left, right)
+            | syntax::CExpression::Divide(left, right)
+            | syntax::CExpression::Remainder(left, right)
+            | syntax::CExpression::ShiftLeft(left, right)
+            | syntax::CExpression::ShiftRight(left, right)
+            | syntax::CExpression::BitwiseAnd(left, right)
+            | syntax::CExpression::BitwiseOr(left, right)
+            | syntax::CExpression::BitwiseXor(left, right)
+            | syntax::CExpression::Index(left, right, _) => {
                 collect_function_addresses(left, names);
                 collect_function_addresses(right, names);
             }
-            syntax::C0Expression::Field { pointer, .. } => {
+            syntax::CExpression::Field { pointer, .. } => {
                 collect_function_addresses(pointer, names);
             }
-            syntax::C0Expression::UnionField { pointer, .. } => {
+            syntax::CExpression::UnionField { pointer, .. } => {
                 collect_function_addresses(pointer, names);
             }
-            syntax::C0Expression::Void
-            | syntax::C0Expression::Variable(_)
-            | syntax::C0Expression::StepResult { .. }
-            | syntax::C0Expression::Int32Literal(_)
-            | syntax::C0Expression::UInt8Literal(_)
-            | syntax::C0Expression::UInt32Literal(_)
-            | syntax::C0Expression::Int64Literal(_)
-            | syntax::C0Expression::UInt64Literal(_)
-            | syntax::C0Expression::Float32Literal(_)
-            | syntax::C0Expression::Float64Literal(_)
-            | syntax::C0Expression::SizeOfStruct { .. }
-            | syntax::C0Expression::SizeOfUnion { .. }
-            | syntax::C0Expression::SizeOfType { .. } => {}
+            syntax::CExpression::Void
+            | syntax::CExpression::Variable(_)
+            | syntax::CExpression::StepResult { .. }
+            | syntax::CExpression::Int32Literal(_)
+            | syntax::CExpression::UInt8Literal(_)
+            | syntax::CExpression::UInt32Literal(_)
+            | syntax::CExpression::Int64Literal(_)
+            | syntax::CExpression::UInt64Literal(_)
+            | syntax::CExpression::Float32Literal(_)
+            | syntax::CExpression::Float64Literal(_)
+            | syntax::CExpression::SizeOfStruct { .. }
+            | syntax::CExpression::SizeOfUnion { .. }
+            | syntax::CExpression::SizeOfType { .. } => {}
         }
     }
 
@@ -4164,24 +4060,23 @@ fn c_statement_calls_recording(
     collect_function_pointer_names(function.body(), &mut function_pointer_names);
 
     fn visit(
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
         calls: &mut Vec<BTreeSet<String>>,
         function_pointer_names: &BTreeSet<String>,
         allocator: &mut BTreeSet<&'static str>,
     ) {
         match statement {
-            syntax::C0Statement::Skip
-            | syntax::C0Statement::Break
-            | syntax::C0Statement::Continue => {}
-            syntax::C0Statement::Goto { .. } => calls.push(BTreeSet::new()),
-            syntax::C0Statement::Label { statement, .. } => {
+            syntax::CStatement::Skip | syntax::CStatement::Break | syntax::CStatement::Continue => {
+            }
+            syntax::CStatement::Goto { .. } => calls.push(BTreeSet::new()),
+            syntax::CStatement::Label { statement, .. } => {
                 visit(statement, calls, function_pointer_names, allocator)
             }
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 visit(first, calls, function_pointer_names, allocator);
                 visit(second, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -4193,10 +4088,10 @@ fn c_statement_calls_recording(
                 visit(then_branch, calls, function_pointer_names, allocator);
                 visit(else_branch, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::While {
+            syntax::CStatement::While {
                 condition, body, ..
             }
-            | syntax::C0Statement::DoWhile {
+            | syntax::CStatement::DoWhile {
                 condition, body, ..
             } => {
                 let mut dependencies = BTreeSet::new();
@@ -4204,7 +4099,7 @@ fn c_statement_calls_recording(
                 calls.push(dependencies);
                 visit(body, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 condition,
                 step,
@@ -4218,7 +4113,7 @@ fn c_statement_calls_recording(
                 visit(body, calls, function_pointer_names, allocator);
                 visit(step, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::Switch {
+            syntax::CStatement::Switch {
                 expression, cases, ..
             } => {
                 let mut dependencies = BTreeSet::new();
@@ -4228,34 +4123,13 @@ fn c_statement_calls_recording(
                     visit(case.body(), calls, function_pointer_names, allocator);
                 }
             }
-            syntax::C0Statement::CallAssign {
-                function_name,
-                arguments,
-                ..
-            } => {
-                let mut dependencies = BTreeSet::new();
-                if !function_pointer_names.contains(function_name) {
-                    match c_allocator_function(function_name) {
-                        Some(function) => {
-                            allocator.insert(function);
-                        }
-                        None => {
-                            dependencies.insert(function_name.clone());
-                        }
-                    }
-                }
-                for argument in arguments {
-                    collect_function_addresses(argument, &mut dependencies);
-                }
-                calls.push(dependencies);
-            }
-            syntax::C0Statement::Call {
+            syntax::CStatement::Call {
                 function_name,
                 arguments,
                 callee,
                 ..
             }
-            | syntax::C0Statement::CallResult {
+            | syntax::CStatement::CallResult {
                 function_name,
                 arguments,
                 callee,
@@ -4281,7 +4155,7 @@ fn c_statement_calls_recording(
                 }
                 calls.push(dependencies);
             }
-            syntax::C0Statement::IndirectCall {
+            syntax::CStatement::IndirectCall {
                 function,
                 arguments,
                 ..
@@ -4293,28 +4167,28 @@ fn c_statement_calls_recording(
                 }
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Declare {
+            syntax::CStatement::Declare {
                 initializer: None, ..
             }
-            | syntax::C0Statement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
-            syntax::C0Statement::Declare {
+            | syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
+            syntax::CStatement::Declare {
                 initializer: Some(expression),
                 ..
             }
-            | syntax::C0Statement::Assign { expression, .. }
-            | syntax::C0Statement::HeapAllocate {
+            | syntax::CStatement::Assign { expression, .. }
+            | syntax::CStatement::HeapAllocate {
                 bytes: expression, ..
             }
-            | syntax::C0Statement::HeapFree {
+            | syntax::CStatement::HeapFree {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Statement::Return(expression, _) => {
+            | syntax::CStatement::Return(expression, _) => {
                 match statement {
-                    syntax::C0Statement::HeapAllocate { zeroed, .. } => {
+                    syntax::CStatement::HeapAllocate { zeroed, .. } => {
                         allocator.insert(if *zeroed { "calloc" } else { "malloc" });
                     }
-                    syntax::C0Statement::HeapFree { .. } => {
+                    syntax::CStatement::HeapFree { .. } => {
                         allocator.insert("free");
                     }
                     _ => {}
@@ -4323,25 +4197,25 @@ fn c_statement_calls_recording(
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Store { pointer, value, .. } => {
+            syntax::CStatement::Store { pointer, value, .. } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(pointer, &mut dependencies);
                 collect_function_addresses(value, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::SequentialStore { target, value, .. } => {
+            syntax::CStatement::SequentialStore { target, value, .. } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(target, &mut dependencies);
                 collect_function_addresses(value, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::AggregateCopy { target, source, .. } => {
+            syntax::CStatement::AggregateCopy { target, source, .. } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(target, &mut dependencies);
                 collect_function_addresses(source, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Update {
+            syntax::CStatement::Update {
                 target, operand, ..
             } => {
                 let mut dependencies = BTreeSet::new();
@@ -4349,9 +4223,9 @@ fn c_statement_calls_recording(
                 collect_function_addresses(operand, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Assert { condition, .. }
-            | syntax::C0Statement::LoopTest { condition, .. }
-            | syntax::C0Statement::StepValue {
+            syntax::CStatement::Assert { condition, .. }
+            | syntax::CStatement::LoopTest { condition, .. }
+            | syntax::CStatement::StepValue {
                 expression: condition,
                 ..
             } => {
@@ -4473,31 +4347,6 @@ pub(in crate::surface) fn termination_measure_name(
     }
 }
 
-/// How the whole-function termination plan names each declared component.
-///
-/// The plan is built before specification lowering has an environment, so a
-/// component that is not a current-state C expression is named here by its
-/// declared spelling. The loop head, which is lowered with that environment,
-/// records the same spelling beside the expression it evaluates, and the
-/// termination check matches the two. Both sides read the one clause.
-pub(in crate::surface) fn termination_measure_keys(
-    measure: &TerminationMeasure,
-    _context: &str,
-) -> Result<Vec<crate::kernel::RankingMeasureKey>, ClickError> {
-    Ok(measure
-        .components()
-        .iter()
-        .map(
-            |expression| match resource_argument_to_program_expression(expression) {
-                Ok(expression) => crate::kernel::RankingMeasureKey::ProgramExpression(expression),
-                Err(_) => {
-                    crate::kernel::RankingMeasureKey::Pure(termination_measure_source(expression))
-                }
-            },
-        )
-        .collect())
-}
-
 /// The spelling a pure `decreases` component is named by.
 ///
 /// This is a rendering of the declared contract expression, not a lowering:
@@ -4593,29 +4442,6 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
         _ => None,
     }
-}
-
-/// Classifies one loop's `decreases` clause (D6).
-///
-/// The clause is one expression, and a loop's own `owns name: resource(args);`
-/// binders are the names that make it a structural measure; anything else is
-/// the existing int32 ranking measure. The decision reads this loop's own
-/// declarations, so it costs the clause and the loop header.
-pub(in crate::surface) fn loop_termination_measure(
-    clause: &StructuralClause,
-    context: &str,
-) -> Result<Option<crate::kernel::LoopTerminationMeasure>, ClickError> {
-    let Some(measure) = clause.decreases() else {
-        return Ok(None);
-    };
-    if let Some(name) = loop_structural_measure_binder(clause) {
-        return Ok(Some(crate::kernel::LoopTerminationMeasure::Structural(
-            name,
-        )));
-    }
-    Ok(Some(crate::kernel::LoopTerminationMeasure::Ranking(
-        termination_measure_keys(measure, context)?,
-    )))
 }
 
 /// Maps each Click-visible C spelling to the name its body executes under.
@@ -5385,10 +5211,10 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
 }
 
 fn validate_modeled_pthread_calls(
-    statement: &syntax::C0Statement,
+    statement: &syntax::CStatement,
     source_path: &str,
 ) -> Result<(), ClickError> {
-    use syntax::{C0Expression as E, C0Statement as S};
+    use syntax::{CExpression as E, CStatement as S};
     fn is_null(expression: &E) -> bool {
         match expression {
             E::Int32Literal(0) => true,
@@ -5398,11 +5224,6 @@ fn validate_modeled_pthread_calls(
     }
     match statement {
         S::Call {
-            function_name,
-            arguments,
-            ..
-        }
-        | S::CallAssign {
             function_name,
             arguments,
             ..
@@ -7809,7 +7630,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
         verify_c_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded = expand_c_claim_source(

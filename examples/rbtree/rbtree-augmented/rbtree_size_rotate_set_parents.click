@@ -165,11 +165,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
                 };
                 have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    transport_certificate {
-                        premise 0: separate(statement(3).footprint, memory(new->__rb_parent_color)) => separate(statement(3).footprint, memory(new->__rb_parent_color));
-                        preserve 0 => new->__rb_parent_color == at(words, new->__rb_parent_color);
-                        conclusion 1;
-                    }
+                    preserve(separate(statement(3).footprint, memory(new->__rb_parent_color)));
                 }
                 rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); known();
             }
@@ -256,11 +252,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
                 };
                 have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    transport_certificate {
-                        premise 0: separate(statement(3).footprint, memory(new->__rb_parent_color)) => separate(statement(3).footprint, memory(new->__rb_parent_color));
-                        preserve 0 => new->__rb_parent_color == at(words, new->__rb_parent_color);
-                        conclusion 1;
-                    }
+                    preserve(separate(statement(3).footprint, memory(new->__rb_parent_color)));
                 }
                 rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); known();
             }
@@ -347,11 +339,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
                 };
                 have new->__rb_parent_color == at(words, new->__rb_parent_color) by {
-                    transport_certificate {
-                        premise 0: separate(statement(3).footprint, memory(new->__rb_parent_color)) => separate(statement(3).footprint, memory(new->__rb_parent_color));
-                        preserve 0 => new->__rb_parent_color == at(words, new->__rb_parent_color);
-                        conclusion 1;
-                    }
+                    preserve(separate(statement(3).footprint, memory(new->__rb_parent_color)));
                 }
                 rewrite(new->__rb_parent_color == at(words, new->__rb_parent_color)); known();
             }

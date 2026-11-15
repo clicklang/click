@@ -110,7 +110,7 @@ that every current implementation meets the checking-cost contract.
 | Apply a mathematical or separation law | [Theorem application with selected premises](../reference/tactics/index.md#theorem-application-with-selected-premises), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Arithmetic certificates](../reference/tactics/index.md#arithmetic-certificates) | The family, cited premises, and checked certificate nodes |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
-| Preserve a fact across a state transition | [Transport certificates](../reference/tactics/index.md#transport-certificates), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
+| Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
 | Establish current live storage | [Observing resources](../reference/tactics/index.md#observing-resources) | One exact held memory range, named by `observe(p[lo..hi])`; this establishes liveness, not initialization or a stored value |
 | Manipulate ownership or open a resource definition | [Scoped resource opening](../reference/tactics/index.md#scoped-resource-opening), [tactic reference](../reference/tactics/index.md) | The selected resource instance, its definition, and required ownership quantities |
 
@@ -132,9 +132,8 @@ If a documented rule already covers the link and refuses it, use
 
 ### One-step preservation must be fast
 
-The explicit `transport_certificate` uses `premise`, `preserve`, `transitive`,
-and `conclusion`. Cite `separate(region.footprint, B)` as a premise;
-`preserve` establishes the after-to-before read equality. The execution-produced
+Write `preserve(separate(region.footprint, B));` under a read-equality goal.
+It establishes the after-to-before read equality. The execution-produced
 footprint includes writes, call effects and allocation release. Establish its
 separation with explicitly supplied evidence. When a checked call publishes
 `contains(R, region.footprint)`, select it with `known()` and apply the
@@ -143,13 +142,13 @@ named `separation::separate_restrict` law; `contains_refl` supplies reflexivity 
 does not unfold recursive resources or normalize a footprint. The older
 memory-range route uses `normalize() using` with listed separations and bounds.
 For a region containing several transitions, spell the individual preservation
-nodes and compose their equalities: simple normalization does not walk a region.
+steps and compose their equalities: simple normalization does not walk a region.
 The observation rule covers complete pointer, byte, 32/64-bit integer and abstract
 typed cells, plus explicitly selected fields of named owned resources. For a
 resource field, separate the footprint from the instance and write the field
 equality across the exact entry/exit states; no unfolding or field search is
 part of this primitive.
-Use the [certificate reference](../reference/tactics/index.md#transport-certificates)
+Use the [preservation reference](../reference/tactics/index.md#preservation)
 for exact syntax and current producer/observation limits.
 
 The required primitive for one recorded transition has this logical shape:
