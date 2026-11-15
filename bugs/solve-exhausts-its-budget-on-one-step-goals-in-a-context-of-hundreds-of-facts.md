@@ -14,8 +14,10 @@ state, not by the size of the surrounding context
 (`docs/internals/verification-efficiency.md`); a single prompt miss is
 acceptable, a budget exhaustion on a one-step goal is not.
 
-Related: `bugs/solve-exhausts-its-budget-spelling-premises-of-an-inclusive-range-loop.md`
-reports the same phase on a different shape.
+The earlier inclusive-range case in this phase is now covered by
+`charon_inclusive_range_exhaustion_uses_typed_signed_bounds` in
+`tests/rust_import/inclusive_ranges.rs`. Its unsigned-to-signed range facts
+retain their explicit conversion; this report tracks the larger contexts.
 
 ## Reproduction
 

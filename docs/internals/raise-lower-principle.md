@@ -291,6 +291,15 @@ ordinary structural lowering. The certificate operand test compares the
 resulting `KernelTerm` identity directly. Subsequent migrations should remove
 legacy leaves and adapters family by family rather than adding parallel trees.
 
+A derived signed range for a native `uint32` value retains the conversion
+`x as int32`: a signed comparison of the raw unsigned term would raise with
+that conversion and lower to a different term. When the unsigned operand was
+already converted from an `int32` source, the range instead names that signed
+source. Admission and decision use the same structural rule; this does not
+change lowering or erase conversions elsewhere. The simple `known()` proofs
+in [the checked range fixture](https://github.com/clicklang/click/blob/master/mdtests/unsigned_small_bound_signed_facts_round_trip.md)
+exercise the exact derived facts.
+
 ## Kernel authority
 
 Some kernel propositions are checked context, not proof-state facts: a

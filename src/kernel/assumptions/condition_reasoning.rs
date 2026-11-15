@@ -13,7 +13,8 @@ mod order_paths;
 pub(in crate::kernel) use order_paths::cancel_common_offset_addends;
 pub(in crate::kernel) use order_paths::{WIDE_ORDER_FORMATS, order_view_at_format};
 pub(in crate::kernel) use order_paths::{
-    held_order_at, uint64_upper_bound_below_sign_bit, unsigned_upper_bound_below_sign_bit,
+    held_order_at, signed_uint32_term, uint64_upper_bound_below_sign_bit,
+    unsigned_upper_bound_below_sign_bit,
 };
 mod overflow_intervals;
 mod selected_conditions;
