@@ -7694,7 +7694,7 @@ fn directly_matched_effect_endpoint(
 mod opaque_pointer_frame_tests {
     use super::*;
 
-    // Exercise the same explicit primitive as a Surface preserve node: observe
+    // Exercise the same explicit primitive as a Surface preserve tactic: observe
     // both endpoints, narrow the supplied separation, and apply one effect.
     fn explicit_pointer_store_frame(
         before: &Memory,

@@ -60,8 +60,12 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             step();
             mark after_store;
             have gparent->rb_left == at(before_store, gparent->rb_left) by {
-                have separate(loop(0).statement(0).footprint, at(before_store, memory(gparent->rb_left))) by { normalize() using { at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right))); }; }
-                preserve(separate(loop(0).statement(0).footprint, at(before_store, memory(gparent->rb_left))));
+                have separate(loop(0).statement(0).footprint, memory(gparent->rb_left)) by {
+                    normalize() using {
+                        at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)));
+                    };
+                }
+                preserve(separate(loop(0).statement(0).footprint, memory(gparent->rb_left)));
             }
             have parent == at(before_store, gparent->rb_left) by { known(); }
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {

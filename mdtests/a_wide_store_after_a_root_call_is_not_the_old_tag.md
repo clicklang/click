@@ -79,8 +79,12 @@ void probe(struct node *p, struct root *root) {
   step();
   mark after_store;
   have nid->right == at(before_store, nid->right) by {
-   have separate(statement(2).footprint, at(before_store, memory(nid->right))) by { normalize() using { at(before_store, separate(memory(p->right), memory(nid->right))); }; }
-   preserve(separate(statement(2).footprint, at(before_store, memory(nid->right))));
+   have separate(statement(2).footprint, memory(nid->right)) by {
+       normalize() using {
+           at(before_store, separate(memory(p->right), memory(nid->right)));
+       };
+   }
+   preserve(separate(statement(2).footprint, memory(nid->right)));
   }
   have separate(c, memory(near->right));
   have nid == near;

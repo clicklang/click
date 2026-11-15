@@ -57,7 +57,6 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                     }
                     have bytes[k] == at(loop(0).statement(0).exit, bytes[k]) by { normalize(); }
                     have bytes[k] == at(before, bytes[k]) by {
-                        rewrite(bytes[k] == at(loop(0).statement(0).exit, bytes[k]));
                         known();
                     }
                     have bytes[k] == value by {

@@ -7,7 +7,7 @@ count: `memcpy(dst, src, 4); dst[4] = 0;` and then the copied bytes. The
 requirement, so typed range membership places them by the exact guard fact
 before the separation keeps them apart from the store at `dst[4]`. The
 written proof states the destination frame with a single-statement footprint
-certificate, then transports the copied-byte equality. The omitted proof of
+preservation step, then transports the copied-byte equality. The omitted proof of
 `copy_u_smart` also verifies. The explicit frame avoids relying on the legacy
 quantified read-history route to bridge the store and cached-cell forgetting.
 

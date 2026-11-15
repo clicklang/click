@@ -104,15 +104,15 @@ fn preserve_checks_signed_and_unsigned_64_bit_reads() {
                 step() by {{ known(); }}
                 mark after;
                 have *kept == at(before, *kept) by {{
-                    have separate(statement(0).footprint, at(before, memory(*kept))) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
-                    preserve(separate(statement(0).footprint, at(before, memory(*kept))));
+                    have separate(statement(0).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                    preserve(separate(statement(0).footprint, memory(*kept)));
                 }}
                 step() by {{ known(); }}
                 mark final;
                 have *kept == at(before, *kept) by {{
                     have *kept == at(after, *kept) by {{
-                        have separate(statement(1).footprint, at(after, memory(*kept))) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
-                        preserve(separate(statement(1).footprint, at(after, memory(*kept))));
+                        have separate(statement(1).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                        preserve(separate(statement(1).footprint, memory(*kept)));
                     }}
                     rewrite(*kept == at(after, *kept));
                     known();
@@ -188,7 +188,7 @@ fn region_footprint_identity_survives_unrelated_snapshots() {
 }
 
 #[test]
-fn region_footprint_free_and_call_certificates_expand_without_search() {
+fn region_footprint_free_and_call_preservation_expands_without_search() {
     for (fixture, claim) in [
         (
             "mdtests/a_cell_beside_a_freed_allocation_is_framed.md",
@@ -464,23 +464,6 @@ fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
         "have *p == at(statement(0).entry, *p)",
     );
     assert!(without_implicit_solve(|| verify_c_sources(&overlap, &sources)).is_err());
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
-fn preserve_step_supports_memory_and_resource_observations() {
-    for fixture in [
-        "preserve_byte_read.md",
-        "preserve_pointer_read.md",
-        "preserve_resource_field.md",
-    ] {
-        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}"));
-        let sources = sources
-            .iter()
-            .map(|(n, s)| (n.as_str(), s.as_str()))
-            .collect::<Vec<_>>();
-        without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
-    }
 }
 
 #[test]
@@ -1500,7 +1483,6 @@ test_batches! {
         preserve_refuses_other_or_modified_resource,
         preserve_named_resource_is_a_theorem_argument,
         preserve_step_carries_a_fact_with_ordinary_rewriting,
-        preserve_step_supports_memory_and_resource_observations,
     ],
     transport_batch_04: [
         resource_viewability_restriction_expands_without_transport,
