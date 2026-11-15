@@ -219,8 +219,10 @@ A cast is written after its operand, `e as T`. An integer target is bare:
 parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 `p as (const struct node *)`. The targets are the ten machine integer types
 `int8` to `uint128`, `void *`, a pointer to one of them, `float *`, `double *`,
-and a pointer to a struct; a pointer target is unqualified except for a
-struct's `const`, and a byte view inherits its source's qualification. A Rust source's sidecar
+and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
+or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
+targets support `const`. An unqualified byte view inherits its source's const
+qualification. Qualifying a pointer grants no memory access permission. A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
 
 Float pointer casts preserve the address and use the existing pointer-cast

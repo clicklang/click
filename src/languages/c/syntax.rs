@@ -3209,7 +3209,7 @@ impl ImportedFunction {
                 ),
                 interface_type: InterfaceType::CharArray(
                     literal.plain_char(),
-                    literal.bytes().len() as u32,
+                    u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
                 ),
                 constant: false,
                 extent: None,
@@ -8304,7 +8304,10 @@ impl Parser {
     fn static_address_expression(&self, expression: &CExpression) -> Option<(InterfaceType, bool)> {
         match expression {
             CExpression::StringLiteral(literal) if literal.identity.is_some() => Some((
-                InterfaceType::CharArray(literal.plain_char(), literal.bytes().len() as u32),
+                InterfaceType::CharArray(
+                    literal.plain_char(),
+                    u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
+                ),
                 false,
             )),
             CExpression::Variable(name) => self.static_object_type(name),
@@ -13850,7 +13853,9 @@ impl Parser {
         let ordinal = u32::try_from(self.string_literals.len()).expect("literal count fits u32");
         let identity = self.current_function_source_name.as_ref().map(|function| {
             let mut id = crate::kernel::StringLiteralId::new(function.clone(), ordinal);
-            id.source = self.source_identity.clone();
+            if let Some(source) = &self.source_identity {
+                id = id.with_source(source);
+            }
             id
         });
         let literal = std::sync::Arc::new(CStringLiteral::new(identity, bytes, self.plain_char));
@@ -18085,7 +18090,7 @@ impl Parser {
             CExpression::StepResult { interface_type, .. } => *interface_type,
             CExpression::StringLiteral(literal) => Some(InterfaceType::CharArray(
                 literal.plain_char(),
-                literal.bytes().len() as u32,
+                u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
             )),
             CExpression::Variable(name) => self.variable_types.get(name).copied(),
             CExpression::FunctionAddress(name) => {

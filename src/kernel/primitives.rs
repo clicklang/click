@@ -2912,38 +2912,55 @@ impl std::ops::Deref for PointerValue {
 }
 
 /// A source occurrence of a string literal, independent of C variable names.
+/// Shared so pointer and expression nodes stay small and cloning does not copy names.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct StringLiteralId {
-    pub source: Option<String>,
-    pub function: String,
-    pub ordinal: u32,
+pub struct StringLiteralId(Arc<StringLiteralOccurrence>);
+
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+struct StringLiteralOccurrence {
+    source: Option<String>,
+    function: String,
+    ordinal: u32,
 }
 
 impl StringLiteralId {
     pub fn new(function: impl Into<String>, ordinal: u32) -> Self {
-        Self {
+        Self(Arc::new(StringLiteralOccurrence {
             source: None,
             function: function.into(),
             ordinal,
-        }
+        }))
     }
 
-    pub fn with_source(mut self, source: impl Into<String>) -> Self {
-        self.source = Some(source.into());
-        self
+    pub fn with_source(self, source: impl Into<String>) -> Self {
+        Self(Arc::new(StringLiteralOccurrence {
+            source: Some(source.into()),
+            function: self.0.function.clone(),
+            ordinal: self.0.ordinal,
+        }))
+    }
+
+    pub fn source(&self) -> Option<&str> {
+        self.0.source.as_deref()
+    }
+    pub fn function(&self) -> &str {
+        &self.0.function
+    }
+    pub fn ordinal(&self) -> u32 {
+        self.0.ordinal
     }
 
     pub(crate) fn payload_bytes(&self) -> usize {
-        self.function.len() + self.source.as_ref().map_or(0, String::len) + 4
+        self.0.function.len() + self.0.source.as_ref().map_or(0, String::len) + 4
     }
 }
 
 impl std::fmt::Display for StringLiteralId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(source) = &self.source {
+        if let Some(source) = &self.0.source {
             write!(f, "{source:?}::")?;
         }
-        write!(f, "{}.string_literal({})", self.function, self.ordinal)
+        write!(f, "{}.string_literal({})", self.0.function, self.0.ordinal)
     }
 }
 

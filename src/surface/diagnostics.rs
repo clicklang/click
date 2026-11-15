@@ -5833,6 +5833,20 @@ impl Drop for ReferenceResultSourceScope {
     }
 }
 
+fn qualified_native_pointer_spelling(target: &str, constant: bool, volatile: bool) -> String {
+    let target = match target {
+        "float32*" => "float*",
+        "float64*" => "double*",
+        target => target,
+    };
+    if !target.contains('*') {
+        return target.to_string();
+    }
+    let constant = if constant { "const " } else { "" };
+    let volatile = if volatile { "volatile " } else { "" };
+    format!("{constant}{volatile}{target}")
+}
+
 /// Click's cast, `operand as target`, from their spellings. A pointer
 /// target is parenthesized, `p as (uint8 *)`. `as` binds tighter than every
 /// binary operator and looser than every unary one, so an operand that is
@@ -5962,11 +5976,15 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             expression,
             target_type,
             pointee_struct,
+            pointee_constant,
+            pointee_volatile,
             ..
         } => {
             // The contract parser accepts the null pointer constant directly;
             // a C header's `(void *)0` must not expose the kernel type name.
             if target_type.is_pointer()
+                && !pointee_constant
+                && !pointee_volatile
                 && matches!(
                     expression.as_ref(),
                     ProgramExpression::Value(ProgramValue::Int32(int32_constant!(0)))
@@ -5996,12 +6014,14 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                 ProgramType::Float64Pointer => "double*",
                 _ => crate::kernel::program_type_spelling(*target_type),
             };
+            let spelling =
+                qualified_native_pointer_spelling(spelling, *pointee_constant, *pointee_volatile);
             // Contract expressions use the `expression as type` cast syntax.
             // Wrap the complete cast so it remains a single term when it is
             // embedded in a generated comparison or another proposition.
             format!(
                 "({})",
-                click_cast(&describe_program_expression(expression), spelling)
+                click_cast(&describe_program_expression(expression), &spelling)
             )
         }
         ProgramExpression::FloatNegate(expression) => {
@@ -7128,6 +7148,8 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 ProgramExpression::Cast {
                     target_type,
                     pointee_struct,
+                    pointee_constant,
+                    pointee_volatile,
                     ..
                 } => {
                     if pointee_struct.is_none()
@@ -7140,7 +7162,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         .as_ref()
                         .map(|name| format!("struct {name} *"))
                         .unwrap_or_else(|| {
-                            crate::kernel::program_type_spelling(*target_type).to_string()
+                            qualified_native_pointer_spelling(
+                                crate::kernel::program_type_spelling(*target_type),
+                                *pointee_constant,
+                                *pointee_volatile,
+                            )
                         });
                     format!("({})", click_cast(&operand, &spelling))
                 }

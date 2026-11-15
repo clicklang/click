@@ -1666,7 +1666,10 @@ The zero-based ordinal counts literal objects in source order, after adjacent
 string concatenation, including formats lowered specially for `snprintf`.
 `"file.c"::f.string_literal(i)` is the fully qualified form; a declared C source
 alias also qualifies the function. Bare `f` requires an unambiguous owner.
-Indexing and pointer casts use the ordinary pointer syntax. The literal has its
+Indexing and pointer casts use the ordinary pointer syntax. A qualified native
+pointer view is written `f.string_literal(0) as (const uint8 *)`; `volatile`
+and `const volatile` pointer targets also retain those qualifiers when raised.
+An unqualified byte cast continues to inherit a source const view. The literal has its
 own static, read-only storage and introduces no C local. A pointer escaping its
 function retains this identity. Equal text in distinct occurrences has distinct
 source references without a guarantee that their storage differs: C permits

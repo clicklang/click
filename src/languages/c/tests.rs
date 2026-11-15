@@ -15114,13 +15114,13 @@ fn c_string_literal_identities_are_function_local_occurrences_not_variables() {
     .unwrap();
     let first = &functions[0];
     assert_eq!(first.string_literals().len(), 2);
-    assert_eq!(first.string_literals()[0].identity().unwrap().ordinal, 0);
-    assert_eq!(first.string_literals()[1].identity().unwrap().ordinal, 1);
+    assert_eq!(first.string_literals()[0].identity().unwrap().ordinal(), 0);
+    assert_eq!(first.string_literals()[1].identity().unwrap().ordinal(), 1);
     assert_eq!(
         functions[1].string_literals()[0]
             .identity()
             .unwrap()
-            .ordinal,
+            .ordinal(),
         0
     );
     assert_ne!(
