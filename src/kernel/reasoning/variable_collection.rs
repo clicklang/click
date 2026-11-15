@@ -54,7 +54,7 @@ fn visit_machine_operand_carrier_leaves_selected(
     }
     if matches!(
         root.node(),
-        KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+        KernelTermNode::Fold(_) | KernelTermNode::Match(_) | KernelTermNode::FloatConvert { .. }
     ) {
         visit(operand);
         return;
@@ -72,7 +72,9 @@ fn visit_machine_operand_carrier_leaves_selected(
             }
             if matches!(
                 leaf.node(),
-                KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+                KernelTermNode::Fold(_)
+                    | KernelTermNode::Match(_)
+                    | KernelTermNode::FloatConvert { .. }
             ) {
                 visit(MachineOperandView::Shared(leaf));
             } else {
@@ -146,6 +148,20 @@ fn collect_operand_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     if let MachineOperandView::Shared(root) = operand
+        && matches!(root.node(), KernelTermNode::FloatConvert { .. })
+    {
+        variables.extend(
+            retained_folds::common_variables(
+                root,
+                retained_folds::FoldVariableRead::ExpressionFree,
+                &mut Default::default(),
+            )
+            .iter()
+            .copied(),
+        );
+        return;
+    }
+    if let MachineOperandView::Shared(root) = operand
         && let KernelTermNode::Match(fold) = root.node()
     {
         retained_matches::collect_match_variables(
@@ -182,6 +198,20 @@ fn collect_operand_integer_variables_seen(
     seen: &mut SeenTerms,
 ) {
     if let MachineOperandView::Shared(root) = operand
+        && matches!(root.node(), KernelTermNode::FloatConvert { .. })
+    {
+        variables.extend(
+            retained_folds::common_variables(
+                root,
+                retained_folds::FoldVariableRead::IntegerFree,
+                &mut Default::default(),
+            )
+            .iter()
+            .copied(),
+        );
+        return;
+    }
+    if let MachineOperandView::Shared(root) = operand
         && let KernelTermNode::Match(fold) = root.node()
     {
         retained_matches::collect_match_variables(
@@ -216,6 +246,29 @@ fn collect_operand_binder_variables_seen(
     bitvector_variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
+    if let MachineOperandView::Shared(root) = operand
+        && matches!(root.node(), KernelTermNode::FloatConvert { .. })
+    {
+        integer_variables.extend(
+            retained_folds::common_variables(
+                root,
+                retained_folds::FoldVariableRead::IntegerBinders,
+                &mut Default::default(),
+            )
+            .iter()
+            .copied(),
+        );
+        bitvector_variables.extend(
+            retained_folds::common_variables(
+                root,
+                retained_folds::FoldVariableRead::MachineBinders,
+                &mut Default::default(),
+            )
+            .iter()
+            .copied(),
+        );
+        return;
+    }
     if let MachineOperandView::Shared(root) = operand
         && let KernelTermNode::Match(fold) = root.node()
     {
@@ -3020,6 +3073,16 @@ fn collect_integer_variables_seen(
                                 retained_folds::FoldVariableRead::ExpressionFree,
                                 variables,
                             );
+                        } else if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
+                            variables.extend(
+                                retained_folds::common_variables(
+                                    leaf,
+                                    retained_folds::FoldVariableRead::ExpressionFree,
+                                    &mut Default::default(),
+                                )
+                                .iter()
+                                .copied(),
+                            );
                         } else {
                             collect_bitvector_variables(
                                 leaf.machine_conversion_leaf().expect("conversion leaf"),
@@ -3809,6 +3872,16 @@ fn collect_integer_bitvector_capture_variables(
                                 retained_folds::FoldVariableRead::MachineCapture,
                                 variables,
                             );
+                        } else if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
+                            variables.extend(
+                                retained_folds::common_variables(
+                                    leaf,
+                                    retained_folds::FoldVariableRead::MachineCapture,
+                                    &mut Default::default(),
+                                )
+                                .iter()
+                                .copied(),
+                            );
                         } else {
                             collect_bitvector_capture_variables_seen(
                                 leaf.machine_conversion_leaf().expect("conversion leaf"),
@@ -4066,6 +4139,12 @@ fn collect_machine_operand_scope_summary(
     if let KernelTermNode::Fold(fold) = root.node() {
         return collect_fold_scope_summary(fold, summaries);
     }
+    if matches!(root.node(), KernelTermNode::FloatConvert { .. }) {
+        return collect_bitvector_scope_summary(
+            &KernelTermExport::machine(root).expect("float conversion"),
+            summaries,
+        );
+    }
     let mut summary = IntegerScopeSummary::default();
     if let Some(leaves) =
         shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
@@ -4076,6 +4155,11 @@ fn collect_machine_operand_scope_summary(
             }
             summary.merge(if let KernelTermNode::Fold(fold) = leaf.node() {
                 collect_fold_scope_summary(fold, summaries)
+            } else if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
+                collect_bitvector_scope_summary(
+                    &KernelTermExport::machine(leaf).expect("float conversion"),
+                    summaries,
+                )
             } else {
                 collect_bitvector_scope_summary(
                     leaf.machine_conversion_leaf().expect("conversion leaf"),

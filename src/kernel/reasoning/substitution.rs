@@ -3322,6 +3322,18 @@ fn collect_scoped_leaf_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     if let MachineOperandView::Shared(root) = leaf
+        && matches!(root.node(), KernelTermNode::FloatConvert { .. })
+    {
+        // This freshness policy includes snapshot contents as well as binders.
+        // Keep its selected native boundary; the ordinary free-variable reader
+        // intentionally has different scope and memory rules.
+        collect_bitvector_bound_variables(
+            &crate::kernel::KernelTermExport::machine(root).expect("float conversion"),
+            variables,
+        );
+        return;
+    }
+    if let MachineOperandView::Shared(root) = leaf
         && let KernelTermNode::Fold(fold) = root.node()
     {
         variables.insert(fold.accumulator);
@@ -9947,5 +9959,37 @@ fn float_conversion_substitution_matches_direct_constant_cast() {
                 target.value_from_term(substitute_bitvector_variable(&term, variable, literal));
             assert_eq!(actual, evaluate_cast(source.clone(), target.program_type()));
         }
+    }
+}
+
+#[cfg(test)]
+mod float_conversion_freshness_tests {
+    use super::*;
+
+    #[test]
+    fn retained_float_conversion_freshness_preserves_nested_binders() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::opaque_conversion(
+            "c_float32_to_int32",
+            MachineTerm::opaque_conversion(
+                "c_int32_to_float32",
+                MachineTerm::RangeFold {
+                    start: Box::new(MachineTerm::constant(0)),
+                    end: Box::new(MachineTerm::Variable(Variable(999982))),
+                    initial: Box::new(MachineTerm::constant(0)),
+                    accumulator: Variable(999983),
+                    item: Variable(999984),
+                    body: Box::new(MachineTerm::Variable(Variable(999983))),
+                },
+            ),
+        );
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+        let mut expected = BTreeSet::new();
+        collect_bitvector_bound_variables(&native, &mut expected);
+        let mut actual = BTreeSet::new();
+        collect_scoped_leaf_bound_variables(MachineOperandView::Shared(&root), &mut actual);
+        assert!(expected.contains(&Variable(999983)) && expected.contains(&Variable(999984)));
+        assert_eq!(actual, expected);
     }
 }

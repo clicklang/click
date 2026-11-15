@@ -211,6 +211,9 @@ pub(super) fn collect_common_memory_loads(
             } => {
                 pending.push((operand, Some(source.format().byte_width())));
             }
+            KernelTermNode::FloatConvert { .. } => {
+                return Err("opaque pure function may hide a current memory load".into());
+            }
             KernelTermNode::Call { .. } => {
                 return Err(if term.ty() == &KernelType::Integer {
                     "opaque integer function may hide a current memory load"
@@ -261,6 +264,51 @@ fn push_offset_memory_loads<'a>(
 mod tests {
     use super::*;
     use crate::kernel::KernelTermImport;
+
+    #[test]
+    fn common_float_conversions_preserve_native_memory_collection_refusal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for (source, target, name) in [
+            (
+                ProgramType::Float32,
+                ProgramType::Int32,
+                "c_float32_to_int32",
+            ),
+            (
+                ProgramType::Float64,
+                ProgramType::UInt64,
+                "c_float64_to_uint64",
+            ),
+            (
+                ProgramType::Int32,
+                ProgramType::Float32,
+                "c_int32_to_float32",
+            ),
+        ] {
+            let native = MachineTerm::PureFunctionApplication {
+                name: name.into(),
+                arguments: vec![MachineTerm::Variable(Variable(999973))],
+            };
+            let operand = KernelTerm::variable(KernelType::Program(source), Variable(999973));
+            let root = KernelTerm::numeric_float_convert(target, source, operand).unwrap();
+            let current = Memory::new();
+            let expected = collect_bitvector_memory_loads_with_width(
+                &native,
+                &current,
+                &mut Vec::new(),
+                None,
+                &mut BTreeSet::new(),
+            );
+            let actual = collect_common_memory_loads(
+                vec![(&root, None)],
+                &current,
+                &mut Vec::new(),
+                &mut BTreeSet::new(),
+            );
+            assert!(expected.is_err());
+            assert_eq!(actual, expected);
+        }
+    }
 
     #[test]
     fn retained_fold_guard_reads_keep_their_comparison_width() {

@@ -751,23 +751,34 @@ mod tests {
                     crate::kernel::KernelFloatType::Float32,
                 ),
             };
+            let integer = MachineTerm::opaque_conversion(
+                format!(
+                    "c_{}_to_int32",
+                    crate::kernel::program_type_spelling(format.program_type())
+                ),
+                native.clone(),
+            );
             let native = MachineTerm::opaque_conversion(name, native);
-            let argument = PureFunctionArgument::Value(target.value(native));
-            let root = KernelTermImport::default().argument(&argument);
-            for mode in [
-                FoldVariableRead::IntegerFree,
-                FoldVariableRead::ExpressionFree,
-                FoldVariableRead::MachineCapture,
-                FoldVariableRead::IntegerBinders,
-                FoldVariableRead::MachineBinders,
+            for argument in [
+                PureFunctionArgument::Value(target.value(native)),
+                PureFunctionArgument::Value(ProgramValue::Int32(integer)),
             ] {
-                let mut expected = BTreeSet::new();
-                collect_argument(&argument, mode, &mut expected, &mut SeenTerms::default());
-                let actual = common_variables(&root, mode, &mut Default::default())
-                    .iter()
-                    .copied()
-                    .collect::<BTreeSet<_>>();
-                assert_eq!(actual, expected, "{format:?} {mode:?}");
+                let root = KernelTermImport::default().argument(&argument);
+                for mode in [
+                    FoldVariableRead::IntegerFree,
+                    FoldVariableRead::ExpressionFree,
+                    FoldVariableRead::MachineCapture,
+                    FoldVariableRead::IntegerBinders,
+                    FoldVariableRead::MachineBinders,
+                ] {
+                    let mut expected = BTreeSet::new();
+                    collect_argument(&argument, mode, &mut expected, &mut SeenTerms::default());
+                    let actual = common_variables(&root, mode, &mut Default::default())
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>();
+                    assert_eq!(actual, expected, "{format:?} {mode:?}");
+                }
             }
         }
     }
