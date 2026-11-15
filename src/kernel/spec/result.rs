@@ -239,7 +239,10 @@ impl SpecCallArgument {
     pub(super) fn from_value(value: SpecValue) -> Self {
         match value {
             SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
-            SpecValue::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+            SpecValue::Shared(root)
+                if matches!(root.ty(), KernelType::Algebraic(_))
+                    || FloatOperandView::from_shared(&root).is_some() =>
+            {
                 Self::Native(PureFunctionArgument::Value(
                     SpecValue::Shared(root).into_native(),
                 ))
@@ -344,6 +347,25 @@ pub(super) fn call_arguments(arguments: Vec<SpecCallArgument>) -> Vec<PureFuncti
 #[cfg(test)]
 mod pointer_observation_tests {
     use super::*;
+    #[test]
+    fn shared_float_atoms_keep_native_mixed_call_descriptors() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for value in [
+            ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
+            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+        ] {
+            let expected = PureFunctionArgument::Value(value.clone());
+            let root = KernelTermImport::default().argument(&expected);
+            let shared = SpecValue::Shared(root.clone());
+            assert_eq!(shared.clone().into_native(), value);
+            let argument = SpecCallArgument::from_value(shared);
+            assert_eq!(argument.native_descriptor(), Some(&expected));
+            let (restored, carrier) = argument.into_algebraic_call_operand();
+            assert_eq!(restored, root);
+            assert!(carrier.is_none());
+        }
+    }
+
     #[test]
     fn numeric_pointer_projection_retains_the_address_without_changing_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();

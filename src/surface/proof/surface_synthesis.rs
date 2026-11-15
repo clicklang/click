@@ -3354,6 +3354,9 @@ pub(super) fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
+        Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+            crate::kernel::KernelTermExport::float(term).ok()?,
+        )),
         Node::MachineLiteral(literal) => {
             let KernelType::Program(ty) = term.ty() else {
                 return None;
