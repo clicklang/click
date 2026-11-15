@@ -415,7 +415,7 @@ scaling test, Boolean-read substitution and identity parity, dependency widths
 and ordering, resource diagnostics and the intervening MIR temporary tests.
 The CI-quality check passed.
 
-8l produces Boolean pure-call results as common Bool roots. Numeric arguments
+8l (merged [PR #2824](https://github.com/clicklang/click/pull/2824)) produces Boolean pure-call results as common Bool roots. Numeric arguments
 remain shared, and opaque argument descriptors retain exact producer identities.
 A cached selected call reading preserves shared numeric arguments at native
 handoffs. Observation normalization uses native semantic argument identity while
@@ -443,7 +443,8 @@ local cast emits its original certified range facts through the selected native
 cast descriptor. General output spelling and later local/storage handoffs retain
 their assigned slices; no search or budget policy changes.
 
-Validation: all 1,900 selected tests passed, including every scaling test,
+Validation: all 2,410 integration tests passed, including every scaling test,
+C frontend and fact-reasoning selections,
 constructor reductions, all integer cast formats, producer parity, observation
 identity, local range-fact preservation, equality rewrites, dependencies and the
 modeled-binary-tree example. The C/C++/Rust integer-language examples and focused
