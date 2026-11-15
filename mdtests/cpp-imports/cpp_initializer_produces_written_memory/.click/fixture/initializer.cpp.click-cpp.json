@@ -1,0 +1,386 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "initializer": {
+            "kind": "uninitialized"
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:initializer.cpp@127@F@caller#i#@x",
+            "name": "x",
+            "span": {
+              "end_column": 19,
+              "end_line": 3,
+              "file": "initializer.cpp",
+              "start_column": 5,
+              "start_line": 3
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          },
+          "span": {
+            "end_column": 20,
+            "end_line": 3,
+            "file": "initializer.cpp",
+            "start_column": 5,
+            "start_line": 3
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "value",
+              "value": {
+                "kind": "address_of",
+                "place": {
+                  "declaration_id": "c:initializer.cpp@127@F@caller#i#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 12,
+                    "end_line": 4,
+                    "file": "initializer.cpp",
+                    "start_column": 11,
+                    "start_line": 4
+                  }
+                },
+                "span": {
+                  "end_column": 12,
+                  "end_line": 4,
+                  "file": "initializer.cpp",
+                  "start_column": 10,
+                  "start_line": 4
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": false,
+                    "source_aliases": []
+                  }
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:initializer.cpp@92@F@caller#i#@value",
+                  "name": "value",
+                  "span": {
+                    "end_column": 19,
+                    "end_line": 4,
+                    "file": "initializer.cpp",
+                    "start_column": 14,
+                    "start_line": 4
+                  }
+                },
+                "span": {
+                  "end_column": 19,
+                  "end_line": 4,
+                  "file": "initializer.cpp",
+                  "start_column": 14,
+                  "start_line": 4
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": false,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@F@init#*i#i#",
+            "name": "init",
+            "span": {
+              "end_column": 9,
+              "end_line": 4,
+              "file": "initializer.cpp",
+              "start_column": 5,
+              "start_line": 4
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 20,
+            "end_line": 4,
+            "file": "initializer.cpp",
+            "start_column": 5,
+            "start_line": 4
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 13,
+            "end_line": 5,
+            "file": "initializer.cpp",
+            "start_column": 5,
+            "start_line": 5
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:initializer.cpp@127@F@caller#i#@x",
+              "name": "x",
+              "span": {
+                "end_column": 13,
+                "end_line": 5,
+                "file": "initializer.cpp",
+                "start_column": 12,
+                "start_line": 5
+              }
+            },
+            "span": {
+              "end_column": 13,
+              "end_line": 5,
+              "file": "initializer.cpp",
+              "start_column": 12,
+              "start_line": 5
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@caller#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "caller",
+      "parameters": [
+        {
+          "declaration_id": "c:initializer.cpp@92@F@caller#i#@value",
+          "name": "value",
+          "span": {
+            "end_column": 39,
+            "end_line": 2,
+            "file": "initializer.cpp",
+            "start_column": 21,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "caller"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 6,
+        "file": "initializer.cpp",
+        "start_column": 1,
+        "start_line": 2
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "initializer.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/initializer.cpp",
+      "canonical_path": "$unit/initializer.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "initializer.cpp",
+      "-o",
+      "initializer.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "initializer.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "kind": "store",
+          "pointer": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:initializer.cpp@10@F@init#*i#i#@p",
+              "name": "p",
+              "span": {
+                "end_column": 61,
+                "end_line": 1,
+                "file": "initializer.cpp",
+                "start_column": 60,
+                "start_line": 1
+              }
+            },
+            "span": {
+              "end_column": 61,
+              "end_line": 1,
+              "file": "initializer.cpp",
+              "start_column": 60,
+              "start_line": 1
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            }
+          },
+          "span": {
+            "end_column": 69,
+            "end_line": 1,
+            "file": "initializer.cpp",
+            "start_column": 59,
+            "start_line": 1
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:initializer.cpp@27@F@init#*i#i#@value",
+              "name": "value",
+              "span": {
+                "end_column": 69,
+                "end_line": 1,
+                "file": "initializer.cpp",
+                "start_column": 64,
+                "start_line": 1
+              }
+            },
+            "span": {
+              "end_column": 69,
+              "end_line": 1,
+              "file": "initializer.cpp",
+              "start_column": 64,
+              "start_line": 1
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@init#*i#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "init",
+      "parameters": [
+        {
+          "declaration_id": "c:initializer.cpp@10@F@init#*i#i#@p",
+          "name": "p",
+          "span": {
+            "end_column": 26,
+            "end_line": 1,
+            "file": "initializer.cpp",
+            "start_column": 11,
+            "start_line": 1
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "declaration_id": "c:initializer.cpp@27@F@init#*i#i#@value",
+          "name": "value",
+          "span": {
+            "end_column": 46,
+            "end_line": 1,
+            "file": "initializer.cpp",
+            "start_column": 28,
+            "start_line": 1
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "init"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 72,
+        "end_line": 1,
+        "file": "initializer.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    }
+  ],
+  "records": [],
+  "schema": 60
+}
