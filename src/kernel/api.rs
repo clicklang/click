@@ -5280,6 +5280,7 @@ pub fn prove_checked_program_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CheckedFunctionExecution {
+        published_outcomes: Default::default(),
         contract_completion: None,
         entry_authority: None,
         closed_exit_obligations: vec![None; path_count],

@@ -6303,6 +6303,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                 context.assume_proposition(fact.clone())
             });
             let core = OutcomeProofCore {
+                publication: None,
                 identity: OutcomeIdentity::fresh(),
                 result: Arc::new(value.clone().into_native()),
                 store_consequences_available: true,
@@ -6317,11 +6318,11 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             let mut goals = closing.open(path_index, &core);
             while let Some(kind) = goals.first_open_goal() {
                 goals = goals
-                    .prove_goal(
+                    .prove_goal_for_specification(
                         kind,
                         &artifact,
                         path,
-                        &owned,
+                        owned.specification(),
                         &core,
                         &claim_goals,
                         &closing_facts,
@@ -6349,6 +6350,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                 goal_facts.extend_from_slice(goal.facts());
                 let outcome = Arc::new(OutcomeProofState::new(
                     OutcomeProofCore {
+                        publication: None,
                         identity: OutcomeIdentity::fresh(),
                         result: Arc::new(value.clone().into_native()),
                         store_consequences_available: true,

@@ -308,15 +308,29 @@ pub(crate) struct CheckedReturnPath {
     path: crate::kernel::SymbolicExecutionPath,
     deferred: bool,
     error: Option<crate::kernel::RuntimeError>,
+    publication: Arc<crate::kernel::PublishedFunctionOutcome>,
 }
 
 impl CheckedReturnPath {
+    pub(crate) fn publication(&self) -> &Arc<crate::kernel::PublishedFunctionOutcome> {
+        &self.publication
+    }
     pub(crate) fn path(&self) -> &crate::kernel::SymbolicExecutionPath {
         &self.path
     }
 }
 
 impl crate::kernel::CheckedFunctionExecution {
+    pub(crate) fn published_outcome(
+        &self,
+        index: usize,
+    ) -> &Arc<crate::kernel::PublishedFunctionOutcome> {
+        &self.published_outcomes[index]
+    }
+    pub(crate) fn open_outcome(&self, index: usize) -> Option<super::OutcomeProofCore> {
+        self.published_outcome(index).open_core()
+    }
+
     pub(crate) fn with_contract_completion(
         mut self,
         progress: Option<crate::kernel::ContractProofProgress>,
@@ -358,6 +372,7 @@ impl crate::kernel::CheckedFunctionExecution {
             if !Arc::ptr_eq(&source.theorem.proposition, &completed.source.proposition) {
                 return Err("return completion belongs to a different producer path");
             }
+            self.published_outcomes[completed.index] = completed.publication;
             self.execution.paths[completed.index] = completed.path;
             self.deferred_contract_exits[completed.index] = completed.deferred;
             self.deferred_contract_exit_errors[completed.index] = completed.error;
@@ -11466,16 +11481,22 @@ impl ExecutionProofCore {
             .as_ref()
             .filter(|entry| entry.cases.is_some());
         let assumptions = contract_entry.map_or(assumptions, |entry| entry.assumptions.clone());
-        let (paths, has_checked_entry, deferred_contract_exits, deferred_contract_exit_errors) =
-            self.checked_execution_paths(
-                candidates,
-                checked_function,
-                &assumptions,
-                None,
-                &mut None,
-            )?;
+        let (
+            paths,
+            has_checked_entry,
+            deferred_contract_exits,
+            deferred_contract_exit_errors,
+            published_outcomes,
+        ) = self.checked_execution_paths(
+            candidates,
+            checked_function,
+            &assumptions,
+            None,
+            &mut None,
+        )?;
         let path_count = paths.len();
         Ok(crate::kernel::CheckedFunctionExecution {
+            published_outcomes: published_outcomes.into(),
             contract_completion: None,
             entry_authority: has_checked_entry
                 .then_some(contract_entry)
@@ -11532,7 +11553,7 @@ impl ExecutionProofCore {
                 unjustified_fact: None,
             })?;
         let mut unjustified = None;
-        let (mut paths, _, deferred, errors) = self
+        let (mut paths, _, deferred, errors, publications) = self
             .checked_execution_paths(
                 candidates,
                 &execution.function,
@@ -11554,6 +11575,7 @@ impl ExecutionProofCore {
             path,
             deferred: deferred[0],
             error: errors.into_iter().next().flatten(),
+            publication: publications[0].retain_identity(execution.published_outcome(path_index)),
         })
     }
 
@@ -11603,6 +11625,7 @@ impl ExecutionProofCore {
             bool,
             Vec<bool>,
             Vec<Option<crate::kernel::RuntimeError>>,
+            Vec<Arc<crate::kernel::PublishedFunctionOutcome>>,
         ),
         &'static str,
     > {
@@ -11661,6 +11684,7 @@ impl ExecutionProofCore {
             .ok_or("the published arguments do not bind at entry")?;
         }
         let mut paths = Vec::with_capacity(range.len());
+        let mut publications = Vec::with_capacity(range.len());
         let mut deferred_contract_exits = Vec::with_capacity(range.len());
         let mut deferred_contract_exit_errors = Vec::with_capacity(range.len());
         for path_index in range {
@@ -11838,7 +11862,7 @@ impl ExecutionProofCore {
                 state: Box::new(candidates.state().clone()),
                 function: Box::new(function.clone()),
                 arguments: candidates.arguments().to_vec(),
-                outcome,
+                outcome: outcome.clone(),
             };
             let mut post_assumptions = boundary_assumptions;
             // Preserve the typed-load bridges that the former certification
@@ -11883,6 +11907,17 @@ impl ExecutionProofCore {
                 &facts,
                 candidate.obligations(),
             ));
+            publications.push(crate::kernel::PublishedFunctionOutcome::from_execution(
+                candidates.state(),
+                function,
+                candidates.arguments(),
+                assumptions,
+                &facts,
+                candidate.obligations(),
+                &outcome,
+                candidate,
+                &theorem,
+            ));
             drop(premises);
             paths.push(crate::kernel::SymbolicExecutionPath {
                 call_parameters: None,
@@ -11912,6 +11947,7 @@ impl ExecutionProofCore {
             has_checked_entry,
             deferred_contract_exits,
             deferred_contract_exit_errors,
+            publications,
         ))
     }
 

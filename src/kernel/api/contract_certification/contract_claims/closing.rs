@@ -296,13 +296,63 @@ impl ContractExitObligations {
         ))
     }
 
-    /// One primitive proof of the currently selected closing obligation.
+    /// The ordinary closer reads its own outcome's producer publication,
+    /// without accepting a separately assembled specification.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn prove_goal(
         &self,
         kind: ContractClosingGoal,
         execution: &CheckedFunctionExecution,
         path: &SymbolicExecutionPath,
-        specification: &CheckedPathSpecification,
+        outcome: &OutcomeProofCore,
+        claims: &OutcomeClaimGoals,
+        facts: &ProofFacts,
+    ) -> Result<Self, ContractClosingRefusal> {
+        let publication = outcome
+            .publication
+            .as_ref()
+            .expect("an ordinary checked outcome retains its producer publication");
+        self.prove_goal_with_specification(
+            kind,
+            execution,
+            path,
+            publication.specification(),
+            outcome,
+            claims,
+            facts,
+        )
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prove_goal_for_specification(
+        &self,
+        kind: ContractClosingGoal,
+        execution: &CheckedFunctionExecution,
+        path: &SymbolicExecutionPath,
+        specification: &FunctionSpecification,
+        outcome: &OutcomeProofCore,
+        claims: &OutcomeClaimGoals,
+        facts: &ProofFacts,
+    ) -> Result<Self, ContractClosingRefusal> {
+        self.prove_goal_with_specification(
+            kind,
+            execution,
+            path,
+            specification,
+            outcome,
+            claims,
+            facts,
+        )
+    }
+
+    /// One primitive proof of the currently selected closing obligation.
+    fn prove_goal_with_specification(
+        &self,
+        kind: ContractClosingGoal,
+        execution: &CheckedFunctionExecution,
+        path: &SymbolicExecutionPath,
+        specification: &FunctionSpecification,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
         facts: &ProofFacts,
@@ -331,14 +381,14 @@ impl ContractExitObligations {
         let mut proved = self.clone();
         match kind {
             ContractClosingGoal::ReturnedResources => {
-                if !outcome.is_exceptional {
-                    if let FunctionOutcome::RuntimeError(error) =
-                        specification.specification().outcome()
-                    {
-                        if (self.context.complete_boundary && self.checked_transition.is_none())
-                            || !crate::kernel::functions::is_deferred_conditional_resource_effect_error(error)
-                        { return Err(ContractClosingRefusal::Runtime(error.clone())); }
-                    }
+                if !outcome.is_exceptional
+                    && let FunctionOutcome::RuntimeError(error) = specification.outcome()
+                    && ((self.context.complete_boundary && self.checked_transition.is_none())
+                        || !crate::kernel::functions::is_deferred_conditional_resource_effect_error(
+                            error,
+                        ))
+                {
+                    return Err(ContractClosingRefusal::Runtime(error.clone()));
                 }
                 let receipts_closed = !self.context.complete_boundary
                     || !execution
@@ -348,10 +398,7 @@ impl ContractExitObligations {
                         .unwrap_or(false);
                 let resources_closed = self.checked_transition.is_some()
                     || receipts_closed
-                        && matches!(
-                            specification.specification().outcome(),
-                            FunctionOutcome::Return { .. }
-                        )
+                        && matches!(specification.outcome(), FunctionOutcome::Return { .. })
                         && self.resource_receipts_jointly_available(
                             outcome,
                             claims,
