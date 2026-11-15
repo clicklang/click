@@ -190,6 +190,13 @@ impl SpecCallArgument {
     pub(super) fn from_value(value: SpecValue) -> Self {
         match value {
             SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
+            SpecValue::Shared(value) if value.ty() == &KernelType::Bool => {
+                // The Boolean argument handoff is migrated separately from
+                // call-result production. Keep this selected native boundary.
+                Self::Native(PureFunctionArgument::Value(
+                    SpecValue::Shared(value).into_native(),
+                ))
+            }
             SpecValue::Shared(value)
                 if matches!(value.node(), KernelTermNode::PointerAddress { .. }) =>
             {
