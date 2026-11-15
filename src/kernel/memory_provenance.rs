@@ -6573,8 +6573,23 @@ pub(in crate::kernel) fn transport_framed_common_condition(
         | Node::Variable(_)
         | Node::BoolIf { .. }
         | Node::BoolEqual { .. }
-        | Node::Call { .. }
-        | Node::PointerValueEqual(_) => None,
+        | Node::Call { .. } => None,
+        Node::PointerValueEqual(pair) => {
+            let [a, b] = pair.arguments();
+            let mapped = crate::kernel::KernelTerm::pointer_value_equal_raw([
+                shared_pointer_transport::transport_pointer(a, after, assumptions)?,
+                shared_pointer_transport::transport_pointer(b, after, assumptions)?,
+            ]);
+            Some(
+                if crate::kernel::BooleanOperandView::Shared(condition)
+                    .syntax_equal(crate::kernel::BooleanOperandView::Shared(&mapped))
+                {
+                    condition.clone()
+                } else {
+                    mapped
+                },
+            )
+        }
         Node::PointerEqual { arguments } => Some(crate::kernel::KernelTerm::pointer_equal(
             shared_pointer_transport::transport_addresses(arguments, after, assumptions)?,
         )),
@@ -9198,6 +9213,26 @@ mod common_boolean_transport_tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         for source in [
+            ConditionTerm::PointerValueEqual(
+                Box::new(PointerValue::new(
+                    Pointer {
+                        block: PointerBlock::Symbolic(Variable(972_003)),
+                        offset: PointerOffsetTerm::scaled_int32_node(
+                            MachineTerm::MemoryLoad(
+                                memory.clone(),
+                                Box::new(address.clone()),
+                                LoadKind::Int32,
+                            ),
+                            4,
+                        ),
+                    },
+                    ProgramType::Int32Pointer,
+                )),
+                Box::new(PointerValue::new(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer,
+                )),
+            ),
             ConditionTerm::PointerEqual(
                 Box::new(Pointer {
                     block: PointerBlock::Symbolic(Variable(972_003)),

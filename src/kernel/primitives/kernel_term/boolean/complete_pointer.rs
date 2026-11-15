@@ -17,7 +17,7 @@ struct PointerIdentity {
 #[derive(Clone, Debug)]
 pub struct KernelPointerEquality {
     arguments: [SharedPointerValue; 2],
-    observation: Option<[PointerIdentity; 2]>,
+    observation: Option<Arc<[PointerIdentity; 2]>>,
 }
 impl PartialEq for KernelPointerEquality {
     fn eq(&self, other: &Self) -> bool {
@@ -71,7 +71,7 @@ impl KernelPointerEquality {
         });
         Self {
             arguments: self.arguments.clone(),
-            observation: Some(observation),
+            observation: Some(Arc::new(observation)),
         }
     }
 }

@@ -372,12 +372,19 @@ extent, explicit extent and exact qualifiers/evidence. Its observation identity
 uses the native logical fields without changing the producer payload. Snapshot
 selectors and dependency readers use shared address roles directly; extent widths
 retain each reader's existing admission policy. Load matching still accepts exact
-identity only, and framed condition transport retains its native refusal.
+identity only. Framed condition transport reuses the existing complete-pointer
+transporter, preserving its reconstructed-word designation policy.
 
 Bitvector substitution maps addresses while preserving extent widths. Formal
 pointer substitution keeps the native complete-value designation and opaque-domain
 replacement rules, followed by the existing address canonicalization and equality
 constructor reductions. Surface output keeps its explicit compatibility adapter.
+
+Validation: all 1,723 selected tests passed on current upstream, including every
+scaling test, native constructor/substitution/transport parity, complete-domain
+snapshot keys, dependency admission, read order and observation identity. Exact
+producer metadata stays retained while logical keys preserve the native const,
+volatile, type and extent distinctions. The CI-quality check passed.
 
 ### 8a inventory
 

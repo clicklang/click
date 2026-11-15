@@ -179,13 +179,13 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                     &Pointer::null(),
                 )
                 .unwrap();
-            assert!(
+            assert_eq!(
                 crate::kernel::memory_provenance::transport_framed_common_condition(
                     &root,
                     &crate::kernel::Memory::new(),
                     None
-                )
-                .is_none()
+                ),
+                Some(root.clone())
             );
             let observed = SharedMachineIntegerTerm::observe_shared(
                 MachineIntegerType::Int32,
