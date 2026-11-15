@@ -1165,8 +1165,7 @@ fn call_result_then_assignment_uses_function_environment() {
         ),
         program_return(crate::kernel::program_expression::variable("result")),
     );
-    let mut final_state = ExecutionState::new().with_local("result", int32(42));
-    final_state.set_step_result(1, int32(42));
+    let final_state = ExecutionState::new().with_local("result", int32(42));
     let theorem = prove_symbolic_program_execution_with_environment(
         state.clone(),
         statement.clone(),

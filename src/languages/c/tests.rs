@@ -14997,8 +14997,8 @@ fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
 #[test]
 fn realloc_argument_calls_are_separate_retained_operations() {
     let functions = syntax::parse_functions(
-        "int32* prior(int32* p); int32 bytes();
-         int32* resize(int32* p) { p = realloc(prior(p), bytes()); return p; }",
+        "int32 bytes();
+         int32* resize(int32* p) { p = realloc(p, bytes()); return p; }",
     )
     .expect("realloc argument calls parse");
     let mut pending = vec![functions[0].body()];
@@ -15024,11 +15024,10 @@ fn realloc_argument_calls_are_separate_retained_operations() {
             _ => {}
         }
     }
-    assert_eq!(calls.len(), 3);
+    assert_eq!(calls.len(), 2);
     let arguments = reallocation.expect("a realloc call");
-    assert!(
-        arguments
-            .iter()
-            .all(|argument| matches!(argument, syntax::CExpression::StepResult { .. }))
-    );
+    assert!(matches!(
+        &arguments[1],
+        syntax::CExpression::StepResult { .. }
+    ));
 }

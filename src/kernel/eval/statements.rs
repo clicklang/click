@@ -4425,7 +4425,7 @@ fn execute_execution_statement_leaf_paths(
                             }
                         }
                     }
-                    None => retained_value.clone(),
+                    None => retained_value.clone().into(),
                 };
                 if let StatementOutcome::Normal(state) = &mut path.outcome {
                     state.set_retained_step_result(*call, value);

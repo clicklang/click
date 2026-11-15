@@ -2346,9 +2346,8 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     let environment = ExecutionEnvironment::new()
         .with_function(function)
         .with_verified_function_rule(rule);
-    let call_statement = program_call_then_assign(
+    let (call_statement, call_value) = program_call_value(
         8,
-        "call_result",
         "modular_maybe_throw",
         vec![crate::kernel::program_expression::int32_literal(0)],
     );
@@ -2428,7 +2427,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         exceptional.theorem(),
     ));
     let statement = program_seq(
-        call_statement,
+        program_seq(call_statement, program_assign("call_result", call_value)),
         program_seq(
             program_assign("after", crate::kernel::program_expression::int32_literal(1)),
             program_return(crate::kernel::program_expression::variable("call_result")),
