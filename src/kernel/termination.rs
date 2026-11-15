@@ -4580,57 +4580,6 @@ fn check_expression_measure_recursion(
     Ok(())
 }
 
-/// Whether `statement` contains a call to `callee`, at any depth.
-///
-/// Work is the statement tree handed in; nothing outside it is read.
-pub(super) fn statement_calls_function(statement: &ProgramStatement, callee: &str) -> bool {
-    charge_termination_work(1);
-    let both = |left: &ProgramStatement, right: &ProgramStatement| {
-        statement_calls_function(left, callee) || statement_calls_function(right, callee)
-    };
-    match statement {
-        ProgramStatement::Call { function_name, .. }
-        | ProgramStatement::CallResult { function_name, .. }
-        | ProgramStatement::CallConstruct { function_name, .. } => function_name == callee,
-        ProgramStatement::While { body, .. } => statement_calls_function(body, callee),
-        ProgramStatement::Seq(statements) => both(statements.first(), &statements.rest()),
-        ProgramStatement::If {
-            then_branch,
-            else_branch,
-            ..
-        } => both(then_branch, else_branch),
-        ProgramStatement::TryCatchInt32 {
-            try_body, handler, ..
-        } => both(try_body, handler),
-        ProgramStatement::Switch { cases, .. } => cases
-            .iter()
-            .any(|case| statement_calls_function(&case.body, callee)),
-        ProgramStatement::ForStep { step, .. } => statement_calls_function(step, callee),
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
-        | ProgramStatement::EndAutomaticLifetimes { .. }
-        | ProgramStatement::Break
-        | ProgramStatement::Continue
-        | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare { .. }
-        | ProgramStatement::DeclareAggregate { .. }
-        | ProgramStatement::Assign { .. }
-        | ProgramStatement::HeapAllocate { .. }
-        | ProgramStatement::HeapFree { .. }
-        | ProgramStatement::Assert { .. }
-        | ProgramStatement::StepValue { .. }
-        | ProgramStatement::LoopTest { .. }
-        | ProgramStatement::Throw(_)
-        | ProgramStatement::Return(_)
-        | ProgramStatement::Store { .. }
-        | ProgramStatement::TypedStore { .. }
-        | ProgramStatement::CopyAggregate { .. }
-        | ProgramStatement::InitializeScalarArray { .. }
-        | ProgramStatement::Update { .. } => false,
-    }
-}
-
 /// The source loop indices of every loop in `body` that contains a call to
 /// `callee`, an enclosing loop as well as the innermost one.
 ///

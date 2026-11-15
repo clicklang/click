@@ -664,8 +664,8 @@ fn prove_claims_by_checked_tactics(
     });
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
-    // self-call raise the descent obligations. The execution producer refuses
-    // completion without the anchor; admission retains that judgment.
+    // self-call raise the descent obligations. The opened execution core binds
+    // that context before any statements run; outcome completion retains it.
     let anchored_function_environment =
         crate::kernel::program_execution_environment_with_recursion_anchor(
             function_environment.clone(),

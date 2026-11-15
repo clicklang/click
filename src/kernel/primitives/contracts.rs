@@ -3908,7 +3908,7 @@ impl ExecutionEnvironment {
         if rule
             .recursion_anchor
             .as_ref()
-            .zip(self.recursion_anchor_handle().as_ref())
+            .zip(self.recursion_anchor.as_ref())
             .is_some_and(|(produced, current)| Arc::ptr_eq(produced, current))
         {
             return true;
