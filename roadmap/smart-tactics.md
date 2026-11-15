@@ -173,11 +173,12 @@ contracts, or resource shapes.
 ## Remaining transport expansion inventory
 
 The remaining work is written-proof migration, removal of residual internal
-legacy producers, and syntax/dispatcher retirement. A selected expansion of
-`integer_sum_range_fold.md` and `rewrite_pointer_into_a_shifted_byte_view.md`
-still retained legacy nodes during the corpus pass; migrate these producers
-alongside their written consumers before deleting the dispatcher. Counts are syntax sites, not independent slow walks or a claim that
-every fixture currently verifies.
+legacy producers, and syntax/dispatcher retirement. Next, group the remaining
+historical element uses by their explicit separation and preservation argument,
+then migrate one verified family. Check whole proofs and their smart expansions
+separately: replacing a written legacy operation does not establish that all
+producer paths are legacy-free. Counts below are syntax sites, not independent
+slow walks or a claim that every fixture currently verifies.
 
 ### Written syntax is a separate migration
 
@@ -186,12 +187,12 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 72 | 125 |
+| `mdtests/` | 65 | 118 |
 | `examples/` | 29 | 369 |
 | `library/` | 0 | 0 |
-| Total | 101 | 494 |
+| Total | 94 | 487 |
 
-The 18 mdtests with failure expectations still require migration while retaining
+The 16 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text
 to expansion/mutation tests; migrate those inputs together with their tests,
 rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
@@ -202,14 +203,13 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- Migrate the negative `transport_wide_viewable_range_to_element_definedness.md`
-  fixture without inferring initialized contents from its pure `viewable`
-  premise. Its legacy rule must remain refused; initializedness needs an
-  initialized input clause, a write, or an explicit definedness premise.
 - The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
-  node, before its legacy transport calls. An explicit `node == identity`
-  lookup moves the failure to the packed parent-pointer equality. Repair and
-  verify this baseline before migrating its 106 written sites.
+  node, before its legacy transport calls. Explicit lookups establish the
+  identity, packed parent, color, and child-parent facts needed by that fold.
+  The proof also needs its execution sequence adjusted for separate call-result
+  and assignment steps; the next observed failure concerns `gparent->rb_right`
+  versus `tmp`. Repair and verify the whole baseline before migrating its 106
+  written sites. The partial investigation is not a verified proof repair.
 
 ### Excluded or still unconfirmed
 

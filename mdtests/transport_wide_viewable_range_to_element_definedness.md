@@ -23,10 +23,7 @@ uint64 f(uint8 bytes[], uint64 n) {
         have forall (k: uint64) { to_integer(k) < to_integer(n + 1u64) implies defined(bytes[k]) } by {
             intro();
             intro();
-            transport(
-                at(function.entry, viewable(bytes[0..n + 1u64])),
-                defined(bytes[k])
-            ) using {
+            solve() using {
                 to_integer(k) < to_integer(n + 1u64);
                 at(function.entry, viewable(bytes[0..n + 1u64]));
             };
@@ -36,5 +33,5 @@ uint64 f(uint8 bytes[], uint64 n) {
 ```
 
 ```expect
-fail: found no frame evidence
+fail: could not prove the current goal from only its listed premises
 ```
