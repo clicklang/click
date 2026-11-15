@@ -18584,6 +18584,7 @@ fn resolve_retained_aggregate_fields(
         | ProgramExpression::FloatClassification {
             expression: inner, ..
         }
+        | ProgramExpression::Negate(inner)
         | ProgramExpression::FloatNegate(inner)
         | ProgramExpression::EnumField { value: inner, .. }
         | ProgramExpression::EnumIs { value: inner, .. }

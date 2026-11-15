@@ -3777,7 +3777,8 @@ fn validate_pointer_cast_operands(
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::StepResult { .. } => Ok(()),
-        ProgramExpression::FloatNegate(inner)
+        ProgramExpression::Negate(inner)
+        | ProgramExpression::FloatNegate(inner)
         | ProgramExpression::FloatClassification {
             expression: inner, ..
         }
@@ -3956,6 +3957,10 @@ pub(in crate::surface) fn infer_program_expression_type(
             Some(InterfaceType::Parameter(_))
         )
         .then_some(InterfaceType::Bool),
+        ProgramExpression::Negate(expression) => arithmetic_result_type(
+            Some(InterfaceType::Int32),
+            infer_program_expression_type(expression, variables),
+        ),
         ProgramExpression::FloatNegate(expression) => {
             infer_program_expression_type(expression, variables)
                 .filter(|interface_type| type_is_float(*interface_type))

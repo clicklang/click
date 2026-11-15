@@ -2673,7 +2673,8 @@ fn collect_program_expression_bound_variables(
             collect_program_expression_bound_variables(then_branch, variables);
             collect_program_expression_bound_variables(else_branch, variables);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..
@@ -4780,6 +4781,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
             )),
             classification: *classification,
         },
+        ProgramExpression::Negate(expression) => ProgramExpression::Negate(Box::new(
+            substitute_bitvector_variable_in_program_expression(expression, from, to),
+        )),
         ProgramExpression::FloatNegate(expression) => ProgramExpression::FloatNegate(Box::new(
             substitute_bitvector_variable_in_program_expression(expression, from, to),
         )),
@@ -6844,6 +6848,9 @@ fn substitute_pointer_variable_in_program_expression(
             )),
             classification: *classification,
         },
+        ProgramExpression::Negate(expression) => ProgramExpression::Negate(Box::new(
+            substitute_pointer_variable_in_program_expression(expression, from, to),
+        )),
         ProgramExpression::FloatNegate(expression) => ProgramExpression::FloatNegate(Box::new(
             substitute_pointer_variable_in_program_expression(expression, from, to),
         )),
@@ -7374,6 +7381,9 @@ fn substitute_pointer_variable_in_spec_expression(
                 _ => unreachable!("the combined spec binary arm is exhaustive"),
             }
         }
+        SpecExpression::Negate(expression) => SpecExpression::Negate(Box::new(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        )),
         SpecExpression::BitwiseNot(expression) => SpecExpression::BitwiseNot(Box::new(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         )),

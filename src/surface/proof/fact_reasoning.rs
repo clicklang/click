@@ -402,6 +402,7 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::Cast { expression, .. }
+            | ProgramExpression::Negate(expression)
             | ProgramExpression::FloatNegate(expression)
             | ProgramExpression::FloatClassification { expression, .. }
             | ProgramExpression::AddressOf(expression)

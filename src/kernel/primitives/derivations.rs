@@ -1950,7 +1950,8 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
                 pending.push((then_branch, false));
                 pending.push((else_branch, false));
             }
-            ProgramExpression::FloatNegate(expression)
+            ProgramExpression::Negate(expression)
+            | ProgramExpression::FloatNegate(expression)
             | ProgramExpression::FloatClassification { expression, .. }
             | ProgramExpression::EnumField {
                 value: expression, ..

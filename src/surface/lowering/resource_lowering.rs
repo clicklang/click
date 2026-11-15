@@ -2816,12 +2816,9 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
                     MachineTerm::constant(0u32.wrapping_sub(value as u32)),
                 )));
             }
-            Ok(ProgramExpression::Subtract(
-                Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(0),
-                ))),
-                Box::new(resource_argument_to_program_expression(expression)?),
-            ))
+            Ok(ProgramExpression::Negate(Box::new(
+                resource_argument_to_program_expression(expression)?,
+            )))
         }
         ContractExpression::ResourceField(_) => Err(ClickError::new(
             "resource fields are symbolic Click values, not C arguments",

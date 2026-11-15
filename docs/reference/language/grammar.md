@@ -52,6 +52,11 @@ for binary32 it preserves the existing internal carrier distinction by using
 an unsuffixed literal for the signed carrier and `u32` for the unsigned one.
 Both forms denote the same IEEE bits.
 
+Unary `-x` on a float flips its sign bit, including signed zero and NaN
+payloads. It uses the same negation as C float expressions; integer unary
+minus retains its existing arithmetic and definedness conditions
+(`mdtests/float_unary_negation_preserves_signed_zero.md`).
+
 <!-- verified-example: mdtests/float_bit_literals_preserve_ieee_values.md -->
 ```click
 theorem float_bits() {
