@@ -8128,7 +8128,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         environment: &crate::kernel::ExecutionEnvironment,
     ) -> Result<Self, String> {
-        let descent = crate::kernel::termination::descent_completion::OpenedDescent::open(
+        let descent = crate::kernel::termination::descent_completion::OpenedDescent::inherit(
             function,
             environment,
         )?;
