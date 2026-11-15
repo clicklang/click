@@ -46,7 +46,7 @@ use crate::kernel::{
     prove_universally_quantified_pure_implication_by_int32_rewrites, resources_directly_match,
     substitute_int32_variable_in_proposition,
 };
-use crate::languages::c::syntax::{self, C0Expression, LongRank};
+use crate::languages::c::syntax::{self, CExpression, LongRank};
 use crate::languages::interface::InterfaceType;
 use crate::persistent::PersistentMap;
 
@@ -2334,7 +2334,7 @@ pub enum ClickProposition {
     },
     FloatClassification {
         expression: ContractExpression,
-        classification: syntax::C0FloatClassification,
+        classification: syntax::CFloatClassification,
     },
     Separate {
         left: ResourceSubject,

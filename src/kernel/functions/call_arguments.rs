@@ -379,7 +379,7 @@ pub(super) fn coerce_function_return_value(
     // source expression that supplies the value retains the pointee type of
     // the object it addresses (for example, `int32*` for `return *source`).
     // The aggregate return materializer copies through the pointer and is the
-    // type boundary that validates the complete object. The C0 struct model
+    // type boundary that validates the complete object. The C struct model
     // uses `int32*` for a struct pointer and `uint8*` for an address-backed
     // struct value, so only those two data-pointer views cross this boundary.
     if function.return_aggregate_layout().is_some()

@@ -3780,7 +3780,7 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
             LValueOutcome::LValue(lvalue) => match lvalue.pointer(state) {
                 Some(pointer) => {
                     // A struct object is stored as its byte array; its
-                    // address is a struct pointer, which the C0 front end
+                    // address is a struct pointer, which the C front end
                     // spells with the int32-pointer placeholder. Alignment
                     // of any declared object is intrinsic to its block,
                     // recorded when the block was created.

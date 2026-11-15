@@ -598,7 +598,7 @@ fn imported_static_inline_helpers_use_tu_identity_and_shared_origin() {
 }
 
 #[test]
-fn c0_linux_sequential_access_primitives_lower_to_ordered_kernel_accesses() {
+fn c_linux_sequential_access_primitives_lower_to_ordered_kernel_accesses() {
     let source = r#"
 #define READ_ONCE(x) ({ typeof(x) __value; __value = x; __value; })
 #define WRITE_ONCE(x, value) ({ typeof(x) __value = (value); (*(volatile typeof(x) *)&(x)) = __value; __value; })
@@ -651,7 +651,7 @@ int32 run(int32 value) {
 }
 
 #[test]
-fn c0_sequential_pointer_primitives_preserve_struct_pointer_identity() {
+fn c_sequential_pointer_primitives_preserve_struct_pointer_identity() {
     let functions = syntax::parse_functions(
         r#"
         struct node { int32 value; struct node *next; };
@@ -674,7 +674,7 @@ fn c0_sequential_pointer_primitives_preserve_struct_pointer_identity() {
 }
 
 #[test]
-fn c0_sequential_profile_rejects_concurrency_builtins() {
+fn c_sequential_profile_rejects_concurrency_builtins() {
     for source in [
         "int32 bad(int32 value) { return __atomic_load_n(&value, 0); }",
         "int32 bad(int32 value) { __atomic_store_n(&value, 1, 0); return value; }",
@@ -695,7 +695,7 @@ fn c0_sequential_profile_rejects_concurrency_builtins() {
 }
 
 #[test]
-fn c0_wide_static_initializers_use_checked_wide_values() {
+fn c_wide_static_initializers_use_checked_wide_values() {
     use crate::kernel::{MachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         r#"
@@ -767,7 +767,7 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
 }
 
 #[test]
-fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
+fn c_plain_char_retains_source_types_and_unsigned_byte_lowering() {
     use crate::languages::interface::InterfaceType;
     let functions = syntax::parse_functions_for_target(
         r#"
@@ -831,7 +831,7 @@ fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
 }
 
 #[test]
-fn c0_plain_char_rejects_unsigned_char_pointer_aliasing() {
+fn c_plain_char_rejects_unsigned_char_pointer_aliasing() {
     // GCC and Clang refuse these by default: pointers to character pointers,
     // a retyping pointer-to-pointer cast, `?:` arms whose common type would
     // be `void *`, a subtraction of distinct pointer types, and a character
@@ -856,9 +856,9 @@ fn c0_plain_char_rejects_unsigned_char_pointer_aliasing() {
 }
 
 #[test]
-fn c0_character_pointer_conversions_lower_as_explicit_casts() {
+fn c_character_pointer_conversions_lower_as_explicit_casts() {
     use crate::languages::c::target::CTarget;
-    use syntax::{C0Expression, InterfaceType, PlainChar};
+    use syntax::{CExpression, InterfaceType, PlainChar};
     // GCC and Clang accept each of these with only a `-Wpointer-sign` (or,
     // for a comparison, `-Wcompare-distinct-pointer-types`) warning.
     for source in [
@@ -921,7 +921,7 @@ fn c0_character_pointer_conversions_lower_as_explicit_casts() {
         assert!(
             matches!(
                 returned,
-                C0Expression::Cast {
+                CExpression::Cast {
                     interface_type: actual,
                     struct_name: None,
                     pointee_volatile: false,
@@ -940,7 +940,7 @@ fn c0_character_pointer_conversions_lower_as_explicit_casts() {
 }
 
 #[test]
-fn c0_plain_char_declaration_signatures_remain_distinct() {
+fn c_plain_char_declaration_signatures_remain_distinct() {
     for source in [
         "void f(char *p); void f(unsigned char *p);",
         "char *f(); unsigned char *f();",
@@ -953,7 +953,7 @@ fn c0_plain_char_declaration_signatures_remain_distinct() {
 }
 
 #[test]
-fn c0_plain_char_inline_call_assignments_preserve_source_compatibility() {
+fn c_plain_char_inline_call_assignments_preserve_source_compatibility() {
     // A mangled inline call keeps its source return type, so assigning its
     // `char *` result to an `unsigned char *` converts it as by a cast.
     for body in [
@@ -984,8 +984,8 @@ fn c0_plain_char_inline_call_assignments_preserve_source_compatibility() {
 }
 
 #[test]
-fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
-    use syntax::{C0Expression, C0Statement, InterfaceType};
+fn c_plain_char_qualified_pointee_casts_preserve_read_only_views() {
+    use syntax::{CExpression, CStatement, InterfaceType};
     let functions = syntax::parse_functions_for_target(
         "const char *view(char *p) { return (const char *)p; }",
         crate::languages::c::target::CTarget::X86_64LinuxKernel,
@@ -993,8 +993,8 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
     .expect("a const-qualified pointee cast should parse");
     assert!(matches!(
         functions[0].body(),
-        C0Statement::Return(
-            C0Expression::Cast {
+        CStatement::Return(
+            CExpression::Cast {
                 interface_type: InterfaceType::CharPointer(
                     crate::languages::c::syntax::PlainChar::Unsigned
                 ),
@@ -1025,7 +1025,7 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
 }
 
 #[test]
-fn c0_plain_char_qualified_pointer_casts_reject_unsupported_qualifiers_and_writes() {
+fn c_plain_char_qualified_pointer_casts_reject_unsupported_qualifiers_and_writes() {
     for source in [
         "char *f(char *p) { return (char * const)p; }",
         "char *f(char *p) { return (volatile char *)p; }",
@@ -1056,7 +1056,7 @@ fn c0_plain_char_qualified_pointer_casts_reject_unsupported_qualifiers_and_write
 }
 
 #[test]
-fn c0_function_declarations_reject_conflicting_pointee_const_parameters() {
+fn c_function_declarations_reject_conflicting_pointee_const_parameters() {
     let error = syntax::parse_functions(
         "int32 read(const int32 *p); int32 read(int32 *p) { return p[0]; }",
     )
@@ -1070,7 +1070,7 @@ fn c0_function_declarations_reject_conflicting_pointee_const_parameters() {
 }
 
 #[test]
-fn c0_plain_char_unsigned_promotion_verifies() {
+fn c_plain_char_unsigned_promotion_verifies() {
     crate::surface::verify_c_sources(
         r#"
         target "x86_64-unknown-linux-gnu";
@@ -1084,8 +1084,8 @@ fn c0_plain_char_unsigned_promotion_verifies() {
 }
 
 #[test]
-fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
-    use syntax::{C0Expression, C0Statement, InterfaceType};
+fn c_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
+    use syntax::{CExpression, CStatement, InterfaceType};
     let functions = syntax::parse_functions_for_target(
         "char *to_char(unsigned char *q) { return (char *)q; } unsigned char *to_byte(char *p) { return (unsigned char *)p; }",
         crate::languages::c::target::CTarget::X86_64LinuxKernel,
@@ -1095,7 +1095,7 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
         InterfaceType::UInt8Pointer,
     ]) {
         assert!(
-            matches!(function.body(), C0Statement::Return(C0Expression::Cast { interface_type, .. }, _) if *interface_type == expected)
+            matches!(function.body(), CStatement::Return(CExpression::Cast { interface_type, .. }, _) if *interface_type == expected)
         );
     }
     crate::surface::verify_c_sources(
@@ -1111,7 +1111,7 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
 }
 
 #[test]
-fn c0_plain_char_cross_file_signatures_remain_distinct() {
+fn c_plain_char_cross_file_signatures_remain_distinct() {
     crate::surface::verify_c_sources(
         r#"
         verifying "a.c";
@@ -1130,7 +1130,7 @@ fn c0_plain_char_cross_file_signatures_remain_distinct() {
 }
 
 #[test]
-fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
+fn c_small_volatile_model_preserves_metadata_and_access_facts() {
     let functions = syntax::parse_functions(
         r#"
         volatile int32 global_value = 3;
@@ -1216,7 +1216,7 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
 }
 
 #[test]
-fn c0_small_volatile_model_rejects_unsupported_pointer_depth() {
+fn c_small_volatile_model_rejects_unsupported_pointer_depth() {
     for (source, expected) in [
         (
             r#"
@@ -1267,7 +1267,7 @@ fn c0_small_volatile_model_rejects_unsupported_pointer_depth() {
 }
 
 #[test]
-fn c0_pointer_volatile_accesses_preserve_pointee_metadata_and_order() {
+fn c_pointer_volatile_accesses_preserve_pointee_metadata_and_order() {
     let functions = syntax::parse_functions(
         r#"
         int32 pointer_access() {
@@ -1318,7 +1318,7 @@ fn c0_pointer_volatile_accesses_preserve_pointee_metadata_and_order() {
 }
 
 #[test]
-fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
+fn c_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     let functions = syntax::parse_functions(
         r#"
         struct node { int32 value; };
@@ -1432,7 +1432,7 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
 }
 
 #[test]
-fn c0_collects_scalar_file_scope_globals() {
+fn c_collects_scalar_file_scope_globals() {
     let functions = syntax::parse_functions(
         r#"
         int32 counter = 3;
@@ -1467,7 +1467,7 @@ fn c0_collects_scalar_file_scope_globals() {
 }
 
 #[test]
-fn c0_coalesces_tentative_scalar_declarations_before_initialization() {
+fn c_coalesces_tentative_scalar_declarations_before_initialization() {
     let functions = syntax::parse_functions_for_source(
         r#"
         extern int32 counter;
@@ -1513,7 +1513,7 @@ fn c0_coalesces_tentative_scalar_declarations_before_initialization() {
 }
 
 #[test]
-fn c0_lowers_static_address_initializers_with_pointer_provenance() {
+fn c_lowers_static_address_initializers_with_pointer_provenance() {
     let functions = syntax::parse_functions_for_source(
         r#"
         int32 target = 3;
@@ -1601,7 +1601,7 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
 }
 
 #[test]
-fn c0_links_static_address_dependencies_after_later_definitions() {
+fn c_links_static_address_dependencies_after_later_definitions() {
     let functions = syntax::parse_functions(
         r#"
         extern int32 target;
@@ -1663,7 +1663,7 @@ fn c0_links_static_address_dependencies_after_later_definitions() {
 }
 
 #[test]
-fn c0_rejects_static_address_initializers_that_discard_const() {
+fn c_rejects_static_address_initializers_that_discard_const() {
     let error = syntax::parse_functions(
         "const int32 target = 3; int32 *alias = &target; int32 read() { return *alias; }",
     )
@@ -1676,7 +1676,7 @@ fn c0_rejects_static_address_initializers_that_discard_const() {
 }
 
 #[test]
-fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
+fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
     let functions = syntax::parse_functions_for_source(
         r#"
         struct state {
@@ -1760,7 +1760,7 @@ fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
 }
 
 #[test]
-fn c0_rejects_static_subobject_address_initializers_that_discard_const() {
+fn c_rejects_static_subobject_address_initializers_that_discard_const() {
     let error = syntax::parse_functions(
         r#"
         const int32 table[2] = {1, 2};
@@ -1777,7 +1777,7 @@ fn c0_rejects_static_subobject_address_initializers_that_discard_const() {
 }
 
 #[test]
-fn c0_rejects_dynamic_static_subobject_address_initializers() {
+fn c_rejects_dynamic_static_subobject_address_initializers() {
     let error = syntax::parse_functions(
         r#"
         int32 table[2] = {1, 2};
@@ -1796,17 +1796,17 @@ fn c0_rejects_dynamic_static_subobject_address_initializers() {
 
 /// The statements a function body holds, apart from the sequencing nodes
 /// that join them.
-fn c0_statement_count(statement: &syntax::C0Statement) -> usize {
+fn c_statement_count(statement: &syntax::CStatement) -> usize {
     match statement {
-        syntax::C0Statement::Seq(first, second) => {
-            c0_statement_count(first) + c0_statement_count(second)
+        syntax::CStatement::Seq(first, second) => {
+            c_statement_count(first) + c_statement_count(second)
         }
         _ => 1,
     }
 }
 
 #[test]
-fn c0_collects_file_scope_scalar_arrays() {
+fn c_collects_file_scope_scalar_arrays() {
     let functions = syntax::parse_functions(
         r#"
         int32 table[3] = {1, 2};
@@ -1833,9 +1833,9 @@ fn c0_collects_file_scope_scalar_arrays() {
             .as_deref(),
         Some(
             [
-                syntax::C0Expression::Int32Literal(1),
-                syntax::C0Expression::Int32Literal(2),
-                syntax::C0Expression::Int32Literal(0),
+                syntax::CExpression::Int32Literal(1),
+                syntax::CExpression::Int32Literal(2),
+                syntax::CExpression::Int32Literal(0),
             ]
             .as_slice()
         )
@@ -1863,7 +1863,7 @@ fn c0_collects_file_scope_scalar_arrays() {
 }
 
 #[test]
-fn c0_collects_multidimensional_file_scope_scalar_arrays() {
+fn c_collects_multidimensional_file_scope_scalar_arrays() {
     let functions = syntax::parse_functions(
         r#"
         int32 values[2][3] = {{1, 2}, {3, 4}};
@@ -1886,12 +1886,12 @@ fn c0_collects_multidimensional_file_scope_scalar_arrays() {
             .as_deref(),
         Some(
             [
-                syntax::C0Expression::Int32Literal(1),
-                syntax::C0Expression::Int32Literal(2),
-                syntax::C0Expression::Int32Literal(0),
-                syntax::C0Expression::Int32Literal(3),
-                syntax::C0Expression::Int32Literal(4),
-                syntax::C0Expression::Int32Literal(0),
+                syntax::CExpression::Int32Literal(1),
+                syntax::CExpression::Int32Literal(2),
+                syntax::CExpression::Int32Literal(0),
+                syntax::CExpression::Int32Literal(3),
+                syntax::CExpression::Int32Literal(4),
+                syntax::CExpression::Int32Literal(0),
             ]
             .as_slice()
         )
@@ -1916,7 +1916,7 @@ fn c0_collects_multidimensional_file_scope_scalar_arrays() {
 }
 
 #[test]
-fn c0_rejects_wrong_number_of_global_array_indices() {
+fn c_rejects_wrong_number_of_global_array_indices() {
     let error =
         syntax::parse_functions("int32 values[2][3]; int32 read_values() { return values[1]; }")
             .expect_err("multidimensional global arrays require every index");
@@ -1930,7 +1930,7 @@ fn c0_rejects_wrong_number_of_global_array_indices() {
 }
 
 #[test]
-fn c0_infers_file_scope_scalar_array_bounds() {
+fn c_infers_file_scope_scalar_array_bounds() {
     let functions = syntax::parse_functions_for_source(
         r#"
         int32 values[] = {1, 2, 3};
@@ -1957,9 +1957,9 @@ fn c0_infers_file_scope_scalar_array_bounds() {
             .as_deref(),
         Some(
             [
-                syntax::C0Expression::Int32Literal(1),
-                syntax::C0Expression::Int32Literal(2),
-                syntax::C0Expression::Int32Literal(3),
+                syntax::CExpression::Int32Literal(1),
+                syntax::CExpression::Int32Literal(2),
+                syntax::CExpression::Int32Literal(3),
             ]
             .as_slice()
         )
@@ -1975,7 +1975,7 @@ fn c0_infers_file_scope_scalar_array_bounds() {
 }
 
 #[test]
-fn c0_coalesces_tentative_scalar_array_declarations_before_initialization() {
+fn c_coalesces_tentative_scalar_array_declarations_before_initialization() {
     let functions = syntax::parse_functions_for_source(
         r#"
         extern int32 table[3];
@@ -2033,7 +2033,7 @@ fn c0_coalesces_tentative_scalar_array_declarations_before_initialization() {
 }
 
 #[test]
-fn c0_rejects_conflicting_tentative_scalar_array_declarations() {
+fn c_rejects_conflicting_tentative_scalar_array_declarations() {
     for (source, expected) in [
         (
             r#"
@@ -2059,7 +2059,7 @@ fn c0_rejects_conflicting_tentative_scalar_array_declarations() {
 }
 
 #[test]
-fn c0_preserves_const_global_tables_and_pointer_views() {
+fn c_preserves_const_global_tables_and_pointer_views() {
     let functions = syntax::parse_functions(
         r#"
         const int32 table[3] = {2, 4, 6};
@@ -2091,7 +2091,7 @@ fn c0_preserves_const_global_tables_and_pointer_views() {
 }
 
 #[test]
-fn c0_headers_accept_const_global_table_declarations() {
+fn c_headers_accept_const_global_table_declarations() {
     syntax::validate_header(
         "extern const int32 table[3]; int32 read_table(const int32 *values);",
         &source::ExpandedLineMap::empty(),
@@ -2100,7 +2100,7 @@ fn c0_headers_accept_const_global_table_declarations() {
 }
 
 #[test]
-fn c0_rejects_const_global_and_pointer_view_writes() {
+fn c_rejects_const_global_and_pointer_view_writes() {
     for source in [
         r#"
         const int32 value = 1;
@@ -2127,7 +2127,7 @@ fn c0_rejects_const_global_and_pointer_view_writes() {
 }
 
 #[test]
-fn c0_preserves_const_aggregate_global_and_static_objects() {
+fn c_preserves_const_aggregate_global_and_static_objects() {
     let functions = syntax::parse_functions(
         r#"
         struct state {
@@ -2175,7 +2175,7 @@ fn c0_preserves_const_aggregate_global_and_static_objects() {
 }
 
 #[test]
-fn c0_const_aggregate_extern_declarations_must_match_definitions() {
+fn c_const_aggregate_extern_declarations_must_match_definitions() {
     let error = crate::surface::verify_c_sources(
         r#"
         verifying "state.c";
@@ -2211,7 +2211,7 @@ fn c0_const_aggregate_extern_declarations_must_match_definitions() {
 }
 
 #[test]
-fn c0_collects_file_scope_struct_aggregates() {
+fn c_collects_file_scope_struct_aggregates() {
     let functions = syntax::parse_functions(
         r#"
         struct state {
@@ -2256,7 +2256,7 @@ fn c0_collects_file_scope_struct_aggregates() {
 }
 
 #[test]
-fn c0_collects_static_struct_aggregates_with_stable_kernel_names() {
+fn c_collects_static_struct_aggregates_with_stable_kernel_names() {
     let functions = syntax::parse_functions(
         r#"
         struct state {
@@ -2294,7 +2294,7 @@ fn c0_collects_static_struct_aggregates_with_stable_kernel_names() {
 }
 
 #[test]
-fn c0_collects_aggregate_static_initializers() {
+fn c_collects_aggregate_static_initializers() {
     let functions = syntax::parse_functions(
         r#"
         struct state {
@@ -2323,12 +2323,12 @@ fn c0_collects_aggregate_static_initializers() {
     );
     assert!(matches!(
         global_initializers[0].value(),
-        syntax::C0Expression::Int32Literal(7)
+        syntax::CExpression::Int32Literal(7)
     ));
     assert_eq!(global_initializers[1].offset_bytes(), 4);
     assert!(matches!(
         global_initializers[1].value(),
-        syntax::C0Expression::Int32Literal(1)
+        syntax::CExpression::Int32Literal(1)
     ));
 
     let static_aggregate = function
@@ -2340,7 +2340,7 @@ fn c0_collects_aggregate_static_initializers() {
     assert_eq!(static_aggregate.initializer()[0].offset_bytes(), 0);
     assert!(matches!(
         static_aggregate.initializer()[0].value(),
-        syntax::C0Expression::Int32Literal(3)
+        syntax::CExpression::Int32Literal(3)
     ));
 
     let kernel_function = function.to_kernel_function();
@@ -2362,7 +2362,7 @@ fn c0_collects_aggregate_static_initializers() {
 }
 
 #[test]
-fn c0_collects_aggregate_arrays() {
+fn c_collects_aggregate_arrays() {
     let functions = syntax::parse_functions_for_source(
         r#"
         struct entry {
@@ -2441,7 +2441,7 @@ fn c0_collects_aggregate_arrays() {
 }
 
 #[test]
-fn c0_coalesces_tentative_aggregate_declarations_before_initialization() {
+fn c_coalesces_tentative_aggregate_declarations_before_initialization() {
     let functions = syntax::parse_functions_for_source(
         r#"
         struct state {
@@ -2517,7 +2517,7 @@ fn c0_coalesces_tentative_aggregate_declarations_before_initialization() {
 }
 
 #[test]
-fn c0_rejects_conflicting_tentative_aggregate_declarations() {
+fn c_rejects_conflicting_tentative_aggregate_declarations() {
     for (source, expected) in [
         (
             r#"
@@ -2554,7 +2554,7 @@ fn c0_rejects_conflicting_tentative_aggregate_declarations() {
 }
 
 #[test]
-fn c0_collects_designated_static_aggregate_initializers() {
+fn c_collects_designated_static_aggregate_initializers() {
     let functions = syntax::parse_functions(
         r#"
         struct state {
@@ -2612,7 +2612,7 @@ fn c0_collects_designated_static_aggregate_initializers() {
 }
 
 #[test]
-fn c0_rejects_unsupported_static_aggregate_designators() {
+fn c_rejects_unsupported_static_aggregate_designators() {
     for (source, expected) in [
         (
             "struct state { int32 value; }; struct state shared = {.missing = 1}; int32 read() { return 0; }",
@@ -2638,7 +2638,7 @@ fn c0_rejects_unsupported_static_aggregate_designators() {
 }
 
 #[test]
-fn c0_rejects_unsupported_aggregate_array_initializers() {
+fn c_rejects_unsupported_aggregate_array_initializers() {
     for (source, expected) in [
         (
             "struct state { int32 value; }; struct state shared[2][2];",
@@ -2660,7 +2660,7 @@ fn c0_rejects_unsupported_aggregate_array_initializers() {
 }
 
 #[test]
-fn c0_struct_designated_initializers_reject_unsupported_designators() {
+fn c_struct_designated_initializers_reject_unsupported_designators() {
     for (source, expected) in [
         (
             "struct state { int32 value; }; int32 f() { struct state state = {[0] = 1}; return 0; }",
@@ -2682,7 +2682,7 @@ fn c0_struct_designated_initializers_reject_unsupported_designators() {
 }
 
 #[test]
-fn c0_file_static_arrays_are_qualified_by_translation_unit() {
+fn c_file_static_arrays_are_qualified_by_translation_unit() {
     let alpha = syntax::parse_functions_for_source(
         "static int32 values[2] = {1, 2}; int32 read_alpha() { return values[0]; }",
         "alpha.c",
@@ -2706,7 +2706,7 @@ fn c0_file_static_arrays_are_qualified_by_translation_unit() {
 }
 
 #[test]
-fn c0_headers_accept_extern_scalar_arrays() {
+fn c_headers_accept_extern_scalar_arrays() {
     syntax::validate_header("extern int32 table[3];", &source::ExpandedLineMap::empty())
         .expect("headers should accept extern scalar arrays");
     let error = syntax::validate_header("int32 table[3];", &source::ExpandedLineMap::empty())
@@ -2715,7 +2715,7 @@ fn c0_headers_accept_extern_scalar_arrays() {
 }
 
 #[test]
-fn c0_accepts_incomplete_extern_scalar_and_aggregate_arrays() {
+fn c_accepts_incomplete_extern_scalar_and_aggregate_arrays() {
     let functions = syntax::parse_functions_for_source(
         r#"
         extern int32 values[];
@@ -2748,7 +2748,7 @@ fn c0_accepts_incomplete_extern_scalar_and_aggregate_arrays() {
 }
 
 #[test]
-fn c0_accepts_incomplete_outer_dimension_extern_scalar_arrays() {
+fn c_accepts_incomplete_outer_dimension_extern_scalar_arrays() {
     let functions = syntax::parse_functions_for_source(
         r#"
         extern int32 values[][3];
@@ -2771,19 +2771,19 @@ fn c0_accepts_incomplete_outer_dimension_extern_scalar_arrays() {
     assert_eq!(values.incomplete_shape(), Some(&[3][..]));
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Index(base, index, _), _)
-            if matches!(base.as_ref(), syntax::C0Expression::Variable(name) if name == "values")
-                && matches!(index.as_ref(), syntax::C0Expression::Add(left, right)
-                    if matches!(left.as_ref(), syntax::C0Expression::Multiply(multiplier, stride)
-                        if matches!(multiplier.as_ref(), syntax::C0Expression::Int32Literal(1))
-                            && matches!(stride.as_ref(), syntax::C0Expression::Int32Literal(3)))
-                    && matches!(right.as_ref(), syntax::C0Expression::Int32Literal(2))
+        syntax::CStatement::Return(syntax::CExpression::Index(base, index, _), _)
+            if matches!(base.as_ref(), syntax::CExpression::Variable(name) if name == "values")
+                && matches!(index.as_ref(), syntax::CExpression::Add(left, right)
+                    if matches!(left.as_ref(), syntax::CExpression::Multiply(multiplier, stride)
+                        if matches!(multiplier.as_ref(), syntax::CExpression::Int32Literal(1))
+                            && matches!(stride.as_ref(), syntax::CExpression::Int32Literal(3)))
+                    && matches!(right.as_ref(), syntax::CExpression::Int32Literal(2))
                 )
     ));
 }
 
 #[test]
-fn c0_accepts_incomplete_outer_dimension_tentative_scalar_arrays() {
+fn c_accepts_incomplete_outer_dimension_tentative_scalar_arrays() {
     let functions = syntax::parse_functions_for_source(
         r#"
         int32 values[][3];
@@ -2809,7 +2809,7 @@ fn c0_accepts_incomplete_outer_dimension_tentative_scalar_arrays() {
 }
 
 #[test]
-fn c0_rejects_incomplete_multidimensional_static_arrays() {
+fn c_rejects_incomplete_multidimensional_static_arrays() {
     let error =
         syntax::parse_functions("static int32 values[][3]; int32 read() { return values[1][2]; }")
             .expect_err("file-scope static multidimensional arrays need a complete shape");
@@ -2823,7 +2823,7 @@ fn c0_rejects_incomplete_multidimensional_static_arrays() {
 }
 
 #[test]
-fn c0_infers_incomplete_outer_dimension_from_multidimensional_initializer() {
+fn c_infers_incomplete_outer_dimension_from_multidimensional_initializer() {
     let functions = syntax::parse_functions_for_source(
         r#"
         int32 values[][3] = {{1, 2}, {4, 5, 6}};
@@ -2857,7 +2857,7 @@ fn c0_infers_incomplete_outer_dimension_from_multidimensional_initializer() {
 }
 
 #[test]
-fn c0_infers_incomplete_outer_dimension_for_static_multidimensional_initializer() {
+fn c_infers_incomplete_outer_dimension_for_static_multidimensional_initializer() {
     let functions = syntax::parse_functions_for_source(
         r#"
         static int32 values[][3] = {{1, 2}, {4, 5, 6}};
@@ -2892,7 +2892,7 @@ fn c0_infers_incomplete_outer_dimension_for_static_multidimensional_initializer(
 }
 
 #[test]
-fn c0_accepts_incomplete_tentative_scalar_array_declarations() {
+fn c_accepts_incomplete_tentative_scalar_array_declarations() {
     let functions = syntax::parse_functions_for_source(
         r#"
         int32 values[];
@@ -2913,7 +2913,7 @@ fn c0_accepts_incomplete_tentative_scalar_array_declarations() {
 }
 
 #[test]
-fn c0_resolves_incomplete_file_static_scalar_arrays_within_one_translation_unit() {
+fn c_resolves_incomplete_file_static_scalar_arrays_within_one_translation_unit() {
     let functions = syntax::parse_functions_for_source(
         r#"
         static int32 values[];
@@ -2946,7 +2946,7 @@ fn c0_resolves_incomplete_file_static_scalar_arrays_within_one_translation_unit(
 }
 
 #[test]
-fn c0_resolves_incomplete_tentative_scalar_arrays_to_complete_definitions() {
+fn c_resolves_incomplete_tentative_scalar_arrays_to_complete_definitions() {
     let functions = syntax::parse_functions_for_source(
         r#"
         int32 values[];
@@ -2977,7 +2977,7 @@ fn c0_resolves_incomplete_tentative_scalar_arrays_to_complete_definitions() {
 }
 
 #[test]
-fn c0_rejects_unsupported_inferred_file_scope_array_forms() {
+fn c_rejects_unsupported_inferred_file_scope_array_forms() {
     for source in [
         "int32 values[] = {}; int32 read() { return values[0]; }",
         "int32 values[][3] = {1, 2, 3}; int32 read() { return values[0][0]; }",
@@ -2998,7 +2998,7 @@ fn c0_rejects_unsupported_inferred_file_scope_array_forms() {
 }
 
 #[test]
-fn c0_links_incomplete_extern_arrays_to_complete_definitions() {
+fn c_links_incomplete_extern_arrays_to_complete_definitions() {
     crate::surface::verify_c_sources(
         r#"
         verifying "reader.c";
@@ -3041,7 +3041,7 @@ fn c0_links_incomplete_extern_arrays_to_complete_definitions() {
 }
 
 #[test]
-fn c0_links_incomplete_tentative_array_to_complete_tentative_definition() {
+fn c_links_incomplete_tentative_array_to_complete_tentative_definition() {
     crate::surface::verify_c_sources(
         r#"
         verifying "reader.c";
@@ -3072,7 +3072,7 @@ fn c0_links_incomplete_tentative_array_to_complete_tentative_definition() {
 }
 
 #[test]
-fn c0_file_static_globals_are_qualified_by_translation_unit() {
+fn c_file_static_globals_are_qualified_by_translation_unit() {
     let alpha = syntax::parse_functions_for_source(
         "static int32 counter = 1; int32 read_alpha() { return counter; }",
         "alpha.c",
@@ -3104,7 +3104,7 @@ fn c0_file_static_globals_are_qualified_by_translation_unit() {
 }
 
 #[test]
-fn c0_file_static_struct_aggregates_are_qualified_by_translation_unit() {
+fn c_file_static_struct_aggregates_are_qualified_by_translation_unit() {
     let alpha = syntax::parse_functions_for_source(
         "struct state { int32 value; }; static struct state state; int32 read_alpha() { return state.value; }",
         "alpha.c",
@@ -3128,7 +3128,7 @@ fn c0_file_static_struct_aggregates_are_qualified_by_translation_unit() {
 }
 
 #[test]
-fn c0_headers_accept_extern_scalar_globals_only() {
+fn c_headers_accept_extern_scalar_globals_only() {
     syntax::validate_header("extern int32 counter;", &source::ExpandedLineMap::empty())
         .expect("headers should accept extern scalar globals");
     let error = syntax::validate_header("int32 counter;", &source::ExpandedLineMap::empty())
@@ -3140,7 +3140,7 @@ fn c0_headers_accept_extern_scalar_globals_only() {
 }
 
 #[test]
-fn c0_collects_static_scalar_locals_with_stable_kernel_names() {
+fn c_collects_static_scalar_locals_with_stable_kernel_names() {
     let functions = syntax::parse_functions(
         r#"
         int32 increment() {
@@ -3165,7 +3165,7 @@ fn c0_collects_static_scalar_locals_with_stable_kernel_names() {
         local.interface_type(),
         crate::languages::interface::InterfaceType::Int32
     );
-    assert_eq!(local.initializer(), &syntax::C0Expression::Int32Literal(5));
+    assert_eq!(local.initializer(), &syntax::CExpression::Int32Literal(5));
     assert_eq!(
         function.to_kernel_function().static_variables()[0].initial_value(),
         &crate::kernel::int32(5)
@@ -3173,7 +3173,7 @@ fn c0_collects_static_scalar_locals_with_stable_kernel_names() {
 }
 
 #[test]
-fn c0_collects_static_scalar_arrays_with_stable_kernel_names() {
+fn c_collects_static_scalar_arrays_with_stable_kernel_names() {
     let functions = syntax::parse_functions(
         r#"
         int32 lookup() {
@@ -3201,9 +3201,9 @@ fn c0_collects_static_scalar_arrays_with_stable_kernel_names() {
     assert_eq!(
         array.initializer().dense_values(),
         &[
-            syntax::C0Expression::Int32Literal(5),
-            syntax::C0Expression::Int32Literal(7),
-            syntax::C0Expression::Int32Literal(0),
+            syntax::CExpression::Int32Literal(5),
+            syntax::CExpression::Int32Literal(7),
+            syntax::CExpression::Int32Literal(0),
         ]
     );
     let kernel_function = function.to_kernel_function();
@@ -3221,7 +3221,7 @@ fn c0_collects_static_scalar_arrays_with_stable_kernel_names() {
 }
 
 #[test]
-fn c0_folds_integer_constant_static_initializers() {
+fn c_folds_integer_constant_static_initializers() {
     let functions = syntax::parse_functions(
         r#"
         int32 global = 1 + 2 * 3;
@@ -3244,15 +3244,15 @@ fn c0_folds_integer_constant_static_initializers() {
         .expect("reader function");
     assert_eq!(
         function.globals()["global"].initializer(),
-        Some(&syntax::C0Expression::Int32Literal(7))
+        Some(&syntax::CExpression::Int32Literal(7))
     );
     assert_eq!(
         function.globals()["flags"].initializer(),
-        Some(&syntax::C0Expression::UInt32Literal(19))
+        Some(&syntax::CExpression::UInt32Literal(19))
     );
     assert_eq!(
         function.globals()["private"].initializer(),
-        Some(&syntax::C0Expression::UInt32Literal(5))
+        Some(&syntax::CExpression::UInt32Literal(5))
     );
     assert_eq!(
         function
@@ -3261,7 +3261,7 @@ fn c0_folds_integer_constant_static_initializers() {
             .find(|local| local.name() == "local")
             .expect("folded static local")
             .initializer(),
-        &syntax::C0Expression::Int32Literal(7)
+        &syntax::CExpression::Int32Literal(7)
     );
     assert_eq!(
         function
@@ -3272,15 +3272,15 @@ fn c0_folds_integer_constant_static_initializers() {
             .initializer()
             .dense_values(),
         &[
-            syntax::C0Expression::Int32Literal(2),
-            syntax::C0Expression::Int32Literal(4),
-            syntax::C0Expression::Int32Literal(3),
+            syntax::CExpression::Int32Literal(2),
+            syntax::CExpression::Int32Literal(4),
+            syntax::CExpression::Int32Literal(3),
         ]
     );
 }
 
 #[test]
-fn c0_folds_comparison_logical_conditional_and_cast_static_initializers() {
+fn c_folds_comparison_logical_conditional_and_cast_static_initializers() {
     let functions = syntax::parse_functions(
         r#"
         int32 values[5] = {
@@ -3313,21 +3313,21 @@ fn c0_folds_comparison_logical_conditional_and_cast_static_initializers() {
             .as_deref(),
         Some(
             &[
-                syntax::C0Expression::Int32Literal(1),
-                syntax::C0Expression::Int32Literal(20),
-                syntax::C0Expression::Int32Literal(30),
-                syntax::C0Expression::Int32Literal(255),
-                syntax::C0Expression::Int32Literal(42),
+                syntax::CExpression::Int32Literal(1),
+                syntax::CExpression::Int32Literal(20),
+                syntax::CExpression::Int32Literal(30),
+                syntax::CExpression::Int32Literal(255),
+                syntax::CExpression::Int32Literal(42),
             ][..]
         )
     );
     assert_eq!(
         function.globals()["private_value"].initializer(),
-        Some(&syntax::C0Expression::Int32Literal(3))
+        Some(&syntax::CExpression::Int32Literal(3))
     );
     assert_eq!(
         function.globals()["mixed_value"].initializer(),
-        Some(&syntax::C0Expression::Int32Literal(1))
+        Some(&syntax::CExpression::Int32Literal(1))
     );
     assert_eq!(
         function
@@ -3336,12 +3336,12 @@ fn c0_folds_comparison_logical_conditional_and_cast_static_initializers() {
             .find(|local| local.name() == "local_value")
             .expect("folded static local")
             .initializer(),
-        &syntax::C0Expression::UInt32Literal(9)
+        &syntax::CExpression::UInt32Literal(9)
     );
 }
 
 #[test]
-fn c0_rejects_invalid_static_integer_constant_initializers() {
+fn c_rejects_invalid_static_integer_constant_initializers() {
     for (source, expected) in [
         (
             "int32 seed = 1; int32 value = seed + 1; int32 read() { return value; }",
@@ -3375,7 +3375,7 @@ fn c0_rejects_invalid_static_integer_constant_initializers() {
 }
 
 #[test]
-fn c0_collects_designated_static_scalar_array_initializers() {
+fn c_collects_designated_static_scalar_array_initializers() {
     let functions = syntax::parse_functions(
         r#"
         int32 shared[5] = {[4] = 9, [1] = 3, 6};
@@ -3397,11 +3397,11 @@ fn c0_collects_designated_static_scalar_array_initializers() {
             .as_deref(),
         Some(
             [
-                syntax::C0Expression::Int32Literal(0),
-                syntax::C0Expression::Int32Literal(3),
-                syntax::C0Expression::Int32Literal(6),
-                syntax::C0Expression::Int32Literal(0),
-                syntax::C0Expression::Int32Literal(9),
+                syntax::CExpression::Int32Literal(0),
+                syntax::CExpression::Int32Literal(3),
+                syntax::CExpression::Int32Literal(6),
+                syntax::CExpression::Int32Literal(0),
+                syntax::CExpression::Int32Literal(9),
             ]
             .as_slice()
         )
@@ -3415,10 +3415,10 @@ fn c0_collects_designated_static_scalar_array_initializers() {
             .initializer()
             .dense_values(),
         &[
-            syntax::C0Expression::Int32Literal(0),
-            syntax::C0Expression::Int32Literal(2),
-            syntax::C0Expression::Int32Literal(0),
-            syntax::C0Expression::Int32Literal(4),
+            syntax::CExpression::Int32Literal(0),
+            syntax::CExpression::Int32Literal(2),
+            syntax::CExpression::Int32Literal(0),
+            syntax::CExpression::Int32Literal(4),
         ]
     );
 
@@ -3457,7 +3457,7 @@ fn c0_collects_designated_static_scalar_array_initializers() {
 }
 
 #[test]
-fn c0_rejects_unsupported_static_scalar_array_designators() {
+fn c_rejects_unsupported_static_scalar_array_designators() {
     for (source, expected) in [
         (
             "int32 values[3] = {[1] = 2, [1] = 4}; int32 read() { return values[0]; }",
@@ -3487,7 +3487,7 @@ fn c0_rejects_unsupported_static_scalar_array_designators() {
 }
 
 #[test]
-fn c0_collects_string_literals_with_terminators() {
+fn c_collects_string_literals_with_terminators() {
     let functions = syntax::parse_functions(
         r#"
         uint8* literal() {
@@ -3505,11 +3505,11 @@ fn c0_collects_string_literals_with_terminators() {
         function.to_kernel_function().string_literals()[0].bytes(),
         b"ok\n\0"
     );
-    assert!(matches!(function.body(), syntax::C0Statement::Return(_, _)));
+    assert!(matches!(function.body(), syntax::CStatement::Return(_, _)));
 }
 
 #[test]
-fn c0_concatenates_adjacent_string_literals_before_lowering() {
+fn c_concatenates_adjacent_string_literals_before_lowering() {
     let functions = syntax::parse_functions(
         r#"
         uint8* literal() {
@@ -3525,7 +3525,7 @@ fn c0_concatenates_adjacent_string_literals_before_lowering() {
 }
 
 #[test]
-fn c0_rejects_unsupported_string_literal_escapes_in_concatenated_sequences() {
+fn c_rejects_unsupported_string_literal_escapes_in_concatenated_sequences() {
     let error = syntax::parse_functions(
         r#"
         uint8* literal() {
@@ -3541,7 +3541,7 @@ fn c0_rejects_unsupported_string_literal_escapes_in_concatenated_sequences() {
 }
 
 #[test]
-fn c0_accepts_zero_initialized_static_local_multidimensional_arrays() {
+fn c_accepts_zero_initialized_static_local_multidimensional_arrays() {
     syntax::parse_functions(
         r#"
         int32 invalid() {
@@ -3554,7 +3554,7 @@ fn c0_accepts_zero_initialized_static_local_multidimensional_arrays() {
 }
 
 #[test]
-fn c0_static_array_parity_rejects_invalid_initializers() {
+fn c_static_array_parity_rejects_invalid_initializers() {
     for source in [
         "int32 f() { static int32 a[]; return 0; }",
         "int32 f() { static int32 a[] = {}; return 0; }",
@@ -3600,7 +3600,7 @@ fn own_memory_context(
 }
 
 #[test]
-fn c0_array_parameter_syntax_lowers_to_pointer_parameter() {
+fn c_array_parameter_syntax_lowers_to_pointer_parameter() {
     let function = syntax::parse_function(
         r#"
         int32 first(int32 p[3]) {
@@ -3621,7 +3621,7 @@ fn c0_array_parameter_syntax_lowers_to_pointer_parameter() {
 }
 
 #[test]
-fn c0_accepts_standard_integer_spellings_and_struct_typedefs() {
+fn c_accepts_standard_integer_spellings_and_struct_typedefs() {
     let function = syntax::parse_function(
         r#"
         struct record {
@@ -3665,7 +3665,7 @@ fn c0_accepts_standard_integer_spellings_and_struct_typedefs() {
 }
 
 #[test]
-fn c0_models_signed_char_as_distinct_signed_byte() {
+fn c_models_signed_char_as_distinct_signed_byte() {
     for spelling in ["signed char", "int8", "int8_t"] {
         let source = format!("{spelling} identity({spelling} value) {{ return value; }}");
         let function = syntax::parse_function(&source).unwrap();
@@ -3681,7 +3681,7 @@ fn c0_models_signed_char_as_distinct_signed_byte() {
 }
 
 #[test]
-fn c0_syntax_ignores_line_and_block_comments() {
+fn c_syntax_ignores_line_and_block_comments() {
     let function = syntax::parse_function(
         r#"
         /* the imported source may retain its documentation */
@@ -3718,7 +3718,7 @@ fn large_straight_line_block_parses_and_lowers_on_a_small_stack() {
 }
 
 #[test]
-fn c0_void_functions_accept_return_and_fallthrough() {
+fn c_void_functions_accept_return_and_fallthrough() {
     let explicit = syntax::parse_function("void stop() { return; }")
         .expect("a void function may return without a value");
     let fallthrough = syntax::parse_function("void stop() { int32 value = 0; }")
@@ -3739,7 +3739,7 @@ fn c0_void_functions_accept_return_and_fallthrough() {
 }
 
 #[test]
-fn c0_void_and_nonvoid_returns_do_not_mix() {
+fn c_void_and_nonvoid_returns_do_not_mix() {
     let void_error = syntax::parse_function("void bad() { return 1; }")
         .expect_err("a void function cannot return a value");
     assert_eq!(void_error.message(), "void functions cannot return a value");
@@ -3753,23 +3753,21 @@ fn c0_void_and_nonvoid_returns_do_not_mix() {
 }
 
 #[test]
-fn c0_parses_standalone_calls() {
+fn c_parses_standalone_calls() {
     let function =
         syntax::parse_function("int32 caller(int32 value) { observe(value); return 0; }")
             .expect("a function result may be discarded");
 
-    fn contains_call(statement: &syntax::C0Statement) -> bool {
+    fn contains_call(statement: &syntax::CStatement) -> bool {
         match statement {
-            syntax::C0Statement::Call { function_name, .. } => function_name == "observe",
-            syntax::C0Statement::Seq(first, second) => {
-                contains_call(first) || contains_call(second)
-            }
-            syntax::C0Statement::If {
+            syntax::CStatement::Call { function_name, .. } => function_name == "observe",
+            syntax::CStatement::Seq(first, second) => contains_call(first) || contains_call(second),
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => contains_call(then_branch) || contains_call(else_branch),
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 contains_call(body)
             }
             _ => false,
@@ -3780,7 +3778,7 @@ fn c0_parses_standalone_calls() {
 }
 
 #[test]
-fn c0_parses_multiple_definitions_and_forward_prototypes() {
+fn c_parses_multiple_definitions_and_forward_prototypes() {
     let functions = syntax::parse_functions(
         r#"
         int32 helper(int32 value);
@@ -3808,7 +3806,7 @@ fn c0_parses_multiple_definitions_and_forward_prototypes() {
 }
 
 #[test]
-fn c0_rejects_conflicting_inline_linkage_declarations() {
+fn c_rejects_conflicting_inline_linkage_declarations() {
     for source in [
         "static inline int32 helper(int32 value); int32 helper(int32 value) { return value; }",
         "int32 helper(int32 value); static inline int32 helper(int32 value) { return value; }",
@@ -3828,7 +3826,7 @@ fn c0_rejects_conflicting_inline_linkage_declarations() {
 }
 
 #[test]
-fn c0_static_inline_prototypes_select_the_internal_body() {
+fn c_static_inline_prototypes_select_the_internal_body() {
     let functions = syntax::parse_functions_for_source(
         "static inline int32 helper(int32 value);\n\
          static inline int32 helper(int32 value) { return value + 1; }\n\
@@ -3842,7 +3840,7 @@ fn c0_static_inline_prototypes_select_the_internal_body() {
 }
 
 #[test]
-fn c0_rejects_conflicting_function_prototypes() {
+fn c_rejects_conflicting_function_prototypes() {
     let error = syntax::parse_functions(
         r#"
         int32 helper(int32 value);
@@ -3860,7 +3858,7 @@ fn c0_rejects_conflicting_function_prototypes() {
 }
 
 #[test]
-fn c0_headers_accept_declarations_and_static_inline_function_bodies() {
+fn c_headers_accept_declarations_and_static_inline_function_bodies() {
     syntax::validate_header(
         r#"
         typedef int32 index_t;
@@ -3892,7 +3890,7 @@ fn c0_headers_accept_declarations_and_static_inline_function_bodies() {
 }
 
 #[test]
-fn c0_rejects_unknown_gnu_function_attributes() {
+fn c_rejects_unknown_gnu_function_attributes() {
     let error = syntax::validate_header(
         "static inline int32 helper(int32 value) __attribute__((aligned(8))) { return value; }",
         &source::ExpandedLineMap::empty(),
@@ -3906,7 +3904,7 @@ fn c0_rejects_unknown_gnu_function_attributes() {
 }
 
 #[test]
-fn c0_typeof_preserves_pointer_tags_and_const_qualification() {
+fn c_typeof_preserves_pointer_tags_and_const_qualification() {
     let functions = syntax::parse_functions(
         r#"
         struct node { int32 value; };
@@ -3920,30 +3918,30 @@ fn c0_typeof_preserves_pointer_tags_and_const_qualification() {
     .expect("GNU typeof should preserve modeled struct-pointer metadata");
 
     fn find_declaration(
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
         name: &str,
     ) -> Option<(crate::languages::interface::InterfaceType, bool)> {
         match statement {
-            syntax::C0Statement::Declare {
+            syntax::CStatement::Declare {
                 interface_type,
                 name: declared_name,
                 pointee_constant,
                 ..
             } if declared_name == name => Some((*interface_type, *pointee_constant)),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 find_declaration(first, name).or_else(|| find_declaration(second, name))
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => {
                 find_declaration(then_branch, name).or_else(|| find_declaration(else_branch, name))
             }
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 find_declaration(body, name)
             }
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 step,
                 body,
@@ -3951,7 +3949,7 @@ fn c0_typeof_preserves_pointer_tags_and_const_qualification() {
             } => find_declaration(initializer, name)
                 .or_else(|| find_declaration(step, name))
                 .or_else(|| find_declaration(body, name)),
-            syntax::C0Statement::Switch { cases, .. } => cases
+            syntax::CStatement::Switch { cases, .. } => cases
                 .iter()
                 .find_map(|case| find_declaration(case.body(), name)),
             _ => None,
@@ -3975,11 +3973,11 @@ fn c0_typeof_preserves_pointer_tags_and_const_qualification() {
 }
 
 #[test]
-fn c0_statement_expressions_preserve_order_and_value() {
+fn c_statement_expressions_preserve_order_and_value() {
     let functions = syntax::parse_functions(
         "int32 run(int32 value) { return ({ value = value + 1; value * 2; }); }",
     )
-    .expect("GNU statement expressions should lower to sequenced C0 statements");
+    .expect("GNU statement expressions should lower to sequenced C statements");
     let debug_body = format!("{:?}", functions[0].body());
     assert!(debug_body.contains("Assign"), "{debug_body}");
     assert!(debug_body.contains("value"), "{debug_body}");
@@ -3998,13 +3996,13 @@ fn c0_statement_expressions_preserve_order_and_value() {
 }
 
 #[test]
-fn c0_builtin_expect_is_an_identity_and_unknown_builtins_fail() {
+fn c_builtin_expect_is_an_identity_and_unknown_builtins_fail() {
     let functions =
         syntax::parse_functions("int32 run(int32 value) { return __builtin_expect(value, 1); }")
             .expect("__builtin_expect should preserve the first operand");
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Variable(name), _) if name == "value"
+        syntax::CStatement::Return(syntax::CExpression::Variable(name), _) if name == "value"
     ));
 
     let error = syntax::parse_functions(
@@ -4035,7 +4033,7 @@ fn c0_builtin_expect_is_an_identity_and_unknown_builtins_fail() {
 }
 
 #[test]
-fn c0_always_inline_header_helpers_parse_as_translation_unit_local_functions() {
+fn c_always_inline_header_helpers_parse_as_translation_unit_local_functions() {
     let functions = syntax::parse_functions_for_source(
         "static __always_inline int32 add_one(int32 value) { return value + 1; }\n\
          int32 run(int32 value) { return add_one(value); }",
@@ -4048,7 +4046,7 @@ fn c0_always_inline_header_helpers_parse_as_translation_unit_local_functions() {
 }
 
 #[test]
-fn c0_static_inline_header_helpers_are_translation_unit_local() {
+fn c_static_inline_header_helpers_are_translation_unit_local() {
     let expanded = source::expand_includes(
         "alpha.c",
         &std::collections::BTreeMap::from([
@@ -4097,7 +4095,7 @@ fn c0_static_inline_header_helpers_are_translation_unit_local() {
 }
 
 #[test]
-fn c0_bundle_header_origins_locate_parse_errors() {
+fn c_bundle_header_origins_locate_parse_errors() {
     let expanded = source::expand_includes(
         "alpha.c",
         &std::collections::BTreeMap::from([
@@ -4127,7 +4125,7 @@ fn c0_bundle_header_origins_locate_parse_errors() {
 }
 
 #[test]
-fn c0_bundle_duplicate_inline_helpers_across_headers_are_rejected() {
+fn c_bundle_duplicate_inline_helpers_across_headers_are_rejected() {
     let expanded = source::expand_includes(
         "main.c",
         &std::collections::BTreeMap::from([
@@ -4173,7 +4171,7 @@ fn c0_bundle_duplicate_inline_helpers_across_headers_are_rejected() {
 }
 
 #[test]
-fn c0_bundle_conflicting_inline_helpers_across_headers_are_rejected() {
+fn c_bundle_conflicting_inline_helpers_across_headers_are_rejected() {
     let expanded = source::expand_includes(
         "main.c",
         &std::collections::BTreeMap::from([
@@ -4219,7 +4217,7 @@ fn c0_bundle_conflicting_inline_helpers_across_headers_are_rejected() {
 }
 
 #[test]
-fn c0_syntax_reports_unterminated_block_comments() {
+fn c_syntax_reports_unterminated_block_comments() {
     for (prefix, line) in [("", 1), ("int32 value(void) { return 1; }\n", 2)] {
         for comment in ["/*", "/**", "/*x", "/* never closed"] {
             let source = format!("{prefix}{comment}");
@@ -4246,7 +4244,7 @@ fn c0_syntax_reports_unterminated_block_comments() {
 }
 
 #[test]
-fn c0_syntax_rejects_unescaped_character_literal_delimiters() {
+fn c_syntax_rejects_unescaped_character_literal_delimiters() {
     for (literal, message) in [
         ("'''", "character literals must contain exactly one byte"),
         ("''", "character literals must contain exactly one byte"),
@@ -4276,7 +4274,7 @@ fn c0_syntax_rejects_unescaped_character_literal_delimiters() {
 }
 
 #[test]
-fn c0_syntax_errors_carry_source_positions() {
+fn c_syntax_errors_carry_source_positions() {
     let error = syntax::parse_function("int32 broken(int32 x) {\n    return x\n}\n")
         .expect_err("a missing semicolon should be rejected");
 
@@ -4289,7 +4287,7 @@ fn c0_syntax_errors_carry_source_positions() {
 }
 
 #[test]
-fn c0_syntax_positions_point_at_the_offending_token() {
+fn c_syntax_positions_point_at_the_offending_token() {
     let error =
         syntax::parse_function("int32 broken() {\n    int32 x;\n    x = $;\n    return x;\n}\n")
             .expect_err("an unexpected character should be rejected");
@@ -4302,7 +4300,7 @@ fn c0_syntax_positions_point_at_the_offending_token() {
 }
 
 #[test]
-fn c0_call_lowering_diagnostics_preserve_original_call_positions() {
+fn c_call_lowering_diagnostics_preserve_original_call_positions() {
     for (source, expected_message, expected_position) in [
         (
             "int32 caller() {\n    return malloc(1);\n}\n",
@@ -4333,7 +4331,7 @@ fn c0_call_lowering_diagnostics_preserve_original_call_positions() {
 }
 
 #[test]
-fn c0_call_lowering_rejects_potentially_aliased_operand_and_argument_reads() {
+fn c_call_lowering_rejects_potentially_aliased_operand_and_argument_reads() {
     let cases = [
         (
             "x + set(&x)",
@@ -4406,7 +4404,7 @@ fn c0_call_lowering_rejects_potentially_aliased_operand_and_argument_reads() {
 }
 
 #[test]
-fn c0_call_lowering_rejects_a_call_that_can_change_a_function_designator() {
+fn c_call_lowering_rejects_a_call_that_can_change_a_function_designator() {
     let source = r#"
 struct callbacks { int (*apply)(int); };
 int replacement(int value) { return value; }
@@ -4453,7 +4451,7 @@ fn imported_call_lowering_diagnostics_use_original_header_line() {
 }
 
 #[test]
-fn c0_syntax_lowers_scalar_declaration_initializers_in_source_order() {
+fn c_syntax_lowers_scalar_declaration_initializers_in_source_order() {
     let function = syntax::parse_function(
         r#"
         int32 initialized() {
@@ -4466,13 +4464,13 @@ fn c0_syntax_lowers_scalar_declaration_initializers_in_source_order() {
 
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Seq(first, _)
+        syntax::CStatement::Seq(first, _)
             if matches!(
                 first.as_ref(),
-                syntax::C0Statement::Seq(declaration, assignment)
+                syntax::CStatement::Seq(declaration, assignment)
                     if matches!(
                         declaration.as_ref(),
-                        syntax::C0Statement::Declare {
+                        syntax::CStatement::Declare {
                             interface_type: crate::languages::interface::InterfaceType::Int32,
                             name,
                             ..
@@ -4480,9 +4478,9 @@ fn c0_syntax_lowers_scalar_declaration_initializers_in_source_order() {
                     )
                     && matches!(
                         assignment.as_ref(),
-                        syntax::C0Statement::Assign {
+                        syntax::CStatement::Assign {
                             name,
-                            expression: syntax::C0Expression::Int32Literal(7), ..
+                            expression: syntax::CExpression::Int32Literal(7), ..
                         } if name == "value"
                     )
             )
@@ -4490,7 +4488,7 @@ fn c0_syntax_lowers_scalar_declaration_initializers_in_source_order() {
 }
 
 #[test]
-fn c0_syntax_accepts_declaration_initializer_in_for_loop() {
+fn c_syntax_accepts_declaration_initializer_in_for_loop() {
     syntax::parse_function(
         r#"
         int32 count() {
@@ -4506,7 +4504,7 @@ fn c0_syntax_accepts_declaration_initializer_in_for_loop() {
 }
 
 #[test]
-fn c0_syntax_accepts_continue_in_for_loop() {
+fn c_syntax_accepts_continue_in_for_loop() {
     let function = syntax::parse_function(
         r#"
         int32 count() {
@@ -4523,19 +4521,19 @@ fn c0_syntax_accepts_continue_in_for_loop() {
     )
     .expect("continue should parse in a for loop");
 
-    fn contains_for(statement: &syntax::C0Statement) -> bool {
+    fn contains_for(statement: &syntax::CStatement) -> bool {
         match statement {
-            syntax::C0Statement::For { .. } => true,
-            syntax::C0Statement::Seq(first, second) => contains_for(first) || contains_for(second),
-            syntax::C0Statement::If {
+            syntax::CStatement::For { .. } => true,
+            syntax::CStatement::Seq(first, second) => contains_for(first) || contains_for(second),
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => contains_for(then_branch) || contains_for(else_branch),
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 contains_for(body)
             }
-            syntax::C0Statement::Switch { cases, .. } => {
+            syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().any(|case| contains_for(case.body()))
             }
             _ => false,
@@ -4546,7 +4544,7 @@ fn c0_syntax_accepts_continue_in_for_loop() {
 }
 
 #[test]
-fn c0_syntax_accepts_omitted_for_initializer_and_step() {
+fn c_syntax_accepts_omitted_for_initializer_and_step() {
     syntax::parse_function(
         r#"
         int32 count() {
@@ -4562,13 +4560,13 @@ fn c0_syntax_accepts_omitted_for_initializer_and_step() {
 }
 
 #[test]
-fn c0_syntax_accepts_omitted_for_condition() {
+fn c_syntax_accepts_omitted_for_condition() {
     syntax::parse_function("int once(void) { for (;;) { return 7; } }")
         .expect("an omitted for condition is true");
 }
 
 #[test]
-fn c0_global_struct_addresses_retain_nominal_type_for_calls() {
+fn c_global_struct_addresses_retain_nominal_type_for_calls() {
     let source = "struct counter { int value; }; static struct counter state = {7}; int bump(struct counter *p) { p->value += 1; return p->value; } int twice(void) { bump(&state); return bump(&state); }";
     let functions =
         syntax::parse_functions(source).expect("global struct address should retain its tag");
@@ -4584,7 +4582,7 @@ fn c0_global_struct_addresses_retain_nominal_type_for_calls() {
 }
 
 #[test]
-fn c0_syntax_accepts_unary_plus_and_a_for_initializer_list() {
+fn c_syntax_accepts_unary_plus_and_a_for_initializer_list() {
     syntax::parse_function(
         r#"
         int32 count() {
@@ -4601,7 +4599,7 @@ fn c0_syntax_accepts_unary_plus_and_a_for_initializer_list() {
 }
 
 #[test]
-fn c0_syntax_accepts_multiple_declarations_in_a_for_initializer() {
+fn c_syntax_accepts_multiple_declarations_in_a_for_initializer() {
     syntax::parse_function(
         r#"
         int32 count() {
@@ -4617,7 +4615,7 @@ fn c0_syntax_accepts_multiple_declarations_in_a_for_initializer() {
 }
 
 #[test]
-fn c0_syntax_accepts_a_do_while_loop_with_an_unbraced_body() {
+fn c_syntax_accepts_a_do_while_loop_with_an_unbraced_body() {
     let function = syntax::parse_function(
         r#"
         int32 count() {
@@ -4631,19 +4629,19 @@ fn c0_syntax_accepts_a_do_while_loop_with_an_unbraced_body() {
     )
     .expect("a do-while loop may control one statement without braces");
 
-    fn contains_do_while(statement: &syntax::C0Statement) -> bool {
+    fn contains_do_while(statement: &syntax::CStatement) -> bool {
         match statement {
-            syntax::C0Statement::DoWhile { .. } => true,
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::DoWhile { .. } => true,
+            syntax::CStatement::Seq(first, second) => {
                 contains_do_while(first) || contains_do_while(second)
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => contains_do_while(then_branch) || contains_do_while(else_branch),
-            syntax::C0Statement::While { body, .. } => contains_do_while(body),
-            syntax::C0Statement::Switch { cases, .. } => {
+            syntax::CStatement::While { body, .. } => contains_do_while(body),
+            syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().any(|case| contains_do_while(case.body()))
             }
             _ => false,
@@ -4654,7 +4652,7 @@ fn c0_syntax_accepts_a_do_while_loop_with_an_unbraced_body() {
 }
 
 #[test]
-fn c0_syntax_accepts_break_and_continue_in_while_bodies() {
+fn c_syntax_accepts_break_and_continue_in_while_bodies() {
     let function = syntax::parse_function(
         r#"
         int32 control() {
@@ -4674,16 +4672,16 @@ fn c0_syntax_accepts_break_and_continue_in_while_bodies() {
     )
     .expect("break and continue should parse in a while body");
 
-    fn count_controls(statement: &syntax::C0Statement) -> (usize, usize) {
+    fn count_controls(statement: &syntax::CStatement) -> (usize, usize) {
         match statement {
-            syntax::C0Statement::Break => (1, 0),
-            syntax::C0Statement::Continue => (0, 1),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Break => (1, 0),
+            syntax::CStatement::Continue => (0, 1),
+            syntax::CStatement::Seq(first, second) => {
                 let (breaks, continues) = count_controls(first);
                 let (more_breaks, more_continues) = count_controls(second);
                 (breaks + more_breaks, continues + more_continues)
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -4692,10 +4690,10 @@ fn c0_syntax_accepts_break_and_continue_in_while_bodies() {
                 let (more_breaks, more_continues) = count_controls(else_branch);
                 (breaks + more_breaks, continues + more_continues)
             }
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 count_controls(body)
             }
-            syntax::C0Statement::Switch { cases, .. } => {
+            syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().map(|case| count_controls(case.body())).fold(
                     (0, 0),
                     |(breaks, continues), (more_breaks, more_continues)| {
@@ -4711,7 +4709,7 @@ fn c0_syntax_accepts_break_and_continue_in_while_bodies() {
 }
 
 #[test]
-fn c0_syntax_accepts_break_and_continue_in_do_while_bodies() {
+fn c_syntax_accepts_break_and_continue_in_do_while_bodies() {
     let function = syntax::parse_function(
         r#"
         int32 control() {
@@ -4729,16 +4727,16 @@ fn c0_syntax_accepts_break_and_continue_in_do_while_bodies() {
     )
     .expect("break and continue should parse in a do-while body");
 
-    fn count_controls(statement: &syntax::C0Statement) -> (usize, usize) {
+    fn count_controls(statement: &syntax::CStatement) -> (usize, usize) {
         match statement {
-            syntax::C0Statement::Break => (1, 0),
-            syntax::C0Statement::Continue => (0, 1),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Break => (1, 0),
+            syntax::CStatement::Continue => (0, 1),
+            syntax::CStatement::Seq(first, second) => {
                 let (breaks, continues) = count_controls(first);
                 let (more_breaks, more_continues) = count_controls(second);
                 (breaks + more_breaks, continues + more_continues)
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -4747,7 +4745,7 @@ fn c0_syntax_accepts_break_and_continue_in_do_while_bodies() {
                 let (more_breaks, more_continues) = count_controls(else_branch);
                 (breaks + more_breaks, continues + more_continues)
             }
-            syntax::C0Statement::DoWhile { body, .. } => count_controls(body),
+            syntax::CStatement::DoWhile { body, .. } => count_controls(body),
             _ => (0, 0),
         }
     }
@@ -4756,7 +4754,7 @@ fn c0_syntax_accepts_break_and_continue_in_do_while_bodies() {
 }
 
 #[test]
-fn c0_syntax_accepts_switch_cases_and_nested_loop_control() {
+fn c_syntax_accepts_switch_cases_and_nested_loop_control() {
     let function = syntax::parse_function(
         r#"
         int32 choose(int32 kind) {
@@ -4780,31 +4778,31 @@ fn c0_syntax_accepts_switch_cases_and_nested_loop_control() {
     )
     .expect("switch cases should parse inside a while body");
 
-    fn find_switch(statement: &syntax::C0Statement) -> Option<&syntax::C0Statement> {
+    fn find_switch(statement: &syntax::CStatement) -> Option<&syntax::CStatement> {
         match statement {
-            syntax::C0Statement::Switch { .. } => Some(statement),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Switch { .. } => Some(statement),
+            syntax::CStatement::Seq(first, second) => {
                 find_switch(first).or_else(|| find_switch(second))
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => find_switch(then_branch).or_else(|| find_switch(else_branch)),
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 find_switch(body)
             }
             _ => None,
         }
     }
 
-    let Some(syntax::C0Statement::Switch {
+    let Some(syntax::CStatement::Switch {
         expression, cases, ..
     }) = find_switch(function.body())
     else {
         panic!("expected native switch statement");
     };
-    assert!(matches!(expression, syntax::C0Expression::Variable(name) if name == "kind"));
+    assert!(matches!(expression, syntax::CExpression::Variable(name) if name == "kind"));
     assert_eq!(cases.len(), 3);
     assert_eq!(cases[0].value(), Some(0));
     assert_eq!(cases[1].value(), Some(u32::from(b'1')));
@@ -4812,7 +4810,7 @@ fn c0_syntax_accepts_switch_cases_and_nested_loop_control() {
 }
 
 #[test]
-fn c0_syntax_accepts_integer_constant_switch_case_labels() {
+fn c_syntax_accepts_integer_constant_switch_case_labels() {
     let function = syntax::parse_function(
         r#"
         int32 choose(int32 kind) {
@@ -4833,7 +4831,7 @@ fn c0_syntax_accepts_integer_constant_switch_case_labels() {
     )
     .expect("integer constant expressions should be accepted as switch labels");
 
-    let syntax::C0Statement::Switch { cases, .. } = function.body() else {
+    let syntax::CStatement::Switch { cases, .. } = function.body() else {
         panic!("expected native switch statement");
     };
     assert_eq!(
@@ -4843,7 +4841,7 @@ fn c0_syntax_accepts_integer_constant_switch_case_labels() {
 }
 
 #[test]
-fn c0_syntax_rejects_unsupported_switch_shapes() {
+fn c_syntax_rejects_unsupported_switch_shapes() {
     for (source, expected) in [
         (
             "int32 bad(int32 kind) { switch (kind) { case 1 + 1: break; case 2: break; } return 0; }",
@@ -4889,7 +4887,7 @@ fn c0_syntax_rejects_unsupported_switch_shapes() {
 }
 
 #[test]
-fn c0_syntax_rejects_loop_control_outside_its_supported_loop() {
+fn c_syntax_rejects_loop_control_outside_its_supported_loop() {
     for (source, expected) in [
         (
             "int32 bad() { break; return 0; }",
@@ -4911,7 +4909,7 @@ fn c0_syntax_rejects_loop_control_outside_its_supported_loop() {
 }
 
 #[test]
-fn c0_syntax_accepts_prefix_scalar_updates() {
+fn c_syntax_accepts_prefix_scalar_updates() {
     syntax::parse_function(
         r#"
         int32 count() {
@@ -4928,7 +4926,7 @@ fn c0_syntax_accepts_prefix_scalar_updates() {
 }
 
 #[test]
-fn c0_syntax_accepts_a_local_declaration_list() {
+fn c_syntax_accepts_a_local_declaration_list() {
     syntax::parse_function(
         r#"
         int32 count() {
@@ -4941,7 +4939,7 @@ fn c0_syntax_accepts_a_local_declaration_list() {
 }
 
 #[test]
-fn c0_syntax_accepts_a_struct_field_declaration_list() {
+fn c_syntax_accepts_a_struct_field_declaration_list() {
     syntax::parse_function(
         r#"
         struct pair {
@@ -4958,7 +4956,7 @@ fn c0_syntax_accepts_a_struct_field_declaration_list() {
 }
 
 #[test]
-fn c0_syntax_accepts_the_remaining_scalar_compound_assignments() {
+fn c_syntax_accepts_the_remaining_scalar_compound_assignments() {
     syntax::parse_function(
         r#"
         int32 updates() {
@@ -4977,7 +4975,7 @@ fn c0_syntax_accepts_the_remaining_scalar_compound_assignments() {
 }
 
 #[test]
-fn c0_syntax_accepts_memory_lvalue_updates() {
+fn c_syntax_accepts_memory_lvalue_updates() {
     let function = syntax::parse_function(
         r#"
         struct counter {
@@ -4995,16 +4993,16 @@ fn c0_syntax_accepts_memory_lvalue_updates() {
     .expect("indexed and field compound updates should parse");
 
     fn update_targets<'a>(
-        statement: &'a syntax::C0Statement,
-        targets: &mut Vec<&'a syntax::C0Expression>,
+        statement: &'a syntax::CStatement,
+        targets: &mut Vec<&'a syntax::CExpression>,
     ) {
         match statement {
-            syntax::C0Statement::Update { target, .. } => targets.push(target),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Update { target, .. } => targets.push(target),
+            syntax::CStatement::Seq(first, second) => {
                 update_targets(first, targets);
                 update_targets(second, targets);
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -5012,7 +5010,7 @@ fn c0_syntax_accepts_memory_lvalue_updates() {
                 update_targets(then_branch, targets);
                 update_targets(else_branch, targets);
             }
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 update_targets(body, targets)
             }
             _ => {}
@@ -5022,17 +5020,17 @@ fn c0_syntax_accepts_memory_lvalue_updates() {
     let mut targets = Vec::new();
     update_targets(function.body(), &mut targets);
     assert_eq!(targets.len(), 3);
-    assert!(matches!(targets[0], syntax::C0Expression::Index(_, _, _)));
+    assert!(matches!(targets[0], syntax::CExpression::Index(_, _, _)));
     assert!(matches!(
         targets[1],
-        syntax::C0Expression::Field {
+        syntax::CExpression::Field {
             field_type: crate::languages::interface::InterfaceType::Int32,
             ..
         }
     ));
     assert!(matches!(
         targets[2],
-        syntax::C0Expression::Field {
+        syntax::CExpression::Field {
             field_type: crate::languages::interface::InterfaceType::Int32,
             ..
         }
@@ -5040,7 +5038,7 @@ fn c0_syntax_accepts_memory_lvalue_updates() {
 }
 
 #[test]
-fn c0_syntax_accepts_scalar_casts_and_conditional_expressions() {
+fn c_syntax_accepts_scalar_casts_and_conditional_expressions() {
     let function = syntax::parse_function(
         r#"
         int32 choose(int32 condition, uint8 left, int32 right) {
@@ -5052,30 +5050,30 @@ fn c0_syntax_accepts_scalar_casts_and_conditional_expressions() {
 
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Ternary {
+        syntax::CStatement::Return(syntax::CExpression::Ternary {
             condition,
             then_branch,
             else_branch,
-        }, _) if matches!(condition.as_ref(), syntax::C0Expression::Variable(name) if name == "condition")
+        }, _) if matches!(condition.as_ref(), syntax::CExpression::Variable(name) if name == "condition")
             && matches!(
                 then_branch.as_ref(),
-                syntax::C0Expression::Cast {
+                syntax::CExpression::Cast {
                     interface_type: crate::languages::interface::InterfaceType::Int32,
                     expression,
                     ..
-                } if matches!(expression.as_ref(), syntax::C0Expression::Variable(name) if name == "left")
+                } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name == "left")
             )
             && matches!(
                 else_branch.as_ref(),
-                syntax::C0Expression::Add(left, right)
-                    if matches!(left.as_ref(), syntax::C0Expression::Variable(name) if name == "right")
-                        && matches!(right.as_ref(), syntax::C0Expression::Int32Literal(1))
+                syntax::CExpression::Add(left, right)
+                    if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name == "right")
+                        && matches!(right.as_ref(), syntax::CExpression::Int32Literal(1))
             )
     ));
 }
 
 #[test]
-fn c0_syntax_rejects_non_scalar_casts() {
+fn c_syntax_rejects_non_scalar_casts() {
     let error = syntax::parse_function(
         r#"
         struct node {
@@ -5096,7 +5094,7 @@ fn c0_syntax_rejects_non_scalar_casts() {
 }
 
 #[test]
-fn c0_syntax_rejects_retyped_object_pointer_casts() {
+fn c_syntax_rejects_retyped_object_pointer_casts() {
     for source in [
         "uint8 *as_bytes(int32 *value) { return (uint8 *)value; }",
         "int32 *as_words(uint8 *value) { return (int32 *)value; }",
@@ -5118,7 +5116,7 @@ fn c0_syntax_rejects_retyped_object_pointer_casts() {
 }
 
 #[test]
-fn c0_syntax_retyped_pointer_cast_diagnostics_name_source_types() {
+fn c_syntax_retyped_pointer_cast_diagnostics_name_source_types() {
     for (source, expected, actual) in [
         (
             "struct a { int32 x; }; struct b { int32 y; }; struct b **as_b(struct a **p) { return (struct b **)p; }",
@@ -5170,7 +5168,7 @@ fn c0_syntax_retyped_pointer_cast_diagnostics_name_source_types() {
 }
 
 #[test]
-fn c0_syntax_parses_object_pointer_casts_with_struct_tags() {
+fn c_syntax_parses_object_pointer_casts_with_struct_tags() {
     let function = syntax::parse_function(
         r#"
         struct node {
@@ -5185,16 +5183,16 @@ fn c0_syntax_parses_object_pointer_casts_with_struct_tags() {
         "#,
     )
     .expect("pointer casts to and from `unsigned long` should parse");
-    let syntax::C0Statement::Seq(store, _) = function.body() else {
+    let syntax::CStatement::Seq(store, _) = function.body() else {
         panic!("expected a store followed by a return");
     };
     assert!(
         matches!(
             store.as_ref(),
-            syntax::C0Statement::Store { value, .. }
+            syntax::CStatement::Store { value, .. }
                 if matches!(
                     value,
-                    syntax::C0Expression::Cast {
+                    syntax::CExpression::Cast {
                         interface_type: crate::languages::interface::InterfaceType::UInt64(_),
                         struct_name: None,
                         ..
@@ -5206,7 +5204,7 @@ fn c0_syntax_parses_object_pointer_casts_with_struct_tags() {
 }
 
 #[test]
-fn c0_syntax_rejects_overlong_local_array_initializers() {
+fn c_syntax_rejects_overlong_local_array_initializers() {
     let error = syntax::parse_function(
         r#"
         int32 unsupported() {
@@ -5221,7 +5219,7 @@ fn c0_syntax_rejects_overlong_local_array_initializers() {
 }
 
 #[test]
-fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
+fn c_syntax_models_missing_else_and_empty_statements_as_skip() {
     let function = syntax::parse_function(
         r#"
         int32 nonnegative(int32 value) {
@@ -5237,50 +5235,48 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
     )
     .expect("if statements should not require artificial else branches");
 
-    fn contains_skip(statement: &syntax::C0Statement) -> bool {
+    fn contains_skip(statement: &syntax::CStatement) -> bool {
         match statement {
-            syntax::C0Statement::Skip => true,
-            syntax::C0Statement::Seq(first, second) => {
-                contains_skip(first) || contains_skip(second)
-            }
-            syntax::C0Statement::If {
+            syntax::CStatement::Skip => true,
+            syntax::CStatement::Seq(first, second) => contains_skip(first) || contains_skip(second),
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => contains_skip(then_branch) || contains_skip(else_branch),
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 contains_skip(body)
             }
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 body,
                 step,
                 ..
             } => contains_skip(initializer) || contains_skip(body) || contains_skip(step),
-            syntax::C0Statement::Switch { cases, .. } => {
+            syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().any(|case| contains_skip(case.body()))
             }
-            syntax::C0Statement::Label { statement, .. } => contains_skip(statement),
-            syntax::C0Statement::Break
-            | syntax::C0Statement::Continue
-            | syntax::C0Statement::Goto { .. }
-            | syntax::C0Statement::Declare { .. }
-            | syntax::C0Statement::DeclareStructValue { .. }
-            | syntax::C0Statement::Assign { .. }
-            | syntax::C0Statement::Call { .. }
-            | syntax::C0Statement::CallResult { .. }
-            | syntax::C0Statement::CallAssign { .. }
-            | syntax::C0Statement::IndirectCall { .. }
-            | syntax::C0Statement::HeapAllocate { .. }
-            | syntax::C0Statement::HeapFree { .. }
-            | syntax::C0Statement::Return(_, _)
-            | syntax::C0Statement::Store { .. }
-            | syntax::C0Statement::SequentialStore { .. }
-            | syntax::C0Statement::AggregateCopy { .. }
-            | syntax::C0Statement::Update { .. }
-            | syntax::C0Statement::Assert { .. }
-            | syntax::C0Statement::StepValue { .. }
-            | syntax::C0Statement::LoopTest { .. } => false,
+            syntax::CStatement::Label { statement, .. } => contains_skip(statement),
+            syntax::CStatement::Break
+            | syntax::CStatement::Continue
+            | syntax::CStatement::Goto { .. }
+            | syntax::CStatement::Declare { .. }
+            | syntax::CStatement::DeclareStructValue { .. }
+            | syntax::CStatement::Assign { .. }
+            | syntax::CStatement::Call { .. }
+            | syntax::CStatement::CallResult { .. }
+            | syntax::CStatement::CallAssign { .. }
+            | syntax::CStatement::IndirectCall { .. }
+            | syntax::CStatement::HeapAllocate { .. }
+            | syntax::CStatement::HeapFree { .. }
+            | syntax::CStatement::Return(_, _)
+            | syntax::CStatement::Store { .. }
+            | syntax::CStatement::SequentialStore { .. }
+            | syntax::CStatement::AggregateCopy { .. }
+            | syntax::CStatement::Update { .. }
+            | syntax::CStatement::Assert { .. }
+            | syntax::CStatement::StepValue { .. }
+            | syntax::CStatement::LoopTest { .. } => false,
         }
     }
 
@@ -5308,7 +5304,7 @@ fn kernel_skip_preserves_state_without_facts_or_obligations() {
 }
 
 #[test]
-fn c0_syntax_parses_negative_literals_and_unary_minus() {
+fn c_syntax_parses_negative_literals_and_unary_minus() {
     let literal = syntax::parse_function(
         r#"
         int32 negative_one() {
@@ -5319,7 +5315,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
     .expect("negative literals should parse");
     assert!(matches!(
         literal.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(value), _)
+        syntax::CStatement::Return(syntax::CExpression::Int32Literal(value), _)
             if *value == (-1i32) as u32
     ));
 
@@ -5333,11 +5329,11 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
     .expect("the minimum int32 literal should parse");
     assert!(matches!(
         minimum.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Cast {
+        syntax::CStatement::Return(syntax::CExpression::Cast {
             expression,
             interface_type: crate::languages::interface::InterfaceType::Int32,
             ..
-        }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-2147483648))
+        }, _) if matches!(expression.as_ref(), syntax::CExpression::Int64Literal(-2147483648))
     ));
 
     let negation = syntax::parse_function(
@@ -5350,19 +5346,19 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
     .expect("general unary minus should parse");
     assert!(matches!(
         negation.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Subtract(left, right), _)
+        syntax::CStatement::Return(syntax::CExpression::Subtract(left, right), _)
             if matches!(
                 left.as_ref(),
-                syntax::C0Expression::Int32Literal(0)
+                syntax::CExpression::Int32Literal(0)
             ) && matches!(
                 right.as_ref(),
-                syntax::C0Expression::Variable(name) if name == "value"
+                syntax::CExpression::Variable(name) if name == "value"
             )
     ));
 }
 
 #[test]
-fn c0_syntax_long_long_suffix_letters_must_match_case() {
+fn c_syntax_long_long_suffix_letters_must_match_case() {
     for digits in ["1", "01", "0x1"] {
         for suffix in [
             "lL", "Ll", "ulL", "uLl", "UlL", "ULl", "lLu", "lLU", "Llu", "LlU",
@@ -5387,7 +5383,7 @@ fn c0_syntax_long_long_suffix_letters_must_match_case() {
 }
 
 #[test]
-fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
+fn c_syntax_parses_c_integer_literal_radices_and_suffixes() {
     let literals = syntax::parse_function(
         r#"
         int32 literals() {
@@ -5398,9 +5394,9 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("C integer literal radices and suffixes should parse");
     assert!(matches!(
         literals.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::BitwiseOr(left, right), _)
-            if matches!(left.as_ref(), syntax::C0Expression::UInt32Literal(15))
-                && matches!(right.as_ref(), syntax::C0Expression::UInt32Literal(8))
+        syntax::CStatement::Return(syntax::CExpression::BitwiseOr(left, right), _)
+            if matches!(left.as_ref(), syntax::CExpression::UInt32Literal(15))
+                && matches!(right.as_ref(), syntax::CExpression::UInt32Literal(8))
     ));
 
     let octal = syntax::parse_function(
@@ -5413,7 +5409,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("large octal literals should consider unsigned int before long");
     assert!(matches!(
         octal.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::UInt32Literal(0xffff_ffff), _)
+        syntax::CStatement::Return(syntax::CExpression::UInt32Literal(0xffff_ffff), _)
     ));
 
     let minimum = syntax::parse_function(
@@ -5426,11 +5422,11 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("negative hexadecimal literals should preserve int32 minimum");
     assert!(matches!(
         minimum.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Cast {
+        syntax::CStatement::Return(syntax::CExpression::Cast {
             expression,
             interface_type: crate::languages::interface::InterfaceType::Int32,
             ..
-        }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-0x8000_0000))
+        }, _) if matches!(expression.as_ref(), syntax::CExpression::Int64Literal(-0x8000_0000))
     ));
 
     let conditional = syntax::parse_function(
@@ -5443,29 +5439,29 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("conditional operands should use their common C type");
     assert!(matches!(
         conditional.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right), _)
-            if matches!(right.as_ref(), syntax::C0Expression::Int32Literal(0))
+        syntax::CStatement::Return(syntax::CExpression::LessThan(left, right), _)
+            if matches!(right.as_ref(), syntax::CExpression::Int32Literal(0))
                 && matches!(
                     left.as_ref(),
-                    syntax::C0Expression::Ternary { then_branch, else_branch, .. }
+                    syntax::CExpression::Ternary { then_branch, else_branch, .. }
                         if matches!(
                             then_branch.as_ref(),
-                            syntax::C0Expression::Cast {
+                            syntax::CExpression::Cast {
                                 expression,
                                 interface_type: crate::languages::interface::InterfaceType::UInt32,
                                 ..
-                            } if matches!(expression.as_ref(), syntax::C0Expression::Int32Literal(0xffff_ffff))
+                            } if matches!(expression.as_ref(), syntax::CExpression::Int32Literal(0xffff_ffff))
                         )
                         && matches!(
                             else_branch.as_ref(),
-                            syntax::C0Expression::UInt32Literal(1)
+                            syntax::CExpression::UInt32Literal(1)
                         )
                 )
     ));
 }
 
 #[test]
-fn c0_syntax_rejects_invalid_octal_literals() {
+fn c_syntax_rejects_invalid_octal_literals() {
     let error = syntax::parse_function(
         r#"
         int32 invalid() {
@@ -5482,7 +5478,7 @@ fn c0_syntax_rejects_invalid_octal_literals() {
 }
 
 #[test]
-fn c0_syntax_rejects_incompatible_conditional_types() {
+fn c_syntax_rejects_incompatible_conditional_types() {
     let error = syntax::parse_function(
         r#"
         int32 bad(int32* left, uint8* right) {
@@ -5500,7 +5496,7 @@ fn c0_syntax_rejects_incompatible_conditional_types() {
 }
 
 #[test]
-fn c0_unary_minus_preserves_signed_overflow_semantics() {
+fn c_unary_minus_preserves_signed_overflow_semantics() {
     let function = syntax::parse_function(
         r#"
         int32 negate(int32 value) {
@@ -5535,7 +5531,7 @@ fn c0_unary_minus_preserves_signed_overflow_semantics() {
 }
 
 #[test]
-fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
+fn c_syntax_retains_struct_pointee_types_across_chained_fields() {
     let function = syntax::parse_function(
         r#"
         struct leaf {
@@ -5559,8 +5555,8 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
         .expect("node child field");
     assert_eq!(child.struct_name(), Some("leaf"));
 
-    let syntax::C0Statement::Return(
-        syntax::C0Expression::Field {
+    let syntax::CStatement::Return(
+        syntax::CExpression::Field {
             pointer,
             field_type: crate::languages::interface::InterfaceType::Int32,
             field_struct_name: None,
@@ -5572,12 +5568,12 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
         panic!("the terminal scalar field should retain its resolved type")
     };
     // `value` designates its own four bytes of the loaded `child` pointer.
-    let syntax::C0Expression::Subobject { pointer, width: 4 } = pointer.as_ref() else {
+    let syntax::CExpression::Subobject { pointer, width: 4 } = pointer.as_ref() else {
         panic!("the terminal field should designate its member")
     };
     assert!(matches!(
         pointer.as_ref(),
-        syntax::C0Expression::Field {
+        syntax::CExpression::Field {
             field_type: crate::languages::interface::InterfaceType::Int32Pointer,
             field_struct_name: Some(name),
             ..
@@ -5586,7 +5582,7 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
 }
 
 #[test]
-fn c0_struct_layout_preserves_embedded_struct_shape() {
+fn c_struct_layout_preserves_embedded_struct_shape() {
     #[repr(C)]
     struct HostInner {
         flag: u8,
@@ -5653,7 +5649,7 @@ fn c0_struct_layout_preserves_embedded_struct_shape() {
 }
 
 #[test]
-fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
+fn c_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
     let function = syntax::parse_function(
         r#"
         struct inner {
@@ -5721,7 +5717,7 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
 }
 
 #[test]
-fn c0_tagged_union_layout_overlaps_members_and_preserves_member_types() {
+fn c_tagged_union_layout_overlaps_members_and_preserves_member_types() {
     #[repr(C)]
     union HostPayload {
         number: i32,
@@ -5789,7 +5785,7 @@ fn c0_tagged_union_layout_overlaps_members_and_preserves_member_types() {
 
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::UnionField {
+        syntax::CStatement::Return(syntax::CExpression::UnionField {
             field_type: crate::languages::interface::InterfaceType::Int32,
             union_name,
             ..
@@ -5798,7 +5794,7 @@ fn c0_tagged_union_layout_overlaps_members_and_preserves_member_types() {
 }
 
 #[test]
-fn c0_anonymous_union_typedef_preserves_embedded_struct_and_array_abi() {
+fn c_anonymous_union_typedef_preserves_embedded_struct_and_array_abi() {
     let source = r#"
         typedef union {
             __extension__ unsigned long long int word;
@@ -5835,7 +5831,7 @@ fn c0_anonymous_union_typedef_preserves_embedded_struct_and_array_abi() {
 }
 
 #[test]
-fn c0_scalar_array_typedef_retains_length_and_struct_layout() {
+fn c_scalar_array_typedef_retains_length_and_struct_layout() {
     let function = syntax::parse_function(
         "typedef long int words[8]; struct holder { words data; int tail; }; \
          int tail(struct holder *p) { return p->tail; }",
@@ -5849,7 +5845,7 @@ fn c0_scalar_array_typedef_retains_length_and_struct_layout() {
 }
 
 #[test]
-fn c0_anonymous_enum_constants_support_aliases_and_arithmetic() {
+fn c_anonymous_enum_constants_support_aliases_and_arithmetic() {
     let function = syntax::parse_function(
         "enum { FIRST = 2, SECOND = FIRST, THIRD = SECOND + 1 }; \
          int result(void) { return THIRD; }",
@@ -5867,7 +5863,7 @@ fn c0_anonymous_enum_constants_support_aliases_and_arithmetic() {
 }
 
 #[test]
-fn c0_compound_union_access_and_by_value_copy_refuse_until_modeled() {
+fn c_compound_union_access_and_by_value_copy_refuse_until_modeled() {
     let declarations = r#"
         typedef union {
             unsigned long long int word;
@@ -5891,7 +5887,7 @@ fn c0_compound_union_access_and_by_value_copy_refuse_until_modeled() {
 }
 
 #[test]
-fn c0_uninitialized_compound_union_storage_does_not_authorize_typed_copy() {
+fn c_uninitialized_compound_union_storage_does_not_authorize_typed_copy() {
     let declarations = r#"
         union payload { int word; struct { int low; int high; } halves; };
         struct holder { union payload value; };
@@ -5914,7 +5910,7 @@ fn c0_uninitialized_compound_union_storage_does_not_authorize_typed_copy() {
 }
 
 #[test]
-fn c0_union_pointer_parameters_keep_nominal_declaration_identity() {
+fn c_union_pointer_parameters_keep_nominal_declaration_identity() {
     let declarations = r#"
         typedef union { int value; char bytes[4]; } first;
         typedef union { int value; char bytes[4]; } second;
@@ -5941,7 +5937,7 @@ fn c0_union_pointer_parameters_keep_nominal_declaration_identity() {
 }
 
 #[test]
-fn c0_tagged_union_member_writes_are_rejected() {
+fn c_tagged_union_member_writes_are_rejected() {
     let error = syntax::parse_function(
         r#"
         union payload { int32 number; int32* pointer; };
@@ -5962,7 +5958,7 @@ fn c0_tagged_union_member_writes_are_rejected() {
 }
 
 #[test]
-fn c0_tagged_union_values_remain_rejected_but_containers_are_copyable() {
+fn c_tagged_union_values_remain_rejected_but_containers_are_copyable() {
     let value_error = syntax::parse_function(
         r#"
         union payload { int32 number; int32* pointer; };
@@ -5990,7 +5986,7 @@ fn c0_tagged_union_values_remain_rejected_but_containers_are_copyable() {
 }
 
 #[test]
-fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
+fn c_tagged_union_member_addresses_preserve_member_type_and_offset() {
     #[repr(C)]
     union HostPayload {
         number: i32,
@@ -6023,12 +6019,12 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
         .iter()
         .find(|function| function.name() == "address_number")
         .expect("scalar member address function");
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) =
+    let syntax::CStatement::Return(syntax::CExpression::AddressOf(target), _) =
         address_number.body()
     else {
         panic!("scalar union member address should remain an address-of lvalue")
     };
-    let syntax::C0Expression::UnionField {
+    let syntax::CExpression::UnionField {
         pointer,
         field_type: crate::languages::interface::InterfaceType::Int32,
         union_name,
@@ -6040,13 +6036,13 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
     assert_eq!(union_name, "payload");
     assert!(matches!(
         pointer.as_ref(),
-        syntax::C0Expression::UnionAddress {
+        syntax::CExpression::UnionAddress {
             pointer,
             union_name,
         } if union_name == "payload"
             && matches!(
                 pointer.as_ref(),
-                syntax::C0Expression::PointerOffsetBytes { bytes, .. }
+                syntax::CExpression::PointerOffsetBytes { bytes, .. }
                     if *bytes == payload_offset
             )
     ));
@@ -6106,7 +6102,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
 }
 
 #[test]
-fn c0_rejects_embedded_struct_values_outside_member_access() {
+fn c_rejects_embedded_struct_values_outside_member_access() {
     let error = syntax::parse_function(
         r#"
         struct inner {
@@ -6131,7 +6127,7 @@ fn c0_rejects_embedded_struct_values_outside_member_access() {
 }
 
 #[test]
-fn c0_struct_aggregate_lvalues_support_load_copy_argument_and_return() {
+fn c_struct_aggregate_lvalues_support_load_copy_argument_and_return() {
     let functions = syntax::parse_functions(
         r#"
         struct inner {
@@ -6173,7 +6169,7 @@ fn c0_struct_aggregate_lvalues_support_load_copy_argument_and_return() {
         .expect("clone function");
     assert!(matches!(
         clone.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::AggregateAddress {
+        syntax::CStatement::Return(syntax::CExpression::AggregateAddress {
             struct_name,
             ..
         }, _) if struct_name == "outer"
@@ -6194,7 +6190,7 @@ fn c0_struct_aggregate_lvalues_support_load_copy_argument_and_return() {
 }
 
 #[test]
-fn c0_enum_metadata_preserves_named_values_and_field_shape() {
+fn c_enum_metadata_preserves_named_values_and_field_shape() {
     #[repr(C)]
     struct HostPacket {
         tag: u8,
@@ -6252,7 +6248,7 @@ fn c0_enum_metadata_preserves_named_values_and_field_shape() {
 }
 
 #[test]
-fn c0_enum_field_comparison_lowers_named_constant() {
+fn c_enum_field_comparison_lowers_named_constant() {
     let function = syntax::parse_function(
         r#"
         enum packet_state {
@@ -6312,7 +6308,7 @@ fn c0_enum_field_comparison_lowers_named_constant() {
 }
 
 #[test]
-fn c0_rejects_unsupported_enum_shapes() {
+fn c_rejects_unsupported_enum_shapes() {
     let error = syntax::parse_function(
         r#"
         enum packet_state { PACKET_IDLE, PACKET_READY };
@@ -6366,10 +6362,10 @@ fn c0_rejects_unsupported_enum_shapes() {
 }
 
 #[test]
-fn c0_syntax_lowers_struct_malloc_sizeof_and_free() {
-    fn contains_heap_operations(statement: &syntax::C0Statement) -> (bool, bool) {
+fn c_syntax_lowers_struct_malloc_sizeof_and_free() {
+    fn contains_heap_operations(statement: &syntax::CStatement) -> (bool, bool) {
         match statement {
-            syntax::C0Statement::HeapAllocate {
+            syntax::CStatement::HeapAllocate {
                 target,
                 bytes,
                 zeroed,
@@ -6379,18 +6375,18 @@ fn c0_syntax_lowers_struct_malloc_sizeof_and_free() {
                 assert!(!zeroed);
                 assert_eq!(
                     *bytes,
-                    syntax::C0Expression::SizeOfStruct {
+                    syntax::CExpression::SizeOfStruct {
                         name: "item".to_string(),
                         bytes: 16,
                     }
                 );
                 (true, false)
             }
-            syntax::C0Statement::HeapFree { pointer, .. } => {
-                assert_eq!(pointer, &syntax::C0Expression::Variable("item".to_string()));
+            syntax::CStatement::HeapFree { pointer, .. } => {
+                assert_eq!(pointer, &syntax::CExpression::Variable("item".to_string()));
                 (false, true)
             }
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 let first = contains_heap_operations(first);
                 let second = contains_heap_operations(second);
                 (first.0 || second.0, first.1 || second.1)
@@ -6419,7 +6415,7 @@ fn c0_syntax_lowers_struct_malloc_sizeof_and_free() {
 }
 
 #[test]
-fn c0_syntax_accepts_malloc_size_that_does_not_match_its_target() {
+fn c_syntax_accepts_malloc_size_that_does_not_match_its_target() {
     let function = syntax::parse_function(
         r#"
         struct left { int32 value; };
@@ -6431,11 +6427,11 @@ fn c0_syntax_accepts_malloc_size_that_does_not_match_its_target() {
         "#,
     )
     .expect("malloc should accept a raw byte extent independent of target type");
-    assert!(matches!(function.body(), syntax::C0Statement::Seq(_, _)));
+    assert!(matches!(function.body(), syntax::CStatement::Seq(_, _)));
 }
 
 #[test]
-fn c0_syntax_accepts_runtime_sized_int32_allocation() {
+fn c_syntax_accepts_runtime_sized_int32_allocation() {
     let function = syntax::parse_function(
         r#"
         int32 allocate(int32 count) {
@@ -6447,11 +6443,11 @@ fn c0_syntax_accepts_runtime_sized_int32_allocation() {
     )
     .expect("runtime-sized scalar allocation should parse");
 
-    assert!(matches!(function.body(), syntax::C0Statement::Seq(_, _)));
+    assert!(matches!(function.body(), syntax::CStatement::Seq(_, _)));
 }
 
 #[test]
-fn c0_syntax_accepts_realloc_with_two_arguments() {
+fn c_syntax_accepts_realloc_with_two_arguments() {
     let function = syntax::parse_function(
         r#"
         int32* resize(int32* data, int32 bytes) {
@@ -6462,14 +6458,14 @@ fn c0_syntax_accepts_realloc_with_two_arguments() {
     )
     .expect("realloc should parse as a two-argument pointer call");
 
-    fn find_realloc(statement: &syntax::C0Statement) -> Option<usize> {
+    fn find_realloc(statement: &syntax::CStatement) -> Option<usize> {
         match statement {
-            syntax::C0Statement::CallAssign {
+            syntax::CStatement::CallAssign {
                 function_name,
                 arguments,
                 ..
             } if function_name == "realloc" => Some(arguments.len()),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 find_realloc(first).or_else(|| find_realloc(second))
             }
             _ => None,
@@ -6486,26 +6482,26 @@ fn c0_syntax_accepts_realloc_with_two_arguments() {
 }
 
 #[test]
-fn c0_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
+fn c_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
     fn find_allocation(
-        statement: &syntax::C0Statement,
-    ) -> Option<(&str, &syntax::C0Expression, bool)> {
+        statement: &syntax::CStatement,
+    ) -> Option<(&str, &syntax::CExpression, bool)> {
         match statement {
-            syntax::C0Statement::HeapAllocate {
+            syntax::CStatement::HeapAllocate {
                 target,
                 bytes,
                 zeroed,
                 ..
             } => Some((target, bytes, *zeroed)),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => find_allocation(then_branch).or_else(|| find_allocation(else_branch)),
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 find_allocation(body)
             }
             _ => None,
@@ -6526,9 +6522,9 @@ fn c0_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
     assert!(zeroed);
     assert_eq!(
         bytes,
-        &syntax::C0Expression::Multiply(
-            Box::new(syntax::C0Expression::Variable("count".to_string())),
-            Box::new(syntax::C0Expression::SizeOfType {
+        &syntax::CExpression::Multiply(
+            Box::new(syntax::CExpression::Variable("count".to_string())),
+            Box::new(syntax::CExpression::SizeOfType {
                 interface_type: crate::languages::interface::InterfaceType::Int32,
                 struct_name: None,
                 bytes: 4,
@@ -6538,7 +6534,7 @@ fn c0_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
 }
 
 #[test]
-fn c0_syntax_accepts_matching_struct_calloc() {
+fn c_syntax_accepts_matching_struct_calloc() {
     let function = syntax::parse_function(
         r#"
         struct item { int32 value; };
@@ -6551,16 +6547,16 @@ fn c0_syntax_accepts_matching_struct_calloc() {
     .expect("calloc should accept a matching struct element size");
 
     fn find_allocation(
-        statement: &syntax::C0Statement,
-    ) -> Option<(&str, &syntax::C0Expression, bool)> {
+        statement: &syntax::CStatement,
+    ) -> Option<(&str, &syntax::CExpression, bool)> {
         match statement {
-            syntax::C0Statement::HeapAllocate {
+            syntax::CStatement::HeapAllocate {
                 target,
                 bytes,
                 zeroed,
                 ..
             } => Some((target, bytes, *zeroed)),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
             }
             _ => None,
@@ -6573,9 +6569,9 @@ fn c0_syntax_accepts_matching_struct_calloc() {
     assert!(zeroed);
     assert_eq!(
         bytes,
-        &syntax::C0Expression::Multiply(
-            Box::new(syntax::C0Expression::Variable("count".to_string())),
-            Box::new(syntax::C0Expression::SizeOfStruct {
+        &syntax::CExpression::Multiply(
+            Box::new(syntax::CExpression::Variable("count".to_string())),
+            Box::new(syntax::CExpression::SizeOfStruct {
                 name: "item".to_string(),
                 bytes: 4,
             }),
@@ -6584,17 +6580,17 @@ fn c0_syntax_accepts_matching_struct_calloc() {
 }
 
 #[test]
-fn c0_syntax_accepts_matching_pointer_array_calloc() {
+fn c_syntax_accepts_matching_pointer_array_calloc() {
     fn assert_pointer_array_calloc(source: &str) {
         let function = syntax::parse_function(source)
             .expect("calloc should accept matching pointer-array element sizes");
 
         fn find_allocation<'a>(
-            statement: &'a syntax::C0Statement,
+            statement: &'a syntax::CStatement,
             target: &str,
-        ) -> Option<&'a syntax::C0Expression> {
+        ) -> Option<&'a syntax::CExpression> {
             match statement {
-                syntax::C0Statement::HeapAllocate {
+                syntax::CStatement::HeapAllocate {
                     target: allocation_target,
                     bytes,
                     zeroed,
@@ -6603,7 +6599,7 @@ fn c0_syntax_accepts_matching_pointer_array_calloc() {
                     assert!(*zeroed);
                     Some(bytes)
                 }
-                syntax::C0Statement::Seq(first, second) => {
+                syntax::CStatement::Seq(first, second) => {
                     find_allocation(first, target).or_else(|| find_allocation(second, target))
                 }
                 _ => None,
@@ -6612,7 +6608,7 @@ fn c0_syntax_accepts_matching_pointer_array_calloc() {
 
         assert!(matches!(
             find_allocation(function.body(), "slots"),
-            Some(syntax::C0Expression::Multiply(_, _))
+            Some(syntax::CExpression::Multiply(_, _))
         ));
     }
 
@@ -6635,7 +6631,7 @@ fn c0_syntax_accepts_matching_pointer_array_calloc() {
 }
 
 #[test]
-fn c0_syntax_rejects_mismatched_pointer_array_calloc_element_size() {
+fn c_syntax_rejects_mismatched_pointer_array_calloc_element_size() {
     let error = syntax::parse_function(
         r#"
         int32* bad(int32 count) {
@@ -6649,7 +6645,7 @@ fn c0_syntax_rejects_mismatched_pointer_array_calloc_element_size() {
 }
 
 #[test]
-fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
+fn c_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
     let function = syntax::parse_function(
         r#"
         int32 sizes() {
@@ -6659,7 +6655,7 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
     )
     .expect("sizeof should accept every supported scalar and pointer type");
 
-    let syntax::C0Statement::Return(expression, _) = function.body() else {
+    let syntax::CStatement::Return(expression, _) = function.body() else {
         panic!("sizeof expression should remain in the return statement");
     };
     let kernel_expression = expression.to_kernel_expression();
@@ -6684,7 +6680,7 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
 }
 
 #[test]
-fn c0_syntax_rejects_wrong_free_arity() {
+fn c_syntax_rejects_wrong_free_arity() {
     let free_error = syntax::parse_function(
         r#"
         int32 bad_free(int32* value) {
@@ -6702,7 +6698,7 @@ fn c0_syntax_rejects_wrong_free_arity() {
 }
 
 #[test]
-fn c0_chained_field_load_executes_through_typed_pointer_memory() {
+fn c_chained_field_load_executes_through_typed_pointer_memory() {
     let function = syntax::parse_function(
         r#"
         struct leaf {
@@ -6770,7 +6766,7 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
 }
 
 #[test]
-fn c0_syntax_parses_chained_field_store_targets() {
+fn c_syntax_parses_chained_field_store_targets() {
     let function = syntax::parse_function(
         r#"
         struct leaf {
@@ -6790,16 +6786,16 @@ fn c0_syntax_parses_chained_field_store_targets() {
 
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Seq(first, _)
+        syntax::CStatement::Seq(first, _)
             if matches!(
                 first.as_ref(),
-                syntax::C0Statement::Store {
-                    pointer: syntax::C0Expression::Subobject { pointer, width: 4 },
+                syntax::CStatement::Store {
+                    pointer: syntax::CExpression::Subobject { pointer, width: 4 },
                     value_type: Some(crate::languages::interface::InterfaceType::Int32),
                     ..
                 } if matches!(
                     pointer.as_ref(),
-                    syntax::C0Expression::Field {
+                    syntax::CExpression::Field {
                         field_type: crate::languages::interface::InterfaceType::Int32Pointer,
                         field_struct_name: Some(name),
                         ..
@@ -6810,7 +6806,7 @@ fn c0_syntax_parses_chained_field_store_targets() {
 }
 
 #[test]
-fn c0_syntax_names_invalid_field_chains() {
+fn c_syntax_names_invalid_field_chains() {
     let error = syntax::parse_function(
         r#"
         struct leaf {
@@ -6831,7 +6827,7 @@ fn c0_syntax_names_invalid_field_chains() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_max_body() {
+fn c_syntax_targets_kernel_max_body() {
     let function = syntax::parse_function(
         r#"
         int32 max(int32 a, int32 b) {
@@ -6883,7 +6879,7 @@ fn c0_syntax_targets_kernel_max_body() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_max_function_call() {
+fn c_syntax_targets_kernel_max_function_call() {
     let function = syntax::parse_function(
         r#"
         int32 max(int32 a, int32 b) {
@@ -6928,7 +6924,7 @@ fn c0_syntax_targets_kernel_max_function_call() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_assignment_and_sequence() {
+fn c_syntax_targets_kernel_assignment_and_sequence() {
     let function = syntax::parse_function(
         r#"
         int32 inc(int32 x) {
@@ -6962,7 +6958,7 @@ fn c0_syntax_targets_kernel_assignment_and_sequence() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_assignment_function_call() {
+fn c_syntax_targets_kernel_assignment_function_call() {
     let function = syntax::parse_function(
         r#"
         int32 inc(int32 x) {
@@ -6998,7 +6994,7 @@ fn c0_syntax_targets_kernel_assignment_function_call() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_store_and_load() {
+fn c_syntax_targets_kernel_store_and_load() {
     let function = syntax::parse_function(
         r#"
         int32 load_after_store(int32* p) {
@@ -7048,7 +7044,7 @@ fn c0_syntax_targets_kernel_store_and_load() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_struct_field_load() {
+fn c_syntax_targets_kernel_struct_field_load() {
     let function = syntax::parse_function(
         r#"
         struct json_object {
@@ -7101,7 +7097,7 @@ fn c0_syntax_targets_kernel_struct_field_load() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_float64_struct_field_load() {
+fn c_syntax_targets_kernel_float64_struct_field_load() {
     let function = syntax::parse_function(
         r#"
         struct json_object {
@@ -7151,7 +7147,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_struct_field_store() {
+fn c_syntax_targets_kernel_struct_field_store() {
     let function = syntax::parse_function(
         r#"
         struct json_object {
@@ -7213,7 +7209,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
 }
 
 #[test]
-fn c0_syntax_accepts_indexed_store_through_struct_pointer_field() {
+fn c_syntax_accepts_indexed_store_through_struct_pointer_field() {
     syntax::parse_function(
         r#"
         struct vector {
@@ -7233,7 +7229,7 @@ fn c0_syntax_accepts_indexed_store_through_struct_pointer_field() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
+fn c_syntax_targets_kernel_multifield_struct_offset_load() {
     let function = syntax::parse_function(
         r#"
         struct pair {
@@ -7287,7 +7283,7 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
+fn c_syntax_targets_kernel_struct_pointer_field_roundtrip() {
     let function = syntax::parse_function(
         r#"
         struct owner {
@@ -7371,7 +7367,7 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_store_and_load_function_call() {
+fn c_syntax_targets_kernel_store_and_load_function_call() {
     let function = syntax::parse_function(
         r#"
         int32 load_after_store(int32* p) {
@@ -7421,7 +7417,7 @@ fn c0_syntax_targets_kernel_store_and_load_function_call() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_pointer_addition_load() {
+fn c_syntax_targets_kernel_pointer_addition_load() {
     let function = syntax::parse_function(
         r#"
         int32 load_second(int32* p) {
@@ -7471,7 +7467,7 @@ fn c0_syntax_targets_kernel_pointer_addition_load() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_array_index_load() {
+fn c_syntax_targets_kernel_array_index_load() {
     let function = syntax::parse_function(
         r#"
         int32 load_second(int32* p) {
@@ -7521,7 +7517,7 @@ fn c0_syntax_targets_kernel_array_index_load() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_array_index_store() {
+fn c_syntax_targets_kernel_array_index_store() {
     let function = syntax::parse_function(
         r#"
         int32 store_second(int32* p) {
@@ -7577,7 +7573,7 @@ fn c0_syntax_targets_kernel_array_index_store() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_address_of_array_index() {
+fn c_syntax_targets_kernel_address_of_array_index() {
     let function = syntax::parse_function(
         r#"
         int32 load_second_through_address(int32* p) {
@@ -7651,7 +7647,7 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_pointer_null_equality() {
+fn c_syntax_targets_kernel_pointer_null_equality() {
     let function = syntax::parse_function(
         r#"
         int32 is_null(int32* p) {
@@ -7695,7 +7691,7 @@ fn c0_syntax_targets_kernel_pointer_null_equality() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_logical_short_circuiting() {
+fn c_syntax_targets_kernel_logical_short_circuiting() {
     let function = syntax::parse_function(
         r#"
         int32 safe_is_three(int32* p) {
@@ -7777,7 +7773,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_unary_not() {
+fn c_syntax_targets_kernel_unary_not() {
     let function = syntax::parse_function(
         r#"
         int32 not_null(int32* p) {
@@ -7821,7 +7817,7 @@ fn c0_syntax_targets_kernel_unary_not() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_local_address_of() {
+fn c_syntax_targets_kernel_local_address_of() {
     let function = syntax::parse_function(
         r#"
         int32 local_read() {
@@ -7873,7 +7869,7 @@ fn c0_syntax_targets_kernel_local_address_of() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_local_array_storage() {
+fn c_syntax_targets_kernel_local_array_storage() {
     let function = syntax::parse_function(
         r#"
         int32 local_array_roundtrip() {
@@ -7931,7 +7927,7 @@ fn c0_syntax_targets_kernel_local_array_storage() {
 }
 
 #[test]
-fn c0_syntax_lowers_local_array_initializer_stores() {
+fn c_syntax_lowers_local_array_initializer_stores() {
     let function = syntax::parse_function(
         r#"
         int32 local_array_initializer() {
@@ -7992,7 +7988,7 @@ fn c0_syntax_lowers_local_array_initializer_stores() {
 }
 
 #[test]
-fn c0_syntax_flattens_multidimensional_local_array_indices() {
+fn c_syntax_flattens_multidimensional_local_array_indices() {
     let function = syntax::parse_function(
         r#"
         int32 matrix_roundtrip() {
@@ -8050,7 +8046,7 @@ fn c0_syntax_flattens_multidimensional_local_array_indices() {
 }
 
 #[test]
-fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
+fn c_syntax_lowers_nested_multidimensional_array_initializers() {
     let function = syntax::parse_function(
         r#"
         int32 matrix_initializer() {
@@ -8138,7 +8134,7 @@ fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
 }
 
 #[test]
-fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
+fn c_syntax_lowers_local_struct_array_fields_with_abi_stride() {
     let function = syntax::parse_function(
         r#"
         struct item {
@@ -8201,7 +8197,7 @@ fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
 }
 
 #[test]
-fn c0_syntax_lowers_local_struct_array_initializers() {
+fn c_syntax_lowers_local_struct_array_initializers() {
     let function = syntax::parse_function(
         r#"
         struct inner {
@@ -8335,7 +8331,7 @@ fn c0_syntax_lowers_local_struct_array_initializers() {
 }
 
 #[test]
-fn c0_local_struct_array_designators_require_constant_in_range_indices() {
+fn c_local_struct_array_designators_require_constant_in_range_indices() {
     for (source, expected) in [
         (
             r#"
@@ -8366,7 +8362,7 @@ fn c0_local_struct_array_designators_require_constant_in_range_indices() {
 }
 
 #[test]
-fn c0_syntax_struct_array_parameter_retains_abi_stride() {
+fn c_syntax_struct_array_parameter_retains_abi_stride() {
     let function = syntax::parse_function(
         r#"
         struct item {
@@ -8394,7 +8390,7 @@ fn c0_syntax_struct_array_parameter_retains_abi_stride() {
 }
 
 #[test]
-fn c0_syntax_local_array_decays_to_pointer_argument() {
+fn c_syntax_local_array_decays_to_pointer_argument() {
     let read_first = syntax::parse_function(
         r#"
         int32 read_first(int32* p) {
@@ -8467,7 +8463,7 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
 }
 
 #[test]
-fn c0_struct_layout_uses_lp64_alignment_and_tail_padding() {
+fn c_struct_layout_uses_lp64_alignment_and_tail_padding() {
     let function = syntax::parse_function(
         r#"
         struct mixed {
@@ -8492,7 +8488,7 @@ fn c0_struct_layout_uses_lp64_alignment_and_tail_padding() {
 }
 
 #[test]
-fn c0_struct_alignment_attribute_extends_layout() {
+fn c_struct_alignment_attribute_extends_layout() {
     let functions = syntax::parse_functions(
         r#"
         struct aligned_node {
@@ -8529,7 +8525,7 @@ fn c0_struct_alignment_attribute_extends_layout() {
 }
 
 #[test]
-fn c0_rejects_unsupported_struct_alignment_attributes() {
+fn c_rejects_unsupported_struct_alignment_attributes() {
     let error = syntax::parse_functions(
         "struct packed_node { int32 value; } __attribute__((packed)); int32 read() { return 0; }",
     )
@@ -8544,7 +8540,7 @@ fn c0_rejects_unsupported_struct_alignment_attributes() {
 }
 
 #[test]
-fn c0_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
+fn c_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
     #[repr(C)]
     struct HostPacket {
         tag: u8,
@@ -8637,7 +8633,7 @@ fn c0_struct_layout_preserves_wide_scalar_field_types_and_lp64_offsets() {
 }
 
 #[test]
-fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
+fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -8735,7 +8731,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
 }
 
 #[test]
-fn c0_scalar_struct_values_preserve_named_kernel_layout_metadata() {
+fn c_scalar_struct_values_preserve_named_kernel_layout_metadata() {
     let function = syntax::parse_function(
         r#"
         struct pair {
@@ -8789,7 +8785,7 @@ fn c0_scalar_struct_values_preserve_named_kernel_layout_metadata() {
 }
 
 #[test]
-fn c0_struct_values_preserve_wide_scalar_layout_metadata() {
+fn c_struct_values_preserve_wide_scalar_layout_metadata() {
     let function = syntax::parse_function(
         r#"
         struct widths {
@@ -8843,7 +8839,7 @@ fn c0_struct_values_preserve_wide_scalar_layout_metadata() {
 }
 
 #[test]
-fn c0_struct_values_flatten_embedded_layout_for_recursive_copies() {
+fn c_struct_values_flatten_embedded_layout_for_recursive_copies() {
     #[repr(C)]
     struct HostInner {
         value: i32,
@@ -8942,7 +8938,7 @@ fn c0_struct_values_flatten_embedded_layout_for_recursive_copies() {
 }
 
 #[test]
-fn c0_struct_values_flatten_embedded_array_layout_for_recursive_copies() {
+fn c_struct_values_flatten_embedded_array_layout_for_recursive_copies() {
     #[repr(C)]
     struct HostInner {
         value: i32,
@@ -9046,7 +9042,7 @@ fn c0_struct_values_flatten_embedded_array_layout_for_recursive_copies() {
 }
 
 #[test]
-fn c0_struct_values_flatten_multidimensional_embedded_array_layout_for_recursive_copies() {
+fn c_struct_values_flatten_multidimensional_embedded_array_layout_for_recursive_copies() {
     #[repr(C)]
     struct HostInner {
         value: i32,
@@ -9135,7 +9131,7 @@ fn c0_struct_values_flatten_multidimensional_embedded_array_layout_for_recursive
 }
 
 #[test]
-fn c0_struct_values_preserve_pointer_field_layout_metadata() {
+fn c_struct_values_preserve_pointer_field_layout_metadata() {
     #[repr(C)]
     struct HostPacket {
         data: *mut i32,
@@ -9188,7 +9184,7 @@ fn c0_struct_values_preserve_pointer_field_layout_metadata() {
 }
 
 #[test]
-fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
+fn c_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -9277,7 +9273,7 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
 }
 
 #[test]
-fn c0_accepts_union_struct_values_with_overlapping_metadata() {
+fn c_accepts_union_struct_values_with_overlapping_metadata() {
     syntax::parse_function(
         r#"
         union payload {
@@ -9299,7 +9295,7 @@ fn c0_accepts_union_struct_values_with_overlapping_metadata() {
 }
 
 #[test]
-fn c0_rejects_unsupported_static_aggregate_initializer_forms() {
+fn c_rejects_unsupported_static_aggregate_initializer_forms() {
     for (source, expected) in [
         (
             r#"
@@ -9338,7 +9334,7 @@ fn c0_rejects_unsupported_static_aggregate_initializer_forms() {
 }
 
 #[test]
-fn c0_struct_values_preserve_inline_array_layout_metadata() {
+fn c_struct_values_preserve_inline_array_layout_metadata() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -9395,7 +9391,7 @@ fn c0_struct_values_preserve_inline_array_layout_metadata() {
 }
 
 #[test]
-fn c0_scalar_struct_values_allow_named_enum_fields() {
+fn c_scalar_struct_values_allow_named_enum_fields() {
     let function = syntax::parse_function(
         r#"
         enum packet_state {
@@ -9445,7 +9441,7 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
 }
 
 #[test]
-fn c0_struct_layout_preserves_inline_scalar_array_shape() {
+fn c_struct_layout_preserves_inline_scalar_array_shape() {
     #[repr(C)]
     struct HostPacket {
         buf: [u8; 16],
@@ -9500,7 +9496,7 @@ fn c0_struct_layout_preserves_inline_scalar_array_shape() {
 }
 
 #[test]
-fn c0_struct_layout_preserves_multidimensional_scalar_array_shape() {
+fn c_struct_layout_preserves_multidimensional_scalar_array_shape() {
     #[repr(C)]
     struct HostPacket {
         tag: u8,
@@ -9564,7 +9560,7 @@ fn c0_struct_layout_preserves_multidimensional_scalar_array_shape() {
 }
 
 #[test]
-fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
+fn c_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -9632,7 +9628,7 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
 }
 
 #[test]
-fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
+fn c_struct_multidimensional_scalar_array_field_flattens_row_major() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -9701,7 +9697,7 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
 }
 
 #[test]
-fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
+fn c_struct_scalar_array_element_address_preserves_row_major_offset() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -9716,16 +9712,16 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
     )
     .expect("address of an inline scalar array element should parse");
 
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) = function.body()
+    let syntax::CStatement::Return(syntax::CExpression::AddressOf(target), _) = function.body()
     else {
         panic!("array element address should remain an address-of lvalue")
     };
-    let syntax::C0Expression::Index(base, index, _) = target.as_ref() else {
+    let syntax::CExpression::Index(base, index, _) = target.as_ref() else {
         panic!("array element address should target an indexed lvalue")
     };
     assert!(matches!(
         base.as_ref(),
-        syntax::C0Expression::Field {
+        syntax::CExpression::Field {
             field_type: crate::languages::interface::InterfaceType::Int32Array(6),
             array_shape: Some(shape),
             ..
@@ -9733,11 +9729,11 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
     ));
     assert!(matches!(
         index.as_ref(),
-        syntax::C0Expression::Add(left, right)
-            if matches!(left.as_ref(), syntax::C0Expression::Multiply(multiplier, stride)
-                if matches!(multiplier.as_ref(), syntax::C0Expression::Int32Literal(1))
-                    && matches!(stride.as_ref(), syntax::C0Expression::Int32Literal(3)))
-                && matches!(right.as_ref(), syntax::C0Expression::Int32Literal(2))
+        syntax::CExpression::Add(left, right)
+            if matches!(left.as_ref(), syntax::CExpression::Multiply(multiplier, stride)
+                if matches!(multiplier.as_ref(), syntax::CExpression::Int32Literal(1))
+                    && matches!(stride.as_ref(), syntax::CExpression::Int32Literal(3)))
+                && matches!(right.as_ref(), syntax::CExpression::Int32Literal(2))
     ));
 
     let crate::kernel::ProgramStatement::Return(crate::kernel::ProgramExpression::AddressOf(
@@ -9770,7 +9766,7 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
 }
 
 #[test]
-fn c0_struct_scalar_array_element_address_executes_at_element_width() {
+fn c_struct_scalar_array_element_address_executes_at_element_width() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -9854,7 +9850,7 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
 }
 
 #[test]
-fn c0_struct_byte_array_element_address_executes_at_byte_width() {
+fn c_struct_byte_array_element_address_executes_at_byte_width() {
     let function = syntax::parse_function(
         r#"
         struct packet {
@@ -9937,7 +9933,7 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
 }
 
 #[test]
-fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
+fn c_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
     #[repr(C)]
     struct HostInner {
         value: i32,
@@ -10049,7 +10045,7 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
 }
 
 #[test]
-fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
+fn c_multidimensional_embedded_struct_array_preserves_row_major_stride() {
     #[repr(C)]
     struct HostInner {
         value: i32,
@@ -10162,7 +10158,7 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
 }
 
 #[test]
-fn c0_lp64_layout_matches_the_host_c_abi() {
+fn c_lp64_layout_matches_the_host_c_abi() {
     #[repr(C)]
     struct HostMixed {
         tag: i32,
@@ -10214,7 +10210,7 @@ fn c0_lp64_layout_matches_the_host_c_abi() {
 }
 
 #[test]
-fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
+fn c_struct_field_lowering_uses_explicit_byte_offsets() {
     let function = syntax::parse_function(
         r#"
         struct mixed {
@@ -10228,18 +10224,17 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
         "#,
     )
     .expect("mixed struct getter should parse");
-    let syntax::C0Statement::Return(syntax::C0Expression::Field { pointer, .. }, _) =
-        function.body()
+    let syntax::CStatement::Return(syntax::CExpression::Field { pointer, .. }, _) = function.body()
     else {
         panic!("getter should return a field load")
     };
     // The member pointer is narrowed to the member's own eight bytes.
-    let syntax::C0Expression::Subobject { pointer, width: 8 } = pointer.as_ref() else {
+    let syntax::CExpression::Subobject { pointer, width: 8 } = pointer.as_ref() else {
         panic!("a member access should designate the member")
     };
     assert!(matches!(
         pointer.as_ref(),
-        syntax::C0Expression::PointerOffsetBytes { bytes: 8, .. }
+        syntax::CExpression::PointerOffsetBytes { bytes: 8, .. }
     ));
     let crate::kernel::ProgramStatement::Return(crate::kernel::ProgramExpression::TypedLoad {
         pointer,
@@ -10259,7 +10254,7 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
 }
 
 #[test]
-fn c0_field_source_ids_distinguish_same_layout_occurrences() {
+fn c_field_source_ids_distinguish_same_layout_occurrences() {
     let functions = syntax::parse_functions_for_source(
         r#"
         struct pair { int32 value; };
@@ -10270,8 +10265,7 @@ fn c0_field_source_ids_distinguish_same_layout_occurrences() {
         "field-id.c",
     )
     .expect("same-layout field accesses should parse");
-    let syntax::C0Statement::Return(syntax::C0Expression::Add(left, right), _) =
-        functions[0].body()
+    let syntax::CStatement::Return(syntax::CExpression::Add(left, right), _) = functions[0].body()
     else {
         panic!("the two field accesses should remain in the return expression")
     };
@@ -10289,7 +10283,7 @@ fn c0_field_source_ids_distinguish_same_layout_occurrences() {
 }
 
 #[test]
-fn c0_field_source_id_reaches_the_kernel_typed_load() {
+fn c_field_source_id_reaches_the_kernel_typed_load() {
     let functions = syntax::parse_functions_for_source(
         r#"
         struct owner { int32 len; };
@@ -10316,7 +10310,7 @@ fn c0_field_source_id_reaches_the_kernel_typed_load() {
 }
 
 #[test]
-fn c0_field_source_ids_survive_expression_rebuilds() {
+fn c_field_source_ids_survive_expression_rebuilds() {
     let functions = syntax::parse_functions_for_source(
         r#"
         int32 helper(int32 value);
@@ -10328,11 +10322,11 @@ fn c0_field_source_ids_survive_expression_rebuilds() {
         "field-rebuild.c",
     )
     .expect("call argument field access should parse");
-    fn call_argument(statement: &syntax::C0Statement) -> Option<&syntax::C0Expression> {
+    fn call_argument(statement: &syntax::CStatement) -> Option<&syntax::CExpression> {
         match statement {
-            syntax::C0Statement::CallAssign { arguments, .. }
-            | syntax::C0Statement::CallResult { arguments, .. } => arguments.first(),
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::CallAssign { arguments, .. }
+            | syntax::CStatement::CallResult { arguments, .. } => arguments.first(),
+            syntax::CStatement::Seq(first, second) => {
                 call_argument(first).or_else(|| call_argument(second))
             }
             _ => None,
@@ -10349,7 +10343,7 @@ fn c0_field_source_ids_survive_expression_rebuilds() {
 }
 
 #[test]
-fn c0_synthesized_aggregate_copy_fields_have_no_source_ids() {
+fn c_synthesized_aggregate_copy_fields_have_no_source_ids() {
     let function = syntax::parse_function(
         r#"
         struct pair { int32 value; int32 other; };
@@ -10359,13 +10353,13 @@ fn c0_synthesized_aggregate_copy_fields_have_no_source_ids() {
         "#,
     )
     .expect("aggregate copy should parse");
-    fn assert_synthesized_fields_are_unidentified(statement: &syntax::C0Statement) -> usize {
+    fn assert_synthesized_fields_are_unidentified(statement: &syntax::CStatement) -> usize {
         match statement {
-            syntax::C0Statement::Store { value, .. } => {
+            syntax::CStatement::Store { value, .. } => {
                 assert!(value.field_source().is_none());
                 1
             }
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 assert_synthesized_fields_are_unidentified(first)
                     + assert_synthesized_fields_are_unidentified(second)
             }
@@ -10380,7 +10374,7 @@ fn c0_synthesized_aggregate_copy_fields_have_no_source_ids() {
 }
 
 #[test]
-fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
+fn c_struct_field_address_lowering_preserves_nested_byte_offset() {
     #[repr(C)]
     struct HostInner {
         flag: u8,
@@ -10428,11 +10422,11 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         std::mem::offset_of!(HostInner, value)
     );
 
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) = function.body()
+    let syntax::CStatement::Return(syntax::CExpression::AddressOf(target), _) = function.body()
     else {
         panic!("nested field address should remain an address-of lvalue")
     };
-    let syntax::C0Expression::Field {
+    let syntax::CExpression::Field {
         pointer,
         field_type,
         ..
@@ -10446,11 +10440,11 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
     );
     // Each member selection designates that member: the leaf `value`, and
     // within it the embedded `inner` it was reached through.
-    let syntax::C0Expression::Subobject { pointer, width } = pointer.as_ref() else {
+    let syntax::CExpression::Subobject { pointer, width } = pointer.as_ref() else {
         panic!("the leaf member address should designate the leaf member")
     };
     assert_eq!(*width as usize, std::mem::size_of::<i32>());
-    let syntax::C0Expression::PointerOffsetBytes {
+    let syntax::CExpression::PointerOffsetBytes {
         pointer: inner_pointer,
         bytes: inner_offset,
     } = pointer.as_ref()
@@ -10458,7 +10452,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         panic!("nested field address should include the inner field offset")
     };
     assert_eq!(*inner_offset, std::mem::offset_of!(HostInner, value) as u32);
-    let syntax::C0Expression::Subobject {
+    let syntax::CExpression::Subobject {
         pointer: inner_pointer,
         width: inner_width,
     } = inner_pointer.as_ref()
@@ -10468,7 +10462,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
     assert_eq!(*inner_width as usize, std::mem::size_of::<HostInner>());
     assert!(matches!(
         inner_pointer.as_ref(),
-        syntax::C0Expression::PointerOffsetBytes { bytes, .. }
+        syntax::CExpression::PointerOffsetBytes { bytes, .. }
             if *bytes == std::mem::offset_of!(HostOuter, inner) as u32
     ));
 
@@ -10512,7 +10506,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
 }
 
 #[test]
-fn c0_address_of_int16_preserves_pointer_type() {
+fn c_address_of_int16_preserves_pointer_type() {
     let function = syntax::parse_function(
         r#"
         int16* address_short() {
@@ -10546,7 +10540,7 @@ fn c0_address_of_int16_preserves_pointer_type() {
 }
 
 #[test]
-fn c0_syntax_rejects_assignment_to_local_array_object() {
+fn c_syntax_rejects_assignment_to_local_array_object() {
     let function = syntax::parse_function(
         r#"
         int32 bad_assign(int32* p) {
@@ -10587,7 +10581,7 @@ fn c0_syntax_rejects_assignment_to_local_array_object() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_int32_subtraction_and_comparisons() {
+fn c_syntax_targets_kernel_int32_subtraction_and_comparisons() {
     let function = syntax::parse_function(
         r#"
         int32 adjust(int32 x) {
@@ -10631,7 +10625,7 @@ fn c0_syntax_targets_kernel_int32_subtraction_and_comparisons() {
 }
 
 #[test]
-fn c0_if_condition_uses_c_int32_truthiness() {
+fn c_if_condition_uses_c_int32_truthiness() {
     let function = syntax::parse_function(
         r#"
         int32 truthy(int32 x) {
@@ -10693,7 +10687,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
 }
 
 #[test]
-fn c0_clamp_demo_proves_symbolic_branch_specifications() {
+fn c_clamp_demo_proves_symbolic_branch_specifications() {
     let function = syntax::parse_function(
         r#"
         int32 clamp(int32 x, int32 lo, int32 hi) {
@@ -10790,7 +10784,7 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
 }
 
 #[test]
-fn c0_equality_binds_looser_than_relational_comparison() {
+fn c_equality_binds_looser_than_relational_comparison() {
     let mixed = syntax::parse_function(
         r#"
         int32 mixed(int32 a, int32 b, int32 c) {
@@ -10801,9 +10795,9 @@ fn c0_equality_binds_looser_than_relational_comparison() {
     .expect("a mixed equality and relational chain should parse");
     assert!(matches!(
         mixed.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right), _)
-            if matches!(left.as_ref(), syntax::C0Expression::Variable(name) if name == "a")
-                && matches!(right.as_ref(), syntax::C0Expression::LessThan(_, _))
+        syntax::CStatement::Return(syntax::CExpression::Equal(left, right), _)
+            if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name == "a")
+                && matches!(right.as_ref(), syntax::CExpression::LessThan(_, _))
     ));
 
     let paired = syntax::parse_function(
@@ -10816,14 +10810,14 @@ fn c0_equality_binds_looser_than_relational_comparison() {
     .expect("relational operands on both sides of `==` should parse");
     assert!(matches!(
         paired.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right), _)
-            if matches!(left.as_ref(), syntax::C0Expression::LessThan(_, _))
-                && matches!(right.as_ref(), syntax::C0Expression::LessThan(_, _))
+        syntax::CStatement::Return(syntax::CExpression::Equal(left, right), _)
+            if matches!(left.as_ref(), syntax::CExpression::LessThan(_, _))
+                && matches!(right.as_ref(), syntax::CExpression::LessThan(_, _))
     ));
 }
 
 #[test]
-fn c0_syntax_accepts_a_declaration_that_shadows_an_enclosing_local() {
+fn c_syntax_accepts_a_declaration_that_shadows_an_enclosing_local() {
     let function = syntax::parse_function(
         r#"
         int32 shadow(int32 c) {
@@ -10836,7 +10830,7 @@ fn c0_syntax_accepts_a_declaration_that_shadows_an_enclosing_local() {
     .expect("an inner `int32 y` gets a distinct kernel identity");
     assert!(
         format!("{:?}", function.body()).contains("y#scope0"),
-        "the shadowed declaration should be renamed in the lowered C0 body"
+        "the shadowed declaration should be renamed in the lowered C body"
     );
     assert!(
         format!("{:?}", function.body()).contains("y#scope1"),
@@ -10845,7 +10839,7 @@ fn c0_syntax_accepts_a_declaration_that_shadows_an_enclosing_local() {
 }
 
 #[test]
-fn c0_syntax_accepts_a_declaration_that_shadows_a_parameter() {
+fn c_syntax_accepts_a_declaration_that_shadows_a_parameter() {
     let function = syntax::parse_function(
         r#"
         struct S { int32 a; int32 b; };
@@ -10859,12 +10853,12 @@ fn c0_syntax_accepts_a_declaration_that_shadows_a_parameter() {
     .expect("an inner `struct T *p` gets a distinct kernel identity");
     assert!(
         format!("{:?}", function.body()).contains("p#scope0"),
-        "the shadowed pointer declaration should be renamed in the lowered C0 body"
+        "the shadowed pointer declaration should be renamed in the lowered C body"
     );
 }
 
 #[test]
-fn c0_syntax_accepts_sibling_scopes_reusing_a_name() {
+fn c_syntax_accepts_sibling_scopes_reusing_a_name() {
     // `q->z` exists only in `T` and `q->a` only in `S`: the second arm parses
     // only if the first arm's struct binding for `q` ended with its block.
     syntax::parse_function(
@@ -10885,7 +10879,7 @@ fn c0_syntax_accepts_sibling_scopes_reusing_a_name() {
 }
 
 #[test]
-fn c0_syntax_rejects_for_initializer_name_after_loop() {
+fn c_syntax_rejects_for_initializer_name_after_loop() {
     let error = syntax::parse_function(
         r#"
         int32 for_initializer_scope_rejected() {
@@ -10903,7 +10897,7 @@ fn c0_syntax_rejects_for_initializer_name_after_loop() {
 }
 
 #[test]
-fn c0_syntax_accepts_else_if_and_unbraced_controlled_statements() {
+fn c_syntax_accepts_else_if_and_unbraced_controlled_statements() {
     let function = syntax::parse_function(
         r#"
         int32 classify(int32 x) {
@@ -10919,12 +10913,12 @@ fn c0_syntax_accepts_else_if_and_unbraced_controlled_statements() {
     .expect("else-if arms may contain one unbraced statement");
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::If {
+        syntax::CStatement::If {
             then_branch,
             else_branch,
             ..
-        } if matches!(then_branch.as_ref(), syntax::C0Statement::Return(_, _))
-            && matches!(else_branch.as_ref(), syntax::C0Statement::If { .. })
+        } if matches!(then_branch.as_ref(), syntax::CStatement::Return(_, _))
+            && matches!(else_branch.as_ref(), syntax::CStatement::If { .. })
     ));
 
     syntax::parse_function(
@@ -10943,7 +10937,7 @@ fn c0_syntax_accepts_else_if_and_unbraced_controlled_statements() {
 }
 
 #[test]
-fn c0_syntax_rejects_a_declaration_as_an_unbraced_controlled_statement() {
+fn c_syntax_rejects_a_declaration_as_an_unbraced_controlled_statement() {
     let error = syntax::parse_function(
         r#"
         int32 invalid(int32 condition) {
@@ -10964,7 +10958,7 @@ fn c0_syntax_rejects_a_declaration_as_an_unbraced_controlled_statement() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_known_function_call_assignment() {
+fn c_syntax_targets_kernel_known_function_call_assignment() {
     let increment = syntax::parse_function(
         r#"
         int32 increment(int32 x) {
@@ -11011,7 +11005,7 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
         environment,
         crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
-    .expect("known C0 function call should execute");
+    .expect("known C function call should execute");
 
     assert_eq!(
         theorem.proposition(),
@@ -11028,7 +11022,7 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_float_argument_conversion() {
+fn c_syntax_targets_kernel_float_argument_conversion() {
     let widen = syntax::parse_function(
         r#"
         double widen(double value) {
@@ -11083,7 +11077,7 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
 }
 
 #[test]
-fn c0_syntax_lowers_calls_in_expression_position() {
+fn c_syntax_lowers_calls_in_expression_position() {
     let function = syntax::parse_function(
         r#"
         int32 caller(int32 x) {
@@ -11105,12 +11099,12 @@ fn c0_syntax_lowers_calls_in_expression_position() {
     );
     assert!(
         !debug.contains("Call {"),
-        "the lowered C0 body contains no expression-level call nodes"
+        "the lowered C body contains no expression-level call nodes"
     );
 }
 
 #[test]
-fn c0_syntax_rejects_an_undeclared_identifier_in_a_value_position() {
+fn c_syntax_rejects_an_undeclared_identifier_in_a_value_position() {
     let error = syntax::parse_function(
         r#"
         int32 caller(int32 x) {
@@ -11126,7 +11120,7 @@ fn c0_syntax_rejects_an_undeclared_identifier_in_a_value_position() {
 }
 
 #[test]
-fn c0_syntax_accepts_a_call_to_a_function_from_another_source() {
+fn c_syntax_accepts_a_call_to_a_function_from_another_source() {
     // `increment` is defined in a different translation unit; the linker
     // resolves it after each source is parsed, so the call position must not
     // be mistaken for an undeclared object reference.
@@ -11145,7 +11139,7 @@ fn c0_syntax_accepts_a_call_to_a_function_from_another_source() {
 }
 
 #[test]
-fn c0_syntax_lowers_calls_in_conditional_expression_branches() {
+fn c_syntax_lowers_calls_in_conditional_expression_branches() {
     let function = syntax::parse_function(
         r#"
         int32 caller(int32 condition) {
@@ -11164,15 +11158,15 @@ fn c0_syntax_lowers_calls_in_conditional_expression_branches() {
         !debug.contains("Ternary {"),
         "the lowered body does not evaluate conditional call branches eagerly"
     );
-    fn has_operator_value(statement: &syntax::C0Statement) -> bool {
+    fn has_operator_value(statement: &syntax::CStatement) -> bool {
         match statement {
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 operator: Some(_),
                 then_branch,
                 ..
-            } => matches!(**then_branch, syntax::C0Statement::Seq(_, ref value)
-                if matches!(**value, syntax::C0Statement::StepValue { .. })),
-            syntax::C0Statement::Seq(first, second) => {
+            } => matches!(**then_branch, syntax::CStatement::Seq(_, ref value)
+                if matches!(**value, syntax::CStatement::StepValue { .. })),
+            syntax::CStatement::Seq(first, second) => {
                 has_operator_value(first) || has_operator_value(second)
             }
             _ => false,
@@ -11189,7 +11183,7 @@ fn c0_syntax_lowers_calls_in_conditional_expression_branches() {
 }
 
 #[test]
-fn c0_syntax_lowers_calls_in_short_circuit_right_operands() {
+fn c_syntax_lowers_calls_in_short_circuit_right_operands() {
     for (source, operator) in [
         (
             r#"
@@ -11227,7 +11221,7 @@ fn c0_syntax_lowers_calls_in_short_circuit_right_operands() {
 }
 
 #[test]
-fn c0_syntax_lowers_aggregate_conditional_call_argument() {
+fn c_syntax_lowers_aggregate_conditional_call_argument() {
     let functions = syntax::parse_functions(
         r#"
         struct inner { int32 value; uint8 enabled; };
@@ -11256,7 +11250,7 @@ fn c0_syntax_lowers_aggregate_conditional_call_argument() {
 }
 
 #[test]
-fn c0_syntax_lowers_calls_in_reevaluated_loop_conditions() {
+fn c_syntax_lowers_calls_in_reevaluated_loop_conditions() {
     let function = syntax::parse_function(
         r#"
         int32 caller() {
@@ -11290,7 +11284,7 @@ fn c0_syntax_lowers_calls_in_reevaluated_loop_conditions() {
 }
 
 #[test]
-fn c0_assignment_expression_result_uses_the_target_type() {
+fn c_assignment_expression_result_uses_the_target_type() {
     let function = syntax::parse_function(
         r#"
         uint8 converted_assignment_result() {
@@ -11323,7 +11317,7 @@ fn c0_assignment_expression_result_uses_the_target_type() {
 }
 
 #[test]
-fn c0_assignment_expression_short_circuits_a_guard_read() {
+fn c_assignment_expression_short_circuits_a_guard_read() {
     let function = syntax::parse_function(
         r#"
         struct item { int32 value; };
@@ -11362,7 +11356,7 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
 }
 
 #[test]
-fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
+fn c_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     let calls_owner = crate::kernel::ResourceSpec::owned_memory(crate::kernel::MemorySegment::new(
         crate::kernel::program_expression::variable("calls"),
         crate::kernel::program_expression::int32_literal(0),
@@ -11435,7 +11429,7 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
 }
 
 #[test]
-fn c0_assignment_expression_preserves_unsequenced_call_read_rejection() {
+fn c_assignment_expression_preserves_unsequenced_call_read_rejection() {
     let error = syntax::parse_functions(
         r#"
         int32 mutate(int32 *p);
@@ -11453,7 +11447,7 @@ fn c0_assignment_expression_preserves_unsequenced_call_read_rejection() {
 }
 
 #[test]
-fn c0_assignment_expression_rejects_unlowerable_lvalue_and_short_circuit_shapes() {
+fn c_assignment_expression_rejects_unlowerable_lvalue_and_short_circuit_shapes() {
     let memory_error = syntax::parse_function(
         r#"
         int32 memory_target(int32 *p) {
@@ -11498,7 +11492,7 @@ fn c0_assignment_expression_rejects_unlowerable_lvalue_and_short_circuit_shapes(
 }
 
 #[test]
-fn c0_syntax_rejects_multiple_unsequenced_expression_calls() {
+fn c_syntax_rejects_multiple_unsequenced_expression_calls() {
     let error = syntax::parse_function(
         r#"
         int32 caller(int32 x) {
@@ -11517,7 +11511,7 @@ fn c0_syntax_rejects_multiple_unsequenced_expression_calls() {
 }
 
 #[test]
-fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
+fn c_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
     let parsed = syntax::parse_functions(
         r#"
         union payload {
@@ -11589,7 +11583,7 @@ fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
 }
 
 #[test]
-fn c0_gnu_field_alignment_changes_aggregate_layout() {
+fn c_gnu_field_alignment_changes_aggregate_layout() {
     let unit = syntax::parse_translation_unit_for_source(
         "struct aligned { char pad; int32 value __attribute__((aligned(16))); char tail; }; \
          union overlay { int32 value __attribute__((__aligned__(__alignof__(long long)))); char bytes[3]; };",
@@ -11620,7 +11614,7 @@ fn c0_gnu_field_alignment_changes_aggregate_layout() {
 }
 
 #[test]
-fn c0_gnu_access_annotation_is_parsed_without_proof_authority() {
+fn c_gnu_access_annotation_is_parsed_without_proof_authority() {
     let declaration = "extern int32 record(void *ptr, int32 count, const char *name) __attribute__((__access__(__none__, 1), __access__(__read_only__, 3, 2)));";
     syntax::validate_header(declaration, &source::ExpandedLineMap::empty())
         .expect("well-formed access annotations should import");
@@ -11638,7 +11632,7 @@ fn c0_gnu_access_annotation_is_parsed_without_proof_authority() {
 }
 
 #[test]
-fn c0_asm_labeled_returns_twice_declaration_preserves_link_target_and_refuses_use() {
+fn c_asm_labeled_returns_twice_declaration_preserves_link_target_and_refuses_use() {
     let declaration =
         "extern int32 jump(void) __asm__(\"\" \"__jump_impl\") __attribute__((__returns_twice__));";
     let unit = syntax::parse_translation_unit_for_source(
@@ -11677,7 +11671,7 @@ fn c0_asm_labeled_returns_twice_declaration_preserves_link_target_and_refuses_us
 }
 
 #[test]
-fn c0_weak_function_declaration_requires_availability_before_use() {
+fn c_weak_function_declaration_requires_availability_before_use() {
     let declaration = "extern int32 optional(void) __attribute__((__weak__));";
     syntax::validate_header(declaration, &source::ExpandedLineMap::empty())
         .expect("weak declaration should import");
@@ -11708,7 +11702,7 @@ fn c0_weak_function_declaration_requires_availability_before_use() {
 }
 
 #[test]
-fn c0_gnu_aligned_typedef_preserves_pointer_only_boundary() {
+fn c_gnu_aligned_typedef_preserves_pointer_only_boundary() {
     let source = "typedef struct { int32 value; } buffer __attribute__((__aligned__)); \
                   int32 inspect(buffer *buf) { return buf->value; }";
     syntax::parse_functions(source).expect("pointer to aligned typedef may be imported");
@@ -11728,7 +11722,7 @@ fn c0_gnu_aligned_typedef_preserves_pointer_only_boundary() {
 }
 
 #[test]
-fn c0_function_pointer_void_parameter_list_is_empty() {
+fn c_function_pointer_void_parameter_list_is_empty() {
     let function =
         syntax::parse_function("int32 run(void (*callback)(void)) { callback(); return 0; }")
             .expect("a sole void denotes an empty callback parameter list");
@@ -11746,7 +11740,7 @@ fn c0_function_pointer_void_parameter_list_is_empty() {
 }
 
 #[test]
-fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
+fn c_function_pointers_preserve_signature_and_dispatch_callback() {
     let callback =
         syntax::parse_function("int32 compare(int32 left, int32 right) { return left - right; }")
             .expect("callback should parse")
@@ -11824,7 +11818,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
 }
 
 #[test]
-fn c0_function_pointers_reject_incompatible_callback_targets() {
+fn c_function_pointers_reject_incompatible_callback_targets() {
     let wrong =
         syntax::parse_function("uint8 wrong(uint8 left, uint8 right) { return left - right; }")
             .expect("incompatible callback should parse")
@@ -11867,7 +11861,7 @@ fn c0_function_pointers_reject_incompatible_callback_targets() {
 }
 
 #[test]
-fn c0_function_pointer_signatures_preserve_struct_pointer_tags() {
+fn c_function_pointer_signatures_preserve_struct_pointer_tags() {
     let functions = syntax::parse_functions(
         r#"
         struct node { int32 value; };
@@ -11908,7 +11902,7 @@ fn c0_function_pointer_signatures_preserve_struct_pointer_tags() {
 }
 
 #[test]
-fn c0_struct_function_pointer_fields_preserve_signature_and_lp64_layout() {
+fn c_struct_function_pointer_fields_preserve_signature_and_lp64_layout() {
     let function = syntax::parse_function(
         r#"
         struct callback_table {
@@ -11956,7 +11950,7 @@ fn c0_struct_function_pointer_fields_preserve_signature_and_lp64_layout() {
 }
 
 #[test]
-fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
+fn c_struct_function_pointer_fields_load_and_dispatch_known_targets() {
     let functions = syntax::parse_functions(
         r#"
         struct callback_table {
@@ -12041,7 +12035,7 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
 }
 
 #[test]
-fn c0_struct_function_pointer_fields_support_direct_calls() {
+fn c_struct_function_pointer_fields_support_direct_calls() {
     let functions = syntax::parse_functions(
         r#"
         struct callback_table {
@@ -12114,7 +12108,7 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
 }
 
 #[test]
-fn c0_struct_function_pointer_fields_reject_nominally_wrong_direct_arguments() {
+fn c_struct_function_pointer_fields_reject_nominally_wrong_direct_arguments() {
     let error = syntax::parse_functions(
         r#"
         struct left { int32 value; };
@@ -12139,7 +12133,7 @@ fn c0_struct_function_pointer_fields_reject_nominally_wrong_direct_arguments() {
 }
 
 #[test]
-fn c0_struct_function_pointer_fields_reject_incompatible_targets() {
+fn c_struct_function_pointer_fields_reject_incompatible_targets() {
     let error = syntax::parse_functions(
         r#"
         struct callback_table {
@@ -12166,7 +12160,7 @@ fn c0_struct_function_pointer_fields_reject_incompatible_targets() {
 }
 
 #[test]
-fn c0_function_pointer_signatures_reject_nominally_wrong_struct_targets() {
+fn c_function_pointer_signatures_reject_nominally_wrong_struct_targets() {
     let error = syntax::parse_functions(
         r#"
         struct left { int32 value; };
@@ -12198,7 +12192,7 @@ fn c0_function_pointer_signatures_reject_nominally_wrong_struct_targets() {
 }
 
 #[test]
-fn c0_void_pointers_are_opaque_object_views() {
+fn c_void_pointers_are_opaque_object_views() {
     let functions = syntax::parse_functions(
         r#"
         int32 compare(const void *left, const void *right) {
@@ -12270,7 +12264,7 @@ fn c0_void_pointers_are_opaque_object_views() {
 }
 
 #[test]
-fn c0_syntax_targets_kernel_while_countdown() {
+fn c_syntax_targets_kernel_while_countdown() {
     let function = syntax::parse_function(
         r#"
         int32 countdown(int32 x) {
@@ -12309,7 +12303,7 @@ fn c0_syntax_targets_kernel_while_countdown() {
 }
 
 #[test]
-fn c0_memory_safety_demo_fill_three_ints() {
+fn c_memory_safety_demo_fill_three_ints() {
     let function = syntax::parse_function(
         r#"
         int32 fill3(int32* p) {
@@ -12387,7 +12381,7 @@ fn c0_memory_safety_demo_fill_three_ints() {
 }
 
 #[test]
-fn c0_floating_point_storage_types_preserve_abi_layout() {
+fn c_floating_point_storage_types_preserve_abi_layout() {
     let parsed = syntax::parse_function(
         r#"
         struct packet {
@@ -12433,8 +12427,8 @@ fn c0_floating_point_storage_types_preserve_abi_layout() {
 }
 
 #[test]
-fn c0_floating_point_literals_may_start_with_a_decimal_point() {
-    use syntax::C0Expression::{Float32Literal, Float64Literal};
+fn c_floating_point_literals_may_start_with_a_decimal_point() {
+    use syntax::CExpression::{Float32Literal, Float64Literal};
 
     for (interface_type, literal, expected) in [
         ("double", ".5", Float64Literal(0.5f64.to_bits())),
@@ -12449,7 +12443,7 @@ fn c0_floating_point_literals_may_start_with_a_decimal_point() {
         let function = syntax::parse_function(&source).expect(&source);
         assert_eq!(
             function.body(),
-            &syntax::C0Statement::Return(expected, syntax::C0Site::NONE),
+            &syntax::CStatement::Return(expected, syntax::CSite::NONE),
             "{source}"
         );
     }
@@ -12461,14 +12455,14 @@ fn c0_floating_point_literals_may_start_with_a_decimal_point() {
 }
 
 #[test]
-fn c0_floating_point_literals_use_declared_binary_formats() {
+fn c_floating_point_literals_use_declared_binary_formats() {
     let single = syntax::parse_function("float single() { return 1.5f; }")
         .expect("binary32 literal should parse");
     assert_eq!(
         single.body(),
-        &syntax::C0Statement::Return(
-            syntax::C0Expression::Float32Literal(1.5f32.to_bits(),),
-            crate::languages::c::syntax::C0Site::NONE
+        &syntax::CStatement::Return(
+            syntax::CExpression::Float32Literal(1.5f32.to_bits(),),
+            crate::languages::c::syntax::CSite::NONE
         )
     );
 
@@ -12476,9 +12470,9 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
         .expect("binary64 literal should parse");
     assert_eq!(
         double.body(),
-        &syntax::C0Statement::Return(
-            syntax::C0Expression::Float64Literal(1.5f64.to_bits(),),
-            crate::languages::c::syntax::C0Site::NONE
+        &syntax::CStatement::Return(
+            syntax::CExpression::Float64Literal(1.5f64.to_bits(),),
+            crate::languages::c::syntax::CSite::NONE
         )
     );
 
@@ -12499,7 +12493,7 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
 }
 
 #[test]
-fn c0_floating_point_constants_cover_ties_signs_and_classification() {
+fn c_floating_point_constants_cover_ties_signs_and_classification() {
     let functions = syntax::parse_functions(
         r#"
         float single_tie() { return 16777217.0f; }
@@ -12517,45 +12511,45 @@ fn c0_floating_point_constants_cover_ties_signs_and_classification() {
 
     assert_eq!(
         functions[0].body(),
-        &syntax::C0Statement::Return(
-            syntax::C0Expression::Float32Literal(0x4b80_0000),
-            crate::languages::c::syntax::C0Site::NONE
+        &syntax::CStatement::Return(
+            syntax::CExpression::Float32Literal(0x4b80_0000),
+            crate::languages::c::syntax::CSite::NONE
         )
     );
     assert_eq!(
         functions[1].body(),
-        &syntax::C0Statement::Return(
-            syntax::C0Expression::Float64Literal(0x4340_0000_0000_0000,),
-            crate::languages::c::syntax::C0Site::NONE
+        &syntax::CStatement::Return(
+            syntax::CExpression::Float64Literal(0x4340_0000_0000_0000,),
+            crate::languages::c::syntax::CSite::NONE
         )
     );
     assert_eq!(
         functions[2].body(),
-        &syntax::C0Statement::Return(
-            syntax::C0Expression::Float32Literal(0x8000_0000),
-            crate::languages::c::syntax::C0Site::NONE
+        &syntax::CStatement::Return(
+            syntax::CExpression::Float32Literal(0x8000_0000),
+            crate::languages::c::syntax::CSite::NONE
         )
     );
     assert_eq!(
         functions[3].body(),
-        &syntax::C0Statement::Return(
-            syntax::C0Expression::Float64Literal(0xfff0_0000_0000_0000,),
-            crate::languages::c::syntax::C0Site::NONE
+        &syntax::CStatement::Return(
+            syntax::CExpression::Float64Literal(0xfff0_0000_0000_0000,),
+            crate::languages::c::syntax::CSite::NONE
         )
     );
     for function in &functions[4..] {
         assert_eq!(
             function.body(),
-            &syntax::C0Statement::Return(
-                syntax::C0Expression::Int32Literal(1),
-                crate::languages::c::syntax::C0Site::NONE
+            &syntax::CStatement::Return(
+                syntax::CExpression::Int32Literal(1),
+                crate::languages::c::syntax::CSite::NONE
             )
         );
     }
 }
 
 #[test]
-fn c0_floating_point_conditions_accept_symbolic_operands() {
+fn c_floating_point_conditions_accept_symbolic_operands() {
     let functions = syntax::parse_functions(
         r#"
         int compare(float value) { return value < 1.0f; }
@@ -12566,22 +12560,22 @@ fn c0_floating_point_conditions_accept_symbolic_operands() {
 
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right), _)
-            if matches!(left.as_ref(), syntax::C0Expression::Variable(name) if name == "value")
-                && matches!(right.as_ref(), syntax::C0Expression::Float32Literal(bits) if *bits == 1.0f32.to_bits())
+        syntax::CStatement::Return(syntax::CExpression::LessThan(left, right), _)
+            if matches!(left.as_ref(), syntax::CExpression::Variable(name) if name == "value")
+                && matches!(right.as_ref(), syntax::CExpression::Float32Literal(bits) if *bits == 1.0f32.to_bits())
     ));
     assert!(matches!(
         functions[1].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::And(left, right), _)
-            if matches!(left.as_ref(), syntax::C0Expression::FloatClassification {
+        syntax::CStatement::Return(syntax::CExpression::And(left, right), _)
+            if matches!(left.as_ref(), syntax::CExpression::FloatClassification {
                 expression,
-                classification: syntax::C0FloatClassification::Finite,
-            } if matches!(expression.as_ref(), syntax::C0Expression::Variable(name) if name == "value"))
-                && matches!(right.as_ref(), syntax::C0Expression::Not(inner)
-                    if matches!(inner.as_ref(), syntax::C0Expression::FloatClassification {
+                classification: syntax::CFloatClassification::Finite,
+            } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name == "value"))
+                && matches!(right.as_ref(), syntax::CExpression::Not(inner)
+                    if matches!(inner.as_ref(), syntax::CExpression::FloatClassification {
                         expression,
-                        classification: syntax::C0FloatClassification::Nan,
-                    } if matches!(expression.as_ref(), syntax::C0Expression::Variable(name) if name == "value")))
+                        classification: syntax::CFloatClassification::Nan,
+                    } if matches!(expression.as_ref(), syntax::CExpression::Variable(name) if name == "value")))
     ));
 
     let compare = functions[0].to_kernel_function();
@@ -12591,7 +12585,7 @@ fn c0_floating_point_conditions_accept_symbolic_operands() {
 }
 
 #[test]
-fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
+fn c_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
     let functions = syntax::parse_functions(
         r#"
         float single(float value) { return -(value + 1.0f) * 2.0f; }
@@ -12602,17 +12596,17 @@ fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
 
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Multiply(left, right), _)
-            if matches!(left.as_ref(), syntax::C0Expression::FloatNegate(inner)
-                if matches!(inner.as_ref(), syntax::C0Expression::Add(_, _)))
-                && matches!(right.as_ref(), syntax::C0Expression::Float32Literal(bits)
+        syntax::CStatement::Return(syntax::CExpression::Multiply(left, right), _)
+            if matches!(left.as_ref(), syntax::CExpression::FloatNegate(inner)
+                if matches!(inner.as_ref(), syntax::CExpression::Add(_, _)))
+                && matches!(right.as_ref(), syntax::CExpression::Float32Literal(bits)
                     if *bits == 2.0f32.to_bits())
     ));
     assert!(matches!(
         functions[1].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Divide(left, right), _)
-            if matches!(left.as_ref(), syntax::C0Expression::Multiply(_, _))
-                && matches!(right.as_ref(), syntax::C0Expression::Float64Literal(bits)
+        syntax::CStatement::Return(syntax::CExpression::Divide(left, right), _)
+            if matches!(left.as_ref(), syntax::CExpression::Multiply(_, _))
+                && matches!(right.as_ref(), syntax::CExpression::Float64Literal(bits)
                     if *bits == 3.0f64.to_bits())
     ));
 
@@ -12627,7 +12621,7 @@ fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
 }
 
 #[test]
-fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc() {
+fn c_floating_point_storage_initializers_cover_static_local_arrays_and_calloc() {
     let functions = syntax::parse_functions(
         r#"
         float file_value = 1.5f;
@@ -12652,11 +12646,11 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
     let load = &functions[0];
     assert_eq!(
         load.globals()["file_value"].initializer(),
-        Some(&syntax::C0Expression::Float32Literal(1.5f32.to_bits()))
+        Some(&syntax::CExpression::Float32Literal(1.5f32.to_bits()))
     );
     assert_eq!(
         load.globals()["file_zero"].initializer(),
-        Some(&syntax::C0Expression::Float64Literal(0))
+        Some(&syntax::CExpression::Float64Literal(0))
     );
     let stored = load
         .static_locals()
@@ -12665,7 +12659,7 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
         .expect("static floating-point local");
     assert_eq!(
         stored.initializer(),
-        &syntax::C0Expression::Float32Literal(2.5f32.to_bits())
+        &syntax::CExpression::Float32Literal(2.5f32.to_bits())
     );
     assert_eq!(
         load.to_kernel_function().static_variables()[0].initial_value(),
@@ -12689,7 +12683,7 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
 }
 
 #[test]
-fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
+fn c_struct_pointer_indirection_updates_one_pointer_cell() {
     let function = syntax::parse_function(
         r#"
         struct node {
@@ -12802,7 +12796,7 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
 }
 
 #[test]
-fn c0_struct_pointer_indirection_rejects_incompatible_struct_pointers() {
+fn c_struct_pointer_indirection_rejects_incompatible_struct_pointers() {
     let wrong_value = syntax::parse_function(
         r#"
         struct left { int32 value; };
@@ -12856,7 +12850,7 @@ fn c0_struct_pointer_indirection_rejects_incompatible_struct_pointers() {
 }
 
 #[test]
-fn c0_struct_pointer_globals_and_returns_retain_struct_identity() {
+fn c_struct_pointer_globals_and_returns_retain_struct_identity() {
     let functions = syntax::parse_functions(
         r#"
         struct node {
@@ -12886,7 +12880,7 @@ fn c0_struct_pointer_globals_and_returns_retain_struct_identity() {
     assert_eq!(current.struct_name(), Some("node"));
     assert_eq!(
         current.initializer(),
-        Some(&syntax::C0Expression::Int32Literal(0))
+        Some(&syntax::CExpression::Int32Literal(0))
     );
     let current_slot = &functions[0].globals()["current_slot"];
     assert_eq!(
@@ -12918,7 +12912,7 @@ fn c0_struct_pointer_globals_and_returns_retain_struct_identity() {
 }
 
 #[test]
-fn c0_struct_pointer_return_boundaries_reject_incompatible_tags() {
+fn c_struct_pointer_return_boundaries_reject_incompatible_tags() {
     let error = syntax::parse_functions(
         r#"
         struct left { int32 value; };
@@ -12942,7 +12936,7 @@ fn c0_struct_pointer_return_boundaries_reject_incompatible_tags() {
 }
 
 #[test]
-fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
+fn c_bool_objects_normalize_values_and_keep_abi_metadata() {
     let functions = syntax::parse_functions(
         r#"
         bool global_flag = 7;
@@ -13040,7 +13034,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
 }
 
 #[test]
-fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
+fn c_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     let sources = std::collections::BTreeMap::from([(
         "bool.c",
         "#include <stdbool.h>\nbool constants() { return true && !false; }\n",
@@ -13126,7 +13120,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
 /// conditional's own common result type; its generated temporary is not
 /// silently retyped to `int32` and cannot truncate a branch's wide value.
 #[test]
-fn c0_ternary_call_value_keeps_its_common_type() {
+fn c_ternary_call_value_keeps_its_common_type() {
     let lowered_functions = syntax::parse_functions(
         r#"
         double scale(double x) { return x; }
@@ -13140,14 +13134,14 @@ fn c0_ternary_call_value_keeps_its_common_type() {
     let lowered = lowered_functions.last().expect("pick is parsed");
     // The ternary operator's value takes the operator's common type.
     fn declared_temporary_type(
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
     ) -> Option<crate::languages::interface::InterfaceType> {
         match statement {
-            syntax::C0Statement::StepValue { interface_type, .. } => *interface_type,
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::StepValue { interface_type, .. } => *interface_type,
+            syntax::CStatement::Seq(first, second) => {
                 declared_temporary_type(first).or_else(|| declared_temporary_type(second))
             }
-            syntax::C0Statement::If { then_branch, .. } => declared_temporary_type(then_branch),
+            syntax::CStatement::If { then_branch, .. } => declared_temporary_type(then_branch),
             _ => None,
         }
     }
@@ -13213,7 +13207,7 @@ fn c0_ternary_call_value_keeps_its_common_type() {
 }
 
 #[test]
-fn c0_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
+fn c_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
     let functions = syntax::parse_functions(
         r#"
         void set(int32* p) { p[0] = 9; }
@@ -13369,7 +13363,7 @@ fn signed_byte_storage_and_pointer_identity() {
     assert_eq!(layout.field("tail").unwrap().offset_bytes(), 4);
     assert_eq!(InterfaceType::Int8.to_kernel_type().byte_width(), 1);
     // An uncast conversion between character pointers is accepted, as by
-    // its cast; see `c0_character_pointer_conversions_lower_as_explicit_casts`.
+    // its cast; see `c_character_pointer_conversions_lower_as_explicit_casts`.
     for source in [
         "void f(signed char *p, unsigned char *q) { p = q; }",
         "void f(signed char *p, char *q) { p = q; }",
@@ -13389,7 +13383,7 @@ fn signed_byte_storage_and_pointer_identity() {
 /// it takes the value GCC and Clang give it, modulo 2^N, in a static or
 /// automatic initializer, an assignment, a cast, a return, and an argument.
 #[test]
-fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
+fn c_out_of_range_integer_constants_convert_modulo_the_destination_width() {
     use crate::kernel::{MachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         "signed char high = 128; signed char low = -129; unsigned char negative = -56;\n\
@@ -13603,7 +13597,7 @@ fn struct_constant_array_lengths_reject_invalid_values() {
 }
 
 #[test]
-fn c0_nothrow_leaf_and_const_attributes_accept_aliases_lists_and_repeated_groups() {
+fn c_nothrow_leaf_and_const_attributes_accept_aliases_lists_and_repeated_groups() {
     for attributes in [
         "__attribute__((leaf))",
         "__attribute__((__leaf__))",
@@ -13645,7 +13639,7 @@ fn c0_nothrow_leaf_and_const_attributes_accept_aliases_lists_and_repeated_groups
 }
 
 #[test]
-fn c0_nonnull_function_attributes_accept_parameter_indices_without_granting_ownership() {
+fn c_nonnull_function_attributes_accept_parameter_indices_without_granting_ownership() {
     for attributes in [
         "__attribute__((nonnull))",
         "__attribute__((__nonnull__ (1, 2)))",
@@ -13664,7 +13658,7 @@ fn c0_nonnull_function_attributes_accept_parameter_indices_without_granting_owne
 }
 
 #[test]
-fn c0_noreturn_declarations_parse_without_changing_checked_call_rules() {
+fn c_noreturn_declarations_parse_without_changing_checked_call_rules() {
     for attribute in ["noreturn", "__noreturn__"] {
         let declaration = format!("extern void stop(void) __attribute__(({attribute}));");
         syntax::validate_header(&declaration, &source::ExpandedLineMap::empty()).unwrap();
@@ -13674,7 +13668,7 @@ fn c0_noreturn_declarations_parse_without_changing_checked_call_rules() {
 }
 
 #[test]
-fn c0_deprecated_function_attributes_preserve_ordinary_prototypes() {
+fn c_deprecated_function_attributes_preserve_ordinary_prototypes() {
     for attribute in ["deprecated", "__deprecated__"] {
         let declaration = format!("extern int old_api(void) __attribute__(({attribute}));");
         syntax::validate_header(&declaration, &source::ExpandedLineMap::empty()).unwrap();
@@ -13684,7 +13678,7 @@ fn c0_deprecated_function_attributes_preserve_ordinary_prototypes() {
 }
 
 #[test]
-fn c0_nothrow_leaf_const_and_nonnull_attributes_do_not_hide_unsupported_attributes_or_linkage() {
+fn c_nothrow_leaf_const_and_nonnull_attributes_do_not_hide_unsupported_attributes_or_linkage() {
     for source in [
         "int f(void) __attribute__((leaf, unsupported));",
         "int f(void) __attribute__((leaf)) __attribute__((aligned(8)));",
@@ -13714,7 +13708,7 @@ fn c0_nothrow_leaf_const_and_nonnull_attributes_do_not_hide_unsupported_attribut
 }
 
 #[test]
-fn c0_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
+fn c_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
     for qualifier in ["restrict", "__restrict", "__restrict__"] {
         let prototype = format!("extern int read(int *{qualifier} p, const int *{qualifier} q);");
         syntax::validate_header(&prototype, &source::ExpandedLineMap::empty()).unwrap();
@@ -13732,7 +13726,7 @@ fn c0_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
 }
 
 #[test]
-fn c0_leaf_memory_proof_expands_and_reverifies() {
+fn c_leaf_memory_proof_expands_and_reverifies() {
     let c = "__attribute__((__nothrow__, __leaf__)) int set(int *p) { *p = 7; return *p; }";
     let proof = "verifying \"leaf.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7; ensures result == 7; }";
     crate::surface::verify_c_sources(proof, &[("leaf.c", c)]).unwrap();
@@ -13743,7 +13737,7 @@ fn c0_leaf_memory_proof_expands_and_reverifies() {
 }
 
 #[test]
-fn c0_const_pointer_fields_preserve_qualification_and_layout() {
+fn c_const_pointer_fields_preserve_qualification_and_layout() {
     let unit = syntax::parse_translation_unit_for_source(
         r#"
         struct holder { int tag; const char *text; const int *value; };
@@ -13769,7 +13763,7 @@ fn c0_const_pointer_fields_preserve_qualification_and_layout() {
 }
 
 #[test]
-fn c0_const_pointer_fields_reject_writes_and_qualifier_loss() {
+fn c_const_pointer_fields_reject_writes_and_qualifier_loss() {
     for body in [
         "int bad(struct holder *h) { h->text[0] = 1; return 0; }",
         "int bad(struct holder *h) { *h->text = 1; return 0; }",
@@ -13798,7 +13792,7 @@ fn c0_const_pointer_fields_reject_writes_and_qualifier_loss() {
 }
 
 #[test]
-fn c0_const_pointer_fields_keep_deeper_qualifiers_out_of_scope() {
+fn c_const_pointer_fields_keep_deeper_qualifiers_out_of_scope() {
     for source in [
         "struct holder { char *const text; };",
         "struct holder { const int value; };",
@@ -13817,14 +13811,14 @@ fn c0_const_pointer_fields_keep_deeper_qualifiers_out_of_scope() {
 }
 
 #[test]
-fn c0_union_pointer_member_preserves_pointee_constness() {
+fn c_union_pointer_member_preserves_pointee_constness() {
     let source = "union holder { const char *text; }; struct wrap { union holder h; }; char *bad(struct wrap *w) { return w->h.text; }";
     let error = syntax::parse_functions(source).expect_err("implicit const removal must fail");
     assert!(error.message().contains("const"), "{}", error.message());
 }
 
 #[test]
-fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
+fn c_const_pointer_fields_alias_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; int update(struct holder *h, int *p) { *p = 7; return h->value[0]; }";
     let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires h->value == p; ensures result == 7; }";
     crate::surface::verify_c_sources(proof, &[("fields.c", c)]).unwrap();
@@ -13839,7 +13833,7 @@ fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn c0_const_pointer_fields_store_proof_expands_and_reverifies() {
+fn c_const_pointer_fields_store_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; const int *set(struct holder *h, const int *p) { h->value = p; return h->value; }";
     let proof = "verifying \"fields.c\"; const int *set(struct holder *h, const int *p) { owns h->value; ensures result == p; ensures h->value == p; }";
     crate::surface::verify_c_sources(proof, &[("fields.c", c)]).unwrap();
@@ -13856,7 +13850,7 @@ fn c0_const_pointer_fields_store_proof_expands_and_reverifies() {
 /// because it has no flexible or zero-length struct members: every struct
 /// array, including a trailing `[1]`, keeps its declared length.
 #[test]
-fn c0_syntax_has_no_wide_literals_or_flexible_struct_arrays() {
+fn c_syntax_has_no_wide_literals_or_flexible_struct_arrays() {
     for (source, refusal) in [
         (
             "uint32 wide_char(void) { return L'x'; }",
@@ -14023,7 +14017,7 @@ fn optimizer_promise_classification_without_a_profile_switch() {
 }
 
 #[test]
-fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_admission() {
+fn c_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_admission() {
     use crate::kernel::{PointerArrayElement as Element, ProgramType};
     use crate::languages::interface::InterfaceType;
     for (scalar, pointer, slot, array, element, kernel_scalar) in [
@@ -14095,7 +14089,7 @@ fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_a
 // glibc's register_t uses word mode; preserving its 64-bit width is required
 // when importing the unchanged zlib translation unit and its system headers.
 #[test]
-fn c0_gnu_word_mode_preserves_signedness_and_lp64_layout() {
+fn c_gnu_word_mode_preserves_signedness_and_lp64_layout() {
     for (base, expected) in [
         (
             "signed char",
@@ -14156,7 +14150,7 @@ fn c0_gnu_word_mode_preserves_signedness_and_lp64_layout() {
 
 #[test]
 #[ignore = "nightly: GNU typedef attribute rejection cases"]
-fn c0_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
+fn c_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
     for source in [
         "typedef int word __attribute__((mode(QI)));",
         "typedef int word __attribute__((mode(word, word)));",
@@ -14175,7 +14169,7 @@ fn c0_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
 // System headers may declare va_list APIs unrelated to the selected body. The
 // declaration-only type must survive aliases without granting a usable ABI.
 #[test]
-fn c0_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
+fn c_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
     let source = "typedef __builtin_va_list A; typedef A B; \
                   int unrelated(B args); int identity(int x) { return x; }";
     let unit = syntax::parse_translation_unit_for_source(
@@ -14195,7 +14189,7 @@ fn c0_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
 
 #[test]
 #[ignore = "nightly: declaration-only compiler type rejection cases"]
-fn c0_builtin_va_list_cannot_supply_layout_values_or_call_authority() {
+fn c_builtin_va_list_cannot_supply_layout_values_or_call_authority() {
     let aliases = "typedef __builtin_va_list A; typedef A B;";
     for body in [
         "B object;",
@@ -14228,7 +14222,7 @@ fn c0_builtin_va_list_cannot_supply_layout_values_or_call_authority() {
 // Explicit &function must enforce the same declaration rules as C's implicit
 // function decay, before unrelated undefined-body diagnostics can obscure them.
 #[test]
-fn c0_explicit_and_implicit_function_addresses_share_declaration_checks() {
+fn c_explicit_and_implicit_function_addresses_share_declaration_checks() {
     for (declaration, expected) in [
         ("int restricted(int value, ...);", "variadic function"),
         (
@@ -14266,7 +14260,7 @@ fn c0_explicit_and_implicit_function_addresses_share_declaration_checks() {
 }
 
 #[test]
-fn c0_callback_typedefs_keep_signatures_through_aliases_locals_and_fields() {
+fn c_callback_typedefs_keep_signatures_through_aliases_locals_and_fields() {
     let functions = syntax::parse_functions(
         r#"
         typedef int32 (*callback_t)(int32);
@@ -14299,7 +14293,7 @@ fn c0_callback_typedefs_keep_signatures_through_aliases_locals_and_fields() {
 }
 
 #[test]
-fn c0_callback_typedefs_reject_wrong_nominal_targets_in_each_position() {
+fn c_callback_typedefs_reject_wrong_nominal_targets_in_each_position() {
     let prefix = r#"
         struct left { int32 value; };
         struct right { int32 value; };
@@ -14329,7 +14323,7 @@ fn c0_callback_typedefs_reject_wrong_nominal_targets_in_each_position() {
 }
 
 #[test]
-fn c0_callback_typedefs_keep_return_and_parameter_pointee_qualifiers() {
+fn c_callback_typedefs_keep_return_and_parameter_pointee_qualifiers() {
     let source = r#"
         struct item { int32 value; };
         typedef const struct item* (*callback_t)(const struct item*);
@@ -14354,7 +14348,7 @@ fn c0_callback_typedefs_keep_return_and_parameter_pointee_qualifiers() {
 }
 
 #[test]
-fn c0_callback_typedefs_reject_signature_erasure_in_unmodeled_positions() {
+fn c_callback_typedefs_reject_signature_erasure_in_unmodeled_positions() {
     for source in [
         "typedef int32 (*callback_t)(int32); callback_t global; int32 run() { return 0; }",
         "typedef int32 (*callback_t)(int32); int32 run() { static callback_t local; return 0; }",
@@ -14378,7 +14372,7 @@ fn c0_callback_typedefs_reject_signature_erasure_in_unmodeled_positions() {
 }
 
 #[test]
-fn c0_opaque_pointer_typedef_returns_retain_identity_without_a_layout() {
+fn c_opaque_pointer_typedef_returns_retain_identity_without_a_layout() {
     let functions = syntax::parse_functions(
         r#"
         typedef struct opaque* opaque_t;
@@ -14411,7 +14405,7 @@ fn c0_opaque_pointer_typedef_returns_retain_identity_without_a_layout() {
 }
 
 #[test]
-fn c0_unmodeled_allocation_and_purity_attributes_are_declaration_only() {
+fn c_unmodeled_allocation_and_purity_attributes_are_declaration_only() {
     use syntax::PromiseAttributes::{Accept, Refuse};
     for attribute in [
         "pure",
@@ -14491,7 +14485,7 @@ fn c0_unmodeled_allocation_and_purity_attributes_are_declaration_only() {
 // A diagnostic-suppression marker must neither change layout nor admit an
 // otherwise unsupported GNU declaration.
 #[test]
-fn c0_extension_declarations_keep_ordinary_semantic_checks() {
+fn c_extension_declarations_keep_ordinary_semantic_checks() {
     parse_import_with(
         "__extension__ typedef struct { long long int quot; long long int rem; } quotient_t; quotient_t identity(quotient_t value) { return value; }",
         syntax::PromiseAttributes::Accept,
@@ -14508,7 +14502,7 @@ fn c0_extension_declarations_keep_ordinary_semantic_checks() {
 
 // Unused libc conversion prototypes cannot grant an extended-precision ABI.
 #[test]
-fn c0_long_double_prototypes_are_unusable_and_keep_type_positions() {
+fn c_long_double_prototypes_are_unusable_and_keep_type_positions() {
     use syntax::PromiseAttributes::{Accept, Refuse};
     for promises in [Accept, Refuse] {
         for declaration in [
@@ -14542,7 +14536,7 @@ fn c0_long_double_prototypes_are_unusable_and_keep_type_positions() {
 // Returned values and zero-condition exits must use the same checked native
 // updates as statements, including full-width unsigned wrap.
 #[test]
-fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
+fn c_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
     use crate::kernel::{ExecutionState, FunctionOutcome, MachineTerm, Proposition};
     for (source, expected) in [
         (
@@ -14604,7 +14598,7 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
 
 // Post-incremented byte pointers are consumed by unchanged checksum idioms.
 #[test]
-fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
+fn c_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
     for source in [
         "int32 run() { uint8 bytes[2]; bytes[0] = 255; bytes[1] = 7; const uint8* p = bytes; int32 sum = 0; sum += *p++; sum += *p++; return sum; }",
         "struct pair { int32 first; int32 second; }; int32 run() { struct pair values[2]; values[0].first = 3; values[1].first = 262; struct pair* p = values; struct pair* before = p++; return p->first; }",
@@ -14631,7 +14625,7 @@ fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
 }
 
 #[test]
-fn c0_scalar_updates_reject_unsequenced_aliases_and_non_lvalues() {
+fn c_scalar_updates_reject_unsequenced_aliases_and_non_lvalues() {
     for source in [
         "int32 run(int32 n) { return n++ + n; }",
         "int32 run(int32 n) { return n++ + n++; }",
@@ -14646,7 +14640,7 @@ fn c0_scalar_updates_reject_unsequenced_aliases_and_non_lvalues() {
 }
 
 #[test]
-fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
+fn c_scalar_updates_preserve_signed_overflow_undefined_behavior() {
     for source in [
         "int32 run() { int32 n = 2147483647; return n++; }",
         "int32 run() { int32 n = 2147483647; return ++n; }",
@@ -14680,7 +14674,7 @@ fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
 }
 
 #[test]
-fn c0_builtin_types_compatible_preserves_c_identity() {
+fn c_builtin_types_compatible_preserves_c_identity() {
     for (left, right, expected) in [
         ("int", "signed int", 1),
         ("int", "unsigned int", 0),
@@ -14716,7 +14710,7 @@ fn c0_builtin_types_compatible_preserves_c_identity() {
         let functions = syntax::parse_functions(&source)
             .unwrap_or_else(|e| panic!("{left}, {right}: {}", e.message()));
         assert!(
-            matches!(functions[0].body(), syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(value), _) if *value == expected),
+            matches!(functions[0].body(), syntax::CStatement::Return(syntax::CExpression::Int32Literal(value), _) if *value == expected),
             "{left}, {right}: {:?}",
             functions[0].body()
         );
@@ -14724,7 +14718,7 @@ fn c0_builtin_types_compatible_preserves_c_identity() {
 }
 
 #[test]
-fn c0_builtin_types_compatible_refuses_erased_or_unsupported_identity() {
+fn c_builtin_types_compatible_refuses_erased_or_unsupported_identity() {
     for operands in [
         "typeof(*(int*)(void*)p), struct A", // Layout provenance is not the cast type.
         "typeof(n), int", // May be an enum, whose identity the expression type erased.
@@ -14750,7 +14744,7 @@ fn c0_builtin_types_compatible_refuses_erased_or_unsupported_identity() {
 }
 
 #[test]
-fn c0_builtin_types_compatible_rejects_erased_typedef_metadata() {
+fn c_builtin_types_compatible_rejects_erased_typedef_metadata() {
     for declaration in [
         "typedef const int* T;", // Adding another pointer cannot collapse qualifier levels.
         "typedef int T __attribute__((mode(word)));",
@@ -14769,7 +14763,7 @@ fn c0_builtin_types_compatible_rejects_erased_typedef_metadata() {
 }
 
 #[test]
-fn c0_static_assert_checks_all_declaration_scopes() {
+fn c_static_assert_checks_all_declaration_scopes() {
     syntax::parse_functions(
         r#"
         _Static_assert(sizeof(long) == 8, "target");
@@ -14807,14 +14801,14 @@ fn c0_static_assert_checks_all_declaration_scopes() {
 }
 
 #[test]
-fn c0_builtin_offsetof_uses_layout_and_refuses_unsupported_designators() {
+fn c_builtin_offsetof_uses_layout_and_refuses_unsupported_designators() {
     for (member, expected) in [("c", 0), ("x", 8), ("tail", 16)] {
         let source = format!(
             "struct A {{ char c; long x; int tail[3]; }}; unsigned long run() {{ return __builtin_offsetof(struct A, {member}); }}"
         );
         let functions = syntax::parse_functions(&source).unwrap();
         assert!(
-            matches!(functions[0].body(), syntax::C0Statement::Return(syntax::C0Expression::UInt64Literal(value), _) if *value == expected)
+            matches!(functions[0].body(), syntax::CStatement::Return(syntax::CExpression::UInt64Literal(value), _) if *value == expected)
         );
     }
     for operands in [
@@ -14833,12 +14827,12 @@ fn c0_builtin_offsetof_uses_layout_and_refuses_unsupported_designators() {
 }
 
 /// The expression the last `return` sequenced in `statement` returns.
-fn returned_expression(statement: &syntax::C0Statement) -> Option<&syntax::C0Expression> {
+fn returned_expression(statement: &syntax::CStatement) -> Option<&syntax::CExpression> {
     match statement {
-        syntax::C0Statement::Seq(first, second) => {
+        syntax::CStatement::Seq(first, second) => {
             returned_expression(second).or_else(|| returned_expression(first))
         }
-        syntax::C0Statement::Return(expression, _) => Some(expression),
+        syntax::CStatement::Return(expression, _) => Some(expression),
         _ => None,
     }
 }

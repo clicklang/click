@@ -339,26 +339,26 @@ pub(super) fn verify_execution_theorem(
     let arguments = execution
         .parameters
         .iter()
-        .map(|p| syntax::C0Expression::Variable(p.name().to_string()))
+        .map(|p| syntax::CExpression::Variable(p.name().to_string()))
         .collect();
     let body = if block.signature().return_type() == InterfaceType::Void {
-        syntax::C0Statement::Call {
+        syntax::CStatement::Call {
             function_name: call_name.to_string(),
             arguments,
-            site: crate::languages::c::syntax::C0Site::NONE,
+            site: crate::languages::c::syntax::CSite::NONE,
             callee: None,
         }
     } else {
-        syntax::C0Statement::Seq(
-            Box::new(syntax::C0Statement::CallAssign {
+        syntax::CStatement::Seq(
+            Box::new(syntax::CStatement::CallAssign {
                 target: "result".into(),
                 function_name: call_name.to_string(),
                 arguments,
-                site: crate::languages::c::syntax::C0Site::NONE,
+                site: crate::languages::c::syntax::CSite::NONE,
             }),
-            Box::new(syntax::C0Statement::Return(
-                syntax::C0Expression::Variable("result".into()),
-                crate::languages::c::syntax::C0Site::NONE,
+            Box::new(syntax::CStatement::Return(
+                syntax::CExpression::Variable("result".into()),
+                crate::languages::c::syntax::CSite::NONE,
             )),
         )
     };

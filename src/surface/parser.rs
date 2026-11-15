@@ -198,7 +198,7 @@ pub(in crate::surface) struct ProgramLayouts {
     pub(in crate::surface) recursion_peers: BTreeMap<String, Vec<String>>,
     pub(in crate::surface) struct_layouts:
         BTreeMap<String, crate::languages::interface::RecordLayout>,
-    pub(in crate::surface) union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
+    pub(in crate::surface) union_layouts: BTreeMap<String, syntax::CUnionLayout>,
     /// Each function's address-backed aggregate objects, with their structs.
     pub(in crate::surface) aggregate_objects: BTreeMap<String, BTreeMap<String, String>>,
     /// Each function's aggregate objects that are arrays.
@@ -265,7 +265,7 @@ pub(in crate::surface) struct ProgramLayouts {
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
     /// The typedef names of the verified C sources a function head may
     /// write, with their types.
-    pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
+    pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::CHeadTypedef>,
 }
 
 /// An instance of a generic function the import declares: its name, the
@@ -967,7 +967,7 @@ struct Parser {
     /// See [`ProgramLayouts::record_spellings`].
     record_spellings: BTreeMap<String, String>,
     /// See [`ProgramLayouts::c_typedefs`].
-    c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
+    c_typedefs: BTreeMap<String, syntax::CHeadTypedef>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -990,7 +990,7 @@ struct Parser {
     struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
     /// See [`ProgramLayouts::rust_enum_types`].
     rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
-    union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
+    union_layouts: BTreeMap<String, syntax::CUnionLayout>,
     aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
     global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
@@ -1353,7 +1353,7 @@ impl Parser {
     fn new_with_layouts(
         source: &str,
         struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
-        union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
+        union_layouts: BTreeMap<String, syntax::CUnionLayout>,
     ) -> Result<Self, ClickError> {
         Self::new_with_layouts_and_aggregate_objects(
             source,
@@ -1549,7 +1549,7 @@ impl Parser {
     fn new_with_layouts_and_aggregate_objects(
         source: &str,
         struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
-        union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
+        union_layouts: BTreeMap<String, syntax::CUnionLayout>,
         aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
         aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
         global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
@@ -6012,7 +6012,7 @@ impl Parser {
         // for the type it stands for, where the name is not a standard
         // spelling; a specification writes Click's type.
         let typedef_struct = match self.c_typedefs.get(&spelling) {
-            Some(syntax::C0HeadTypedef::Struct {
+            Some(syntax::CHeadTypedef::Struct {
                 name,
                 interface_type,
                 constant,
@@ -6165,7 +6165,7 @@ impl Parser {
                 }
                 _ if let Some(typedef) = self.c_typedefs.get(&spelling) => {
                     self.check_head_typedef(&spelling)?;
-                    let syntax::C0HeadTypedef::Scalar {
+                    let syntax::CHeadTypedef::Scalar {
                         interface_type,
                         constant,
                         pointee_constant,
@@ -6477,7 +6477,7 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Ok(None);
         };
-        let Some(syntax::C0HeadTypedef::FunctionPointer {
+        let Some(syntax::CHeadTypedef::FunctionPointer {
             interface_type,
             signature,
         }) = self.c_typedefs.get(name)
@@ -6502,7 +6502,7 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Ok(None);
         };
-        let Some(syntax::C0HeadTypedef::Array {
+        let Some(syntax::CHeadTypedef::Array {
             element,
             length,
             constant,
@@ -12646,7 +12646,7 @@ impl Parser {
         Ok(tactic)
     }
 
-    fn parse_ensure_expression(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_expression(&mut self) -> Result<CExpression, ClickError> {
         self.parse_ensure_bitwise_or()
     }
 
@@ -13922,43 +13922,43 @@ impl Parser {
         Ok(())
     }
 
-    fn resolve_c0_field_load(
+    fn resolve_c_field_load(
         &self,
-        base: C0Expression,
+        base: CExpression,
         field_name: &str,
-    ) -> Result<Option<C0Expression>, ClickError> {
-        if let C0Expression::Variable(name) = &base {
+    ) -> Result<Option<CExpression>, ClickError> {
+        if let CExpression::Variable(name) = &base {
             self.refuse_trait_receiver_field(Some(name))?;
         }
         let struct_name = match &base {
-            C0Expression::Variable(base_name) => self
+            CExpression::Variable(base_name) => self
                 .names
                 .struct_params
                 .get(base_name)
                 .or_else(|| self.names.aggregate_objects.get(base_name)),
-            C0Expression::Field {
+            CExpression::Field {
                 field_struct_name, ..
             } => field_struct_name.as_ref(),
-            C0Expression::AggregateAddress { struct_name, .. } => Some(struct_name),
-            C0Expression::Cast { struct_name, .. } => struct_name.as_ref(),
+            CExpression::AggregateAddress { struct_name, .. } => Some(struct_name),
+            CExpression::Cast { struct_name, .. } => struct_name.as_ref(),
             _ => None,
         };
         if let Some(struct_name) = struct_name {
             let field = self.resolve_struct_field_metadata(struct_name, field_name)?;
-            let pointer = self.offset_c0_field_pointer(base.clone(), field.offset_bytes);
+            let pointer = self.offset_c_field_pointer(base.clone(), field.offset_bytes);
             return Ok(Some(if let Some(union_name) = field.union_name {
-                C0Expression::UnionAddress {
+                CExpression::UnionAddress {
                     pointer: Box::new(pointer),
                     union_name,
                 }
             } else if field.interface_type == InterfaceType::Int32 {
                 if let Some(struct_name) = field.struct_name {
-                    C0Expression::AggregateAddress {
+                    CExpression::AggregateAddress {
                         pointer: Box::new(pointer),
                         struct_name,
                     }
                 } else {
-                    C0Expression::Field {
+                    CExpression::Field {
                         pointer: Box::new(pointer),
                         field_type: field.interface_type,
                         pointee_constant: field.pointee_constant,
@@ -13970,7 +13970,7 @@ impl Parser {
                     }
                 }
             } else {
-                C0Expression::Field {
+                CExpression::Field {
                     pointer: Box::new(pointer),
                     field_type: field.interface_type,
                     pointee_constant: field.pointee_constant,
@@ -13982,10 +13982,10 @@ impl Parser {
                 }
             }));
         }
-        if let C0Expression::UnionAddress { union_name, .. } = &base {
+        if let CExpression::UnionAddress { union_name, .. } = &base {
             let field = self.resolve_union_field_metadata(union_name, field_name)?;
-            let pointer = self.offset_c0_field_pointer(base.clone(), field.offset_bytes);
-            return Ok(Some(C0Expression::UnionField {
+            let pointer = self.offset_c_field_pointer(base.clone(), field.offset_bytes);
+            return Ok(Some(CExpression::UnionField {
                 pointer: Box::new(pointer),
                 field_type: field.interface_type,
                 union_name: union_name.clone(),
@@ -14256,11 +14256,11 @@ impl Parser {
         crate::kernel::program_expression::pointer_offset_bytes(base, offset_bytes)
     }
 
-    fn offset_c0_field_pointer(&self, base: C0Expression, offset_bytes: u32) -> C0Expression {
+    fn offset_c_field_pointer(&self, base: CExpression, offset_bytes: u32) -> CExpression {
         if offset_bytes == 0 {
             base
         } else {
-            C0Expression::PointerOffsetBytes {
+            CExpression::PointerOffsetBytes {
                 pointer: Box::new(base),
                 bytes: offset_bytes,
             }
@@ -16334,46 +16334,46 @@ impl Parser {
         })
     }
 
-    fn parse_ensure_bitwise_or(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_bitwise_or(&mut self) -> Result<CExpression, ClickError> {
         let mut expression = self.parse_ensure_bitwise_xor()?;
         let mut operands = 1;
         while self.peek() == Some(&Token::Pipe) {
             self.check_expression_chain_limit(operands)?;
             self.position += 1;
             let right = self.parse_ensure_bitwise_xor()?;
-            expression = C0Expression::BitwiseOr(Box::new(expression), Box::new(right));
+            expression = CExpression::BitwiseOr(Box::new(expression), Box::new(right));
             operands += 1;
         }
         Ok(expression)
     }
 
-    fn parse_ensure_bitwise_xor(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_bitwise_xor(&mut self) -> Result<CExpression, ClickError> {
         let mut expression = self.parse_ensure_bitwise_and()?;
         let mut operands = 1;
         while self.peek() == Some(&Token::Caret) {
             self.check_expression_chain_limit(operands)?;
             self.position += 1;
             let right = self.parse_ensure_bitwise_and()?;
-            expression = C0Expression::BitwiseXor(Box::new(expression), Box::new(right));
+            expression = CExpression::BitwiseXor(Box::new(expression), Box::new(right));
             operands += 1;
         }
         Ok(expression)
     }
 
-    fn parse_ensure_bitwise_and(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_bitwise_and(&mut self) -> Result<CExpression, ClickError> {
         let mut expression = self.parse_ensure_shift()?;
         let mut operands = 1;
         while self.peek() == Some(&Token::Amp) {
             self.check_expression_chain_limit(operands)?;
             self.position += 1;
             let right = self.parse_ensure_shift()?;
-            expression = C0Expression::BitwiseAnd(Box::new(expression), Box::new(right));
+            expression = CExpression::BitwiseAnd(Box::new(expression), Box::new(right));
             operands += 1;
         }
         Ok(expression)
     }
 
-    fn parse_ensure_shift(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_shift(&mut self) -> Result<CExpression, ClickError> {
         let mut expression = self.parse_ensure_add()?;
         let mut operands = 1;
         loop {
@@ -16383,21 +16383,21 @@ impl Parser {
                     self.position += 1;
                     let right = self.parse_ensure_add()?;
                     operands += 1;
-                    C0Expression::ShiftLeft(Box::new(expression), Box::new(right))
+                    CExpression::ShiftLeft(Box::new(expression), Box::new(right))
                 }
                 Some(Token::ShiftRight) => {
                     self.check_expression_chain_limit(operands)?;
                     self.position += 1;
                     let right = self.parse_ensure_add()?;
                     operands += 1;
-                    C0Expression::ShiftRight(Box::new(expression), Box::new(right))
+                    CExpression::ShiftRight(Box::new(expression), Box::new(right))
                 }
                 _ => return Ok(expression),
             };
         }
     }
 
-    fn parse_ensure_add(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_add(&mut self) -> Result<CExpression, ClickError> {
         let mut expression = self.parse_ensure_multiply()?;
         let mut operands = 1;
         loop {
@@ -16407,28 +16407,28 @@ impl Parser {
                     self.position += 1;
                     let right = self.parse_ensure_multiply()?;
                     operands += 1;
-                    C0Expression::Add(Box::new(expression), Box::new(right))
+                    CExpression::Add(Box::new(expression), Box::new(right))
                 }
                 Some(Token::Minus) => {
                     self.check_expression_chain_limit(operands)?;
                     self.position += 1;
                     let right = self.parse_ensure_multiply()?;
                     operands += 1;
-                    C0Expression::Subtract(Box::new(expression), Box::new(right))
+                    CExpression::Subtract(Box::new(expression), Box::new(right))
                 }
                 _ => return Ok(expression),
             };
         }
     }
 
-    fn parse_ensure_multiply(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_multiply(&mut self) -> Result<CExpression, ClickError> {
         let mut expression = self.parse_ensure_unary()?;
         let mut operands = 1;
         while let Some(operator) = self.peek() {
             let constructor = match operator {
-                Token::Star => C0Expression::Multiply,
-                Token::Slash => C0Expression::Divide,
-                Token::Percent => C0Expression::Remainder,
+                Token::Star => CExpression::Multiply,
+                Token::Slash => CExpression::Divide,
+                Token::Percent => CExpression::Remainder,
                 _ => break,
             };
             self.check_expression_chain_limit(operands)?;
@@ -16440,11 +16440,11 @@ impl Parser {
         Ok(expression)
     }
 
-    fn parse_ensure_unary(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_unary(&mut self) -> Result<CExpression, ClickError> {
         self.parse_ensure_unary_at_depth(0)
     }
 
-    fn parse_ensure_unary_at_depth(&mut self, depth: usize) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_unary_at_depth(&mut self, depth: usize) -> Result<CExpression, ClickError> {
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
             if let Some((literal, end)) = self.negated_rust_literal() {
@@ -16455,22 +16455,22 @@ impl Parser {
             }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
-                return Ok(C0Expression::Int64Literal(i64::MIN));
+                return Ok(CExpression::Int64Literal(i64::MIN));
             }
             if let Some(value) = self.peek_next().and_then(negatable_int32_magnitude) {
                 self.position += 2;
-                return Ok(C0Expression::Int32Literal(0u32.wrapping_sub(value)));
+                return Ok(CExpression::Int32Literal(0u32.wrapping_sub(value)));
             }
             self.position += 1;
-            return Ok(C0Expression::Subtract(
-                Box::new(C0Expression::Int32Literal(0)),
+            return Ok(CExpression::Subtract(
+                Box::new(CExpression::Int32Literal(0)),
                 Box::new(self.parse_ensure_unary_at_depth(depth + 1)?),
             ));
         }
         if self.peek() == Some(&Token::Tilde) {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
-            return Ok(C0Expression::BitwiseNot(Box::new(
+            return Ok(CExpression::BitwiseNot(Box::new(
                 self.parse_ensure_unary_at_depth(depth + 1)?,
             )));
         }
@@ -16480,12 +16480,12 @@ impl Parser {
             };
             let carrier = self.reference_binding_carrier(name);
             self.position += 2;
-            return Ok(C0Expression::Variable(carrier));
+            return Ok(CExpression::Variable(carrier));
         }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
-            return Ok(C0Expression::AddressOf(Box::new(
+            return Ok(CExpression::AddressOf(Box::new(
                 self.parse_ensure_unary_at_depth(depth + 1)?,
             )));
         }
@@ -16493,7 +16493,7 @@ impl Parser {
         self.parse_ensure_postfix()
     }
 
-    fn parse_ensure_postfix(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_postfix(&mut self) -> Result<CExpression, ClickError> {
         let mut expression = self.parse_ensure_primary()?;
         let mut postfixes = 0;
         loop {
@@ -16510,22 +16510,22 @@ impl Parser {
                     self.position += 1;
                     let index = self.parse_ensure_expression()?;
                     self.expect(Token::RBracket)?;
-                    expression = C0Expression::Index(Box::new(expression), Box::new(index), None);
+                    expression = CExpression::Index(Box::new(expression), Box::new(index), None);
                 }
                 Some(Token::Arrow | Token::Dot) => {
                     self.position += 1;
                     let field_name = self.expect_field_name()?;
                     let base = expression;
                     expression = self
-                        .resolve_c0_field_load(base.clone(), &field_name)?
-                        .unwrap_or_else(|| C0Expression::Load(Box::new(base), None));
+                        .resolve_c_field_load(base.clone(), &field_name)?
+                        .unwrap_or_else(|| CExpression::Load(Box::new(base), None));
                 }
                 _ => unreachable!("postfix expression token checked above"),
             }
         }
     }
 
-    fn parse_ensure_primary(&mut self) -> Result<C0Expression, ClickError> {
+    fn parse_ensure_primary(&mut self) -> Result<CExpression, ClickError> {
         match self.next() {
             Some(Token::Ident(name)) if name == "by" => {
                 Err(self.error("expected result expression, got `by`"))
@@ -16533,13 +16533,13 @@ impl Parser {
             Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
                 let carrier = self.reference_binding_carrier(&name);
                 let is_struct = self.names.struct_params.contains_key(&carrier);
-                let carrier = C0Expression::Variable(carrier);
+                let carrier = CExpression::Variable(carrier);
                 Ok(if is_struct {
                     carrier
                 } else {
-                    C0Expression::Index(
+                    CExpression::Index(
                         Box::new(carrier),
-                        Box::new(C0Expression::Int32Literal(0)),
+                        Box::new(CExpression::Int32Literal(0)),
                         None,
                     )
                 })
@@ -16547,21 +16547,21 @@ impl Parser {
             Some(Token::Ident(name)) => {
                 self.refuse_unknown_loop_value(&name)?;
                 let name = self.take_rust_slice_len(&name).unwrap_or(name);
-                Ok(C0Expression::Variable(name))
+                Ok(CExpression::Variable(name))
             }
             Some(Token::RustInteger(literal)) => literal.program_expression(false).map_err(|message| self.error(message)),
-            Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),
-            Some(Token::UInt8Number(value)) => Ok(C0Expression::UInt8Literal(value)),
-            Some(Token::UInt32Number(value)) => Ok(C0Expression::UInt32Literal(value)),
+            Some(Token::Number(value)) => Ok(CExpression::Int32Literal(value)),
+            Some(Token::UInt8Number(value)) => Ok(CExpression::UInt8Literal(value)),
+            Some(Token::UInt32Number(value)) => Ok(CExpression::UInt32Literal(value)),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
             )),
-            Some(Token::Int64Number(value)) => Ok(C0Expression::Int64Literal(value)),
-            Some(Token::UInt64Number(value)) => Ok(C0Expression::UInt64Literal(value)),
+            Some(Token::Int64Number(value)) => Ok(CExpression::Int64Literal(value)),
+            Some(Token::UInt64Number(value)) => Ok(CExpression::UInt64Literal(value)),
             Some(Token::CharLiteral(value)) => Ok(
                 match self.character_constant_value(value)? {
-                    ProgramValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
-                    _ => C0Expression::UInt8Literal(value),
+                    ProgramValue::Int32(bits32_constant!(bits)) => CExpression::Int32Literal(constant_u32(bits)),
+                    _ => CExpression::UInt8Literal(value),
                 },
             ),
             Some(Token::LParen) => {
@@ -16575,7 +16575,7 @@ impl Parser {
                     crate::surface::validation::validate_void_pointer_cast_source(
                         &operand.to_kernel_expression(), &self.names.program_parameter_types, "contract expression"
                     )?;
-                    return Ok(C0Expression::Cast {
+                    return Ok(CExpression::Cast {
                         expression: Box::new(operand),
                         interface_type: InterfaceType::VoidPointer,
                         struct_name: None,
@@ -16590,7 +16590,7 @@ impl Parser {
                     self.record_parameter_struct_cast(
                         &operand.to_kernel_expression(), &cast.struct_name,
                     )?;
-                    return Ok(C0Expression::Cast {
+                    return Ok(CExpression::Cast {
                         expression: Box::new(operand),
                         interface_type: InterfaceType::Int32Pointer,
                         struct_name: Some(cast.struct_name),
@@ -17002,13 +17002,13 @@ fn typed_load_type_from_name(name: Option<&str>) -> Option<ProgramType> {
     }
 }
 
-fn float_classification_from_name(name: &str) -> Option<syntax::C0FloatClassification> {
+fn float_classification_from_name(name: &str) -> Option<syntax::CFloatClassification> {
     match name {
-        "isfinite" => Some(syntax::C0FloatClassification::Finite),
-        "isinf" => Some(syntax::C0FloatClassification::Infinite),
-        "iszero" => Some(syntax::C0FloatClassification::Zero),
-        "issubnormal" => Some(syntax::C0FloatClassification::Subnormal),
-        "isnan" => Some(syntax::C0FloatClassification::Nan),
+        "isfinite" => Some(syntax::CFloatClassification::Finite),
+        "isinf" => Some(syntax::CFloatClassification::Infinite),
+        "iszero" => Some(syntax::CFloatClassification::Zero),
+        "issubnormal" => Some(syntax::CFloatClassification::Subnormal),
+        "isnan" => Some(syntax::CFloatClassification::Nan),
         _ => None,
     }
 }

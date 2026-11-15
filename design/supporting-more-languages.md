@@ -66,7 +66,7 @@ object, logical terms, resources, memory operations, and tool orchestration
 where their semantics agree. Retain a language-specific layer for validity,
 aliasing, object lifetime, cleanup, and exceptional behavior.
 
-The immediate implementation boundary is `C0VerificationSession` and its
+The immediate implementation boundary is `CVerificationSession` and its
 prepared inputs in `src/surface/verification.rs`, not a repository-wide rename
 of every `C`-prefixed type. Introduce a program/source identity and a small
 semantic input boundary as the second frontend needs them. New rules must

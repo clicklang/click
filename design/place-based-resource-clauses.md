@@ -263,7 +263,7 @@ spelling is described in `docs/reference/rust.md`.
 
 Built 2026-10-08. A local `int& r = value;` is carried the same way: the
 lowered pointer is named `&r`, the C++ interface records the function's
-reference locals (`C0Function::local_references`), and the parser adds them
+reference locals (`CFunction::local_references`), and the parser adds them
 to the names it resolves as referents in that function's proof. A name
 declared both as a reference and as an object in two scopes is left as
 written. `assignment(r, N)` is refused, since binding a reference is not an
