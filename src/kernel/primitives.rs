@@ -10199,7 +10199,7 @@ pub struct ExecutionState {
     /// call step sets one, the rest of the statement reads it, and the
     /// statement's end drops what it read. `None` is the canonical state at
     /// every statement boundary.
-    pub(crate) step_results: Option<Arc<BTreeMap<u32, StoredMemoryValue>>>,
+    pub(crate) step_results: Option<Arc<BTreeMap<u32, StoredExecutionValue>>>,
 }
 
 /// The function pointer a call goes through, with its type.
@@ -10297,9 +10297,9 @@ impl ExecutionState {
         self.set_retained_step_result(call, value.into());
     }
 
-    /// Keep an executed pointer producer through its statement-local handoff.
-    /// This uses the same native-key carrier as memory, without changing the
-    /// key or admitting other value families into common storage.
+    /// Keep the executed value through its statement-local handoff. Results
+    /// are values, like locals and returns, not native memory cells; recording
+    /// one must not export a retained arithmetic expression tree.
     pub(super) fn set_retained_step_result(
         &mut self,
         call: u32,
@@ -10312,11 +10312,8 @@ impl ExecutionState {
 
     /// The term call `call` of the running statement returned, once its call
     /// step has run.
-    pub(crate) fn step_result(&self, call: u32) -> Option<&ProgramValue> {
-        self.step_results
-            .as_ref()?
-            .get(&call)
-            .map(StoredMemoryValue::native)
+    pub(crate) fn step_result(&self, call: u32) -> Option<&StoredExecutionValue> {
+        self.step_results.as_ref()?.get(&call)
     }
 
     /// Ends the results of `steps`: their reader has read them.

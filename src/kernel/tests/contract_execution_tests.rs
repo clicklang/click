@@ -2504,7 +2504,10 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     state.locals().get_native("after").as_deref(),
                     Some(&int32(0))
                 );
-                assert!(state.locals().get("call_result").is_none());
+                assert_eq!(
+                    state.locals().get_native("call_result").as_deref(),
+                    Some(&int32(0))
+                );
                 let ProgramValue::Int32(value) = value.clone().into_native() else {
                     panic!("exceptional payload should be int32")
                 };

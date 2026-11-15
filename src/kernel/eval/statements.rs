@@ -4409,6 +4409,15 @@ fn execute_execution_statement_leaf_paths(
                 // The result has the callee's declared type, as it would
                 // assigned to a local of that type.
                 let value = match result_type {
+                    // The callee already formed a value of this scalar type.
+                    // An unchanged type keeps that producer, not an exported
+                    // and re-imported arithmetic tree.
+                    Some(program_type)
+                        if !program_type.is_pointer()
+                            && *program_type == retained_value.program_type() =>
+                    {
+                        retained_value.clone().into()
+                    }
                     Some(program_type) => {
                         match crate::kernel::functions::coerce_program_value_with_pointee_constant(
                             retained_value.native().into_owned(),

@@ -1418,7 +1418,7 @@ pub(super) fn local_naming_tables(
         values.extend(results.iter().filter_map(|(call, value)| {
             Some((
                 describe_contract_expression(&step_result_expression(*call)?),
-                value.native().clone(),
+                value.native().into_owned(),
             ))
         }));
     }
