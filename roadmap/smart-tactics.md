@@ -173,13 +173,12 @@ contracts, or resource shapes.
 ## Remaining transport expansion inventory
 
 The remaining work is written-proof migration, removal of residual internal
-legacy producers, and syntax/dispatcher retirement. A selected expansion of
-the passing
-`c_pointer_field_prefix_postcondition_across_call.md` still retains a legacy
-node for its quantified historical element equality. Migrate these producers
-alongside their written consumers before deleting the dispatcher. Counts are
-syntax sites, not independent slow walks or a claim that
-every fixture currently verifies.
+legacy producers, and syntax/dispatcher retirement. Next, group the remaining
+historical element uses by their explicit separation and preservation argument,
+then migrate one verified family. Check whole proofs and their smart expansions
+separately: replacing a written legacy operation does not establish that all
+producer paths are legacy-free. Counts below are syntax sites, not independent
+slow walks or a claim that every fixture currently verifies.
 
 ### Written syntax is a separate migration
 
@@ -188,10 +187,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 66 | 119 |
+| `mdtests/` | 65 | 118 |
 | `examples/` | 29 | 369 |
 | `library/` | 0 | 0 |
-| Total | 95 | 488 |
+| Total | 94 | 487 |
 
 The 16 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text
