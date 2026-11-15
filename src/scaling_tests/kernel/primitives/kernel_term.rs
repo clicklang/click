@@ -1015,3 +1015,72 @@ fn boolean_dependency_walk_visits_shared_connectives_once() {
         assert_eq!(work, size + 1);
     }
 }
+
+#[test]
+fn growing_common_boolean_comparisons_keep_operands_shared() {
+    use crate::kernel::{BooleanOperandView as B, KernelTermNode};
+    use crate::kernel::assumptions::boolean_operands_equal_with_load_atoms;
+    let mut samples = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let read = |block: &str| {
+            let memory = crate::kernel::intern_memory(crate::kernel::Memory::new().with_block(block, 16));
+            let pointer = crate::kernel::Pointer { block: block.into(),
+                offset: crate::kernel::PointerOffsetTerm::Constant(0) };
+            KernelTermImport::default().machine(format, &MachineTerm::MemoryLoad(
+                memory, Box::new(pointer), crate::kernel::LoadKind::Int32))
+        };
+        let mut left = read("bool-left");
+        let mut right = read("bool-right");
+        let zero = crate::kernel::KernelTermImport::default().machine(format, &MachineTerm::constant(0));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                for root in [&mut left, &mut right] {
+                    *root = KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add,
+                        [root.clone(), root.clone()]);
+                }
+                let comparison = |root: KernelTerm| KernelTerm::intern(KernelType::Bool,
+                    KernelTermNode::BoolCompare { format, relation: CompareRelation::LessThan,
+                        arguments: [root, zero.clone()] });
+                let l = comparison(left.clone());
+                let r = comparison(right.clone());
+                assert!(boolean_operands_equal_with_load_atoms(B::Shared(&l), B::Shared(&r), &|_, _| true));
+                assert!(!boolean_operands_equal_with_load_atoms(B::Shared(&l), B::Shared(&r), &|_, _| false));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(samples.windows(2).all(|p| p[1] <= p[0] * 5 + 100), "{samples:?}");
+}
+
+#[test]
+fn common_boolean_identity_visits_shared_connectives_once() {
+    use crate::kernel::BooleanOperandView as B;
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let atom = |format| KernelTermImport::default().condition(&ConditionTerm::Compare {
+            format, relation: CompareRelation::Equal,
+            left: Box::new(MachineTerm::Variable(Variable(964_099))),
+            right: Box::new(MachineTerm::constant(1)),
+        });
+        let mut left = atom(MachineIntegerType::Int32);
+        let mut right = atom(MachineIntegerType::UInt32);
+        for _ in 0..size {
+            left = KernelTerm::intern(KernelType::Bool, KernelTermNode::BoolEqual {
+                arguments: [left.clone(), left],
+            });
+            right = KernelTerm::intern(KernelType::Bool, KernelTermNode::BoolEqual {
+                arguments: [right.clone(), right],
+            });
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(B::Shared(&left).syntax_equal(B::Shared(&right)));
+        });
+        assert!(work <= size * 3 + 20, "{size}: {work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
