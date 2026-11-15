@@ -15,7 +15,8 @@
 //! - named by a statement rather than read by an expression;
 //! - the storage of a place, as in `&t`, `t.f` or `t[i]`;
 //! - an enum `match` scrutinee;
-//! - assigned a call, a borrow or a slice.
+//! - assigned a call or a slice, or a borrow its block's call does not take
+//!   as an argument.
 
 use super::super::schema::{
     Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place,
@@ -62,6 +63,18 @@ pub(super) fn substitute_pure_values(
         // ahead, with nothing since that could change them.
         let mut pending = BTreeMap::<String, E>::new();
         let mut kept = Vec::with_capacity(block.statements.len());
+        // A borrow the block's call takes as an argument is that argument,
+        // `f(&mut x)`: the loan lasts the call.
+        let call_arguments = match &block.terminator {
+            T::Call { arguments, .. } => arguments
+                .iter()
+                .filter_map(|argument| match argument {
+                    E::Local { name } => Some(name.clone()),
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>(),
+            _ => BTreeSet::new(),
+        };
         for mut statement in std::mem::take(&mut block.statements) {
             for (name, value) in substitute_statement(&mut statement, &mut pending) {
                 removed.remove(&name);
@@ -74,7 +87,11 @@ pub(super) fn substitute_pure_values(
                 S::Assign {
                     target: E::Local { name },
                     value,
-                } if substitutable(name) && pure(value) => {
+                } if substitutable(name)
+                    && (pure(value)
+                        || (matches!(value, E::Borrow { place, .. } if pure(place))
+                            && call_arguments.contains(name))) =>
+                {
                     pending.insert(name.clone(), value.clone());
                     removed.insert(name.clone());
                     continue;
@@ -885,6 +902,37 @@ mod tests {
             T::Return,
         );
         assert!(locals.contains(&"t1".to_string()));
+    }
+
+    #[test]
+    fn a_borrow_the_block_s_call_takes_is_that_argument() {
+        // `t1 = &mut a; f(t1)` is `f(&mut a)`.
+        let mut locals = ["a", "t1"].map(place).to_vec();
+        let borrow = E::Borrow {
+            place: Box::new(local("a")),
+            value_type: Type::U32,
+        };
+        let mut blocks = vec![MirBlock {
+            statements: vec![assign("t1", borrow)],
+            terminator: T::Call {
+                function: "f".into(),
+                arguments: vec![local("t1")],
+                owned_arguments: Vec::new(),
+                destination: "unit".into(),
+                target: 0,
+                through_pointer: false,
+                result: None,
+            },
+            terminator_site: None,
+        }];
+        let temporaries = BTreeSet::from(["t1".to_string()]);
+        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        assert!(locals.iter().all(|local| local.name != "t1"));
+        assert!(blocks[0].statements.is_empty());
+        assert!(matches!(
+            &blocks[0].terminator,
+            T::Call { arguments, .. } if matches!(arguments.as_slice(), [E::Borrow { .. }])
+        ));
     }
 
     #[test]
