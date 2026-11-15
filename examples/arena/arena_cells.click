@@ -5581,6 +5581,7 @@ int32 arena_pipeline(
     }
     have (w2_start as int32) <= ((first->start + 0) as int32) by { solve(); }
     have ((first->start + 0) as int32) < (w2_end as int32) by { solve(); }
+    have defined(first->start + 0) by { normalize(); }
     have contains(memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]), memory(at(w2_open, arena->data)[first->start + 0])) by {
         apply(separation::contains_element(at(w2_open, arena->data), (w2_start as int32), (w2_end as int32), first->start + 0)) using {
             defined(first->start + 0);
@@ -6821,6 +6822,8 @@ int32 arena_pipeline(
             assumption();
         }
         let { allocated: r3 } = unfold(o3);
+        observe(arena_region(combined));
+        have defined(combined->start) by { normalize(); }
         mark z3;
         have r3.start == at(z3, combined->start) by {
             normalize();
@@ -6938,9 +6941,7 @@ int32 arena_pipeline(
         }
         have defined((at(z3, combined->start) + 4)) by {
             have defined(at(z3, combined->start)) by {
-                transport(at(function.entry, viewable((combined as (uint8 *))[0..16])), defined(at(z3, combined->start))) using {
-                    at(function.entry, viewable((combined as (uint8 *))[0..16]));
-                };
+                assumption();
             }
             arithmetic_certificate rules {
                 premise 0: 0 <= at(z3, combined->start) => 0 <= at(z3, combined->start);

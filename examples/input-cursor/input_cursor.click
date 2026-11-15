@@ -84,6 +84,8 @@ int32 input_cursor_take(struct input_cursor* owner) {
     requires owner->pos < owner->len;
     owns input_cursor(owner);
 
+    ensures defined(owner->data);
+    ensures defined(owner->len);
     ensures result == old(owner->data[owner->pos]);
     ensures owner->pos == old(owner->pos) + 1;
     ensures owner->len == old(owner->len);
@@ -289,6 +291,5 @@ int32 input_cursor_shared_pipeline(
         right->data[right->pos] == data[0];
     };
     step();
-    fold(input_cursor(left));
     solve();
 }

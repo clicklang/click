@@ -80,9 +80,14 @@ void inspect(struct node* parent) {
                 Pair::At(model, lm) => {
                     let { l: l } = unfold(c);
                     have parent->left == model by { assumption(); }
+                    have defined(parent->right) by { rewrite(parent == pid); normalize(); }
                     mark before_sibling;
+                    have defined(at(before_sibling, pid->right)) by { normalize(); }
                     step();
                     have separate(loop(0).statement(0).footprint, memory(parent->right)) by { normalize() using {}; }
+                    have defined(parent->right) by {
+                        preserve(separate(loop(0).statement(0).footprint, memory(parent->right)));
+                    }
                     have parent->right == at(before_sibling, parent->right) by {
                         transport_certificate {
                             premise 0: separate(loop(0).statement(0).footprint, memory(parent->right))
@@ -112,22 +117,16 @@ void inspect(struct node* parent) {
                     have sibling == model by { assumption(); }
                     mark split;
                     match f.model ensuring {
-                        owns nf: focus_at(parent->right);
-                        fact nf.model == at(split, f.model);
+                        owns f: focus_at(parent->right);
+                        fact f.model == at(split, f.model);
                     } {
                         Focus::Empty => {
                             have at(split, f.model) == Focus::Empty;
-                            unfold(f);
-                            let nf = fold(focus_at(parent->right), { model: Focus::Empty });
-                            have nf.model == at(split, f.model);
+                            have f.model == at(split, f.model);
                         },
                         Focus::Live(identity) => {
                             have at(split, f.model) == Focus::Live(identity);
-                            unfold(f);
-                            have at(before_sibling, parent->right) == identity by { assumption(); }
-                            have parent->right == identity by { assumption(); }
-                            let nf = fold(focus_at(parent->right), { model: Focus::Live(identity) });
-                            have nf.model == at(split, f.model);
+                            have f.model == at(split, f.model);
                         },
                     }
                     have sibling->left == at(before_sibling, parent->left->left) by { assumption(); }
@@ -147,8 +146,8 @@ void inspect(struct node* parent) {
                             }
                             let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
                             let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)) }, { l: l });
-                            have nf.model == fm;
-                            let tree_context = fold(parent_at(root), { model: Parent::At(pid, Pair::At(model, Identity::At(leaf)), fm) }, { c: c, f: nf });
+                            have f.model == fm;
+                            let tree_context = fold(parent_at(root), { model: Parent::At(pid, Pair::At(model, Identity::At(leaf)), fm) }, { c: c, f: f });
                             step(); step();
                         },
                     }

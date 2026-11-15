@@ -40,12 +40,12 @@ uint32 decode() {
     have bytes[1] == 128;
     have bytes[2] == 238;
     have bytes[3] == 255;
-    have defined(obj);
+    have defined((&obj)[0]);
     have viewable((&obj)[0..1]);
     apply(integer::uint32_from_le_bytes(&obj)) using {
         little_endian();
         viewable((&obj)[0..1]);
-        defined(obj);
+        defined((&obj)[0]);
     };
     have obj == 4293820433u32;
 }

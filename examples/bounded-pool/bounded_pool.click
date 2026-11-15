@@ -36,6 +36,8 @@ void pool_init(struct pool* pool, int32 capacity) {
     requires count(pool_object(pool, _)) == 0;
     produces pool_control(pool);
     produces capacity of pool_slot(pool);
+    ensures defined(pool->capacity);
+    ensures defined(pool->checked_out);
     ensures pool->capacity == capacity;
     ensures pool->checked_out == 0;
     ensures count(pool_object(pool, _)) == 0;
@@ -239,6 +241,7 @@ void pool_grow(struct pool* pool, int32 amount) {
 } by {
     open(pool_control(pool)) {
         have defined(count(pool_slot(pool)) + amount);
+        have defined(pool->capacity) by { normalize(); }
         have defined(pool->capacity + amount);
         step();
         fold(amount of pool_slot(pool));

@@ -2972,3 +2972,58 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     assert_eq!(range.kind(), RangeIndexKind::UInt64);
     assert!(facts.contains(&ResourceFact::own_memory(range)));
 }
+
+#[test]
+fn viewability_alone_cannot_certify_initialization_of_external_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(9_492_101));
+    for value_type in [
+        ProgramType::UInt8,
+        ProgramType::Int32,
+        ProgramType::Int32Pointer,
+    ] {
+        for initialized in [false, true] {
+            let mut memory = Memory::new();
+            if initialized {
+                memory = memory.with_initialized_object(&pointer, value_type.byte_width());
+            }
+            let assumptions =
+                PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    memory: memory.clone(),
+                    base: pointer.clone(),
+                    bytes: MachineTerm::constant(value_type.byte_width()),
+                    wide: false,
+                });
+            assert_eq!(
+                assumptions.proves_memory_read_defined(&memory, &pointer, value_type),
+                initialized
+            );
+        }
+    }
+}
+
+#[test]
+fn typed_read_initialization_accepts_only_complete_cached_byte_coverage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(9_492_102));
+    for count in [0, 1, 2] {
+        let memory = Memory::new().with_seeded_cells(
+            pointer.clone(),
+            4,
+            ProgramType::Int32,
+            0,
+            count,
+            crate::kernel::intern_memory(Memory::new()),
+        );
+        let context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            memory: memory.clone(),
+            base: pointer.clone(),
+            bytes: MachineTerm::constant(8),
+            wide: false,
+        });
+        assert_eq!(
+            context.proves_memory_read_defined(&memory, &pointer, ProgramType::Int32Pointer),
+            count == 2
+        );
+    }
+}

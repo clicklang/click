@@ -7651,12 +7651,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     SpecMemory::Fixed(memory) => memory,
                 };
                 let mut obligations = pointer_path.obligations;
+                // A written definedness claim must retain the typed premise,
+                // even when this snapshot's cached cell already proves it.
+                // Otherwise `have defined(read)` records only true and cannot
+                // supply that premise to a later explicit preservation step.
                 if budget.checked_reads
-                    && !PureFactContext::new().proves_memory_read_defined(
-                        memory,
-                        &pointer,
-                        *value_type,
-                    )
+                    && (budget.program_definedness
+                        || !PureFactContext::new().proves_memory_read_defined(
+                            memory,
+                            &pointer,
+                            *value_type,
+                        ))
                 {
                     obligations.push(ProofObligation::new(Proposition::MemoryReadDefined {
                         memory: memory.clone(),

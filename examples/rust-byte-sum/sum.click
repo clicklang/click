@@ -16,6 +16,7 @@ fn sum(bytes: &[u8]) -> i32 {
         }; solve();
     }
     loop {
+        views bytes[0..bytes.len()];
         decreases bytes.len() - i;
         invariant i <= bytes.len();
         invariant 0 <= total and total <= 255 * i;
@@ -23,11 +24,10 @@ fn sum(bytes: &[u8]) -> i32 {
         preserve by {
             step_until(read(0)); step();
             have defined(bytes[i]) by {
-                transport(at(function.entry, viewable(bytes[0..bytes.len()])), defined(bytes[i])) using {
-                    at(function.entry, viewable(bytes[0..bytes.len()]));
-                    i < bytes.len();
-                    bytes.len() <= 9223372036854775807u64;
-                };
+                instantiate(forall (k: uint64) {
+                    true and k < bytes.len() implies defined(old(bytes[k]))
+                }, i);
+                transport(defined(old(bytes[i])), defined(bytes[i]));
             }
             have defined(total + bytes[i] as i32);
             have i < 18446744073709551615u64;

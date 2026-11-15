@@ -201,7 +201,14 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 resource,
                 parameter_binding,
                 &abstract_state,
-                concrete_facts.assumptions(),
+                // Each arm checked these argument reads above, before the
+                // state was abstracted. Re-express the already-established
+                // interface at its fresh join snapshot; do not demand the
+                // concrete snapshot's initialization facts a second time.
+                &concrete_facts
+                    .assumptions()
+                    .clone()
+                    .allow_symbolic_contract_loads(),
             )
             .map_err(|_| {
                 // The clause was read in this arm's own state above, so what

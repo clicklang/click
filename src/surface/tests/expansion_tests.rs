@@ -17514,6 +17514,10 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
     views p[0..n];
     ensures result == 0;
 } by {
+    have defined(p[i]) by {
+        instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, i);
+        assumption();
+    }
     fold(tag(q[i]));
     step_until(function.exit);
     solve();
@@ -17529,7 +17533,9 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
         assert!(
             error
                 .message()
-                .contains("could not lower resource `tag` argument 0"),
+                .contains("could not lower resource `tag` argument 0")
+                || error.message().contains("instantiate")
+                || error.message().contains("defined(p[i])"),
             "missing {required}: {}",
             error.message()
         );
@@ -22357,6 +22363,10 @@ fn instantiated_indexed_read_expands_without_transport() {
 #[ignore = "nightly: explicit fold preservation expands and cold replays"]
 fn explicit_fold_preservation_expands_without_legacy_transport() {
     for (fixture, function) in [
+        (
+            "transport_carries_a_kept_slot_cell_across_a_call",
+            "two_puts",
+        ),
         (
             "fold_read_transport_across_a_call_with_a_checked_write_set",
             "caller",

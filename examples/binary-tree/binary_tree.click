@@ -49,6 +49,8 @@ int32 tree_make_root(
     consumes tree(right);
     produces tree(node);
 
+    ensures defined(node->left);
+    ensures defined(node->right);
     ensures result == value;
     ensures node->value == value;
     ensures node->left == left;
@@ -58,6 +60,8 @@ int32 tree_make_root(
     step();
     step();
     step();
+    have defined(node->left) by { normalize(); }
+    have defined(node->right) by { normalize(); }
     fold(tree(node));
     assumption();
     assumption();
@@ -72,6 +76,8 @@ int32 tree_swap_children(struct node* node) {
     owns node->left;
     owns node->right;
 
+    ensures defined(node->left);
+    ensures defined(node->right);
     ensures result == old(node->value);
     ensures node->value == old(node->value);
     ensures node->left == old(node->right);
@@ -98,6 +104,8 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     step();
     unfold(tree(node));
     step();
+    have defined(node->left);
+    have defined(node->right);
     fold(tree(node));
     step();
     step();

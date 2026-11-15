@@ -31,6 +31,7 @@ void release(struct root* root) {
     consumes state: bundled(root);
     produces root->node;
     produces leaf: cell(root->node);
+    ensures defined(root->node);
 } by {
     match state.shape {
         Shape::Empty => { unfold(state); contradiction(0 == 1); },

@@ -186,10 +186,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 75 | 129 |
+| `mdtests/` | 73 | 126 |
 | `examples/` | 30 | 371 |
 | `library/` | 0 | 0 |
-| Total | 105 | 500 |
+| Total | 103 | 497 |
 
 The 18 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text
@@ -202,11 +202,10 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- `transport_wide_viewable_range_to_element_definedness.md` has only a pure
-  `viewable` premise, not an initialized input memory clause. The new entry
-  initialization facts do not justify inferring initialized contents from
-  liveness alone. Reduce the legacy rule's initialization assumptions before
-  choosing its explicit replacement.
+- Migrate the negative `transport_wide_viewable_range_to_element_definedness.md`
+  fixture without inferring initialized contents from its pure `viewable`
+  premise. Its legacy rule must remain refused; initializedness needs an
+  initialized input clause, a write, or an explicit definedness premise.
 - The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
   node, before its legacy transport calls. An explicit `node == identity`
   lookup moves the failure to the packed parent-pointer equality. Repair and
