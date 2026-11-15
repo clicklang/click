@@ -3913,6 +3913,8 @@ before it and counted from zero there:
 | `S.region(j)` | the `j`th atomic region of `S`'s own, in executable order |
 | `S.call(f, j)` | `S`'s `j`th call of `f`, in the order the calls run |
 | `S.call(j)` | `S`'s `j`th call of any callee, a call through a function pointer included, in the order the calls run |
+| `call(f, j)` | the function's `j`th call of `f`, counting all its calls of `f` in the order they run |
+| `call(j)` | the function's `j`th call of any callee, in the order the calls run |
 | `loop(i).test()` | the test of loop `i` whose condition calls a function, after those calls; refused for a pure condition, which is tested at the head |
 | `S.assignment(x, j)` | `S`'s `j`th atomic region of its own that assigns local `x` |
 | `S.read(j)` | `S`'s `j`th atomic region of its own with an explicit scalar memory load |
@@ -3934,6 +3936,13 @@ have at(statement(1).region(1).entry, y) == x + 1 by solve();
 
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
 call of `f` and its second atomic region.
+
+`call(f, j)` and `call(j)` on their own count the function's calls rather
+than one statement's, so `call(twice, 1)` is the second call of `twice`
+wherever it is written (`mdtests/a_function_level_call_is_named_among_the_function_s_calls.md`,
+`mdtests/a_function_level_call_past_the_function_s_calls_is_refused.md`).
+A Rust proof names a call this way, writing `f` as its path, such as
+`call(result_values::ok_if, 0).result`.
 
 `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)`, `.read(j)`,
 `.and(j)`, `.or(j)` and `.ternary(j)` end a chain
@@ -4012,8 +4021,10 @@ not every branch/loop boundary currently has a complete recorded footprint.
 Click writes points the same way. A diagnostic, a suggested premise or an
 expansion names a recorded point by its statement: `.entry` or `.exit` when
 the point is one, and the statement's `.call(f, j)` or `.region(j)` otherwise.
-It writes `region(N)` only for an atomic region that belongs to no statement as
-written, such as a `break`, or in a function whose frontend records none.
+A call that belongs to no statement as written, as in a Rust function, is
+written `call(f, j)` among the function's calls. Click writes `region(N)`
+only for another atomic region that belongs to no statement as written, such
+as a `break`, or in a function whose frontend records none.
 Nested statements and loop bodies are in
 `mdtests/statement_regions_count_the_arms_of_an_if_together.md` and
 `mdtests/statement_regions_reach_a_loop_body.md`.

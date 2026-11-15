@@ -2253,6 +2253,10 @@ impl Context<'_> {
 
     fn expr(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {
+            E::CallResult { call, function } => Ok(ProgramExpression::StepResult {
+                step: *call,
+                origin: crate::kernel::StepOrigin::Call(function.clone()),
+            }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
             E::SharedArrayOptionTag { option }

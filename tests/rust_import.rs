@@ -3216,6 +3216,37 @@ fn charon_option_values_read_as_click_options() {
 const RESULT_VALUE_SIDECAR: &str =
     include_str!("../design/charon-trial/result-values/results.click");
 
+// A call nested in another call's arguments, `or_zero(ok_if(x, true))`, is
+// a call step: its result is no local, and a proof names it by its call,
+// `call(f, j).result`, counting the function's calls of `f`.
+#[test]
+fn charon_a_nested_call_result_is_named_by_its_call() {
+    let p = Project::from_fixture("design/charon-trial/result-values");
+    fs::write(p.root.join("borrow.click"), RESULT_VALUE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    let proof = |claim: &str| {
+        RESULT_VALUE_SIDECAR.replacen(
+            "fn result_values::round(x: u32) -> u32 {\n    ensures result == x;\n}",
+            &format!(
+                "fn result_values::round(x: u32) -> u32 {{\n    ensures result == x;\n}} by {{\n    step_until(call(result_values::or_zero, 0));\n    have {claim};\n}}"
+            ),
+            1,
+        )
+    };
+    let named = proof("call(result_values::ok_if, 0).result == Result<u32, u8>::Ok(x)");
+    assert_ne!(named, RESULT_VALUE_SIDECAR);
+    verify_rust_function(&named, &prepared, "result_values::round")
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let false_claim = proof("call(result_values::ok_if, 0).result == Result<u32, u8>::Err(7u8)");
+    assert!(verify_rust_function(&false_claim, &prepared, "result_values::round").is_err());
+    let missing = proof("call(result_values::ok_if, 1).result == Result<u32, u8>::Ok(x)");
+    let error = verify_rust_function(&missing, &prepared, "result_values::round")
+        .expect_err("a call the function does not make is refused");
+    let rendered =
+        click::languages::rust::names::display_rust_names(&format!("{error}")).into_owned();
+    assert!(rendered.contains("1 time(s)"), "{rendered}");
+}
+
 // A Rust `Result<u32, u8>` is Click's `Result<u32, u8>` in a contract, as an
 // `Option` is: a function returning one, a `match` and an `if let` on one,
 // and a caller composing two through their contracts. `r?` returns `r`'s

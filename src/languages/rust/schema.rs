@@ -327,6 +327,13 @@ pub enum Expression {
     ChunkRemainder {
         iterator: String,
     },
+    /// The result of the call step `call`, a call to `function` that ran
+    /// just before the statement reading it: a value of the source
+    /// expression that holds the call, never a local of the program.
+    CallResult {
+        call: u32,
+        function: String,
+    },
     ArrayToSlice {
         array: Box<Self>,
         mutable: bool,
@@ -618,6 +625,10 @@ pub enum MirTerminator {
         /// A call through the function pointer the local `function` holds.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         through_pointer: bool,
+        /// The call step whose result its successor reads as
+        /// `Expression::CallResult`; `destination` then names no local.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<u32>,
     },
     /// A `match`: the case whose label the scrutinee has, else `otherwise`.
     /// An enum's cases are its variants; an integer's are its values.

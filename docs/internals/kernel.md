@@ -1376,9 +1376,16 @@ whose lowering emits that operator's panic check:
 At any other read, it stays a temporary: an enum constructor's field, a branch
 condition, a `match` scrutinee. Moving it there would drop the check.
 
+A call whose result one later expression reads, in the call's only
+successor, is a call step (`temporaries::call_steps`): the MIR call carries
+the step number in `result`, the read is `Expression::CallResult`, and the
+lowering emits `ProgramStatement::CallResult`. A proof names its result
+`call(f, j).result`, among the function's calls.
+
 These still stay a temporary:
 
-- a call's result, so a `for` loop's `next` result is one and a proof sees it;
+- a call's result read more than once, so a `for` loop's `next` result is one
+  and a proof sees it;
 - a borrow;
 - an indexed place or slice;
 - a local that roots a place (`&t`, `t.f`, `t[i]`);
