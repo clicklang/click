@@ -88,7 +88,17 @@ impl SharedPointerOffset {
         Ok(roots.each_ref().map(|root| results[root].clone()))
     }
 
-    pub(crate) fn visit_pair(roots: &[Self; 2], mut visit: impl FnMut(&KernelPointerOffset)) {
+    pub(crate) fn visit_pair(roots: &[Self; 2], visit: impl FnMut(&KernelPointerOffset)) {
+        Self::visit_pair_in_order(roots, false, visit);
+    }
+
+    /// Resource-read collection historically visits each Add right-first;
+    /// variable and snapshot readers use left-first. Preserve the caller's order.
+    pub(crate) fn visit_pair_in_order(
+        roots: &[Self; 2],
+        right_first: bool,
+        mut visit: impl FnMut(&KernelPointerOffset),
+    ) {
         let mut pending: Vec<_> = roots.iter().rev().collect();
         let mut seen = std::collections::HashSet::new();
         while let Some(root) = pending.pop() {
@@ -97,7 +107,11 @@ impl SharedPointerOffset {
             }
             crate::instrumentation::record_deterministic_work(1);
             visit(root.node());
-            pending.extend(root.node().offset_children().iter().rev());
+            if right_first {
+                pending.extend(root.node().offset_children());
+            } else {
+                pending.extend(root.node().offset_children().iter().rev());
+            }
         }
     }
 
