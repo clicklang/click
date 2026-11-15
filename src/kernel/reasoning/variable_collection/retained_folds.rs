@@ -476,6 +476,52 @@ mod tests {
     }
 
     #[test]
+    fn retained_boolean_call_arguments_preserve_dependency_modes() {
+        use crate::kernel::BooleanOperandView as V;
+        let _session = crate::kernel::VerificationSession::enter();
+        let argument = KernelTermImport::default().condition(&ConditionTerm::BoolIf {
+            condition: Box::new(ConditionTerm::Variable(Variable(999560))),
+            then_condition: Box::new(ConditionTerm::IntegerEqual(
+                IntegerTerm::Variable(Variable(999561)).into(),
+                IntegerTerm::Variable(Variable(999562)).into(),
+            )),
+            else_condition: Box::new(ConditionTerm::BoolLoad(
+                crate::kernel::intern_memory(Memory::new()),
+                Box::new(Pointer::symbolic(Variable(999563))),
+            )),
+        });
+        let application = SharedPureApplication::intern(
+            "boolean_dependency_handoff".into(),
+            vec![argument.boolean_argument_native().unwrap().clone()],
+        );
+        let common =
+            KernelTermImport::default().boolean_call_with_retained(&application, &[Some(argument)]);
+        let native = ConditionTerm::BoolApplication(application);
+        struct Restore(bool);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+            }
+        }
+        for connection in [false, true, false] {
+            let _restore = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::ExpressionFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let mut expected = BTreeSet::new();
+                let mut actual = BTreeSet::new();
+                collect_boolean_variables(V::Native(&native), mode, &mut expected);
+                collect_boolean_variables(V::Shared(&common), mode, &mut actual);
+                assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+            }
+        }
+    }
+
+    #[test]
     fn standalone_boolean_dependencies_preserve_collection_modes() {
         use crate::kernel::BooleanOperandView as V;
         let comparison = ConditionTerm::IntegerEqual(

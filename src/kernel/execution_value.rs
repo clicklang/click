@@ -154,6 +154,20 @@ impl ExecutionValue {
         }
     }
 
+    /// Argument coercion leaves a logical Bool unchanged when the destination
+    /// is also Bool. Other conversions keep the established pointer policy.
+    pub(in crate::kernel) fn retain_coerced_argument(&self, value: ProgramValue) -> Self {
+        if self
+            .shared()
+            .is_some_and(|root| root.ty() == &KernelType::Bool)
+            && value.program_type() == ProgramType::Bool
+        {
+            self.clone()
+        } else {
+            self.retain_checked_pointer(value)
+        }
+    }
+
     /// Retain one selected operand before crossing a native checking boundary.
     pub(in crate::kernel) fn common_operand(&self) -> KernelTerm {
         match self {

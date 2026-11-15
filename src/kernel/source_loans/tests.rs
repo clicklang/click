@@ -976,6 +976,7 @@ fn source_scalar_lease_branches_refuse_reference_mutations_early_returns_and_loo
                     destination: "x".into(),
                     target: 3,
                     through_pointer: false,
+                    result: None,
                 }
             }
         }

@@ -508,7 +508,10 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         | E::SignedInteger { .. }
         | E::UsizeInteger { .. }
         | E::Boolean { .. }
-        | E::NoneBox => return Ok((false, false)),
+        | E::NoneBox
+        // A call step's result is a scalar or enum value, which holds no
+        // reference.
+        | E::CallResult { .. } => return Ok((false, false)),
         E::SharedArrayHasNext { .. }
         | E::RangeHasNext { .. }
         | E::EnumerateOptionIndex { .. }
@@ -737,6 +740,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
                 target,
                 function,
                 through_pointer,
+                ..
             } => {
                 let mut used = *through_pointer && aliases.contains(function.as_str());
                 used |= owned_arguments
@@ -973,6 +977,7 @@ mod tests {
             destination: "x".into(),
             target: 1,
             through_pointer: false,
+            result: None,
         };
         f.mir.as_mut().unwrap().blocks.push(MirBlock {
             statements: vec![],

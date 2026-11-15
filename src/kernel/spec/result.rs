@@ -233,13 +233,6 @@ impl SpecCallArgument {
     pub(super) fn from_value(value: SpecValue) -> Self {
         match value {
             SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
-            SpecValue::Shared(value) if value.ty() == &KernelType::Bool => {
-                // The Boolean argument handoff is migrated separately from
-                // call-result production. Keep this selected native boundary.
-                Self::Native(PureFunctionArgument::Value(
-                    SpecValue::Shared(value).into_native(),
-                ))
-            }
             SpecValue::Shared(value)
                 if matches!(value.node(), KernelTermNode::PointerAddress { .. }) =>
             {
@@ -264,7 +257,9 @@ impl SpecCallArgument {
     pub(super) fn native_descriptor(&self) -> Option<&PureFunctionArgument> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(value) => value.pointer_argument_native(),
+            Self::Shared(value) => value
+                .pointer_argument_native()
+                .or_else(|| value.boolean_argument_native()),
         }
     }
 
@@ -272,7 +267,10 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
-                if let Some(descriptor) = value.pointer_argument_native() {
+                if let Some(descriptor) = value
+                    .pointer_argument_native()
+                    .or_else(|| value.boolean_argument_native())
+                {
                     return descriptor.clone();
                 }
                 let KernelType::Program(ty) = value.ty() else {

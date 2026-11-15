@@ -738,6 +738,21 @@ fn lower_function(
             declaration.with_positional_parameters()
         });
     }
+    // Reserve the compiler's explicit call-result identities once for this
+    // function. Generated call/assignment pairs must not reuse a later MIR
+    // call's identity, even when the generated call comes first.
+    let next_call_result = f
+        .mir
+        .iter()
+        .flat_map(|mir| &mir.blocks)
+        .filter_map(|block| match &block.terminator {
+            super::schema::MirTerminator::Call { result, .. } => *result,
+            _ => None,
+        })
+        .max()
+        .map(|last| last.checked_add(1).ok_or("too many calls in one function"))
+        .transpose()?
+        .unwrap_or(0);
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
         library_slice_iterators: BTreeMap::new(),
@@ -765,7 +780,7 @@ fn lower_function(
         mir_point: None,
         mir_nodes: BTreeMap::new(),
         next_temporary: 0,
-        next_call_result: std::cell::Cell::new(0),
+        next_call_result: std::cell::Cell::new(next_call_result),
         loop_iterators: Vec::new(),
         locals,
         return_type,
@@ -2276,6 +2291,10 @@ impl Context<'_> {
 
     fn expr(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {
+            E::CallResult { call, function } => Ok(ProgramExpression::StepResult {
+                step: *call,
+                origin: crate::kernel::StepOrigin::Call(function.clone()),
+            }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
             E::SharedArrayOptionTag { option }

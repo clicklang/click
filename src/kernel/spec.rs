@@ -7770,11 +7770,20 @@ fn evaluate_spec_pure_function_application_paths_in(
             continue;
         }
         if result_type == ProgramType::Bool && !budget.machine_result_production_disabled {
+            let retained = arguments
+                .iter()
+                .map(|argument| match argument {
+                    SpecCallArgument::Shared(root) if root.ty() == &KernelType::Bool => {
+                        Some(root.clone())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
             let application =
                 SharedPureApplication::intern(name.to_owned(), call_arguments(arguments));
             results.push(SpecExpressionPath {
                 value: KernelTermImport::default()
-                    .boolean_call(&application)
+                    .boolean_call_with_retained(&application, &retained)
                     .into(),
                 facts,
                 obligations,
