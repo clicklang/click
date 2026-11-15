@@ -168,19 +168,19 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
                 facts = facts.assume_condition(
                     ConditionTerm::pointer_equal(
                         base.clone(),
-                        Pointer::symbolic(Variable(986_000 + id)),
+                        Pointer::symbolic(Variable(10_000_000 + id)),
                     ),
                     true,
                 );
                 facts = facts.assume_condition(
                     ConditionTerm::pointer_equal(
-                        Pointer::symbolic(Variable(987_000 + id)),
-                        Pointer::symbolic(Variable(988_000 + id)),
+                        Pointer::symbolic(Variable(20_000_000 + id)),
+                        Pointer::symbolic(Variable(30_000_000 + id)),
                     ),
                     true,
                 );
             }
-            let alias = Pointer::symbolic(Variable(if hit { 986_000 + size - 1 } else { 989_000 }));
+            let alias = Pointer::symbolic(Variable(if hit { 10_000_000 + size - 1 } else { 40_000_000 }));
             let output = ResourceFact::own_allocation(alias, 4);
             let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
                 transfer_population_call_facts(
