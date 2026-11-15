@@ -194,7 +194,8 @@ checks ordinary verification, expansion, retained replay, cold checking of the
 expanded claim with implicit solving disabled, and refusal of a body that
 stores null. It is a named nightly regression. Focused source tests cover
 binder shadowing/forks, signed and unsigned word reads, casted calls, and
-recorded array snapshots; multi-size controls grow binder/alias populations
+recorded array snapshots. The gate covers 32/64-bit calls; the complete
+ten-format sweep is a named nightly check. Multi-size controls grow binder/alias populations
 and unrelated recorded history. This does not close the larger rbtree reports
 or replace the remaining native-interface matrix.
 
