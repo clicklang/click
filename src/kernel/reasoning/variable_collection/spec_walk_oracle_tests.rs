@@ -41,7 +41,8 @@ fn old_collect_spec_expression_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(left, variables);
             old_collect_spec_expression_bitvector_variables(right, variables);
         }
-        SpecExpression::BitwiseNot(expression)
+        SpecExpression::Negate(expression)
+        | SpecExpression::BitwiseNot(expression)
         | SpecExpression::Cast(expression, _)
         | SpecExpression::NarrowArithmetic(expression, _)
         | SpecExpression::PointerCoercion(expression, _) => {
@@ -428,7 +429,8 @@ fn old_collect_spec_integer_bound_expression(
             old_collect_spec_integer_bound_expression(left, variables, integer_seen);
             old_collect_spec_integer_bound_expression(right, variables, integer_seen);
         }
-        SpecExpression::BitwiseNot(expression)
+        SpecExpression::Negate(expression)
+        | SpecExpression::BitwiseNot(expression)
         | SpecExpression::Cast(expression, _)
         | SpecExpression::NarrowArithmetic(expression, _)
         | SpecExpression::PointerCoercion(expression, _)

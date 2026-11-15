@@ -94,7 +94,8 @@ impl Gen {
 
     fn c(&mut self) -> ProgramExpression {
         const NAMES: [&str; 6] = ["x", "x", "n", "v", "acc", "i"];
-        match self.pick(4) {
+        match self.pick(5) {
+            4 => ProgramExpression::Negate(Box::new(ProgramExpression::Variable("n".into()))),
             0 => ProgramExpression::Variable(NAMES[self.pick(6) as usize].into()),
             1 => ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
             2 => ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
@@ -137,7 +138,7 @@ impl Gen {
             return self.expr_leaf();
         }
         let d = depth - 1;
-        match self.pick(20) {
+        match self.pick(21) {
             0 => self.expr_leaf(),
             1 => SpecExpression::ProgramExpression(self.c()),
             2 => SpecExpression::IntegerToMachine {
@@ -145,6 +146,7 @@ impl Gen {
                 destination: MachineIntegerType::Int32,
             },
             3 => SpecExpression::Add(Box::new(self.expr(d)), Box::new(self.expr(d))),
+            20 => SpecExpression::Negate(Box::new(self.expr(d))),
             4 => SpecExpression::BitwiseNot(Box::new(self.expr(d))),
             19 => {
                 SpecExpression::PointerCoercion(Box::new(self.expr(d)), ProgramType::UInt8Pointer)

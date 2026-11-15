@@ -979,6 +979,8 @@ struct Parser {
     proposition_nesting: usize,
     proof_nesting: usize,
     contract_expression_nesting: usize,
+    /// Interval certificates juxtapose a term and two parenthesized bounds.
+    certificate_operand_boundary: bool,
     contract_if_nesting: usize,
     algebraic_type_nesting: usize,
     tokens: Vec<Token>,
@@ -1328,6 +1330,7 @@ fn algebraic_parameter_types(
             ClickType::Parameter(_)
             | ClickType::Program(_)
             | ClickType::CObjectPointer { .. }
+            | ClickType::Function { .. }
             | ClickType::Integer => None,
         })
         .collect()
@@ -1713,6 +1716,7 @@ impl Parser {
             proposition_nesting: 0,
             proof_nesting: 0,
             contract_expression_nesting: 0,
+            certificate_operand_boundary: false,
             contract_if_nesting: 0,
             algebraic_type_nesting: 0,
             position: 0,
@@ -3123,6 +3127,12 @@ impl Parser {
         );
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
+        if matches!(return_type, ClickType::Function { .. }) {
+            return Err(
+                self.error("specification function declaration results are not supported yet")
+            );
+        }
+
         let return_object_class = parsed_c_return_type
             .as_ref()
             .and_then(|parsed| self.declared_object_class(parsed));
@@ -3934,6 +3944,12 @@ impl Parser {
                     });
                 } else {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
+                    if matches!(click_type, ClickType::Function { .. }) {
+                        return Err(self.error(
+                            "specification function declaration parameters are not supported yet",
+                        ));
+                    }
+
                     let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
                         if self.peek() == Some(&Token::LParen) {
                             let (interface_type, function_pointer_signature) =
@@ -6323,6 +6339,35 @@ impl Parser {
     }
 
     fn parse_click_type(&mut self) -> Result<(ClickType, Option<ParsedType>), ClickError> {
+        if self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen) {
+            if self.algebraic_type_nesting >= MATCH_NESTING_LIMIT {
+                return Err(self
+                    .error("specification function type nesting exceeds Click's supported depth"));
+            }
+            self.algebraic_type_nesting += 1;
+            self.position += 2;
+            let mut parameters = Vec::new();
+            if self.peek() != Some(&Token::RParen) {
+                loop {
+                    parameters.push(self.parse_click_type()?.0);
+                    if self.peek() != Some(&Token::Comma) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::RParen)?;
+            self.expect(Token::Arrow)?;
+            let (result, _) = self.parse_click_type()?;
+            self.algebraic_type_nesting -= 1;
+            return Ok((
+                ClickType::Function {
+                    parameters,
+                    result: Box::new(result),
+                },
+                None,
+            ));
+        }
         if let Some(element) = self.take_rust_slice_value_type()? {
             return Ok((
                 ClickType::Algebraic(AlgebraicTypeApplication {
@@ -8759,7 +8804,7 @@ impl Parser {
                                     .set_scoped(NameKind::ContractBinding, &name, true);
                                 self.integer_literal_context = false;
                             }
-                            ClickType::Parameter(_) => {
+                            ClickType::Function { .. } | ClickType::Parameter(_) => {
                                 return Err(self.error(
                                     "quantifier type must be a concrete C, Integer, or algebraic type",
                                 ));
@@ -9947,7 +9992,10 @@ impl Parser {
             {
                 return Err(self.error("only pointer-to-struct types are supported"));
             }
-            if matches!(click_type, ClickType::Parameter(_)) {
+            if matches!(
+                click_type,
+                ClickType::Function { .. } | ClickType::Parameter(_)
+            ) {
                 return Err(self.error(
                     "existential binding type must be a concrete C, Integer, or algebraic type",
                 ));
@@ -9982,7 +10030,9 @@ impl Parser {
                     self.names.set_scoped(NameKind::ContractBinding, name, true);
                     self.integer_literal_context = false;
                 }
-                ClickType::Parameter(_) => unreachable!("rejected above"),
+                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                    unreachable!("rejected above")
+                }
             }
         }
         let body = self.parse_proposition()?;
@@ -11943,7 +11993,7 @@ impl Parser {
                 }
                 "interval_from_affine" => {
                     let source = self.expect_index("affine source")?;
-                    let term = self.parse_contract_expression()?;
+                    let term = self.parse_interval_certificate_term()?;
                     let lower = self.expect_signed_i64("interval lower bound")?;
                     let upper = self.expect_signed_i64("interval upper bound")?;
                     self.expect(Token::Semicolon)?;
@@ -11956,7 +12006,7 @@ impl Parser {
                 }
                 "interval_from_affine_direct" => {
                     let source = self.expect_index("affine source")?;
-                    let term = self.parse_contract_expression()?;
+                    let term = self.parse_interval_certificate_term()?;
                     let lower = self.expect_signed_i64("interval lower bound")?;
                     let upper = self.expect_signed_i64("interval upper bound")?;
                     self.expect(Token::Semicolon)?;
@@ -11968,7 +12018,7 @@ impl Parser {
                     }
                 }
                 "interval_atom" => {
-                    let term = self.parse_contract_expression()?;
+                    let term = self.parse_interval_certificate_term()?;
                     let lower = self.expect_signed_i64("interval lower bound")?;
                     let upper = self.expect_signed_i64("interval upper bound")?;
                     self.expect(Token::Semicolon)?;
@@ -14724,6 +14774,16 @@ impl Parser {
         Ok(expression)
     }
 
+    /// A certificate's `(term) (lower) (upper)` has operand delimiters,
+    /// rather than two applications of a parenthesized value. Inside the
+    /// term's own delimiters, ordinary lambda applications remain available.
+    fn parse_interval_certificate_term(&mut self) -> Result<ContractExpression, ClickError> {
+        let previous = std::mem::replace(&mut self.certificate_operand_boundary, true);
+        let term = self.parse_contract_expression();
+        self.certificate_operand_boundary = previous;
+        term
+    }
+
     // Keep postfix metadata and field-lowering temporaries out of the
     // recursive expression parser frame. Nested `match` expressions only
     // retain this small dispatcher while their primary is parsed.
@@ -14816,15 +14876,38 @@ impl Parser {
         };
         let mut postfixes = 0;
         loop {
+            if self.certificate_operand_boundary && self.peek() == Some(&Token::LParen) {
+                return Ok(expression);
+            }
+
             if !matches!(
                 self.peek(),
-                Some(Token::LBracket | Token::Arrow | Token::Dot)
+                Some(Token::LBracket | Token::Arrow | Token::Dot | Token::LParen)
             ) {
                 return Ok(expression);
             }
             self.check_expression_chain_limit(postfixes)?;
             postfixes += 1;
             match self.peek() {
+                Some(Token::LParen) => {
+                    self.position += 1;
+                    let mut arguments = Vec::new();
+                    if self.peek() != Some(&Token::RParen) {
+                        loop {
+                            arguments.push(self.parse_contract_expression()?);
+                            if self.peek() != Some(&Token::Comma) {
+                                break;
+                            }
+                            self.position += 1;
+                        }
+                    }
+                    self.expect(Token::RParen)?;
+                    expression = ContractExpression::Apply {
+                        function: Box::new(expression),
+                        arguments,
+                    };
+                    struct_name = None;
+                }
                 // A slice parameter is a pointer and a length; its subslice
                 // is the method on the slice value it stands for.
                 Some(Token::LBracket)
@@ -15557,6 +15640,65 @@ impl Parser {
                 _ => {}
             }
         }
+        if self.peek() == Some(&Token::Pipe) {
+            self.position += 1;
+            let mut parameters = Vec::new();
+            let mut bound = BTreeSet::new();
+            if self.peek() != Some(&Token::Pipe) {
+                loop {
+                    let name = self.expect_ident("lambda parameter name")?;
+                    self.refuse_bool_literal_binder(&name)?;
+                    if !bound.insert(name.clone()) {
+                        return Err(self.error(format!("duplicate lambda parameter `{name}`")));
+                    }
+                    self.expect(Token::Colon)?;
+                    let (click_type, _) = self.parse_click_type()?;
+                    parameters.push((name, click_type));
+                    if self.peek() != Some(&Token::Comma) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::Pipe)?;
+            self.expect(Token::Arrow)?;
+            let (result, _) = self.parse_click_type()?;
+            self.expect(Token::LBrace)?;
+            let previous_bool = std::mem::replace(&mut self.bool_value_context, false);
+            let previous_integer = std::mem::replace(
+                &mut self.integer_literal_context,
+                result == ClickType::Integer,
+            );
+            let scope = self.names.scope();
+            let mut shadowed = Vec::new();
+            for (name, ty) in &parameters {
+                self.names.set_scoped(NameKind::ContractBinding, name, true);
+                self.names
+                    .set_scoped(NameKind::IntegerParameter, name, *ty == ClickType::Integer);
+                self.names.set_scoped(NameKind::IntegerLet, name, false);
+                self.names.set_scoped_struct_param(name, None);
+                shadowed.push(self.bind_let_operand(name, Some(ty), None));
+            }
+            let body = self
+                .parse_branch_value(result == ClickType::Program(InterfaceType::Bool))
+                .and_then(|body| match &result {
+                    ClickType::Integer => Ok(self.at_integer_position(body)),
+                    ClickType::Program(ty) => self.typed_let_literal("lambda result", *ty, body),
+                    _ => Ok(body),
+                });
+            self.unbind_let_operands(shadowed);
+            self.names.end(scope);
+            self.bool_value_context = previous_bool;
+            self.integer_literal_context = previous_integer;
+            let body = body?;
+            self.expect(Token::RBrace)?;
+            return Ok(ContractExpression::Lambda {
+                parameters,
+                result,
+                body: Box::new(body),
+            });
+        }
+
         if self.looks_like_algebraic_constructor() {
             let algebraic_type = self.parse_algebraic_type_application()?;
             self.expect(Token::ColonColon)?;
@@ -15810,6 +15952,12 @@ impl Parser {
         if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::LParen)
         {
             let (name, arguments) = self.parse_call_arguments("function name")?;
+            if self.names.contains(NameKind::ContractBinding, &name) {
+                return Ok(ContractExpression::Apply {
+                    function: Box::new(ContractExpression::Binding(name)),
+                    arguments,
+                });
+            }
             let call = ContractExpression::Call {
                 name: name.clone(),
                 arguments,
@@ -15915,7 +16063,10 @@ impl Parser {
             )),
             Some(Token::LParen) => {
                 let start = self.position;
-                let expression = self.parse_contract_expression()?;
+                let boundary = std::mem::replace(&mut self.certificate_operand_boundary, false);
+                let expression = self.parse_contract_expression();
+                self.certificate_operand_boundary = boundary;
+                let expression = expression?;
                 if self.continues_as_rust_bool_value() {
                     // Rust's `(x > 3)` is a `bool` value: the proposition's
                     // truth value, as in a `-> bool` body.
@@ -16413,6 +16564,16 @@ impl Parser {
         self.expect(Token::LParen)?;
         let initial = self.parse_contract_expression()?;
         self.expect(Token::Comma)?;
+        // The old unannotated two-name spelling remains contextual sugar.
+        // A typed literal or any other expression is an ordinary step value.
+        let legacy_binder = self.peek() == Some(&Token::Pipe)
+            && matches!(self.peek_next(), Some(Token::Ident(_)))
+            && self.tokens.get(self.position + 2) == Some(&Token::Comma);
+        if !legacy_binder {
+            let step = self.parse_contract_expression()?;
+            self.expect(Token::RParen)?;
+            return Ok(lambdas::range_fold(start, end, initial, step));
+        }
         self.expect(Token::Pipe)?;
         let accumulator = self.expect_ident("fold accumulator name")?;
         self.expect(Token::Comma)?;
@@ -17010,7 +17171,8 @@ impl Parser {
         matches!(
             self.tokens.get(close + 1),
             Some(
-                Token::EqualEqual
+                Token::LParen
+                    | Token::EqualEqual
                     | Token::BangEqual
                     | Token::LessThan
                     | Token::LessEqual
@@ -18276,6 +18438,26 @@ mod qualified_native_pointer_cast_tests {
                     );
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod lambda_certificate_parser_tests {
+    use super::*;
+
+    #[test]
+    fn typed_lambda_applications_preserve_interval_operand_boundaries() {
+        for source in [
+            "(value) (-2147483648) (2147483646)",
+            "1 (-2147483648) (2147483646)",
+            "((|x: int32| -> int32 { x })(value)) (-2147483648) (2147483646)",
+        ] {
+            let mut parser = Parser::new(source).unwrap();
+            parser.parse_interval_certificate_term().unwrap();
+            assert_eq!(parser.expect_signed_i64("lower").unwrap(), -2147483648);
+            assert_eq!(parser.expect_signed_i64("upper").unwrap(), 2147483646);
+            assert!(parser.peek().is_none());
         }
     }
 }

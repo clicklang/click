@@ -255,7 +255,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
                         },
                     );
                 }
-                ClickType::Parameter(_) => {
+                ClickType::Function { .. } | ClickType::Parameter(_) => {
                     return Err(ClickError::new("unresolved resource match binding type"));
                 }
                 // Mathematical bindings are carried into the kernel as
@@ -1198,6 +1198,11 @@ pub(super) fn validate_algebraic_type_uses(
             )?;
         }
         match (definition.return_type(), body_type) {
+            (ClickType::Function { .. }, _) => {
+                return Err(ClickError::new(
+                    "specification function parameters and results are not supported yet",
+                ));
+            }
             (ClickType::Resource, _) => {
                 return Err(ClickError::new(
                     "Resource function results are not supported",
@@ -1541,7 +1546,10 @@ fn validate_algebraic_proposition_one(
                     context,
                 );
             }
-            if matches!(interface_type, ClickType::Parameter(_)) {
+            if matches!(
+                interface_type,
+                ClickType::Function { .. } | ClickType::Parameter(_)
+            ) {
                 return Err(ClickError::new(
                     "this quantifier binder type is not supported",
                 ));
@@ -1556,7 +1564,9 @@ fn validate_algebraic_proposition_one(
                 }
                 ClickType::Integer => variables.hide(name),
                 ClickType::Algebraic(_) => unreachable!("handled above"),
-                ClickType::Parameter(_) => unreachable!("refused above"),
+                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                    unreachable!("refused above")
+                }
             }
             let result = validate_algebraic_proposition(
                 body,
@@ -1668,6 +1678,11 @@ fn validate_algebraic_proposition_one(
                     continue;
                 };
                 match (expected.click_type(), actual) {
+                    (ClickType::Function { .. }, _) => {
+                        return Err(ClickError::new(
+                            "specification function parameters and results are not supported yet",
+                        ));
+                    }
                     (ClickType::Resource, _) => {
                         return Err(ClickError::new(
                             "Resource is supported only as a theorem parameter",
@@ -1931,7 +1946,7 @@ fn expression_is_integer_match_result(
                         ClickType::Integer => {
                             integer_bindings.insert(binding.clone());
                         }
-                        ClickType::Parameter(_) => {}
+                        ClickType::Function { .. } | ClickType::Parameter(_) => {}
                     }
                 }
                 let arm_body = substitute_contract_expression(&arm.body, &algebraic_bindings)
@@ -2015,6 +2030,26 @@ fn validate_algebraic_expression_node(
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
     context: &str,
 ) -> Result<Option<AlgebraicTypeApplication>, ClickError> {
+    if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
+        if let ContractExpression::Let { value, .. } = expression {
+            validate_algebraic_expression(
+                value,
+                variables,
+                click_functions,
+                predicates,
+                definitions,
+                context,
+            )?;
+        }
+        return validate_algebraic_expression(
+            &reduced,
+            variables,
+            click_functions,
+            predicates,
+            definitions,
+            context,
+        );
+    }
     match expression {
         ContractExpression::Resource(_) => Ok(None),
         ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
@@ -2023,6 +2058,27 @@ fn validate_algebraic_expression_node(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(None),
+        ContractExpression::Lambda {
+            parameters, body, ..
+        } => {
+            let scope = variables.scope();
+            for (name, ty) in parameters {
+                variables.bind(name, ty.clone());
+            }
+            let checked = validate_algebraic_expression(
+                body,
+                variables,
+                click_functions,
+                predicates,
+                definitions,
+                context,
+            );
+            variables.end(scope);
+            checked?;
+            Ok(None)
+        }
+        ContractExpression::Apply { .. } => unreachable!("an application reduces above"),
+
         ContractExpression::IntegerLiteral(_) => Ok(None),
         ContractExpression::Negate(inner) => validate_algebraic_expression(
             inner,
@@ -2105,6 +2161,11 @@ fn validate_algebraic_expression_node(
                 let expected = instantiate_field_type(definition, algebraic_type, field)?;
                 let field_type = &expected;
                 match (&expected, actual_algebraic) {
+                    (ClickType::Function { .. }, _) => {
+                        return Err(ClickError::new(
+                            "specification function parameters and results are not supported yet",
+                        ));
+                    }
                     (ClickType::Resource, _) => {
                         return Err(ClickError::new(
                             "Resource is supported only as a theorem parameter",
@@ -2288,6 +2349,11 @@ fn validate_algebraic_expression_node(
                     match instantiate_field_type(definition, &algebraic_type, field)? {
                         ClickType::Resource => {
                             return Err(ClickError::new("Resource is not an algebraic field type"));
+                        }
+                        ClickType::Function { .. } => {
+                            return Err(ClickError::new(
+                                "specification function fields are not supported",
+                            ));
                         }
                         ClickType::Parameter(_) => {}
                         field_type @ (ClickType::Program(_) | ClickType::CObjectPointer { .. }) => {
@@ -2754,6 +2820,11 @@ fn validate_algebraic_expression_node(
                     .transpose()?
                     .unwrap_or_else(|| expected.click_type().clone());
                 match (&expected, actual) {
+                    (ClickType::Function { .. }, _) => {
+                        return Err(ClickError::new(
+                            "specification function parameters and results are not supported yet",
+                        ));
+                    }
                     (ClickType::Resource, _) => {
                         return Err(ClickError::new(
                             "Resource is supported only as a theorem parameter",
@@ -2876,7 +2947,7 @@ fn validate_algebraic_expression_node(
                 .transpose()?;
             Ok(return_type.and_then(|return_type| match return_type {
                 ClickType::Resource => None,
-                ClickType::Parameter(_) => None,
+                ClickType::Function { .. } | ClickType::Parameter(_) => None,
                 ClickType::Algebraic(application) => Some(application),
                 ClickType::Program(_) | ClickType::CObjectPointer { .. } => None,
                 ClickType::Integer => None,
@@ -3046,6 +3117,19 @@ fn require_scalar_return_value(
                 context,
                 click_type == &Some(ClickType::Integer),
             )?;
+            if matches!(inferred, SpecValueType::Function(_)) {
+                let reduced = lambdas::reduce_head(expression)
+                    .map_err(ClickError::new)?
+                    .ok_or_else(|| ClickError::new("expected a literal lambda binding"))?;
+                return require_scalar_return_value(
+                    &reduced,
+                    expected,
+                    types,
+                    click_functions,
+                    definitions,
+                    context,
+                );
+            }
             let value_type = match inferred {
                 SpecValueType::Scalar(Some(ty)) => Some(ClickType::Program(ty)),
                 SpecValueType::Integer => Some(ClickType::Integer),
@@ -3350,6 +3434,18 @@ fn infer_generic_expression_type(
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
     context: &str,
 ) -> Result<Option<ClickType>, ClickError> {
+    if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
+        if let ContractExpression::Let { value, .. } = expression {
+            infer_generic_expression_type(value, variables, click_functions, definitions, context)?;
+        }
+        return infer_generic_expression_type(
+            &reduced,
+            variables,
+            click_functions,
+            definitions,
+            context,
+        );
+    }
     if let Some(cast_type) = generics::explicit_cast_click_type(expression) {
         return Ok(Some(cast_type));
     }
@@ -3359,6 +3455,29 @@ fn infer_generic_expression_type(
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. }
         | ContractExpression::MethodCall { .. } => Ok(None),
+        ContractExpression::Lambda {
+            parameters,
+            result,
+            body,
+        } => {
+            let scope = variables.scope();
+            for (name, ty) in parameters {
+                variables.bind(name, Some(ty.clone()));
+            }
+            let checked = require_scalar_return_value(
+                body,
+                result,
+                variables,
+                click_functions,
+                definitions,
+                context,
+            );
+            variables.end(scope);
+            checked?;
+            Ok(Some(lambdas::signature(parameters, result)))
+        }
+        ContractExpression::Apply { .. } => unreachable!("an application reduces above"),
+
         ContractExpression::IntegerLiteral(_) => {
             Ok(generics::default_numeral_click_type(expression))
         }
@@ -3950,6 +4069,11 @@ fn validate_type_application(
         match argument {
             ClickType::Resource => {
                 return Err(ClickError::new("Resource is not an algebraic field type"));
+            }
+            ClickType::Function { .. } => {
+                return Err(ClickError::new(
+                    "specification function fields are not supported",
+                ));
             }
             ClickType::Parameter(_) => {}
             ClickType::Program(interface_type)

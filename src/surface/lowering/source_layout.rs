@@ -196,6 +196,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             ProgramExpression::AddressOf(place)
             | ProgramExpression::CheckedObjectAddress(place) => pending.push((place, false)),
             ProgramExpression::Cast { expression, .. }
+            | ProgramExpression::Negate(expression)
             | ProgramExpression::FloatNegate(expression)
             | ProgramExpression::FloatClassification { expression, .. }
             | ProgramExpression::EnumField {
@@ -1642,7 +1643,9 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
         ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        ProgramExpression::Cast { expression, .. } | ProgramExpression::FloatNegate(expression) => {
+        ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression) => {
             collect_program_expression_referenced_names(expression, names);
         }
         ProgramExpression::Ternary {

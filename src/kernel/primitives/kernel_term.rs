@@ -75,6 +75,7 @@ pub enum KernelTermNode {
     BoolLiteral(bool),
     BoolRead(KernelBooleanRead),
     AlgebraicRead(KernelSnapshotRead),
+    FloatRead(KernelSnapshotRead),
     BoolCast {
         destination: MachineIntegerType,
         operand: KernelTerm,
@@ -391,7 +392,8 @@ impl NodeKey {
             | KernelTermNode::PointerEqual { .. }
             | KernelTermNode::PointerValueEqual(_)
             | KernelTermNode::BoolRead(_)
-            | KernelTermNode::AlgebraicRead(_) => true,
+            | KernelTermNode::AlgebraicRead(_)
+            | KernelTermNode::FloatRead(_) => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,

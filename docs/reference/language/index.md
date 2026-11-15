@@ -4133,7 +4133,10 @@ function count3(p: int32[], x: int32) -> int32 {
 Supported expression features include parameters, literals, `+`, `-`, `*`,
 `/`, `%`, `<<`, `>>`, `int32` bitwise `&`, `|`, `^`, unary `~`, indexing,
 `let name [: type] = value; body`, `if proposition { then } else { else }`,
-range `.fold`, and calls to other Click functions.
+range `.fold`, typed specification lambdas and their application, and calls
+to other Click functions. A fold accepts a lambda value as its step; see
+[Range folds](grammar.md#range-folds) for its signature and compatibility
+shorthand.
 
 A function returning `bool` states a truth value, and its body may be a
 comparison or a connective of comparisons: `function positive(x: int32) ->

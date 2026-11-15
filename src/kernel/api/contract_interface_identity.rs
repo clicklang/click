@@ -261,6 +261,7 @@ impl Names {
                 pointer: expression,
                 ..
             }
+            | Negate(expression)
             | FloatNegate(expression)
             | EnumField {
                 value: expression, ..
@@ -400,6 +401,7 @@ impl Names {
                 self.expression(b);
             }
             Subobject { pointer: e, .. }
+            | Negate(e)
             | BitwiseNot(e)
             | NarrowArithmetic(e, _)
             | Cast(e, _)

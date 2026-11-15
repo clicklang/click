@@ -178,6 +178,8 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
     } else {
         None
     };
+    let zero = matches!(expression, ProgramExpression::Negate(_))
+        .then(|| Box::new(ProgramExpression::Value(int32(0))));
     let (operation, left, right) = if let Some(narrow) = narrow {
         narrow
     } else {
@@ -189,6 +191,9 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 (Binary::RustShift(Op::ShiftRight), left, right)
             }
             ProgramExpression::Add(left, right) => (Binary::Machine(Op::Add), left, right),
+            ProgramExpression::Negate(right) => {
+                (Binary::Machine(Op::Subtract), zero.as_ref().unwrap(), right)
+            }
             ProgramExpression::Subtract(left, right) => {
                 (Binary::Machine(Op::Subtract), left, right)
             }
@@ -370,10 +375,43 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 paths.extend(native_paths.into_iter().map(ExecutionValuePath::from));
                 continue;
             }
+            if matches!(expression, ProgramExpression::Negate(_))
+                && matches!(
+                    right_value.program_type(),
+                    ProgramType::Float32 | ProgramType::Float64
+                )
+            {
+                paths.extend(
+                    apply_program_float_negate(right_value.into_native(), facts, obligations)
+                        .into_iter()
+                        .map(Into::into),
+                );
+                continue;
+            }
             let Binary::Machine(op) = operation else {
                 unreachable!()
             };
-            if let Some(value) = retained_binary(op, &left_value, &right_value) {
+            // The implicit zero in unary minus undergoes the same usual
+            // conversion as 0 - x. Materialize that constant at the unsigned
+            // width so the existing shared producer can keep x retained.
+            let promoted_zero = if matches!(expression, ProgramExpression::Negate(_)) {
+                match right_value.program_type() {
+                    ProgramType::UInt32 => Some(ExecutionValue::from(ProgramValue::UInt32(
+                        MachineTerm::uint32_constant(0),
+                    ))),
+                    ProgramType::UInt64 => Some(ExecutionValue::from(ProgramValue::UInt64(
+                        MachineTerm::uint64_constant(0),
+                    ))),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some(value) = retained_binary(
+                op,
+                promoted_zero.as_ref().unwrap_or(&left_value),
+                &right_value,
+            ) {
                 if op == Op::BitwiseAnd
                     && let ExecutionValue::Shared(root) = &value
                     && let Some(equation) =

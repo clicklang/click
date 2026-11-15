@@ -1645,6 +1645,9 @@ pub(super) fn evaluate_native_expression_paths(
             assumptions,
             budget,
         )?,
+        ProgramExpression::Negate(expression) => {
+            evaluate_program_negate_paths(state, expression, assumptions, budget)?
+        }
         ProgramExpression::FloatNegate(expression) => {
             evaluate_program_float_negate_paths(state, expression, assumptions, budget)?
         }

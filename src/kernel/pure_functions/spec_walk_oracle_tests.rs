@@ -44,6 +44,7 @@ fn old_collect_body_reads(
             old_collect_body_reads(right, bound, reads)
         }
         SpecExpression::Subobject { pointer: inner, .. }
+        | SpecExpression::Negate(inner)
         | SpecExpression::BitwiseNot(inner)
         | SpecExpression::Cast(inner, _)
         | SpecExpression::NarrowArithmetic(inner, _)
@@ -155,11 +156,15 @@ fn old_collect_algebraic_body_reads(
         SpecAlgebraicExpressionNode::Variable(_)
         | SpecAlgebraicExpressionNode::Binding(_)
         | SpecAlgebraicExpressionNode::ResourceField(_) => Ok(()),
-        SpecAlgebraicExpressionNode::ProgramValue(value) => old_collect_body_reads(value, bound, reads),
+        SpecAlgebraicExpressionNode::ProgramValue(value) => {
+            old_collect_body_reads(value, bound, reads)
+        }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {
-                    SpecAlgebraicValue::Program(value) => old_collect_body_reads(value, bound, reads)?,
+                    SpecAlgebraicValue::Program(value) => {
+                        old_collect_body_reads(value, bound, reads)?
+                    }
                     SpecAlgebraicValue::Integer(value) => {
                         old_collect_integer_body_reads(value, bound, reads)?
                     }

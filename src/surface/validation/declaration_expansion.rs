@@ -3853,6 +3853,37 @@ fn expand_declared_resource_expression_children(
     let recurse =
         |expression| expand_declared_resource_expression(expression, resource_definitions);
     Ok(match expression {
+        ContractExpression::Lambda {
+            parameters,
+            result,
+            body,
+        } => {
+            let constructors = &resource_definitions.constructors;
+            let scopes = parameters
+                .iter()
+                .map(|(name, ty)| constructors.bind(name, Some(ty.clone())))
+                .collect::<Vec<_>>();
+            let body = recurse(*body);
+            if let Some(scope) = scopes.first() {
+                constructors.restore(*scope);
+            }
+            ContractExpression::Lambda {
+                parameters,
+                result,
+                body: Box::new(body?),
+            }
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => ContractExpression::Apply {
+            function: Box::new(recurse(*function)?),
+            arguments: arguments
+                .into_iter()
+                .map(recurse)
+                .collect::<Result<_, _>>()?,
+        },
+
         ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant,

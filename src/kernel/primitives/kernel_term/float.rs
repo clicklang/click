@@ -1,6 +1,7 @@
 //! Typed floating-point atoms. Import is structural: neither host floating-point
 //! conversion nor constant evaluation changes a written carrier or its bits.
 use super::*;
+mod read;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum KernelFloatType {
@@ -98,6 +99,7 @@ impl<'a> FloatOperandView<'a> {
         match self {
             Self::Native(_, term) => Some(term),
             Self::Shared(root) => match root.node() {
+                KernelTermNode::FloatRead(_) => root.float_read_native(),
                 KernelTermNode::FloatLiteral { carrier, bits } => {
                     Some(root.0.machine_leaf.get_or_init(|| MachineTerm::Constant {
                         format: *carrier,
@@ -123,6 +125,15 @@ impl<'a> FloatOperandView<'a> {
 impl KernelTermImport {
     pub(crate) fn float(&mut self, format: KernelFloatType, term: &MachineTerm) -> KernelTerm {
         crate::instrumentation::record_deterministic_work(1);
+        if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
+            && *kind == format.load_kind()
+        {
+            return KernelTerm::float_read(
+                format,
+                memory.clone(),
+                SharedPointerAddress::import(pointer),
+            );
+        }
         let view = FloatOperandView::Native(format, term);
         let ty = KernelType::Program(format.program_type());
         if let Some((carrier, bits)) = view.literal() {

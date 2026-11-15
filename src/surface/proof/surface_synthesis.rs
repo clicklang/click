@@ -3405,6 +3405,7 @@ pub(super) fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
+        Node::FloatRead(_) => raise_float_read(term, parameter_binding, state, bound_variables)?,
         Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
             crate::kernel::KernelTermExport::float(term).ok()?,
         )),
@@ -6348,6 +6349,85 @@ fn synthesize_snapshot_pointer_expression(
         selector,
         expression: Box::new(expression),
     })
+}
+
+/// A float load states its width with an existing pointer cast. This keeps the
+/// spelling exact even when the available address name is a byte pointer.
+fn raise_float_read(
+    root: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    let read = root.float_read_native()?;
+    let MachineTerm::MemoryLoad(memory, _, _) = read else {
+        unreachable!("float read descriptor")
+    };
+    // Float producers retain the raw snapshot, rather than the integer load's
+    // canonical selection. Spelling must reproduce that same producer input.
+    let reads_snapshot = |state: &ExecutionState| {
+        crate::kernel::intern_memory_ref(state.memory()).arena_id() == memory.arena_id()
+    };
+    if !reads_snapshot(state) {
+        if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+            && reads_snapshot(&entry)
+        {
+            return Some(SurfaceTerm::Old(Box::new(raise_float_read(
+                root,
+                parameter_binding,
+                &entry,
+                bound_variables,
+            )?)));
+        }
+        let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            let slot = slot.borrow();
+            let points = slot.as_ref()?;
+            let (selector, recorded) = points.point_reading_memory(memory)?;
+            reads_snapshot(recorded).then(|| (selector.clone(), recorded.clone()))
+        })?;
+        return Some(SurfaceTerm::At {
+            selector,
+            expression: Box::new(raise_float_read(
+                root,
+                parameter_binding,
+                &recorded,
+                bound_variables,
+            )?),
+        });
+    }
+    let MachineTerm::MemoryLoad(_, pointer, _) = read else {
+        unreachable!()
+    };
+    let pointer = synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
+    let crate::kernel::KernelType::Program(value_type) = root.ty() else {
+        unreachable!()
+    };
+    Some(SurfaceTerm::Index(
+        Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Cast {
+                expression: Box::new(pointer),
+                target_type: ProgramType::VoidPointer,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            }),
+            target_type: match value_type {
+                ProgramType::Float32 => ProgramType::Float32Pointer,
+                ProgramType::Float64 => ProgramType::Float64Pointer,
+                _ => unreachable!("float read type"),
+            },
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        })),
+        Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+            int32(0),
+        ))),
+    ))
 }
 
 /// The source spelling of an algebraic value: a held instance's model field

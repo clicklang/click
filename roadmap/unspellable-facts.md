@@ -647,12 +647,28 @@ scaling test timed out under the broad load, then passed alone in 11.6 seconds
 under the unchanged 30-second limit. The final seven-test selection passed;
 quality checks passed. No limits or budgets changed.
 
-Before 8v, the approved pointer-cast prerequisite adds `p as (float *)` and
+Before 8v, the approved pointer-cast prerequisite ([PR #2850](https://github.com/clicklang/click/pull/2850)) adds `p as (float *)` and
 `p as (double *)` to Click parsing and prints these targets with their source
 names. Existing pointer-cast, access and definedness rules remain unchanged.
 Both widths round-trip printed loads and indexed reads; pointer-stride proof
 fixtures pass. All 325 selected cast, parser, diagnostic, documentation and
 fixture tests passed, with no fact-stability differences.
+
+Before 8w, the approved unary-negation prerequisite fixes Click `-x` on
+floats to preserve sign-bit negation (including zeros and NaN payloads).
+Generic unary carriers defer the choice until the operand type is known;
+integer negation keeps the established zero-subtraction semantics.
+
+8v imports float reads into typed common nodes with shared addresses and the
+producer's exact snapshot. Selected native export remains lazy; variable-reader
+policies and native observation identity remain unchanged. Surface spelling
+uses the float pointer casts for both widths, with current, entry and recorded
+snapshots. Float reads retain raw snapshots, so this route does not use the
+integer read's canonical memory selection. Runtime storage activation remains
+8aa–8ab. All six focused checks and the 1,923-test representation, reader,
+Surface and scaling selection passed. The separate float proof fixtures passed
+with zero fact-stability differences. The full ordinary example corpus and
+quality checks passed.
 
 ### 8a inventory
 
