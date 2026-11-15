@@ -148,6 +148,7 @@ impl Adapter<'_> {
         self.core_methods.borrow_mut().insert(
             function.clone(),
             out::Function {
+                sites: Vec::new(),
                 name: function.clone(),
                 return_type,
                 parameters,

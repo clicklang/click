@@ -189,6 +189,7 @@ pub(super) fn declare_iterator_operations(export: &mut RustExport) {
     ];
     for (operation, parameters, return_type) in operations {
         export.functions.push(Function {
+            sites: Vec::new(),
             name: chunks_exact_function(operation),
             return_type,
             parameters: parameters
@@ -323,6 +324,7 @@ fn declare_library_chunk_operations(export: &mut RustExport) {
             ),
         };
         export.functions.push(Function {
+            sites: Vec::new(),
             name,
             return_type,
             parameters: parameters
@@ -447,6 +449,7 @@ fn declare_slice_iter_operations(export: &mut RustExport) {
         ];
         for (operation, parameters, return_type) in operations {
             export.functions.push(Function {
+                sites: Vec::new(),
                 name: slice_iter_function(operation, spelling),
                 return_type,
                 parameters: parameters
@@ -610,6 +613,7 @@ mod tests {
             records: vec![],
             enums: vec![],
             functions: vec![Function {
+                sites: Vec::new(),
                 name: "__rust_q_I3_u32_I11_checked_add".into(),
                 return_type: Type::Enum {
                     name: "Option<u32>".into(),

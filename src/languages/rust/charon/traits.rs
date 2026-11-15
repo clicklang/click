@@ -278,6 +278,7 @@ impl Adapter<'_> {
                 let mut name = instance.clone();
                 super::super::names::push_path_segment(&mut name, &binder.name.0);
                 functions.push(out::Function {
+                    sites: Vec::new(),
                     name,
                     return_type,
                     parameters,
@@ -623,6 +624,7 @@ impl Adapter<'_> {
         Ok([pack, unpack, shared_pack, shared_unpack]
             .into_iter()
             .map(|name| out::Function {
+                sites: Vec::new(),
                 name,
                 return_type: Type::Unit,
                 parameters: vec![out::Place {
@@ -730,6 +732,7 @@ pub(super) fn wrap_object_coercions(
                 first + index
             };
             blocks.push(out::MirBlock {
+                terminator_site: None,
                 statements: Vec::new(),
                 terminator: call_with(pack, argument, next),
             });
@@ -743,6 +746,7 @@ pub(super) fn wrap_object_coercions(
             *call_target = first_unpack;
         }
         blocks.push(out::MirBlock {
+            terminator_site: None,
             statements: Vec::new(),
             terminator: call,
         });
@@ -753,6 +757,7 @@ pub(super) fn wrap_object_coercions(
                 first_unpack + index + 1
             };
             blocks.push(out::MirBlock {
+                terminator_site: None,
                 statements: Vec::new(),
                 terminator: call_with(unpack, argument, next),
             });

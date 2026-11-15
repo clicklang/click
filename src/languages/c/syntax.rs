@@ -9126,6 +9126,7 @@ impl Parser {
         let string_literals = std::mem::take(&mut self.string_literals);
         let inline_body = header.name != header.source_name;
         Ok(ImportedFunction {
+            source_sites: None,
             return_type: header.return_type,
             return_pointee_constant: header.return_pointee_constant,
             return_reference: false,

@@ -285,6 +285,10 @@ pub struct Function {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core_method: Option<String>,
     pub span: Span,
+    /// The function's statements as written, by their `statement(i)...`
+    /// paths, in preorder; a MIR `Site` names one by its index here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sites: Vec<Vec<u32>>,
 }
 
 fn is_zero(count: &usize) -> bool {
@@ -495,10 +499,20 @@ pub struct MirBody {
 pub struct MirBlock {
     pub statements: Vec<MirStatement>,
     pub terminator: MirTerminator,
+    /// The source statement the terminator comes from
+    /// (`Function::sites`), when it comes from one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminator_site: Option<u32>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MirStatement {
+    /// The statements after this one in its block, up to the next `Site`,
+    /// come from source statement `site` of the function
+    /// (`Function::sites`). It runs nothing.
+    Site {
+        site: u32,
+    },
     /// A Rust panic guarded by `condition`, `assert!(condition)`: the
     /// verifier proves `condition` holds. `message` names the panic.
     Assert {
