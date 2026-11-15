@@ -265,7 +265,7 @@ After integrating upstream through `7a681179b` (including #2802 and #2804),
 all 1,729 integration selections passed, including every scaling test and the
 contract-claim tests.
 
-8f prepares identity and fact-key consumers before completing 8d/8e. Primitive
+8f (merged [PR #2808](https://github.com/clicklang/click/pull/2808)) prepares identity and fact-key consumers before completing 8d/8e. Primitive
 Boolean comparison matching reads retained machine operands through the existing
 comparison-format identity. Exact Boolean identity walks common connectives
 once and preserves native comparison-format equivalences; numeric call arguments
@@ -282,8 +282,28 @@ view/identity tests, snapshot operand keys and shared load-atom comparisons.
 Regressions cover native/shared format agreement, composite load-authority
 refusal, linear shared-connective identity and growing arithmetic comparison
 prefixes without machine exports. No proof rules, search indexes or budgets
-changed. The 8d/8e draft checkpoints remain unpublished pending their producer
+changed. The 8e draft checkpoint remains unpublished pending its producer
 reconstruction work.
+
+8d prepares common Boolean bitvector/pointer substitution for the producer and
+handoff slices. Bitvector substitution preserves raw Boolean connectives and
+uses the existing shared arithmetic normalization mapper; one local memo shares
+numeric work across comparison atoms. Pointer substitution preserves its distinct
+native Boolean folding policy, scoped carrier reservation and read snapshots.
+Comparison reconstruction preserves written formats, width-specific reductions,
+address/zero and alignment rules. In particular, unsigned 32-bit equality keeps
+its written format, and bitvector substitution keeps signed 64-bit equality raw.
+Typed call arguments retain shared machine operands through their existing
+substitution route; selected Integer and opaque atoms keep their native family
+routines. Refused common operand rewrites propagate failure. General native
+proposition/certificate boundaries remain in package 9; producer activation stays
+in the later Boolean slices.
+
+Validation covers native/common constructor and substitution parity across all
+integer widths, address and mask rules, fold capture, pointer connective folding,
+read snapshots, and shared connective/overlapping arithmetic-prefix scaling.
+All 1,741 selected tests passed, including every scaling test and the substitution
+selections, with pinned importer tools. The CI-quality check passed.
 
 ### 8a inventory
 

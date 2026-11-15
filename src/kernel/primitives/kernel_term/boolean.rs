@@ -1,6 +1,7 @@
 //! Logical Bool operands of machine conversions. Import/export preserves the
 //! written comparison format, even when fact equality identifies formats.
 use super::*;
+mod comparison;
 
 /// Borrow a Boolean root or an exact native compatibility payload. Inspecting
 /// this view never exports children, consults facts, or selects a branch.
@@ -105,7 +106,7 @@ impl<'a> BooleanOperandView<'a> {
     /// Keep numeric call arguments as typed handles for semantic identity.
     /// Other leaves already have exact native payloads or shared Integer
     /// bridges; no enclosing Boolean connective reaches this boundary.
-    fn identity_leaf(self) -> std::borrow::Cow<'a, ConditionTerm> {
+    pub(crate) fn identity_leaf(self) -> std::borrow::Cow<'a, ConditionTerm> {
         if let Self::Shared(root) = self
             && let KernelTermNode::Call { name, arguments } = root.node()
         {
@@ -278,6 +279,78 @@ impl<'a> BooleanOperandView<'a> {
             )),
             _ => None,
         }
+    }
+}
+
+impl KernelTerm {
+    pub(crate) fn boolean_if_raw(arguments: [Self; 3]) -> Self {
+        Self::intern(KernelType::Bool, KernelTermNode::BoolIf { arguments })
+    }
+
+    pub(crate) fn boolean_equal_raw(arguments: [Self; 2]) -> Self {
+        Self::intern(KernelType::Bool, KernelTermNode::BoolEqual { arguments })
+    }
+
+    /// Structural Boolean reconstruction. The callback owns each selected
+    /// atom's existing rewrite and binder rules; connectives are never folded.
+    /// A query-local memo prevents shared Boolean prefixes becoming trees.
+    pub(crate) fn map_boolean_leaves<E>(
+        &self,
+        leaf: impl FnMut(&Self) -> Result<Self, E>,
+    ) -> Result<Self, E> {
+        self.map_boolean_with_connectives(leaf, |original, children| {
+            let node = match original.node() {
+                KernelTermNode::BoolIf { .. } => KernelTermNode::BoolIf {
+                    arguments: [
+                        children[0].clone(),
+                        children[1].clone(),
+                        children[2].clone(),
+                    ],
+                },
+                KernelTermNode::BoolEqual { .. } => KernelTermNode::BoolEqual {
+                    arguments: [children[0].clone(), children[1].clone()],
+                },
+                _ => unreachable!(),
+            };
+            Ok(Self::intern(KernelType::Bool, node))
+        })
+    }
+
+    pub(crate) fn map_boolean_with_connectives<E>(
+        &self,
+        mut leaf: impl FnMut(&Self) -> Result<Self, E>,
+        mut connective: impl FnMut(&Self, &[Self]) -> Result<Self, E>,
+    ) -> Result<Self, E> {
+        let mut rewritten = HashMap::<u64, Self>::new();
+        let mut pending = vec![(self, false)];
+        while let Some((term, finish)) = pending.pop() {
+            if rewritten.contains_key(&term.id()) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let children: &[Self] = match term.node() {
+                KernelTermNode::BoolIf { arguments } => arguments,
+                KernelTermNode::BoolEqual { arguments } => arguments,
+                _ => {
+                    rewritten.insert(term.id(), leaf(term)?);
+                    continue;
+                }
+            };
+            if !finish {
+                pending.push((term, true));
+                pending.extend(children.iter().rev().map(|child| (child, false)));
+                continue;
+            }
+            let children: Vec<_> = children
+                .iter()
+                .map(|child| rewritten[&child.id()].clone())
+                .collect();
+            let result = connective(term, &children)?;
+            rewritten.insert(term.id(), result);
+        }
+        Ok(rewritten
+            .remove(&self.id())
+            .expect("rewritten Boolean root"))
     }
 }
 
@@ -509,6 +582,124 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn common_boolean_substitution_keeps_unfolded_connectives_and_scoped_folds() {
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition;
+        let _session = crate::kernel::VerificationSession::enter();
+        let free = Variable(971_001);
+        let accumulator = Variable(971_002);
+        let fold = MachineTerm::RangeFold {
+            start: Box::new(MachineTerm::constant(0)),
+            end: Box::new(MachineTerm::Variable(free)),
+            initial: Box::new(MachineTerm::Variable(accumulator)),
+            accumulator,
+            item: Variable(971_003),
+            body: Box::new(MachineTerm::add(
+                MachineTerm::Variable(free),
+                MachineTerm::Variable(accumulator),
+            )),
+        };
+        let source = ConditionTerm::BoolIf {
+            condition: Box::new(ConditionTerm::Variable(free)),
+            then_condition: Box::new(ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(fold.clone()),
+                right: Box::new(MachineTerm::Variable(Variable(971_004))),
+            }),
+            else_condition: Box::new(ConditionTerm::Constant(false)),
+        };
+        let root = KernelTermImport::default().condition(&source);
+        let replacement = MachineTerm::Variable(accumulator);
+        let expected =
+            crate::kernel::reasoning::substitute_bitvector_variable(&fold, free, &replacement);
+        let actual =
+            substitute_bitvector_variable_in_common_condition(&root, free, &replacement).unwrap();
+        let [_, then_branch, _] = BooleanOperandView::Shared(&actual).conditional().unwrap();
+        let (_, _, operands) = then_branch.comparison().unwrap();
+        let MachineOperandView::Shared(left) = operands[0] else {
+            panic!("common comparison child")
+        };
+        let actual_fold = KernelTermExport::machine(left).unwrap();
+        assert_eq!(
+            crate::kernel::proof::fact_keys::bitvector_folds_alpha_equivalent(
+                &actual_fold,
+                &expected
+            ),
+            Some(true)
+        );
+        assert!(matches!(actual.node(), KernelTermNode::BoolIf { .. }));
+    }
+
+    #[test]
+    fn common_boolean_pointer_substitution_keeps_native_folding_policy() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(971_020);
+        let pointer = Pointer::null();
+        let atom = ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left: Box::new(MachineTerm::PointerAddress(
+                Box::new(Pointer::symbolic(from)),
+                crate::kernel::AddressObjectClass::NONE,
+            )),
+            right: Box::new(MachineTerm::uint64_constant(0)),
+        };
+        let sources = [
+            ConditionTerm::BoolEqual(Box::new(atom.clone()), Box::new(atom.clone())),
+            ConditionTerm::BoolIf {
+                condition: Box::new(atom),
+                then_condition: Box::new(ConditionTerm::Constant(true)),
+                else_condition: Box::new(ConditionTerm::Constant(false)),
+            },
+            ConditionTerm::BoolIf {
+                condition: Box::new(ConditionTerm::Constant(true)),
+                then_condition: Box::new(ConditionTerm::Variable(Variable(971_021))),
+                else_condition: Box::new(ConditionTerm::Constant(false)),
+            },
+        ];
+        for source in sources {
+            let expected = crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
+                from, &pointer,
+            )
+            .condition(&source);
+            let root = KernelTermImport::default().condition(&source);
+            let actual = crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
+                &root, from, &pointer,
+            )
+            .unwrap();
+            let actual = KernelTermExport::condition(&actual).unwrap();
+            assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+        }
+    }
+
+    #[test]
+    fn common_boolean_pointer_substitution_preserves_read_snapshot() {
+        let from = Variable(971_010);
+        let memory = crate::kernel::intern_memory(Memory::new());
+        let source = ConditionTerm::BoolEqual(
+            Box::new(ConditionTerm::BoolLoad(
+                memory.clone(),
+                Box::new(Pointer::symbolic(from)),
+            )),
+            Box::new(ConditionTerm::Constant(true)),
+        );
+        let root = KernelTermImport::default().condition(&source);
+        let pointer = Pointer::symbolic(Variable(971_011));
+        let actual = crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
+            &root, from, &pointer,
+        )
+        .unwrap();
+        let restored = KernelTermExport::condition(&actual).unwrap();
+        assert_eq!(
+            restored,
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::BoolLoad(memory, Box::new(pointer))),
+                Box::new(ConditionTerm::Constant(true)),
+            )
+        );
     }
 
     #[test]
