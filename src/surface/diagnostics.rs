@@ -5861,14 +5861,19 @@ pub(in crate::surface) fn click_cast(operand: &str, target: &str) -> String {
     }
 }
 
-/// A cast target as Click source writes it: an integer bare, a pointer
+/// A cast target as Click source writes it: a numeric type bare, a pointer
 /// parenthesized with a space before its `*`, `(uint8 *)`.
 pub(in crate::surface) fn click_cast_target(target: &str) -> String {
+    let source_name = |name: &str| match name {
+        "float32" => "float".to_string(),
+        "float64" => "double".to_string(),
+        name => name.to_string(),
+    };
     let Some(star) = target.find('*') else {
-        return target.to_string();
+        return source_name(target);
     };
     let (pointee, stars) = target.split_at(star);
-    format!("({} {stars})", pointee.trim_end())
+    format!("({} {stars})", source_name(pointee.trim_end()))
 }
 
 /// Whether `text` reads as the operand of an `as` cast without parentheses:
