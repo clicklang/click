@@ -28,6 +28,7 @@ mod slice_into_iteration_tests;
 mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
+mod temporaries;
 mod traits;
 mod vec_methods;
 
@@ -3504,6 +3505,8 @@ pub(super) fn decode_crate(
         let mut local_names = BTreeSet::new();
         let mut occurrences = BTreeMap::<&str, usize>::new();
         let mut reserved = BTreeSet::new();
+        // The locals the source does not name, apart from the return slot.
+        let mut temporaries = BTreeSet::new();
         for local in &body.locals.locals {
             if let Some(name) = &local.name {
                 *occurrences.entry(name).or_default() += 1;
@@ -3535,6 +3538,9 @@ pub(super) fn decode_crate(
                 let mut generated = format!("__rust_mir_{}", local.index.index());
                 while !reserved.insert(generated.clone()) {
                     generated.push('_');
+                }
+                if local.index.index() != 0 {
+                    temporaries.insert(generated.clone());
                 }
                 generated
             };
@@ -3682,6 +3688,8 @@ pub(super) fn decode_crate(
         traits::wrap_object_coercions(&mut blocks, coercions)?;
         protocol::split_next_branches(&mut blocks)?;
         panics::assert_branches(&mut blocks);
+        let mut locals = locals;
+        temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
             name: name.clone(),
             return_type: adapter.ty(&f.signature.output).map_err(|error| {

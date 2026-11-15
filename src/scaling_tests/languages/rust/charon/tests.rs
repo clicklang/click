@@ -362,6 +362,17 @@ fn charon_array_lowering_and_verification_work_do_not_expand_with_length() {
                     value: E::UsizeInteger { value, .. },
                     ..
                 } if *value == 999_999 => *value = length - 1,
+                // The index constant, read in place.
+                S::Assign {
+                    value: E::Index { index, .. },
+                    ..
+                } => {
+                    if let E::UsizeInteger { value } = index.as_mut()
+                        && *value == 999_999
+                    {
+                        *value = length - 1;
+                    }
+                }
                 _ => {}
             }
         }
