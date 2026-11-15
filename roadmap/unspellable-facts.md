@@ -322,7 +322,7 @@ check reuses the existing immutable machine syntax memo. All 1,679 selected test
 passed, including every scaling test, memory provenance and shared load-atom
 comparison selections, with exit status 0. The CI-quality check passed.
 
-8g replaces the whole-condition pointer-offset equality fallback with a typed
+8g (merged [PR #2813](https://github.com/clicklang/click/pull/2813)) replaces the whole-condition pointer-offset equality fallback with a typed
 pair of shared offsets. Imports and explicit exports preserve the written Add
 shape, scales, index carrier types and signedness. Boolean identity, load-atom
 matching, variable/capture/binder readers, memory/resource dependencies and
@@ -345,6 +345,27 @@ constructor/substitution/transport parity, annotation identity, dependency width
 snapshot keys and doubled/growing offset DAGs without numeric exports. Integration
 validation against the subsequent pointer-read/snapshot-control changes is recorded
 with the PR. Boolean execution handoffs and the other package-8 families remain open.
+
+8h retains raw pointer equality as a typed pair of shared addresses. Block
+identity, shared displacement, exact producer metadata and semantic observation
+identity remain separate. Dependency readers preserve native admission and
+ordering, including loaded-pointer defining reads and right-first resource
+displacement traversal. Snapshot selectors and load matching reuse the existing
+shared-address readers; narrow and wide indices retain their existing authority
+rules. Frame transport uses one context for both addresses.
+
+Substitution preserves the distinct native rules for top-level pointer conditions,
+nested Boolean values and pure-call pointer blocks. Numeric indices keep their
+existing raw or smart reconstruction policy, and replacement offsets retain their
+written structure. Opaque block rewriting stays at its existing compatibility
+boundary; no search, budgets or pointer semantics change. Explicit Surface output
+continues through the existing address-context adapter. Complete-pointer equality
+is the separate 8i slice.
+
+Validation: all 1,716 selected tests passed, including every scaling test,
+raw-pointer constructor/substitution parity, block and snapshot identity,
+load authority, read ordering, dependency modes and frame transport. The
+CI-quality check passed.
 
 ### 8a inventory
 

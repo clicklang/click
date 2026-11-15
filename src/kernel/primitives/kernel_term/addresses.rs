@@ -169,6 +169,17 @@ impl SharedPointerBlock {
         arena.cleanup.push_back(key);
         Self(BlockStorage::Interned(node))
     }
+    /// Observation keys use the application's semantic scalar identity.
+    /// Producer imports continue to retain its exact payload identity.
+    pub(crate) fn observation(&self) -> Self {
+        match self.native_atom() {
+            block @ PointerBlock::PureFunctionApplication(_) => {
+                Self(BlockStorage::Inline(block.clone()))
+            }
+            _ => self.clone(),
+        }
+    }
+
     pub(crate) fn native_atom(&self) -> &PointerBlock {
         match &self.0 {
             BlockStorage::Inline(block) => block,
@@ -206,6 +217,12 @@ impl SharedPointerAddress {
             KernelPointerOffset::import(&pointer.offset),
         )
     }
+    pub(crate) fn syntax_equal(&self, other: &Self) -> bool {
+        (self.node().block == other.node().block
+            || self.node().block.native_atom() == other.node().block.native_atom())
+            && self.node().offset.syntax_equal(&other.node().offset)
+    }
+
     pub(crate) fn export(&self) -> Result<Pointer, &'static str> {
         Ok(Pointer {
             block: self.0.block.native_atom().clone(),

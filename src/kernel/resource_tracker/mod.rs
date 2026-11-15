@@ -1407,6 +1407,18 @@ fn collect_condition_operand_reads(
             for operand in operands {
                 collect_operand_reads(operand, reads);
             }
+        } else if let Some(addresses) = leaf.pointer_addresses() {
+            for address in addresses {
+                collect_pointer_block_reads(address.node().block.native_atom(), reads);
+                address.node().offset.visit_root_in_order(true, |node| {
+                    if let Some(index) = node.index() {
+                        collect_operand_reads(
+                            crate::kernel::MachineOperandView::Shared(index),
+                            reads,
+                        );
+                    }
+                });
+            }
         } else if let Some(offsets) = leaf.pointer_offsets() {
             crate::kernel::SharedPointerOffset::visit_pair_in_order(&offsets, true, |node| {
                 if let Some(index) = node.index() {
@@ -1475,7 +1487,12 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
 /// A loaded pointer reads the complete pointer cell its name was defined at,
 /// at the point that name embeds, as an offset's load variable reads its cell.
 fn collect_pointer_reads(pointer: &Pointer, reads: &mut Vec<ResourceRead>) {
-    if let PointerBlock::LoadedPointer(identity) = pointer.block
+    collect_pointer_block_reads(&pointer.block, reads);
+    collect_offset_reads(&pointer.offset, reads);
+}
+
+fn collect_pointer_block_reads(block: &PointerBlock, reads: &mut Vec<ResourceRead>) {
+    if let PointerBlock::LoadedPointer(identity) = *block
         && let Some((memory, address)) = crate::kernel::eval::registered_pointer_load(identity)
     {
         push_read(
@@ -1487,7 +1504,6 @@ fn collect_pointer_reads(pointer: &Pointer, reads: &mut Vec<ResourceRead>) {
             ProgramPoint::at(&memory),
         );
     }
-    collect_offset_reads(&pointer.offset, reads);
 }
 
 fn collect_offset_reads(offset: &PointerOffsetTerm, reads: &mut Vec<ResourceRead>) {

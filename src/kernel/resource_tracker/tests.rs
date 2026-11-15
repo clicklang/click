@@ -1607,3 +1607,32 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
     assert_eq!(expected.len(), 3);
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
+    use crate::kernel::{BooleanOperandView, KernelTermImport};
+    let memory = intern_memory(entry_memory());
+    let offset = |name| {
+        PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::MemoryLoad(
+                memory.clone(),
+                Box::new(at(block(name), 0)),
+                LoadKind::Int32,
+            ),
+            4,
+        )
+    };
+    let mut left = Pointer::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
+    left.offset =
+        PointerOffsetTerm::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
+    let mut right = Pointer::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
+    right.offset = offset("local:f:i");
+    let source = ConditionTerm::PointerEqual(Box::new(left), Box::new(right));
+    let root = KernelTermImport::default().condition(&source);
+    let mut expected = Vec::new();
+    let mut actual = Vec::new();
+    collect_condition_reads(&source, &mut expected);
+    collect_condition_operand_reads(BooleanOperandView::Shared(&root), &mut actual);
+    assert_eq!(expected.len(), 5);
+    assert_eq!(actual, expected);
+}

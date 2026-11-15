@@ -5302,6 +5302,43 @@ mod machine_integer_substitution_tests {
     }
 }
 
+fn map_common_substitution_offsets(
+    arguments: &[crate::kernel::SharedPointerOffset; 2],
+    map_machine: &mut impl FnMut(&KernelTerm, MachineIntegerType) -> Option<SharedMachineIntegerTerm>,
+) -> Result<[crate::kernel::SharedPointerOffset; 2], ()> {
+    use crate::kernel::{KernelPointerOffset as O, SharedPointerOffset as S};
+    S::try_map_pair(arguments, |original, node| {
+        let (value, width, wide) = match node {
+            O::Add([a, b]) => {
+                return Ok::<_, ()>(
+                    if matches!(original.node(), O::Add(old) if old == &[a.clone(), b.clone()]) {
+                        original.clone()
+                    } else {
+                        S::add(a, b)
+                    },
+                );
+            }
+            O::Int32Scaled { value, byte_width } => (value, byte_width, None),
+            O::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => (value, byte_width, Some(unsigned)),
+            _ => return Ok(original.clone()),
+        };
+        let index = S::exact_index(&value);
+        // The native offset substitution preserves the old index
+        // on an unsupported rewrite and preserves unchanged spelling.
+        let mapped = map_machine(&value, index.ty()).unwrap_or_else(|| index.clone());
+        if crate::kernel::memory_provenance::pointer_index_syntax_equal(&index, &mapped) {
+            return Ok(original.clone());
+        }
+        Ok(O::import(
+            &crate::kernel::memory_provenance::rebuild_scaled_pointer_index(mapped, width, wide),
+        ))
+    })
+}
+
 // Prepared for the common Boolean producer/handoff slices. Atomic comparison,
 // call and opaque-payload substitution keeps the established native semantics;
 // the surrounding Boolean DAG is reconstructed without exporting its prefixes.
@@ -5355,29 +5392,21 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 );
             }
             if let crate::kernel::KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
-                use crate::kernel::{KernelPointerOffset as O, SharedPointerOffset as S};
-                let offsets = S::try_map_pair(arguments, |original, node| {
-                    let (value, width, wide) = match node {
-                        O::Add([a, b]) => {
-                            return Ok::<_, ()>(if matches!(original.node(), O::Add(old) if old == &[a.clone(), b.clone()]) {
-                                original.clone()
-                            } else { S::add(a, b) });
-                        }
-                        O::Int32Scaled { value, byte_width } => (value, byte_width, None),
-                        O::Int64Scaled { value, byte_width, unsigned } => (value, byte_width, Some(unsigned)),
-                        _ => return Ok(original.clone()),
-                    };
-                    let index = S::exact_index(&value);
-                    // The native offset substitution preserves the old index
-                    // on an unsupported rewrite and preserves unchanged spelling.
-                    let mapped = map_machine(&value, index.ty())
-                        .unwrap_or_else(|| index.clone());
-                    if crate::kernel::memory_provenance::pointer_index_syntax_equal(&index, &mapped) {
-                        return Ok(original.clone());
-                    }
-                    Ok(O::import(&crate::kernel::memory_provenance::rebuild_scaled_pointer_index(mapped, width, wide)))
-                })?;
+                let offsets = map_common_substitution_offsets(arguments, &mut map_machine)?;
                 return Ok(KernelTerm::pointer_offset_equal(offsets));
+            }
+            if let crate::kernel::KernelTermNode::PointerEqual { arguments } = leaf.node() {
+                let mut mapped = Vec::with_capacity(2);
+                for address in arguments {
+                    if matches!(address.node().block.native_atom(), PointerBlock::PureFunctionApplication(_)) {
+                        mapped.push(crate::kernel::proof::term_rewrite::substitute_application_address_bits(address, from, to).ok_or(())?);
+                    } else {
+                        let offset = &address.node().offset;
+                        let offsets = map_common_substitution_offsets(&[offset.clone(), offset.clone()], &mut map_machine)?;
+                        mapped.push(crate::kernel::SharedPointerAddress::new(address.node().block.clone(), offsets[0].clone()));
+                    }
+                }
+                return Ok(KernelTerm::pointer_equal([mapped[0].clone(), mapped[1].clone()]));
             }
             let native = crate::kernel::BooleanOperandView::Shared(leaf).identity_leaf();
             Ok(crate::kernel::KernelTermImport::default().condition(
@@ -5397,6 +5426,49 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
         return crate::kernel::proof::term_rewrite::substitute_pointer_boolean_value(
             condition, from, to,
         );
+    }
+    if let crate::kernel::KernelTermNode::PointerEqual { arguments } = condition.node() {
+        use crate::kernel::{
+            KernelPointerOffset as O, SharedPointerAddress as A, SharedPointerBlock,
+            SharedPointerOffset as S,
+        };
+        let mut mapped = Vec::with_capacity(2);
+        for address in arguments {
+            let block = address.node().block.native_atom();
+            if matches!(block, PointerBlock::PureFunctionApplication(_)) {
+                mapped.push(
+                    crate::kernel::proof::term_rewrite::substitute_application_address_pointer(
+                        address, from, to,
+                    )?,
+                );
+                continue;
+            }
+            let replacement = match block {
+                PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)
+                    if *variable == from =>
+                {
+                    Some(to.clone())
+                }
+                PointerBlock::ExternalObject(variable) if *variable == from => {
+                    Some(to.object_identity())
+                }
+                _ => None,
+            };
+            mapped.push(match replacement {
+                Some(replacement) => A::new(
+                    SharedPointerBlock::import(&replacement.block),
+                    S::add(
+                        O::import(&replacement.offset),
+                        address.node().offset.clone(),
+                    ),
+                ),
+                None => address.clone(),
+            });
+        }
+        return Some(KernelTerm::pointer_equal([
+            mapped[0].clone(),
+            mapped[1].clone(),
+        ]));
     }
     if matches!(
         condition.node(),

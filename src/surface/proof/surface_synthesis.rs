@@ -3229,7 +3229,7 @@ pub(super) fn raise_kernel_term(
         }
         // Offset spelling still uses its existing address context at the
         // explicit Surface boundary; no new standalone offset syntax.
-        Node::PointerOffsetEqual { .. } | Node::LegacyBool(_) => {
+        Node::PointerEqual { .. } | Node::PointerOffsetEqual { .. } | Node::LegacyBool(_) => {
             let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
             synthesize_surface_bool(&condition, parameter_binding, state, bound_variables)?
         }
