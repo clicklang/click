@@ -6289,10 +6289,45 @@ fn collect_condition_operand_memories(
             return;
         }
 
-        if let Some((_, _, operands)) = leaf.comparison() {
+        if let Some((memory, address)) = leaf.read() {
+            if !memories.contains(&memory) {
+                memories.push(memory);
+            }
+            let mut seen = BTreeSet::new();
+            address.node().offset.visit_root_in_order(false, |node| {
+                if let Some(index) = node.index() {
+                    collect_operand_memories(
+                        crate::kernel::MachineOperandView::Shared(index),
+                        memories,
+                        &mut seen,
+                    );
+                }
+            });
+        } else if let Some((_, operands)) = leaf.machine_arguments() {
             let mut seen = BTreeSet::new();
             for operand in operands {
                 collect_operand_memories(operand, memories, &mut seen);
+            }
+        } else if let Some(values) = leaf.pointer_values() {
+            for value in values {
+                for address in value.addresses() {
+                    if let PointerBlock::PureFunctionApplication(call) =
+                        address.node().block.native_atom()
+                        && let Some(bits) = call.integer_address_bits()
+                    {
+                        collect_bitvector_memories(bits, memories);
+                    }
+                    let mut seen = BTreeSet::new();
+                    address.node().offset.visit_root_in_order(false, |node| {
+                        if let Some(index) = node.index() {
+                            collect_operand_memories(
+                                crate::kernel::MachineOperandView::Shared(index),
+                                memories,
+                                &mut seen,
+                            );
+                        }
+                    });
+                }
             }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {
@@ -6552,7 +6587,24 @@ pub(in crate::kernel) fn transport_framed_common_condition(
         | Node::Variable(_)
         | Node::BoolIf { .. }
         | Node::BoolEqual { .. }
-        | Node::Call { .. } => None,
+        | Node::Call { .. }
+        | Node::BoolRead(_) => None,
+        Node::PointerValueEqual(pair) => {
+            let [a, b] = pair.arguments();
+            let mapped = crate::kernel::KernelTerm::pointer_value_equal_raw([
+                shared_pointer_transport::transport_pointer(a, after, assumptions)?,
+                shared_pointer_transport::transport_pointer(b, after, assumptions)?,
+            ]);
+            Some(
+                if crate::kernel::BooleanOperandView::Shared(condition)
+                    .syntax_equal(crate::kernel::BooleanOperandView::Shared(&mapped))
+                {
+                    condition.clone()
+                } else {
+                    mapped
+                },
+            )
+        }
         Node::PointerEqual { arguments } => Some(crate::kernel::KernelTerm::pointer_equal(
             shared_pointer_transport::transport_addresses(arguments, after, assumptions)?,
         )),
@@ -6562,9 +6614,10 @@ pub(in crate::kernel) fn transport_framed_common_condition(
             ))
         }
         Node::BoolCompare {
-            format,
-            relation,
-            arguments,
+            format, arguments, ..
+        }
+        | Node::BoolOverflow {
+            format, arguments, ..
         } => {
             let mut mapped = Vec::with_capacity(2);
             for argument in arguments {
@@ -6575,11 +6628,16 @@ pub(in crate::kernel) fn transport_framed_common_condition(
                     value.operand_view(),
                 ));
             }
-            let mapped = crate::kernel::KernelTerm::boolean_comparison(
-                *format,
-                *relation,
-                [mapped[0].clone(), mapped[1].clone()],
-            );
+            let arguments = [mapped[0].clone(), mapped[1].clone()];
+            let mapped = match condition.node() {
+                Node::BoolCompare { relation, .. } => {
+                    crate::kernel::KernelTerm::boolean_comparison(*format, *relation, arguments)
+                }
+                Node::BoolOverflow { operation, .. } => {
+                    crate::kernel::KernelTerm::boolean_overflow(*format, *operation, arguments)
+                }
+                _ => unreachable!(),
+            };
             Some(
                 if crate::kernel::BooleanOperandView::Shared(condition)
                     .syntax_equal(crate::kernel::BooleanOperandView::Shared(&mapped))
@@ -9176,6 +9234,36 @@ mod common_boolean_transport_tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         for source in [
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: crate::kernel::OverflowOperation::Add,
+                left: Box::new(MachineTerm::MemoryLoad(
+                    memory.clone(),
+                    Box::new(address.clone()),
+                    LoadKind::Int32,
+                )),
+                right: Box::new(MachineTerm::constant(1)),
+            },
+            ConditionTerm::PointerValueEqual(
+                Box::new(PointerValue::new(
+                    Pointer {
+                        block: PointerBlock::Symbolic(Variable(972_003)),
+                        offset: PointerOffsetTerm::scaled_int32_node(
+                            MachineTerm::MemoryLoad(
+                                memory.clone(),
+                                Box::new(address.clone()),
+                                LoadKind::Int32,
+                            ),
+                            4,
+                        ),
+                    },
+                    ProgramType::Int32Pointer,
+                )),
+                Box::new(PointerValue::new(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer,
+                )),
+            ),
             ConditionTerm::PointerEqual(
                 Box::new(Pointer {
                     block: PointerBlock::Symbolic(Variable(972_003)),
@@ -9248,5 +9336,47 @@ mod common_boolean_transport_tests {
             let root = KernelTermImport::default().condition(&source);
             assert!(transport_framed_common_condition(&root, &Memory::new(), None).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod common_boolean_read_tests {
+    use super::*;
+    #[test]
+    fn boolean_reads_keep_snapshot_dependency_order() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = Memory::new()
+            .with_block("bool-memory-index", 4)
+            .with_block("bool-memory-other", 4);
+        let after = before.clone().store(
+            Memory::global_pointer("bool-memory-other"),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
+        let old = crate::kernel::intern_memory(before);
+        let new = crate::kernel::intern_memory(after);
+        let source = ConditionTerm::BoolLoad(
+            new.clone(),
+            Box::new(Pointer {
+                block: PointerBlock::Symbolic(Variable(999370)),
+                offset: PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::MemoryLoad(
+                        old.clone(),
+                        Box::new(Memory::global_pointer("bool-memory-index")),
+                        LoadKind::Int32,
+                    ),
+                    4,
+                ),
+            }),
+        );
+        let root = crate::kernel::KernelTermImport::default().condition(&source);
+        let mut expected = Vec::new();
+        let mut actual = Vec::new();
+        collect_condition_memories(&source, &mut expected);
+        collect_condition_operand_memories(
+            crate::kernel::BooleanOperandView::Shared(&root),
+            &mut actual,
+        );
+        assert_eq!(actual, expected);
+        assert_eq!(actual, vec![new, old]);
     }
 }

@@ -339,26 +339,26 @@ pub(super) fn verify_execution_theorem(
     let arguments = execution
         .parameters
         .iter()
-        .map(|p| syntax::C0Expression::Variable(p.name().to_string()))
+        .map(|p| syntax::CExpression::Variable(p.name().to_string()))
         .collect();
     let body = if block.signature().return_type() == InterfaceType::Void {
-        syntax::C0Statement::Call {
+        syntax::CStatement::Call {
             function_name: call_name.to_string(),
             arguments,
-            site: crate::languages::c::syntax::C0Site::NONE,
+            site: crate::languages::c::syntax::CSite::NONE,
             callee: None,
         }
     } else {
-        syntax::C0Statement::Seq(
-            Box::new(syntax::C0Statement::CallAssign {
+        syntax::CStatement::Seq(
+            Box::new(syntax::CStatement::CallAssign {
                 target: "result".into(),
                 function_name: call_name.to_string(),
                 arguments,
-                site: crate::languages::c::syntax::C0Site::NONE,
+                site: crate::languages::c::syntax::CSite::NONE,
             }),
-            Box::new(syntax::C0Statement::Return(
-                syntax::C0Expression::Variable("result".into()),
-                crate::languages::c::syntax::C0Site::NONE,
+            Box::new(syntax::CStatement::Return(
+                syntax::CExpression::Variable("result".into()),
+                crate::languages::c::syntax::CSite::NONE,
             )),
         )
     };
@@ -374,35 +374,11 @@ pub(super) fn verify_execution_theorem(
         spec_definitions,
         resources,
         theorems,
-        function_source_registry,
+        Arc::new(function_source_registry.for_contract_proof()),
         tactics,
     )?;
-    let entry = verified
-        .iter()
-        .filter(|verified| {
-            verified
-                .checked_execution
-                .has_checked_resource_transitions()
-        })
-        .find_map(|verified| verified.entry_context.clone())
-        .or_else(|| {
-            verified
-                .iter()
-                .find_map(|verified| verified.entry_context.clone())
-        })
-        .ok_or_else(|| error("the one-call proof did not retain its contract entry"))?;
-    let artifacts = crate::surface::verification::distinct_checked_executions(&verified)
-        .into_iter()
-        .map(|execution| CheckedFunctionExecution::clone(execution))
-        .collect::<Vec<_>>();
-    let owner = entry
-        .completion
-        .clone()
-        .ok_or_else(|| error("the one-call proof did not open a whole-contract owner"))?;
-    let admitted = owner.admit_executions(&artifacts);
-    let completed = admitted
-        .complete()
-        .map_err(|goal| error(&format!("the one-call proof still owes {goal:?}")))?;
+    let completed = finish_whole_contract_root(&block, &verified)?
+        .ok_or_else(|| error("the one-call proof did not open a whole-contract root"))?;
     let rule = completed
         .into_rule()
         .expect("a synthetic one-call function is never a program entry");

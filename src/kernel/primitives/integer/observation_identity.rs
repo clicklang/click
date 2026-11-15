@@ -97,6 +97,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     .collect(),
                 KernelTermNode::Fold(fold) => fold.arguments.to_vec(),
                 KernelTermNode::MachineBinary { arguments, .. }
+                | KernelTermNode::BoolOverflow { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
                 | KernelTermNode::IntegerCompare { arguments, .. }
                 | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
@@ -147,6 +148,30 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
                 }
+                KernelTermNode::BoolRead(read) => {
+                    let (_, address) = read.parts();
+                    KernelTerm::intern(
+                        KernelType::Bool,
+                        KernelTermNode::BoolRead(read.observe(
+                            crate::kernel::SharedPointerAddress::new(
+                                address.node().block.observation(),
+                                normalize_offset(&address.node().offset),
+                            ),
+                        )),
+                    )
+                }
+                KernelTermNode::PointerValueEqual(pair) => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::PointerValueEqual(pair.observe(
+                        |address| {
+                            crate::kernel::SharedPointerAddress::new(
+                                address.node().block.observation(),
+                                normalize_offset(&address.node().offset),
+                            )
+                        },
+                        normalize,
+                    )),
+                ),
                 KernelTermNode::PointerEqual { arguments } => {
                     KernelTerm::pointer_equal_raw(arguments.each_ref().map(|address| {
                         crate::kernel::SharedPointerAddress::new(
@@ -210,6 +235,15 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     KernelTermNode::BoolEqual {
                         arguments: arguments.each_ref().map(|arg| get(arg)),
                     },
+                ),
+                KernelTermNode::BoolOverflow {
+                    format,
+                    operation,
+                    arguments,
+                } => KernelTerm::boolean_overflow_raw(
+                    *format,
+                    *operation,
+                    arguments.each_ref().map(|arg| get(arg)),
                 ),
                 KernelTermNode::BoolCompare {
                     format,

@@ -106,7 +106,7 @@ pub(in crate::surface) fn with_synthesis_binder_names<T>(
 pub(in crate::surface) struct SynthesisStructOwners {
     locals: BTreeMap<String, crate::languages::interface::RecordLayout>,
     cast_parameters: BTreeMap<String, (String, crate::languages::interface::RecordLayout)>,
-    callback_sources: std::sync::Arc<BTreeMap<String, syntax::C0Expression>>,
+    callback_sources: std::sync::Arc<BTreeMap<String, syntax::CExpression>>,
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
     storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
@@ -3229,7 +3229,12 @@ pub(super) fn raise_kernel_term(
         }
         // Offset spelling still uses its existing address context at the
         // explicit Surface boundary; no new standalone offset syntax.
-        Node::PointerEqual { .. } | Node::PointerOffsetEqual { .. } | Node::LegacyBool(_) => {
+        Node::BoolRead(_)
+        | Node::BoolOverflow { .. }
+        | Node::PointerValueEqual(_)
+        | Node::PointerEqual { .. }
+        | Node::PointerOffsetEqual { .. }
+        | Node::LegacyBool(_) => {
             let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
             synthesize_surface_bool(&condition, parameter_binding, state, bound_variables)?
         }

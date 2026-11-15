@@ -1403,9 +1403,23 @@ fn collect_condition_operand_reads(
             return;
         }
 
-        if let Some((_, _, operands)) = leaf.comparison() {
+        if let Some((_, operands)) = leaf.machine_arguments() {
             for operand in operands {
                 collect_operand_reads(operand, reads);
+            }
+        } else if let Some(values) = leaf.pointer_values() {
+            for value in values {
+                for address in value.addresses() {
+                    collect_pointer_block_reads(address.node().block.native_atom(), reads);
+                    address.node().offset.visit_root_in_order(true, |node| {
+                        if let Some(index) = node.index() {
+                            collect_operand_reads(
+                                crate::kernel::MachineOperandView::Shared(index),
+                                reads,
+                            );
+                        }
+                    });
+                }
             }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {

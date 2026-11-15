@@ -476,10 +476,23 @@ fn snapshot_blind_boolean_operand_key(
             right,
         );
     }
+    if let Some((format, operation, [a, b])) = condition.overflow() {
+        return SnapshotBlindConditionKey::Comparison(
+            BitvectorComparisonOp::Overflows(format, operation),
+            snapshot_operands::operand(a),
+            snapshot_operands::operand(b),
+        );
+    }
     if let Some([a, b]) = condition.pointer_offsets() {
         return SnapshotBlindConditionKey::PointerOffsetEqual(
             pointer_keys::snapshot_offset(&a),
             pointer_keys::snapshot_offset(&b),
+        );
+    }
+    if let Some([a, b]) = condition.pointer_values() {
+        return SnapshotBlindConditionKey::PointerValueEqual(
+            pointer_keys::snapshot_value(&a),
+            pointer_keys::snapshot_value(&b),
         );
     }
     if let Some([a, b]) = condition.pointer_addresses() {
@@ -5142,6 +5155,71 @@ mod raw_pointer_condition_tests {
             assert_eq!(actual, snapshot_blind_condition_key(&source));
             assert!(!keys.contains(&actual));
             keys.push(actual);
+        }
+    }
+}
+
+#[cfg(test)]
+mod complete_pointer_condition_tests {
+    use super::*;
+    use crate::kernel::SubobjectExtent;
+    #[test]
+    fn complete_pointer_conditions_keep_snapshot_domain_keys() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let a = PointerValue::new(
+            Pointer::symbolic(Variable(998620)),
+            ProgramType::Int32Pointer,
+        );
+        let mut keys = Vec::new();
+        for value in [
+            a.clone(),
+            a.clone().with_root_extent(),
+            a.clone().with_extent(Some(SubobjectExtent {
+                start: Pointer::null(),
+                width: MachineTerm::constant(4),
+            })),
+        ] {
+            let source = ConditionTerm::PointerValueEqual(Box::new(value), Box::new(a.clone()));
+            let root = crate::kernel::KernelTermImport::default().condition(&source);
+            let actual = snapshot_blind_boolean_operand_key(
+                crate::kernel::BooleanOperandView::Shared(&root),
+            );
+            assert_eq!(actual, snapshot_blind_condition_key(&source));
+            assert!(!keys.contains(&actual));
+            keys.push(actual);
+        }
+    }
+}
+
+#[cfg(test)]
+mod overflow_condition_tests {
+    use super::*;
+    #[test]
+    fn overflow_conditions_keep_exact_format_and_operation_keys() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut keys = Vec::new();
+        for format in crate::kernel::machine_integer::FORMATS {
+            for op in [
+                crate::kernel::OverflowOperation::Add,
+                crate::kernel::OverflowOperation::Subtract,
+                crate::kernel::OverflowOperation::Multiply,
+                crate::kernel::OverflowOperation::Divide,
+                crate::kernel::OverflowOperation::ShiftLeft,
+            ] {
+                let source = ConditionTerm::Overflows {
+                    format,
+                    op,
+                    left: Box::new(MachineTerm::Variable(Variable(998630))),
+                    right: Box::new(MachineTerm::Variable(Variable(998631))),
+                };
+                let root = crate::kernel::KernelTermImport::default().condition(&source);
+                let actual = snapshot_blind_boolean_operand_key(
+                    crate::kernel::BooleanOperandView::Shared(&root),
+                );
+                assert_eq!(actual, snapshot_blind_condition_key(&source));
+                assert!(!keys.contains(&actual));
+                keys.push(actual);
+            }
         }
     }
 }

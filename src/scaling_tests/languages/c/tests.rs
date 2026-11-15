@@ -12,7 +12,7 @@ use super::*;
 /// expression per declared element, so four million-element arrays cost
 /// seconds before verification began.
 #[test]
-fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
+fn c_static_array_initializers_cost_what_they_write_whatever_the_length() {
     let samples = [100u32, 10_000, 1_000_000].map(|length| {
         let source = format!(
             "int32 buf[{length}];
@@ -27,7 +27,7 @@ fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
         );
         let functions = syntax::parse_functions(&source).expect("large arrays should parse");
         let function = &functions[0];
-        let written = |initializer: &syntax::C0ArrayInitializer| {
+        let written = |initializer: &syntax::CArrayInitializer| {
             assert_eq!(initializer.length(), length);
             initializer.elements().to_vec()
         };
@@ -85,16 +85,16 @@ fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
         &[
             vec![],
             vec![
-                (0, syntax::C0Expression::Int32Literal(1)),
-                (1, syntax::C0Expression::Int32Literal(2)),
-                (99, syntax::C0Expression::Int32Literal(7)),
+                (0, syntax::CExpression::Int32Literal(1)),
+                (1, syntax::CExpression::Int32Literal(2)),
+                (99, syntax::CExpression::Int32Literal(7)),
             ],
             vec![
-                (0, syntax::C0Expression::Int32Literal(4)),
-                (10, syntax::C0Expression::Int32Literal(5)),
-                (11, syntax::C0Expression::Int32Literal(6)),
+                (0, syntax::CExpression::Int32Literal(4)),
+                (10, syntax::CExpression::Int32Literal(5)),
+                (11, syntax::CExpression::Int32Literal(6)),
             ],
-            vec![(7, syntax::C0Expression::UInt32Literal(5))],
+            vec![(7, syntax::CExpression::UInt32Literal(5))],
         ]
     );
     assert!(
@@ -119,7 +119,7 @@ fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
 /// lowering does the same work whatever the length. An automatic array
 /// declared without an initializer carries no zero fill.
 #[test]
-fn c0_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_the_length() {
+fn c_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_the_length() {
     let samples = [100u32, 10_000, 1_000_000].map(|length| {
         let source = format!(
             "struct node {{
@@ -153,18 +153,18 @@ fn c0_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_t
         let mut pending = vec![function.body()];
         while let Some(statement) = pending.pop() {
             match statement {
-                syntax::C0Statement::Seq(first, second) => {
+                syntax::CStatement::Seq(first, second) => {
                     pending.push(first);
                     pending.push(second);
                 }
-                syntax::C0Statement::Declare {
+                syntax::CStatement::Declare {
                     name, zero_fill, ..
                 } => zero_filled.push((name.clone(), zero_fill.is_some())),
                 _ => {}
             }
         }
         zero_filled.sort();
-        let statements = c0_statement_count(function.body());
+        let statements = c_statement_count(function.body());
         let (_, work) =
             crate::instrumentation::measure_deterministic_work(|| function.to_kernel_function());
         (length, pool, slots, zero_filled, statements, work)
@@ -209,13 +209,13 @@ fn scalar_call_assignments_lower_to_linear_explicit_operations() {
         let mut assignments = 0;
         while let Some(statement) = pending.pop() {
             match statement {
-                syntax::C0Statement::Seq(left, right) => {
+                syntax::CStatement::Seq(left, right) => {
                     pending.push(left);
                     pending.push(right);
                 }
-                syntax::C0Statement::CallResult { .. } => calls += 1,
-                syntax::C0Statement::Assign { .. } => assignments += 1,
-                syntax::C0Statement::CallAssign { .. } => panic!("combined scalar call"),
+                syntax::CStatement::CallResult { .. } => calls += 1,
+                syntax::CStatement::Assign { .. } => assignments += 1,
+                syntax::CStatement::CallAssign { .. } => panic!("combined scalar call"),
                 _ => {}
             }
         }
@@ -249,13 +249,13 @@ fn aggregate_call_assignments_lower_to_linear_explicit_operations() {
         let (mut calls, mut copies) = (0, 0);
         while let Some(statement) = pending.pop() {
             match statement {
-                syntax::C0Statement::Seq(left, right) => {
+                syntax::CStatement::Seq(left, right) => {
                     pending.push(left);
                     pending.push(right);
                 }
-                syntax::C0Statement::CallResult { .. } => calls += 1,
-                syntax::C0Statement::AggregateCopy { .. } => copies += 1,
-                syntax::C0Statement::CallAssign { .. } => panic!("combined aggregate call"),
+                syntax::CStatement::CallResult { .. } => calls += 1,
+                syntax::CStatement::AggregateCopy { .. } => copies += 1,
+                syntax::CStatement::CallAssign { .. } => panic!("combined aggregate call"),
                 _ => {}
             }
         }

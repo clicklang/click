@@ -1778,7 +1778,7 @@ pub(super) fn click_integer_cast_type(name: &str) -> Option<ProgramType> {
     })
 }
 
-/// The C0 type a Rust scalar type name denotes.
+/// The C type a Rust scalar type name denotes.
 impl Parser {}
 
 pub(super) fn rust_scalar_type(name: &str) -> Option<InterfaceType> {

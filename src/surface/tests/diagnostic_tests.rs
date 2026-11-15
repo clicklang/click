@@ -1815,7 +1815,7 @@ fn split_statement_sites(message: &str) -> (String, Vec<String>) {
 }
 
 /// A statement's site is diagnostics only. The same C written at other
-/// lines and columns, with other comments, parses to equal C0 and kernel
+/// lines and columns, with other comments, parses to equal C and kernel
 /// functions and verifies with the same work and the same messages, apart
 /// from the `C statement at` line each refusal gains, which names the line
 /// and column the statement moved to and quotes it without its comment.

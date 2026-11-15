@@ -133,3 +133,85 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
         assert!(work <= 100 * size + 1000, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observations() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut offset = KernelPointerOffset::Int32Scaled {
+            value: KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999801)),
+            byte_width: 4,
+        }
+        .into_shared()
+        .unwrap();
+        for _ in 0..size {
+            offset = KernelPointerOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        let values = [999802, 999803].map(|variable| {
+            let source = SharedPointerValue::import(&PointerValue::new(
+                Pointer::symbolic(Variable(variable)),
+                ProgramType::Int32Pointer,
+            ));
+            let mut value = source.node().clone();
+            value.address =
+                SharedPointerAddress::new(value.address.node().block.clone(), offset.clone());
+            SharedPointerValue::new(value)
+        });
+        let root = KernelTerm::pointer_value_equal_raw(values.clone());
+        let one = KernelTermImport::default()
+            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+        let zero = KernelTermImport::default()
+            .machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+        let exports = KernelTermExport::machine_export_count();
+        let ((bits, pointers), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let bits = crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
+                &root,
+                Variable(999809),
+                &MachineTerm::constant(1),
+            )
+            .unwrap();
+            let pointers =
+                crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
+                    &root,
+                    Variable(999809),
+                    &Pointer::null(),
+                )
+                .unwrap();
+            assert_eq!(
+                crate::kernel::memory_provenance::transport_framed_common_condition(
+                    &root,
+                    &crate::kernel::Memory::new(),
+                    None
+                ),
+                Some(root.clone())
+            );
+            let observed = SharedMachineIntegerTerm::observe_shared(
+                MachineIntegerType::Int32,
+                KernelTerm::machine_if_shared(
+                    MachineIntegerType::Int32,
+                    [root.clone(), one.clone(), zero.clone()],
+                ),
+            )
+            .unwrap();
+            let again = SharedMachineIntegerTerm::observe_shared(
+                MachineIntegerType::Int32,
+                KernelTerm::machine_if_shared(
+                    MachineIntegerType::Int32,
+                    [root.clone(), one.clone(), zero.clone()],
+                ),
+            )
+            .unwrap();
+            assert_eq!(observed, again);
+            (bits, pointers)
+        });
+        assert_eq!(bits, root);
+        let KernelTermNode::PointerValueEqual(pair) = pointers.node() else {
+            panic!("complete pointer equality");
+        };
+        assert_eq!(pair.arguments()[0].node().address.node().offset, offset);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= 500 * size + 5000, "size={size}, work={work}");
+    }
+}

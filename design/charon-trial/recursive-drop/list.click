@@ -162,11 +162,11 @@ impl recursive_drop::Stack {
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(12).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(12).exit, old(self.head).next) == at(region(12).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(14).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(14).exit, old(self.head).next) == at(region(14).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(12).footprint, memory(self.head.next))) => at(before_pop, separate(region(12).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(12).exit, old(self.head).next) == at(region(12).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(14).footprint, memory(self.head.next))) => at(before_pop, separate(region(14).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(14).exit, old(self.head).next) == at(region(14).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
@@ -178,27 +178,11 @@ impl recursive_drop::Stack {
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(16).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(16).exit, old(self.head).next) == at(region(16).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(21).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(21).exit, old(self.head).next) == at(region(21).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(16).footprint, memory(self.head.next))) => at(before_pop, separate(region(16).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(16).exit, old(self.head).next) == at(region(16).entry, old(self.head).next);
-                        conclusion 1;
-                    }
-                }
-                have at(before_pop, separate(region(17).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(17).exit, old(self.head).next) == at(region(17).entry, old(self.head).next) by {
-                    transport_certificate {
-                        premise 0: at(before_pop, separate(region(17).footprint, memory(self.head.next))) => at(before_pop, separate(region(17).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(17).exit, old(self.head).next) == at(region(17).entry, old(self.head).next);
-                        conclusion 1;
-                    }
-                }
-                have at(before_pop, separate(region(18).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(18).exit, old(self.head).next) == at(region(18).entry, old(self.head).next) by {
-                    transport_certificate {
-                        premise 0: at(before_pop, separate(region(18).footprint, memory(self.head.next))) => at(before_pop, separate(region(18).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(18).exit, old(self.head).next) == at(region(18).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(21).footprint, memory(self.head.next))) => at(before_pop, separate(region(21).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(21).exit, old(self.head).next) == at(region(21).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
@@ -210,27 +194,35 @@ impl recursive_drop::Stack {
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(27).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(27).exit, old(self.head).next) == at(region(27).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(28).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(28).exit, old(self.head).next) == at(region(28).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(27).footprint, memory(self.head.next))) => at(before_pop, separate(region(27).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(27).exit, old(self.head).next) == at(region(27).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(28).footprint, memory(self.head.next))) => at(before_pop, separate(region(28).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(28).exit, old(self.head).next) == at(region(28).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(31).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(31).exit, old(self.head).next) == at(region(31).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(34).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(34).exit, old(self.head).next) == at(region(34).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(31).footprint, memory(self.head.next))) => at(before_pop, separate(region(31).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(31).exit, old(self.head).next) == at(region(31).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(34).footprint, memory(self.head.next))) => at(before_pop, separate(region(34).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(34).exit, old(self.head).next) == at(region(34).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(37).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(37).exit, old(self.head).next) == at(region(37).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(42).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(42).exit, old(self.head).next) == at(region(42).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(37).footprint, memory(self.head.next))) => at(before_pop, separate(region(37).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(37).exit, old(self.head).next) == at(region(37).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(42).footprint, memory(self.head.next))) => at(before_pop, separate(region(42).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(42).exit, old(self.head).next) == at(region(42).entry, old(self.head).next);
+                        conclusion 1;
+                    }
+                }
+                have at(before_pop, separate(region(43).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(43).exit, old(self.head).next) == at(region(43).entry, old(self.head).next) by {
+                    transport_certificate {
+                        premise 0: at(before_pop, separate(region(43).footprint, memory(self.head.next))) => at(before_pop, separate(region(43).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(43).exit, old(self.head).next) == at(region(43).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
@@ -250,27 +242,19 @@ impl recursive_drop::Stack {
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(48).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(48).exit, old(self.head).next) == at(region(48).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(47).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(47).exit, old(self.head).next) == at(region(47).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(48).footprint, memory(self.head.next))) => at(before_pop, separate(region(48).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(48).exit, old(self.head).next) == at(region(48).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(47).footprint, memory(self.head.next))) => at(before_pop, separate(region(47).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(47).exit, old(self.head).next) == at(region(47).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(49).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(49).exit, old(self.head).next) == at(region(49).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(55).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(55).exit, old(self.head).next) == at(region(55).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(49).footprint, memory(self.head.next))) => at(before_pop, separate(region(49).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(49).exit, old(self.head).next) == at(region(49).entry, old(self.head).next);
-                        conclusion 1;
-                    }
-                }
-                have at(before_pop, separate(region(50).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(50).exit, old(self.head).next) == at(region(50).entry, old(self.head).next) by {
-                    transport_certificate {
-                        premise 0: at(before_pop, separate(region(50).footprint, memory(self.head.next))) => at(before_pop, separate(region(50).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(50).exit, old(self.head).next) == at(region(50).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(55).footprint, memory(self.head.next))) => at(before_pop, separate(region(55).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(55).exit, old(self.head).next) == at(region(55).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
@@ -290,35 +274,35 @@ impl recursive_drop::Stack {
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(64).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(64).exit, old(self.head).next) == at(region(64).entry, old(self.head).next) by {
+                have at(before_pop, separate(region(68).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
+                have at(region(68).exit, old(self.head).next) == at(region(68).entry, old(self.head).next) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(64).footprint, memory(self.head.next))) => at(before_pop, separate(region(64).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(64).exit, old(self.head).next) == at(region(64).entry, old(self.head).next);
+                        premise 0: at(before_pop, separate(region(68).footprint, memory(self.head.next))) => at(before_pop, separate(region(68).footprint, memory(self.head.next)));
+                        preserve 0 => at(region(68).exit, old(self.head).next) == at(region(68).entry, old(self.head).next);
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(71).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(71).exit, old(self.head).next) == at(region(71).entry, old(self.head).next) by {
+                have separate(region(89).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
+                have at(region(89).exit, self.head) == at(region(89).entry, self.head) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(71).footprint, memory(self.head.next))) => at(before_pop, separate(region(71).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(71).exit, old(self.head).next) == at(region(71).entry, old(self.head).next);
+                        premise 0: separate(region(89).footprint, memory(self.head)) => separate(region(89).footprint, memory(self.head));
+                        preserve 0 => at(region(89).exit, self.head) == at(region(89).entry, self.head);
                         conclusion 1;
                     }
                 }
-                have at(before_pop, separate(region(74).footprint, memory(self.head.next))) by { normalize() using { at(before_pop, separate(memory(self.head.next), memory(self.head))); }; }
-                have at(region(74).exit, old(self.head).next) == at(region(74).entry, old(self.head).next) by {
+                have separate(region(92).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
+                have at(region(92).exit, self.head) == at(region(92).entry, self.head) by {
                     transport_certificate {
-                        premise 0: at(before_pop, separate(region(74).footprint, memory(self.head.next))) => at(before_pop, separate(region(74).footprint, memory(self.head.next)));
-                        preserve 0 => at(region(74).exit, old(self.head).next) == at(region(74).entry, old(self.head).next);
+                        premise 0: separate(region(92).footprint, memory(self.head)) => separate(region(92).footprint, memory(self.head));
+                        preserve 0 => at(region(92).exit, self.head) == at(region(92).entry, self.head);
                         conclusion 1;
                     }
                 }
-                have separate(region(95).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(95).exit, self.head) == at(region(95).entry, self.head) by {
+                have separate(region(93).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
+                have at(region(93).exit, self.head) == at(region(93).entry, self.head) by {
                     transport_certificate {
-                        premise 0: separate(region(95).footprint, memory(self.head)) => separate(region(95).footprint, memory(self.head));
-                        preserve 0 => at(region(95).exit, self.head) == at(region(95).entry, self.head);
+                        premise 0: separate(region(93).footprint, memory(self.head)) => separate(region(93).footprint, memory(self.head));
+                        preserve 0 => at(region(93).exit, self.head) == at(region(93).entry, self.head);
                         conclusion 1;
                     }
                 }
@@ -338,39 +322,7 @@ impl recursive_drop::Stack {
                         conclusion 1;
                     }
                 }
-                have separate(region(106).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(106).exit, self.head) == at(region(106).entry, self.head) by {
-                    transport_certificate {
-                        premise 0: separate(region(106).footprint, memory(self.head)) => separate(region(106).footprint, memory(self.head));
-                        preserve 0 => at(region(106).exit, self.head) == at(region(106).entry, self.head);
-                        conclusion 1;
-                    }
-                }
-                have separate(region(107).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(107).exit, self.head) == at(region(107).entry, self.head) by {
-                    transport_certificate {
-                        premise 0: separate(region(107).footprint, memory(self.head)) => separate(region(107).footprint, memory(self.head));
-                        preserve 0 => at(region(107).exit, self.head) == at(region(107).entry, self.head);
-                        conclusion 1;
-                    }
-                }
-                have separate(region(112).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(112).exit, self.head) == at(region(112).entry, self.head) by {
-                    transport_certificate {
-                        premise 0: separate(region(112).footprint, memory(self.head)) => separate(region(112).footprint, memory(self.head));
-                        preserve 0 => at(region(112).exit, self.head) == at(region(112).entry, self.head);
-                        conclusion 1;
-                    }
-                }
-                have separate(region(115).footprint, memory(self.head)) by { normalize() using { at(before_pop, separate(memory(*self.head), memory(self.head))); }; }
-                have at(region(115).exit, self.head) == at(region(115).entry, self.head) by {
-                    transport_certificate {
-                        premise 0: separate(region(115).footprint, memory(self.head)) => separate(region(115).footprint, memory(self.head));
-                        preserve 0 => at(region(115).exit, self.head) == at(region(115).entry, self.head);
-                        conclusion 1;
-                    }
-                }
-                have at(region(90).exit, self.head) == old(self.head.next) by { known(); }
+                have at(region(84).exit, self.head) == old(self.head.next) by { known(); }
                 have self.head == old(self.head.next) by { known(); }
                 unfold(first(List::Cons(v, tail_values)));
                 unfold(rest(List::Cons(v, tail_values)));
@@ -381,8 +333,8 @@ impl recursive_drop::Stack {
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
-                        have old(self.head.next).next == at(region(107).exit, old(self.head.next).next) by {
-                            transport(at(region(107).exit, old(self.head.next).next) == at(region(107).exit, old(self.head.next).next), old(self.head.next).next == at(region(107).exit, old(self.head.next).next));
+                        have old(self.head.next).next == at(region(93).exit, old(self.head.next).next) by {
+                            transport(at(region(93).exit, old(self.head.next).next) == at(region(93).exit, old(self.head.next).next), old(self.head.next).next == at(region(93).exit, old(self.head.next).next));
                         }
                         have self.head.next == old(self.head.next).next by {
                             rewrite(self.head == old(self.head.next));
@@ -448,28 +400,28 @@ fn recursive_drop::pushed(x: u32) -> u32 {
 fn recursive_drop::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    step_until(region(57));
-    have separate(region(50).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(50).exit, stack.head) == at(region(50).entry, stack.head) by {
+    step_until(region(51));
+    have separate(region(44).footprint, memory(stack.head)) by { normalize() using {}; }
+    have at(region(44).exit, stack.head) == at(region(44).entry, stack.head) by {
         transport_certificate {
-            premise 0: separate(region(50).footprint, memory(stack.head)) => separate(region(50).footprint, memory(stack.head));
-            preserve 0 => at(region(50).exit, stack.head) == at(region(50).entry, stack.head);
+            premise 0: separate(region(44).footprint, memory(stack.head)) => separate(region(44).footprint, memory(stack.head));
+            preserve 0 => at(region(44).exit, stack.head) == at(region(44).entry, stack.head);
             conclusion 1;
         }
     }
-    have separate(region(54).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(54).exit, stack.head) == at(region(54).entry, stack.head) by {
+    have separate(region(48).footprint, memory(stack.head)) by { normalize() using {}; }
+    have at(region(48).exit, stack.head) == at(region(48).entry, stack.head) by {
         transport_certificate {
-            premise 0: separate(region(54).footprint, memory(stack.head)) => separate(region(54).footprint, memory(stack.head));
-            preserve 0 => at(region(54).exit, stack.head) == at(region(54).entry, stack.head);
+            premise 0: separate(region(48).footprint, memory(stack.head)) => separate(region(48).footprint, memory(stack.head));
+            preserve 0 => at(region(48).exit, stack.head) == at(region(48).entry, stack.head);
             conclusion 1;
         }
     }
-    have separate(region(55).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(55).exit, stack.head) == at(region(55).entry, stack.head) by {
+    have separate(region(49).footprint, memory(stack.head)) by { normalize() using {}; }
+    have at(region(49).exit, stack.head) == at(region(49).entry, stack.head) by {
         transport_certificate {
-            premise 0: separate(region(55).footprint, memory(stack.head)) => separate(region(55).footprint, memory(stack.head));
-            preserve 0 => at(region(55).exit, stack.head) == at(region(55).entry, stack.head);
+            premise 0: separate(region(49).footprint, memory(stack.head)) => separate(region(49).footprint, memory(stack.head));
+            preserve 0 => at(region(49).exit, stack.head) == at(region(49).entry, stack.head);
             conclusion 1;
         }
     }

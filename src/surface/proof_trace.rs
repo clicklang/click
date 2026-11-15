@@ -1,10 +1,9 @@
 //! Opt-in observations of checked proof steps for CLI diagnostics.
 //! The trace is diagnostic only; no recorded text participates in checking.
 
-use crate::kernel::CompareRelation;
-use crate::kernel::ContractPathPreparationFailure;
-use crate::kernel::MachineIntegerType;
 use crate::kernel::proof::BranchId;
+#[cfg(test)]
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, SharedMemory};
 use crate::source::SourcePosition;
 use crate::surface::proof_diagnostics::ProofDiagnosticState;
@@ -367,130 +366,6 @@ pub(super) fn pointer_definition(pointer: &Pointer) -> Option<MachineTerm> {
 /// Kernel authority is no proof-state fact at all.
 pub(super) fn visible_checked_fact(fact: &Proposition) -> bool {
     !crate::kernel::is_load_variable_defining_fact(fact) && !fact.is_kernel_authority()
-}
-
-/// The exact check that failed after the written proof completed. A completed
-/// script has no failing proof node, so it cannot use a node-lineage trace.
-/// These facts come from the certification context at the failed check.
-pub(super) struct CertificationTraceState {
-    goal: Proposition,
-    available: Vec<Proposition>,
-    available_count: usize,
-}
-
-impl CertificationTraceState {
-    pub(super) fn from_failure(failure: &ContractPathPreparationFailure) -> Option<Self> {
-        Some(Self {
-            goal: failure.obligation.clone()?,
-            available: failure.available.clone(),
-            available_count: failure.available_count,
-        })
-    }
-}
-
-fn traced_read(term: &MachineTerm) -> Option<(SharedMemory, Pointer)> {
-    match term {
-        MachineTerm::MemoryLoad(memory, pointer, _) => {
-            Some((memory.clone(), pointer.as_ref().clone()))
-        }
-        MachineTerm::Variable(variable) => crate::kernel::registered_load_for_variable(variable),
-        _ => None,
-    }
-}
-
-impl ProofDiagnosticState for CertificationTraceState {
-    fn kernel_goal(&self) -> Option<&Proposition> {
-        Some(&self.goal)
-    }
-
-    fn premises(&self, _limit: usize) -> Vec<&Proposition> {
-        Vec::new()
-    }
-
-    fn premise_count(&self) -> usize {
-        0
-    }
-
-    fn proof_trace(
-        &self,
-        _claim: &str,
-        labels: &mut SnapshotLabels,
-        _tactic_location: &dyn Fn(&[usize]) -> Option<(String, SourcePosition)>,
-        _branch_arm: &dyn Fn(&[usize], &SourcePosition) -> Option<usize>,
-        _have_body_contains: &dyn Fn(&[usize], &SourcePosition) -> bool,
-        _target: Option<&SourcePosition>,
-        _failing_path: Option<usize>,
-    ) -> Option<String> {
-        let mut output =
-            String::from("  certification trace (facts available at the failed check):");
-        let mut relevant = Vec::new();
-        let mut different_snapshots = false;
-        if let Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: needed_left,
-                right: needed_right,
-            },
-            true,
-        ) = &self.goal
-            && let Some((needed_memory, needed_pointer)) = traced_read(needed_left)
-        {
-            let needed_snapshot = labels.snapshot_name(needed_memory.memory());
-            for fact in &self.available {
-                let Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                        relation: CompareRelation::Equal,
-                        left,
-                        right,
-                    },
-                    true,
-                ) = fact
-                else {
-                    continue;
-                };
-                let Some((known_memory, known_pointer)) = traced_read(left) else {
-                    continue;
-                };
-                if known_pointer == needed_pointer && right == needed_right {
-                    relevant.push(fact);
-                    if known_memory != needed_memory {
-                        different_snapshots = true;
-                        output.push_str(&format!(
-                            "\n    same address and required value: known at {}, needed at {}",
-                            labels.snapshot_name(known_memory.memory()),
-                            needed_snapshot,
-                        ));
-                    }
-                }
-            }
-            if different_snapshots {
-                output.push_str(
-                    "\n    certification did not establish that these snapshot reads agree",
-                );
-            }
-        }
-        if relevant.is_empty() {
-            relevant.extend(self.available.iter().take(8));
-        }
-        let shown = relevant.len();
-        output.push_str(&format!(
-            "\n    checked facts (showing {} of {}):",
-            shown, self.available_count,
-        ));
-        for fact in relevant {
-            let description = render::render_proposition_labeled(fact, labels);
-            let description = trace_text(&description, 512);
-            output.push_str("\n    fact: ");
-            output.push_str(&description);
-        }
-        if shown < self.available_count {
-            output.push_str("\n    … <other available facts omitted>");
-        }
-        append_legend(&mut output, labels);
-        Some(output)
-    }
 }
 
 thread_local! {

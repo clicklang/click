@@ -5378,7 +5378,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 arguments,
             } = leaf.node()
             {
-                let arguments = arguments.each_ref().map(|argument| map_machine(argument, *format).and_then(|value| value.shared_operand().cloned()));
+                let arguments = arguments.each_ref().map(|argument| {
+                    map_machine(argument, *format).and_then(|value| value.shared_operand().cloned())
+                });
                 let [Some(left), Some(right)] = arguments else {
                     return Err(());
                 };
@@ -5391,22 +5393,67 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     },
                 );
             }
+            if let crate::kernel::KernelTermNode::BoolOverflow {
+                format,
+                operation,
+                arguments,
+            } = leaf.node()
+            {
+                let a = map_machine(&arguments[0], *format).ok_or(())?;
+                let b = map_machine(&arguments[1], *format).ok_or(())?;
+                return Ok(KernelTerm::boolean_overflow(
+                    *format,
+                    *operation,
+                    [
+                        KernelTerm::retained_machine_operand(*format, a.operand_view()),
+                        KernelTerm::retained_machine_operand(*format, b.operand_view()),
+                    ],
+                ));
+            }
             if let crate::kernel::KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
                 let offsets = map_common_substitution_offsets(arguments, &mut map_machine)?;
                 return Ok(KernelTerm::pointer_offset_equal(offsets));
             }
-            if let crate::kernel::KernelTermNode::PointerEqual { arguments } = leaf.node() {
-                let mut mapped = Vec::with_capacity(2);
-                for address in arguments {
-                    if matches!(address.node().block.native_atom(), PointerBlock::PureFunctionApplication(_)) {
-                        mapped.push(crate::kernel::proof::term_rewrite::substitute_application_address_bits(address, from, to).ok_or(())?);
-                    } else {
-                        let offset = &address.node().offset;
-                        let offsets = map_common_substitution_offsets(&[offset.clone(), offset.clone()], &mut map_machine)?;
-                        mapped.push(crate::kernel::SharedPointerAddress::new(address.node().block.clone(), offsets[0].clone()));
-                    }
+            let mut map_address = |address: &crate::kernel::SharedPointerAddress| {
+                if matches!(
+                    address.node().block.native_atom(),
+                    PointerBlock::PureFunctionApplication(_)
+                ) {
+                    crate::kernel::proof::term_rewrite::substitute_application_address_bits(
+                        address, from, to,
+                    )
+                    .ok_or(())
+                } else {
+                    let offset = &address.node().offset;
+                    let offsets = map_common_substitution_offsets(
+                        &[offset.clone(), offset.clone()],
+                        &mut map_machine,
+                    )?;
+                    Ok(crate::kernel::SharedPointerAddress::new(
+                        address.node().block.clone(),
+                        offsets[0].clone(),
+                    ))
                 }
-                return Ok(KernelTerm::pointer_equal([mapped[0].clone(), mapped[1].clone()]));
+            };
+            if let crate::kernel::KernelTermNode::BoolRead(read) = leaf.node() {
+                let (memory, address) = read.parts();
+                return Ok(KernelTerm::boolean_read(
+                    substitute_bitvector_variable_in_shared_memory(memory, from, to),
+                    map_address(address)?,
+                ));
+            }
+            if let crate::kernel::KernelTermNode::PointerValueEqual(pair) = leaf.node() {
+                let [a, b] = pair.arguments();
+                return Ok(KernelTerm::pointer_value_equal_raw([
+                    a.map_condition_addresses(&mut map_address)?,
+                    b.map_condition_addresses(&mut map_address)?,
+                ]));
+            }
+            if let crate::kernel::KernelTermNode::PointerEqual { arguments } = leaf.node() {
+                return Ok(KernelTerm::pointer_equal([
+                    map_address(&arguments[0])?,
+                    map_address(&arguments[1])?,
+                ]));
             }
             let native = crate::kernel::BooleanOperandView::Shared(leaf).identity_leaf();
             Ok(crate::kernel::KernelTermImport::default().condition(
@@ -5422,7 +5469,12 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
     from: Variable,
     to: &Pointer,
 ) -> Option<KernelTerm> {
-    if crate::kernel::BooleanOperandView::Shared(condition).is_bool_value_form() {
+    if crate::kernel::BooleanOperandView::Shared(condition).is_bool_value_form()
+        || matches!(
+            condition.node(),
+            crate::kernel::KernelTermNode::PointerValueEqual(_)
+        )
+    {
         return crate::kernel::proof::term_rewrite::substitute_pointer_boolean_value(
             condition, from, to,
         );
@@ -5477,7 +5529,7 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
         return Some(condition.clone());
     }
     if crate::kernel::BooleanOperandView::Shared(condition)
-        .comparison()
+        .machine_arguments()
         .is_some()
     {
         return Some(condition.clone());

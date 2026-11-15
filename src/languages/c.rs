@@ -1,4 +1,4 @@
-//! The C0 program-language frontend and source model.
+//! The C program-language frontend and source model.
 
 pub(crate) mod address_taken;
 pub mod compiler_import;

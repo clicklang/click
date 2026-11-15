@@ -15,7 +15,7 @@ impl Parser {
         interface_type: InterfaceType,
         array_shape: Option<&[u32]>,
         compact: bool,
-    ) -> Result<(Option<C0ZeroFill>, C0Statement), C0SyntaxError> {
+    ) -> Result<(Option<CZeroFill>, CStatement), CSyntaxError> {
         let (length, element_type) = match interface_type {
             InterfaceType::Int32Array(length) => (length, InterfaceType::Int32),
             InterfaceType::CharArray(plain, length) => (length, InterfaceType::Char(plain)),
@@ -45,16 +45,16 @@ impl Parser {
         for (_, value) in &mut written {
             convert_integer_constant(element_type, value);
         }
-        let store = |index: u32, value: C0Expression| C0Statement::Store {
-            pointer: C0Expression::Add(
-                Box::new(C0Expression::Variable(name.to_string())),
-                Box::new(C0Expression::Int32Literal(index)),
+        let store = |index: u32, value: CExpression| CStatement::Store {
+            pointer: CExpression::Add(
+                Box::new(CExpression::Variable(name.to_string())),
+                Box::new(CExpression::Int32Literal(index)),
             ),
             value,
             value_type: Some(element_type),
             lvalue_class: None,
             pointee_constant: false,
-            site: C0Site::NONE,
+            site: CSite::NONE,
         };
         // The declaration zero-fills the array, and only the written
         // elements that are not the zero initializer are stored after it.
@@ -63,7 +63,7 @@ impl Parser {
                 .iter()
                 .map(|(index, value)| store(*index, value.clone()))
                 .collect::<Vec<_>>();
-            if let Some(zero_fill) = C0ZeroFill::from_element_stores(
+            if let Some(zero_fill) = CZeroFill::from_element_stores(
                 name,
                 element_type.abi_size_bytes(),
                 length,
@@ -74,7 +74,7 @@ impl Parser {
                 let stores = zero_fill.without_its_own_stores(name, written_stores);
                 return Ok((
                     Some(zero_fill),
-                    balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+                    balanced_statement_sequence(stores).unwrap_or(CStatement::Skip),
                 ));
             }
         }
@@ -94,7 +94,7 @@ impl Parser {
         }
         Ok((
             None,
-            balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+            balanced_statement_sequence(stores).unwrap_or(CStatement::Skip),
         ))
     }
 
@@ -109,7 +109,7 @@ impl Parser {
         struct_name: &str,
         array_shape: &[u32],
         compact: bool,
-    ) -> Result<(Option<C0ZeroFill>, C0Statement), C0SyntaxError> {
+    ) -> Result<(Option<CZeroFill>, CStatement), CSyntaxError> {
         if self.peek() != Some(&Token::LBrace) {
             return Err(self.error_here(
                 "local struct array elements require nested `{...}` initializer groups",
@@ -125,12 +125,12 @@ impl Parser {
                 let count = array_shape
                     .iter()
                     .try_fold(1u32, |count, dimension| count.checked_mul(*dimension))?;
-                C0ZeroFill::from_element_stores(
+                CZeroFill::from_element_stores(
                     name,
                     element_width,
                     count,
                     &self.zero_struct_initializer_level(
-                        C0Expression::Variable(name.to_string()),
+                        CExpression::Variable(name.to_string()),
                         struct_name,
                     ),
                 )
@@ -139,7 +139,7 @@ impl Parser {
         let start = self.position;
         if let Some(zero_fill) = zero_fill {
             let stores = self.parse_embedded_struct_array_initializer_level(
-                C0Expression::Variable(name.to_string()),
+                CExpression::Variable(name.to_string()),
                 struct_name,
                 array_shape,
                 0,
@@ -151,7 +151,7 @@ impl Parser {
                 let stores = zero_fill.without_its_own_stores(name, stores);
                 return Ok((
                     Some(zero_fill),
-                    balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+                    balanced_statement_sequence(stores).unwrap_or(CStatement::Skip),
                 ));
             }
             // An initializer that reads the array keeps every store in
@@ -159,7 +159,7 @@ impl Parser {
             self.position = start;
         }
         let stores = self.parse_embedded_struct_array_initializer_level(
-            C0Expression::Variable(name.to_string()),
+            CExpression::Variable(name.to_string()),
             struct_name,
             array_shape,
             0,
@@ -169,7 +169,7 @@ impl Parser {
         )?;
         Ok((
             None,
-            balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+            balanced_statement_sequence(stores).unwrap_or(CStatement::Skip),
         ))
     }
 
@@ -180,9 +180,9 @@ impl Parser {
         name: &str,
         dimensions: &[u32],
         depth: usize,
-        values: &mut Vec<C0Expression>,
-        zero: &C0Expression,
-    ) -> Result<(), C0SyntaxError> {
+        values: &mut Vec<CExpression>,
+        zero: &CExpression,
+    ) -> Result<(), CSyntaxError> {
         let mut next = u32::try_from(values.len()).expect("validated array initializer length");
         let mut written = Vec::new();
         self.parse_sparse_array_initializer_level(
@@ -210,9 +210,9 @@ impl Parser {
         name: &str,
         dimensions: &[u32],
         depth: usize,
-        values: &mut Vec<(u32, C0Expression)>,
+        values: &mut Vec<(u32, CExpression)>,
         next: &mut u32,
-    ) -> Result<(), C0SyntaxError> {
+    ) -> Result<(), CSyntaxError> {
         let child_width = dimensions[depth + 1..]
             .iter()
             .copied()
@@ -287,7 +287,7 @@ impl Parser {
         &mut self,
         object_name: &str,
         struct_name: &str,
-    ) -> Result<Vec<C0AggregateInitializer>, C0SyntaxError> {
+    ) -> Result<Vec<CAggregateInitializer>, CSyntaxError> {
         self.parse_aggregate_initializer_level(object_name, struct_name, 0)
     }
 
@@ -297,7 +297,7 @@ impl Parser {
         struct_name: &str,
         layout: &RecordLayout,
         length: u32,
-    ) -> Result<Vec<C0AggregateInitializer>, C0SyntaxError> {
+    ) -> Result<Vec<CAggregateInitializer>, CSyntaxError> {
         self.parse_aggregate_array_initializer_with_bound(
             object_name,
             struct_name,
@@ -313,7 +313,7 @@ impl Parser {
         struct_name: &str,
         layout: &RecordLayout,
         length: Option<u32>,
-    ) -> Result<(u32, Vec<C0AggregateInitializer>), C0SyntaxError> {
+    ) -> Result<(u32, Vec<CAggregateInitializer>), CSyntaxError> {
         self.expect(Token::LBrace)?;
         let mut initializers = Vec::new();
         let mut next_element_index = 0u32;
@@ -401,7 +401,7 @@ impl Parser {
         &mut self,
         object_name: &str,
         length: u32,
-    ) -> Result<u32, C0SyntaxError> {
+    ) -> Result<u32, CSyntaxError> {
         let index = match self.next() {
             Some(Token::Number(number)) => {
                 let magnitude = parse_integer_literal_magnitude(&number).map_err(|reason| {
@@ -442,7 +442,7 @@ impl Parser {
         object_name: &str,
         struct_name: &str,
         base_offset: u32,
-    ) -> Result<Vec<C0AggregateInitializer>, C0SyntaxError> {
+    ) -> Result<Vec<CAggregateInitializer>, CSyntaxError> {
         let mut fields = self
             .structs
             .get(struct_name)
@@ -524,7 +524,7 @@ impl Parser {
         object_name: &str,
         base_offset: u32,
         field: &RecordField,
-    ) -> Result<Vec<C0AggregateInitializer>, C0SyntaxError> {
+    ) -> Result<Vec<CAggregateInitializer>, CSyntaxError> {
         let field_offset = base_offset
             .checked_add(field.offset_bytes)
             .expect("validated aggregate initializer field offset");
@@ -589,7 +589,7 @@ impl Parser {
                             .expect("validated aggregate initializer offset"),
                     )
                     .expect("validated aggregate initializer offset");
-                initializers.push(C0AggregateInitializer::new(offset, element_type, value));
+                initializers.push(CAggregateInitializer::new(offset, element_type, value));
             }
             return Ok(initializers);
         }
@@ -606,13 +606,13 @@ impl Parser {
             self.validate_function_pointer_value(expected, &value)?;
             if !matches!(
                 value,
-                C0Expression::Int32Literal(0) | C0Expression::FunctionAddress(_)
+                CExpression::Int32Literal(0) | CExpression::FunctionAddress(_)
             ) {
                 return Err(self.error_here(
                     "aggregate callback initializers currently support only a function address or the null pointer literal",
                 ));
             }
-            return Ok(vec![C0AggregateInitializer::new(
+            return Ok(vec![CAggregateInitializer::new(
                 field_offset,
                 field.interface_type,
                 value,
@@ -624,7 +624,7 @@ impl Parser {
             &mut value,
         )?;
         validate_aggregate_initializer(self, field.interface_type, &value)?;
-        Ok(vec![C0AggregateInitializer::new(
+        Ok(vec![CAggregateInitializer::new(
             field_offset,
             field.interface_type,
             value,
@@ -640,7 +640,7 @@ impl Parser {
         flat_prefix: u32,
         element_offset: u32,
         element_width: u32,
-    ) -> Result<Vec<C0AggregateInitializer>, C0SyntaxError> {
+    ) -> Result<Vec<CAggregateInitializer>, CSyntaxError> {
         let child_count = dimensions[depth];
         let child_width = dimensions[depth + 1..]
             .iter()
@@ -734,19 +734,19 @@ impl Parser {
         &mut self,
         target: &str,
         struct_name: &str,
-    ) -> Result<C0Statement, C0SyntaxError> {
+    ) -> Result<CStatement, CSyntaxError> {
         let stores = self.parse_struct_initializer_level(
-            C0Expression::Variable(target.to_string()),
+            CExpression::Variable(target.to_string()),
             struct_name,
         )?;
-        Ok(balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip))
+        Ok(balanced_statement_sequence(stores).unwrap_or(CStatement::Skip))
     }
 
     pub(super) fn parse_struct_initializer_level(
         &mut self,
-        target_pointer: C0Expression,
+        target_pointer: CExpression,
         struct_name: &str,
-    ) -> Result<Vec<C0Statement>, C0SyntaxError> {
+    ) -> Result<Vec<CStatement>, CSyntaxError> {
         let mut fields = self
             .structs
             .get(struct_name)
@@ -842,10 +842,10 @@ impl Parser {
     /// and scalar-array handling.
     pub(super) fn parse_struct_field_designator(
         &mut self,
-        target_pointer: C0Expression,
+        target_pointer: CExpression,
         struct_name: &str,
         root_fields: &[RecordField],
-    ) -> Result<(usize, C0Expression, RecordField), C0SyntaxError> {
+    ) -> Result<(usize, CExpression, RecordField), CSyntaxError> {
         let mut current_struct_name = struct_name.to_string();
         let mut parent_pointer = target_pointer;
         let mut root_index = None;
@@ -898,9 +898,9 @@ impl Parser {
 
     pub(super) fn parse_struct_initializer_field(
         &mut self,
-        target_pointer: C0Expression,
+        target_pointer: CExpression,
         field: &RecordField,
-    ) -> Result<Vec<C0Statement>, C0SyntaxError> {
+    ) -> Result<Vec<CStatement>, CSyntaxError> {
         let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes);
         if let Some(element_width) = field.array_element_width {
             let struct_name = field
@@ -949,7 +949,7 @@ impl Parser {
             return Ok(values
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| C0Statement::Store {
+                .map(|(index, value)| CStatement::Store {
                     pointer: offset_field_pointer(
                         field_pointer.clone(),
                         u32::try_from(index)
@@ -961,7 +961,7 @@ impl Parser {
                     value_type: Some(element_type),
                     lvalue_class: None,
                     pointee_constant: false,
-                    site: C0Site::NONE,
+                    site: CSite::NONE,
                 })
                 .collect());
         }
@@ -972,13 +972,13 @@ impl Parser {
             field.pointee_constant,
             &mut value,
         )?;
-        Ok(vec![C0Statement::Store {
+        Ok(vec![CStatement::Store {
             pointer: field_pointer,
             value,
             value_type: Some(field.interface_type),
             lvalue_class: None,
             pointee_constant: field.pointee_constant,
-            site: C0Site::NONE,
+            site: CSite::NONE,
         }])
     }
 
@@ -988,14 +988,14 @@ impl Parser {
     /// passes `false`, so an omitted element costs nothing.
     pub(super) fn parse_embedded_struct_array_initializer_level(
         &mut self,
-        target_pointer: C0Expression,
+        target_pointer: CExpression,
         struct_name: &str,
         dimensions: &[u32],
         depth: usize,
         flat_prefix: u32,
         element_width: u32,
         zero_omitted: bool,
-    ) -> Result<Vec<C0Statement>, C0SyntaxError> {
+    ) -> Result<Vec<CStatement>, CSyntaxError> {
         let child_count = dimensions[depth];
         self.expect(Token::LBrace)?;
         let mut stores = Vec::new();
@@ -1128,7 +1128,7 @@ impl Parser {
         struct_name: &str,
         depth: usize,
         length: u32,
-    ) -> Result<u32, C0SyntaxError> {
+    ) -> Result<u32, CSyntaxError> {
         let index = match self.next() {
             Some(Token::Number(number)) => {
                 let magnitude = parse_integer_literal_magnitude(&number).map_err(|reason| {
@@ -1166,9 +1166,9 @@ impl Parser {
 
     pub(super) fn zero_struct_initializer_level(
         &self,
-        target_pointer: C0Expression,
+        target_pointer: CExpression,
         struct_name: &str,
-    ) -> Vec<C0Statement> {
+    ) -> Vec<CStatement> {
         let mut fields = self
             .structs
             .get(struct_name)
@@ -1186,9 +1186,9 @@ impl Parser {
 
     pub(super) fn zero_struct_initializer_field(
         &self,
-        target_pointer: C0Expression,
+        target_pointer: CExpression,
         field: &RecordField,
-    ) -> Vec<C0Statement> {
+    ) -> Vec<CStatement> {
         let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes);
         if let Some(element_width) = field.array_element_width {
             let struct_name = field
@@ -1217,7 +1217,7 @@ impl Parser {
         if let Some((element_type, dimensions)) = struct_scalar_array_shape(field) {
             let element_count = dimensions.iter().product::<u32>();
             return (0..element_count)
-                .map(|index| C0Statement::Store {
+                .map(|index| CStatement::Store {
                     pointer: offset_field_pointer(
                         field_pointer.clone(),
                         index
@@ -1228,30 +1228,30 @@ impl Parser {
                     value_type: Some(element_type),
                     lvalue_class: None,
                     pointee_constant: false,
-                    site: C0Site::NONE,
+                    site: CSite::NONE,
                 })
                 .collect();
         }
 
-        vec![C0Statement::Store {
+        vec![CStatement::Store {
             pointer: field_pointer,
             value: zero_initializer_value(field.interface_type),
             value_type: Some(field.interface_type),
             lvalue_class: None,
             pointee_constant: field.pointee_constant,
-            site: C0Site::NONE,
+            site: CSite::NONE,
         }]
     }
 
     pub(super) fn zero_embedded_struct_array_initializer_level(
         &self,
-        target_pointer: C0Expression,
+        target_pointer: CExpression,
         struct_name: &str,
         dimensions: &[u32],
         depth: usize,
         flat_prefix: u32,
         element_width: u32,
-    ) -> Vec<C0Statement> {
+    ) -> Vec<CStatement> {
         let child_count = dimensions[depth];
         let mut stores = Vec::new();
         for child_index in 0..child_count {

@@ -10006,7 +10006,7 @@ fn local_block_object_name(block: &PointerBlock) -> Option<&str> {
 /// the object it was derived from is undefined behaviour, which Click enforces
 /// with the bounds obligation on every displaced access
 /// (`MemoryCanStore` / `access_in_bounds`), and an integer cast to a pointer
-/// is outside the supported C0 subset. A `&x` written in a *proof* creates no
+/// is outside the supported C subset. A `&x` written in a *proof* creates no
 /// runtime pointer, so an annotation cannot make an object addressable that
 /// the program never addresses.
 ///

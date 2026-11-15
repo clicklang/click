@@ -5,6 +5,7 @@ use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
 pub(crate) use boolean::BooleanOperandView;
+pub use boolean::{KernelBooleanRead, KernelPointerEquality};
 // Scoped payloads shared by evaluation, checking, and Surface synthesis.
 #[allow(dead_code)]
 mod folds;
@@ -58,15 +59,22 @@ pub enum KernelTermNode {
     Fold(KernelFold),
     Match(KernelMatch),
     BoolLiteral(bool),
+    BoolRead(KernelBooleanRead),
     BoolCast {
         destination: MachineIntegerType,
         operand: KernelTerm,
+    },
+    BoolOverflow {
+        format: MachineIntegerType,
+        operation: OverflowOperation,
+        arguments: [KernelTerm; 2],
     },
     BoolCompare {
         format: MachineIntegerType,
         relation: CompareRelation,
         arguments: [KernelTerm; 2],
     },
+    PointerValueEqual(KernelPointerEquality),
     PointerEqual {
         arguments: [SharedPointerAddress; 2],
     },
@@ -350,7 +358,9 @@ impl NodeKey {
             KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. }
             | KernelTermNode::PointerOffsetEqual { .. }
-            | KernelTermNode::PointerEqual { .. } => true,
+            | KernelTermNode::PointerEqual { .. }
+            | KernelTermNode::PointerValueEqual(_)
+            | KernelTermNode::BoolRead(_) => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
                     value.identity,
@@ -365,6 +375,7 @@ impl NodeKey {
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments
@@ -713,6 +724,7 @@ impl KernelTerm {
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments,

@@ -235,7 +235,7 @@ impl IntegerLiteral {
         Ok(if negative { -value } else { value })
     }
 
-    pub(super) fn program_expression(&self, negative: bool) -> Result<C0Expression, String> {
+    pub(super) fn program_expression(&self, negative: bool) -> Result<CExpression, String> {
         let value = if self.suffix.is_some() {
             self.native_value(negative)?
         } else {
@@ -284,29 +284,29 @@ impl IntegerLiteral {
         };
         Ok(match value {
             ProgramValue::Int32(bits32_constant!(bits)) => {
-                C0Expression::Int32Literal(constant_u32(bits))
+                CExpression::Int32Literal(constant_u32(bits))
             }
             ProgramValue::UInt8(bits32_constant!(bits)) => {
-                C0Expression::UInt8Literal(constant_u32(bits) as u8)
+                CExpression::UInt8Literal(constant_u32(bits) as u8)
             }
             ProgramValue::UInt32(bits32_constant!(bits)) => {
-                C0Expression::UInt32Literal(constant_u32(bits))
+                CExpression::UInt32Literal(constant_u32(bits))
             }
             ProgramValue::Int64(int64_constant!(value)) => {
-                C0Expression::Int64Literal(constant_i64(value))
+                CExpression::Int64Literal(constant_i64(value))
             }
             ProgramValue::UInt64(uint64_constant!(value)) => {
-                C0Expression::UInt64Literal(constant_u64(value))
+                CExpression::UInt64Literal(constant_u64(value))
             }
             ProgramValue::Int8(bits32_constant!(bits))
             | ProgramValue::Int16(bits32_constant!(bits))
-            | ProgramValue::UInt16(bits32_constant!(bits)) => C0Expression::Cast {
+            | ProgramValue::UInt16(bits32_constant!(bits)) => CExpression::Cast {
                 interface_type: match value {
                     ProgramValue::Int8(_) => InterfaceType::Int8,
                     ProgramValue::Int16(_) => InterfaceType::Int16,
                     _ => InterfaceType::UInt16,
                 },
-                expression: Box::new(C0Expression::Int32Literal(constant_u32(bits))),
+                expression: Box::new(CExpression::Int32Literal(constant_u32(bits))),
                 struct_name: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -371,18 +371,18 @@ mod tests {
         };
         assert_eq!(
             parser("-0x8000_0000i64").parse_ensure_expression().unwrap(),
-            C0Expression::Int64Literal(-2147483648)
+            CExpression::Int64Literal(-2147483648)
         );
         assert_eq!(
             parser("-(0x8000_0000i32)")
                 .parse_ensure_expression()
                 .unwrap(),
-            C0Expression::Int32Literal(i32::MIN as u32)
+            CExpression::Int32Literal(i32::MIN as u32)
         );
         let expression = parser("0xff_ffu16").parse_ensure_expression().unwrap();
         assert!(matches!(
             expression,
-            C0Expression::Cast {
+            CExpression::Cast {
                 interface_type: InterfaceType::UInt16,
                 ..
             }

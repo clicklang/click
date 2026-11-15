@@ -17,7 +17,7 @@ payload. Every allocation-failure path releases only what it acquired and
 returns `-1`. The final reference frees the child exactly once; both parent
 allocations are also reclaimed.
 
-The source uses Click's C0 declarations of `int32`, `malloc`, and `free`.
+The source uses Click's C declarations of `int32`, `malloc`, and `free`.
 The target is the default x86-64 Linux LP64 profile with eight-bit bytes and
 unsigned plain `char`. No source refactoring, alternate release entry point,
 or proof-only C operation is used.

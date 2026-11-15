@@ -1042,7 +1042,7 @@ impl MachineTerm {
 // The original term type is retained as the shared arena for both machine
 // widths.  These helpers use dedicated constructors and constants for 64-bit
 // values, so a 64-bit value can never be mistaken for a wrapped 32-bit one by
-// the existing C0 paths.
+// the existing C paths.
 fn int64_constant(term: &MachineTerm) -> Option<i64> {
     match term {
         int64_constant!(value) => Some(constant_i64(*value)),

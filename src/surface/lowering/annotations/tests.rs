@@ -349,7 +349,7 @@ mod scaling_tests {
 /// One walk's loop index agrees with the per-index walk it replaces at every
 /// index, across nested, `for`, `do` and `if`-arm loops, and past the end.
 #[test]
-fn c0_loop_index_agrees_with_the_walk_at_every_loop() {
+fn c_loop_index_agrees_with_the_walk_at_every_loop() {
     let function = crate::languages::c::syntax::parse_function(
         r#"
             int32 f(int32 n) {
@@ -375,12 +375,12 @@ fn c0_loop_index_agrees_with_the_walk_at_every_loop() {
         "#,
     )
     .expect("loop function should parse");
-    let index = c0_loops_by_index(function.body());
+    let index = c_loops_by_index(function.body());
     assert_eq!(index.len(), 6);
     for target in 0..index.len() + 2 {
         assert_eq!(
             index.get(target).and_then(Option::as_ref),
-            c0_loop_by_index(function.body(), target),
+            c_loop_by_index(function.body(), target),
             "loop({target})"
         );
     }

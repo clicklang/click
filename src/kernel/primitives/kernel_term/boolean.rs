@@ -2,6 +2,11 @@
 //! written comparison format, even when fact equality identifies formats.
 use super::*;
 mod comparison;
+mod complete_pointer;
+mod overflow;
+mod read;
+pub use complete_pointer::KernelPointerEquality;
+pub use read::KernelBooleanRead;
 mod pointer_comparison;
 
 /// Borrow a Boolean root or an exact native compatibility payload. Inspecting
@@ -108,9 +113,42 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
+            match (left.read(), right.read()) {
+                (Some((am, a)), Some((bm, b))) => {
+                    if am != bm || !a.syntax_equal(&b) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+            match (left.overflow(), right.overflow()) {
+                (Some((af, ao, a)), Some((bf, bo, b))) => {
+                    if af != bf
+                        || ao != bo
+                        || !a.into_iter().zip(b).all(|(a, b)| machine_equal(a, b))
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
             match (left.pointer_offsets(), right.pointer_offsets()) {
                 (Some(a), Some(b)) => {
                     if !a.iter().zip(&b).all(|(a, b)| a.syntax_equal(b)) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+            match (left.pointer_values(), right.pointer_values()) {
+                (Some(a), Some(b)) => {
+                    if !a.iter().zip(&b).all(|(a, b)| a.condition_syntax_equal(b)) {
                         return false;
                     }
                     continue;
@@ -187,6 +225,11 @@ impl<'a> BooleanOperandView<'a> {
     /// Explicit compatibility boundary for callers that still need a native
     /// condition. Borrow existing leaves; only common compound roots export.
     pub(crate) fn native(self) -> std::borrow::Cow<'a, ConditionTerm> {
+        if let Self::Shared(root) = self
+            && let Some(read) = root.boolean_read_native()
+        {
+            return std::borrow::Cow::Borrowed(read);
+        }
         if let Some(value) = self.native_leaf() {
             return std::borrow::Cow::Borrowed(value);
         }
@@ -194,6 +237,31 @@ impl<'a> BooleanOperandView<'a> {
             unreachable!()
         };
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
+    }
+
+    pub(crate) fn read(self) -> Option<(SharedMemory, SharedPointerAddress)> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::BoolRead(read) = root.node()
+        {
+            let (memory, address) = read.parts();
+            return Some((memory.clone(), address.clone()));
+        }
+        let ConditionTerm::BoolLoad(memory, address) = self.native_leaf()? else {
+            return None;
+        };
+        Some((memory.clone(), SharedPointerAddress::import(address)))
+    }
+
+    pub(crate) fn pointer_values(self) -> Option<[SharedPointerValue; 2]> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::PointerValueEqual(pair) = root.node()
+        {
+            return Some(pair.arguments().clone());
+        }
+        let ConditionTerm::PointerValueEqual(a, b) = self.native_leaf()? else {
+            return None;
+        };
+        Some([SharedPointerValue::import(a), SharedPointerValue::import(b)])
     }
 
     pub(crate) fn pointer_addresses(self) -> Option<[SharedPointerAddress; 2]> {
@@ -294,6 +362,7 @@ impl<'a> BooleanOperandView<'a> {
                 if matches!(
                     root.node(),
                     KernelTermNode::BoolIf { .. }
+                        | KernelTermNode::BoolRead(_)
                         | KernelTermNode::BoolEqual { .. }
                         | KernelTermNode::Call { .. }
                 ) =>
@@ -303,6 +372,53 @@ impl<'a> BooleanOperandView<'a> {
             _ => self
                 .native_leaf()
                 .is_some_and(ConditionTerm::is_bool_value_form),
+        }
+    }
+
+    pub(crate) fn machine_arguments(
+        self,
+    ) -> Option<(MachineIntegerType, [MachineOperandView<'a>; 2])> {
+        self.comparison()
+            .map(|(format, _, arguments)| (format, arguments))
+            .or_else(|| {
+                self.overflow()
+                    .map(|(format, _, arguments)| (format, arguments))
+            })
+    }
+    pub(crate) fn overflow(
+        self,
+    ) -> Option<(
+        MachineIntegerType,
+        OverflowOperation,
+        [MachineOperandView<'a>; 2],
+    )> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::BoolOverflow {
+                    format,
+                    operation,
+                    arguments,
+                } => Some((
+                    *format,
+                    *operation,
+                    arguments.each_ref().map(MachineOperandView::Shared),
+                )),
+                _ => Self::Native(self.native_leaf()?).overflow(),
+            },
+            Self::Native(ConditionTerm::Overflows {
+                format,
+                op,
+                left,
+                right,
+            }) => Some((
+                *format,
+                *op,
+                [
+                    MachineOperandView::Legacy(left),
+                    MachineOperandView::Legacy(right),
+                ],
+            )),
+            _ => None,
         }
     }
 
@@ -422,6 +538,28 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
+            Old::BoolLoad(memory, address) => {
+                return KernelTerm::boolean_read(
+                    memory.clone(),
+                    SharedPointerAddress::import(address),
+                );
+            }
+            Old::Overflows {
+                format,
+                op,
+                left,
+                right,
+            } => Node::BoolOverflow {
+                format: *format,
+                operation: *op,
+                arguments: [self.machine(*format, left), self.machine(*format, right)],
+            },
+            Old::PointerValueEqual(a, b) => {
+                return KernelTerm::pointer_value_equal_raw([
+                    SharedPointerValue::import(a),
+                    SharedPointerValue::import(b),
+                ]);
+            }
             Old::PointerEqual(a, b) => Node::PointerEqual {
                 arguments: [
                     SharedPointerAddress::import(a),
@@ -526,6 +664,24 @@ impl KernelTermExport {
         }
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::BoolRead(read) => {
+                let (memory, address) = read.parts();
+                Old::BoolLoad(memory.clone(), Box::new(address.export()?))
+            }
+            Node::BoolOverflow {
+                format,
+                operation,
+                arguments,
+            } => Old::Overflows {
+                format: *format,
+                op: *operation,
+                left: Box::new(Self::machine(&arguments[0])?),
+                right: Box::new(Self::machine(&arguments[1])?),
+            },
+            Node::PointerValueEqual(pair) => {
+                let [a, b] = pair.arguments();
+                Old::PointerValueEqual(Box::new(a.export()?), Box::new(b.export()?))
+            }
             Node::PointerEqual { arguments: [a, b] } => {
                 Old::PointerEqual(Box::new(a.export()?), Box::new(b.export()?))
             }

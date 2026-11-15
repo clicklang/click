@@ -10,9 +10,17 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
     B::Shared(root).for_each_dependency_leaf(|leaf| {
-        if let Some((_, _, operands)) = leaf.comparison() {
+        if let Some((_, address)) = leaf.read() {
+            collect_common_address_carriers(&address, &mut variables);
+        } else if let Some((_, operands)) = leaf.machine_arguments() {
             for operand in operands {
                 collect_machine_operand_carriers(operand, &mut variables);
+            }
+        } else if let Some(values) = leaf.pointer_values() {
+            for value in values {
+                for address in value.addresses() {
+                    collect_common_address_carriers(address, &mut variables);
+                }
             }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {
@@ -61,6 +69,17 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 }
             }
             return Ok(KernelTerm::boolean_comparison_raw(*format, *relation, arguments));
+        }
+        if let KernelTermNode::BoolOverflow { format,operation,arguments } = leaf.node() {
+            return Ok(KernelTerm::boolean_overflow_raw(*format,*operation,[rewrite.shared_machine_operand(&arguments[0]).ok_or(())?,rewrite.shared_machine_operand(&arguments[1]).ok_or(())?]));
+        }
+        if let KernelTermNode::BoolRead(read) = leaf.node() {
+            let (memory,address) = read.parts();
+            return Ok(KernelTerm::boolean_read(memory.clone(),rewrite.boolean_address(address).ok_or(())?));
+        }
+        if let KernelTermNode::PointerValueEqual(pair) = leaf.node() {
+            let [a,b] = pair.arguments();
+            return Ok(KernelTerm::pointer_value_equal([rewrite.boolean_pointer_value(a).ok_or(())?,rewrite.boolean_pointer_value(b).ok_or(())?]));
         }
         if let KernelTermNode::PointerEqual { arguments } = leaf.node() {
             return Ok(KernelTerm::pointer_equal_raw([
@@ -236,4 +255,115 @@ pub(in crate::kernel) fn substitute_application_address_pointer(
     collect_common_address_carriers(source, &mut variables);
     rewrite.reserve_source_variables(variables);
     rewrite.boolean_address(source)
+}
+
+impl TermRewrite<'_> {
+    /// Complete formal-variable substitution, retaining the native designation
+    /// and opaque-domain policy. This entry has no exact-value or fact rewrite.
+    fn boolean_pointer_value(
+        &mut self,
+        source: &crate::kernel::SharedPointerValue,
+    ) -> Option<crate::kernel::SharedPointerValue> {
+        use crate::kernel::{
+            KernelPointerOffset as O, SharedPointerAddress as A, SharedPointerOffset as S,
+            SharedPointerValue as V,
+        };
+        let (from, to) = self.pointer_variable?;
+        debug_assert!(
+            self.pointer_value_exact.is_none()
+                && self.typed_variables.is_none()
+                && !self.pointer_addresses_only
+        );
+        let p = source.node();
+        let base = A::import(&Pointer {
+            block: p.address.node().block.native_atom().clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        });
+        let selected = |address: &A| matches!(address.node().block.native_atom(),PointerBlock::Symbolic(v)|PointerBlock::FunctionSymbolic(v) if *v == from);
+        let replacement = (selected(&p.address) && p.designation.syntax_equal(&base))
+            .then(|| V::import(&PointerValue::new(to.clone(), p.program_type)));
+        let target_identity = A::import(&to.object_identity());
+        let designation = if let Some(target) = &replacement {
+            target.node().designation.clone()
+        } else if selected(&p.designation) {
+            target_identity.clone()
+        } else {
+            self.boolean_address(&p.designation)?
+        };
+        let opaque = match &p.opaque_extent {
+            None => None,
+            Some(origin) if replacement.is_some() && origin.syntax_equal(&base) => {
+                replacement.as_ref().unwrap().node().opaque_extent.clone()
+            }
+            Some(origin) if selected(origin) => Some(target_identity),
+            Some(origin) => Some(self.boolean_address(origin)?),
+        };
+        let mut mapped = source
+            .map_condition_addresses(|address| self.boolean_address(address).ok_or(()))
+            .ok()?
+            .node()
+            .clone();
+        mapped.designation = designation;
+        mapped.opaque_extent = opaque;
+        if !p.qualifiers.as_ref().is_some_and(|q| q.extent_known)
+            && let Some(replacement) = replacement
+        {
+            let q = replacement.node().qualifiers.as_ref();
+            if q.is_some_and(|q| q.extent_known) || q.and_then(|q| q.extent.as_ref()).is_some() {
+                let qualifiers = std::sync::Arc::make_mut(
+                    mapped.qualifiers.get_or_insert_with(Default::default),
+                );
+                qualifiers.extent = q.and_then(|q| q.extent.clone());
+                qualifiers.extent_known = true;
+                mapped.opaque_extent = None;
+            }
+        }
+        // Native condition rewriting canonicalizes addresses after replacing
+        // the complete value, without rewriting the retained extent width.
+        V::new(mapped)
+            .map_condition_addresses(|address| {
+                let offsets = S::try_map_pair(
+                    &[address.node().offset.clone(), address.node().offset.clone()],
+                    |_, node| {
+                        let mapped = match node {
+                            O::Add([a, b]) => return Ok::<_, ()>(S::add(a, b)),
+                            O::Int32Scaled { value, byte_width } => {
+                                let index = S::exact_index(&value);
+                                if let Some(written) = index.retained_written_operand() {
+                                    return Ok(O::import(&PointerOffsetTerm::scale_int32(
+                                        crate::kernel::eval::canonical_term(written),
+                                        byte_width,
+                                    )));
+                                }
+                                O::Int32Scaled { value, byte_width }
+                            }
+                            O::Int64Scaled {
+                                value,
+                                byte_width,
+                                unsigned,
+                            } => {
+                                let index = S::exact_index(&value);
+                                if let Some(written) = index.retained_written_operand() {
+                                    return Ok(O::import(&PointerOffsetTerm::scale_int64(
+                                        crate::kernel::eval::canonical_term(written),
+                                        byte_width,
+                                        unsigned,
+                                    )));
+                                }
+                                O::Int64Scaled {
+                                    value,
+                                    byte_width,
+                                    unsigned,
+                                }
+                            }
+                            node => node,
+                        };
+                        mapped.into_shared().map_err(|_| ())
+                    },
+                )?;
+                Ok::<_, ()>(A::new(address.node().block.clone(), offsets[0].clone()))
+            })
+            .ok()
+            .filter(|_| self.refusal().is_none())
+    }
 }

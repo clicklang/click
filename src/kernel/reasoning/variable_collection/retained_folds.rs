@@ -171,6 +171,53 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
+            KernelTermNode::BoolRead(read) => {
+                let (memory, address) = read.parts();
+                match mode {
+                    FoldVariableRead::ExpressionFree => {
+                        collect_shared_memory_bitvector_variables(memory, &mut leaf_variables);
+                        super::retained_pointers::collect_address_variables_with_summaries(
+                            address,
+                            mode,
+                            &mut leaf_variables,
+                            summaries,
+                        );
+                        if collecting_connection_variables() {
+                            let ConditionTerm::BoolLoad(_, pointer) =
+                                term.boolean_read_native().expect("Boolean read")
+                            else {
+                                unreachable!();
+                            };
+                            collect_stored_load_connection_variables(
+                                memory,
+                                pointer,
+                                &mut leaf_variables,
+                            );
+                        }
+                    }
+                    FoldVariableRead::MachineCapture => {
+                        super::retained_pointers::collect_address_variables_with_summaries(
+                            address,
+                            mode,
+                            &mut leaf_variables,
+                            summaries,
+                        )
+                    }
+                    _ => {}
+                }
+            }
+            KernelTermNode::PointerValueEqual(pair) => {
+                for value in pair.arguments() {
+                    for address in value.addresses() {
+                        super::retained_pointers::collect_address_variables_with_summaries(
+                            address,
+                            mode,
+                            &mut leaf_variables,
+                            summaries,
+                        );
+                    }
+                }
+            }
             KernelTermNode::PointerEqual { arguments } => {
                 for address in arguments {
                     super::retained_pointers::collect_address_variables_with_summaries(
@@ -436,6 +483,48 @@ mod tests {
             IntegerTerm::Variable(Variable(970_002)).into(),
         );
         for source in [
+            ConditionTerm::BoolLoad(
+                crate::kernel::intern_memory(
+                    crate::kernel::Memory::new()
+                        .with_block("bool-dependencies", 4)
+                        .store(
+                            crate::kernel::Memory::global_pointer("bool-dependencies"),
+                            ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
+                        ),
+                ),
+                Box::new(Pointer {
+                    block: PointerBlock::Symbolic(Variable(970_031)),
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::Variable(Variable(970_032)),
+                        4,
+                    ),
+                }),
+            ),
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: crate::kernel::OverflowOperation::Add,
+                left: Box::new(MachineTerm::IntegerToMachine {
+                    value: IntegerTerm::Variable(Variable(970_020)).into(),
+                    destination: MachineIntegerType::Int32,
+                }),
+                right: Box::new(MachineTerm::Variable(Variable(970_021))),
+            },
+            ConditionTerm::PointerValueEqual(
+                Box::new(
+                    PointerValue::new(
+                        Pointer::symbolic(Variable(970_010)),
+                        ProgramType::Int32Pointer,
+                    )
+                    .with_extent(Some(SubobjectExtent {
+                        start: Pointer::symbolic(Variable(970_011)),
+                        width: MachineTerm::Variable(Variable(970_012)),
+                    })),
+                ),
+                Box::new(PointerValue::new(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer,
+                )),
+            ),
             ConditionTerm::PointerOffsetEqual(
                 Box::new(PointerOffsetTerm::Add(
                     Box::new(PointerOffsetTerm::Variable(Variable(970_005))),

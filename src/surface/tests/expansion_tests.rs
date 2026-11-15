@@ -3869,11 +3869,8 @@ fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_19")]
-fn context_free_disjunction_solve_expands_choice_and_rechecks() {
-    for (goal, choice) in [
-        ("1 == 1 or 2 == 3", "known();"),
-        ("2 == 3 or 1 == 1", "known();"),
-    ] {
+fn context_free_disjunction_solve_expands_known_and_rechecks() {
+    for goal in ["1 == 1 or 2 == 3", "2 == 3 or 1 == 1"] {
         let source = format!(
             r#"
 theorem choose_reflexive_arm() {{
@@ -3886,11 +3883,12 @@ theorem choose_reflexive_arm() {{
         let position = expansion::position_at_offset(&source, offset);
         let expanded =
             expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
-        assert!(expanded.contains("have 1 == 1 by"), "{expanded}");
-        assert!(expanded.contains(choice), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(!expanded.contains("solve();"), "{expanded}");
-        verify_c_sources(&expanded, &[])
-            .expect("expanded disjunction choice should independently recheck");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .expect("the computed disjunction should recheck without implicit solving");
+        let false_goal = expanded.replace("1 == 1", "1 == 2");
+        assert!(without_implicit_solve(|| verify_c_sources(&false_goal, &[])).is_err());
     }
 }
 
@@ -21478,7 +21476,7 @@ test_batches! {
         whole_claim_expansion_keeps_a_proof_if_after_execution,
         whole_claim_expansion_closes_a_claim_opened_after_execution,
         whole_claim_expansion_continues_after_a_branch_with_one_reachable_arm,
-        context_free_disjunction_solve_expands_choice_and_rechecks,
+        context_free_disjunction_solve_expands_known_and_rechecks,
     ],
     expansion_batch_20: [
         signed_unsigned_compound_arithmetic_expands_and_rechecks,

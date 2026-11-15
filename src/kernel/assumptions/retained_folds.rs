@@ -128,6 +128,9 @@ pub(super) fn collect_common_memory_loads(
             }
             KernelTermNode::BoolCompare {
                 format, arguments, ..
+            }
+            | KernelTermNode::BoolOverflow {
+                format, arguments, ..
             } => {
                 pending.extend(
                     arguments
@@ -138,6 +141,29 @@ pub(super) fn collect_common_memory_loads(
             }
             KernelTermNode::PointerOffsetEqual { arguments } => {
                 push_offset_memory_loads(arguments.iter(), &mut pending)?;
+            }
+            KernelTermNode::BoolRead(read) => {
+                let (memory, address) = read.parts();
+                if MemorySnapshotIdentity::of(memory.memory())
+                    == MemorySnapshotIdentity::of(current_memory)
+                {
+                    let ConditionTerm::BoolLoad(_, pointer) =
+                        term.boolean_read_native().expect("Boolean read")
+                    else {
+                        unreachable!();
+                    };
+                    loads.push((pointer.as_ref().clone(), 1));
+                }
+                push_offset_memory_loads(std::iter::once(&address.node().offset), &mut pending)?;
+            }
+            KernelTermNode::PointerValueEqual(pair) => {
+                push_offset_memory_loads(
+                    pair.arguments()
+                        .iter()
+                        .flat_map(|value| value.addresses())
+                        .map(|address| &address.node().offset),
+                    &mut pending,
+                )?;
             }
             KernelTermNode::PointerEqual { arguments } => {
                 push_offset_memory_loads(
@@ -401,6 +427,48 @@ mod offset_condition_tests {
         assert_eq!(
             actual.iter().map(|(_, width)| *width).collect::<Vec<_>>(),
             [4, 8]
+        );
+    }
+}
+
+#[cfg(test)]
+mod boolean_read_tests {
+    use super::*;
+    #[test]
+    fn boolean_reads_keep_own_and_index_dependency_widths() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let current = Memory::new().with_block("bool-index", 4);
+        let memory = crate::kernel::intern_memory(current.clone());
+        let source = ConditionTerm::BoolLoad(
+            memory.clone(),
+            Box::new(Pointer {
+                block: PointerBlock::Symbolic(Variable(999360)),
+                offset: PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::MemoryLoad(
+                        memory,
+                        Box::new(Memory::global_pointer("bool-index")),
+                        LoadKind::Int32,
+                    ),
+                    4,
+                ),
+            }),
+        );
+        let root = crate::kernel::KernelTermImport::default().condition(&source);
+        let mut expected = Vec::new();
+        let mut actual = Vec::new();
+        collect_condition_memory_loads(&source, &current, &mut expected, &mut BTreeSet::new())
+            .unwrap();
+        collect_common_memory_loads(
+            vec![(&root, None)],
+            &current,
+            &mut actual,
+            &mut BTreeSet::new(),
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(
+            actual.iter().map(|(_, width)| *width).collect::<Vec<_>>(),
+            vec![1, 4]
         );
     }
 }

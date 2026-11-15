@@ -5293,7 +5293,7 @@ pub enum SpecResource {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SwitchCase {
     /// `None` is the default case; integer values are represented in the
-    /// promoted int32 bit pattern used by C0.
+    /// promoted int32 bit pattern used by C.
     pub value: Option<u32>,
     pub body: Box<ProgramStatement>,
 }

@@ -3264,7 +3264,7 @@ fn pending_allocation_outcome_paths(
 
 /// The automatic objects one scope declares for itself.
 ///
-/// C0 lowers a source block to a `Seq` tree, and the kernel has no statement
+/// C lowers a source block to a `Seq` tree, and the kernel has no statement
 /// that stands for the block itself, so a scope's own declarations are the
 /// ones reachable from its root through that tree. The walk stops at a nested
 /// scope — an `if` arm, a loop body, a `switch` body — because control leaving

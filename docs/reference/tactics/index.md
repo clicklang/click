@@ -1101,7 +1101,7 @@ step is still checked.
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
-| `known()` | simple | Expansion output | Close a goal directly from available facts. | [Reference](#available-facts) |
+| `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
@@ -1482,11 +1482,12 @@ the rule gap, and profiling reports the restricted site.
 **Form:** `known()`
 
 The former spelling `assumption()` is refused with a diagnostic naming
-`known()`. The operation is unchanged: it reuses an available fact.
+`known()`. It reuses available facts and also checks the computational leaves
+described below.
 
 **Expansion output.** `click expand` writes it; by hand, write it to close a
-goal that is exactly an available fact without any search, typically after a
-`rewrite`. It closes the goal or refuses; it adds no fact.
+goal that is already available or true by direct computation, without search,
+typically after a `rewrite`. It closes the goal or refuses; it adds no fact.
 
 **Accepts** a goal that is available, where an atomic proposition is
 available when one of these holds:
@@ -1513,12 +1514,23 @@ available when one of these holds:
   points under the facts in context. Only facts that are that same
   condition up to their points are checked, so nothing is searched.
 
+A leaf also closes by goal-local computation: a constant truth, exact
+reflexivity (excluding IEEE floating-point comparisons), equality or inequality
+of literal integers, cancellation and regrouping of additive machine or
+`Integer` expressions, and distinct algebraic constructors. Exact `Integer`
+order comparisons close when their symbolic terms cancel. Calls, reads, folds,
+and symbolic matches are opaque operands; their identical occurrences may
+cancel, but this check never unfolds a call or resolves a read. It does not
+invoke the general atomic prover.
+
 A conjunction goal closes when every conjunct does, and a disjunction goal
-when one disjunct does, each by the rules above, recursively.
+when one disjunct does, using available facts or these computations recursively.
+Computational truths inside an implication or quantifier still require the
+ordinary introduction or witness steps. An implication or quantified goal
+already held as a fact retains its existing exact-lookup behavior.
 
 **Outside it**, with what to write instead:
 
-- A constant goal such as `true` or `1 + 1 == 2`: `normalize()`.
 - A consequent of an available implication: `extract(Q)` first.
 - A reordered disjunction fact (`y > 0 or x < y` from `x < y or y > 0`):
   `extract(y > 0 or x < y)`, which checks each arm, then `known()`.
@@ -1532,9 +1544,9 @@ when one disjunct does, each by the rules above, recursively.
 
 **Failure, checking, and tools:**
 
-A conjunction or disjunction costs one lookup per side of the goal, and a
-failure names the first side that is not available; prove other missing
-premises with `have` first.
+The structural walk checks each needed leaf using indexed facts or direct
+computation. A failure names the first side it cannot close; prove other
+missing premises with `have` first.
 
 For exactly named, independently held resources, `known()` applies the
 live partition rule: an owned unit is separate from another owned unit or a
@@ -1557,7 +1569,7 @@ no function unfolding, implication extraction, or fact transport across
 effects. Expansion leaves the step unchanged, and profiling charges one
 simple leaf.
 
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md)
+**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md)
 
 ### Extracting a fact
 

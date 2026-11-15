@@ -74,7 +74,8 @@ pub(in crate::surface) use crate::kernel::proof::{
 };
 use claim_proofs::finish_ordered_proof;
 pub(super) use claim_proofs::{
-    prove_claim_by_tactics, prove_claims_by_grouped_script, prove_claims_by_implicit_tail,
+    finish_whole_contract_root, prove_claim_by_tactics, prove_claims_by_grouped_script,
+    prove_claims_by_implicit_tail,
 };
 pub(in crate::surface) use cursor_execution::surface_snapshot_selector;
 use cursor_execution::*;
@@ -672,14 +673,14 @@ mod certificate_tests {
         );
         let error = root
             .driver()
-            .apply_step(ProofStep::Known)
+            .apply_step(ProofStep::Intro)
             .err()
             .expect("a rejected candidate must not be reported as success");
-        assert!(error.message().contains("known"), "{}", error.message());
+        assert!(error.message().contains("intro"), "{}", error.message());
         assert!(root.certificate().steps().is_empty());
         let completed = root
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .expect("failed validation must not mutate the retained root");
         assert_eq!(
             completed.completed_proposition().unwrap().proposition(),
@@ -1829,7 +1830,8 @@ pub(super) fn function_claims(function_block: &FunctionBlock) -> Vec<FunctionCla
 /// instead of building it again.
 #[derive(Clone, Debug)]
 pub(in crate::surface) struct ProofEntryContext {
-    pub(in crate::surface) completion: Option<crate::kernel::WholeContractProof>,
+    pub(in crate::surface) completion: Option<crate::kernel::WholeContractRoot>,
+    pub(in crate::surface) strategy_root: Option<crate::kernel::WholeContractRoot>,
     pub(in crate::surface) cases: Arc<crate::kernel::PreparedContractEntryCases>,
     pub(in crate::surface) state: ExecutionState,
     pub(in crate::surface) arguments: Vec<ProgramExpression>,

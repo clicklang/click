@@ -1,26 +1,26 @@
 use super::*;
-use crate::surface::syntax::flatten_direct_c0_statements;
+use crate::surface::syntax::flatten_direct_c_statements;
 
-type Site = std::sync::Arc<syntax::C0StatementSite>;
+type Site = std::sync::Arc<syntax::CStatementSite>;
 
-pub(in crate::surface) fn count_loops(statement: &syntax::C0Statement) -> usize {
+pub(in crate::surface) fn count_loops(statement: &syntax::CStatement) -> usize {
     match statement {
-        syntax::C0Statement::Seq(first, second) => count_loops(first) + count_loops(second),
-        syntax::C0Statement::If {
+        syntax::CStatement::Seq(first, second) => count_loops(first) + count_loops(second),
+        syntax::CStatement::If {
             then_branch,
             else_branch,
             ..
         } => count_loops(then_branch) + count_loops(else_branch),
-        syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+        syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
             1 + count_loops(body)
         }
-        syntax::C0Statement::For {
+        syntax::CStatement::For {
             initializer,
             step,
             body,
             ..
         } => count_loops(initializer) + 1 + count_loops(body) + count_loops(step),
-        syntax::C0Statement::Switch { cases, .. } => {
+        syntax::CStatement::Switch { cases, .. } => {
             cases.iter().map(|case| count_loops(case.body())).sum()
         }
         _ => 0,
@@ -93,9 +93,9 @@ struct SourceExecutionLayoutData {
     /// Where each C statement was written, by statement index: diagnostics
     /// only, read by a refusal to name the line it refused. Statements a
     /// frontend generated with no source statement of their own are absent.
-    sites: BTreeMap<usize, std::sync::Arc<syntax::C0StatementSite>>,
+    sites: BTreeMap<usize, std::sync::Arc<syntax::CStatementSite>>,
     /// The regions of each statement as written, by its source path (see
-    /// [`syntax::C0StatementSite::source_path`]), in executable preorder:
+    /// [`syntax::CStatementSite::source_path`]), in executable preorder:
     /// the statement's own regions, not its children's.
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The function each direct-call region calls, for `.call(f, j)`.
@@ -268,10 +268,10 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
     }
 }
 
-fn syntax_statement_reads(statement: &syntax::C0Statement) -> bool {
-    use syntax::C0Statement as S;
+fn syntax_statement_reads(statement: &syntax::CStatement) -> bool {
+    use syntax::CStatement as S;
     let read =
-        |expression: &syntax::C0Expression| expression_reads(&expression.to_kernel_expression());
+        |expression: &syntax::CExpression| expression_reads(&expression.to_kernel_expression());
     match statement {
         S::Assign { expression, .. }
         | S::Return(expression, _)
@@ -555,7 +555,7 @@ impl SourceExecutionLayout {
         })
     }
 
-    pub(in crate::surface) fn new(statement: &syntax::C0Statement) -> Self {
+    pub(in crate::surface) fn new(statement: &syntax::CStatement) -> Self {
         Self::new_with_natural_loop(statement, None, None, None)
     }
 
@@ -595,7 +595,7 @@ impl SourceExecutionLayout {
     }
 
     fn new_with_natural_loop(
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
         natural_loop_target: Option<crate::kernel::ControlTargetId>,
         natural_exit_target: Option<crate::kernel::ControlTargetId>,
         natural_exit_label: Option<&str>,
@@ -608,10 +608,10 @@ impl SourceExecutionLayout {
         fn record_site(
             layout: &mut SourceExecutionLayoutData,
             index: usize,
-            mut statement: &syntax::C0Statement,
+            mut statement: &syntax::CStatement,
             enclosing: Option<&Site>,
         ) -> Option<Site> {
-            while let syntax::C0Statement::Label {
+            while let syntax::CStatement::Label {
                 statement: body, ..
             } = statement
             {
@@ -624,7 +624,7 @@ impl SourceExecutionLayout {
             // written; one with no site has no path of its own.
             if let Some(path) = statement
                 .site()
-                .and_then(syntax::C0Site::get)
+                .and_then(syntax::CSite::get)
                 .and_then(|site| site.source_path())
             {
                 layout
@@ -634,16 +634,16 @@ impl SourceExecutionLayout {
                     .push(index);
                 layout.region_paths.insert(index, path.to_vec());
             }
-            if let syntax::C0Statement::LoopTest { .. } = statement {
+            if let syntax::CStatement::LoopTest { .. } = statement {
                 layout.loop_tests.insert(index);
             }
-            if let syntax::C0Statement::CallResult { call, .. } = statement {
+            if let syntax::CStatement::CallResult { call, .. } = statement {
                 layout.call_numbers.insert(index, *call);
                 layout.step_regions.insert(*call, index);
             }
             // An operator `if` region makes its operator's value, which its
             // exit records as the region's result.
-            if let syntax::C0Statement::If {
+            if let syntax::CStatement::If {
                 operator: Some(operator),
                 ..
             } = statement
@@ -654,7 +654,7 @@ impl SourceExecutionLayout {
             }
             // A value step's region makes the value its steps name, unless
             // an operator `if` already made those steps its own.
-            if let syntax::C0Statement::StepValue { steps, .. } = statement {
+            if let syntax::CStatement::StepValue { steps, .. } = statement {
                 for step in steps {
                     if let std::collections::btree_map::Entry::Vacant(entry) =
                         layout.step_regions.entry(*step)
@@ -664,7 +664,7 @@ impl SourceExecutionLayout {
                     }
                 }
             }
-            if let syntax::C0Statement::Assign {
+            if let syntax::CStatement::Assign {
                 name,
                 prior_result: Some(step),
                 ..
@@ -673,19 +673,19 @@ impl SourceExecutionLayout {
                 layout.step_regions.insert(*step, index);
                 layout.prior_steps.insert(*step, name.clone());
             }
-            if let syntax::C0Statement::CallAssign { .. }
-            | syntax::C0Statement::Call { .. }
-            | syntax::C0Statement::CallResult { .. } = statement
+            if let syntax::CStatement::CallAssign { .. }
+            | syntax::CStatement::Call { .. }
+            | syntax::CStatement::CallResult { .. } = statement
             {
                 layout.calls.insert(index);
             }
-            if let syntax::C0Statement::CallAssign { function_name, .. }
-            | syntax::C0Statement::Call {
+            if let syntax::CStatement::CallAssign { function_name, .. }
+            | syntax::CStatement::Call {
                 function_name,
                 callee: None,
                 ..
             }
-            | syntax::C0Statement::CallResult {
+            | syntax::CStatement::CallResult {
                 function_name,
                 callee: None,
                 ..
@@ -696,17 +696,17 @@ impl SourceExecutionLayout {
                     crate::surface::call_source_spelling(function_name).to_string(),
                 );
             }
-            if let syntax::C0Statement::CallAssign { target, .. }
-            | syntax::C0Statement::HeapAllocate { target, .. } = statement
+            if let syntax::CStatement::CallAssign { target, .. }
+            | syntax::CStatement::HeapAllocate { target, .. } = statement
             {
                 layout.call_results.insert(index, target.clone());
             }
-            if matches!(statement, syntax::C0Statement::HeapAllocate { .. }) {
+            if matches!(statement, syntax::CStatement::HeapAllocate { .. }) {
                 layout.allocation_regions.insert(index);
             }
             let site = statement
                 .site()
-                .and_then(syntax::C0Site::get)
+                .and_then(syntax::CSite::get)
                 .or(enclosing)
                 .cloned()?;
             layout.sites.insert(index, site.clone());
@@ -718,7 +718,7 @@ impl SourceExecutionLayout {
         /// control successors past the sibling arm to its own continuation.
         /// `enclosing` is the site of the nearest enclosing statement.
         fn visit(
-            statement: &syntax::C0Statement,
+            statement: &syntax::CStatement,
             next_statement_index: &mut usize,
             next_loop_index: &mut usize,
             layout: &mut SourceExecutionLayoutData,
@@ -727,7 +727,7 @@ impl SourceExecutionLayout {
             match statement {
                 // A labeled statement is laid out as its body; the natural
                 // cycle layout below visits its labels' bodies itself.
-                syntax::C0Statement::Label {
+                syntax::CStatement::Label {
                     statement: body, ..
                 } => visit(
                     body,
@@ -736,7 +736,7 @@ impl SourceExecutionLayout {
                     layout,
                     enclosing,
                 ),
-                syntax::C0Statement::Seq(first, second) => {
+                syntax::CStatement::Seq(first, second) => {
                     visit(
                         first,
                         next_statement_index,
@@ -752,7 +752,7 @@ impl SourceExecutionLayout {
                         enclosing,
                     )
                 }
-                syntax::C0Statement::If {
+                syntax::CStatement::If {
                     then_branch,
                     else_branch,
                     ..
@@ -804,8 +804,8 @@ impl SourceExecutionLayout {
                     );
                     statement_index
                 }
-                syntax::C0Statement::While { body, .. }
-                | syntax::C0Statement::DoWhile { body, .. } => {
+                syntax::CStatement::While { body, .. }
+                | syntax::CStatement::DoWhile { body, .. } => {
                     let statement_index = *next_statement_index;
                     let own = record_site(layout, statement_index, statement, enclosing);
                     let loop_index = *next_loop_index;
@@ -831,13 +831,13 @@ impl SourceExecutionLayout {
                     );
                     statement_index
                 }
-                syntax::C0Statement::For {
+                syntax::CStatement::For {
                     initializer,
                     body,
                     step,
                     ..
                 } => {
-                    let for_site = statement.site().and_then(syntax::C0Site::get).or(enclosing);
+                    let for_site = statement.site().and_then(syntax::CSite::get).or(enclosing);
                     visit(
                         initializer,
                         next_statement_index,
@@ -880,14 +880,14 @@ impl SourceExecutionLayout {
                 _ => {
                     let statement_index = *next_statement_index;
                     record_site(layout, statement_index, statement, enclosing);
-                    if let syntax::C0Statement::Assign { name, .. }
-                    | syntax::C0Statement::CallAssign { target: name, .. }
-                    | syntax::C0Statement::AggregateCopy {
-                        target: syntax::C0Expression::Variable(name),
+                    if let syntax::CStatement::Assign { name, .. }
+                    | syntax::CStatement::CallAssign { target: name, .. }
+                    | syntax::CStatement::AggregateCopy {
+                        target: syntax::CExpression::Variable(name),
                         ..
                     }
-                    | syntax::C0Statement::Update {
-                        target: syntax::C0Expression::Variable(name),
+                    | syntax::CStatement::Update {
+                        target: syntax::CExpression::Variable(name),
                         ..
                     } = statement
                     {
@@ -965,7 +965,7 @@ impl SourceExecutionLayout {
         let mut data = SourceExecutionLayoutData::default();
         if let Some(target) = natural_loop_target {
             let mut statements = Vec::new();
-            flatten_direct_c0_statements(statement, &mut statements);
+            flatten_direct_c_statements(statement, &mut statements);
             let loop_index = 0;
             let statement_index = 0;
             let mut next_statement_index = 1;
@@ -976,11 +976,11 @@ impl SourceExecutionLayout {
                 statements.iter().position(|statement| {
                     matches!(
                         statement,
-                        syntax::C0Statement::Label { name: label, .. } if label == name
+                        syntax::CStatement::Label { name: label, .. } if label == name
                     )
                 })
             });
-            if let Some(syntax::C0Statement::Label { statement, .. }) = statements.first() {
+            if let Some(syntax::CStatement::Label { statement, .. }) = statements.first() {
                 visit(
                     statement,
                     &mut next_statement_index,
@@ -1005,7 +1005,7 @@ impl SourceExecutionLayout {
                 data.natural_exit_targets.insert(loop_index, exit_target);
                 data.natural_exit_statement_indices
                     .insert(loop_index, next_statement_index);
-                let syntax::C0Statement::Label { statement, .. } = statements[exit_label_index]
+                let syntax::CStatement::Label { statement, .. } = statements[exit_label_index]
                 else {
                     unreachable!("natural exit target points to a label");
                 };
@@ -1398,7 +1398,7 @@ impl SourceExecutionLayout {
     pub(in crate::surface) fn site(
         &self,
         index: usize,
-    ) -> Option<&std::sync::Arc<syntax::C0StatementSite>> {
+    ) -> Option<&std::sync::Arc<syntax::CStatementSite>> {
         self.data.sites.get(&index)
     }
 
@@ -1704,8 +1704,8 @@ fn collect_kernel_automatic_exits(
     }
 }
 
-fn collect_automatic_exits(source: &syntax::C0Statement, layout: &mut SourceExecutionLayoutData) {
-    use syntax::C0Statement as S;
+fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecutionLayoutData) {
+    use syntax::CStatement as S;
     fn declarations(s: &S, names: &mut Vec<String>) {
         match s {
             S::Declare { name, .. } | S::DeclareStructValue { name, .. } => {

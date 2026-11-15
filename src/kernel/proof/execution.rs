@@ -3256,6 +3256,7 @@ pub(crate) struct OpenedContractEntry {
     facts: ProofFacts,
     source_origins: Vec<Option<usize>>,
     cases: Arc<crate::kernel::PreparedContractEntryCases>,
+    contract_root: Option<crate::kernel::WholeContractRoot>,
 }
 
 impl OpenedContractEntry {
@@ -3337,11 +3338,29 @@ impl OpenedContractEntry {
             facts,
             source_origins,
             cases,
+            contract_root: None,
         })
     }
 
     pub(crate) fn caller_state(&self) -> &ExecutionState {
         self.entry.caller_state()
+    }
+
+    /// Start the parent judgment for a function-proof session. Independent
+    /// entry/execution APIs do not acquire whole-contract obligations.
+    pub(crate) fn open_contract_root(mut self) -> Result<Self, RuntimeError> {
+        let function = &self.entry.function;
+        if function.opaque_contract_supported() && !function.contract_claims().is_empty() {
+            self.contract_root = Some(
+                crate::kernel::WholeContractRoot::open(self.cases.clone())
+                    .map_err(RuntimeError::FunctionContract)?,
+            );
+        }
+        Ok(self)
+    }
+
+    pub(crate) fn contract_root(&self) -> Option<&crate::kernel::WholeContractRoot> {
+        self.contract_root.as_ref()
     }
 
     pub(crate) fn prepared_cases(&self) -> &Arc<crate::kernel::PreparedContractEntryCases> {
