@@ -149,6 +149,7 @@ pub(super) fn algebraic_integer_variables(root: &KernelTerm, free: bool) -> Vari
         }
         crate::instrumentation::record_deterministic_work(1);
         match term.node() {
+            KernelTermNode::AlgebraicIf { arguments } => pending.extend(arguments.iter().rev()),
             KernelTermNode::AlgebraicCall(call) => {
                 for argument in call.arguments.iter().rev() {
                     if matches!(argument.ty(), KernelType::Algebraic(_)) {
@@ -254,7 +255,9 @@ pub(super) fn common_variables(
         if mode == FoldVariableRead::IntegerFree
             && matches!(
                 term.node(),
-                KernelTermNode::Constructor(_) | KernelTermNode::AlgebraicCall(_)
+                KernelTermNode::Constructor(_)
+                    | KernelTermNode::AlgebraicCall(_)
+                    | KernelTermNode::AlgebraicIf { .. }
             )
         {
             summaries.insert(term.id(), algebraic_integer_variables(term, false));
@@ -682,48 +685,63 @@ mod tests {
                 ],
             },
         };
-        let root = KernelTermImport::default().algebraic(&native);
-        struct Restore(bool);
-        impl Drop for Restore {
-            fn drop(&mut self) {
-                CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+        let conditional = AlgebraicTerm {
+            algebraic_type: native.algebraic_type.clone(),
+            node: AlgebraicTermNode::If {
+                condition: Box::new(ConditionTerm::integer_equal(
+                    IntegerTerm::var(Variable(999717)),
+                    IntegerTerm::constant_i64(0),
+                )),
+                then_term: Box::new(native.clone()),
+                else_term: Box::new(KernelMatch::test_scrutinee(vec![
+                    AlgebraicValueType::Integer,
+                ])),
+            },
+        };
+        for native in [native, conditional] {
+            let root = KernelTermImport::default().algebraic(&native);
+            struct Restore(bool);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+                }
             }
-        }
-        for connection in [false, true, false] {
-            let _restore = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
-            for mode in [
-                FoldVariableRead::IntegerFree,
-                FoldVariableRead::ExpressionFree,
-                FoldVariableRead::MachineCapture,
-                FoldVariableRead::IntegerBinders,
-                FoldVariableRead::MachineBinders,
-            ] {
+            for connection in [false, true, false] {
+                let _restore = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
+                for mode in [
+                    FoldVariableRead::IntegerFree,
+                    FoldVariableRead::ExpressionFree,
+                    FoldVariableRead::MachineCapture,
+                    FoldVariableRead::IntegerBinders,
+                    FoldVariableRead::MachineBinders,
+                ] {
+                    let mut expected = BTreeSet::new();
+                    collect_argument(
+                        &PureFunctionArgument::Algebraic(native.clone()),
+                        mode,
+                        &mut expected,
+                        &mut SeenTerms::default(),
+                    );
+                    let actual = common_variables(&root, mode, &mut Default::default())
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>();
+                    assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+                }
                 let mut expected = BTreeSet::new();
-                collect_argument(
-                    &PureFunctionArgument::Algebraic(native.clone()),
-                    mode,
+                collect_algebraic_free_integer_variables(
+                    &native,
                     &mut expected,
                     &mut SeenTerms::default(),
                 );
-                let actual = common_variables(&root, mode, &mut Default::default())
-                    .iter()
-                    .copied()
-                    .collect::<BTreeSet<_>>();
-                assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+                assert_eq!(
+                    algebraic_integer_variables(&root, true)
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>(),
+                    expected
+                );
             }
-            let mut expected = BTreeSet::new();
-            collect_algebraic_free_integer_variables(
-                &native,
-                &mut expected,
-                &mut SeenTerms::default(),
-            );
-            assert_eq!(
-                algebraic_integer_variables(&root, true)
-                    .iter()
-                    .copied()
-                    .collect::<BTreeSet<_>>(),
-                expected
-            );
         }
     }
 

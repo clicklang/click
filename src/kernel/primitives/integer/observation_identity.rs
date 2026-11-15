@@ -102,7 +102,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 | KernelTermNode::IntegerCompare { arguments, .. }
                 | KernelTermNode::AlgebraicEqual { arguments }
                 | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
-                KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
+                KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } | KernelTermNode::AlgebraicIf { arguments } => {
                     arguments.to_vec()
                 }
                 KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
@@ -154,6 +154,10 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
+                }
+                KernelTermNode::AlgebraicIf { arguments } => {
+                    let KernelType::Algebraic(ty) = term.ty() else { unreachable!() };
+                    KernelTerm::algebraic_if_raw(ty.clone(), arguments.each_ref().map(|arg| get(arg)))
                 }
                 KernelTermNode::AlgebraicCall(call) => {
                     let mut call = call.clone();

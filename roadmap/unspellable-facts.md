@@ -542,7 +542,8 @@ scaling test, algebraic/Boolean checks, rewrites/readers, Surface synthesis, cal
 and statement checks, language lowering and full ordinary example projects.
 `scripts/check.sh --ci-quality` exited 0 on the integrated tree.
 
-8s retains algebraic pure-call arguments and results as common roots, preserving
+8s ([#2838](https://github.com/clicklang/click/pull/2838), merged) retains
+algebraic pure-call arguments and results as common roots, preserving
 native `Value(machine)` versus `SharedMachine` argument forms. Explicit output
 reconstructs those forms and exact pointer metadata. Syntax comparison, dependency
 readers, observation normalization and existing Surface call spelling understand
@@ -560,6 +561,26 @@ checks and full ordinary examples. Its sole failure was a fixture assuming a
 zero-argument algebraic call remained opaque; after giving it an opaque pointer
 argument, that regression and the five focused checks all passed. The quality
 gate exited 0. No production behavior or test limits changed for that adjustment.
+
+8s.1 retains algebraic conditional guards and both branches. Import/export
+preserves written conditional structure, while production keeps the existing
+literal-condition and equal-arm reductions without exporting branch trees.
+Syntax equality, observation normalization, dependency readers and existing
+Surface `if` spelling follow the common children. No fact-dependent lowering,
+obligation rule, refusal or resource limit changed. A small Surface helper keeps
+the general recursive dispatch frame within the existing stack limit.
+
+Conditional parity testing also caught and corrected an 8s argument-identity
+regression: re-creating a SharedMachine carrier from its imported root can change
+its native identity. Calls now preserve that immutable handle for explicit output
+and compare it by its existing ID, while retaining the common child separately.
+Observation carriers and exact producer carriers keep their distinct equality
+policies. Thirteen focused tests passed, including this reproduction, raw/reduced
+native parity, opaque observation keys, readers, nested import/export and actual
+evaluator scaling, and the existing deep-synthesis budget regression.
+Validation: all 2,794 selected tests passed, including every scaling test,
+algebraic/Boolean/call/nat checks, readers/rewrites, Surface synthesis and full
+ordinary example projects. The quality gate exited 0.
 
 ### 8a inventory
 

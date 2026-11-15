@@ -30,6 +30,7 @@ impl KernelTerm {
             match value.node {
                 AlgebraicTermNode::Variable(_)
                 | AlgebraicTermNode::Constructor { .. }
+                | AlgebraicTermNode::If { .. }
                 | AlgebraicTermNode::PureFunctionApplication { .. } => {
                     KernelTermImport::default().algebraic(value)
                 }
@@ -90,12 +91,25 @@ impl KernelTerm {
                 (KernelTermNode::Variable(a), KernelTermNode::Variable(b)) if a == b => {}
                 (KernelTermNode::IntegerLiteral(a), KernelTermNode::IntegerLiteral(b))
                     if a == b => {}
+                (
+                    KernelTermNode::AlgebraicIf { arguments: a },
+                    KernelTermNode::AlgebraicIf { arguments: b },
+                ) => pending.extend(a.iter().cloned().zip(b.iter().cloned())),
                 (KernelTermNode::AlgebraicCall(a), KernelTermNode::AlgebraicCall(b))
                     if a.name == b.name
                         && a.shared_machine_arguments == b.shared_machine_arguments
                         && a.arguments.len() == b.arguments.len() =>
                 {
-                    pending.extend(a.arguments.iter().cloned().zip(b.arguments.iter().cloned()));
+                    // SharedMachine arguments compare their original carrier IDs,
+                    // not their exported machine syntax or pointer annotations.
+                    pending.extend(
+                        a.arguments
+                            .iter()
+                            .zip(&b.arguments)
+                            .zip(&a.shared_machine_arguments)
+                            .filter(|(_, carrier)| carrier.is_none())
+                            .map(|((a, b), _)| (a.clone(), b.clone())),
+                    );
                 }
                 (KernelTermNode::Constructor(a), KernelTermNode::Constructor(b))
                     if a.variant == b.variant && a.fields.len() == b.fields.len() =>

@@ -246,11 +246,69 @@ fn nested_algebraic_calls_retain_shared_arguments_with_linear_work() {
             let KernelTermNode::AlgebraicCall(call) = root.node() else {
                 panic!("nested common call");
             };
-            assert_eq!(call.shared_machine_arguments, vec![false]);
+            assert_eq!(call.shared_machine_arguments, vec![None]);
             root = call.arguments[0].clone();
         }
         assert!(
             matches!(root.node(), KernelTermNode::Variable(variable) if *variable == Variable(999705))
+        );
+    }
+}
+
+#[test]
+fn nested_algebraic_conditionals_retain_branches_with_linear_work() {
+    for size in [8, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = maybe_type();
+        let leaf = SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Variable(Variable(999725)),
+        };
+        let mut expression = SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Variable(Variable(999726)),
+        };
+        for _ in 0..size {
+            expression = SpecAlgebraicExpression {
+                algebraic_type: ty.clone(),
+                node: SpecAlgebraicExpressionNode::If {
+                    condition: Box::new(SpecProposition::IntegerComparison {
+                        left: SpecIntegerExpression::Term(IntegerTerm::var(Variable(999727))),
+                        operator: IntegerComparisonOperator::Equal,
+                        right: SpecIntegerExpression::Term(IntegerTerm::constant_i64(0)),
+                    }),
+                    then_branch: Box::new(expression),
+                    else_branch: Box::new(leaf.clone()),
+                },
+            };
+        }
+        let mut execution = ExecutionBudget::new();
+        let mut budget = SpecEvaluation::logical(&mut execution);
+        let exports = KernelTermExport::algebraic_export_count();
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_algebraic_at_state_in(
+                &ExecutionState::new(),
+                &expression,
+                None,
+                &PureFactContext::new(),
+                &mut budget,
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(work <= 200 * size + 200, "size={size} work={work}");
+        let AlgebraicResult::Shared(mut root) = paths[0].value.clone() else {
+            panic!("retained conditional")
+        };
+        for _ in 0..size {
+            let KernelTermNode::AlgebraicIf { arguments } = root.node() else {
+                panic!("nested conditional")
+            };
+            root = arguments[1].clone();
+        }
+        assert!(
+            matches!(root.node(), KernelTermNode::Variable(variable) if *variable == Variable(999726))
         );
     }
 }

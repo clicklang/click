@@ -9142,12 +9142,20 @@ fn evaluate_spec_algebraic_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecAlgebraicPath {
-                            value: (AlgebraicTerm::if_then_else(
-                                condition.clone(),
-                                then_value.into_native_compat(),
-                                else_value.into_native_compat(),
-                            ))
-                            .into(),
+                            value: if budget.machine_result_production_disabled {
+                                AlgebraicTerm::if_then_else(
+                                    condition.clone(),
+                                    then_value.into_native_compat(),
+                                    else_value.into_native_compat(),
+                                )
+                                .into()
+                            } else {
+                                AlgebraicResult::Shared(KernelTerm::algebraic_if([
+                                    KernelTermImport::default().condition(&condition),
+                                    then_value.into_kernel(),
+                                    else_value.into_kernel(),
+                                ]))
+                            },
                             facts,
                             obligations,
                         });

@@ -13,6 +13,7 @@ pub use folds::KernelFold;
 pub(crate) use folds::KernelFoldIndex;
 mod algebraic;
 mod algebraic_call;
+mod algebraic_if;
 pub(crate) use algebraic_call::KernelAlgebraicCall;
 mod algebraic_equality;
 mod machine;
@@ -63,6 +64,9 @@ pub enum KernelTermNode {
     Match(KernelMatch),
     Constructor(KernelConstructor),
     AlgebraicCall(KernelAlgebraicCall),
+    AlgebraicIf {
+        arguments: [KernelTerm; 3],
+    },
     BoolLiteral(bool),
     BoolRead(KernelBooleanRead),
     BoolCast {
@@ -412,6 +416,9 @@ impl NodeKey {
             // Integer conditionals already had retained Integer identity before
             // becoming common nodes. Conversion consumers visit their branches
             // with the source width and current snapshot; keep that boundary.
+            KernelTermNode::AlgebraicIf { arguments } => arguments
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
@@ -758,6 +765,7 @@ impl KernelTerm {
             | KernelTermNode::AlgebraicEqual { arguments }
             | KernelTermNode::BoolEqual { arguments } => arguments,
             KernelTermNode::BoolIf { arguments }
+            | KernelTermNode::AlgebraicIf { arguments }
             | KernelTermNode::IntegerIf { arguments }
             | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
@@ -1520,6 +1528,7 @@ impl KernelTermExport {
                 term.node(),
                 KernelTermNode::Match(_)
                     | KernelTermNode::AlgebraicCall(_)
+                    | KernelTermNode::AlgebraicIf { .. }
                     | KernelTermNode::Constructor(_)
                     | KernelTermNode::Variable(_)
             )
