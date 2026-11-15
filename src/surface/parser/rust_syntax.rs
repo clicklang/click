@@ -1679,8 +1679,8 @@ impl Parser {
                 return Ok(operand);
             }
             match self.peek_next() {
-                Some(Token::Ident(name)) if click_integer_cast_type(name).is_some() => {
-                    let target_type = click_integer_cast_type(name).expect("checked above");
+                Some(Token::Ident(name)) if click_numeric_cast_type(name).is_some() => {
+                    let target_type = click_numeric_cast_type(name).expect("checked above");
                     self.position += 2;
                     operand = self.lower_click_cast(target_type, operand)?;
                     continue;
@@ -1694,14 +1694,19 @@ impl Parser {
                     }
                     if self.starts_contract_scalar_cast() {
                         self.position += 1;
-                        let target_type = self.parse_click_cast_type()?;
+                        let (target_type, constant, volatile) = self.parse_click_cast_type()?;
                         if !target_type.is_pointer() {
                             return Err(self.error(
-                                "an integer cast target is written without parentheses: `e as uint32`; only a pointer target is parenthesized, `e as (uint8 *)`",
+                                "a numeric cast target is written without parentheses: `e as uint32`; only a pointer target is parenthesized, `e as (uint8 *)`",
                             ));
                         }
                         self.expect(Token::RParen)?;
-                        operand = self.lower_click_cast(target_type, operand)?;
+                        operand = self.lower_qualified_click_cast(
+                            target_type,
+                            constant,
+                            volatile,
+                            operand,
+                        )?;
                         continue;
                     }
                     self.position -= 1;
@@ -1761,9 +1766,11 @@ impl Parser {
     }
 }
 
-/// The integer type a bare Click cast target names, `x as uint32`.
-pub(super) fn click_integer_cast_type(name: &str) -> Option<ProgramType> {
+/// The numeric type a bare Click cast target names, `x as uint32` or `x as float`.
+pub(super) fn click_numeric_cast_type(name: &str) -> Option<ProgramType> {
     Some(match name {
+        "float" => ProgramType::Float32,
+        "double" => ProgramType::Float64,
         "int8" => ProgramType::Int8,
         "uint8" => ProgramType::UInt8,
         "int16" => ProgramType::Int16,

@@ -861,6 +861,7 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
             collect_program_value_bitvector_variables(value, variables)
         }
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
@@ -880,7 +881,8 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
             collect_program_expression_bitvector_variables(then_branch, variables);
             collect_program_expression_bitvector_variables(else_branch, variables);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..
@@ -943,6 +945,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
+            ..
         }
         | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bitvector_variables(expression, variables);
@@ -1374,9 +1377,11 @@ fn collect_program_expression_bound_identities(
             collect_program_value_bound_identities(value, variables, integer_seen);
         }
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {

@@ -5,11 +5,83 @@ use super::*;
 mod flow;
 use crate::languages::rust::schema::{MirBody, MirStatement as S, MirTerminator as T};
 
-pub(super) fn lower(
-    cx: &mut Context<'_>,
-    f: &Function,
-    mir: &MirBody,
-) -> Result<ProgramStatement, String> {
+/// A lowered statement and the source statement each of its regions comes
+/// from (`Function::sites`), in the order the source layout numbers its
+/// regions: a statement before the statements it contains. A region the
+/// lowering adds with no source statement of its own has none.
+#[derive(Clone)]
+pub(super) struct Sited {
+    pub(super) statement: ProgramStatement,
+    pub(super) sites: Vec<Option<u32>>,
+}
+
+impl Sited {
+    /// `statement`, every region of which comes from `site`.
+    fn at(site: Option<u32>, statement: ProgramStatement) -> Self {
+        let sites = vec![site; region_count(&statement)];
+        Self { statement, sites }
+    }
+
+    fn unsited(statement: ProgramStatement) -> Self {
+        Self::at(None, statement)
+    }
+
+    /// `self`, then `next`: `program_seq(self, next)`.
+    fn then(mut self, next: Sited) -> Self {
+        self.sites.extend(next.sites);
+        Self {
+            statement: program_seq(self.statement, next.statement),
+            sites: self.sites,
+        }
+    }
+
+    /// `program_if(condition, then, otherwise)`, whose test comes from `site`.
+    fn branch(
+        site: Option<u32>,
+        condition: ProgramExpression,
+        then: Sited,
+        otherwise: Sited,
+    ) -> Self {
+        let mut sites = vec![site];
+        sites.extend(then.sites);
+        sites.extend(otherwise.sites);
+        Self {
+            statement: program_if(condition, then.statement, otherwise.statement),
+            sites,
+        }
+    }
+
+    /// `program_while(condition, [], body)`, a loop that comes from `site`.
+    fn looping(site: Option<u32>, condition: ProgramExpression, body: Sited) -> Self {
+        let mut sites = vec![site];
+        sites.extend(body.sites);
+        Self {
+            statement: program_while(condition, Vec::new(), body.statement),
+            sites,
+        }
+    }
+}
+
+/// How many regions the source layout numbers in `statement`: one for each
+/// `if`, loop and `try` and each statement that is none of these or a
+/// sequence, which numbers its statements' regions in order.
+pub(super) fn region_count(statement: &ProgramStatement) -> usize {
+    match statement {
+        ProgramStatement::Seq(statements) => statements.iter().map(|s| region_count(s)).sum(),
+        ProgramStatement::If {
+            then_branch,
+            else_branch,
+            ..
+        } => 1 + region_count(then_branch) + region_count(else_branch),
+        ProgramStatement::While { body, .. } => 1 + region_count(body),
+        ProgramStatement::TryCatchInt32 {
+            try_body, handler, ..
+        } => 1 + region_count(try_body) + region_count(handler),
+        _ => 1,
+    }
+}
+
+pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result<Sited, String> {
     // Index storage starts once. Locals without a compiler storage event
     // retain their function-entry backing (including return-place arrays).
     let storage_starts: BTreeSet<&str> = mir
@@ -579,6 +651,7 @@ pub(super) fn lower(
                     // A call step: its successor reads the result as the
                     // value of the expression that holds the call.
                     ProgramStatement::CallResult {
+                        aggregate_layout: None,
                         call: *step,
                         function_name: function.clone(),
                         arguments: arguments_values,
@@ -642,7 +715,10 @@ pub(super) fn lower(
                 )
             }
         };
-        let mut statements = program_skip();
+        // The source statement the block's statements come from, as its
+        // `Site` statements name it.
+        let mut site = None;
+        let mut statements = Sited::unsited(program_skip());
         for (statement_index, s) in mir.blocks[block].statements.iter().enumerate() {
             cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
                 block,
@@ -654,6 +730,10 @@ pub(super) fn lower(
                 BTreeMap::new()
             };
             let mut statement = match s {
+                S::Site { site: next } => {
+                    site = Some(*next);
+                    continue;
+                }
                 S::Assert { condition, message } => {
                     let (checks, condition) = cx.prepared_expr(condition)?;
                     program_seq(
@@ -1050,7 +1130,10 @@ pub(super) fn lower(
                     &mut statement,
                 )?;
             }
-            statements = program_seq(statements, program_seq(accesses(&inputs, &live), statement));
+            statements = statements.then(Sited::at(
+                site,
+                program_seq(accesses(&inputs, &live), statement),
+            ));
         }
         let prefix = leases.as_ref().map_or_else(program_skip, |forest| {
             super::scalar_leases::endings(
@@ -1061,7 +1144,8 @@ pub(super) fn lower(
                 },
             )
         });
-        nodes[block] = Some(program_seq(prefix, program_seq(statements, terminal)));
+        let terminal = Sited::at(mir.blocks[block].terminator_site, terminal);
+        nodes[block] = Some(Sited::unsited(prefix).then(statements.then(terminal)));
     }
     let mut emitted = vec![false; mir.blocks.len()];
     let structured = region(
@@ -1074,7 +1158,7 @@ pub(super) fn lower(
         leases.as_ref(),
         None,
     )?;
-    Ok(program_seq(declarations, structured))
+    Ok(Sited::unsited(declarations).then(structured))
 }
 
 fn successors(t: &T, exit: usize) -> Vec<usize> {
@@ -1265,21 +1349,21 @@ fn escape_code(index: usize) -> ProgramExpression {
 fn region(
     cx: &mut Context<'_>,
     mir: &MirBody,
-    nodes: &[Option<ProgramStatement>],
+    nodes: &[Option<Sited>],
     flow: &flow::Flow,
     emitted: &mut [bool],
     bounds: std::ops::Range<usize>,
     leases: Option<&super::scalar_leases::Prepared>,
     exits: Option<&LoopExits<'_>>,
-) -> Result<ProgramStatement, String> {
+) -> Result<Sited, String> {
     let mut block = bounds.start;
     let stop = bounds.end;
-    let mut result = program_skip();
+    let mut result = Sited::unsited(program_skip());
     while block != stop && block != mir.blocks.len() {
         // The enclosing loop's exit, reached from its body, is a `break`,
         // and so is a labeled escape, after setting the loop's flag.
         if let Some(leave) = exits.and_then(|exits| exits.leave(block)) {
-            result = program_seq(result, leave);
+            result = result.then(Sited::unsited(leave));
             break;
         }
         if std::mem::replace(&mut emitted[block], true) && !flow.exit_tails[block] {
@@ -1289,6 +1373,8 @@ fn region(
             let T::If { condition, .. } = &mir.blocks[loop_.test].terminator else {
                 return Err("natural while header is not conditional".into());
             };
+            // The loop statement, as written: the source of its test.
+            let loop_site = mir.blocks[loop_.test].terminator_site;
             let inner = LoopExits {
                 header: block,
                 exit: loop_.exit,
@@ -1339,8 +1425,7 @@ fn region(
                 if std::mem::replace(&mut emitted[*part], true) {
                     return Err("shared MIR while-header continuation".into());
                 }
-                header = program_seq(
-                    header,
+                header = header.then(
                     nodes[*part]
                         .as_ref()
                         .ok_or("missing loop header continuation")?
@@ -1354,7 +1439,7 @@ fn region(
             // test exits by `break` too, right after them, as the MIR does.
             let header_first = library_test.is_some();
             if let Some(read) = library_test {
-                header = program_seq(header, read);
+                header = header.then(Sited::at(loop_site, read));
             }
             let lowered = if loop_.breaks {
                 let exit = region(
@@ -1367,40 +1452,40 @@ fn region(
                     leases,
                     Some(&inner),
                 )?;
-                program_while(
+                Sited::looping(
+                    loop_site,
                     crate::kernel::program_expression::int32_literal(1),
-                    Vec::new(),
-                    program_seq(
-                        header,
-                        program_seq(program_if(condition, program_skip(), exit), body),
+                    header.then(
+                        Sited::branch(loop_site, condition, Sited::unsited(program_skip()), exit)
+                            .then(body),
                     ),
                 )
             } else if header_first {
-                program_while(
+                Sited::looping(
+                    loop_site,
                     crate::kernel::program_expression::int32_literal(1),
-                    Vec::new(),
-                    program_seq(
-                        header,
-                        program_seq(program_if(condition, program_skip(), program_break()), body),
+                    header.then(
+                        Sited::branch(
+                            loop_site,
+                            condition,
+                            Sited::unsited(program_skip()),
+                            Sited::unsited(program_break()),
+                        )
+                        .then(body),
                     ),
                 )
             } else {
-                program_seq(
-                    program_while(condition, Vec::new(), program_seq(header.clone(), body)),
-                    header,
-                )
+                Sited::looping(loop_site, condition, header.clone().then(body)).then(header)
             };
             // A labeled `break` or `continue` leaves this loop with its flag
             // naming the escape; the enclosing body then resumes there.
             let mut lowered = lowered;
             if !loop_.escapes.is_empty() {
-                lowered = program_seq(
-                    program_assign(
-                        &inner.flag,
-                        crate::kernel::program_expression::int32_literal(0),
-                    ),
-                    lowered,
-                );
+                lowered = Sited::unsited(program_assign(
+                    &inner.flag,
+                    crate::kernel::program_expression::int32_literal(0),
+                ))
+                .then(lowered);
                 for (index, end) in loop_.escapes.iter().enumerate() {
                     let resume = match exits {
                         Some(outer) if *end == outer.header => program_continue(),
@@ -1409,27 +1494,23 @@ fn region(
                             .ok_or("Rust labeled break leaves more than one enclosing loop")?,
                         None => return Err("Rust labeled break outside an enclosing loop".into()),
                     };
-                    lowered = program_seq(
-                        lowered,
-                        program_if(
-                            crate::kernel::program_expression::equal(
-                                crate::kernel::program_expression::variable(&inner.flag),
-                                escape_code(index),
-                            ),
-                            resume,
-                            program_skip(),
+                    lowered = lowered.then(Sited::unsited(program_if(
+                        crate::kernel::program_expression::equal(
+                            crate::kernel::program_expression::variable(&inner.flag),
+                            escape_code(index),
                         ),
-                    );
+                        resume,
+                        program_skip(),
+                    )));
                 }
             }
-            result = program_seq(result, lowered);
+            result = result.then(lowered);
             block = loop_.exit;
             continue;
         }
-        result = program_seq(
-            result,
-            nodes[block].as_ref().ok_or("missing MIR block")?.clone(),
-        );
+        result = result.then(nodes[block].as_ref().ok_or("missing MIR block")?.clone());
+        // The statement as written that branches here.
+        let site = mir.blocks[block].terminator_site;
         match &mir.blocks[block].terminator {
             T::If {
                 condition,
@@ -1463,16 +1544,14 @@ fn region(
                 )?;
                 let branch =
                     if let Some(scope) = leases.and_then(|leases| leases.scopes.get(&block)) {
-                        program_seq(
-                            scope.operation(false),
-                            program_if(
-                                cx.condition(condition)?,
-                                program_seq(yes, scope.operation(true)),
-                                program_seq(no, scope.operation(true)),
-                            ),
-                        )
+                        Sited::unsited(scope.operation(false)).then(Sited::branch(
+                            site,
+                            cx.condition(condition)?,
+                            yes.then(Sited::unsited(scope.operation(true))),
+                            no.then(Sited::unsited(scope.operation(true))),
+                        ))
                     } else {
-                        program_if(cx.condition(condition)?, yes, no)
+                        Sited::branch(site, cx.condition(condition)?, yes, no)
                     };
                 if let E::ChunkHasNext { iterator } = condition {
                     let read = if super::library_iterators() {
@@ -1480,14 +1559,14 @@ fn region(
                     } else {
                         cx.chunk_read_left(iterator)
                     };
-                    result = program_seq(result, read);
+                    result = result.then(Sited::at(site, read));
                 }
                 if let E::SharedArrayHasNext { iterator } = condition
                     && let Some(read) = cx.library_slice_next_call(iterator)
                 {
-                    result = program_seq(result, read);
+                    result = result.then(Sited::at(site, read));
                 }
-                result = program_seq(result, branch);
+                result = result.then(branch);
                 block = join;
             }
             T::Switch {
@@ -1500,13 +1579,10 @@ fn region(
                 } else {
                     flow.joins[block]
                 };
-                result = program_seq(
-                    result,
-                    switch(
-                        cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, leases,
-                        exits,
-                    )?,
-                );
+                result = result.then(switch(
+                    cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, leases,
+                    exits, site,
+                )?);
                 block = join;
             }
             T::Goto { target }
@@ -1528,7 +1604,7 @@ fn region(
 fn switch(
     cx: &mut Context<'_>,
     mir: &MirBody,
-    nodes: &[Option<ProgramStatement>],
+    nodes: &[Option<Sited>],
     flow: &flow::Flow,
     emitted: &mut [bool],
     scrutinee: &E,
@@ -1537,7 +1613,8 @@ fn switch(
     join: usize,
     leases: Option<&super::scalar_leases::Prepared>,
     exits: Option<&LoopExits<'_>>,
-) -> Result<ProgramStatement, String> {
+    site: Option<u32>,
+) -> Result<Sited, String> {
     use crate::languages::rust::schema::SwitchLabel;
     let mut groups: Vec<(usize, Vec<&SwitchLabel>)> = Vec::new();
     for case in cases {
@@ -1577,16 +1654,19 @@ fn switch(
         && let Some(field_enum) = super::nested_enum_field_type(name, variant, *index)?
     {
         let local = cx.fresh_temporary()?;
-        bound_field = Some(program_seq(
-            program_declare_with_all_qualifiers(
-                &local,
-                field_enum.to_kernel_type(),
-                false,
-                false,
-                false,
-                false,
+        bound_field = Some(Sited::at(
+            site,
+            program_seq(
+                program_declare_with_all_qualifiers(
+                    &local,
+                    field_enum.to_kernel_type(),
+                    false,
+                    false,
+                    false,
+                    false,
+                ),
+                program_assign(&local, cx.expr(scrutinee)?),
             ),
-            program_assign(&local, cx.expr(scrutinee)?),
         ));
         bound_local = E::Local { name: local };
         &bound_local
@@ -1620,7 +1700,8 @@ fn switch(
                 None => test,
             });
         }
-        chain = Some(program_if(
+        chain = Some(Sited::branch(
+            site,
             condition.ok_or("Rust match arm without a label")?,
             body,
             rest,
@@ -1628,7 +1709,7 @@ fn switch(
     }
     let chain = chain.ok_or_else(|| "Rust match without arms".to_string())?;
     Ok(match bound_field {
-        Some(bound) => program_seq(bound, chain),
+        Some(bound) => bound.then(chain),
         None => chain,
     })
 }
@@ -1724,6 +1805,7 @@ mod tests {
             destructor: None,
         };
         let owned = Function {
+            sites: Vec::new(),
             name: "owned".into(),
             return_type: Type::Unit,
             parameters: vec![],
@@ -1743,6 +1825,7 @@ mod tests {
                     span: span.clone(),
                 }],
                 blocks: vec![crate::languages::rust::schema::MirBlock {
+                    terminator_site: None,
                     statements: vec![S::Initialize {
                         target: "value".into(),
                         record: "Live".into(),
@@ -1773,6 +1856,7 @@ mod tests {
                 unrelated.name = format!("Unrelated{i}");
                 export.records.push(unrelated);
                 export.functions.push(Function {
+                    sites: Vec::new(),
                     name: format!("unrelated{i}"),
                     return_type: Type::I32,
                     parameters: vec![],
@@ -1801,6 +1885,7 @@ mod tests {
             for i in 0..count {
                 let start = i * 3;
                 blocks.push(crate::languages::rust::schema::MirBlock {
+                    terminator_site: None,
                     statements: vec![],
                     terminator: T::If {
                         condition: E::Boolean { value: true },
@@ -1810,12 +1895,14 @@ mod tests {
                 });
                 for _ in 0..2 {
                     blocks.push(crate::languages::rust::schema::MirBlock {
+                        terminator_site: None,
                         statements: vec![],
                         terminator: T::Goto { target: start + 3 },
                     });
                 }
             }
             blocks.push(crate::languages::rust::schema::MirBlock {
+                terminator_site: None,
                 statements: vec![],
                 terminator: T::Return,
             });
@@ -1869,9 +1956,9 @@ mod tests {
             };
             let nodes = (0..mir.blocks.len())
                 .map(|i| {
-                    Some(program_assert(
+                    Some(Sited::unsited(program_assert(
                         crate::kernel::program_expression::int32_literal(i as u32),
-                    ))
+                    )))
                 })
                 .collect::<Vec<_>>();
             let mut emitted = vec![false; mir.blocks.len()];
@@ -1909,7 +1996,7 @@ mod tests {
                     _ => 0,
                 }
             }
-            assert_eq!(assertions(&structured), count * 3 + 1);
+            assert_eq!(assertions(&structured.statement), count * 3 + 1);
         }
     }
 }

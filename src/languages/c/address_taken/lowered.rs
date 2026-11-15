@@ -80,7 +80,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),
             ProgramStatement::HeapFree { pointer } => expressions.push((pointer, false)),
             ProgramStatement::Assert { condition, .. }
-            | ProgramStatement::LoopTest { condition }
+            | ProgramStatement::LoopTest { condition, .. }
             | ProgramStatement::StepValue {
                 expression: condition,
                 ..
@@ -143,7 +143,9 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                     summary.taken.insert(name.clone());
                 }
             }
-            ProgramExpression::FunctionAddress(_) | ProgramExpression::StepResult { .. } => {}
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::FunctionAddress(_)
+            | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::AddressOf(value)
             | ProgramExpression::CheckedObjectAddress(value) => {
                 expressions.push((value, true));
@@ -151,6 +153,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramExpression::Cast {
                 expression: value, ..
             }
+            | ProgramExpression::Negate(value)
             | ProgramExpression::FloatNegate(value)
             | ProgramExpression::FloatClassification {
                 expression: value, ..

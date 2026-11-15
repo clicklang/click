@@ -28,11 +28,7 @@ void keep(int32* p, int32* q, int32* r, int32* s) {
         normalize() using { separate(memory(*p), memory(*s)); };
     }
     have *q == 7 and (*r == 8 and *s == 9) by {
-        transport(at(statement(0).entry, *q == 7 and (*r == 8 and *s == 9)), *q == 7 and (*r == 8 and *s == 9)) using {
-            separate(statement(0).footprint, memory(*q));
-            separate(statement(0).footprint, memory(*r));
-            separate(statement(0).footprint, memory(*s));
-        };
+        transport(at(statement(0).entry, *q == 7 and (*r == 8 and *s == 9)), *q == 7 and (*r == 8 and *s == 9));
     }
     step();
     known();

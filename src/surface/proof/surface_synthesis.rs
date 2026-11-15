@@ -1290,6 +1290,12 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
+    {
+        return Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(value.clone()),
+        ));
+    }
     if let Some(name) = pointer_names::native_name(value) {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Variable(name),
@@ -2462,6 +2468,9 @@ fn synthesize_surface_atomic_proposition(
         arguments: kernel_arguments,
     } = proposition
     {
+        if let Some(surface) = super::program_termination::predicate_spelling(name) {
+            return Some(surface);
+        }
         let mut call_arguments = Vec::new();
         let mut index = usize::from(matches!(
             kernel_arguments.first(),
@@ -3143,6 +3152,35 @@ fn raise_algebraic_if<'a>(
     })
 }
 
+// Keep the float-only temporaries out of the recursive shared renderer's
+// frame, which is also used for deeply nested integer expressions.
+fn raise_float_arithmetic(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::KernelTermNode as Node;
+    let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
+    Some(match term.node() {
+        Node::FloatNegate { operand } => SurfaceTerm::Negate(Box::new(recurse(operand)?)),
+        Node::FloatBinary {
+            operator,
+            arguments,
+        } => {
+            let left = Box::new(recurse(&arguments[0])?);
+            let right = Box::new(recurse(&arguments[1])?);
+            match operator {
+                crate::kernel::FloatBinaryOperator::Add => SurfaceTerm::Add(left, right),
+                crate::kernel::FloatBinaryOperator::Subtract => SurfaceTerm::Subtract(left, right),
+                crate::kernel::FloatBinaryOperator::Multiply => SurfaceTerm::Multiply(left, right),
+                crate::kernel::FloatBinaryOperator::Divide => SurfaceTerm::Divide(left, right),
+            }
+        }
+        _ => unreachable!("float arithmetic dispatch"),
+    })
+}
+
 /// The shared term-to-surface boundary. Arithmetic and calls have common
 /// children; the legacy leaf dispatch is temporary and never projects away
 /// part of a value. Fold bodies retain their typed lexical scope.
@@ -3399,6 +3437,9 @@ pub(super) fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
+        Node::FloatNegate { .. } | Node::FloatBinary { .. } => {
+            raise_float_arithmetic(term, parameter_binding, state, bound_variables)?
+        }
         Node::FloatRead(_) => raise_float_read(term, parameter_binding, state, bound_variables)?,
         Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
             crate::kernel::KernelTermExport::float(term).ok()?,
@@ -5820,6 +5861,12 @@ fn synthesize_surface_pointer(
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Pointer::null() {
         return Some(ProgramExpression::Value(int32(0)));
+    }
+    if matches!(pointer.block, PointerBlock::StringLiteral { .. }) {
+        return Some(ProgramExpression::Value(ProgramValue::typed_pointer(
+            pointer.clone(),
+            ProgramType::UInt8Pointer,
+        )));
     }
     // A function's address spells as the function's name.
     if let (PointerBlock::Function(function), PointerOffsetTerm::Constant(0)) =

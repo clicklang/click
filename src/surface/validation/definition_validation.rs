@@ -2832,14 +2832,16 @@ fn collect_resource_fact_reads_from_program_expression(
     reads: &mut Vec<ResourceFactRead>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
             collect_resource_fact_reads_from_program_expression(expression, reads);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..

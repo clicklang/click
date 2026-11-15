@@ -3961,7 +3961,7 @@ mod tests {
                 PointerBlock::FunctionSymbolic(Variable(index)),
                 PointerBlock::Function(format!("function{index}")),
                 PointerBlock::StringLiteral {
-                    identity: format!("literal{index}"),
+                    identity: crate::kernel::StringLiteralId::new("literal", index as u32),
                     bytes: vec![0],
                 },
             ]);

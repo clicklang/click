@@ -417,7 +417,7 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
             E::SharedArrayOptionTag { option } if shared => option,
             _ => return Err(unsupported("iterator Option kind")),
         };
-        if dispatched != &option || !blocks[dispatch].statements.iter().all(|s| matches!(s, S::Assign { target: E::Local { .. }, value: E::ChunkOptionTag { option: value } | E::SharedArrayOptionTag { option: value } } if value == &option)) { return Err(unsupported("iterator next dispatch effects")) }
+        if dispatched != &option || !blocks[dispatch].statements.iter().all(|s| matches!(s, S::Site { .. }) || matches!(s, S::Assign { target: E::Local { .. }, value: E::ChunkOptionTag { option: value } | E::SharedArrayOptionTag { option: value } } if value == &option)) { return Err(unsupported("iterator next dispatch effects")) }
         // Reject external entry into the dispatch; it must denote this call.
         if predecessors[dispatch].as_slice() != [header] {
             return Err(unsupported("shared iterator next dispatch"));
@@ -426,6 +426,7 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
         let first = blocks.len();
         for target in targets {
             blocks.push(out::MirBlock {
+                terminator_site: None,
                 statements: vec![next.clone()],
                 terminator: T::Goto { target },
             });
@@ -475,7 +476,13 @@ fn split_range_next(
     let (Some(then_target), Some(else_target)) = (target("Some"), target("None")) else {
         return Err(unsupported("range next Option match"));
     };
-    if name != option || cases.len() != 2 || !blocks[dispatch].statements.is_empty() {
+    if name != option
+        || cases.len() != 2
+        || !blocks[dispatch]
+            .statements
+            .iter()
+            .all(|s| matches!(s, S::Site { .. }))
+    {
         return Err(unsupported("range next dispatch effects"));
     }
     // Reject external entry into the dispatch; it must denote this call.
@@ -489,6 +496,7 @@ fn split_range_next(
             *decided = Some(taken);
         }
         blocks.push(out::MirBlock {
+            terminator_site: None,
             statements: vec![next],
             terminator: T::Goto { target },
         });
@@ -510,6 +518,7 @@ mod tests {
     fn protocol() -> Vec<out::MirBlock> {
         vec![
             out::MirBlock {
+                terminator_site: None,
                 statements: vec![S::ChunkNext {
                     iterator: "iter".into(),
                     option: "option".into(),
@@ -517,6 +526,7 @@ mod tests {
                 terminator: T::Goto { target: 1 },
             },
             out::MirBlock {
+                terminator_site: None,
                 statements: vec![],
                 terminator: T::If {
                     condition: E::ChunkOptionTag {
@@ -527,10 +537,12 @@ mod tests {
                 },
             },
             out::MirBlock {
+                terminator_site: None,
                 statements: vec![],
                 terminator: T::Goto { target: 0 },
             },
             out::MirBlock {
+                terminator_site: None,
                 statements: vec![],
                 terminator: T::Return,
             },

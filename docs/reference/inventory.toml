@@ -655,6 +655,54 @@ id = "language.word.count"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.termination"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.termination_local"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.termination_strict"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.termination_body"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.termination_returns"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.termination_divergence"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.termination_callbacks"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.strict"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.normal"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.check_termination_local"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.check_termination_component"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.check_termination_callbacks"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.decreases"
 path = "reference/language/grammar.md#word-index"
 
@@ -1076,6 +1124,14 @@ id = "language.tactic"
 path = "reference/language/index.md#user-defined-tactics"
 
 [[item]]
+id = "language.termination"
+path = "reference/language/index.md#program-termination-proofs"
+
+[[item]]
+id = "language.termination-goals"
+path = "reference/language/index.md#program-termination-proofs"
+
+[[item]]
 id = "language.decreases"
 path = "reference/language/index.md#c-termination"
 
@@ -1199,7 +1255,7 @@ path = "reference/language/index.md#at"
 
 [[item]]
 id = "language.fold"
-path = "reference/language/index.md#pure-click-functions"
+path = "reference/language/grammar.md#range-folds"
 
 [[item]]
 id = "language.if-expression"
@@ -1324,6 +1380,18 @@ path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic.solve"
 path = "reference/tactics/index.md#proposition-reasoning"
+
+[[item]]
+id = "tactic.check_termination_local"
+path = "reference/tactics/index.md#termination-checks"
+
+[[item]]
+id = "tactic.check_termination_component"
+path = "reference/tactics/index.md#termination-checks"
+
+[[item]]
+id = "tactic.check_termination_callbacks"
+path = "reference/tactics/index.md#termination-checks"
 
 [[item]]
 id = "tactic.known"
@@ -1556,6 +1624,18 @@ path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.obtain"
 path = "reference/tactics/index.md#proposition-reasoning"
+[[item]]
+id = "tactic-form.check-termination-local"
+path = "reference/tactics/index.md#termination-checks"
+
+[[item]]
+id = "tactic-form.check-termination-component"
+path = "reference/tactics/index.md#termination-checks"
+
+[[item]]
+id = "tactic-form.check-termination-callbacks"
+path = "reference/tactics/index.md#termination-checks"
+
 [[item]]
 id = "tactic-form.known"
 path = "reference/tactics/index.md#proposition-reasoning"
@@ -4974,6 +5054,10 @@ path = "reference/library/index.md#integeradd_le"
 [[item]]
 id = "library.theorem.integer::round_down_le"
 path = "reference/library/index.md#integerround_down_le"
+
+[[item]]
+id = "language.string-literal-reference"
+path = "reference/language/c.md#string-literals"
 
 [[item]]
 id = "library.theorem.integer::le_antisymmetric"

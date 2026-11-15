@@ -18,6 +18,8 @@ use std::sync::Arc;
 #[cfg(test)]
 mod aggregate_return_tests;
 mod construction_return;
+#[cfg(test)]
+mod literal_objects;
 mod produced_argument_supply;
 #[cfg(test)]
 mod produced_argument_supply_tests;
@@ -3868,6 +3870,7 @@ fn execute_verified_function_applications_with_suspension(
             interface,
             post_state.memory.clone(),
             &effective_assumptions,
+            &mut facts,
             budget,
         )? {
             Ok(memory) => memory,
@@ -12234,6 +12237,7 @@ fn produced_memory_initialization(
     interface: &FunctionContractInterface,
     mut memory: Memory,
     assumptions: &PureFactContext,
+    facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Memory, RuntimeError>> {
     for resource in interface.resource_ensures() {
@@ -12305,6 +12309,21 @@ fn produced_memory_initialization(
                 }
             }
             None => memory = memory.with_initialized_object(&start, extent),
+        }
+        // Only an explicit complete byte output needs this representation
+        // equation. Ordinary scalar reads keep their retained roots and do
+        // no extra byte-view work. Initialization is supplied above by the
+        // checked output clause, never by the numeric equation.
+        if extent == 4
+            && range.element_width() == 1
+            && segment.value_runs().is_none()
+            && let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
+                &memory,
+                &start,
+                budget.program_byte_order(),
+            )
+        {
+            facts.push(ExecutionPureFact::certified(equation));
         }
     }
     Ok(Ok(memory))
@@ -18571,7 +18590,8 @@ fn resolve_retained_aggregate_fields(
         }
     }
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
@@ -18584,6 +18604,7 @@ fn resolve_retained_aggregate_fields(
         | ProgramExpression::FloatClassification {
             expression: inner, ..
         }
+        | ProgramExpression::Negate(inner)
         | ProgramExpression::FloatNegate(inner)
         | ProgramExpression::EnumField { value: inner, .. }
         | ProgramExpression::EnumIs { value: inner, .. }
@@ -19991,6 +20012,25 @@ fn end_function_body_automatic_lifetimes(
                 return Err(error);
             }
             blocks.push(slot.block.clone());
+        }
+    }
+    for (_, pointer) in state.aggregate_step_objects.iter() {
+        crate::instrumentation::record_deterministic_work(1);
+        if !caller.has_block(&pointer.block)
+            && memory.has_block(&pointer.block)
+            && selected.insert(pointer.block.clone())
+        {
+            if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
+                return Err(error);
+            }
+            if let Some(error) = super::mutexes::automatic_storage_refusal(
+                state,
+                "aggregate expression result",
+                &pointer.block,
+            ) {
+                return Err(error);
+            }
+            blocks.push(pointer.block.clone());
         }
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))

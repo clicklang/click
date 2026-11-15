@@ -13,7 +13,7 @@ impl ExactBlock {
         let bytes = match block {
             PointerBlock::Concrete(name) | PointerBlock::Function(name) => name.len(),
             PointerBlock::StringLiteral { identity, bytes } => {
-                identity.len().saturating_add(bytes.len())
+                identity.payload_bytes().saturating_add(bytes.len())
             }
             _ => 0,
         };
@@ -239,7 +239,7 @@ mod tests {
         let blocks = vec![
             PointerBlock::Concrete("object".into()),
             PointerBlock::StringLiteral {
-                identity: "literal".into(),
+                identity: StringLiteralId::new("literal", 0),
                 bytes: vec![0, 255],
             },
             PointerBlock::Function("function".into()),

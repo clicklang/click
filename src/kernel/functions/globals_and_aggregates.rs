@@ -8,7 +8,7 @@ pub(super) fn initialize_program_function_globals_owned(
     initialize_missing_storage: bool,
 ) -> ExecutionState {
     for literal in function.string_literals() {
-        let slot = Memory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
+        let slot = Memory::string_literal_pointer(literal.identity(), literal.bytes());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(
                 state
@@ -29,12 +29,15 @@ pub(super) fn initialize_program_function_globals_owned(
                 ));
             }
         }
-        state.locals.set_array_object_at(
-            literal.name().to_string(),
-            literal.element_type(),
-            literal.bytes().len() as u32,
+        let value = ExecutionValue::from(ProgramValue::typed_pointer(
             slot.clone(),
-        );
+            literal
+                .element_type()
+                .pointer_to()
+                .expect("character pointer"),
+        ))
+        .retain_pointer_result();
+        Arc::make_mut(&mut state.literal_values).insert(literal.identity().clone(), value.into());
         let literal_resource = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             slot,
             MachineTerm::constant(0),

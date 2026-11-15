@@ -315,7 +315,7 @@ impl<'a> Proof<'a> {
             }
         }
         let facts = ProofFacts::from_ordered(requires).with_reserved_variables(ambient_variables);
-        Self {
+        let mut proof = Self {
             site: ProofStepSite::default(),
             context: Arc::new(ProofContext::Pure(PureProofContext {
                 claim_label,
@@ -347,7 +347,11 @@ impl<'a> Proof<'a> {
                 depth: 0,
                 split_branches: Vec::new(),
             }),
+        };
+        if let Some(scope) = spec_definitions.termination_scope {
+            proof.state = proof.state.with_termination_context(scope.clone());
         }
+        proof
     }
 
     #[allow(clippy::too_many_arguments)]

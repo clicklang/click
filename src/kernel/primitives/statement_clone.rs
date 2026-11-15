@@ -159,6 +159,7 @@ impl ProgramStatement {
                 callee: callee.clone(),
             },
             Self::CallResult {
+                aggregate_layout,
                 call,
                 function_name,
                 arguments,
@@ -166,7 +167,9 @@ impl ProgramStatement {
                 result_aggregate_layout,
                 result_pointee_constant,
                 callee,
+                ..
             } => Self::CallResult {
+                aggregate_layout: aggregate_layout.clone(),
                 call: *call,
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
@@ -196,17 +199,25 @@ impl ProgramStatement {
                 label: label.clone(),
             },
             Self::StepValue {
+                aggregate_layout,
                 steps,
                 expression,
                 value_type,
                 pointee_constant,
+                ..
             } => Self::StepValue {
+                aggregate_layout: aggregate_layout.clone(),
                 steps: steps.clone(),
                 expression: expression.clone(),
                 value_type: *value_type,
                 pointee_constant: *pointee_constant,
             },
-            Self::LoopTest { condition } => Self::LoopTest {
+            Self::LoopTest {
+                aggregate_steps,
+                condition,
+                ..
+            } => Self::LoopTest {
+                aggregate_steps: aggregate_steps.clone(),
                 condition: condition.clone(),
             },
             Self::Seq(value) => Self::Seq(value.clone()),
@@ -299,7 +310,8 @@ impl ProgramStatement {
                     })
                     .collect(),
             },
-            Self::EndAutomaticLifetimes { names } => Self::EndAutomaticLifetimes {
+            Self::EndAutomaticLifetimes { names, steps } => Self::EndAutomaticLifetimes {
+                steps: steps.clone(),
                 names: names.clone(),
             },
         }

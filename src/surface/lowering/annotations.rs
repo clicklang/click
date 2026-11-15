@@ -4781,6 +4781,29 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecProposition, String> {
         match proposition {
             ClickProposition::PredicateCall { name, arguments } => {
+                if let Some(kind) = crate::kernel::TerminationAtomKind::from_spelling(name) {
+                    let scope = self.spec_definitions.termination_scope
+                        .ok_or("termination propositions are available only inside `termination by` proofs")?;
+                    let function = match (kind, arguments.as_slice()) {
+                        (crate::kernel::TerminationAtomKind::Callbacks, []) => "",
+                        (_, [ContractExpression::Binding(name)])
+                            if kind != crate::kernel::TerminationAtomKind::Callbacks =>
+                        {
+                            name
+                        }
+                        _ => return Err(format!("invalid arguments to `{name}`")),
+                    };
+                    let Proposition::Predicate { name, arguments } = scope.atom(kind, function)?
+                    else {
+                        unreachable!()
+                    };
+                    debug_assert!(matches!(arguments.as_slice(), [Term::ExecutionState(_)]));
+                    return Ok(SpecProposition::Predicate {
+                        name,
+                        arguments: vec![],
+                        resource_state_dependent: false,
+                    });
+                }
                 if name == "held" {
                     let [mutex] = arguments.as_slice() else {
                         return Err(format!(
@@ -6234,6 +6257,19 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if let Some((region, accesses)) = region_result_read(expression)
+            && let Some(snapshots) = self.snapshots
+        {
+            let index = snapshots.result_region_index(region)?;
+            // Ordinary pointer results retain their usual indexing and member reads.
+            if snapshots
+                .source_layout
+                .as_ref()
+                .is_some_and(|layout| layout.is_aggregate_result(index))
+            {
+                return self.lower_region_result_read(region, &accesses, environment);
+            }
+        }
         if let Some((region, name, accesses)) = region_parameter_read(expression) {
             return self.lower_region_parameter_read(region, name, &accesses, environment);
         }
@@ -6764,10 +6800,9 @@ impl AnnotationLowerer<'_> {
                         MachineTerm::constant(0u32.wrapping_sub(value as u32)),
                     )));
                 }
-                Ok(SpecExpression::Subtract(
-                    Box::new(SpecExpression::Value(int32(0))),
-                    Box::new(self.lower_contract_expression_to_spec(expression, environment)?),
-                ))
+                Ok(SpecExpression::Negate(Box::new(
+                    self.lower_contract_expression_to_spec(expression, environment)?,
+                )))
             }
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             ContractExpression::Add(left, right) => {
@@ -8299,6 +8334,98 @@ impl AnnotationLowerer<'_> {
         }))
     }
 
+    /// Read a scalar field of an aggregate result at its producer's exit.
+    fn lower_region_result_read(
+        &mut self,
+        region: &CodeRegionRef,
+        accesses: &[RegionParameterAccess<'_>],
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        let snapshots = self
+            .snapshots
+            .ok_or("aggregate result requires a function execution")?;
+        let index = snapshots.result_region_index(region)?;
+        let layout = snapshots
+            .source_layout
+            .as_ref()
+            .ok_or("aggregate result requires a source layout")?;
+        let mut path = String::new();
+        for access in accesses {
+            match access {
+                RegionParameterAccess::Field(name) => {
+                    if !path.is_empty() {
+                        path.push('.');
+                    }
+                    path.push_str(name);
+                }
+                RegionParameterAccess::Index(index) => {
+                    let i = literal_element_index(index)
+                        .ok_or("aggregate result array fields require a literal index")?;
+                    path.push_str(&format!("[{i}]"));
+                }
+            }
+        }
+        let (field, element) = match layout.aggregate_result_field(index, &path) {
+            Some(field) => (field, None),
+            None => {
+                let Some((last, _)) = accesses.split_last() else {
+                    unreachable!()
+                };
+                let RegionParameterAccess::Index(position) = last else {
+                    return Err(format!(
+                        "`{}.result` has no aggregate field `{path}`",
+                        diagnostics::describe_code_region_ref(region)
+                    ));
+                };
+                let position = literal_element_index(position)
+                    .ok_or("aggregate result array fields require a literal index")?;
+                let cut = path.rfind('[').expect("indexed path");
+                let field = layout
+                    .aggregate_result_field(index, &path[..cut])
+                    .ok_or_else(|| format!("aggregate result has no field `{}`", &path[..cut]))?;
+                (field, Some(position))
+            }
+        };
+        let (offset, value_type) = match element {
+            Some(position) => {
+                let (element, count) =
+                    super::resource_lowering::array_field_elements(field.program_type())
+                        .ok_or("result field is not an array")?;
+                if position >= count {
+                    return Err(format!("result array field has {count} elements"));
+                }
+                (
+                    field.offset_bytes() + position * element.byte_width(),
+                    element,
+                )
+            }
+            None => (field.offset_bytes(), field.program_type()),
+        };
+        if super::resource_lowering::array_field_elements(value_type).is_some() {
+            return Err("read an element of the aggregate result array field".into());
+        }
+        let pointer = snapshots.region_result_value(region)?;
+        let read = ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+            pointer: Box::new(crate::kernel::program_expression::pointer_offset_bytes(
+                ProgramExpression::Value(pointer),
+                offset,
+            )),
+            value_type,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: Default::default(),
+        });
+        self.lower_at_expression_to_spec(
+            &SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Exit,
+            }),
+            &read,
+            environment,
+        )
+    }
+
     /// `R.parameter(name).field[i]`: the scalar the call at `R` read from
     /// its copy of an aggregate argument. The copy's layout is the one the
     /// call bound, recorded at `R`'s parameter point, so the read is the
@@ -8873,6 +9000,9 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.lower_program_expression_to_spec(left, environment)?),
                 Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
+            ProgramExpression::Negate(expression) => Ok(SpecExpression::Negate(Box::new(
+                self.lower_program_expression_to_spec(expression, environment)?,
+            ))),
             ProgramExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_program_expression_to_spec(expression, environment)?,
             ))),
@@ -10161,6 +10291,30 @@ pub(in crate::surface) fn region_parameter_read(
             ContractExpression::RegionParameter { region, name } => {
                 accesses.reverse();
                 return Some((region, name.as_str(), accesses));
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn region_result_read(
+    expression: &ContractExpression,
+) -> Option<(&CodeRegionRef, Vec<RegionParameterAccess<'_>>)> {
+    let mut accesses = Vec::new();
+    let mut current = expression;
+    loop {
+        match current {
+            ContractExpression::Field { base, field, .. } => {
+                accesses.push(RegionParameterAccess::Field(field));
+                current = base;
+            }
+            ContractExpression::Index(base, index) => {
+                accesses.push(RegionParameterAccess::Index(index));
+                current = base;
+            }
+            ContractExpression::RegionResult(region) if !accesses.is_empty() => {
+                accesses.reverse();
+                return Some((region, accesses));
             }
             _ => return None,
         }

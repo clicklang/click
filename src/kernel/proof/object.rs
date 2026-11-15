@@ -17,14 +17,16 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 /// The immutable state shared by checked proof successors. Its fields stay
-/// private so code outside this module can inspect the state but cannot
-/// assemble a whole semantic successor.
+/// private to the proof implementation so Source can inspect the state but
+/// cannot assemble a whole semantic successor.
 #[derive(Clone)]
 pub(crate) struct ProofState<L, O, E> {
-    locals: L,
-    open_branches: ProofBranches<ProofBranch<O, E>>,
-    added_facts: Arc<Vec<Proposition>>,
-    checked_facts: Arc<Vec<Proposition>>,
+    pub(super) locals: L,
+    pub(super) open_branches: ProofBranches<ProofBranch<O, E>>,
+    pub(super) added_facts: Arc<Vec<Proposition>>,
+    pub(super) checked_facts: Arc<Vec<Proposition>>,
+    pub(super) termination: Option<Arc<crate::kernel::OrdinaryTerminationScope>>,
+    pub(super) termination_root: bool,
 }
 
 impl<L, O, E> ProofState<L, O, E> {
@@ -58,8 +60,8 @@ impl<L, O, E> ProofState<L, O, E> {
 /// they are not part of the semantic proof state and cannot change its focus.
 #[derive(Clone)]
 pub(crate) struct ProofObject<L, O, E> {
-    state: Arc<ProofState<L, O, E>>,
-    focused_branch: BranchId,
+    pub(super) state: Arc<ProofState<L, O, E>>,
+    pub(super) focused_branch: BranchId,
 }
 
 /// Borrowed authority that the focused goal is an execution frontier owning
@@ -213,6 +215,8 @@ impl<L, O, E> ProofObject<L, O, E> {
     {
         Self::new(
             ProofState {
+                termination: None,
+                termination_root: false,
                 locals,
                 open_branches: ProofBranches::root(branch),
                 added_facts: Arc::new(Vec::new()),
@@ -222,7 +226,7 @@ impl<L, O, E> ProofObject<L, O, E> {
         )
     }
 
-    fn new(state: ProofState<L, O, E>, focused_branch: BranchId) -> Self {
+    pub(super) fn new(state: ProofState<L, O, E>, focused_branch: BranchId) -> Self {
         Self {
             state: Arc::new(state),
             focused_branch,
@@ -311,6 +315,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
     ) -> Self {
         Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.clone(),
                 added_facts: Arc::new(added_facts),
@@ -325,6 +331,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
     pub(crate) fn with_locals(&self, locals: L) -> Self {
         Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals,
                 open_branches: self.state.open_branches.clone(),
                 added_facts: self.state.added_facts.clone(),
@@ -355,6 +363,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
         };
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals,
                 open_branches,
                 added_facts: Arc::new(added_facts),
@@ -395,6 +405,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
         Ok((
             Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(Vec::new()),
@@ -417,6 +429,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
             .ok_or(ProofFocusError::NotOpen)?;
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self
                     .state
@@ -446,6 +460,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
         };
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self
                     .state
@@ -473,6 +489,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
             .ok_or(ProofFocusError::NotOpen)?;
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.replace_at(
                     self.focused_branch,
@@ -508,6 +526,8 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
         }
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.clone(),
                 added_facts: Arc::new(Vec::new()),
@@ -962,6 +982,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     fn closed_focused(&self) -> Self {
         Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.close_at(self.focused_branch),
                 added_facts: Arc::new(Vec::new()),
@@ -1506,6 +1528,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         };
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.replace_at(
                     self.focused_branch,
@@ -1543,6 +1567,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let obligation = goal.with_presentation(presentation(&goal.presentation));
         Some(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.replace_at(
                     self.focused_branch,
@@ -1644,6 +1670,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         };
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.discharged_if_at(
                     self.focused_branch,
@@ -1731,6 +1759,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let facts = facts.with_fact(conclusion);
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self
                     .state
@@ -1846,6 +1876,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(ProofSplit {
             proof: Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(Vec::new()),
@@ -1900,6 +1932,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(ProofSplit {
             proof: Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(Vec::new()),
@@ -1952,6 +1986,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(ProofSplit {
             proof: Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(Vec::new()),
@@ -2203,6 +2239,8 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         core.checked_invariant_lowerings = Some(Arc::new(binding));
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: requested.state.locals.clone(),
                 open_branches: requested.state.open_branches.with_branch_state_at(
                     requested.focused_branch,
@@ -2266,6 +2304,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         };
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self
                     .state
@@ -2386,6 +2426,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         };
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self
                     .state
@@ -2427,6 +2469,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
                 .replace_frontier_at(self.focused_branch, facts, execution);
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches,
                 added_facts: Arc::new(added_facts),
@@ -2476,6 +2520,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         Ok(ProofSplit {
             proof: Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(introduced_facts[0].clone()),
@@ -2535,6 +2581,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         Ok((
             Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(deltas.clone()),
@@ -2589,6 +2637,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
             .ok_or(ProofJoinError::InvalidSplit)?;
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches,
                 added_facts: Arc::new(added_facts),
@@ -2657,6 +2707,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         Ok(ProofSplit {
             proof: Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(introduced_facts[0].clone()),
@@ -2692,6 +2744,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         Ok(ProofSplit {
             proof: Self::new(
                 ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
                     locals: self.state.locals.clone(),
                     open_branches,
                     added_facts: Arc::new(vec![]),
@@ -2745,6 +2799,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         successor.state.execution = Some(Arc::new(execution));
         Ok(Self::new(
             ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
                 locals: self.state.locals.clone(),
                 open_branches: self
                     .state

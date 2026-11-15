@@ -87,3 +87,26 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
         "containing-cell lookup work grew with unrelated cells: {works:?}"
     );
 }
+
+#[test]
+fn declared_word_read_representation_ignores_unrelated_memory() {
+    use crate::kernel::eval::declared_uint32_read_representation;
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut memory =
+            Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
+        for index in 0..size {
+            memory = memory.with_block(format!("unrelated:{index}"), 4);
+        }
+        let (equation, work) = crate::instrumentation::measure_deterministic_work(|| {
+            declared_uint32_read_representation(&memory, &word(0), Some(ByteOrder::Little))
+        });
+        assert!(equation.is_some());
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

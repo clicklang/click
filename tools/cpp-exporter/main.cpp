@@ -1967,6 +1967,12 @@ private:
         result["kind"] = "member_store";
         result["object"] = std::move(lowered->object);
         result["field"] = std::move(lowered->field);
+      } else if (const auto *subscript =
+                     llvm::dyn_cast<clang::ArraySubscriptExpr>(left)) {
+        auto pointer = lower_subscript_pointer(subscript, function);
+        if (!pointer) return std::nullopt;
+        result["kind"] = "store";
+        result["pointer"] = std::move(*pointer);
       } else if (const auto *dereference =
                      llvm::dyn_cast<clang::UnaryOperator>(left);
           dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
@@ -4497,6 +4503,38 @@ private:
     return Json(std::move(result));
   }
 
+  // Builtin scalar p[i] has the existing *(p + i) representation. Preserve
+  // the written operand order, including the reversed spelling i[p].
+  std::optional<Json> lower_subscript_pointer(
+      const clang::ArraySubscriptExpr *subscript,
+      const clang::FunctionDecl *function) {
+    const auto *pointer_type =
+        subscript->getBase()->getType()->getAs<clang::PointerType>();
+    const auto index_type = subscript->getIdx()->getType();
+    if (pointer_type == nullptr ||
+        !supported_pointer_element(pointer_type->getPointeeType()) ||
+        !index_type->isIntegerType() ||
+        (context_.getTypeSize(index_type) != 32 &&
+         context_.getTypeSize(index_type) != 64)) {
+      fail(subscript->getExprLoc(),
+           "C++ builtin subscripts require a supported native scalar pointer and a 32/64-bit index");
+      return std::nullopt;
+    }
+    auto left = lower_expression(subscript->getLHS(), function);
+    auto right = lower_expression(subscript->getRHS(), function);
+    auto value_type =
+        lower_type(subscript->getBase()->getType(), subscript->getExprLoc());
+    if (!left || !right || !value_type) return std::nullopt;
+    llvm::json::Object result;
+    result["kind"] = "binary";
+    result["operator"] = "add";
+    result["left"] = std::move(*left);
+    result["right"] = std::move(*right);
+    result["value_type"] = std::move(*value_type);
+    result["span"] = span(subscript->getSourceRange());
+    return Json(std::move(result));
+  }
+
   // A read of the value `source`, an lvalue of `type`: a field, a
   // dereference, or a named place.
   std::optional<Json> lower_load(const clang::Expr *source, clang::QualType type,
@@ -4515,6 +4553,12 @@ private:
       result["kind"] = "member_load";
       result["object"] = std::move(lowered->object);
       result["field"] = std::move(lowered->field);
+    } else if (const auto *subscript =
+                   llvm::dyn_cast<clang::ArraySubscriptExpr>(source)) {
+      auto pointer = lower_subscript_pointer(subscript, function);
+      if (!pointer) return std::nullopt;
+      result["kind"] = "dereference";
+      result["pointer"] = std::move(*pointer);
     } else if (const auto *dereference =
             llvm::dyn_cast<clang::UnaryOperator>(source);
         dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {

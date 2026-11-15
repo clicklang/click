@@ -79,7 +79,10 @@ pub(super) fn substitute_pure_values(
                     removed.insert(name.clone());
                     continue;
                 }
-                S::BeginStorage { .. } | S::EndStorage { .. } | S::Assert { .. } => {}
+                S::BeginStorage { .. }
+                | S::EndStorage { .. }
+                | S::Assert { .. }
+                | S::Site { .. } => {}
                 _ => {
                     // Anything else may change what a pending value reads,
                     // so no pending value moves past it: its definition goes
@@ -332,7 +335,8 @@ fn statement_expressions_mut(statement: &mut S) -> Vec<&mut E> {
         | S::Move { .. }
         | S::Copy { .. }
         | S::BeginStorage { .. }
-        | S::EndStorage { .. } => Vec::new(),
+        | S::EndStorage { .. }
+        | S::Site { .. } => Vec::new(),
     }
 }
 
@@ -358,9 +362,11 @@ fn statement_named_locals(statement: &S) -> Vec<&String> {
             iterator, option, ..
         }
         | S::ChunkNext { iterator, option } => vec![iterator, option],
-        S::Assert { .. } | S::Assign { .. } | S::BeginStorage { .. } | S::EndStorage { .. } => {
-            Vec::new()
-        }
+        S::Assert { .. }
+        | S::Assign { .. }
+        | S::BeginStorage { .. }
+        | S::EndStorage { .. }
+        | S::Site { .. } => Vec::new(),
     }
 }
 
@@ -741,6 +747,7 @@ mod tests {
     fn substituted(statements: Vec<S>, terminator: T) -> (Vec<String>, MirBlock) {
         let mut locals = ["a", "b", "x", "t1", "t2"].map(place).to_vec();
         let mut blocks = vec![MirBlock {
+            terminator_site: None,
             statements,
             terminator,
         }];
@@ -808,6 +815,7 @@ mod tests {
         let mut locals = ["a", "x", "t1"].map(place).to_vec();
         let mut blocks = vec![
             MirBlock {
+                terminator_site: None,
                 statements: Vec::new(),
                 terminator: T::Call {
                     function: "f".into(),
@@ -820,6 +828,7 @@ mod tests {
                 },
             },
             MirBlock {
+                terminator_site: None,
                 statements: vec![assign("x", binary("add", local("t1"), local("a")))],
                 terminator: T::Return,
             },

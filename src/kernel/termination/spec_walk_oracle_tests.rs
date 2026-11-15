@@ -132,6 +132,7 @@ fn old_collect_speprogram_expression_program_variables(
             old_collect_speprogram_expression_program_variables(right, reads)
         }
         SpecExpression::Subobject { pointer: value, .. }
+        | SpecExpression::Negate(value)
         | SpecExpression::BitwiseNot(value)
         | SpecExpression::Cast(value, _)
         | SpecExpression::NarrowArithmetic(value, _)

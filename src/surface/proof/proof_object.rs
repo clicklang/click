@@ -493,6 +493,7 @@ struct ProofLocals {
     /// These can contain captured values with no printable source form, so
     /// they serve explicit fact lookup only, never certificate source choice.
     checked_lowerings: SurfacePropositionMap,
+    termination_diagnostics: super::program_termination::TerminationDiagnostics,
     next_choice_variable: u64,
 }
 
@@ -532,6 +533,7 @@ impl Default for ProofLocals {
             algebraic_values: PersistentMap::default(),
             surface_facts: SurfacePropositionMap::default(),
             checked_lowerings: SurfacePropositionMap::default(),
+            termination_diagnostics: Default::default(),
             next_choice_variable: 3_000_000,
         }
     }
@@ -3713,6 +3715,9 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
     match step {
         ProofStep::Match { .. } => "match",
         ProofStep::Both { .. } => "both",
+        ProofStep::CheckTerminationLocal(_) => "check_termination_local",
+        ProofStep::CheckTerminationComponent { .. } => "check_termination_component",
+        ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
         ProofStep::ArithmeticUsing(_) => "solve() using",
@@ -3761,6 +3766,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
 
 mod construction;
 mod match_cases;
+mod termination;
 pub(in crate::surface::proof) use match_cases::ExecutionMatchPlan;
 pub(in crate::surface::proof) use match_cases::PureMatchPlan;
 mod execution_entry;

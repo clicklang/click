@@ -74,3 +74,62 @@ fn float_read_construction_keeps_growing_shared_addresses_and_snapshots() {
         }
     }
 }
+
+#[test]
+fn float_arithmetic_retains_dag_operands_without_exporting_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let mut root =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999931));
+            for _ in 0..size {
+                let child = root.clone();
+                let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    KernelTerm::float_binary(
+                        format,
+                        FloatBinaryOperator::Add,
+                        [root.clone(), root.clone()],
+                    )
+                    .unwrap()
+                });
+                assert!(work <= 4, "size={size}, work={work}");
+                assert_eq!(next.children(), &[child.clone(), child]);
+                assert!(next.0.machine_leaf.0.get().is_none());
+                root = next;
+            }
+        }
+    }
+}
+
+#[test]
+fn float_arithmetic_native_boundaries_walk_only_explicit_output_size() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let mut native = MachineTerm::Variable(Variable(999932));
+            for _ in 0..size {
+                native = match format {
+                    KernelFloatType::Float32 => MachineTerm::Float32Negate(Box::new(native)),
+                    KernelFloatType::Float64 => MachineTerm::Float64Negate(Box::new(native)),
+                };
+            }
+            let (root, import_work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTermImport::default().float(format, &native)
+            });
+            let (exported, export_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    KernelTermExport::float(&root).unwrap()
+                });
+            assert_eq!(exported, format.value(native));
+            assert!(
+                import_work <= 4 * size + 16,
+                "size={size}, work={import_work}"
+            );
+            assert!(
+                export_work <= 4 * size + 16,
+                "size={size}, work={export_work}"
+            );
+            assert!(root.0.machine_leaf.0.get().is_none());
+        }
+    }
+}

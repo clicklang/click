@@ -58,7 +58,7 @@ wall-clock crash-containment bound for a hung or CPU-starved run; a run it
 stops says so, and that is not a verdict about the proof.
 
 `--trace-proof PROOF` verifies one C function, theorem, or user-defined tactic of the
-sidecar, by name or by a PATH:LINE[:COLUMN] of the sidecar that a claim of
+sidecar (or `program.termination` for program closing), by name or by a PATH:LINE[:COLUMN] of the sidecar that a claim of
 it covers, and shows checked fact and resource changes on the path to
 the failing tactic, or an accepted path when the proof succeeds. `--trace-to`
 selects a written tactic by source line (and column when the line has several
@@ -812,9 +812,13 @@ fn proof_error_report(
     // The hint is printed only for a command that `--trace-proof` accepts:
     // both resolve the name through `trace_unit`.
     if error.kind() == ClickErrorKind::Proof
-        && let Some((declaration, _)) = error
-            .proof_claim_label()
-            .and_then(|claim| claim.split_once('.'))
+        && let Some(declaration) = error.proof_claim_label().and_then(|claim| {
+            if claim == "program.termination" {
+                Some(claim)
+            } else {
+                claim.split_once('.').map(|(declaration, _)| declaration)
+            }
+        })
         && let Ok(unit) = trace_unit(declaration, project, inputs)
     {
         report.push_str(&format!(
@@ -886,12 +890,14 @@ enum TraceUnit {
     Function(String),
     Theorem(String),
     Tactic(String),
+    ProgramTermination,
 }
 
 impl TraceUnit {
     fn name(&self) -> &str {
         match self {
             Self::Function(name) | Self::Theorem(name) | Self::Tactic(name) => name,
+            Self::ProgramTermination => "program.termination",
         }
     }
 }
@@ -912,6 +918,9 @@ fn trace_unit(
 
 /// Selects `requested` among the sidecar's selected proof names.
 fn select_trace_unit(requested: &str, names: &[String]) -> Result<TraceUnit, String> {
+    if requested == "program.termination" {
+        return Ok(TraceUnit::ProgramTermination);
+    }
     // A Rust item or a C++ declaration is named by its path, `quad::walk` or
     // `Square::area`, or by the name the importer gives it.
     let selects = |kind: &str, name: &str| {
@@ -1522,6 +1531,10 @@ fn verify_file_within_limits(
             TraceUnit::Theorem(theorem) => {
                 verify_project_theorem(&project, &inputs.program_inputs(), theorem)
             }
+            TraceUnit::ProgramTermination => {
+                verify_project_with_summary(&project, &inputs.program_inputs())
+                    .and_then(|(_, verified)| verified)
+            }
         };
         let report = |error: ClickError| {
             proof_error_report(
@@ -1769,6 +1782,28 @@ mod directory_tests;
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn program_termination_trace_selects_the_ordinary_root() {
+        let (root, path) = temporary_project(
+            "termination-trace",
+            "int32 leaf(void) { return 7; }",
+            "verifying \"program.c\"; int32 leaf() { ensures result == 7; }",
+        );
+        entry_with([
+            "--trace-proof".to_string(),
+            "program.termination".to_string(),
+            path.display().to_string(),
+        ])
+        .expect("program termination retains its checked path for CLI tracing");
+        fs::write(&path, "verifying \"program.c\"; int32 leaf() { ensures result == 7; } termination by { check_termination_component(\"leaf\", normal); known(); }").unwrap();
+        let error = entry_with([path.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("--trace-proof program.termination"),
+            "{error}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn ordinary_cli_diagnostics_bound_late_source_and_trace_hint() {

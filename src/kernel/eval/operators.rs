@@ -637,6 +637,60 @@ pub(in crate::kernel) fn evaluate_program_comparison_paths(
     )
 }
 
+pub(in crate::kernel) fn apply_program_float_negate(
+    value: ProgramValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+) -> Vec<ExpressionPath> {
+    let outcome = match value {
+        ProgramValue::Float32(value) => {
+            ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::float32_negate(value)))
+        }
+        ProgramValue::Float64(value) => {
+            ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::float64_negate(value)))
+        }
+        _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
+    };
+    vec![ExpressionPath {
+        outcome,
+        facts,
+        obligations,
+    }]
+}
+
+pub(in crate::kernel) fn evaluate_program_negate_paths(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<ExpressionPath>> {
+    let zero = ProgramExpression::Value(int32(0));
+    let right_width = program_expression_pointer_step_width(state, expression);
+    evaluate_program_value_binary_paths(
+        state,
+        &zero,
+        expression,
+        assumptions,
+        budget,
+        |left, right, facts, obligations| {
+            if matches!(right, ProgramValue::Float32(_) | ProgramValue::Float64(_)) {
+                apply_program_float_negate(right, facts, obligations)
+            } else {
+                apply_program_subtract(
+                    state,
+                    left,
+                    right,
+                    None,
+                    right_width,
+                    facts,
+                    obligations,
+                    assumptions,
+                )
+            }
+        },
+    )
+}
+
 pub(in crate::kernel) fn evaluate_program_subtract_paths(
     state: &ExecutionState,
     left: &ProgramExpression,

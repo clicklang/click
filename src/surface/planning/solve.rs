@@ -242,3 +242,16 @@ pub(in crate::surface) fn plan_solve_certificate(
         ))
     }
 }
+
+/// Generated termination dependencies are planned inside normal bounded solve;
+/// every selected operation is retained as a Source certificate step.
+pub(in crate::surface) fn plan_termination(
+    scope: &crate::kernel::OrdinaryTerminationScope,
+    goal: &Proposition,
+    facts: &crate::kernel::proof::ProofFacts,
+) -> Result<Vec<crate::kernel::TerminationCheck>, ClickError> {
+    check_verification_deadline()?;
+    let plan = scope.plan(goal, facts);
+    check_verification_deadline()?;
+    plan.map_err(ClickError::new)
+}

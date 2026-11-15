@@ -424,7 +424,10 @@ impl<'a> AccessCollector<'a, '_> {
             | E::UnsignedInteger { .. }
             | E::SignedInteger { .. }
             | E::UsizeInteger { .. }
-            | E::Boolean { .. } => return Ok(false),
+            | E::Boolean { .. }
+            // A call step's result is a scalar or enum value, which holds
+            // no reference.
+            | E::CallResult { .. } => return Ok(false),
             _ => return Err(FrontierRefusal::UnsupportedFlow),
         };
         let mut used = false;
@@ -607,6 +610,8 @@ fn transfer<'a>(
             // an actual definition replaces them, even across StorageDead.
             Ok(())
         }
+        // A source site runs nothing.
+        S::Site { .. } => Ok(()),
         // Aggregate and iterator alias transport needs separate evidence.
         _ => Err(FrontierRefusal::UnsupportedFlow),
     }
@@ -817,6 +822,7 @@ mod tests {
     }
     fn function() -> Function {
         Function {
+            sites: Vec::new(),
             name: "test::reuse".into(),
             return_type: Type::Unit,
             parameters: vec![
@@ -837,6 +843,7 @@ mod tests {
                     place("x", Type::I32),
                 ],
                 blocks: vec![MirBlock {
+                    terminator_site: None,
                     statements: vec![
                         assign(local("child"), borrow_parent()),
                         assign(deref("child"), E::Integer { value: 7 }),
@@ -980,6 +987,7 @@ mod tests {
             result: None,
         };
         f.mir.as_mut().unwrap().blocks.push(MirBlock {
+            terminator_site: None,
             statements: vec![],
             terminator: T::Return,
         });

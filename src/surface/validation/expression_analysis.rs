@@ -8,14 +8,16 @@ pub(in crate::surface) fn program_expression_uses_variable(
     variable: &str,
 ) -> bool {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
         ProgramExpression::Variable(name) => name == variable,
         ProgramExpression::Cast { expression, .. } => {
             program_expression_uses_variable(expression, variable)
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..

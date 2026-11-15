@@ -491,6 +491,11 @@ fn substitute_click_proposition_nonlogical(
                 body: Box::new(body),
             })
         }
+        ClickProposition::PredicateCall { name, .. }
+            if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() =>
+        {
+            Ok(proposition.clone())
+        }
         ClickProposition::PredicateCall { name, arguments } => {
             Ok(ClickProposition::PredicateCall {
                 name: name.clone(),
@@ -3098,6 +3103,8 @@ fn collect_click_proposition_referenced_names_one(
                 names.insert(item.clone());
             }
         }
+        ClickProposition::PredicateCall { name, .. }
+            if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() => {}
         ClickProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_referenced_names(argument, names);
@@ -4503,7 +4510,8 @@ pub(in crate::surface) fn substitute_program_expression_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ProgramExpression, String> {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => Ok(expression.clone()),
         ProgramExpression::Variable(name) => {
@@ -4534,6 +4542,9 @@ pub(in crate::surface) fn substitute_program_expression_in(
             pointee_constant: *pointee_constant,
             explicit_qualification: *explicit_qualification,
         }),
+        ProgramExpression::Negate(expression) => Ok(ProgramExpression::Negate(Box::new(
+            substitute_program_expression_in(expression, substitutions)?,
+        ))),
         ProgramExpression::FloatNegate(expression) => Ok(ProgramExpression::FloatNegate(Box::new(
             substitute_program_expression_in(expression, substitutions)?,
         ))),

@@ -47,6 +47,9 @@ impl SourceContext {
                     | ProofTactic::Witness(_)
                     | ProofTactic::LetSatisfy(_)
                     | ProofTactic::Choose(_)
+                    | ProofTactic::CheckTerminationLocal(_)
+                    | ProofTactic::CheckTerminationComponent { .. }
+                    | ProofTactic::CheckTerminationCallbacks
                     | ProofTactic::Known
                     | ProofTactic::Extract(_)
                     | ProofTactic::Normalize

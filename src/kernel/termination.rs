@@ -1,10 +1,15 @@
+mod ordinary;
+pub(crate) use ordinary::{
+    OrdinaryTerminationScope, TerminationAtomKind, TerminationCause, TerminationCheck,
+    TerminationCheckReport, termination_predicate_spelling,
+};
 mod execution;
 mod obligations;
 pub(in crate::kernel) use completion::ProgramBodyOwner;
-mod completion;
+pub(in crate::kernel) mod completion;
 pub(crate) use completion::{
     ProgramContractBodies, ProgramContractFailure, ProgramContractGoal, ProgramContractProof,
-    ProgramTerminationInputs,
+    ProgramTerminationInputs, ProgramTerminationProof, ProvedProgramContracts,
 };
 
 use super::prelude::*;
@@ -80,7 +85,7 @@ fn substitute_program_expression_variables(
         )
     };
     match expression {
-        Value(_) | FunctionAddress(_) | StepResult { .. } => expression.clone(),
+        StringLiteral(_) | Value(_) | FunctionAddress(_) | StepResult { .. } => expression.clone(),
         Cast {
             expression: body,
             target_type,
@@ -105,6 +110,7 @@ fn substitute_program_expression_variables(
             expression: unary(body),
             classification: *classification,
         },
+        Negate(body) => Negate(unary(body)),
         FloatNegate(body) => FloatNegate(unary(body)),
         EnumConstruct {
             enum_type,
@@ -543,7 +549,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 .collect()
         };
         match statement {
-            ProgramStatement::EndAutomaticLifetimes { names } => {
+            ProgramStatement::EndAutomaticLifetimes { names, .. } => {
                 Ok(names.iter().fold(paths, |paths, name| forget(name, paths)))
             }
             ProgramStatement::Skip
@@ -1186,9 +1192,10 @@ fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut B
     use ProgramExpression::*;
     let mut inner = |body: &ProgramExpression| expression_address_taken_locals(body, names);
     match expression {
-        Value(_) | Variable(_) | FunctionAddress(_) | StepResult { .. } => {}
+        StringLiteral(_) | Value(_) | Variable(_) | FunctionAddress(_) | StepResult { .. } => {}
         Cast { expression, .. } => inner(expression),
-        FloatNegate(expression)
+        Negate(expression)
+        | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | EnumField {
             value: expression, ..
@@ -1259,6 +1266,7 @@ fn collect_program_expression_variables(
         }
         StepResult { .. } => {}
         Cast { expression, .. }
+        | Negate(expression)
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | EnumField {
@@ -1319,7 +1327,7 @@ fn collect_program_expression_variables(
             collect_program_expression_variables(right, names);
         }
         TypedLoad { pointer, .. } => collect_program_expression_variables(pointer, names),
-        Value(_) | FunctionAddress(_) => {}
+        StringLiteral(_) | Value(_) | FunctionAddress(_) => {}
     }
 }
 
@@ -1365,7 +1373,7 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         ProgramStatement::HeapAllocate { bytes, .. } => escapes(bytes),
         ProgramStatement::HeapFree { pointer } => escapes(pointer),
         ProgramStatement::Assert { condition, .. }
-        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::StepValue {
             expression: condition,
             ..
@@ -1585,6 +1593,7 @@ fn collect_spec_program_variables(
                     | crate::kernel::binary_spec_expression!(_, _)
                     | SpecExpression::Subobject { .. }
                     | SpecExpression::PointerOffset { .. }
+                    | SpecExpression::Negate(_)
                     | SpecExpression::BitwiseNot(_)
                     | SpecExpression::NarrowArithmetic(_, _)
                     | SpecExpression::Cast(_, _)
@@ -2089,7 +2098,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
     ) -> Result<Vec<i64>, TerminationError> {
         let measure = self.measure;
         match statement {
-            ProgramStatement::EndAutomaticLifetimes { names } => {
+            ProgramStatement::EndAutomaticLifetimes { names, .. } => {
                 if names.iter().any(|name| name == measure) {
                     return Err(error(format!(
                         "termination measure `{measure}` leaves its lifetime"
@@ -2281,6 +2290,7 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
         NotEqual(left, right) => binary(left, right, "!="),
         And(left, right) => binary(left, right, "&&"),
         Or(left, right) => binary(left, right, "||"),
+        Negate(operand) => unary(operand, "-"),
         BitwiseNot(operand) => unary(operand, "~"),
         Not(operand) => unary(operand, "!"),
         AddressOf(operand) => unary(operand, "&"),
@@ -2311,6 +2321,7 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
         | EnumField { .. }
         | EnumIs { .. }
         | StepResult { .. }
+        | StringLiteral(_)
         | Value(_) => "…".to_string(),
     }
 }
@@ -2866,6 +2877,18 @@ fn ranking_measure_term_unfolded(
                 MachineTerm::int64_add,
             ),
         ),
+        Negate(right) => binary(
+            &Value(ProgramValue::Int32(MachineTerm::constant(0))),
+            right,
+            state,
+            reader,
+            (
+                MachineTerm::subtract,
+                MachineTerm::subtract,
+                MachineTerm::uint64_subtract,
+                MachineTerm::int64_subtract,
+            ),
+        ),
         Subtract(left, right) => binary(
             left,
             right,
@@ -2981,6 +3004,7 @@ fn ranking_measure_term_unfolded(
         Cast { .. }
         | FloatNegate(_)
         | FloatClassification { .. }
+        | StringLiteral(_)
         | FunctionAddress(_)
         | AddressOf(_)
         | CheckedObjectAddress(_)
@@ -4167,6 +4191,7 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
 fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTreeSet<String>) {
     use ProgramExpression::*;
     match expression {
+        StringLiteral(_) => {}
         FunctionAddress(name) => {
             taken.insert(name.clone());
         }
@@ -4177,6 +4202,7 @@ fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTr
         }
         Variable(_) | StepResult { .. } => {}
         Cast { expression, .. }
+        | Negate(expression)
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | EnumField {
@@ -4274,7 +4300,7 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         ProgramStatement::HeapAllocate { bytes, .. } => visit(bytes),
         ProgramStatement::HeapFree { pointer } => visit(pointer),
         ProgramStatement::Assert { condition, .. }
-        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::StepValue {
             expression: condition,
             ..

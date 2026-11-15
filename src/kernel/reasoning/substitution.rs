@@ -872,6 +872,12 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
         .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
         .collect();
     ExecutionState {
+        literal_values: state.literal_values.clone(),
+        aggregate_step_objects: state
+            .aggregate_step_objects
+            .iter()
+            .map(|(step, pointer)| (*step, s.pointer(pointer)))
+            .collect(),
         step_results: state.step_results.as_ref().map(|results| {
             std::sync::Arc::new(
                 results
@@ -998,6 +1004,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             }),
         },
         ProgramStatement::CallResult {
+            aggregate_layout,
             call,
             function_name,
             arguments,
@@ -1005,7 +1012,9 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             result_aggregate_layout,
             result_pointee_constant,
             callee,
+            ..
         } => ProgramStatement::CallResult {
+            aggregate_layout: aggregate_layout.clone(),
             call: *call,
             function_name: function_name.clone(),
             arguments: arguments
@@ -1041,17 +1050,25 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             label: label.clone(),
         },
         ProgramStatement::StepValue {
+            aggregate_layout,
             steps,
             expression,
             value_type,
             pointee_constant,
+            ..
         } => ProgramStatement::StepValue {
+            aggregate_layout: aggregate_layout.clone(),
             steps: steps.clone(),
             expression: s.program_expression(expression),
             value_type: *value_type,
             pointee_constant: *pointee_constant,
         },
-        ProgramStatement::LoopTest { condition } => ProgramStatement::LoopTest {
+        ProgramStatement::LoopTest {
+            aggregate_steps,
+            condition,
+            ..
+        } => ProgramStatement::LoopTest {
+            aggregate_steps: aggregate_steps.clone(),
             condition: s.program_expression(condition),
         },
         ProgramStatement::Seq(statements) => ProgramStatement::Seq(
@@ -2659,6 +2676,7 @@ fn collect_program_expression_bound_variables(
     match expression {
         ProgramExpression::Value(value) => collect_program_value_bound_variables(value, variables),
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
@@ -2673,7 +2691,8 @@ fn collect_program_expression_bound_variables(
             collect_program_expression_bound_variables(then_branch, variables);
             collect_program_expression_bound_variables(else_branch, variables);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..
@@ -2739,6 +2758,7 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
+            ..
         }
         | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bound_variables(expression, variables)
@@ -4725,6 +4745,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
     to: &MachineTerm,
 ) -> ProgramExpression {
     match expression {
+        ProgramExpression::StringLiteral(_) => expression.clone(),
         ProgramExpression::Value(value) => ProgramExpression::Value(
             substitute_bitvector_variable_in_program_value(value, from, to),
         ),
@@ -4780,6 +4801,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
             )),
             classification: *classification,
         },
+        ProgramExpression::Negate(expression) => ProgramExpression::Negate(Box::new(
+            substitute_bitvector_variable_in_program_expression(expression, from, to),
+        )),
         ProgramExpression::FloatNegate(expression) => ProgramExpression::FloatNegate(Box::new(
             substitute_bitvector_variable_in_program_expression(expression, from, to),
         )),
@@ -6795,6 +6819,7 @@ fn substitute_pointer_variable_in_program_expression(
             substitute_pointer_variable_in_program_value(value, from, to),
         ),
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => expression.clone(),
         ProgramExpression::Cast {
@@ -6844,6 +6869,9 @@ fn substitute_pointer_variable_in_program_expression(
             )),
             classification: *classification,
         },
+        ProgramExpression::Negate(expression) => ProgramExpression::Negate(Box::new(
+            substitute_pointer_variable_in_program_expression(expression, from, to),
+        )),
         ProgramExpression::FloatNegate(expression) => ProgramExpression::FloatNegate(Box::new(
             substitute_pointer_variable_in_program_expression(expression, from, to),
         )),
@@ -7374,6 +7402,9 @@ fn substitute_pointer_variable_in_spec_expression(
                 _ => unreachable!("the combined spec binary arm is exhaustive"),
             }
         }
+        SpecExpression::Negate(expression) => SpecExpression::Negate(Box::new(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        )),
         SpecExpression::BitwiseNot(expression) => SpecExpression::BitwiseNot(Box::new(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         )),

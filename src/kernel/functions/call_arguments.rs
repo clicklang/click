@@ -757,7 +757,7 @@ pub(super) fn append_string_literal_loadable_facts(
         _ => return,
     };
     for literal in function.string_literals() {
-        let base = Memory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
+        let base = Memory::string_literal_pointer(literal.identity(), literal.bytes());
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,

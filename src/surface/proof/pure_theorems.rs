@@ -2587,7 +2587,7 @@ fn certificate_int32_rewrites(
 /// `click expand` and `click profile` share, so a failure or a trace step
 /// names the tactic the user wrote. `first` is the occurrence of
 /// `tactics[0]`.
-fn claim_script_sites(
+pub(super) fn claim_script_sites(
     root: &Proof<'_>,
     tactics: &[ProofTactic],
     first: usize,

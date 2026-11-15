@@ -2136,6 +2136,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        if let Some(proof) = super::super::program_termination::try_closure(search_input)? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) =
             crate::kernel::search::ProofSearch::try_flat_solve_conjunction(search_input, &[])?
         {

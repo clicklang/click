@@ -888,6 +888,9 @@ fn contains_integer_expression_signal(
     locals: &BTreeSet<String>,
 ) -> bool {
     match expression {
+        ContractExpression::Apply { function, .. } => {
+            lambdas::application_result_type(function) == Ok(ClickType::Integer)
+        }
         ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
             arguments.len() == 2
         }
@@ -1840,6 +1843,42 @@ pub(super) fn infer_scoped_range_fold_bindings(
     } else {
         ClickType::Program(InterfaceType::Int32)
     };
+    if let Some(step) = lambdas::range_fold_step(expression) {
+        let actual = infer_scoped_spec_value_type(
+            step,
+            variables,
+            integer_bindings,
+            click_functions,
+            context,
+            false,
+        )?;
+        let expected = ClickType::Function {
+            parameters: vec![accumulator_type.clone(), item_type.clone()],
+            result: Box::new(accumulator_type.clone()),
+        };
+        if actual != SpecValueType::Function(expected.clone()) {
+            return Err(ClickError::new(format!(
+                "range fold step expects {}, got {} in {context}",
+                describe_click_type(&expected),
+                describe_spec_value_type(&actual),
+            )));
+        }
+        let initial_type = infer_scoped_spec_value_type(
+            initial,
+            variables,
+            integer_bindings,
+            click_functions,
+            context,
+            accumulator_type == ClickType::Integer,
+        )?;
+        if !spec_value_matches_click_type(&initial_type, &accumulator_type) {
+            return Err(ClickError::new(format!(
+                "range fold initial value expects {}, got {} in {context}",
+                describe_click_type(&accumulator_type),
+                describe_spec_value_type(&initial_type),
+            )));
+        }
+    }
     Ok((accumulator_type, item_type))
 }
 
@@ -1868,8 +1907,19 @@ fn infer_scoped_range_fold_type(
         context,
         expected_integer,
     )?;
-    let mut body_variables = variables.clone();
-    let mut body_integer_bindings = integer_bindings.clone();
+    let mut referenced = BTreeSet::new();
+    collect_contract_expression_referenced_names(body, &mut referenced);
+    let mut body_variables = BTreeMap::new();
+    let mut body_integer_bindings = BTreeSet::new();
+    for name in referenced {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(ty) = variables.get(&name) {
+            body_variables.insert(name.clone(), *ty);
+        }
+        if integer_bindings.contains(&name) {
+            body_integer_bindings.insert(name);
+        }
+    }
     for (name, ty) in [(accumulator, &accumulator_type), (item, &item_type)] {
         body_variables.remove(name);
         body_integer_bindings.remove(name);
@@ -2736,6 +2786,9 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::ApplyInductionUsing { .. }
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
+            | ProofTactic::CheckTerminationLocal(_)
+            | ProofTactic::CheckTerminationComponent { .. }
+            | ProofTactic::CheckTerminationCallbacks
             | ProofTactic::Known
             | ProofTactic::Extract(_)
             | ProofTactic::Normalize
@@ -2867,6 +2920,9 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::LetSatisfy(_) => "obtain",
         ProofTactic::Sorry => "sorry",
         ProofTactic::Choose(_) => "choose",
+        ProofTactic::CheckTerminationLocal(_) => "check_termination_local",
+        ProofTactic::CheckTerminationComponent { .. } => "check_termination_component",
+        ProofTactic::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofTactic::Known => "known",
         ProofTactic::Extract(_) => "extract",
         ProofTactic::Normalize => "normalize",
@@ -3773,11 +3829,13 @@ fn validate_pointer_cast_operands(
             }
             validate_pointer_cast_operands(operand, variables, context)
         }
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::StepResult { .. } => Ok(()),
-        ProgramExpression::FloatNegate(inner)
+        ProgramExpression::Negate(inner)
+        | ProgramExpression::FloatNegate(inner)
         | ProgramExpression::FloatClassification {
             expression: inner, ..
         }
@@ -3956,6 +4014,10 @@ pub(in crate::surface) fn infer_program_expression_type(
             Some(InterfaceType::Parameter(_))
         )
         .then_some(InterfaceType::Bool),
+        ProgramExpression::Negate(expression) => arithmetic_result_type(
+            Some(InterfaceType::Int32),
+            infer_program_expression_type(expression, variables),
+        ),
         ProgramExpression::FloatNegate(expression) => {
             infer_program_expression_type(expression, variables)
                 .filter(|interface_type| type_is_float(*interface_type))
@@ -3967,6 +4029,7 @@ pub(in crate::surface) fn infer_program_expression_type(
         .then_some(InterfaceType::Int32),
         ProgramExpression::AddressOf(_)
         | ProgramExpression::CheckedObjectAddress(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => None,
         ProgramExpression::PointerOffsetBytes { pointer, .. }

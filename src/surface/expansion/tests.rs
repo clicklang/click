@@ -3976,3 +3976,50 @@ fn common_machine_call_expansion_rechecks_selected_call_premises() {
         .is_err()
     );
 }
+
+#[test]
+#[ignore = "nightly: aggregate call and conditional results expand and independently recheck"]
+fn aggregate_step_result_fields_expand_and_recheck_without_generated_locals() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/aggregate_expression_results_are_named_by_their_source_steps.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c_sources(source, &sources).expect("aggregate result source proof");
+    for label in [
+        "call_field.contract",
+        "constant_conditional.contract",
+        "conditional_field.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &sources, label).expect(label);
+        assert!(!expanded.contains("__click_aggregate_result"), "{expanded}");
+        verify_c_sources(&expanded, &sources).expect("aggregate result expansion rechecks");
+    }
+    let changed = fixture
+        .c_sources
+        .iter()
+        .map(|(name, text)| {
+            (
+                name.clone(),
+                text.replace("return make(input).right;", "return make(input).left;"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(verify_c_sources(source, &crate::cli::source_refs(&changed)).is_err());
+}
+
+#[test]
+#[ignore = "nightly: source literal names expand and independently recheck"]
+fn string_literal_source_references_raise_expand_and_recheck() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/string_literal_source_reference.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c_sources(source, &sources).expect("source literal proof");
+    for label in ["text.ensures_0", "text.ensures_1", "first.contract"] {
+        let expanded = expand_c_claim_source_by_label(source, &sources, label).expect(label);
+        assert!(!expanded.contains("__click_string_literal"), "{expanded}");
+        verify_c_sources(&expanded, &sources).expect("literal source expansion");
+    }
+}

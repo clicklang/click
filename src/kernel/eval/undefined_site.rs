@@ -83,7 +83,7 @@ pub(super) fn statement_expressions<'a>(
         | ProgramStatement::Switch { expression, .. }
         | ProgramStatement::StepValue { expression, .. } => expressions.push((expression, false)),
         ProgramStatement::Assert { condition, .. }
-        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::If { condition, .. }
         | ProgramStatement::While { condition, .. } => expressions.push((condition, true)),
         ProgramStatement::CallConstruct { arguments, .. } => {
@@ -170,11 +170,13 @@ fn unconditional_operands<'a>(
     operands: &mut Vec<&'a ProgramExpression>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {

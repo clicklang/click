@@ -2167,6 +2167,7 @@ pub fn program_call_value(
     };
     (
         ProgramStatement::CallResult {
+            aggregate_layout: None,
             call,
             function_name,
             arguments,
@@ -2428,7 +2429,10 @@ pub fn program_copy_aggregate(
 /// Retire automatic storage at a source-language lifetime boundary. Frontends
 /// supply the objects whose lifetimes end; this grants no cleanup authority.
 pub fn program_end_automatic_lifetimes(names: Vec<String>) -> ProgramStatement {
-    ProgramStatement::EndAutomaticLifetimes { names }
+    ProgramStatement::EndAutomaticLifetimes {
+        names,
+        steps: Vec::new(),
+    }
 }
 
 pub fn program_initialize_scalar_array(
