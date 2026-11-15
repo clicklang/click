@@ -1,24 +1,16 @@
-# normalize does not scale terms
+# Normalization keeps symbolic products opaque
 
-`normalize` compares sums and differences after reordering and cancelling
-them, for C machine values and for exact `Integer` terms, but a product is
-one opaque operand. Proving `2 * to_integer(x) == to_integer(x) +
-to_integer(x)` needs distributivity, so `normalize` refuses it within its
-documented behavior; `solve() using {}` proves it.
-
-```c filename=normalize_does_not_scale_terms.c
-void unused(void) {}
-```
+Explicit Integer normalization distributes constant coefficients, but not a
+product of two symbolic operands. Such a product still needs its named law
+or arithmetic proof search.
 
 ```click
-verifying "normalize_does_not_scale_terms.c";
-
-theorem by_arithmetic(x: int32) {
-    ensures 2 * to_integer(x) == to_integer(x) + to_integer(x) by { solve() using {}; }
+theorem by_arithmetic(x: Integer, y: Integer, z: Integer) {
+    ensures (x + y) * z == x * z + y * z by { solve() using {}; }
 }
 
-theorem by_normalize(x: int32) {
-    ensures 2 * to_integer(x) == to_integer(x) + to_integer(x) by { normalize(); }
+theorem by_normalize(x: Integer, y: Integer, z: Integer) {
+    ensures (x + y) * z == x * z + y * z by { normalize(); }
 }
 ```
 

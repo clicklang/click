@@ -4974,3 +4974,31 @@ path = "reference/library/index.md#integeradd_le"
 [[item]]
 id = "library.theorem.integer::round_down_le"
 path = "reference/library/index.md#integerround_down_le"
+
+[[item]]
+id = "library.theorem.integer::le_antisymmetric"
+path = "reference/library/index.md#integerle_antisymmetric"
+
+[[item]]
+id = "library.theorem.integer::le_substitute"
+path = "reference/library/index.md#integerle_substitute"
+
+[[item]]
+id = "library.theorem.integer::equal_substitute"
+path = "reference/library/index.md#integerequal_substitute"
+
+[[item]]
+id = "library.theorem.integer::equal_difference"
+path = "reference/library/index.md#integerequal_difference"
+
+[[item]]
+id = "library.theorem.integer::equal_add"
+path = "reference/library/index.md#integerequal_add"
+
+[[item]]
+id = "library.theorem.integer::equal_multiply"
+path = "reference/library/index.md#integerequal_multiply"
+
+[[item]]
+id = "library.theorem.integer::equal_le"
+path = "reference/library/index.md#integerequal_le"

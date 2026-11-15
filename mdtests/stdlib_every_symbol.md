@@ -1960,6 +1960,51 @@ theorem check_integer_round_down_le(x: Integer) {
     }
 }
 
+
+theorem check_integer_le_antisymmetric(a: Integer, b: Integer) {
+    requires a <= b;
+    requires b <= a;
+    ensures a == b by {
+        apply(integer::le_antisymmetric(a, b)) using { a <= b; b <= a; };
+    }
+}
+
+
+theorem check_integer_le_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c == a;
+    requires d == b;
+    ensures c <= d by {
+        apply(integer::le_substitute(a, b, c, d)) using { a <= b; c == a; d == b; };
+    }
+}
+
+theorem check_integer_equal_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a == b;
+    requires c == a;
+    requires d == b;
+    ensures c == d by {
+        apply(integer::equal_substitute(a, b, c, d)) using { a == b; c == a; d == b; };
+    }
+}
+
+theorem check_integer_congruence(a: Integer, b: Integer, c: Integer, d: Integer, k: Integer) {
+    requires a == b;
+    requires c == d;
+    ensures a + c == b + d by {
+        apply(integer::equal_add(a, b, c, d)) using { a == b; c == d; };
+    }
+    ensures a * k == b * k by {
+        apply(integer::equal_multiply(a, b, k)) using { a == b; };
+    }
+    ensures a - b == 0 by {
+        apply(integer::equal_difference(a, b)) using { a == b; };
+    }
+    ensures a <= b by {
+        apply(integer::equal_le(a, b)) using { a == b; };
+    }
+}
+
 ```
 
 ```expect

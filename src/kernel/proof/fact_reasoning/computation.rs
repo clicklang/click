@@ -305,6 +305,141 @@ fn integer_product_identity(term: &IntegerTerm) -> Option<&SharedIntegerTerm> {
     }
 }
 
+/// Explicit `normalize` also distributes constant Integer coefficients.
+/// `known` continues to use `integer_affine_comparison`: adding this rule to
+/// explicit normalization does not expand its computational leaf. Calls,
+/// reads, folds, and products of two symbolic values remain opaque.
+pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<bool> {
+    use num_bigint::BigInt;
+    use num_traits::Zero;
+    use std::collections::{BTreeMap, HashMap, HashSet};
+    let (left, right) = match condition {
+        ConditionTerm::IntegerEqual(left, right)
+        | ConditionTerm::IntegerNotEqual(left, right)
+        | ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+        _ => return None,
+    };
+    let mut seen = HashSet::new();
+    let mut order = Vec::new();
+    let mut pending = vec![(left.clone(), false), (right.clone(), false)];
+    while let Some((term, expanded)) = pending.pop() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return None;
+        }
+        if expanded {
+            order.push(term);
+        } else if seen.insert(term.id()) {
+            pending.push((term.clone(), true));
+            match term.as_ref() {
+                IntegerTerm::Add(a, b)
+                | IntegerTerm::Subtract(a, b)
+                | IntegerTerm::Multiply(a, b) => {
+                    pending.push((b.clone(), false));
+                    pending.push((a.clone(), false));
+                }
+                IntegerTerm::Negate(a) => pending.push((a.clone(), false)),
+                _ => {}
+            }
+        }
+    }
+    // Evaluate constant coefficient DAGs once, independently of facts.
+    let mut constants: HashMap<u64, BigInt> = HashMap::new();
+    for term in &order {
+        let value = match term.as_ref() {
+            IntegerTerm::Constant(value) => Some(value.clone()),
+            IntegerTerm::Add(a, b) | IntegerTerm::Subtract(a, b) | IntegerTerm::Multiply(a, b) => {
+                match (constants.get(&a.id()), constants.get(&b.id())) {
+                    (Some(a), Some(b)) => {
+                        let bits = (a.bits() as usize + 1).saturating_mul(b.bits() as usize + 1);
+                        if crate::instrumentation::deadline_exceeded_with_work(bits) {
+                            return None;
+                        }
+                        Some(match term.as_ref() {
+                            IntegerTerm::Add(..) => a + b,
+                            IntegerTerm::Subtract(..) => a - b,
+                            _ => a * b,
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            IntegerTerm::Negate(a) => constants.get(&a.id()).map(|value| -value),
+            _ => None,
+        };
+        if let Some(value) = value {
+            constants.insert(term.id(), value);
+        }
+    }
+    let mut weights: HashMap<u64, BigInt> = HashMap::new();
+    *weights.entry(left.id()).or_default() += 1;
+    *weights.entry(right.id()).or_default() -= 1;
+    let mut atoms: BTreeMap<u64, BigInt> = BTreeMap::new();
+    let mut constant = BigInt::zero();
+    for term in order.iter().rev() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return None;
+        }
+        let Some(weight) = weights
+            .remove(&term.id())
+            .filter(|weight| !weight.is_zero())
+        else {
+            continue;
+        };
+        if let Some(value) = constants.get(&term.id()) {
+            if crate::instrumentation::deadline_exceeded_with_work(
+                (value.bits() as usize + 1).saturating_mul(weight.bits() as usize + 1),
+            ) {
+                return None;
+            }
+            constant += value * weight;
+            continue;
+        }
+        match term.as_ref() {
+            IntegerTerm::Add(a, b) => {
+                *weights.entry(a.id()).or_default() += &weight;
+                *weights.entry(b.id()).or_default() += weight;
+            }
+            IntegerTerm::Subtract(a, b) => {
+                *weights.entry(a.id()).or_default() += &weight;
+                *weights.entry(b.id()).or_default() -= weight;
+            }
+            IntegerTerm::Negate(a) => *weights.entry(a.id()).or_default() -= weight,
+            IntegerTerm::Multiply(a, b) => {
+                let scale = constants
+                    .get(&a.id())
+                    .map(|value| (value, b))
+                    .or_else(|| constants.get(&b.id()).map(|value| (value, a)));
+                if let Some((scale, value)) = scale {
+                    if crate::instrumentation::deadline_exceeded_with_work(
+                        (scale.bits() as usize + 1).saturating_mul(weight.bits() as usize + 1),
+                    ) {
+                        return None;
+                    }
+                    *weights.entry(value.id()).or_default() += weight * scale;
+                } else {
+                    *atoms.entry(term.id()).or_default() += weight;
+                }
+            }
+            _ => *atoms.entry(term.id()).or_default() += weight,
+        }
+    }
+    if atoms.values().any(|weight| !weight.is_zero()) {
+        return None;
+    }
+    let zero = BigInt::zero();
+    Some(match condition {
+        ConditionTerm::IntegerEqual(..) => constant == zero,
+        ConditionTerm::IntegerNotEqual(..) => constant != zero,
+        ConditionTerm::IntegerLessThan(..) => constant < zero,
+        ConditionTerm::IntegerLessEqual(..) => constant <= zero,
+        ConditionTerm::IntegerGreaterThan(..) => constant > zero,
+        _ => constant >= zero,
+    })
+}
+
 /// The affine form of `left - right`: each atom's coefficient and the
 /// constant. Interned terms share subterms, so a sum such as
 /// `a + a` over `a = b + b` reaches one node along many paths; coefficients
@@ -425,6 +560,56 @@ mod tests {
         );
         assert!(!computes_leaf(&goal));
     }
+    #[test]
+    fn integer_linear_normalization_matches_independent_bigint_evaluation() {
+        use num_bigint::BigInt;
+        fn evaluate(term: &IntegerTerm, x: &BigInt, y: &BigInt) -> BigInt {
+            match term {
+                IntegerTerm::Variable(variable) if *variable == Variable(0) => x.clone(),
+                IntegerTerm::Variable(variable) if *variable == Variable(1) => y.clone(),
+                IntegerTerm::Constant(value) => value.clone(),
+                IntegerTerm::Add(a, b) => evaluate(a, x, y) + evaluate(b, x, y),
+                IntegerTerm::Subtract(a, b) => evaluate(a, x, y) - evaluate(b, x, y),
+                IntegerTerm::Negate(a) => -evaluate(a, x, y),
+                IntegerTerm::Multiply(a, b) => evaluate(a, x, y) * evaluate(b, x, y),
+                _ => panic!("unexpected oracle term: {term:?}"),
+            }
+        }
+        let large: BigInt = (BigInt::from(1) << 160) + 1;
+        let mut samples: Vec<BigInt> = [-3, -1, 0, 1, 4].into_iter().map(BigInt::from).collect();
+        samples.extend([large.clone(), -large]);
+        for a in &samples {
+            for b in &samples {
+                let x = IntegerTerm::Variable(Variable(0));
+                let y = IntegerTerm::Variable(Variable(1));
+                let left = IntegerTerm::add(
+                    IntegerTerm::multiply(
+                        IntegerTerm::Constant(a.clone()),
+                        IntegerTerm::add(x.clone(), y.clone()),
+                    ),
+                    IntegerTerm::multiply(IntegerTerm::Constant(b.clone()), x.clone()),
+                );
+                let right = IntegerTerm::add(
+                    IntegerTerm::multiply(IntegerTerm::Constant(a + b), x),
+                    IntegerTerm::multiply(IntegerTerm::Constant(a.clone()), y),
+                );
+                let condition =
+                    ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into());
+                assert_eq!(integer_linear_comparison(&condition), Some(true));
+                for x in &samples {
+                    for y in &samples {
+                        assert_eq!(evaluate(&left, x, y), evaluate(&right, x, y));
+                    }
+                }
+                let wrong = ConditionTerm::IntegerEqual(
+                    left.into(),
+                    IntegerTerm::add(right, IntegerTerm::constant_i64(1)).into(),
+                );
+                assert_eq!(integer_linear_comparison(&wrong), Some(false));
+            }
+        }
+    }
+
     #[cfg(test)]
     mod scaling_tests {
         include!("../../../scaling_tests/kernel/proof/fact_reasoning/computation/tests.rs");

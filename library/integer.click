@@ -6,6 +6,49 @@ axiom add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
     ensures a + c <= b + d;
 }
 
+axiom le_antisymmetric(a: Integer, b: Integer) {
+    requires a <= b;
+    requires b <= a;
+    ensures a == b;
+}
+
+// Congruence helpers are ordinary proved theorems. Applying a generic
+// substitution theorem also works when a concrete equality evaluates to true.
+theorem le_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c == a;
+    requires d == b;
+    ensures c <= d by { normalize() using { a <= b; c == a; d == b; }; }
+}
+
+theorem equal_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a == b;
+    requires c == a;
+    requires d == b;
+    ensures c == d by { normalize() using { a == b; c == a; d == b; }; }
+}
+
+theorem equal_difference(a: Integer, b: Integer) {
+    requires a == b;
+    ensures a - b == 0 by { rewrite(a == b); normalize(); }
+}
+
+theorem equal_add(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a == b;
+    requires c == d;
+    ensures a + c == b + d by { normalize() using { a == b; c == d; }; }
+}
+
+theorem equal_multiply(a: Integer, b: Integer, factor: Integer) {
+    requires a == b;
+    ensures a * factor == b * factor by { normalize() using { a == b; }; }
+}
+
+theorem equal_le(a: Integer, b: Integer) {
+    requires a == b;
+    ensures a <= b by { rewrite(a == b); normalize(); }
+}
+
 // No nonnegativity assumption on the remainder is needed for this upper
 // bound. The strict upper bound and positive divisor are both essential.
 axiom round_down_le(value: Integer, bound: Integer, divisor: Integer, remainder: Integer) {

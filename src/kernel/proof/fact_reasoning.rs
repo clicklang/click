@@ -59,6 +59,11 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     {
         return holds == *value;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && let Some(holds) = computation::integer_linear_comparison(condition)
+    {
+        return holds == *value;
+    }
     // Constructor congruence is definitional reduction over the goal's own
     // structure: two applications of one constructor are equal when their
     // corresponding fields are. The walk is bounded by the goal.

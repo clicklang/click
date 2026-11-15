@@ -1671,7 +1671,7 @@ or quantifier, when evaluation makes it true:
   `x + y - y == x`, and `x - x == 0` are true, and `x + 1 != x` is true, for
   `int32`, `uint32`, `int64`, and `uint64` alike.
 - A comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) between sums, differences,
-  and negations of exact `Integer` terms compares their affine forms over the
+  negations, and constant-coefficient products of exact `Integer` terms compares their affine forms over the
   integers, with no modulus: when every term cancels, the constant difference
   decides it. `1 + to_integer(x) == to_integer(x) + 1`,
   `to_integer(x) - to_integer(x) == 0`, `a + b == b + a` for `Integer`
@@ -1679,9 +1679,14 @@ or quantifier, when evaluation makes it true:
   `to_integer(x) + 1 > to_integer(x)` are true. C machine order claims are not
   compared this way, since `x + 1 > x` is false at a type's maximum.
 
-In both affine comparisons a term that is not a sum, difference, negation, or
-constant, such as a product or a call, is one opaque operand, compared as a
-whole.
+For explicit Integer normalization, `2 * x == x + x`,
+`3 * (x - y) == 3 * x - 3 * y`, and `(2 + 3) * x == 5 * x` also hold.
+Only constant coefficients distribute; a product of two symbolic terms, a
+call, a read, or a fold remains an opaque operand. The checker visits shared
+arithmetic nodes once and reads no facts. The computational `known()` leaf
+retains its narrower sum/difference rules. C machine multiplication also
+remains opaque; these exact Integer identities introduce no machine overflow
+or definedness facts.
 
 **Outside it**, with what to write instead:
 
@@ -1690,8 +1695,8 @@ whole.
 - A goal that needs a fact, including a premise of the theorem: use
   `normalize() using { P; ... }`, `rewrite`, or `known()`.
 - A pure function call: `unfold` it first; `normalize` leaves calls symbolic.
-- Scaling or distributing, such as `2 * x == x + x`; an order claim between
-  C machine sums, such as `x + 1 > x`; or an `Integer` order claim whose terms
+- Distributing a symbolic product, such as `(x + y) * z == x * z + y * z`;
+  an order claim between C machine sums, such as `x + 1 > x`; or an `Integer` order claim whose terms
   do not cancel, such as `to_integer(x) < to_integer(x) + to_integer(y)`: use
   `solve() using { ... }` or an arithmetic certificate.
 
@@ -1702,7 +1707,7 @@ leaf check; expansion is unchanged, and profiling charges the normalized
 expression. Smart tactics retain the corresponding `both`, disjunct proof and
 `known()`, or `intro` proof.
 
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md), [`normalize_compares_integer_sums_exactly.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_integer_sums_exactly.md), [`normalize_does_not_scale_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_scale_terms.md)
+**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md), [`normalize_compares_integer_sums_exactly.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_integer_sums_exactly.md), [`normalize_scales_integer_coefficients.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_scales_integer_coefficients.md), [`normalize_does_not_scale_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_scale_terms.md)
 
 ### Normalization with selected premises
 
@@ -2110,13 +2115,17 @@ have named laws, applied with explicit `using` premises:
 | Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
 | Round an Integer upper bound | `integer::round_down_le(value, bound, divisor, remainder)` |
 
-`solve() using` expands a direct sum of two selected non-strict Integer bounds
-to `apply(integer::add_le(...)) using { ... }`. Other arithmetic still uses
-the certificate forms below. The [library reference](../library/index.md#foundational-integer-order-axioms)
-states the laws' exact guards. General affine composition, equality and
-refutation plans, signed interval proofs, and specialized cast, pointer and
-floating rules remain to migrate; their replacement is not implicit in `apply`.
+Integer composition plans expand their premise, addition, scaling, and
+equality-direction nodes into ordinary `have`, `apply(...) using`, `rewrite`,
+and explicit `normalize()` steps. Each intermediate fact is established once;
+later nodes reuse it. Context-free identities relate the plan's flat affine
+forms to the written operands, so expansion does not re-enter arithmetic
+search. Integer antisymmetry uses `integer::le_antisymmetric`.
 
+Strictness, refutation, ranges, rounding, native-machine bridges, signed
+intervals, and specialized rules still use the certificate forms below when
+their rules are needed. The [library reference](../library/index.md#foundational-integer-order-axioms)
+states the named laws' exact guards.
 
 **Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
 
