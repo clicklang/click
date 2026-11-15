@@ -1641,12 +1641,9 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         expanded.contains("extract(at(loop(0).exit, i) <= at(loop(0).exit, n));"),
         "{expanded}"
     );
+    assert!(expanded.contains("not at(loop(0).exit, i) <"), "{expanded}");
     assert!(
-        expanded.contains("premise 1: not at(loop(0).exit, i) <"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("equal_from_bounds 0, 1 => result == n;"),
+        expanded.contains("click::integer::le_antisymmetric"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {

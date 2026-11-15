@@ -2441,8 +2441,8 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
         expand_checked_function_claim(source, &verified_for_label, "fixed_c_params.bounded")
             .expect("fixed execution scaled lower bound should expand");
     assert!(
-        expanded.contains("arithmetic_certificate"),
-        "scaled lower bound expansion should contain its checked certificate: {expanded}"
+        expanded.contains("click::integer::add_le"),
+        "scaled lower bound expansion should contain ordinary composition: {expanded}"
     );
     verify_c_sources(&expanded, &c_sources)
         .expect("expanded fixed execution scaled lower bound should recheck");

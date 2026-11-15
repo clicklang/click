@@ -748,6 +748,66 @@ axiom le_antisymmetric(a: Integer, b: Integer) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `integer::lt_step_le`
+
+```click
+axiom lt_step_le(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a + 1 <= b;
+}
+```
+
+**Kind:** axiom. Integer discreteness turns a strict bound into its successor bound.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::step_le_lt`
+
+```click
+theorem step_le_lt(a: Integer, b: Integer) {
+    requires a + 1 <= b;
+    ensures a < b by {
+        if a < b {
+            known();
+        } else {
+            have b <= a by { normalize() using { not (a < b); }; }
+            have a + 1 + b <= b + a by {
+                apply(integer::add_le(a + 1, b, b, a)) using { a + 1 <= b; b <= a; };
+            }
+            contradiction(a + 1 + b <= b + a);
+        }
+    }
+}
+```
+
+**Kind:** proved theorem. The successor bound implies strict order.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::le_ne_lt`
+
+```click
+theorem le_ne_lt(a: Integer, b: Integer) {
+    requires a <= b;
+    requires a != b;
+    ensures a < b by {
+        if a < b {
+            known();
+        } else {
+            have b <= a by { normalize() using { not (a < b); }; }
+            have a == b by {
+                apply(integer::le_antisymmetric(a, b)) using { a <= b; b <= a; };
+            }
+            contradiction(a == b);
+        }
+    }
+}
+```
+
+**Kind:** proved theorem. A non-strict bound and disequality imply strict order.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `integer::le_substitute`
 
 ```click
@@ -779,6 +839,48 @@ theorem equal_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
 **Kind:** proved theorem. These congruence and substitution laws keep affine
 composition explicit, including applications whose concrete equality guards
 evaluate to `true`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::le_difference`
+
+```click
+theorem le_difference(a:Integer,b:Integer,value:Integer) {
+ requires a<=b;
+ requires value==a-b;
+ ensures value<=0 by {
+  have a + -b <= b + -b by {
+   apply(click::integer::add_le(a,b,-b,-b)) using {a<=b;-b<=-b;};
+  }
+  have value == a + -b by { rewrite(value,a-b); normalize(); }
+  have 0 == b + -b by normalize();
+  apply(click::integer::le_substitute(a + -b,b + -b,value,0)) using {a + -b <= b + -b; value==a + -b;0==b + -b;};
+ }
+}
+```
+
+**Kind:** proved theorem.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::difference_le`
+
+```click
+theorem difference_le(a:Integer,b:Integer,value:Integer) {
+ requires value<=0;
+ requires value==a-b;
+ ensures a<=b by {
+  have value + b <= 0 + b by {
+   apply(click::integer::add_le(value,0,b,b)) using {value<=0;b<=b;};
+  }
+  have a == value + b by { rewrite(value,a-b); normalize(); }
+  have b == 0 + b by normalize();
+  apply(click::integer::le_substitute(value+b,0+b,a,b)) using {value+b<=0+b;a==value+b;b==0+b;};
+ }
+}
+```
+
+**Kind:** proved theorem.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 

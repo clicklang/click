@@ -262,3 +262,5 @@ fn integer_coefficient_normalization_visits_shared_nodes_once() {
         "coefficient normalization expanded shared paths: {costs:?}"
     );
 }
+
+include!("intrinsic_normalization_tests.rs");

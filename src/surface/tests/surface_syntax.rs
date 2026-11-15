@@ -2125,7 +2125,8 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("the chain proof should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("click::integer::"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using { a <= b; b < c; c <= d; d <= e; }\n            }",
         &expanded,
@@ -2324,10 +2325,9 @@ fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
     "#;
 
     let verified = verify_click_theorems(source).expect("solve theorem should verify");
-    assert!(matches!(
-        verified[0].proof_tactics().as_deref(),
-        Some([ProofTactic::ArithmeticCertificate(_)])
-    ));
+    let expanded = verified[0].expanded_proof_source().unwrap();
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("click::integer::"), "{expanded}");
 }
 
 #[test]

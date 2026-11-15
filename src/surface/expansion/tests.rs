@@ -2269,13 +2269,13 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
         .expect("the uint64 arithmetic step expands");
     for step in [
         "have to_integer((i + 1u64)) < to_integer(length) by {\n            known();",
-        "type_range => 0 <= to_integer(i);",
-        "integer_operation_identity bounds [0, 1] => to_integer((i + 2u64)) ==",
-        "arithmetic_certificate {",
+        "have 0 <= to_integer(i) by {\n            normalize();",
+        "have to_integer((i + 2u64)) ==",
+        "normalize() using {",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(!expanded.contains("apply("), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
@@ -2369,12 +2369,12 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
         .expect("the int64 arithmetic step expands");
     for step in [
         "have (to_integer(i) + 1) <= 9223372036854775807 by {",
-        "integer_operation_identity bounds [0, 1] => to_integer((i + 2i64)) ==",
-        "premise 2: to_integer((i + 1i64)) < to_integer(length)",
+        "have to_integer((i + 2i64)) ==",
+        "to_integer((i + 1i64)) < to_integer(length)",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(!expanded.contains("apply("), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without an upper bound on `i`, `i + 1` may overflow above. (A lower

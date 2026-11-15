@@ -1710,6 +1710,13 @@ leaf check; expansion is unchanged, and profiling charges the normalized
 expression. Smart tactics retain the corresponding `both`, disjunct proof and
 `known()`, or `intro` proof.
 
+Intrinsic Integer bounds on a machine quotient, right shift, or remainder
+by a positive constant also normalize without facts, in the bound's written
+shape: `c * to_integer(x / c) <= to_integer(x)` for unsigned division, its
+upper bound with slack `c - 1`, and the corresponding signed slack bounds.
+The divisor and shift count retain the native operation's type and domain.
+No operand history or ambient facts are read.
+
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md), [`normalize_compares_integer_sums_exactly.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_integer_sums_exactly.md), [`normalize_scales_integer_coefficients.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_scales_integer_coefficients.md), [`normalize_does_not_scale_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_scale_terms.md)
 
 ### Normalization with selected premises
@@ -1721,6 +1728,17 @@ explicit proof that must evaluate a goal under named conditions without search.
 It decides conditions in the goal from the cited premises and the equality
 graph, then applies `normalize()`'s check (see
 [Context-free normalization](#context-free-normalization)) to the result.
+
+An in-range operation or cast identity also accepts exactly two ordered
+Integer bounds on its exact result: the lower bound, then the upper bound.
+Both must lie within the operation or destination format. A bound on one
+Integer product accepts exactly four bounds, the lower and upper range of
+the left operand, then those of the right operand; all four corner products
+must imply the stated bound. These are fixed intrinsic checks over the
+written goal and citations. They do not plan arithmetic or construct an
+arithmetic certificate. See
+[`integer_machine_bridge_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_machine_bridge_normalization.md)
+and its wrapping and false-corner refusal controls.
 
 **Accepts** a goal that `normalize()` accepts after this reduction, when every
 cited premise is accepted:
@@ -2116,6 +2134,10 @@ have named laws, applied with explicit `using` premises:
 | --- | --- |
 | Add two non-strict Integer bounds | `integer::add_le(a, b, c, d)` |
 | Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
+| Turn strict order into a successor bound | `integer::lt_step_le(a, b)` |
+| Restore strict order from a successor bound | `integer::step_le_lt(a, b)` |
+| Combine non-strict order with disequality | `integer::le_ne_lt(a, b)` |
+| Move an order to or from a difference | `integer::le_difference(a, b, value)`, `integer::difference_le(a, b, value)` |
 | Round an Integer upper bound | `integer::round_down_le(value, bound, divisor, remainder)` |
 
 Integer composition plans expand their premise, addition, scaling, and
@@ -2125,9 +2147,14 @@ later nodes reuse it. Context-free identities relate the plan's flat affine
 forms to the written operands, so expansion does not re-enter arithmetic
 search. Integer antisymmetry uses `integer::le_antisymmetric`.
 
-Strictness, refutation, ranges, rounding, native-machine bridges, signed
-intervals, and specialized rules still use the certificate forms below when
-their rules are needed. The [library reference](../library/index.md#foundational-integer-order-axioms)
+Strict Integer premises and goals use the successor-order law. Linear
+refutations that use the negated goal once become direct compositions;
+other refutations open a negated-goal scope with `intro` and close its contradiction. Type
+ranges normalize directly, as do constant-divisor quotient, shift, and
+remainder bounds. Rounding and endpoint exclusions use ordinary Integer laws.
+Machine operation and cast identities normalize from their explicit Integer
+bounds. Signed intervals and the other specialized rules still use the
+certificate forms below when needed. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
 
 **Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
