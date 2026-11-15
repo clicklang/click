@@ -626,16 +626,33 @@ function captured(offset: Integer) -> Integer {
 
 Lambdas support `Integer`, `Bool`, 8–64 bit integers, and
 floating-point scalar parameters and results. The result type checks the body even when the lambda
-is unused. Lambdas may capture pure values and other local lambdas; they may
-call named specification functions classified as independent of C memory.
-Memory reads, resource observations, and snapshot selectors inside lambda
-bodies are refused. Function-valued declaration parameters and results,
+is unused. Lambdas may capture values (including pointers) and other local
+lambdas, read memory, and call memory-reading specification functions.
+Capturing a pointer captures its value, not a memory snapshot. Reads and
+current-state observations in the body use the state selected at application;
+applications retain the existing read-permission and definedness obligations,
+including beneath range-membership guards. Constructing an unused lambda
+requires no read permission. `old` and `at` inside lambda bodies are refused;
+select a snapshot around the application instead, as `old(read(0))`. A value
+loaded before construction can be captured separately. Capturing a pointer
+grants no memory permission: proving `defined(read(i))` still requires a
+view covering the selected cell.
+
+Function-valued declaration parameters and results,
 function equality and algebraic lambda parameters/results are not supported
 yet. A lambda may also return `Prop`, as described below. `.fold`, `.all`,
 and `.any` accept lambda values.
 
 Applications elaborate to typed lexical value bindings, using existing kernel
 terms. They introduce no higher-order proof search or automatic extensionality.
+
+<!-- verified-example: mdtests/memory_reading_lambdas.md -->
+```click
+function typed_sum(p: int32*, lo: int32, hi: int32) -> Integer {
+    let add = |acc: Integer, i: int32| -> Integer { acc + to_integer(p[i]) };
+    (lo..hi).fold(0, add)
+}
+```
 
 ### Proposition-valued lambdas
 
@@ -660,10 +677,8 @@ can name that value or a proposition application. Lambda arguments remain
 scalar or `Integer` values: proposition and function parameters, and opaque
 function-valued declaration interfaces, are not supported yet. Named
 propositions still use `predicate`; `function ... -> Prop` is not introduced.
-A `Prop`
-lambda has the same restrictions on memory reads, resource observations,
-and snapshot selectors as other typed lambdas. Named predicates with a
-memory-dependent or unclassified body are not accepted inside it.
+A `Prop` lambda uses the same application-state reads and body snapshot
+restriction as scalar-valued lambdas; it may call named predicates.
 
 ## Ranges and binders
 
@@ -730,9 +745,9 @@ explicit lambda call, and fold laws and machine arithmetic guards are unchanged.
 
 The unannotated shorthand `.fold(initial, |acc, k| { body })` remains
 supported and infers its carriers from the range, initial value, and body.
-It retains support for guarded memory reads. A standalone typed lambda used
-as a step has the current specification-lambda restrictions, including no
-memory reads in its body; capture a read value before constructing it.
+Both shorthand and typed steps support guarded memory reads. Their read
+permissions and definedness obligations are checked under the same range
+guards.
 
 Quantifiers use an explicitly typed binder:
 

@@ -3,6 +3,17 @@
 //! binding and capture avoidance without adding higher-order kernel search.
 use super::*;
 
+/// Snapshot selection belongs around application, not inside its delayed body.
+/// Check source literals too, since declaration aliases may be unused.
+pub(super) fn validate_body_state(body: &ContractExpression) -> Result<(), ClickError> {
+    if contains_old_expression(body) || contains_at_expression(body) {
+        return Err(ClickError::new(
+            "specification lambda bodies cannot select snapshots with old or at; select the state at application instead",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn signature(parameters: &[(String, ClickType)], result: &ClickType) -> ClickType {
     ClickType::Function {
         parameters: parameters.iter().map(|(_, ty)| ty.clone()).collect(),
@@ -337,7 +348,6 @@ mod tests {
             "theorem bad() { ensures (0..3).all(|x: int32, y: int32| -> Prop { x == y }) by solve(); }",
             "theorem bad() { ensures (|| -> Prop { true })() == true by solve(); }",
             "function bad() -> int32 { let unused = |x: int32| -> Prop { x + true == 0 }; 0 }",
-            "function bad(p: int32*) -> int32 { let unused = |x: int32| -> Prop { p[x] == 0 }; 0 }",
         ] {
             if parser::parse(source).is_ok() {
                 accepted.push(source);
@@ -383,6 +393,14 @@ mod tests {
             ),
             (
                 "theorem test(lo: int32, hi: int32) { let p = |x: int32| -> Prop { x == lo }; requires lo < hi; ensures (lo..hi).any(p) by { witness { item: lo }; solve(); } }",
+                "by { witness { item: lo }; solve(); }",
+            ),
+            (
+                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires viewable(p[lo..hi]); requires (lo..hi).all(|i| { p[i] == 0 }); ensures (lo..hi).all(zero) by { intro() as k; intro(); solve(); } }",
+                "by { intro() as k; intro(); solve(); }",
+            ),
+            (
+                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires lo < hi; requires viewable(p[lo..hi]); requires p[lo] == 0; ensures (lo..hi).any(zero) by { witness { item: lo }; solve(); } }",
                 "by { witness { item: lo }; solve(); }",
             ),
         ];
@@ -556,15 +574,19 @@ mod tests {
     }
 
     #[test]
-    fn typed_lambdas_reject_memory_reads_even_when_unused() {
-        let source =
-            "function test(p: int32*) -> int32 { let f = |x: int32| -> int32 { p[x] }; 0 }";
-        let error = parser::parse(source)
-            .expect_err("memory reads require an explicit future lambda contract");
+    fn typed_lambdas_type_reads_without_requiring_construction_permissions() {
+        for body in ["p[x]", "read(p)"] {
+            let source = format!(
+                "function read(p: int32*) -> int32 {{ p[0] }} function test(p: int32*) -> int32 {{ let unused = |x: int32| -> int32 {{ {body} }}; 0 }}"
+            );
+            parser::parse(&source).unwrap_or_else(|error| panic!("{source}: {}", error.report()));
+        }
+        parser::parse("function test(p: int32*) -> int32 { let unused = |x: int32| -> Prop { p[x] == 0 }; 0 }").unwrap();
         assert!(
-            error.message().contains("lambdas cannot read memory"),
-            "{}",
-            error.message()
+            parser::parse(
+                "function test(p: int32*) -> int32 { let unused = |x: int32| -> Bool { p[x] }; 0 }"
+            )
+            .is_err()
         );
     }
 
@@ -615,14 +637,86 @@ mod tests {
     }
 
     #[test]
-    fn typed_lambdas_reject_indirect_memory_reads() {
-        let source = "function read(p: int32*) -> int32 { p[0] } function test(p: int32*) -> int32 { let f = |x: int32| -> int32 { read(p) }; 0 }";
-        let error = parser::parse(source).expect_err("memory dependence follows named calls");
-        assert!(
-            error.message().contains("memory-dependent function `read`"),
-            "{}",
-            error.message()
-        );
+    fn typed_lambdas_refuse_snapshot_selectors_even_when_unused() {
+        for body in ["old(p[x])", "at(function.entry, p[x])"] {
+            let source = format!(
+                "theorem test(p: int32*) {{ let unused = |x: int32| -> int32 {{ {body} }}; ensures true by solve(); }}"
+            );
+            let error = parser::parse(&source)
+                .expect_err("body snapshot selection remains explicit at application");
+            assert!(
+                error
+                    .message()
+                    .contains("lambda bodies cannot select snapshots"),
+                "{}",
+                error.report()
+            );
+        }
+        let source = "theorem test(p: int32*) { let unused = |x: int32| -> Prop { at(function.entry, p[x] == 0) }; ensures true by solve(); }";
+        assert!(parser::parse(source).is_err());
+    }
+
+    #[test]
+    fn memory_lambda_application_checks_permissions_and_definedness() {
+        for (requires, body) in [
+            ("", "p[i]"),
+            ("requires viewable(p[0..1]);", "p[i + 2147483647]"),
+        ] {
+            let source = format!(
+                "theorem test(p: int32*) {{ {requires} let read = |i: int32| -> int32 {{ {body} }}; ensures defined(read(1)) by solve(); }}"
+            );
+            parser::parse(&source).unwrap();
+            let error = verify_click_theorems(&source).expect_err("application owes read validity");
+            assert_eq!(error.kind(), ClickErrorKind::Proof, "{}", error.report());
+        }
+        verify_click_theorems("theorem test(p: int32*) { let read = |i: int32| -> int32 { p[i] }; requires defined(p[1]); ensures defined(read(1)) by solve(); }").unwrap();
+        verify_click_theorems("theorem test(p: int32*) { let read = |i: int32| -> Integer { to_integer(p[i]) }; requires defined(p[1]); ensures read(1) == to_integer(p[1]) by solve(); }").unwrap();
+        let c = [("nothing.c", "void test(int32* p) {}")];
+        let source = "verifying \"nothing.c\"; void test(int32* p) { let read = |i: int32| -> int32 { p[i] }; views p[0..1]; ensures defined(read(0)); }";
+        verify_c_sources(source, &c).unwrap();
+        assert!(verify_c_sources(&source.replace("views p[0..1];", ""), &c).is_err());
+        let source = "theorem test(p: int32*) { let unused = |i: int32| -> int32 { p[i] }; ensures true by solve(); }";
+        verify_click_theorems(source).unwrap();
+    }
+
+    #[test]
+    fn unused_declaration_memory_lambdas_are_still_typed() {
+        for prefix in ["theorem test(p: int32*)", "int32 test(int32* p)"] {
+            let source =
+                format!("{prefix} {{ let unused = |i: int32| -> Bool {{ p[i] }}; ensures true; }}");
+            let error = parser::parse(&source)
+                .expect_err("unused declarations retain lambda result checks");
+            assert!(
+                error.message().contains("lambda result expects"),
+                "{}",
+                error.report()
+            );
+        }
+        let source = "theorem test(p: int32*) { let n: Integer = 1; let unused = |i: int32| -> Integer { n + to_integer(p[i]) }; ensures true by solve(); }";
+        verify_click_theorems(source).unwrap();
+    }
+
+    #[test]
+    fn memory_lambda_store_proofs_expand_and_recheck() {
+        let c = [("write.c", "void write(int32* p) { p[0] = 5; }")];
+        for body in ["p[i] == 5", "to_integer(p[i]) == 5"] {
+            let source = format!(
+                "verifying \"write.c\"; void write(int32* p) {{ let read = |i: int32| -> Prop {{ {body} }}; owns p[0..1]; requires p[0] == 0; ensures read(0); }} by {{ step_until(function.exit); solve(); }}"
+            );
+            let verified = verify_c_sources(&source, &c)
+                .unwrap_or_else(|error| panic!("{source}: {}", error.report()));
+            let expanded = verified[0].expanded_proof_source().unwrap();
+            assert!(!expanded.contains("solve("), "{expanded}");
+            verify_c_sources(
+                &source.replace("by { step_until(function.exit); solve(); }", &expanded),
+                &c,
+            )
+            .unwrap_or_else(|error| panic!("{expanded}: {}", error.report()));
+            assert!(
+                verify_c_sources(&source.replace("== 5", "== 0"), &c).is_err(),
+                "a store must invalidate the old value"
+            );
+        }
     }
 
     #[test]

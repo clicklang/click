@@ -223,3 +223,83 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
         }
     }
 }
+
+#[test]
+fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
+    let template = parser::parse("theorem test() { ensures true; }").unwrap();
+    let mut baseline = Vec::new();
+    for unrelated in [0, 64, 256, 1024] {
+        let mut costs = Vec::new();
+        for size in [8, 16, 32, 64] {
+            let mut variables = BTreeMap::new();
+            let mut integers = BTreeSet::new();
+            for index in 0..unrelated {
+                variables.insert(format!("unused{index}"), InterfaceType::Int32);
+                integers.insert(format!("unused_integer{index}"));
+            }
+            let mut level = (0..size)
+                .map(|index| {
+                    let name = format!("capture{index}");
+                    variables.insert(name.clone(), InterfaceType::Int32Pointer);
+                    ContractExpression::Index(
+                        Box::new(ContractExpression::Binding(name)),
+                        Box::new(ContractExpression::Binding("x".into())),
+                    )
+                })
+                .collect::<Vec<_>>();
+            while level.len() > 1 {
+                level = level
+                    .chunks_exact(2)
+                    .map(|pair| {
+                        ContractExpression::Add(
+                            Box::new(pair[0].clone()),
+                            Box::new(pair[1].clone()),
+                        )
+                    })
+                    .collect();
+            }
+            let expression = ContractExpression::Lambda {
+                parameters: vec![("x".into(), ClickType::Program(InterfaceType::Int32))],
+                result: ClickType::Program(InterfaceType::Int32),
+                body: Box::new(level.pop().unwrap()),
+            };
+            let mut clause = template.theorem_definitions()[0].ensures()[0].clone();
+            clause.proof_bindings = vec![("unused".into(), None, expression.clone())];
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let result = infer_scoped_spec_value_type(
+                    &expression,
+                    &variables,
+                    &integers,
+                    &BTreeMap::new(),
+                    "lambda scaling",
+                    false,
+                )?;
+                validate_declaration_lambda_bindings(
+                    &[clause],
+                    &variables,
+                    &integers,
+                    &BTreeMap::new(),
+                    "declaration scaling",
+                )?;
+                Ok::<_, ClickError>(result)
+            });
+            assert!(matches!(result.unwrap(), SpecValueType::Function(_)));
+            assert!(work > 0);
+            costs.push(work);
+        }
+        for pair in costs.windows(2) {
+            assert!(
+                pair[1] <= 3 * pair[0],
+                "lambda body work must remain near-linear: {costs:?}"
+            );
+        }
+        if unrelated == 0 {
+            baseline = costs;
+        } else {
+            assert_eq!(
+                costs, baseline,
+                "lambda typing must not scan unrelated bindings"
+            );
+        }
+    }
+}

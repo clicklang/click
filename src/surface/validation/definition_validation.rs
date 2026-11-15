@@ -62,7 +62,6 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         );
     }
 
-    let memory_independent = memory_independent_click_functions(&click_function_definitions);
     let mut click_function_types = BTreeMap::new();
     for definition in &click_function_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
@@ -82,7 +81,6 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 type_parameters: definition.type_parameters().to_vec(),
                 parameters: definition.parameters().to_vec(),
                 return_type: definition.return_type_with_object_class(),
-                memory_independent: memory_independent.contains(definition.name()),
             },
         );
     }
@@ -322,6 +320,13 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             function_signature_type_environment(function.signature(), false);
         let ensures_type_environment =
             function_signature_type_environment(function.signature(), true);
+        validate_declaration_lambda_bindings(
+            function.ensures(),
+            &requires_type_environment,
+            &BTreeSet::new(),
+            &click_function_types,
+            &format!("declaration bindings in `{}`", function.signature().name()),
+        )?;
 
         reject_duplicate_owned_declared_resource_clauses(
             function
@@ -1014,6 +1019,18 @@ fn validate_theorem_definition(
     }
 
     let variables = theorem_type_environment(theorem);
+    validate_declaration_lambda_bindings(
+        theorem.ensures(),
+        &variables,
+        &theorem
+            .parameters()
+            .iter()
+            .filter(|parameter| matches!(parameter.click_type(), ClickType::Integer))
+            .map(|parameter| parameter.name().to_string())
+            .collect(),
+        click_function_types,
+        &format!("declaration bindings in theorem `{}`", theorem.name()),
+    )?;
     for requirement in theorem.requires() {
         let Some(proposition) = requirement.theorem_proposition() else {
             return Err(ClickError::new(theorem_resource_clause_refusal(

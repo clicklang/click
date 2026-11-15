@@ -1525,8 +1525,11 @@ pub(super) fn infer_scoped_spec_value_type(
             value,
             body,
         } => {
-            let value_expected_integer =
-                expected_integer || matches!(click_type, Some(ClickType::Integer));
+            let value_expected_integer = match click_type {
+                Some(ClickType::Integer) => true,
+                Some(_) => false,
+                None => expected_integer,
+            };
             let mut value_type = infer_scoped_spec_value_type(
                 value,
                 variables,
@@ -5197,9 +5200,50 @@ fn validate_value_proposition_calls(
     }
 }
 
+/// Retained declaration aliases must be typed even when no clause uses them.
+/// Check their lexical value expression once, rather than once per clause.
+pub(super) fn validate_declaration_lambda_bindings(
+    ensures: &[EnsureClause],
+    variables: &BTreeMap<String, InterfaceType>,
+    integer_bindings: &BTreeSet<String>,
+    functions: &BTreeMap<String, ClickFunctionType>,
+    context: &str,
+) -> Result<(), ClickError> {
+    let Some(last) = ensures.last() else {
+        return Ok(());
+    };
+    // Contract lets accumulate in source order; the last clause retains all
+    // earlier aliases. Non-lambda declarations keep their existing checking.
+    if !last
+        .proof_bindings
+        .iter()
+        .any(|(_, _, value)| contains_scoped_expression_shape(value, ScopedExpressionShape::Lambda))
+    {
+        return Ok(());
+    }
+    let mut expression = ContractExpression::IntegerLiteral("0".into());
+    for (name, click_type, value) in last.proof_bindings.iter().rev() {
+        expression = ContractExpression::Let {
+            name: name.clone(),
+            click_type: click_type.clone(),
+            value: Box::new(value.clone()),
+            body: Box::new(expression),
+        };
+    }
+    infer_scoped_spec_value_type(
+        &expression,
+        variables,
+        integer_bindings,
+        functions,
+        context,
+        false,
+    )?;
+    Ok(())
+}
+
 /// Check a lambda using only names mentioned by its body, never copying an
-/// unrelated ambient typing environment. Memory-dependent functions await
-/// an explicit account of guards and snapshots.
+/// unrelated ambient typing environment. Reads are typed here; application
+/// lowering checks their guards in the selected program state.
 fn validate_lambda_value(
     parameters: &[(String, ClickType)],
     result: &ClickType,
@@ -5222,24 +5266,7 @@ fn validate_lambda_value(
             "lambda parameters and results currently require Integer or C scalar types",
         ));
     }
-    let mut callees = Vec::new();
-    if contract_expression_reads_memory(body, &mut callees) {
-        return Err(ClickError::new(
-            "specification lambdas cannot read memory yet; capture a value instead",
-        ));
-    }
-    if let Some(name) = callees.iter().find(|name| {
-        !is_integer_conversion(name)
-            && !is_integer_truncation(name)
-            && name.as_str() != "to_nat"
-            && !functions
-                .get(generic_instance_source_name(name))
-                .is_some_and(|function| function.memory_independent)
-    }) {
-        return Err(ClickError::new(format!(
-            "specification lambdas cannot call memory-dependent function `{name}`"
-        )));
-    }
+    lambdas::validate_body_state(body)?;
     let mut names = BTreeSet::new();
     collect_contract_expression_referenced_names(body, &mut names);
     let mut local_variables = BTreeMap::new();

@@ -1708,7 +1708,6 @@ struct ClickFunctionType {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
-    memory_independent: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3409,7 +3408,7 @@ pub enum SurfaceTerm {
     },
     /// A proposition carried as a specification value.
     Proposition(Box<ClickProposition>),
-    /// A typed, lexically scoped pure specification function.
+    /// A typed, lexically scoped specification function; reads use application state.
     Lambda {
         parameters: Vec<(String, ClickType)>,
         result: ClickType,

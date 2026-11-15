@@ -15820,6 +15820,7 @@ impl Parser {
             self.integer_literal_context = previous_integer;
             let body = body?;
             self.expect(Token::RBrace)?;
+            super::lambdas::validate_body_state(&body)?;
             return Ok(ContractExpression::Lambda {
                 parameters,
                 result,
