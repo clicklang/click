@@ -23,8 +23,10 @@ mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
 use mixed_return_resources::{
-    EvaluatedReturnResources, ProjectedReturnResource, project_return_resource_cores,
+    ConsumedCellReturn, EvaluatedReturnResources, ProjectedReturnResource,
+    project_return_resource_cores,
 };
+pub(in crate::kernel) use mixed_return_resources::{ReturnResourceTransfer, ReturnedConsumedCell};
 #[cfg(test)]
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
@@ -193,11 +195,13 @@ fn record_resource_clause_attempt() {
     RESOURCE_CLAUSE_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
 }
 /// Resource descriptions can be checked before their transfer is proved.
-/// Checked call application restores entry borrows per emitted occurrence;
-/// every other output still passes through description admission.
+/// Checked call application restores entry borrows per emitted occurrence.
+/// A selected consumed scalar can also return by explicit transfer; other
+/// outputs still pass through description admission.
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition {
     RestoreEntryBorrows,
+    RestoreConsumedCell(ConsumedCellReturn),
     ValidateDescriptions,
 }
 
@@ -228,6 +232,7 @@ struct FunctionResourceTransfer {
     /// This is output-sized call-boundary provenance, not a search through
     /// the caller frame.
     canonical_borrowed_owners: Vec<(ResourceFact, ResourceFact)>,
+    consumed_cell_return: Option<ConsumedCellReturn>,
     callee_resources: ResourceContext,
     /// Resources left in the caller after the entry requirements have been
     /// consumed; this is the caller frame for the remainder of the call.
@@ -3826,7 +3831,10 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface,
             &prepared_outputs,
-            ReturnResourceComposition::RestoreEntryBorrows,
+            transfer.consumed_cell_return.map_or(
+                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::RestoreConsumedCell,
+            ),
             &effective_assumptions,
             budget,
         )? {
@@ -11003,6 +11011,7 @@ fn prepare_contract_resource_transfer_unexplained(
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
             canonical_borrowed_owners: Vec::new(),
+            consumed_cell_return: None,
             callee_resources: with_private_aggregate_parameter_owners(
                 ResourceContext::new_with_equalities(assumptions),
                 callee_state,
@@ -12205,11 +12214,16 @@ fn prepare_contract_resource_transfer_unexplained(
         })
         .collect();
     canonical_borrowed_owners.extend(canonical_population_owners);
+    let consumed_cell_return = stable_view_plan
+        .as_ref()
+        .filter(|_| purpose == ResourceTransitionPurpose::CallSite)
+        .and_then(|plan| ConsumedCellReturn::prepare(interface, plan, caller_state.resources()));
     Ok(Ok(FunctionResourceTransfer {
         helper_call,
         borrowed_inputs,
         consumed_inputs,
         canonical_borrowed_owners,
+        consumed_cell_return,
         callee_resources: with_private_aggregate_parameter_owners(
             callee_resources,
             callee_state,
