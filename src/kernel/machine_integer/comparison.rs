@@ -21,6 +21,53 @@ pub(crate) struct StructuralComparisonView<'a> {
     pub(crate) operands: [ComparisonOperand<'a>; 2],
 }
 
+/// Read a retained primitive comparison without exporting its machine operands.
+/// Other selected atoms keep the existing structural classifier; connectives
+/// are deliberately not opened by that classifier.
+pub(crate) fn structural_boolean_comparison_view(
+    condition: crate::kernel::BooleanOperandView<'_>,
+) -> Option<StructuralComparisonView<'_>> {
+    if let Some((format, relation, operands)) = condition.comparison() {
+        return Some(StructuralComparisonView {
+            format,
+            relation,
+            negated: false,
+            operands: operands.map(|operand| match operand {
+                crate::kernel::MachineOperandView::Legacy(value) => {
+                    ComparisonOperand::Written(value)
+                }
+                operand => ComparisonOperand::Observation(operand.retain(format)),
+            }),
+        });
+    }
+    if let Some(native) = condition.native_leaf() {
+        return structural_comparison_view(native);
+    }
+    let crate::kernel::BooleanOperandView::Shared(root) = condition else {
+        unreachable!()
+    };
+    if !matches!(
+        root.node(),
+        crate::kernel::KernelTermNode::IntegerCompare { .. }
+    ) {
+        return None;
+    }
+    let native = condition.native();
+    let view = structural_comparison_view(&native)?;
+    Some(StructuralComparisonView {
+        format: view.format,
+        relation: view.relation,
+        negated: view.negated,
+        operands: view.operands.map(|operand| match operand {
+            ComparisonOperand::Written(value) => ComparisonOperand::Observation(
+                crate::kernel::MachineOperandView::Legacy(value).retain(view.format),
+            ),
+            ComparisonOperand::Observation(value) => ComparisonOperand::Observation(value),
+            ComparisonOperand::Constant(value) => ComparisonOperand::Constant(value),
+        }),
+    })
+}
+
 pub(crate) fn structural_comparison_view(
     condition: &ConditionTerm,
 ) -> Option<StructuralComparisonView<'_>> {

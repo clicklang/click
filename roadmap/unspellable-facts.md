@@ -250,7 +250,7 @@ beside unrelated arena terms. All 1,753 selected tests passed, including every
 scaling test and the Boolean, condition-reasoning, snapshot-key and equality-graph
 selections.
 
-8c gives standalone Boolean roots the existing five scoped variable-reader
+8c (merged [PR #2806](https://github.com/clicklang/click/pull/2806)) gives standalone Boolean roots the existing five scoped variable-reader
 modes and walks shared Boolean connectives once for resource-read and snapshot
 dependencies. Comparison operands use the existing shared machine readers;
 Boolean calls stay opaque to these memory readers. Resource operand stacks
@@ -264,6 +264,26 @@ read/snapshot order, opaque-call behavior and shared-connective traversal work.
 After integrating upstream through `7a681179b` (including #2802 and #2804),
 all 1,729 integration selections passed, including every scaling test and the
 contract-claim tests.
+
+8f prepares identity and fact-key consumers before completing 8d/8e. Primitive
+Boolean comparison matching reads retained machine operands through the existing
+comparison-format identity. Exact Boolean identity walks common connectives
+once and preserves native comparison-format equivalences; numeric call arguments
+remain typed handles for application identity. Composite guards retain their
+exact-equality-only load policy. Snapshot keys inspect guard shape without
+exporting it and key eligible primitive comparisons through shared operands;
+Integer comparisons and Boolean value forms keep their existing exact enclosing
+operand keys. Selected Integer comparison atoms retain the existing structural
+classifier, and opaque leaves retain their native family identity. Explicit
+native syntax ordering remains a compatibility boundary.
+
+Validation: 1,635 selected tests passed, including every scaling test, Boolean
+view/identity tests, snapshot operand keys and shared load-atom comparisons.
+Regressions cover native/shared format agreement, composite load-authority
+refusal, linear shared-connective identity and growing arithmetic comparison
+prefixes without machine exports. No proof rules, search indexes or budgets
+changed. The 8d/8e draft checkpoints remain unpublished pending their producer
+reconstruction work.
 
 ### 8a inventory
 

@@ -206,14 +206,14 @@ fn shared_operand_leaf_pairs_with_policy(
                     bv,
                 )])
             } else if let (Some((ac, [al, ar])), Some((bc, [bl, br]))) =
-                (a.conditional(), b.conditional())
+                (a.conditional_view(), b.conditional_view())
             {
                 let child_policy = if matches!(policy, P::ConditionLoads) {
                     policy
                 } else {
                     P::Snapshot(false)
                 };
-                (ac == bc || matches!(policy, P::ConditionLoads)).then_some(vec![
+                (matches!(policy, P::ConditionLoads) || ac.syntax_equal(bc)).then_some(vec![
                     (format, child_policy, al, bl),
                     (format, child_policy, ar, br),
                 ])

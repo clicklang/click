@@ -458,6 +458,27 @@ fn snapshot_observation_key(
     ))
 }
 
+fn snapshot_blind_boolean_operand_key(
+    condition: crate::kernel::BooleanOperandView<'_>,
+) -> SnapshotBlindConditionKey {
+    use crate::kernel::machine_integer::comparison::{FactOperand, fact_operand_identity};
+    if let Some((format, relation, operands)) = condition.comparison() {
+        let (format, operands) = fact_operand_identity(format, relation, operands);
+        let [left, right] = operands.map(|operand| match operand {
+            FactOperand::Term(term) => snapshot_operands::operand(term),
+            FactOperand::Value(value) => snapshot_blind_bitvector_key(
+                &crate::kernel::ComparisonSide::Value(value).term(format),
+            ),
+        });
+        return SnapshotBlindConditionKey::Comparison(
+            BitvectorComparisonOp::Compare(format, relation),
+            left,
+            right,
+        );
+    }
+    snapshot_blind_condition_key(&condition.native())
+}
+
 fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindConditionKey {
     // Keyed at the fact identity: a native 8- or 16-bit comparison and the
     // `int32` comparison of its widenings are one fact.

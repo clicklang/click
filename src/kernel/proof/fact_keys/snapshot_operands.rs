@@ -270,12 +270,8 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
                 BitvectorUnaryOp::Machine(format, op),
                 child_key(child),
             ))
-        } else if let Some((condition, [left, right])) = view.conditional() {
-            if matches!(
-                condition.as_ref(),
-                crate::kernel::integer_comparison_condition!(_, _)
-            ) || condition.is_bool_value_form()
-            {
+        } else if let Some((condition, [left, right])) = view.conditional_view() {
+            if condition.is_integer_comparison() || condition.is_bool_value_form() {
                 intern(Node::ExactOperand(
                     crate::kernel::SharedMachineIntegerTerm::observe_shared(
                         MachineIntegerType::Int32,
@@ -285,7 +281,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
                 ))
             } else {
                 intern(Node::If(
-                    Box::new(snapshot_blind_condition_key(&condition)),
+                    Box::new(snapshot_blind_boolean_operand_key(condition)),
                     child_key(left),
                     child_key(right),
                 ))

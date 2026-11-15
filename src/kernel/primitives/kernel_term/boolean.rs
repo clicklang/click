@@ -33,6 +33,105 @@ impl<'a> BooleanOperandView<'a> {
         }
     }
 
+    /// Exact native Boolean identity, without exporting connective trees or
+    /// primitive comparison operands. Load authority is never consulted here.
+    pub(crate) fn syntax_equal(self, other: Self) -> bool {
+        use crate::kernel::machine_integer::comparison::{FactOperand, fact_operand_identity};
+        let mut pending = vec![(self, other)];
+        let mut seen = std::collections::HashSet::new();
+        while let Some((left, right)) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let (Self::Shared(a), Self::Shared(b)) = (left, right) {
+                if a == b || !seen.insert((a.id(), b.id())) {
+                    continue;
+                }
+            }
+            if let (Some(a), Some(b)) = (left.native_leaf(), right.native_leaf()) {
+                if a != b {
+                    return false;
+                }
+                continue;
+            }
+            match (left.conditional(), right.conditional()) {
+                (Some(a), Some(b)) => {
+                    pending.extend(a.into_iter().zip(b));
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+            match (left.equality(), right.equality()) {
+                (Some(a), Some(b)) => {
+                    pending.extend(a.into_iter().zip(b));
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+            match (left.comparison(), right.comparison()) {
+                (Some((af, ar, a)), Some((bf, br, b))) => {
+                    if ar != br {
+                        return false;
+                    }
+                    let (af, a) = fact_operand_identity(af, ar, a);
+                    let (bf, b) = fact_operand_identity(bf, br, b);
+                    if af != bf {
+                        return false;
+                    }
+                    for (a, b) in a.into_iter().zip(b) {
+                        let equal = match (a, b) {
+                            (FactOperand::Value(a), FactOperand::Value(b)) => a == b,
+                            (FactOperand::Term(a), FactOperand::Term(b)) => {
+                                crate::kernel::machine_operand_syntax_cmp(a, b).is_eq()
+                            }
+                            _ => false,
+                        };
+                        if !equal {
+                            return false;
+                        }
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
+            if left.identity_leaf() != right.identity_leaf() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Keep numeric call arguments as typed handles for semantic identity.
+    /// Other leaves already have exact native payloads or shared Integer
+    /// bridges; no enclosing Boolean connective reaches this boundary.
+    fn identity_leaf(self) -> std::borrow::Cow<'a, ConditionTerm> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::Call { name, arguments } = root.node()
+        {
+            let mut export = KernelTermExport::default();
+            let arguments = arguments
+                .iter()
+                .map(|argument| {
+                    if let KernelType::Program(ty) = argument.ty()
+                        && let Some(format) = MachineIntegerType::from_program_type(*ty)
+                        && !matches!(argument.node(), KernelTermNode::Legacy(_))
+                    {
+                        PureFunctionArgument::SharedMachine(
+                            MachineOperandView::Shared(argument).retain(format),
+                        )
+                    } else {
+                        export.argument(argument).expect("Boolean call argument")
+                    }
+                })
+                .collect();
+            return std::borrow::Cow::Owned(ConditionTerm::BoolApplication(
+                SharedPureApplication::intern(name.clone(), arguments),
+            ));
+        }
+        self.native()
+    }
+
     pub(crate) fn native_leaf(self) -> Option<&'a ConditionTerm> {
         match self {
             Self::Native(value) => Some(value),
@@ -112,6 +211,35 @@ impl<'a> BooleanOperandView<'a> {
                 Some([Self::Native(left), Self::Native(right)])
             }
             _ => None,
+        }
+    }
+
+    pub(crate) fn is_integer_comparison(self) -> bool {
+        match self {
+            Self::Shared(root) if matches!(root.node(), KernelTermNode::IntegerCompare { .. }) => {
+                true
+            }
+            _ => self.native_leaf().is_some_and(|value| {
+                matches!(value, crate::kernel::integer_comparison_condition!(_, _))
+            }),
+        }
+    }
+
+    pub(crate) fn is_bool_value_form(self) -> bool {
+        match self {
+            Self::Shared(root)
+                if matches!(
+                    root.node(),
+                    KernelTermNode::BoolIf { .. }
+                        | KernelTermNode::BoolEqual { .. }
+                        | KernelTermNode::Call { .. }
+                ) =>
+            {
+                true
+            }
+            _ => self
+                .native_leaf()
+                .is_some_and(ConditionTerm::is_bool_value_form),
         }
     }
 
@@ -327,6 +455,61 @@ impl KernelTermExport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boolean_identity_matches_native_formats_and_composites() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut cases = vec![
+            ConditionTerm::Constant(false),
+            ConditionTerm::Variable(Variable(964_095)),
+        ];
+        for format in crate::kernel::machine_integer::FORMATS {
+            for relation in [
+                CompareRelation::Equal,
+                CompareRelation::LessThan,
+                CompareRelation::GreaterEqual,
+            ] {
+                cases.push(ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(MachineTerm::Variable(Variable(964_096))),
+                    right: Box::new(MachineTerm::machine_constant(
+                        MachineIntegerConstant::from_signed(format.format(), 1).unwrap(),
+                    )),
+                });
+            }
+        }
+        for source in cases.clone() {
+            cases.push(ConditionTerm::BoolEqual(
+                Box::new(source.clone()),
+                Box::new(source),
+            ));
+        }
+        let common: Vec<_> = cases
+            .iter()
+            .map(|source| KernelTermImport::default().condition(source))
+            .collect();
+        for (i, a) in cases.iter().enumerate() {
+            for (j, b) in cases.iter().enumerate() {
+                let expected = a == b;
+                let shared_a = BooleanOperandView::Shared(&common[i]);
+                let shared_b = BooleanOperandView::Shared(&common[j]);
+                assert_eq!(
+                    shared_a.syntax_equal(shared_b),
+                    expected,
+                    "{a:?} versus {b:?}"
+                );
+                assert_eq!(
+                    shared_a.syntax_equal(BooleanOperandView::Native(b)),
+                    expected
+                );
+                assert_eq!(
+                    BooleanOperandView::Native(a).syntax_equal(shared_b),
+                    expected
+                );
+            }
+        }
+    }
 
     #[test]
     fn boolean_views_keep_written_comparison_and_shared_children() {
