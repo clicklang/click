@@ -1579,6 +1579,19 @@ pub(super) fn evaluate_native_expression_paths(
             read_program_lvalue_expression_paths(state, expression, assumptions, budget)?
         }
         // The term this statement's own call step returned.
+        ProgramExpression::StringLiteral(identity) => vec![ExpressionPath {
+            outcome: state
+                .literal_values
+                .get(identity)
+                .map(|value| ExpressionOutcome::Value(value.native().into_owned()))
+                .unwrap_or_else(|| {
+                    ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(
+                        identity.to_string(),
+                    ))
+                }),
+            facts: Vec::new().into(),
+            obligations: Vec::new(),
+        }],
         ProgramExpression::StepResult { step, .. } => vec![ExpressionPath {
             outcome: match state
                 .step_results
@@ -3991,6 +4004,11 @@ pub(in crate::kernel) fn program_expression_pointee_type(
             None => None,
         },
         // A call's result has the callee's declared type.
+        ProgramExpression::StringLiteral(identity) => state
+            .literal_values
+            .get(identity)?
+            .program_type()
+            .pointee_type(),
         ProgramExpression::StepResult { step, .. } => {
             state.step_result(*step)?.program_type().pointee_type()
         }

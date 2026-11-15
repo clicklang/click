@@ -194,7 +194,7 @@ impl BlockInterval {
 
 fn first_string_literal() -> PointerBlock {
     PointerBlock::StringLiteral {
-        identity: String::new(),
+        identity: crate::kernel::StringLiteralId::new("", 0),
         bytes: Vec::new(),
     }
 }
@@ -572,11 +572,11 @@ mod tests {
             PointerBlock::Concrete("local:y".to_string()),
             PointerBlock::Concrete("static:f:s".to_string()),
             PointerBlock::StringLiteral {
-                identity: "a".to_string(),
+                identity: crate::kernel::StringLiteralId::new("a", 0),
                 bytes: b"one".to_vec(),
             },
             PointerBlock::StringLiteral {
-                identity: "b".to_string(),
+                identity: crate::kernel::StringLiteralId::new("b", 0),
                 bytes: b"two".to_vec(),
             },
             PointerBlock::Function("f".to_string()),

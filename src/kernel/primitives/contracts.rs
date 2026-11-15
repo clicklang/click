@@ -798,14 +798,14 @@ impl StaticAggregateArray {
 }
 
 impl StringLiteral {
-    pub fn new(name: impl Into<String>, bytes: Vec<u8>) -> Self {
+    pub fn new(identity: StringLiteralId, bytes: Vec<u8>) -> Self {
         assert_eq!(
             bytes.last(),
             Some(&0),
             "C string literals require a NUL terminator"
         );
         Self {
-            name: name.into(),
+            identity,
             bytes,
             element_type: ProgramType::UInt8,
         }
@@ -822,8 +822,8 @@ impl StringLiteral {
         self
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn identity(&self) -> &StringLiteralId {
+        &self.identity
     }
 
     pub fn bytes(&self) -> &[u8] {

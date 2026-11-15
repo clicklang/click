@@ -33,7 +33,7 @@ fn block_import_charges_selected_bytes_not_unrelated_literal_bytes() {
         let _unrelated = (0..size)
             .map(|i| {
                 SharedPointerBlock::import(&PointerBlock::StringLiteral {
-                    identity: format!("unrelated-{i}"),
+                    identity: StringLiteralId::new(format!("unrelated-{i}"), 0),
                     bytes: vec![0; size * 16],
                 })
             })

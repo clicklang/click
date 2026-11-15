@@ -535,7 +535,10 @@ fn named_contract_application_discards_template_body_and_storage() {
         vec![pointer_parameter.clone()],
         body_with_load,
     )
-    .with_string_literals(vec![StringLiteral::new("literal", b"x\0".to_vec())]);
+    .with_string_literals(vec![StringLiteral::new(
+        StringLiteralId::new("callback_template", 0),
+        b"x\0".to_vec(),
+    )]);
     let with_different_body = program_function(
         ProgramType::Void,
         "callback_template",

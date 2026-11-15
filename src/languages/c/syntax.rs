@@ -149,22 +149,25 @@ struct StaticAddress {
     extent: Option<crate::kernel::SubobjectExtent>,
 }
 
-/// One string literal occurring in a C function. The hidden name is emitted
-/// into the C expression tree as an array object; `bytes` includes the
-/// required terminating NUL byte.
+/// One string literal occurrence, with static storage and a source identity.
+/// `bytes` includes the required terminating NUL byte.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStringLiteral {
-    name: String,
+    identity: Option<crate::kernel::StringLiteralId>,
     bytes: Vec<u8>,
     /// The target's plain `char`, the literal's element type (C11 6.4.5p6).
     plain_char: PlainChar,
 }
 
 impl CStringLiteral {
-    fn new(name: String, mut bytes: Vec<u8>, plain_char: PlainChar) -> Self {
+    fn new(
+        identity: Option<crate::kernel::StringLiteralId>,
+        mut bytes: Vec<u8>,
+        plain_char: PlainChar,
+    ) -> Self {
         bytes.push(0);
         Self {
-            name,
+            identity,
             bytes,
             plain_char,
         }
@@ -177,12 +180,17 @@ impl CStringLiteral {
     /// The kernel literal: its bytes stored as cells of the target's plain
     /// `char` representation.
     pub fn to_kernel(&self) -> crate::kernel::StringLiteral {
-        crate::kernel::StringLiteral::new(self.name.clone(), self.bytes.clone())
-            .with_element_type(self.plain_char.byte_type().to_kernel_type())
+        crate::kernel::StringLiteral::new(
+            self.identity
+                .clone()
+                .expect("literal metadata has a function owner"),
+            self.bytes.clone(),
+        )
+        .with_element_type(self.plain_char.byte_type().to_kernel_type())
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn identity(&self) -> Option<&crate::kernel::StringLiteralId> {
+        self.identity.as_ref()
     }
 
     pub fn bytes(&self) -> &[u8] {
@@ -2787,6 +2795,7 @@ pub struct COperator {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CExpression {
+    StringLiteral(std::sync::Arc<CStringLiteral>),
     Void,
     Variable(String),
     /// The result of a step this expression's statement made: the term a
@@ -3079,23 +3088,6 @@ impl ImportedFunction {
     }
 
     fn static_object_address(&self, name: &str) -> Option<StaticAddress> {
-        if let Some(literal) = self
-            .string_literals
-            .iter()
-            .find(|literal| literal.name() == name)
-        {
-            let length = u32::try_from(literal.bytes().len()).ok()?;
-            return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::string_literal_pointer(
-                    &self.name,
-                    literal.name(),
-                    literal.bytes(),
-                ),
-                interface_type: InterfaceType::CharArray(literal.plain_char(), length),
-                constant: false,
-            });
-        }
         if let Some(global) = self
             .globals
             .values()
@@ -3210,6 +3202,18 @@ impl ImportedFunction {
 
     fn static_address_expression(&self, expression: &CExpression) -> Option<StaticAddress> {
         match expression {
+            CExpression::StringLiteral(literal) => Some(StaticAddress {
+                pointer: crate::kernel::Memory::string_literal_pointer(
+                    literal.identity()?,
+                    literal.bytes(),
+                ),
+                interface_type: InterfaceType::CharArray(
+                    literal.plain_char(),
+                    literal.bytes().len() as u32,
+                ),
+                constant: false,
+                extent: None,
+            }),
             CExpression::Variable(name) => self.static_object_address(name),
             CExpression::Field {
                 pointer,
@@ -4394,6 +4398,12 @@ impl CExpression {
 
     fn lower_expression(&self) -> crate::kernel::ProgramExpression {
         match self {
+            Self::StringLiteral(literal) => crate::kernel::ProgramExpression::StringLiteral(
+                literal
+                    .identity
+                    .clone()
+                    .expect("runtime string literal belongs to a function"),
+            ),
             Self::StepResult { step, origin, .. } => crate::kernel::ProgramExpression::StepResult {
                 step: *step,
                 origin: origin.clone(),
@@ -6096,7 +6106,8 @@ fn evaluate_static_integer_expression(
             *interface_type,
         ),
         CExpression::CheckedArrayIndex { index, .. } => evaluate_static_integer_expression(index),
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::Call { .. }
@@ -6867,7 +6878,8 @@ fn contains_aggregate_value(expression: &CExpression) -> bool {
         crate::languages::c::syntax::binary_c_expression!(left, right) => {
             contains_aggregate_value(left) || contains_aggregate_value(right)
         }
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
@@ -7195,9 +7207,7 @@ struct Parser {
     next_call_result: u32,
     aggregate_expression_steps: Vec<u32>,
     callback_statement_sources: imbl::OrdMap<String, CExpression>,
-    next_string_literal: u32,
     next_field_source_ordinal: u32,
-    string_literal_names: BTreeSet<String>,
     loop_contexts: Vec<CLoopContext>,
     function_declarations: BTreeMap<String, CFunctionHeader>,
     /// The most recent attribute that is valid only on `static inline`.
@@ -7774,9 +7784,7 @@ impl Parser {
             next_call_result: 0,
             aggregate_expression_steps: Vec::new(),
             callback_statement_sources: imbl::OrdMap::new(),
-            next_string_literal: 0,
             next_field_source_ordinal: 0,
-            string_literal_names: BTreeSet::new(),
             loop_contexts: Vec::new(),
             function_declarations: BTreeMap::new(),
             static_inline_attribute: "always-inline",
@@ -8223,14 +8231,6 @@ impl Parser {
     }
 
     fn static_object_type(&self, name: &str) -> Option<(InterfaceType, bool)> {
-        // A string literal has static storage duration and type `char[N]`
-        // (C11 6.4.5p6), not a const-qualified type. Its storage is the
-        // enclosing function's read-only literal block, so only a literal
-        // inside a function body is a static object here.
-        if self.current_function_source_name.is_some() && self.string_literal_names.contains(name) {
-            let length = self.variable_types.get(name)?.array_length()?;
-            return Some((InterfaceType::CharArray(self.plain_char, length), false));
-        }
         if let Some(global) = self
             .globals
             .values()
@@ -8303,6 +8303,10 @@ impl Parser {
 
     fn static_address_expression(&self, expression: &CExpression) -> Option<(InterfaceType, bool)> {
         match expression {
+            CExpression::StringLiteral(literal) if literal.identity.is_some() => Some((
+                InterfaceType::CharArray(literal.plain_char(), literal.bytes().len() as u32),
+                false,
+            )),
             CExpression::Variable(name) => self.static_object_type(name),
             CExpression::Field {
                 pointer,
@@ -8361,10 +8365,9 @@ impl Parser {
     /// literal or another static table, as the address of its first element
     /// (C11 6.3.2.1p3); any other initializer unchanged.
     fn decayed_static_pointer_initializer(&self, initializer: &CExpression) -> CExpression {
-        if let CExpression::Variable(name) = initializer
-            && self
-                .static_object_type(name)
-                .is_some_and(|(interface_type, _)| interface_type.array_length().is_some())
+        if self
+            .static_address_expression(initializer)
+            .is_some_and(|(ty, _)| ty.array_length().is_some())
         {
             return CExpression::AddressOf(Box::new(CExpression::Index(
                 Box::new(initializer.clone()),
@@ -8393,9 +8396,7 @@ impl Parser {
         }
         let Some((target_type, target_is_constant)) = self.static_address_target(initializer)
         else {
-            if let CExpression::Variable(name) = initializer
-                && self.string_literal_names.contains(name)
-            {
+            if matches!(initializer, CExpression::StringLiteral(_)) {
                 return Err(self.error_here(
                     "file-scope pointer initializers do not support string literals yet",
                 ));
@@ -13733,6 +13734,7 @@ impl Parser {
             | CExpression::StatementExpression { .. }
             | CExpression::Assignment { .. }
             | CExpression::ScalarUpdate { .. }
+            | CExpression::StringLiteral(_)
             | CExpression::Void
             | CExpression::FunctionAddress(_)
             | CExpression::Int32Literal(_)
@@ -13784,6 +13786,7 @@ impl Parser {
             | CExpression::IndirectCall { .. }
             | CExpression::StatementExpression { .. }
             | CExpression::AddressOf(_)
+            | CExpression::StringLiteral(_)
             | CExpression::Void
             | CExpression::Variable(_)
             | CExpression::StepResult { .. }
@@ -13843,37 +13846,18 @@ impl Parser {
         }
     }
 
-    fn fresh_string_literal_name(&mut self, bytes: Vec<u8>) -> String {
-        loop {
-            let name = format!("__click_string_literal{}", self.next_string_literal);
-            self.next_string_literal = self.next_string_literal.saturating_add(1);
-            let already_used = self.variable_types.contains_key(&name)
-                || self
-                    .scopes
-                    .iter()
-                    .any(|scope| scope.iter().any(|binding| binding.kernel_name == name));
-            if already_used {
-                continue;
-            }
-            let length = bytes
-                .len()
-                .checked_add(1)
-                .and_then(|length| u32::try_from(length).ok())
-                .expect("validated string literal length fits in u32");
-            // The literal's storage takes plain `char`'s representation;
-            // `source_expression_type` restores its `char[]` source type.
-            let storage = match self.plain_char {
-                PlainChar::Unsigned => InterfaceType::UInt8Array(length),
-                PlainChar::Signed => InterfaceType::Int8Array(length),
-            };
-            self.variable_types.insert(name.clone(), storage);
-            self.variable_array_shapes
-                .insert(name.clone(), vec![length]);
-            self.string_literals
-                .push(CStringLiteral::new(name.clone(), bytes, self.plain_char));
-            self.string_literal_names.insert(name.clone());
-            return name;
+    fn string_literal_expression(&mut self, bytes: Vec<u8>) -> CExpression {
+        let ordinal = u32::try_from(self.string_literals.len()).expect("literal count fits u32");
+        let identity = self.current_function_source_name.as_ref().map(|function| {
+            let mut id = crate::kernel::StringLiteralId::new(function.clone(), ordinal);
+            id.source = self.source_identity.clone();
+            id
+        });
+        let literal = std::sync::Arc::new(CStringLiteral::new(identity, bytes, self.plain_char));
+        if literal.identity.is_some() {
+            self.string_literals.push(literal.as_ref().clone());
         }
+        CExpression::StringLiteral(literal)
     }
 
     fn lower_call_expressions(
@@ -14077,7 +14061,8 @@ impl Parser {
                     expressions.push(left);
                     expressions.push(right);
                 }
-                CExpression::Void
+                CExpression::StringLiteral(_)
+                | CExpression::Void
                 | CExpression::Variable(_)
                 | CExpression::StepResult { .. }
                 | CExpression::FunctionAddress(_)
@@ -14139,7 +14124,8 @@ impl Parser {
                     expressions.push(left);
                     expressions.push(right);
                 }
-                CExpression::Void
+                CExpression::StringLiteral(_)
+                | CExpression::Void
                 | CExpression::Variable(_)
                 | CExpression::StepResult { .. }
                 | CExpression::FunctionAddress(_)
@@ -14174,7 +14160,8 @@ impl Parser {
             // A call's result is the term the call returned: nothing the
             // statement does afterwards changes it.
             CExpression::StepResult { .. } => false,
-            CExpression::Void
+            CExpression::StringLiteral(_)
+            | CExpression::Void
             | CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::FunctionAddress(_)
@@ -16248,6 +16235,9 @@ impl Parser {
                 "Click models a call to `{source_name}` only with a string-literal format"
             )));
         }
+        // The format is lowered into the callee's specification, but its C
+        // literal object still has a source occurrence and static storage.
+        let _ = self.string_literal_expression(format.clone());
         let pieces = formatted_output::parse_format(&format).map_err(|reason| {
             self.error_at_previous(format!("`{source_name}` format: {reason}"))
         })?;
@@ -17765,7 +17755,8 @@ impl Parser {
             | CExpression::Divide(left, right) => {
                 self.expression_is_float(left) || self.expression_is_float(right)
             }
-            CExpression::Void
+            CExpression::StringLiteral(_)
+            | CExpression::Void
             | CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::FunctionAddress(_)
@@ -18092,21 +18083,11 @@ impl Parser {
     fn source_expression_type(&self, expression: &CExpression) -> Option<InterfaceType> {
         match expression {
             CExpression::StepResult { interface_type, .. } => *interface_type,
-            CExpression::Variable(name) => {
-                let interface_type = self.variable_types.get(name).copied()?;
-                if self.string_literal_names.contains(name) {
-                    match interface_type {
-                        InterfaceType::UInt8Array(length) => {
-                            return Some(InterfaceType::CharArray(PlainChar::Unsigned, length));
-                        }
-                        InterfaceType::Int8Array(length) => {
-                            return Some(InterfaceType::CharArray(PlainChar::Signed, length));
-                        }
-                        _ => {}
-                    }
-                }
-                Some(interface_type)
-            }
+            CExpression::StringLiteral(literal) => Some(InterfaceType::CharArray(
+                literal.plain_char(),
+                literal.bytes().len() as u32,
+            )),
+            CExpression::Variable(name) => self.variable_types.get(name).copied(),
             CExpression::FunctionAddress(name) => {
                 self.function_declaration_for_call(name).map(|header| {
                     function_pointer_type(&function_pointer_signature_from_header(header))
@@ -18305,8 +18286,7 @@ impl Parser {
         if initializes_array
             && expected == InterfaceType::UInt8Pointer
             && matches!(actual, InterfaceType::CharPointer(_))
-            && matches!(expression, CExpression::Variable(name)
-                if self.string_literal_names.contains(name))
+            && matches!(expression, CExpression::StringLiteral(_))
         {
             return Ok(None);
         }
@@ -18970,8 +18950,10 @@ impl Parser {
                 // A complete array object, such as `char tmp[12]` or a
                 // string literal, is not converted to a pointer here: its
                 // size is the whole array's (C11 6.3.2.1p3, 6.5.3.4p2).
-                if let CExpression::Variable(_) = &operand
-                    && let Some(interface_type) = self.source_expression_type(&operand)
+                if matches!(
+                    &operand,
+                    CExpression::Variable(_) | CExpression::StringLiteral(_)
+                ) && let Some(interface_type) = self.source_expression_type(&operand)
                     && !interface_type.is_pointer()
                     && interface_type.pointee_type().is_some()
                 {
@@ -19083,7 +19065,7 @@ impl Parser {
                     };
                     bytes.extend(next);
                 }
-                Ok(CExpression::Variable(self.fresh_string_literal_name(bytes)))
+                Ok(self.string_literal_expression(bytes))
             }
             Some(Token::LParen) => {
                 let expression = self.parse_expression()?;
@@ -20321,7 +20303,8 @@ fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePositi
             first_embedded_call_position(left).or_else(|| first_embedded_call_position(right))
         }
         CExpression::CheckedArrayIndex { index, .. } => first_embedded_call_position(index),
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
@@ -20413,7 +20396,8 @@ fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition>
         crate::languages::c::syntax::binary_c_expression!(left, right) => {
             first_assignment_position(left).or_else(|| first_assignment_position(right))
         }
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
@@ -20438,7 +20422,8 @@ fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition>
 fn expression_reads_runtime_value(expression: &CExpression) -> bool {
     match expression {
         CExpression::ScalarUpdate { .. } => true,
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::FunctionAddress(_)
         | CExpression::Int32Literal(_)
         | CExpression::UInt8Literal(_)

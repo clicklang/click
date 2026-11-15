@@ -200,7 +200,10 @@ fn startup_contract_cannot_be_packaged_as_an_ordinary_rule() {
 #[test]
 fn binding_program_entry_does_not_upgrade_literal_views_to_ownership() {
     let function = storage_function("main", vec![])
-        .with_string_literals(vec![StringLiteral::new("text", vec![b'x', 0])])
+        .with_string_literals(vec![StringLiteral::new(
+            StringLiteralId::new("main", 0),
+            vec![b'x', 0],
+        )])
         .with_program_entry();
     let startup =
         initialize_program_program_storage([function.clone()]).expect("no run limit is installed");

@@ -1885,10 +1885,7 @@ pub(super) fn describe_runtime_error(
         }
         crate::kernel::RuntimeError::FunctionContract(message)
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
-            format!(
-                "function contract could not be applied: {}",
-                name_string_literal_storage(message)
-            )
+            format!("function contract could not be applied: {message}")
         }
         crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
@@ -5055,6 +5052,16 @@ pub(in crate::surface) fn describe_pointer(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
+    if let PointerBlock::StringLiteral { identity, .. } = &pointer.block {
+        return if pointer.offset == PointerOffsetTerm::Constant(0) {
+            identity.to_string()
+        } else {
+            format!(
+                "byte_offset({identity}, {})",
+                describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
+            )
+        };
+    }
     // Two parameters can point into one block, and then every one of them can
     // express the address -- `b[j]` is also `a[(b - a) + j]`. As in
     // [`describe_source_cell`], the shortest spelling is the one written
@@ -5631,6 +5638,26 @@ pub(super) fn describe_program_value(
             describe_bitvector_with_context(value, parameter_binding),
             "f64",
         ),
+        ProgramValue::Pointer(pointer)
+            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }) =>
+        {
+            let base = describe_pointer(pointer, parameter_binding);
+            let ty = crate::kernel::program_type_spelling(pointer.program_type());
+            let constant = if pointer.pointee_constant() {
+                "const "
+            } else {
+                ""
+            };
+            let volatile = if pointer.pointee_volatile() {
+                "volatile "
+            } else {
+                ""
+            };
+            format!(
+                "({})",
+                click_cast(&base, &format!("{constant}{volatile}{ty}"))
+            )
+        }
         ProgramValue::Pointer(pointer) => describe_pointer(pointer, parameter_binding),
     }
 }
@@ -5719,26 +5746,6 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
     } else {
         current
     }
-}
-
-/// A string literal's storage reads as "a string literal": its block name
-/// is one the lowering generated, not one the source has.
-fn name_string_literal_storage(message: &str) -> String {
-    let Some(start) = message.find("`string:") else {
-        return message.to_string();
-    };
-    let Some(length) = message[start + 1..].find('`') else {
-        return message.to_string();
-    };
-    let end = start + 1 + length;
-    if !message[start..end].contains("__click_string_literal") {
-        return message.to_string();
-    }
-    format!(
-        "{}a string literal{}",
-        &message[..start],
-        &message[end + 1..]
-    )
 }
 
 pub(in crate::surface) fn describe_callback_source(expression: &syntax::CExpression) -> String {
@@ -5894,6 +5901,7 @@ pub(in crate::surface) fn describe_operator_kind(
 
 pub(super) fn describe_program_expression(expression: &ProgramExpression) -> String {
     match expression {
+        ProgramExpression::StringLiteral(identity) => identity.to_string(),
         ProgramExpression::Value(value) => {
             describe_program_value(value, ParameterBinding::default())
         }

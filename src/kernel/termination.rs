@@ -78,7 +78,7 @@ fn substitute_program_expression_variables(
         )
     };
     match expression {
-        Value(_) | FunctionAddress(_) | StepResult { .. } => expression.clone(),
+        StringLiteral(_) | Value(_) | FunctionAddress(_) | StepResult { .. } => expression.clone(),
         Cast {
             expression: body,
             target_type,
@@ -1184,7 +1184,7 @@ fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut B
     use ProgramExpression::*;
     let mut inner = |body: &ProgramExpression| expression_address_taken_locals(body, names);
     match expression {
-        Value(_) | Variable(_) | FunctionAddress(_) | StepResult { .. } => {}
+        StringLiteral(_) | Value(_) | Variable(_) | FunctionAddress(_) | StepResult { .. } => {}
         Cast { expression, .. } => inner(expression),
         FloatNegate(expression)
         | FloatClassification { expression, .. }
@@ -1317,7 +1317,7 @@ fn collect_program_expression_variables(
             collect_program_expression_variables(right, names);
         }
         TypedLoad { pointer, .. } => collect_program_expression_variables(pointer, names),
-        Value(_) | FunctionAddress(_) => {}
+        StringLiteral(_) | Value(_) | FunctionAddress(_) => {}
     }
 }
 
@@ -2309,6 +2309,7 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
         | EnumField { .. }
         | EnumIs { .. }
         | StepResult { .. }
+        | StringLiteral(_)
         | Value(_) => "…".to_string(),
     }
 }
@@ -2979,6 +2980,7 @@ fn ranking_measure_term_unfolded(
         Cast { .. }
         | FloatNegate(_)
         | FloatClassification { .. }
+        | StringLiteral(_)
         | FunctionAddress(_)
         | AddressOf(_)
         | CheckedObjectAddress(_)
@@ -4204,6 +4206,7 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
 fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTreeSet<String>) {
     use ProgramExpression::*;
     match expression {
+        StringLiteral(_) => {}
         FunctionAddress(name) => {
             taken.insert(name.clone());
         }

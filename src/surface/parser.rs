@@ -189,6 +189,10 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) string_literal_values:
+        std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
+    pub(in crate::surface) string_literal_owners:
+        std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
@@ -838,6 +842,8 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
+    string_literal_owners: std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
     /// The loop clause currently being read, including its phase proofs.
     /// Source-aware parsing can reject unbound values before proof execution.
     loop_name_context: Option<String>,
@@ -1259,6 +1265,33 @@ struct ParsedFunctionSignature {
     return_struct_name: Option<String>,
 }
 
+impl ProgramLayouts {
+    pub(in crate::surface) fn register_string_literals(
+        &mut self,
+        function: &crate::languages::interface::ImportedFunction,
+    ) {
+        for literal in function.string_literals() {
+            let literal = literal.to_kernel();
+            let id = literal.identity().clone();
+            std::sync::Arc::make_mut(&mut self.string_literal_owners)
+                .entry(id.function.clone())
+                .or_default()
+                .insert(id.source.clone());
+            let pointer = crate::kernel::Memory::string_literal_pointer(&id, literal.bytes());
+            std::sync::Arc::make_mut(&mut self.string_literal_values).insert(
+                id,
+                ProgramValue::typed_pointer(
+                    pointer,
+                    literal
+                        .element_type()
+                        .pointer_to()
+                        .expect("character pointer"),
+                ),
+            );
+        }
+    }
+}
+
 /// Give a concrete replacement for scalar and slice signatures. Record and
 /// method contracts need an `impl` and the imported type identity instead.
 impl Parser {
@@ -1386,6 +1419,8 @@ impl Parser {
             &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.string_literal_values = layouts.string_literal_values;
+        parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
@@ -1630,6 +1665,8 @@ impl Parser {
         };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
+            string_literal_values: Default::default(),
+            string_literal_owners: Default::default(),
             rust_object_traits,
             cpp_object_methods,
             record_spellings: BTreeMap::new(),
@@ -15273,7 +15310,93 @@ impl Parser {
         found
     }
 
+    /// A source literal object: `f.string_literal(i)` or `"file.c"::f.string_literal(i)`.
+    fn take_string_literal_reference(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+        let start = self.position;
+        let first = match self.peek() {
+            Some(Token::Ident(name)) => (false, name.clone()),
+            Some(Token::String(name)) => (true, name.clone()),
+            _ => return Ok(None),
+        };
+        self.position += 1;
+        let (source, function) = if self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            let Some(Token::Ident(function)) = self.peek() else {
+                self.position = start;
+                return Ok(None);
+            };
+            let function = function.clone();
+            self.position += 1;
+            let source = if first.0 {
+                first.1.clone()
+            } else {
+                // An explicit source alias uses the same qualification as C objects.
+                match self.source_aliases.get(&first.1) {
+                    Some(source) => source.clone(),
+                    None => {
+                        self.position = start;
+                        return Ok(None);
+                    }
+                }
+            };
+            (Some(source), function)
+        } else {
+            if first.0 {
+                self.position = start;
+                return Ok(None);
+            }
+            if let Some((alias, name)) = first.1.split_once("::") {
+                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                    self.position = start;
+                    return Ok(None);
+                };
+                (Some(source), name.to_string())
+            } else {
+                (None, first.1.clone())
+            }
+        };
+        if self.peek() != Some(&Token::Dot)
+            || self.peek_next() != Some(&Token::Ident("string_literal".into()))
+        {
+            self.position = start;
+            return Ok(None);
+        }
+        self.position += 2;
+        self.expect(Token::LParen)?;
+        let ordinal = self.expect_index("string literal ordinal")?;
+        self.expect(Token::RParen)?;
+        let source = if source.is_some() {
+            source
+        } else {
+            let owners = self.string_literal_owners.get(&function).ok_or_else(|| {
+                self.error(format!("C function `{function}` has no string literals"))
+            })?;
+            if owners.len() != 1 {
+                return Err(self.error(format!(
+                    "literal owner `{function}` is ambiguous; qualify its C source"
+                )));
+            }
+            owners.first().expect("registered owner").clone()
+        };
+        let id = crate::kernel::StringLiteralId {
+            source,
+            function,
+            ordinal: u32::try_from(ordinal)
+                .map_err(|_| self.error("string literal ordinal exceeds u32"))?,
+        };
+        let value = self
+            .string_literal_values
+            .get(&id)
+            .ok_or_else(|| self.error(format!("unknown string literal `{id}`")))?;
+        Ok(Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(value.clone()),
+        )))
+    }
+
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if let Some(literal) = self.take_string_literal_reference()? {
+            return Ok(literal);
+        }
         let start = self.position;
         if let Ok(region) = self.parse_code_region_ref()
             && self.peek() == Some(&Token::Dot)

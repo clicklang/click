@@ -398,7 +398,8 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
                     names.push(name.clone());
                 }
             }
-            ProgramExpression::Value(_)
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::Value(_)
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::Cast { expression, .. }

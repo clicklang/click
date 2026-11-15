@@ -1244,6 +1244,12 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
+    {
+        return Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(value.clone()),
+        ));
+    }
     if let Some(name) = pointer_names::native_name(value) {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Variable(name),
@@ -5679,6 +5685,12 @@ fn synthesize_surface_pointer(
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Pointer::null() {
         return Some(ProgramExpression::Value(int32(0)));
+    }
+    if matches!(pointer.block, PointerBlock::StringLiteral { .. }) {
+        return Some(ProgramExpression::Value(ProgramValue::typed_pointer(
+            pointer.clone(),
+            ProgramType::UInt8Pointer,
+        )));
     }
     // A function's address spells as the function's name.
     if let (PointerBlock::Function(function), PointerOffsetTerm::Constant(0)) =
