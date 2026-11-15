@@ -562,7 +562,8 @@ zero-argument algebraic call remained opaque; after giving it an opaque pointer
 argument, that regression and the five focused checks all passed. The quality
 gate exited 0. No production behavior or test limits changed for that adjustment.
 
-8s.1 retains algebraic conditional guards and both branches. Import/export
+8s.1 ([#2839](https://github.com/clicklang/click/pull/2839), merged) retains
+algebraic conditional guards and both branches. Import/export
 preserves written conditional structure, while production keeps the existing
 literal-condition and equal-arm reductions without exporting branch trees.
 Syntax equality, observation normalization, dependency readers and existing
