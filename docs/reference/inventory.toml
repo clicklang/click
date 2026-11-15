@@ -4978,3 +4978,11 @@ path = "reference/library/index.md#integerround_down_le"
 [[item]]
 id = "language.string-literal-reference"
 path = "reference/language/c.md#string-literals"
+
+[[item]]
+id = "language.word.float32_from_bits"
+path = "reference/language/grammar.md#exact-float-bit-literals"
+
+[[item]]
+id = "language.word.float64_from_bits"
+path = "reference/language/grammar.md#exact-float-bit-literals"

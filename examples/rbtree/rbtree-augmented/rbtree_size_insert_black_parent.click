@@ -37,16 +37,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             let { metadata: metadata, left: left, right: right } = unfold(tree);
             have shade == Color::Red by solve();
             have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
-                rewrite(Color::Red == shade); known();
+                rewrite(Color::Red, shade); known();
             }
             unfold(color_bit(Color::Red));
             have (node->__rb_parent_color & 1) == 0 by {
-                rewrite((node->__rb_parent_color & 1) == color_bit(Color::Red));
-                rewrite(color_bit(Color::Red) == 0); normalize();
+                rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
+                rewrite(color_bit(Color::Red), 0); normalize();
             }
             have node->__rb_parent_color == address(ancestor) by {
-                rewrite(node->__rb_parent_color == address(ancestor) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1) == 0); normalize();
+                rewrite(node->__rb_parent_color, address(ancestor) + (node->__rb_parent_color & 1));
+                rewrite((node->__rb_parent_color & 1), 0); normalize();
             }
             step(); step(); step(); step();
             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by solve();

@@ -104,8 +104,8 @@ Roles distinguish the work remaining:
 
 | Role | Meaning |
 | --- | --- |
-| `legacy-bridge` | Seven preserved kernel forwarding boundaries into extracted traversals. |
-| `legacy-caller` | Kernel dependencies on those old entry points; these expose propagation beyond the seven bridges. |
+| `legacy-bridge` | Preserved kernel forwarding boundaries into extracted traversals. |
+| `legacy-caller` | Kernel dependencies on those old entry points; these expose propagation beyond those bridges. |
 | `operation` | Source operation, transport, validation or transition construction still calls discovery. |
 | `driver` | Explicit proof interpretation, including legitimate implicit obligation solving. |
 | `operation-to-driver` | Remaining proof-operation calls into orchestration; inspect their transitive behavior. |
@@ -115,10 +115,10 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory contains 637 records: 6 legacy bridges, 21 kernel callers,
+The current inventory contains 662 records: 4 legacy bridges, 17 kernel callers,
 6 Surface operation dependencies, 0 operation-to-driver dependencies,
 122 driver records, 6 presentation records,
-458 search-internal records, 16 mixed records and 2 imports. These are reference
+489 search-internal records, 16 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
@@ -137,15 +137,13 @@ statements without re-running declaration proofs; no guard exception remains.
 See the theorem boundary section in the
 [efficiency contract](../docs/internals/verification-efficiency.md).
 
-Six kernel bridges preserve these implementations:
+Four kernel bridges preserve these implementations:
 
 | Existing entry point | `ProofSearch` implementation | Ambient work to resolve |
 | --- | --- | --- |
 | `memory_range_aliases` | `loan_aliases` | Pointer aliases used by loan queries. |
 | `permits_memory_access_with_assumptions` | `loan_access` | Write permission, including symbolic protected ranges. |
 | `owned_validity_candidates` | `ownership_validity_candidates` | Candidate owners for composition validity. |
-| `memory_ranges_proven_overlapping_with_separation` | `ownership_overlap` | Alias-pair overlap discovery. |
-| `pointers_distinct_by_owned_anchors` | `owned_anchor_distinctness` | Equality components and ownership compositions. |
 | `call_kept_ownership` | `call_frame` | Residual caller resources and composite families. |
 
 `build_support/proof_search_boundary.rs`, invoked by the normal build boundary

@@ -95,7 +95,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 have i < k;
                 have i <= k;
                 have n <= k by {
-                    rewrite(n == i);
+                    rewrite(n, i);
                     known();
                 }
                 instantiate(forall (k: int32) {

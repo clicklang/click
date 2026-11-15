@@ -26,16 +26,19 @@ distinguishes checked witnesses from broader claims still needing coverage.
 
 ## Remaining work
 
-### 1. Repair pointer-field resource folding and preserve compatibility
+### 1. Preserve pointer/resource compatibility
 
-The audit also reproduces
 [`rb_produces_through_the_root_cell.md`](../mdtests/rb_produces_through_the_root_cell.md)
-failing in `rb_set_root.contract` at tactic 4: folding the produced tree needs
-a generated equality for `root->rb_node` that has no Surface spelling.
+now verifies with its original C and contract. Its proof states the three
+ownership-derived separation facts needed to frame the node's fields across
+the root store. Generated prerequisites retain lexical names, typed reads,
+and the selected snapshots of pointer arguments. Ordinary verification,
+expansion, cold checking and retained replay pass, and storing null is refused.
+See the [repair evidence](../design/object-model-current-audit.md#pointer-field-resource-fold-baseline-failure-and-repair).
 
-- [ ] Restore that original fixture, retaining a spellable pointer-field
-  equality through the store and resource fold. Keep the same C and contract;
-  verify the resulting proof across the supported proof modes.
+- [x] Restore the small pointer-field resource-fold fixture across proof modes,
+  keeping its C and contract.
+
 - [ ] Check the affected existing descriptor/resource, pointer-field,
   constructor and cleanup witnesses when delivering a remaining slice.
   Pointer identity, extent and the relevant frame must survive calls, resource
@@ -103,9 +106,10 @@ exercise the shared output-transfer prerequisite.
 
 ## Acceptance and scope
 
-Close this item when the reproduced pointer-field resource-fold failure is
-resolved, the interface matrix has named evidence or explicit refusals, the modular
-byte-output composition passes its positive and hostile checks, and affected existing C/C++/Rust behavior and proof modes remain checked.
+Close this item when the interface matrix has named evidence or explicit
+refusals, the modular byte-output composition passes its positive and hostile
+checks, and affected existing C/C++/Rust behavior and proof modes remain checked.
+Keep the repaired getter and pointer-field fold witnesses green.
 Record any confirmed residual defect at its current reproduction; a missing
 coverage check is not itself a demonstrated semantic bug.
 

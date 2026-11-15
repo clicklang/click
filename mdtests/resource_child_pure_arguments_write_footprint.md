@@ -22,7 +22,7 @@ void overwrite(int32* p) {
     ensures root.tag == old(root.tag);
 } by {
     let { child: c } = unfold(root);
-    have model_pointer(old(root.model)) == p by { rewrite(old(root.model) == Address::At(p)); unfold(model_pointer(Address::At(p))); normalize(); }
+    have model_pointer(old(root.model)) == p by { rewrite(old(root.model), Address::At(p)); unfold(model_pointer(Address::At(p))); normalize(); }
     unfold(c);
     step_until(function.exit);
     let c = fold(cell(p), { tag: old(root.tag) });
@@ -34,7 +34,7 @@ void caller(int32* p) {
     ensures p[0] == 0;
 } by {
     let { child: c } = unfold(root);
-    have model_pointer(old(root.model)) == p by { rewrite(old(root.model) == Address::At(p)); unfold(model_pointer(Address::At(p))); normalize(); }
+    have model_pointer(old(root.model)) == p by { rewrite(old(root.model), Address::At(p)); unfold(model_pointer(Address::At(p))); normalize(); }
     unfold(c);
     step();
     mark before_call;

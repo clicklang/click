@@ -77,7 +77,7 @@ theorem rounded(x: Integer) {
     ensures x <= 2 by {
         have (2 * 2) + 1 == 5 by { normalize(); }
         have x * 2 <= (2 * 2) + 1 by {
-            rewrite((2 * 2) + 1 == 5);
+            rewrite((2 * 2) + 1, 5);
             known();
         }
         apply(integer::round_down_le(x, 2, 2, 1)) using {
@@ -1565,7 +1565,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
             verify_c_sources(&expanded, &[]).unwrap();
         }
-        let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { have to_integer(x + 1i64) == to_integer(x) + 1; have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); known(); } apply(integer::positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
+        let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { have to_integer(x + 1i64) == to_integer(x) + 1; have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64), to_integer(x) + 1); known(); } apply(integer::positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
         verify_c_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires defined(x + 1i64);", ""),

@@ -3576,6 +3576,7 @@ impl<'a> Proof<'a> {
         // Fixed-state and focused-outcome requirements can refer to reads
         // retained from an intermediate statement. Give their speller the
         // same indexed historical names as ordinary facts and goals.
+        let _binder_names = self.requirement_binder_name_scope();
         let spelling_view = self.premise_fixed_state_view();
         let _requirement_points = spelling_view.as_ref().map(|view| {
             super::surface_synthesis::SynthesisRecordedPointsScope::enter(

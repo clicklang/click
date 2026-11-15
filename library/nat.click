@@ -93,7 +93,7 @@ theorem add_right_identity(n: Nat) {
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Zero));
-                rewrite(nat::add(previous, Nat::Zero) == previous);
+                rewrite(nat::add(previous, Nat::Zero), previous);
                 normalize();
             }
         }
@@ -112,7 +112,7 @@ theorem add_succ_right(n: Nat, m: Nat) {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Succ(m)));
                 unfold(nat::add(Nat::Succ(previous), m));
-                rewrite(nat::add(previous, Nat::Succ(m)) == Nat::Succ(nat::add(previous, m)));
+                rewrite(nat::add(previous, Nat::Succ(m)), Nat::Succ(nat::add(previous, m)));
                 normalize();
             }
         }
@@ -130,14 +130,12 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 apply(nat::add_succ_left(previous, b));
-                rewrite(nat::add(Nat::Succ(previous), b) == Nat::Succ(nat::add(previous, b)));
+                rewrite(nat::add(Nat::Succ(previous), b), Nat::Succ(nat::add(previous, b)));
                 apply(nat::add_succ_left(nat::add(previous, b), c));
-                rewrite(nat::add(Nat::Succ(nat::add(previous, b)), c)
-                    == Nat::Succ(nat::add(nat::add(previous, b), c)));
+                rewrite(nat::add(Nat::Succ(nat::add(previous, b)), c), Nat::Succ(nat::add(nat::add(previous, b), c)));
                 apply(nat::add_succ_left(previous, nat::add(b, c)));
-                rewrite(nat::add(Nat::Succ(previous), nat::add(b, c))
-                    == Nat::Succ(nat::add(previous, nat::add(b, c))));
-                rewrite(nat::add(nat::add(previous, b), c) == nat::add(previous, nat::add(b, c)));
+                rewrite(nat::add(Nat::Succ(previous), nat::add(b, c)), Nat::Succ(nat::add(previous, nat::add(b, c))));
+                rewrite(nat::add(nat::add(previous, b), c), nat::add(previous, nat::add(b, c)));
                 normalize();
             }
         }
@@ -150,15 +148,15 @@ theorem add_commutative(a: Nat, b: Nat) {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 apply(nat::add_right_identity(b));
-                rewrite(nat::add(b, Nat::Zero) == b);
+                rewrite(nat::add(b, Nat::Zero), b);
                 normalize();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), b));
                 apply(nat::add_succ_right(b, previous));
-                rewrite(nat::add(b, Nat::Succ(previous)) == Nat::Succ(nat::add(b, previous)));
-                rewrite(nat::add(previous, b) == nat::add(b, previous));
+                rewrite(nat::add(b, Nat::Succ(previous)), Nat::Succ(nat::add(b, previous)));
+                rewrite(nat::add(previous, b), nat::add(b, previous));
                 normalize();
             }
         }

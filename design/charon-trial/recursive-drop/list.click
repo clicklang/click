@@ -225,11 +225,11 @@ impl recursive_drop::Stack {
                             transport(at(region(93).exit, old(self.head.next).next) == at(region(93).exit, old(self.head.next).next), old(self.head.next).next == at(region(93).exit, old(self.head.next).next));
                         }
                         have self.head.next == old(self.head.next).next by {
-                            rewrite(self.head == old(self.head.next));
+                            rewrite(self.head, old(self.head.next));
                             known();
                         }
                         have self.head.value == w by {
-                            rewrite(self.head == old(self.head.next));
+                            rewrite(self.head, old(self.head.next));
                             known();
                         }
                         let after = fold(nodes(self.head), { values: List::Cons(w, more) }, { tail: next });

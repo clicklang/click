@@ -936,7 +936,7 @@ impl<'a> Proof<'a> {
         } else {
             let mut locals = state.locals().clone();
             for (name, value) in result_binding.into_iter().chain(produced_arguments) {
-                locals.values = locals.values.with_inserted(name, value);
+                locals.set_values(locals.values.with_inserted(name, value));
             }
             state.with_locals(locals)
         };

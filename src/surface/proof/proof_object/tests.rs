@@ -14577,12 +14577,12 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             &[],
         );
         let mut locals = root.state().locals().clone();
-        locals.values = locals.values.with_inserted(
+        locals.set_values(locals.values.with_inserted(
             "chosen".into(),
             ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 left.clone(),
             ))),
-        );
+        ));
         let root = root.with_kernel_state(root.state.with_locals(locals));
         let step = |argument| ProofStep::InstantiateUsing {
             quantified: quantified.clone(),
@@ -14625,12 +14625,12 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         );
         samples.push(cached_work);
         let mut changed_locals = instantiated.state().locals().clone();
-        changed_locals.values = changed_locals.values.with_inserted(
+        changed_locals.set_values(changed_locals.values.with_inserted(
             "chosen".into(),
             ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(9_104_102)),
             ))),
-        );
+        ));
         let shadowed =
             instantiated.with_kernel_state(instantiated.state.with_locals(changed_locals));
         assert!(
@@ -14702,10 +14702,10 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         &[],
     );
     let mut locals = root.state().locals().clone();
-    locals.values = locals.values.with_inserted(
+    locals.set_values(locals.values.with_inserted(
         "chosen".into(),
         ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(right))),
-    );
+    ));
     let root = root.with_kernel_state(root.state.with_locals(locals));
     let rewritten = root
         .driver()
@@ -15044,4 +15044,133 @@ fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
         let _guard = crate::kernel::search::FastOperationScope::enter("partition known");
         assert_eq!(focused.apply_known().is_ok(), retained);
     }
+}
+
+#[test]
+fn proof_binding_name_index_tracks_aliases_scopes_and_forks() {
+    let value = |variable| {
+        ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(variable)),
+                ProgramType::Int32Pointer,
+            ),
+        ))
+    };
+    let mut parent = ProofLocals::default();
+    parent.set_values(
+        parent
+            .values
+            .with_inserted("identity".into(), value(981_010)),
+    );
+    parent.set_values(
+        parent
+            .values
+            .with_inserted("other_name".into(), value(981_010)),
+    );
+    let mut child = parent.clone();
+    child.set_values(
+        child
+            .values
+            .with_inserted("identity".into(), value(981_011)),
+    );
+    assert_eq!(parent.value_names.name(Variable(981_010)), Some("identity"));
+    assert_eq!(parent.value_names.name(Variable(981_011)), None);
+    assert_eq!(
+        child.value_names.name(Variable(981_010)),
+        Some("other_name")
+    );
+    assert_eq!(child.value_names.name(Variable(981_011)), Some("identity"));
+    child.set_values(child.values.without_key(&"other_name".to_string()));
+    assert_eq!(child.value_names.name(Variable(981_010)), None);
+    child.set_values(parent.values.clone());
+    assert_eq!(child.value_names.name(Variable(981_010)), Some("identity"));
+    assert_eq!(child.value_names.name(Variable(981_011)), None);
+}
+
+#[test]
+fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
+    let variable = Variable(981_012);
+    let mut locals = ProofLocals::default();
+    locals.set_values(locals.values.with_inserted(
+        "number".into(),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(variable),
+        ))),
+    ));
+    locals.set_integer_values(locals.integer_values.with_inserted(
+        "number".into(),
+        crate::kernel::SpecIntegerExpression::Term(IntegerTerm::Variable(variable)),
+    ));
+    locals.set_values(PersistentMap::default());
+    assert_eq!(locals.value_names.name(variable), Some("number"));
+    locals.set_integer_values(PersistentMap::default());
+    assert_eq!(locals.value_names.name(variable), None);
+    locals.set_algebraic_values(locals.algebraic_values.with_inserted(
+        "model".into(),
+        crate::kernel::SpecAlgebraicExpression {
+            algebraic_type: crate::kernel::AlgebraicType::parameter("T".into()),
+            node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
+        },
+    ));
+    let parent = locals.clone();
+    locals.set_algebraic_values(PersistentMap::default());
+    assert_eq!(locals.value_names.name(variable), None);
+    assert_eq!(parent.value_names.name(variable), Some("model"));
+}
+
+#[test]
+fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
+    let variable = Variable(981_020);
+    let pointer =
+        crate::kernel::PointerValue::new(Pointer::symbolic(variable), ProgramType::Int32Pointer);
+    let expression = ContractExpression::ProgramExpression(ProgramExpression::Value(
+        ProgramValue::Pointer(pointer.clone()),
+    ));
+    let mut locals = ProofLocals::default();
+    locals.set_values(locals.values.with_inserted("identity".into(), expression));
+    let state = ExecutionState::new();
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
+        false,
+    );
+    let synthesize = || {
+        crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+            &goal,
+            ParameterBinding::default(),
+            &state,
+        )
+    };
+    assert!(synthesize().is_none());
+    {
+        let _scope = crate::surface::proof::surface_synthesis::ProofBindingNamesScope::enter(
+            locals.value_names.clone(),
+            PersistentMap::default(),
+        );
+        let spelling = crate::surface::printing::source_click_proposition(&synthesize().unwrap());
+        assert!(spelling.contains("identity"), "{spelling}");
+        let shadows = PersistentMap::default().with_inserted(
+            "identity".into(),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::typed_pointer(
+                    Pointer::symbolic(Variable(981_021)),
+                    ProgramType::Int32Pointer,
+                ),
+            )),
+        );
+        {
+            let _shadow = crate::surface::proof::surface_synthesis::ProofBindingNamesScope::enter(
+                locals.value_names.clone(),
+                shadows,
+            );
+            assert!(
+                synthesize().is_none(),
+                "an intro must not capture an outer pointer name"
+            );
+        }
+        assert!(
+            synthesize().is_some(),
+            "the parent lexical scope is restored"
+        );
+    }
+    assert!(synthesize().is_none(), "the arm's names must not leak");
 }

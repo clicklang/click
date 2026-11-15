@@ -35,7 +35,7 @@ theorem loads_agree(bytes: uint8[], prefix: uint64, suffix: uint64, total: uint6
         have (bytes + prefix) + suffix == bytes + total by {
             normalize() using { to_integer(total) == to_integer(prefix) + to_integer(suffix); };
         }
-        rewrite((bytes + prefix) + suffix == bytes + total);
+        rewrite((bytes + prefix) + suffix, bytes + total);
         solve();
     }
 }

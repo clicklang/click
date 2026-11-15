@@ -134,7 +134,7 @@ void inner(struct rb_node* node) {
     match state.phase {
         InnerPhase::After(g, p) => {
             have inner_pending(state.phase) != 1 by {
-                rewrite(state.phase == InnerPhase::After(g, p));
+                rewrite(state.phase, InnerPhase::After(g, p));
                 unfold(inner_pending(InnerPhase::After(g, p))); normalize();
             }
             contradiction(inner_pending(state.phase) == 1);
@@ -180,7 +180,7 @@ void inner(struct rb_node* node) {
                     have p->rb_right == 0 by { known(); }
                     let state = fold(inner_state(node), { phase: InnerPhase::After(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model) }, { gs: gs, ps: ps, ns: ns });
                     have state.phase == inner_finish(old(state.phase)) by {
-                        rewrite(old(state.phase) == InnerPhase::Before(g, p));
+                        rewrite(old(state.phase), InnerPhase::Before(g, p));
                         unfold(inner_finish(InnerPhase::Before(g, p))); known();
                     }
                     step();

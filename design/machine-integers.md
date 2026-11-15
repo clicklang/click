@@ -8,6 +8,13 @@ and a single comparison family. It reopens the goal of the closed
 `git show 1e37d2df^:issues/one-integer-term-type.md`. The roadmap entry was
 `roadmap/standard-library.md`, closed and deleted on 2026-11-13.
 
+The delivery item closed on 2026-11-13. The staged inventories and earlier
+choices below are chronological evidence, not current missing work. Current
+representation and laws are in [Kernel](../docs/internals/kernel.md) and
+[Mathematical integers](../docs/internals/mathematical-integers.md). The
+kernel matrix and `src/surface/tests/width_uniformity.rs` are the executable
+coverage records; the latter proves every applicable, non-excluded pair.
+
 The site counts below come from text searches of `src/` at `3aea06b9`,
 excluding test files. They size the work; they are not an audit.
 
@@ -1695,9 +1702,10 @@ Maintainer decision, 2026-11-09 (library families):
   `src/surface/tests/width_uniformity.rs` states each family at every
   format in `FORMATS` and proves it by the omitted proof with no library
   import, so a format a rule misses fails a test. Each family/format pair
-  is proved, excluded (the statement does not apply: a signed-only law at
-  an unsigned format, an operation at 128 bits, definedness outside `int32`
-  and `int64`) or a listed gap that the nightly checks is still refused.
-  The per-width lemmas in `library/integer.click` stay for the proofs that
-  cite them; deleting unused ones is deferred, not decided. The open gaps
-  are listed in `roadmap/standard-library.md` ("Width-uniformity gaps").
+  is proved or excluded when the statement does not apply (for example, a
+  signed-only law at an unsigned format or an operation at 128 bits). The
+  former expected-gap list was closed before the delivery item was removed.
+  The per-width lemmas in `library/integer.click` stay for proofs that cite
+  them; deleting unused ones is deferred, not decided. The current
+  [width-uniformity fixture](../docs/internals/testing.md#width-uniformity-fixture)
+  records its scope and exclusions.

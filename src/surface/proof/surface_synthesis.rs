@@ -1181,8 +1181,54 @@ pub(in crate::surface) fn with_proof_binder_names<R>(
     operation()
 }
 
+thread_local! {
+    static PROOF_BINDING_NAMES: std::cell::RefCell<(
+        super::proof_object::binding_names::BindingNames,
+        PersistentMap<String, ContractExpression>,
+    )> = std::cell::RefCell::new((
+        super::proof_object::binding_names::BindingNames::default(),
+        PersistentMap::default(),
+    ));
+}
+
+pub(super) struct ProofBindingNamesScope(
+    super::proof_object::binding_names::BindingNames,
+    PersistentMap<String, ContractExpression>,
+);
+impl ProofBindingNamesScope {
+    pub(super) fn enter(
+        names: super::proof_object::binding_names::BindingNames,
+        shadows: PersistentMap<String, ContractExpression>,
+    ) -> Self {
+        let (names, shadows) = PROOF_BINDING_NAMES.with(|slot| slot.replace((names, shadows)));
+        Self(names, shadows)
+    }
+}
+impl Drop for ProofBindingNamesScope {
+    fn drop(&mut self) {
+        PROOF_BINDING_NAMES.with(|slot| {
+            slot.replace((std::mem::take(&mut self.0), std::mem::take(&mut self.1)));
+        });
+    }
+}
+
 fn proof_binder_name(variable: Variable) -> Option<String> {
-    PROOF_BINDER_NAMES.with(|names| names.borrow().get(&variable).cloned())
+    PROOF_BINDER_NAMES
+        .with(|names| names.borrow().get(&variable).cloned())
+        .or_else(|| {
+            PROOF_BINDING_NAMES.with(|slot| {
+                let (names, shadows) = &*slot.borrow();
+                let name = names.name(variable)?;
+                // An intro may shadow a proof-local name. Its selected binding,
+                // rather than an ambient alias search, decides whether it is live.
+                if shadows.get(name).is_some_and(|expression| {
+                    super::proof_object::binding_names::variable(expression) != Some(variable)
+                }) {
+                    return None;
+                }
+                Some(name.to_owned())
+            })
+        })
 }
 
 thread_local! {
@@ -1261,6 +1307,11 @@ pub(in crate::surface) fn synthesize_surface_value(
         return Some(ContractExpression::RegionResult(region));
     }
     let _scope = SurfaceSynthesisScope::enter();
+    if crate::surface::diagnostics::exact_float_literal_spelling(value).is_some() {
+        return Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(value.clone()),
+        ));
+    }
     match value {
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
             pointer.pointer(),
@@ -3010,8 +3061,19 @@ fn synthesize_surface_atomic_proposition(
         }
     );
     let operand = |term: &MachineTerm| {
-        let expression =
-            synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
+        // Wide comparisons retain signedness at each read and operation.
+        // Reconstruct their shared operands rather than defaulting a Bits64
+        // read to int64 before an unsigned operation consumes it.
+        let expression = if let ConditionTerm::Compare {
+            format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
+            ..
+        } = condition
+        {
+            let root = crate::kernel::KernelTermImport::default().machine(*format, term);
+            raise_kernel_term(&root, parameter_binding, state, bound_variables)?
+        } else {
+            synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
+        };
         if signed_order
             && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
                 || matches!(
@@ -3314,22 +3376,10 @@ pub(super) fn raise_kernel_term(
         Node::PointerCall { call, .. } => recurse(call)?,
         Node::ArrayReference {
             memory, pointer, ..
-        } => {
-            if *memory == crate::kernel::intern_memory_ref(state.memory()) {
-                recurse(pointer)?
-            } else {
-                let entry = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())?;
-                if *memory != crate::kernel::intern_memory_ref(entry.memory()) {
-                    return None;
-                }
-                SurfaceTerm::Old(Box::new(raise_kernel_term(
-                    pointer,
-                    parameter_binding,
-                    &entry,
-                    bound_variables,
-                )?))
-            }
-        }
+        } => synthesize_at_memory(memory, state, |selected| {
+            raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
+        })?,
+
         Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
         | Node::PointerValue(value) => {
@@ -3355,6 +3405,9 @@ pub(super) fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
+        Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+            crate::kernel::KernelTermExport::float(term).ok()?,
+        )),
         Node::MachineLiteral(literal) => {
             let KernelType::Program(ty) = term.ty() else {
                 return None;
@@ -3405,12 +3458,26 @@ pub(super) fn raise_kernel_term(
                 expression
             }
         }
-        Node::MemoryLoad { .. } => synthesize_surface_bitvector(
-            term.machine_read_leaf()?,
-            parameter_binding,
-            state,
-            bound_variables,
-        )?,
+        Node::MemoryLoad { .. } => {
+            let read = term.machine_read_leaf()?;
+            match term.ty() {
+                KernelType::Program(value_type @ (ProgramType::Int64 | ProgramType::UInt64))
+                    if matches!(
+                        read,
+                        MachineTerm::MemoryLoad(_, _, crate::kernel::LoadKind::Bits64)
+                    ) =>
+                {
+                    synthesize_typed_word_read(
+                        read,
+                        *value_type,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?
+                }
+                _ => synthesize_surface_bitvector(read, parameter_binding, state, bound_variables)?,
+            }
+        }
         Node::Variable(variable) => synthesize_surface_bitvector(
             &MachineTerm::Variable(*variable),
             parameter_binding,
@@ -4166,6 +4233,58 @@ fn synthesize_named_integer_local<'a>(
     None
 }
 
+/// A retained word read carries its interpretation. Spell that exact typed
+/// load, at the same selected snapshot, instead of a signed load followed by
+/// an unsigned cast (which introduces a different observation node).
+fn synthesize_typed_word_read(
+    read: &MachineTerm,
+    value_type: ProgramType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+        return None;
+    };
+    let read =
+        crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
+    let at_state = |load: &MachineTerm, state: &ExecutionState| {
+        let MachineTerm::MemoryLoad(_, pointer, _) = load else {
+            return None;
+        };
+        let address = synthesize_surface_pointer_expression(
+            pointer,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        Some(ContractExpression::CUnary {
+            operand: Box::new(address),
+            lowered: ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Value(int32(0))),
+                value_type,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            },
+        })
+    };
+    if let Some(load) = scalar_read_in_state(&read, state) {
+        return at_state(&load, state);
+    }
+    if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+        && let Some(load) = scalar_read_in_state(&read, &entry)
+    {
+        return Some(ContractExpression::Old(Box::new(at_state(&load, &entry)?)));
+    }
+    let (selector, recorded, load) = recorded_point_of_load(&read)?;
+    Some(ContractExpression::At {
+        selector,
+        expression: Box::new(at_state(&load, &recorded)?),
+    })
+}
+
 fn synthesize_surface_bitvector(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -4313,9 +4432,10 @@ fn synthesize_surface_bitvector(
         } => {
             let operand =
                 synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
-            Some(ContractExpression::ProgramExpression(
-                ProgramExpression::Cast {
-                    expression: Box::new(contract_expression_to_program_expression(&operand)?),
+            Some(ContractExpression::CUnary {
+                operand: Box::new(operand),
+                lowered: ProgramExpression::Cast {
+                    expression: Box::new(ProgramExpression::Value(int32(0))),
                     target_type: destination.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
@@ -4323,7 +4443,7 @@ fn synthesize_surface_bitvector(
                     pointee_constant: false,
                     explicit_qualification: false,
                 },
-            ))
+            })
         }
         MachineTerm::BoolCast { to, value } => {
             // synthesize_surface_bool uses the uint8 carrier to name an
@@ -4756,9 +4876,10 @@ fn synthesize_surface_bitvector(
                     operand = synthesize_int32_operand(operand)?;
                 }
             }
-            Some(ContractExpression::ProgramExpression(
-                ProgramExpression::Cast {
-                    expression: Box::new(contract_expression_to_program_expression(&operand)?),
+            Some(ContractExpression::CUnary {
+                operand: Box::new(operand),
+                lowered: ProgramExpression::Cast {
+                    expression: Box::new(ProgramExpression::Value(int32(0))),
                     target_type: if matches!(
                         term,
                         cast_term!(Int64From32, _) | cast_term!(Int64FromUInt32, _)
@@ -4773,18 +4894,17 @@ fn synthesize_surface_bitvector(
                     pointee_constant: false,
                     explicit_qualification: false,
                 },
-            ))
+            })
         }
-        cast_term!(UInt32From64, value) => Some(ContractExpression::ProgramExpression(
-            ProgramExpression::Cast {
-                expression: Box::new(contract_expression_to_program_expression(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
+        cast_term!(UInt32From64, value) => Some(ContractExpression::CUnary {
+            operand: Box::new(synthesize_surface_bitvector(
+                value,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?),
+            lowered: ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Value(int32(0))),
                 target_type: ProgramType::UInt32,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
@@ -4792,7 +4912,7 @@ fn synthesize_surface_bitvector(
                 pointee_constant: false,
                 explicit_qualification: false,
             },
-        )),
+        }),
         MachineTerm::Binary {
             op, left, right, ..
         } => {
@@ -4905,6 +5025,33 @@ fn synthesize_surface_call(
     })
 }
 
+/// A snapshot-bearing argument selects its memory by identity. An intermediate
+/// recorded snapshot is as explicit as `old`; no timeline or frame search is
+/// needed to recover that snapshot's source selector.
+fn synthesize_at_memory(
+    memory: &crate::kernel::SharedMemory,
+    state: &ExecutionState,
+    raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    if *memory == crate::kernel::intern_memory_ref(state.memory()) {
+        return raise(state);
+    }
+    if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+        && *memory == crate::kernel::intern_memory_ref(entry.memory())
+    {
+        return Some(SurfaceTerm::Old(Box::new(raise(&entry)?)));
+    }
+    let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let (selector, recorded) = slot.as_ref()?.point_reading_memory(memory)?;
+        Some((selector.clone(), recorded.clone()))
+    })?;
+    Some(SurfaceTerm::At {
+        selector,
+        expression: Box::new(raise(&recorded)?),
+    })
+}
+
 fn synthesize_legacy_call_argument(
     value: &crate::kernel::PureFunctionArgument,
     parameter_binding: ParameterBinding<'_>,
@@ -4924,6 +5071,11 @@ fn synthesize_legacy_call_argument(
                 state,
                 bound_variables,
             )?
+        }
+        crate::kernel::PureFunctionArgument::Value(
+            value @ (ProgramValue::Float32(_) | ProgramValue::Float64(_)),
+        ) if crate::surface::diagnostics::exact_float_literal_spelling(value).is_some() => {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone()))
         }
         // A word argument's term carries its own width; the candidate's
         // round trip confirms the call lowers it at the parameter's type.
@@ -4945,33 +5097,18 @@ fn synthesize_legacy_call_argument(
             memory,
             pointer: ProgramValue::Pointer(pointer),
             ..
-        } => {
-            let snapshot = crate::kernel::intern_memory_ref(memory);
-            if snapshot == crate::kernel::intern_memory_ref(state.memory()) {
+        } => synthesize_at_memory(
+            &crate::kernel::intern_memory_ref(memory),
+            state,
+            |selected| {
                 synthesize_surface_pointer_expression(
                     pointer,
                     parameter_binding,
-                    state,
+                    selected,
                     bound_variables,
-                )?
-            } else {
-                SYNTHESIS_ENTRY_STATE
-                    .with(|slot| slot.borrow().clone())
-                    .and_then(|entry| {
-                        if snapshot != crate::kernel::intern_memory_ref(entry.memory()) {
-                            return None;
-                        }
-                        Some(ContractExpression::Old(Box::new(
-                            synthesize_surface_pointer_expression(
-                                pointer,
-                                parameter_binding,
-                                &entry,
-                                bound_variables,
-                            )?,
-                        )))
-                    })?
-            }
-        }
+                )
+            },
+        )?,
         _ => return None,
     })
 }
@@ -5588,7 +5725,10 @@ fn pointer_read_address_in_state(pointer: &Pointer, state: &ExecutionState) -> O
         }
         PointerBlock::LoadedPointer(_) => {
             let read = pointer.as_loaded_value()?;
-            (Pointer::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
+            // A retained read always names its exact defining snapshot,
+            // including a post-store read whose canonical value is now known.
+            (memory == read.defining_memory
+                || Pointer::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
                 .then_some(read.defining_address)
         }
         _ => None,
@@ -5886,6 +6026,9 @@ fn synthesize_surface_pointer(
         if read.displacement != PointerOffsetTerm::Constant(0) {
             return None;
         }
+        // A field spelling reads this state; historical reads need their
+        // recorded selector before entering this C-only source fragment.
+        pointer_read_address_in_state(pointer, state)?;
         let field = synthesize_struct_field_load(
             &read.defining_address,
             ProgramType::Int32Pointer,

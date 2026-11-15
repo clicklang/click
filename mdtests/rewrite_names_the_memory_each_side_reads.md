@@ -26,7 +26,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     step();
     have a[m] == 5 by {
-        rewrite(old(a[m]) == 5);
+        rewrite(old(a[m]), 5);
         known();
     }
 }

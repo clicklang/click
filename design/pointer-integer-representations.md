@@ -6,7 +6,9 @@ for full packed-pointer relationships, using existing syntax such as
 `requires ((word & ~1) as (struct node *)) == p;`. Their implementation and checked tagged-word transport are in
 [PR #1245](https://github.com/clicklang/click/pull/1245). No new `represents` predicate is approved.
 This extends [pointer subobject extents](pointer-subobject-extents.md)
-and does not close its tracked bug.
+whose staged repairs have closed the original scalar-subobject bug. The
+integer-representation work is a separate transport boundary, not evidence
+that every larger rbtree sidecar is green.
 
 ## Accepted policy
 

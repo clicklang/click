@@ -48,7 +48,7 @@ function size(tree: Tree) -> Integer
 theorem leaf_left_size(value: int, left: Tree, right: Tree) {
     requires left == Tree::Leaf;
     ensures size(Tree::Node(value, left, right)) == size(right) + 1 by {
-        rewrite(left == Tree::Leaf);
+        rewrite(left, Tree::Leaf);
         unfold(size(Tree::Node(value, Tree::Leaf, right)));
         unfold(size(Tree::Leaf));
         normalize();

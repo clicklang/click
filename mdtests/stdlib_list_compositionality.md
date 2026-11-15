@@ -5,8 +5,7 @@ theorem rewrite_append_in_contains(head: int32, tail: List<int32>, ys: List<int3
     ensures list::contains(list::append(List<int32>::Cons(head, tail), ys), value)
         == list::contains(List<int32>::Cons(head, list::append(tail, ys)), value) by {
         apply(list::append_cons(head, tail, ys));
-        rewrite(list::append(List<int32>::Cons(head, tail), ys)
-            == List<int32>::Cons(head, list::append(tail, ys)));
+        rewrite(list::append(List<int32>::Cons(head, tail), ys), List<int32>::Cons(head, list::append(tail, ys)));
         solve();
     }
 }
@@ -46,11 +45,11 @@ theorem symbolic_comparison(xs: List<int32>, ys: List<int32>) {
 theorem rewrite_inside_condition(xs: List<int32>, ys: List<int32>, zs: List<int32>) {
     requires xs == ys;
     ensures (if xs == zs { 1 } else { 0 }) == (if ys == zs { 1 } else { 0 }) by {
-        rewrite(xs == ys);
+        rewrite(xs, ys);
         normalize();
     }
     ensures adt_equal(list::append(xs, zs), zs) == adt_equal(list::append(ys, zs), zs) by {
-        rewrite(xs == ys);
+        rewrite(xs, ys);
         normalize();
     }
 }

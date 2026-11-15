@@ -3,8 +3,8 @@ theorem incremented_zero_is_one(before: int32, after: int32) {
     requires after == before + 1;
 
     ensures after == 1 by {
-        rewrite(after == before + 1);
-        rewrite(before == 0);
+        rewrite(after, before + 1);
+        rewrite(before, 0);
         solve();
     }
 }
@@ -14,8 +14,8 @@ theorem decremented_one_is_zero(before: int32, after: int32) {
     requires after == before - 1;
 
     ensures after == 0 by {
-        rewrite(after == before - 1);
-        rewrite(before == 1);
+        rewrite(after, before - 1);
+        rewrite(before, 1);
         solve();
     }
 }
@@ -119,8 +119,8 @@ int32 owned_string_init(
     have data[0] == 0;
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at);
-        rewrite(owner->data == data);
-        rewrite(owner->len == 0);
+        rewrite(owner->data, data);
+        rewrite(owner->len, 0);
         known();
     }
     have 0 <= owner->len;
@@ -228,7 +228,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     }
     fold(owned_string(owner));
     have owner->len == (old(owner->len) + 1) by {
-        rewrite(owner->len == at(region(3).entry, (index + 1)));
+        rewrite(owner->len, at(region(3).entry, (index + 1)));
         known();
     }
     known();
@@ -359,38 +359,38 @@ int32 owned_string_pipeline(
         known();
     }
     have (owner->len + 1) < owner->cap by {
-        rewrite(owner->cap == capacity);
-        rewrite(owner->len == 0);
+        rewrite(owner->cap, capacity);
+        rewrite(owner->len, 0);
         have 1 < at(statement(2).entry, capacity);
         solve();
     }
     step();
     step();
     have owner->len == 1 by {
-        rewrite(owner->len == at(statement(3).entry, owner->len + 1));
-        rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
+        rewrite(owner->len, at(statement(3).entry, owner->len + 1));
+        rewrite(at(statement(3).entry, owner->len), at(statement(3).entry, 0));
         normalize();
     }
     have 0 < owner->len by {
-        rewrite(owner->len == 1);
+        rewrite(owner->len, 1);
         normalize();
     }
     have owner->data[at(statement(3).entry, owner->len)] == first by {
         known();
     }
     have owner->data[0] == first by {
-        rewrite(first == owner->data[at(statement(3).entry, owner->len)]);
-        rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
+        rewrite(first, owner->data[at(statement(3).entry, owner->len)]);
+        rewrite(at(statement(3).entry, owner->len), at(statement(3).entry, 0));
         normalize();
     }
     step();
     step();
     have 1 <= owner->len by {
-        rewrite(owner->len == 1);
+        rewrite(owner->len, 1);
         normalize();
     }
     have observed == first by {
-        rewrite(first == owner->data[0]);
+        rewrite(first, owner->data[0]);
         known();
     }
     step();

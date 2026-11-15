@@ -7,7 +7,7 @@ for the iterator cursor supplies no equality between two input bytes.
 theorem wrong_byte(p: const uint8*, bytes: uint8[], n: uint64) {
  requires p == bytes + n;
  ensures to_integer(p[0] as int32) == to_integer((bytes + n)[1] as int32) by {
-  rewrite(p == bytes + n);
+  rewrite(p, bytes + n);
   normalize();
  }
 }

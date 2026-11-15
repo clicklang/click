@@ -182,10 +182,10 @@ impl<'a> Proof<'a> {
         count: &crate::kernel::IntegerTerm,
     ) -> Self {
         let mut locals = self.state.locals().clone();
-        locals.integer_values = locals.integer_values.with_inserted(
+        locals.set_integer_values(locals.integer_values.with_inserted(
             crate::surface::LOOP_ITERATIONS_NAME.to_string(),
             crate::kernel::SpecIntegerExpression::Term(count.clone()),
-        );
+        ));
         self.with_kernel_state(self.state.with_locals(locals))
     }
 
@@ -194,7 +194,7 @@ impl<'a> Proof<'a> {
         bindings: &PersistentMap<String, ContractExpression>,
     ) -> Self {
         let mut locals = self.state.locals().clone();
-        locals.values = bindings.clone();
+        locals.set_values(bindings.clone());
         self.with_kernel_state(self.state.with_locals(locals))
     }
 
@@ -635,8 +635,8 @@ impl<'a> Proof<'a> {
             .introduce_frontier_match_case(plan.partition.clone(), plan.case_indices[index])
             .map_err(|message| self.step_error(message))?;
         let mut locals = plan.parent_locals.clone();
-        locals.values = plan.bindings[index].clone();
-        locals.integer_values = plan.integer_bindings[index].clone();
+        locals.set_values(plan.bindings[index].clone());
+        locals.set_integer_values(plan.integer_bindings[index].clone());
         let arm = &plan.source.arms[index];
         let Some(Proposition::Equal(_, Term::Algebraic(constructor))) =
             plan.partition.case_fact(plan.case_indices[index])
@@ -900,7 +900,7 @@ impl<'a> Proof<'a> {
                     if arms_naming[name.as_str()] == 1
                         && let Some(value) = bindings.get(name)
                     {
-                        locals.values = locals.values.with_inserted(name.clone(), value.clone());
+                        locals.set_values(locals.values.with_inserted(name.clone(), value.clone()));
                     }
                 }
             }
@@ -1155,22 +1155,22 @@ impl<'a> Proof<'a> {
             let mut locals = state.locals().clone();
             let expression = match sort {
                 Sort::Algebraic(algebraic_type) => {
-                    locals.algebraic_values = locals.algebraic_values.with_inserted(
+                    locals.set_algebraic_values(locals.algebraic_values.with_inserted(
                         name.clone(),
                         crate::kernel::SpecAlgebraicExpression {
                             algebraic_type,
                             node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
                         },
-                    );
+                    ));
                     ContractExpression::Binding(name.clone())
                 }
                 Sort::Integer => {
-                    locals.integer_values = locals.integer_values.with_inserted(
+                    locals.set_integer_values(locals.integer_values.with_inserted(
                         name.clone(),
                         crate::kernel::SpecIntegerExpression::Term(
                             crate::kernel::IntegerTerm::var(variable),
                         ),
-                    );
+                    ));
                     ContractExpression::Binding(name.clone())
                 }
                 Sort::ProgramObjectPointer(interface_type, class) => {
@@ -1196,7 +1196,7 @@ impl<'a> Proof<'a> {
                 }
                 _ => return Err(proof.step_error("unsupported match field sort")),
             };
-            locals.values = locals.values.with_inserted(name.clone(), expression);
+            locals.set_values(locals.values.with_inserted(name.clone(), expression));
             proof = proof.with_kernel_state(state.with_locals(locals));
         }
         let state = proof

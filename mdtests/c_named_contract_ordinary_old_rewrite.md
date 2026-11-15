@@ -18,7 +18,7 @@ theorem lift(callback: void (*)(int32*)) {
         unfold(Target);
         have cells[0] == old(cells[1]) implies cells[0] >= old(cells[1]) by {
             intro();
-            rewrite(cells[0] == old(cells[1]));
+            rewrite(cells[0], old(cells[1]));
             solve();
         }
         solve();

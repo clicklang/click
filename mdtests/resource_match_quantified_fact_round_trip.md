@@ -45,7 +45,7 @@ int32 write_zero(struct buffer* buffer) {
                 normalize();
             }
             have 0 < end by {
-                rewrite(end == 1);
+                rewrite(end, 1);
                 normalize();
             }
             have buffer->data[0] == 0 by {
@@ -79,7 +79,7 @@ int32 write_zero(struct buffer* buffer) {
                         k < 1;
                     };
                 }
-                rewrite(k == 0);
+                rewrite(k, 0);
                 normalize();
             }
             let prefix = fold(zero_prefix(buffer), {

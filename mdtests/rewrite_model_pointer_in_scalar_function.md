@@ -28,7 +28,7 @@ int32 f(int32* p) {
         Link::Node(q) => {
             unfold(before);
             have points_to(Link::Node(q), p) == 1 by {
-                rewrite(q == p);
+                rewrite(q, p);
                 unfold(points_to(Link::Node(p), p)); normalize();
             }
             step_until(function.exit);

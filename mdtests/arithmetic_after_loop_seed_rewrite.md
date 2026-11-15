@@ -28,8 +28,8 @@ uint64 seed(uint64 word, uint64 len) {
    have count(old(len), len) == 0 by { unfold(count(old(len), len)); solve(); }
    have word == decode(old(word)) by solve();
    have to_integer(word) == observe(count(old(len), len), to_integer(decode(old(word)))) by {
-    rewrite(count(old(len), len) == 0);
-    rewrite(word == decode(old(word)));
+    rewrite(count(old(len), len), 0);
+    rewrite(word, decode(old(word)));
     solve() using { observe(0, to_integer(decode(old(word)))) == to_integer(decode(old(word))); };
    }
    solve();
@@ -40,8 +40,8 @@ uint64 seed(uint64 word, uint64 len) {
     if 0u64 < len { known(); } else {
      have 0u64 <= len by normalize();
      have 0u64 == len;
-     have len == 0u64 by { rewrite(0u64 == len); normalize(); }
-     have not (len > 0u64) by { rewrite(len == 0u64); normalize(); }
+     have len == 0u64 by { rewrite(0u64, len); normalize(); }
+     have not (len > 0u64) by { rewrite(len, 0u64); normalize(); }
      contradiction(len > 0u64);
     }
    }

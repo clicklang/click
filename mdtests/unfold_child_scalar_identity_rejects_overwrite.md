@@ -45,8 +45,8 @@ void probe(struct node *p) {
             let {kid: kid} = unfold(a);
             step_until(function.exit);
             have (id->tag & 1) == 1 by known();
-            have p != 0 by { rewrite(p == id); known(); }
-            have aligned(p, 8) by { rewrite(p == id); known(); }
+            have p != 0 by { rewrite(p, id); known(); }
+            have aligned(p, 8) by { rewrite(p, id); known(); }
             let b = fold(frame(p), {model: Tag::At(id, gp, child_model)}, {kid: kid});
             solve();
         },

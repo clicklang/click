@@ -53,7 +53,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             have separate(memory(gparent->rb_left), memory(parent->rb_right));
             have gparent->rb_left == parent by { solve() using { parent == gparent->rb_left; }; }
             have separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)) by {
-                rewrite(gparent->rb_left == parent);
+                rewrite(gparent->rb_left, parent);
                 known();
             }
             have defined(gparent->rb_left) by { normalize(); }
@@ -70,7 +70,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             }
             have parent == at(before_store, gparent->rb_left) by { known(); }
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
-                rewrite(parent == at(before_store, gparent->rb_left));
+                rewrite(parent, at(before_store, gparent->rb_left));
                 known();
             }
             have separate(loop(0).statement(0).footprint, memory(gparent->rb_left)) by {

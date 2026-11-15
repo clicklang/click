@@ -363,7 +363,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
     /// Apply an ordinary derivation to its named target. Auxiliary transports
     /// use the same `have` scope as a written proof; no transport node remains.
-    fn apply_ordinary_transport_steps(
+    pub(in crate::surface::proof) fn apply_ordinary_transport_steps(
         &self,
         target: &ClickProposition,
         steps: Vec<ProofStep>,

@@ -30,8 +30,8 @@ theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: uint
   have adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b) by {
    unfold(adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b));
    unfold(adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b));
-   rewrite(adler_spec_a_u64(c_bytes, length, initial_a) == adler_spec_a_u64(rust_bytes, length, initial_a));
-   rewrite(adler_spec_b_u64(c_bytes, length, initial_a, initial_b) == adler_spec_b_u64(rust_bytes, length, initial_a, initial_b));
+   rewrite(adler_spec_a_u64(c_bytes, length, initial_a), adler_spec_a_u64(rust_bytes, length, initial_a));
+   rewrite(adler_spec_b_u64(c_bytes, length, initial_a, initial_b), adler_spec_b_u64(rust_bytes, length, initial_a, initial_b));
    normalize();
   }
   apply(adler_result_widen(rust_result));
@@ -52,9 +52,9 @@ theorem adler_c_rust_reset(c_result: uint64, rust_a: uint32, rust_b: uint32) {
  requires rust_a == 1u32;
  requires rust_b == 0u32;
  ensures c_result == (rust_a | (rust_b << 16)) as uint64 by {
-  rewrite(c_result == 1u64);
-  rewrite(rust_a == 1u32);
-  rewrite(rust_b == 0u32);
+  rewrite(c_result, 1u64);
+  rewrite(rust_a, 1u32);
+  rewrite(rust_b, 0u32);
   normalize();
  }
 }

@@ -1848,6 +1848,47 @@ fn function_array_synthesis_requires_the_exact_named_snapshot() {
 }
 
 #[test]
+fn function_array_argument_keeps_its_recorded_memory_after_other_writes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(981_300)));
+    let historical = ExecutionState::new()
+        .with_local("p", pointer.clone())
+        .with_memory(Memory::new().with_block("historical-array", 4));
+    let current = historical
+        .clone()
+        .with_memory(historical.memory().clone().with_block("later-write", 4));
+    let values = [crate::kernel::PureFunctionArgument::ArrayRef {
+        memory: historical.memory().clone(),
+        pointer,
+        element_type: ProgramType::Int32,
+    }];
+    let selector = SnapshotSelector::from(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let mut points = RecordedSnapshots::new();
+    points.insert(selector.clone(), historical);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let _entry =
+        SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(current.clone()))));
+    let call = synthesize_surface_call(
+        "selected",
+        &values,
+        ParameterBinding::default(),
+        &current,
+        &BTreeMap::new(),
+    )
+    .expect("an explicitly recorded memory has a source selector");
+    let SurfaceTerm::Call { arguments, .. } = call else {
+        panic!("call")
+    };
+    assert!(
+        matches!(&arguments[0], SurfaceTerm::At { selector: selected, expression }
+        if *selected == selector && matches!(expression.as_ref(), SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name == "p"))
+    );
+}
+
+#[test]
 fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
     std::thread::Builder::new()
         .name("small-stack-proposition-synthesis".into())
@@ -4307,8 +4348,18 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
 
 #[test]
 fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
-    use crate::kernel::{KernelTermExport, KernelTermImport, KernelTermNode, PureFunctionArgument};
-    for (format, spelling) in [
+    check_common_machine_call_formats(&[
+        (MachineIntegerType::Int32, "int32"),
+        (MachineIntegerType::UInt32, "uint32"),
+        (MachineIntegerType::Int64, "int64"),
+        (MachineIntegerType::UInt64, "uint64"),
+    ]);
+}
+
+#[test]
+#[ignore = "nightly: complete ten-format call reconstruction sweep"]
+fn common_machine_calls_round_trip_source_with_all_native_formats() {
+    check_common_machine_call_formats(&[
         (MachineIntegerType::Int8, "int8"),
         (MachineIntegerType::UInt8, "uint8"),
         (MachineIntegerType::Int16, "int16"),
@@ -4319,7 +4370,12 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
         (MachineIntegerType::UInt64, "uint64"),
         (MachineIntegerType::Int128, "int128"),
         (MachineIntegerType::UInt128, "uint128"),
-    ] {
+    ]);
+}
+
+fn check_common_machine_call_formats(formats: &[(MachineIntegerType, &str)]) {
+    use crate::kernel::{KernelTermExport, KernelTermImport, KernelTermNode, PureFunctionArgument};
+    for &(format, spelling) in formats {
         let _session = crate::kernel::VerificationSession::enter();
         let declarations = format!(
             "function inner(x: int32) -> int32 {{ x }} function outer(x: int32) -> {spelling} {{ x as {spelling} }}"
@@ -4401,6 +4457,19 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
             let text = diagnostics::describe_contract_expression(&surface);
             let restored = lower(&parse_expression(&text, result_type));
             assert_eq!(restored, root, "{spelling}: {expression} => {text}");
+            if format.format().bits() == 32 && expression.contains(" as ") {
+                let legacy = KernelTermExport::machine(&root).unwrap();
+                let surface = synthesize_surface_bitvector(
+                    &legacy,
+                    ParameterBinding::default(),
+                    &state,
+                    &BTreeMap::new(),
+                )
+                .unwrap_or_else(|| panic!("legacy cast: {expression}"));
+                let text = diagnostics::describe_contract_expression(&surface);
+                let restored = lower(&parse_expression(&text, result_type));
+                assert_eq!(restored, root, "legacy cast: {expression} => {text}");
+            }
         }
     }
 }
@@ -4707,4 +4776,332 @@ fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
+    use crate::kernel::{IntegerTerm, PointerValue};
+    for (format, name) in [
+        (MachineIntegerType::Int64, "load_int64"),
+        (MachineIntegerType::UInt64, "load_uint64"),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(981_200));
+        let memory = Memory::new().with_block("word-read-source", 8);
+        let state = ExecutionState::new()
+            .with_memory(memory.clone())
+            .with_local(
+                "p",
+                ProgramValue::Pointer(PointerValue::new(
+                    pointer.clone(),
+                    ProgramType::UInt64Pointer,
+                )),
+            );
+        let read = crate::kernel::canonical_form_of_load(
+            crate::kernel::intern_memory(memory),
+            pointer,
+            crate::kernel::LoadKind::Bits64,
+        );
+        let value = IntegerTerm::from_machine(format, read).unwrap();
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerLessThan(value.into(), IntegerTerm::constant_i64(1).into()),
+            true,
+        );
+        let spelled =
+            synthesize_surface_proposition(&goal, ParameterBinding::default(), &state).unwrap();
+        let source = crate::surface::printing::source_click_proposition(&spelled);
+        assert!(source.contains(name), "{source}");
+        let lowered = relower_written_proposition(&spelled, &state).unwrap();
+        assert!(
+            crate::surface::proof::smart_closures::propositions_match_after_canonical_loads(
+                &lowered, &goal
+            ),
+            "{source}\n{lowered:?}\n{goal:?}"
+        );
+    }
+}
+
+#[test]
+fn float_bit_literals_round_trip_exact_native_values() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut values = Vec::new();
+    for bits in [
+        0, 0x80000000, 0x3f800000, 1, 0x007fffff, 0x7f800000, 0xff800000, 0x7fc00001, 0x7f800123,
+        0xffc12345,
+    ] {
+        values.push(ProgramValue::Float32(MachineTerm::constant(bits)));
+        values.push(ProgramValue::Float32(MachineTerm::uint32_constant(bits)));
+    }
+    for bits in [
+        0,
+        0x8000000000000000,
+        0x3ff0000000000000,
+        1,
+        0x000fffffffffffff,
+        0x7ff0000000000000,
+        0xfff0000000000000,
+        0x7ff8000000000001,
+        0x7ff0000000000123,
+        0xfff8123456789abc,
+    ] {
+        values.push(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
+    }
+    for value in values {
+        let state = ExecutionState::new();
+        let surface =
+            synthesize_surface_value(&value, ParameterBinding::default(), &state).unwrap();
+        let text = diagnostics::describe_contract_expression(&surface);
+        assert!(text.starts_with("float32_from_bits(") || text.starts_with("float64_from_bits("));
+        for rust in [false, true] {
+            let prefix = if rust { "verifying \"bits.rs\";" } else { "" };
+            let ty = match (&value, rust) {
+                (ProgramValue::Float32(_), false) => "float",
+                (ProgramValue::Float32(_), true) => "f32",
+                (_, false) => "double",
+                (_, true) => "f64",
+            };
+            let file =
+                parser::parse(&format!("{prefix} function probe() -> {ty} {{ {text} }}")).unwrap();
+            let expression = file.click_function_definitions()[0].body().unwrap();
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                expression,
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (restored, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(restored, value, "{text}, rust={rust}");
+            assert!(obligations.is_empty());
+        }
+    }
+}
+
+#[test]
+fn float_bit_literals_refuse_wrong_widths_expressions_and_arity() {
+    for expression in [
+        "float32_from_bits()",
+        "float32_from_bits(1, 2)",
+        "float32_from_bits(x)",
+        "float32_from_bits(1 + 2)",
+        "float32_from_bits(-1)",
+        "float32_from_bits(4294967296)",
+        "float32_from_bits(1u64)",
+        "float32_from_bits(1u8)",
+        "float64_from_bits(1u32)",
+        "float64_from_bits(18446744073709551616)",
+    ] {
+        let error = parser::parse(&format!("function probe() -> float {{ {expression} }}"))
+            .expect_err(expression);
+        assert!(
+            error.message().contains("from_bits"),
+            "{expression}: {error:?}"
+        );
+    }
+    // The local allowance for hexadecimal bit patterns must not change the
+    // ordinary literal grammar of a C/default Click file.
+    assert!(parser::parse("function probe() -> uint32 { 0xffu32 }").is_err());
+}
+
+#[test]
+fn common_float_atoms_round_trip_printed_surface_bits() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let values = [
+        ProgramValue::Float32(MachineTerm::Variable(Variable(999804))),
+        ProgramValue::Float64(MachineTerm::Variable(Variable(999805))),
+        ProgramValue::Float32(MachineTerm::constant(0x80000000)),
+        ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8000000000123)),
+    ];
+    for value in values {
+        let named = matches!(
+            &value,
+            ProgramValue::Float32(MachineTerm::Variable(_))
+                | ProgramValue::Float64(MachineTerm::Variable(_))
+        );
+        let values = if named {
+            BTreeMap::from([("value".to_string(), value.clone())])
+        } else {
+            BTreeMap::new()
+        };
+        let state = ExecutionState::new();
+        // Scoped float binders already have their source names. Execution-local
+        // name/storage handoffs are the later 8aa boundary.
+        let bindings = match &value {
+            ProgramValue::Float32(MachineTerm::Variable(variable))
+            | ProgramValue::Float64(MachineTerm::Variable(variable)) => {
+                BTreeMap::from([(*variable, "value".to_string())])
+            }
+            _ => BTreeMap::new(),
+        };
+        let root = crate::kernel::KernelTermImport::default()
+            .argument(&crate::kernel::PureFunctionArgument::Value(value.clone()));
+        let surface =
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &bindings).unwrap();
+        let text = diagnostics::describe_contract_expression(&surface);
+        assert!(
+            text == "value"
+                || text.starts_with("float32_from_bits(")
+                || text.starts_with("float64_from_bits(")
+        );
+        for rust in [false, true] {
+            let prefix = if rust { "verifying \"bits.rs\";" } else { "" };
+            let ty = match (&value, rust) {
+                (ProgramValue::Float32(_), false) => "float",
+                (ProgramValue::Float32(_), true) => "f32",
+                (_, false) => "double",
+                (_, true) => "f64",
+            };
+            let file = parser::parse(&format!(
+                "{prefix} function probe(value: {ty}) -> {ty} {{ {text} }}"
+            ))
+            .unwrap();
+            let expression = file.click_function_definitions()[0].body().unwrap();
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                expression,
+                BTreeMap::new(),
+                &state,
+                values.clone(),
+                values.clone(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (restored, obligations) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            assert_eq!(restored, value, "{text}, rust={rust}");
+            assert_eq!(
+                crate::kernel::KernelTermImport::default()
+                    .argument(&crate::kernel::PureFunctionArgument::Value(restored)),
+                root
+            );
+            assert!(obligations.is_empty());
+        }
+    }
+}
+
+#[test]
+fn float_pointer_casts_round_trip_native_load_spelling() {
+    for (value_type, pointer_type, spelling, kind) in [
+        (
+            ProgramType::Float32,
+            ProgramType::Float32Pointer,
+            "float",
+            crate::kernel::LoadKind::Float32,
+        ),
+        (
+            ProgramType::Float64,
+            ProgramType::Float64Pointer,
+            "double",
+            crate::kernel::LoadKind::Float64,
+        ),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: PointerBlock::Concrete("float-cast-read".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let state = ExecutionState::new()
+            .with_memory(Memory::new().with_block("float-cast-read", 8))
+            .with_local(
+                "p",
+                ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
+            );
+        let cast = ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Variable("p".into())),
+                target_type: ProgramType::VoidPointer,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            }),
+            target_type: pointer_type,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        };
+        for expression in [
+            ProgramExpression::Load(Box::new(cast.clone())),
+            ProgramExpression::Index(Box::new(cast), Box::new(ProgramExpression::Value(int32(0)))),
+        ] {
+            let text = diagnostics::describe_program_expression(&expression);
+            let parsed = parser::parse(&format!(
+                "function probe(p: uint8*) -> {spelling} {{ {text} }}"
+            ))
+            .unwrap_or_else(|error| panic!("{text}: {error}"));
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                parsed.click_function_definitions()[0].body().unwrap(),
+                BTreeMap::new(),
+                &state,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(&[]),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap();
+            let (value, _) =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            let read = MachineTerm::MemoryLoad(
+                crate::kernel::intern_memory_ref(state.memory()),
+                Box::new(pointer.clone()),
+                kind,
+            );
+            let expected = match value_type {
+                ProgramType::Float32 => ProgramValue::Float32(read),
+                ProgramType::Float64 => ProgramValue::Float64(read),
+                _ => unreachable!(),
+            };
+            assert_eq!(value, expected, "{text}");
+        }
+    }
+    for text in ["p as float", "p as double", "p as (float)", "p as (double)"] {
+        assert!(
+            parser::parse(&format!("function probe(p: uint8*) -> float {{ {text} }}")).is_err()
+        );
+    }
 }

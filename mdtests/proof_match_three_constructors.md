@@ -45,7 +45,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Tri::Zero }, {});
             have tri_code(old(c.model)) == 0 by {
-                rewrite(old(c.model) == Tri::Zero);
+                rewrite(old(c.model), Tri::Zero);
                 unfold(tri_code(Tri::Zero));
                 normalize();
             }
@@ -56,7 +56,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Tri::One }, {});
             have tri_code(old(c.model)) == 1 by {
-                rewrite(old(c.model) == Tri::One);
+                rewrite(old(c.model), Tri::One);
                 unfold(tri_code(Tri::One));
                 normalize();
             }
@@ -67,7 +67,7 @@ int read(int* p) {
             step_until(function.exit);
             let c = fold(cell(p), { model: Tri::Other(value) }, {});
             have tri_code(old(c.model)) == value by {
-                rewrite(old(c.model) == Tri::Other(value));
+                rewrite(old(c.model), Tri::Other(value));
                 unfold(tri_code(Tri::Other(value)));
                 normalize();
             }

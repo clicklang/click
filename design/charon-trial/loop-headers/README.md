@@ -37,11 +37,6 @@ scripts/check.sh --charon-live
 cargo nextest run --lib --test rust_import -E 'test(charon_loop_headers_) | test(split_while_) | test(mir_while_) | test(nested_while_)'
 ```
 
-Current fixture parity is 10/16 (62.5%); import coverage is 14/16 (87.5%). Next
-resolve stable proof observations for numeric frontiers and iterator state,
-plus the remaining owned-iterator and tuple/slice-return normalization gaps,
-before switching the default and retiring legacy extraction.
-
 ## Named assignment frontiers
 
 `loops-assignments.click` additionally selects `assignment(i, 0)` and checks
@@ -59,9 +54,9 @@ Both syntax and typed-kernel layouts index these targets once, with immutable
 sharing and deterministic scaling at 8, 128, and 1024 store pairs. Live Charon
 re-extraction verifies the same proof after inserting an unrelated compiler
 local in an isolated probe. Verification, profiling, auditing, and expanded
-certificates agree. Frozen sources are unchanged and the original sidecars keep their contracts and proofs; parity
-remains 10/16 and imports 14/16. Numeric-selector compatibility and stable
-iterator observations remain migration work.
+certificates agree. Frozen sources are unchanged and the original sidecars keep their contracts and proofs; parity at that checkpoint was 10/16 and imports 14/16. The
+[completed backend migration](../README.md#migration-completion) supersedes
+those rollout gates.
 
 ## Byte-sum proof frontiers
 
@@ -79,7 +74,6 @@ the ten frozen successes, these prove the original sources and contracts of
 12/16 fixtures (75%). AST comparisons protect the original contracts and pure
 specification functions; the live gate checks both migrated sidecars after
 fresh extraction. Frozen-sidecar parity remains 10/16 (62.5%), and import
-coverage remains 14/16 (87.5%). These are distinct measures, not Rust-language
-coverage. Remaining work includes iterator observations, owned iterator and
-tuple/slice-return normalization, and frozen selector compatibility before
-the default changes.
+coverage remains 14/16 (87.5%). These are historical compatibility measures, not current language
+coverage or outstanding backend-switch requirements; see the
+[completed migration](../README.md#migration-completion).

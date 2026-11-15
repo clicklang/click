@@ -3,13 +3,14 @@
 This audit separates current object-model mechanisms and executable evidence
 from the retired PR #646 implementation. The source baseline is upstream
 `20100ea35edb1c32622ef98884a503d11939e752`, fetched for this task on
-2026-11-14 (America/Los_Angeles). The only executable addition is the small C++
-output-initializer witness named below; no verifier semantics are changed.
+2026-11-14 (America/Los_Angeles). At that baseline, the only executable addition was the small C++
+output-initializer witness named below. Follow-up repairs and their evidence
+are recorded separately below.
 
 This is a bounded source and regression audit, not a soundness proof or a
 full-language operation census. Test selection and results are recorded below. An existing C++ positive witness and a pointer-field resource fixture were
-refused on this baseline. The getter repair below supersedes its baseline
-result; the original audit counts remain historical.
+refused on this baseline. The getter and pointer-field repairs below supersede their baseline
+results; the original audit counts remain historical.
 Historical archive passes/failures are not counted as current results.
 
 ## Findings
@@ -42,10 +43,11 @@ Historical archive passes/failures are not counted as current results.
    factory proof-mode check and destroyed-backing rejection both pass. This
    narrows the confirmed failure to that constructed-view call path; it does
    not demonstrate that destruction retires external backing.
-7. `rb_produces_through_the_root_cell.md` currently fails while folding the
-   produced resource after a pointer-field store: a generated equality has no
-   Surface spelling. This is a concrete small composition failure, distinct
-   from the historical counts for larger rbtree sidecars.
+7. At the audit baseline, `rb_produces_through_the_root_cell.md` failed while
+   folding the produced resource after a pointer-field store. The repair below
+   restores this small witness with its original C and contract and explicit
+   ownership-derived frame facts in its proof. Larger rbtree sidecars remain
+   separate acceptance work.
 8. Rbtree reports contain later frontiers than the old roadmap summary. The
    pointer-cell representation repair is already implemented; its original
    large sidecars are not established green. No new full rbtree census or
@@ -142,7 +144,7 @@ search-boundary tests and all 1,616 active scaling tests. Final integration
 validation is recorded in the fix PR. The whole object-model item remains open;
 this repair does not claim its remaining interface or byte-output evidence.
 
-## Confirmed current failure: produced resource through a pointer field
+## Pointer-field resource fold: baseline failure and repair
 
 Run the unchanged fixture alone:
 
@@ -152,11 +154,13 @@ MDTEST_FILTER=rb_produces_through_the_root_cell RUST_MIN_STACK=8388608 \
   -E 'test(=gate_tests::mdtests::mdtests)'
 ```
 
-The audit first encountered it in the `MDTEST_FILTER=produces_` group; all
+The baseline failure was also reproduced on upstream `2175760b9` on
+2026-11-15 in 0.85 seconds, without changing verifier, C or sidecar.
+The baseline audit first encountered it in the `MDTEST_FILTER=produces_` group; all
 other ten selected fixtures passed. The full C, resources and proof remain in
 `mdtests/rb_produces_through_the_root_cell.md`. The body stores `node` in
 `root->rb_node`; its contract produces the tree through that root field.
-The failure is at `rb_set_root.contract` tactic 4 (`fold`):
+The baseline failure was at `rb_set_root.contract` tactic 4 (`fold`):
 
 ```text
 a generated prerequisite has no Surface spelling; this is a spellability defect
@@ -166,10 +170,55 @@ goal: at(<state A>, root->rb_node) == <pointer A>
 `<state A>` is the memory after the store to `root->rb_node`; the report does
 not define `<pointer A>` in its legend. This prevents stating the generated
 link from the report (`unclear-trace` under the tracing procedure). The
-reproduction establishes a current tooling/composition failure, not a false
+baseline reproduction established a tooling/composition failure, not a false
 acceptance or a root cause in pointer designation. No new bug file or issue
 was filed. Keep this exact fixture as the small acceptance witness rather
 than substituting a full rbtree census.
+
+The follow-up repair starts from `c221cda33dbaed982c351ff32eb5fda18d56a934`
+and is integrated onto `a8b40fddd2cead1bee34a07a72d6da99c05feb21`.
+The store itself was already working. Prerequisite reconstruction now retains
+proof-local binder names in a persistent index updated from changed bindings;
+spells 64-bit reads at their retained interpretation; keeps full Click operands
+through casts; and selects recorded array-argument memories and pointer reads
+by their defining snapshots. The round-trip checks remain in place, and no
+kernel inference or fact-dependent lowering was added.
+
+The C, resource definitions and function contract are unchanged. The proof
+states three `separate(memory(...), memory(root->rb_node))` facts, each proved
+by `known()`, before the store. These expose the existing ownership frame
+for the metadata, left-child and right-child cells. Omitting them still
+exhausts the implicit closer's budget; this repair does not claim complete
+implicit frame discovery.
+
+`pointer_field_resource_fold_preserves_match_binders_across_proof_modes`
+checks ordinary verification, expansion, retained replay, cold checking of the
+expanded claim with implicit solving disabled, and refusal of a body that
+stores null. It is a named nightly regression. Focused source tests cover
+binder shadowing/forks, signed and unsigned word reads, casted calls, and
+recorded array snapshots. The gate covers 32/64-bit calls; the complete
+ten-format sweep is a named nightly check. Multi-size controls grow binder/alias populations
+and unrelated recorded history. This does not close the larger rbtree reports
+or replace the remaining native-interface matrix.
+
+Delivery validation on the integrated branch: all 1,635 active scaling tests,
+the selected source/proof-object and documentation tests, seven named C++
+compatibility tests, and 14 selected resource fixtures pass. The combined
+source/scaling/documentation/Rust run has 1,915 passes and nine Rust tests that
+stop during frontend setup because this environment lacks the pinned Charon
+bundle; those nine do not reach verification. The full nightly suite was not
+run. The focused proof-mode regression above passes separately.
+### Report naming follow-up
+
+Full error reports now format an unresolved prerequisite with the same retained
+proof naming context as the rest of the diagnostic and the concise CLI report.
+The original report had discarded that context for the prerequisite, printing
+`<pointer A>` even though the match binder `identity` was retained. The fact is
+expressible as `root->rb_node == identity`; its explicit rewrite proof checks.
+This report fix is independent of the prerequisite reconstruction repair above;
+it changes no proof checking or synthesis. The repaired fixture is the
+acceptance witness for the fold behavior.
+
 
 ## Remaining interface audit
 

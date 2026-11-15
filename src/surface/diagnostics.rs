@@ -5522,6 +5522,26 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
     }
 }
 
+/// Spell IEEE bits without host float formatting or NaN canonicalization.
+pub(in crate::surface) fn exact_float_literal_spelling(value: &ProgramValue) -> Option<String> {
+    use crate::kernel::MachineIntegerType;
+    match value {
+        ProgramValue::Float32(MachineTerm::Constant {
+            format: MachineIntegerType::Int32,
+            bits,
+        }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x})")),
+        ProgramValue::Float32(MachineTerm::Constant {
+            format: MachineIntegerType::UInt32,
+            bits,
+        }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x}u32)")),
+        ProgramValue::Float64(MachineTerm::Constant {
+            format: MachineIntegerType::UInt64,
+            bits,
+        }) if *bits <= u128::from(u64::MAX) => Some(format!("float64_from_bits(0x{bits:016x}u64)")),
+        _ => None,
+    }
+}
+
 /// A value of a narrow or unsigned type as a refusal spells it. A literal
 /// takes its type suffix (`5u32`), which is how the source writes one. A
 /// name or a compound expression is already a typed source term, and a
@@ -5630,6 +5650,11 @@ pub(super) fn describe_program_value(
             describe_bitvector_with_context(value, parameter_binding),
             "u64",
         ),
+        value @ (ProgramValue::Float32(_) | ProgramValue::Float64(_))
+            if exact_float_literal_spelling(value).is_some() =>
+        {
+            exact_float_literal_spelling(value).unwrap()
+        }
         ProgramValue::Float32(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameter_binding),
             "f32",
@@ -5966,7 +5991,11 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                     describe_program_expression(expression)
                 );
             }
-            let spelling = crate::kernel::program_type_spelling(*target_type);
+            let spelling = match target_type {
+                ProgramType::Float32Pointer => "float*",
+                ProgramType::Float64Pointer => "double*",
+                _ => crate::kernel::program_type_spelling(*target_type),
+            };
             // Contract expressions use the `expression as type` cast syntax.
             // Wrap the complete cast so it remains a single term when it is
             // embedded in a generated comparison or another proposition.
