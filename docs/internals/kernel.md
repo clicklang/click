@@ -1377,8 +1377,9 @@ expression that reads it. To move, the temporary must:
 
 `x = a + b * c` is then one expression again.
 
-A value with a checked operator (`+ - * / % << >>`) moves only into a read
-whose lowering emits that operator's panic check:
+A value with a checked operator (`+ - * / % << >>`) or an indexed read
+(`a[i]`) moves only into a read whose lowering emits its panic or bounds
+check:
 
 - an assignment's value;
 - an assertion;
@@ -1399,8 +1400,9 @@ These still stay a temporary:
 
 - a call's result read more than once, so a `for` loop's `next` result is one
   and a proof sees it;
-- a borrow;
-- an indexed place or slice;
+- a borrow, unless its block's call takes it as an argument: `t = &mut x;
+  f(t)` is `f(&mut x)`, whose loan lasts the call;
+- a slice;
 - a local that roots a place (`&t`, `t.f`, `t[i]`);
 - an enum `match` scrutinee, whose proof split names a local.
 

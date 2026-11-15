@@ -443,23 +443,11 @@ impl<T> generic_stack::Stack<T> {
 fn generic_stack::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    step_until(region(17));
+    step_until(statement(0).call(0));
     let { after: empty } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I3_new, {});
-    step_until(region(35));
+    step_until(statement(1).call(0));
     let { after: pushed } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I4_push, { before: empty });
-    step_until(region(52));
-    have separate(region(45).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(45).exit, stack.head) == at(region(45).entry, stack.head) by {
-        preserve(separate(region(45).footprint, memory(stack.head)));
-    }
-    have separate(region(49).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(49).exit, stack.head) == at(region(49).entry, stack.head) by {
-        preserve(separate(region(49).footprint, memory(stack.head)));
-    }
-    have separate(region(50).footprint, memory(stack.head)) by { normalize() using {}; }
-    have at(region(50).exit, stack.head) == at(region(50).entry, stack.head) by {
-        preserve(separate(region(50).footprint, memory(stack.head)));
-    }
+    step_until(statement(2).call(0));
     let { after: remaining } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I3_pop, { before: pushed });
     step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
