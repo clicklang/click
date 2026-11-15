@@ -182,7 +182,7 @@ fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
     );
     let [upper, lower] = definedness::ordinary_bounds(format, exact);
     let goal = Proposition::And(Box::new(upper), Box::new(lower));
-    for mode in 0..3 {
+    for mode in 0..4 {
         let mut samples = Vec::new();
         for count in [4, 16, 64] {
             let mut context = PureFactContext::new();
@@ -198,6 +198,13 @@ fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
                     );
             } else if mode == 2 {
                 context = context.assume_proposition(goal.clone());
+            } else if mode == 3 {
+                let Proposition::And(first, second) = &goal else {
+                    unreachable!()
+                };
+                context = context
+                    .assume_proposition((**first).clone())
+                    .assume_proposition((**second).clone());
             }
             for offset in 0..count {
                 context = context.assume_proposition(requirement(890_000 + offset, "unrelated"));
