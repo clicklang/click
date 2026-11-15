@@ -10889,9 +10889,18 @@ impl Parser {
             }
             "rewrite" => {
                 self.expect(Token::LParen)?;
-                let equality = self.parse_proposition()?;
+                let left = self.parse_contract_expression()?;
+                if self.peek() == Some(&Token::EqualEqual) {
+                    return Err(self.error("`rewrite` takes two expressions: write `rewrite(x, y)`, not `rewrite(x == y)`"));
+                }
+                self.expect(Token::Comma)?;
+                let right = self.parse_contract_expression()?;
                 self.expect(Token::RParen)?;
-                ProofTactic::Rewrite(equality)
+                ProofTactic::Rewrite(self.specification_comparison(
+                    left,
+                    ComparisonOperator::Equal,
+                    right,
+                ))
             }
             "transport" => {
                 self.expect(Token::LParen)?;
@@ -17780,7 +17789,7 @@ mod tactic_classification_tests {
         ("intro-as", "intro() as name;"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
-        ("rewrite", "rewrite(x == 1);"),
+        ("rewrite", "rewrite(x, 1);"),
         ("transport", "transport(x == 1, y == 1);"),
         (
             "transport-using",
@@ -17974,5 +17983,72 @@ mod loop_name_tests {
                 .contains("unknown name `bogus` in loop preserve clause"),
             "{error}"
         );
+    }
+}
+
+#[cfg(test)]
+mod rewrite_syntax_tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_endpoints_round_trip_with_nested_arguments_and_snapshots() {
+        for source in [
+            "rewrite(x, y);",
+            "rewrite(y, x);",
+            "rewrite(at(function.entry, x), old(y));",
+            "rewrite(f(x, y), if x == y { 1 } else { 2 });",
+        ] {
+            let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
+            let printed =
+                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+            let reparsed = Parser::new(&printed)
+                .unwrap()
+                .parse_proof_clause_or_default()
+                .unwrap();
+            assert_eq!(
+                reparsed,
+                SourceProof::Script(vec![tactic]),
+                "{source} -> {printed}"
+            );
+        }
+    }
+
+    #[test]
+    fn rewrite_arguments_keep_specification_equality_arithmetic() {
+        for (source, equality) in [
+            ("rewrite(x + 1, y);", "x + 1 == y"),
+            ("rewrite(x - y, 0u64);", "x - y == 0u64"),
+            (
+                "rewrite(to_integer(x), to_integer(y));",
+                "to_integer(x) == to_integer(y)",
+            ),
+            (
+                "rewrite((x + y) as uint64, 0u64);",
+                "(x + y) as uint64 == 0u64",
+            ),
+        ] {
+            let ProofTactic::Rewrite(actual) =
+                Parser::new(source).unwrap().parse_proof_tactic().unwrap()
+            else {
+                panic!("expected rewrite");
+            };
+            let expected = Parser::new(equality).unwrap().parse_proposition().unwrap();
+            assert_eq!(actual, expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn rewrite_refuses_the_old_equality_argument_and_wrong_arity() {
+        let error = Parser::new("rewrite(x == y);")
+            .unwrap()
+            .parse_proof_tactic()
+            .unwrap_err();
+        assert!(error.message().contains("write `rewrite(x, y)`"));
+        for source in ["rewrite(x);", "rewrite();", "rewrite(x, y, z);"] {
+            assert!(
+                Parser::new(source).unwrap().parse_proof_tactic().is_err(),
+                "{source}"
+            );
+        }
     }
 }

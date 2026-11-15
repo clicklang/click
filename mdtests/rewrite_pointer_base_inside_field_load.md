@@ -37,7 +37,7 @@ void inspect(struct holder* p) {
             unfold(h);
             have p->kid == kid;
             have kid->payload == p->kid->payload by {
-                rewrite(p->kid == kid);
+                rewrite(p->kid, kid);
                 normalize();
             }
             let h = fold(holder(p), { link: Link::Linked(kid) });

@@ -29,7 +29,7 @@ theorem rev_onto_length_transport(xs: List<int32>, a: List<int32>, b: List<int32
                     == list::length(List<int32>::Cons(head, b)) by {
                     unfold(list::length(List<int32>::Cons(head, a)));
                     unfold(list::length(List<int32>::Cons(head, b)));
-                    rewrite(list::length(a) == list::length(b));
+                    rewrite(list::length(a), list::length(b));
                     normalize();
                 }
                 apply(ih(tail, List<int32>::Cons(head, a), b));

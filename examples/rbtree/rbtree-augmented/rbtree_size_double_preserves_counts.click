@@ -12,7 +12,7 @@ theorem sized_double_preserves_counts(g: struct rb_node*, p: struct rb_node*, no
     ensures sized_counts_valid(sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle)) == 1 by {
         unfold(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle));
         have sized_counts_valid(SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle)) == 1 by {
-            rewrite(SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle) == sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); known();
+            rewrite(SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle), sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); known();
         }
         apply(sized_valid_parts(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle));
         apply(sized_valid_parts(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
@@ -20,11 +20,11 @@ theorem sized_double_preserves_counts(g: struct rb_node*, p: struct rb_node*, no
         unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr))));
         unfold(sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
         have to_integer(pv) == 1 + to_integer(sized_value(far)) + to_integer(nv) by {
-            rewrite(nv == sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
+            rewrite(nv, sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
             solve() using { to_integer(pv) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr))); };
         }
         have to_integer(gv) == 1 + to_integer(pv) + to_integer(sized_value(uncle)) by {
-            rewrite(pv == sized_value(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr))));
+            rewrite(pv, sized_value(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr))));
             solve() using { to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)))) + to_integer(sized_value(uncle)); };
         }
         have to_integer(gv) == 3 + to_integer(sized_value(far)) + to_integer(sized_value(ml)) + to_integer(sized_value(mr)) + to_integer(sized_value(uncle)) by {
@@ -48,7 +48,7 @@ theorem sized_mirrored_double_preserves_counts(g: struct rb_node*, p: struct rb_
     ensures sized_counts_valid(sized_mirrored_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle)) == 1 by {
         unfold(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle));
         have sized_counts_valid(SizedTree::Node(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far))) == 1 by {
-            rewrite(SizedTree::Node(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)) == sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); known();
+            rewrite(SizedTree::Node(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)), sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); known();
         }
         apply(sized_valid_parts(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)));
         apply(sized_valid_parts(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far));
@@ -56,11 +56,11 @@ theorem sized_mirrored_double_preserves_counts(g: struct rb_node*, p: struct rb_
         unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)));
         unfold(sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
         have to_integer(pv) == 1 + to_integer(sized_value(far)) + to_integer(nv) by {
-            rewrite(nv == sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
+            rewrite(nv, sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
             solve() using { to_integer(pv) == 1 + to_integer(sized_value(SizedTree::Node(node, p, Color::Red, nv, ml, mr))) + to_integer(sized_value(far)); };
         }
         have to_integer(gv) == 1 + to_integer(pv) + to_integer(sized_value(uncle)) by {
-            rewrite(pv == sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)));
+            rewrite(pv, sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)));
             solve() using { to_integer(gv) == 1 + to_integer(sized_value(uncle)) + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far))); };
         }
         have to_integer(gv) == 3 + to_integer(sized_value(far)) + to_integer(sized_value(ml)) + to_integer(sized_value(mr)) + to_integer(sized_value(uncle)) by {

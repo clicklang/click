@@ -106,7 +106,7 @@ void link_node(struct rb_node *node, struct rb_node *parent, struct rb_node **rb
 theorem equal_words_keep_mask(left: uint64, right: uint64, mask: uint64) {
     requires left == right;
     ensures (left & mask) == (right & mask) by {
-        rewrite(left == right);
+        rewrite(left, right);
         normalize();
     }
 }

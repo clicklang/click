@@ -34,7 +34,9 @@ fn inventory() -> Vec<Entry> {
 /// (2026-11-02) the archives dropped their bare closers, which the back edge
 /// now performs, and the chunk proof's explicit closer kept only its
 /// `extract` steps. The live parity sweep still checks each archive's
-/// recorded outcome.
+/// recorded outcome. The `rewrite` argument migration (2026-11-15)
+/// respells equality arguments as two expression arguments and updates only
+/// the frozen digests; original digests and expected outcomes stay fixed.
 #[test]
 fn charon_frozen_sidecars_are_pinned_and_parse() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

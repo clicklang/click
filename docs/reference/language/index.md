@@ -1329,7 +1329,7 @@ theorem countdown_is_zero(n: int32) {
             have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
             unfold(countdown(n));
-            rewrite(countdown(n - 1) == 0);
+            rewrite(countdown(n - 1), 0);
             normalize();
         }
     }
@@ -3373,7 +3373,7 @@ effects. Symbolic quantities of heterogeneous named instances remain unsupported
 A count and an equal C counter can have different checked term representations.
 To transfer increment definedness, explicitly rewrite the count to the counter
 using the control's equality and establish the nonnegative bound as needed.
-For example, `rewrite(count(item(pool, _)) == pool->checked_out)` can transport
+For example, `rewrite(count(item(pool, _)), pool->checked_out)` can transport
 `defined(pool->checked_out + 1)` inside an opened control. Nonnegativity alone
 does not establish increment safety: the count can still be `2147483647`.
 

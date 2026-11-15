@@ -27,7 +27,7 @@ fn cover(bytes: &[u8]) -> usize {
     have (((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) % 4) == 0 by { normalize() using { bytes.len() <= 2147483647u64; } }
     have chunks_remaining == (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by { solve(); }
     have chunks_remaining % 4 == 0 by {
-        rewrite(chunks_remaining == (((bytes.len() - bytes.len() % 4u64) as uint32) as int32)); solve();
+        rewrite(chunks_remaining, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32)); solve();
     }
     loop {
         decreases chunks_remaining;
@@ -70,8 +70,8 @@ fn cover(bytes: &[u8]) -> usize {
                 normalize() using { at(iteration, 4 <= chunks_remaining); }
             }
             have chunks_remaining % 4 == 0 by {
-                rewrite(chunks_remaining == at(iteration, chunks_remaining) - 4);
-                rewrite((at(iteration, chunks_remaining) - 4) % 4 == at(iteration, chunks_remaining % 4)); solve();
+                rewrite(chunks_remaining, at(iteration, chunks_remaining) - 4);
+                rewrite((at(iteration, chunks_remaining) - 4) % 4, at(iteration, chunks_remaining % 4)); solve();
             }
             have 0 <= chunks_remaining by {
                 solve() using { chunks_remaining == at(iteration, chunks_remaining) - 4; at(iteration, 4 <= chunks_remaining); }
@@ -103,7 +103,7 @@ fn cover(bytes: &[u8]) -> usize {
                 }
             }
             have chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) by {
-                rewrite(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) == at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4); solve();
+                rewrite(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining), at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4); solve();
             }
             extract(((((bytes.len() as uint32)) as int32)) <= 1000);
             extract(at(region(23).entry, 0) <= at(region(23).entry, chunks_remaining));

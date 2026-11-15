@@ -976,7 +976,10 @@ theorem black_color_is_black(color: Color) {
         };
         let forms = oriented_forms(kernel, surface);
         assert_eq!(forms.len(), 2);
-        let equality = crate::surface::printing::source_click_proposition(&forms[0].1);
+        let rewrite =
+            crate::surface::printing::format_partial_tactic_sequence(&[ProofTactic::Rewrite(
+                forms[0].1.clone(),
+            )]);
         let source = format!(
             r#"
             theorem zero_remainder(used: int32, capacity: int32, slots: int32) {{
@@ -986,8 +989,8 @@ theorem black_color_is_black(color: Color) {
                 requires used == 0;
                 ensures to_integer(slots - capacity) == 0 by {{
                     have to_integer(slots - capacity) == 0 by {{
-                        rewrite({equality});
-                        rewrite(used == 0);
+                        {rewrite}
+                        rewrite(used, 0);
                         normalize();
                     }}
                     known();

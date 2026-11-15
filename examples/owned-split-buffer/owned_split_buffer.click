@@ -5,8 +5,8 @@ theorem incremented_one_is_two(before: int32, after: int32) {
     requires after == before + 1;
 
     ensures after == 2 by {
-        rewrite(after == before + 1);
-        rewrite(before == 1);
+        rewrite(after, before + 1);
+        rewrite(before, 1);
         solve();
     }
 }
@@ -298,7 +298,7 @@ int32 owned_split_buffer_pipeline(
         known();
     }
     have data[0] == left_value by {
-        rewrite(data == at(statement(3).entry, owner->data));
+        rewrite(data, at(statement(3).entry, owner->data));
         known();
     }
     have data[1] == right_value by {

@@ -33,7 +33,7 @@ int read(int* p) {
 fn proof_match_fields_survive_function_unfold_in_have() {
     let source = SOURCE
         .replace("resource cell", "function identity(m: Maybe) -> Maybe { m }\nresource cell")
-        .replace("            unfold(c);", "            have identity(Maybe::Some(value)) == Maybe::Some(value) by {\n                unfold(identity(Maybe::Some(value)));\n                normalize();\n            }\n            have Maybe::Some(value) != Maybe::None by {\n                rewrite(Maybe::Some(value) == identity(Maybe::Some(value)));\n                rewrite(identity(Maybe::Some(value)) == Maybe::Some(value));\n                normalize();\n            }\n            unfold(c);");
+        .replace("            unfold(c);", "            have identity(Maybe::Some(value)) == Maybe::Some(value) by {\n                unfold(identity(Maybe::Some(value)));\n                normalize();\n            }\n            have Maybe::Some(value) != Maybe::None by {\n                rewrite(Maybe::Some(value), identity(Maybe::Some(value)));\n                rewrite(identity(Maybe::Some(value)), Maybe::Some(value));\n                normalize();\n            }\n            unfold(c);");
     let sources = [("read.c", C)];
     for source in [
         source.clone(),

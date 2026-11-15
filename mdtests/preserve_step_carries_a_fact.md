@@ -21,7 +21,7 @@ void keep(int32* p, int32* q) {
         preserve(separate(statement(0).footprint, memory(*q)));
     }
     have *q > 0 by {
-        rewrite(*q == at(statement(0).entry, *q));
+        rewrite(*q, at(statement(0).entry, *q));
         known();
     }
     step();

@@ -7,7 +7,7 @@ range now. The premise list prints it with its point,
 checker holds. Printed bare, it would look like the current-state fact the
 proof wrote, which the checker does not hold.
 
-Here the window `p[k..k + 4]` is narrowed at entry, and `rewrite(q == p + k)`
+Here the window `p[k..k + 4]` is narrowed at entry, and `rewrite(q, p + k)`
 reads that entry fact, so the premise is `at(function.entry, ...)`.
 
 ```c filename=a_viewable_premise_from_an_earlier_point_prints_that_point.c
@@ -41,7 +41,7 @@ uint8 last(const uint8* p, uint64 n, uint64 k) {
     step();
     step();
     have viewable(q[0..4]) by {
-        rewrite(q == p + k);
+        rewrite(q, p + k);
         transport(viewable(q[0..(k + 4u64) - k]), viewable(q[0..4])) using {
             viewable(q[0..(k + 4u64) - k]);
         };

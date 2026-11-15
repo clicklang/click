@@ -224,14 +224,12 @@ theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_no
                             List<struct rb_node*>::Cons(head, list::append(tail, ys)), value));
                         normalize() using { value == head; };
                     }
-                    rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys)
-                        == List<struct rb_node*>::Cons(head, list::append(tail, ys)));
+                    rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys), List<struct rb_node*>::Cons(head, list::append(tail, ys)));
                     known();
                 } else {
                     have rb_list_starts_with(List<struct rb_node*>::Cons(head, tail),
                                              value) == 0 by {
-                        rewrite(rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value)
-                            == if value == head { 1 } else { 0 });
+                        rewrite(rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value), if value == head { 1 } else { 0 });
                         normalize() using { not(value == head); };
                     }
                     contradiction(rb_list_starts_with(
@@ -249,7 +247,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
         induct(tree) as ih {
             RbTree::Empty => {
                 have rb_identity_is(RbTree::Empty, node) != 0 by {
-                    rewrite(rb_identity_is(RbTree::Empty, node) == 1);
+                    rewrite(rb_identity_is(RbTree::Empty, node), 1);
                     normalize();
                 }
                 have rb_identity_is(RbTree::Empty, node) == 0 by {
@@ -264,7 +262,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                     normalize();
                 }
                 have left == RbTree::Empty by {
-                    rewrite(left == rb_left(RbTree::Node(identity, parent, color, left, right)));
+                    rewrite(left, rb_left(RbTree::Node(identity, parent, color, left, right)));
                     known();
                 }
 
@@ -297,26 +295,23 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                             List<struct rb_node*>::Cons(identity, rb_inorder(right)), node));
                         normalize() using { node == identity; };
                     }
-                    rewrite(left == RbTree::Empty);
-                    rewrite(rb_inorder(RbTree::Node(identity, parent, color, RbTree::Empty, right))
-                        == list::append(List<struct rb_node*>::Nil,
+                    rewrite(left, RbTree::Empty);
+                    rewrite(rb_inorder(RbTree::Node(identity, parent, color, RbTree::Empty, right)), list::append(List<struct rb_node*>::Nil,
                             List<struct rb_node*>::Cons(identity, rb_inorder(right))));
                     rewrite(list::append(List<struct rb_node*>::Nil,
-                            List<struct rb_node*>::Cons(identity, rb_inorder(right)))
-                        == List<struct rb_node*>::Cons(identity, rb_inorder(right)));
+                            List<struct rb_node*>::Cons(identity, rb_inorder(right))), List<struct rb_node*>::Cons(identity, rb_inorder(right)));
                     known();
                 } else {
                     have rb_identity_is(RbTree::Node(identity, parent, color, left, right), node)
                         == 0 by {
                         rewrite(rb_identity_is(
-                                RbTree::Node(identity, parent, color, left, right), node)
-                            == if node == identity { 1 } else { 0 });
+                                RbTree::Node(identity, parent, color, left, right), node), if node == identity { 1 } else { 0 });
                         normalize() using { not(node == identity); };
                     }
                     have rb_identity_is(
                             RbTree::Node(identity, parent, color, left, right), node) != 0 by {
                         rewrite(rb_identity_is(
-                            RbTree::Node(identity, parent, color, left, right), node) == 1);
+                            RbTree::Node(identity, parent, color, left, right), node), 1);
                         normalize();
                     }
                     contradiction(rb_identity_is(
@@ -344,8 +339,7 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
                     normalize();
                 }
                 have ctx_all_left(up_model) == 1 by {
-                    rewrite(ctx_all_left(up_model)
-                        == ctx_all_left(Context::Left(identity, grandparent, color,
+                    rewrite(ctx_all_left(up_model), ctx_all_left(Context::Left(identity, grandparent, color,
                                                       sibling_model, up_model)));
                     known();
                 }
@@ -357,7 +351,7 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
                     normalize();
                 }
                 have rb_list_starts_with(rb_inorder(sub), node) != 0 by {
-                    rewrite(rb_list_starts_with(rb_inorder(sub), node) == 1);
+                    rewrite(rb_list_starts_with(rb_inorder(sub), node), 1);
                     normalize();
                 }
                 apply(list_starts_with_append(rb_inorder(sub),
@@ -366,8 +360,7 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
                         rb_inorder(RbTree::Node(identity, grandparent, color, sub,
                                                 sibling_model)), node) == 1 by {
                     rewrite(rb_inorder(
-                            RbTree::Node(identity, grandparent, color, sub, sibling_model))
-                        == list::append(rb_inorder(sub),
+                            RbTree::Node(identity, grandparent, color, sub, sibling_model)), list::append(rb_inorder(sub),
                             List<struct rb_node*>::Cons(identity, rb_inorder(sibling_model))));
                     known();
                 }
@@ -381,7 +374,7 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
                 have ctx_all_left(Context::Right(identity, grandparent, color, sibling_model,
                                                  up_model)) != 0 by {
                     rewrite(ctx_all_left(Context::Right(identity, grandparent, color,
-                                                        sibling_model, up_model)) == 1);
+                                                        sibling_model, up_model)), 1);
                     normalize();
                 }
                 have ctx_all_left(Context::Right(identity, grandparent, color, sibling_model,
@@ -416,14 +409,14 @@ struct rb_node* rb_first(const struct rb_root* root) {
             let sub = fold(rb_at(n), { model: RbTree::Empty });
             let ctx = fold(ctx_at(n, root), { model: Context::Top });
             have rb_left(sub.model) == RbTree::Empty by {
-                rewrite(sub.model == RbTree::Empty);
+                rewrite(sub.model, RbTree::Empty);
                 unfold(rb_left(RbTree::Empty));
                 normalize();
             }
             have plug(ctx.model, sub.model) == old(t.model) by {
-                rewrite(ctx.model == Context::Top);
+                rewrite(ctx.model, Context::Top);
                 unfold(plug(Context::Top, sub.model));
-                rewrite(sub.model == RbTree::Empty);
+                rewrite(sub.model, RbTree::Empty);
                 solve();
             }
             step_until(function.exit);
@@ -437,12 +430,12 @@ struct rb_node* rb_first(const struct rb_root* root) {
                          { left: entry_l, right: entry_r });
             let ctx = fold(ctx_at(n, root), { model: Context::Top });
             have ctx_all_left(ctx.model) == 1 by {
-                rewrite(ctx.model == Context::Top);
+                rewrite(ctx.model, Context::Top);
                 unfold(ctx_all_left(Context::Top));
                 normalize();
             }
             have plug(ctx.model, t.model) == old(t.model) by {
-                rewrite(ctx.model == Context::Top);
+                rewrite(ctx.model, Context::Top);
                 unfold(plug(Context::Top, t.model));
                 normalize();
             }
@@ -468,14 +461,14 @@ struct rb_node* rb_first(const struct rb_root* root) {
                                 unfold(plug(Context::Left(identity, parent, color,
                                                         right_model, ctx.model), left_model));
                                 rewrite(RbTree::Node(identity, parent, color, left_model,
-                                                     right_model) == t.model);
+                                                     right_model), t.model);
                                 known();
                             }
                             let { left: l, right: rt } = unfold(t);
                             have plug(Context::Left(n, parent, color, right_model, ctx.model),
                                       left_model)
                                 == old(t.model) by {
-                                rewrite(n == identity);
+                                rewrite(n, identity);
                                 known();
                             }
                             have ctx_all_left(Context::Left(n, parent, color, right_model,
@@ -498,8 +491,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                     have plug(ctx.model,
                               RbTree::Node(identity, parent, color, left_model, right_model))
                         == old(t.model) by {
-                        rewrite(RbTree::Node(identity, parent, color, left_model, right_model)
-                            == t.model);
+                        rewrite(RbTree::Node(identity, parent, color, left_model, right_model), t.model);
                         known();
                     }
                     let { left: l, right: rt } = unfold(t);
@@ -513,29 +505,24 @@ struct rb_node* rb_first(const struct rb_root* root) {
                         model: RbTree::Node(identity, parent, color, left_model, right_model)
                     }, { left: l, right: rt });
                     have rb_left(sub.model) == RbTree::Empty by {
-                        rewrite(sub.model
-                            == RbTree::Node(identity, parent, color, left_model, right_model));
+                        rewrite(sub.model, RbTree::Node(identity, parent, color, left_model, right_model));
                         rewrite(rb_left(RbTree::Node(identity, parent, color, left_model,
-                                                  right_model))
-                            == left_model);
+                                                  right_model)), left_model);
                         known();
                     }
                     have plug(ctx.model, sub.model) == old(t.model) by {
-                        rewrite(sub.model
-                            == RbTree::Node(identity, parent, color, left_model, right_model));
+                        rewrite(sub.model, RbTree::Node(identity, parent, color, left_model, right_model));
                         known();
                     }
                     have rb_identity_is(sub.model, identity) == 1 by {
-                        rewrite(sub.model
-                            == RbTree::Node(identity, parent, color, left_model, right_model));
+                        rewrite(sub.model, RbTree::Node(identity, parent, color, left_model, right_model));
                         unfold(rb_identity_is(
                             RbTree::Node(identity, parent, color, left_model, right_model),
                             identity));
                         normalize();
                     }
                     have rb_identity_is(sub.model, n) == 1 by {
-                        rewrite(sub.model
-                            == RbTree::Node(identity, parent, color, left_model, right_model));
+                        rewrite(sub.model, RbTree::Node(identity, parent, color, left_model, right_model));
                         unfold(rb_identity_is(
                             RbTree::Node(identity, parent, color, left_model, right_model), n));
                         normalize() using { n == identity; };
@@ -550,7 +537,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                     }
                     have old(t.model) == plug(ctx.model, sub.model);
                     have rb_list_starts_with(rb_inorder(old(t.model)), n) == 1 by {
-                        rewrite(old(t.model) == plug(ctx.model, sub.model));
+                        rewrite(old(t.model), plug(ctx.model, sub.model));
                         known();
                     }
                     step();

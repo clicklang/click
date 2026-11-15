@@ -16,7 +16,7 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
  step_until(loop(0));
  have chunk == bytes;
  have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
- have viewable(chunk[0..4]) by { rewrite(chunk == bytes); known(); }
+ have viewable(chunk[0..4]) by { rewrite(chunk, bytes); known(); }
  loop {
  decreases inner;
  views chunk[0..4];
@@ -26,7 +26,7 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
  have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
- have viewable(chunk[0..4]) by { rewrite(chunk == bytes); known(); }
+ have viewable(chunk[0..4]) by { rewrite(chunk, bytes); known(); }
   }
  }
 }
@@ -35,7 +35,7 @@ int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
  step_until(loop(0));
  have chunk == bytes;
  have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
- have viewable(chunk[0..4]) by { rewrite(chunk == bytes); known(); }
+ have viewable(chunk[0..4]) by { rewrite(chunk, bytes); known(); }
  loop {
  decreases inner;
  views chunk[0..4];
@@ -45,7 +45,7 @@ int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
  have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
- have viewable(chunk[0..4]) by { rewrite(chunk == bytes); known(); }
+ have viewable(chunk[0..4]) by { rewrite(chunk, bytes); known(); }
   }
  }
 }

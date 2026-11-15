@@ -228,7 +228,7 @@ theorem countdown_is_zero(n: int32) {
             have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
             unfold(countdown(n));
-            rewrite(countdown(n - 1) == 0);
+            rewrite(countdown(n - 1), 0);
             normalize();
         }
     }

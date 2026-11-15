@@ -6204,7 +6204,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "rewrite",
-        syntax: "rewrite(P)",
+        syntax: "rewrite(from, to)",
         class: "simple",
     },
     PublicTacticForm {

@@ -28,7 +28,7 @@ theorem pointer_add_zero_equals_explicit(
     requires offset == 0;
 
     ensures base + offset == target by {
-        rewrite(offset == 0);
+        rewrite(offset, 0);
         known();
     }
 }

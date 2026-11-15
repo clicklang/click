@@ -24,7 +24,7 @@ void overwrite(int32 *p) {
         preserve(separate(statement(0).footprint, memory(p[0..-1073741823])));
     }
     step();
-    rewrite(*p == old(*p));
+    rewrite(*p, old(*p));
     known();
 }
 ```

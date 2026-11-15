@@ -45,7 +45,7 @@ int32 write_one(struct buffer* buffer) {
                 normalize();
             }
             have 0 < end by {
-                rewrite(end == 1);
+                rewrite(end, 1);
                 normalize();
             }
             have buffer->data[0] == 0 by {

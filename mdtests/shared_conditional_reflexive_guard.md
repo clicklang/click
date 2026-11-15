@@ -12,7 +12,7 @@ theorem identity(a: Payload, b: Payload) {
     requires b == a;
     ensures joined(a, b) == 1 by {
         unfold(joined(a, b));
-        rewrite(b == a);
+        rewrite(b, a);
         have a == a by { normalize(); }
         normalize();
     }
@@ -22,7 +22,7 @@ theorem identity_uint32(a: Payload, b: Payload) {
     requires b == a;
     ensures joined_uint32(a, b) == (1 as uint32) by {
         unfold(joined_uint32(a, b));
-        rewrite(b == a);
+        rewrite(b, a);
         normalize();
     }
 }
@@ -31,7 +31,7 @@ theorem identity_int64(a: Payload, b: Payload) {
     requires b == a;
     ensures joined_int64(a, b) == (1 as int64) by {
         unfold(joined_int64(a, b));
-        rewrite(b == a);
+        rewrite(b, a);
         normalize();
     }
 }
@@ -40,7 +40,7 @@ theorem identity_uint64(a: Payload, b: Payload) {
     requires b == a;
     ensures joined_uint64(a, b) == (1 as uint64) by {
         unfold(joined_uint64(a, b));
-        rewrite(b == a);
+        rewrite(b, a);
         normalize();
     }
 }

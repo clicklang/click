@@ -822,14 +822,17 @@ preconditions, and postconditions. Their fresh native artifacts and locks are
 checked in for offline example verification.
 
 `parity.json` records each replaced original sidecar's archived path and SHA-256
-digest. On 2026-10-26 the archives were respelled once in today's syntax
+digest. On 2026-10-26 the archives received their initial syntax respelling
 (tactic names, Rust signatures, `as` casts, qualified library citations):
 each respelled file is byte-identical to what the retired reading adapter
 produced from the original bytes, so its contracts, specification functions
 and proofs, gaps included, are the original's. `frozen_sha256` pins the
 respelled bytes and `original_sha256` the originals, which git history
-holds. The live gate checks every current canonical proof after fresh
-extraction, then independently checks archived frozen outcomes.
+holds. The 2026-11-15 `rewrite` argument migration respells equality
+arguments as two expression arguments and refreshes the affected frozen
+digests; original digests and recorded outcomes stay fixed. The live gate
+checks every current canonical proof after fresh extraction, then
+independently checks archived frozen outcomes.
 Legacy-backend regressions also explicitly use archived legacy proofs.
 No historical frozen failure is relabeled as a success.
 

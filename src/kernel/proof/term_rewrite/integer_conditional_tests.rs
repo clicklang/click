@@ -91,7 +91,7 @@ fn integer_conditional_is_one_arm_once_a_rewrite_decides_its_condition() {
 
 #[test]
 fn an_exact_integer_rewrite_that_makes_the_arms_equal_leaves_one_arm() {
-    // `rewrite(x == y)` on `if c { x } else { y }` leaves `y`, as the
+    // `rewrite(x, y)` on `if c { x } else { y }` leaves `y`, as the
     // machine rewrite does, so `normalize` sees `y == y`.
     let conditional = IntegerTerm::if_then_else(is_zero(7), integer(1), integer(2));
     let (from, to) = (

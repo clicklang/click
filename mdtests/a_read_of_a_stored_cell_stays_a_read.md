@@ -6,7 +6,7 @@ version name (`docs/internals/spellability.md`). The read-over-write authority
 relates the read to the value the store wrote, so `a[i] == 5` is a goal that
 holds by evaluation and `normalize` closes it, while the goal itself still
 names the read. A rewrite that moves a read to an equal address keeps it a
-read: with `i == j`, `rewrite(j == i)` turns the postcondition `a[j] == 5`
+read: with `i == j`, `rewrite(j, i)` turns the postcondition `a[j] == 5`
 into `a[i] == 5`, which holds by evaluation, so the rewrite closes it. If
 `a[i]` lowered to `5`, the rewritten goal would be `true`, no longer about
 `a` at all.
@@ -25,7 +25,7 @@ void set(int32* a, int32 i, int32 j) {
 } by {
     step_until(function.exit);
     have a[i] == 5 by normalize();
-    rewrite(j == i);
+    rewrite(j, i);
 }
 ```
 

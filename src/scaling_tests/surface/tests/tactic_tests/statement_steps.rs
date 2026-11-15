@@ -37,7 +37,7 @@ void write(struct job *job, int32 *dest) {
                 click.push_str(&format!(
                     r#"
     have job->output == at(entry, job->output) by {{
-        rewrite(job->output == at(before_{index}, job->output));
+        rewrite(job->output, at(before_{index}, job->output));
         known();
     }}
 "#

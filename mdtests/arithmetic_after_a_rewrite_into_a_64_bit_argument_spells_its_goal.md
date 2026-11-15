@@ -17,7 +17,7 @@ theorem rewritten_word_argument(bytes: uint8[], n: uint64, r: uint64, a: uint32)
     requires g(to_integer(a)) == to_integer(a);
     requires spec_f(bytes, 0u64, to_integer(a)) == to_integer(a);
     ensures g(to_integer(a)) == spec_f(bytes, n - r, to_integer(a)) by {
-        rewrite(to_integer(n - r) == to_integer(0u64));
+        rewrite(to_integer(n - r), to_integer(0u64));
         solve() using {
             g(to_integer(a)) == to_integer(a);
             spec_f(bytes, 0u64, to_integer(a)) == to_integer(a);

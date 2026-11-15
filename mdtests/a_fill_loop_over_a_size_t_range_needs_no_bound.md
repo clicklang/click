@@ -70,7 +70,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                         known();
                     }
                     have bytes[k] == value by {
-                        rewrite(bytes[k] == at(before, bytes[k]));
+                        rewrite(bytes[k], at(before, bytes[k]));
                         known();
                     }
                     known();
@@ -80,7 +80,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                         solve() using { k < at(before, i) + 1; };
                     }
                     have k == at(before, i);
-                    rewrite(k == at(before, i));
+                    rewrite(k, at(before, i));
                     solve();
                 }
             }
@@ -92,7 +92,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
         intro();
         intro();
         have k < at(loop(0).exit, i) by {
-            rewrite(at(loop(0).exit, i) == length);
+            rewrite(at(loop(0).exit, i), length);
             known();
         }
         instantiate(forall (k: uint64) { k < at(loop(0).exit, i) implies at(loop(0).exit, bytes[k]) == at(loop(0).exit, value) }, k) using {

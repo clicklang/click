@@ -75,7 +75,7 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
   apply(adler_residue_unique(to_integer(a), 0, to_integer(a)));
   have adler_spec_a(bytes, length, 1) == to_integer(a) by {
    unfold(adler_spec_a(bytes, length, 1));
-   rewrite(1 + adler_byte_sum(bytes, length) == to_integer(a));
+   rewrite(1 + adler_byte_sum(bytes, length), to_integer(a));
    known();
   }
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
@@ -91,7 +91,7 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
    have 0 + to_integer(length) * 1 + adler_weighted_sum(bytes, length, length) == to_integer(b) by solve() using {
     to_integer(b) == to_integer(length) + adler_weighted_sum(bytes, length, length);
    };
-   rewrite(0 + to_integer(length) * 1 + adler_weighted_sum(bytes, length, length) == to_integer(b));
+   rewrite(0 + to_integer(length) * 1 + adler_weighted_sum(bytes, length, length), to_integer(b));
    solve() using { to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521); };
   }
   unfold(adler_spec_checksum(bytes, length, 1, 0));

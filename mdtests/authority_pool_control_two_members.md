@@ -472,7 +472,7 @@ void give_back(struct pool* pool, struct payload* p) {
             known();
         }
         have 1 <= pool->checked_out by {
-            rewrite(to_integer(pool->checked_out) == to_integer(count(item(pool, _))));
+            rewrite(to_integer(pool->checked_out), to_integer(count(item(pool, _))));
             known();
         }
         have defined((count(slot(pool)) + 1)) by {

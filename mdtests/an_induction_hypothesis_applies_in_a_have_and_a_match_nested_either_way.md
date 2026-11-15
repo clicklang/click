@@ -35,7 +35,7 @@ theorem match_in_have(n: int32, c: Choice) {
                 }
             }
             unfold(cd(n));
-            rewrite(cd(n - 1) == 0);
+            rewrite(cd(n - 1), 0);
             normalize();
         }
     }
@@ -52,8 +52,8 @@ theorem have_in_match(n: int32, c: Choice) {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
             match c {
-                Choice::A => { have cd(n - 1) == 0 by apply(ih(n - 1)); unfold(cd(n)); rewrite(cd(n - 1) == 0); normalize(); },
-                Choice::B => { have cd(n - 1) == 0 by apply(ih(n - 1)); unfold(cd(n)); rewrite(cd(n - 1) == 0); normalize(); },
+                Choice::A => { have cd(n - 1) == 0 by apply(ih(n - 1)); unfold(cd(n)); rewrite(cd(n - 1), 0); normalize(); },
+                Choice::B => { have cd(n - 1) == 0 by apply(ih(n - 1)); unfold(cd(n)); rewrite(cd(n - 1), 0); normalize(); },
             }
         }
     }

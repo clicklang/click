@@ -20,21 +20,21 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         SizedTree::Empty => { unfold(state); contradiction(false); },
         SizedTree::Node(identity, ancestor, shade, value, left, right) => {
             have node == identity by {
-                rewrite(node == sized_flip_node(state.model));
-                rewrite(state.model == SizedTree::Node(identity, ancestor, shade, value, left, right));
+                rewrite(node, sized_flip_node(state.model));
+                rewrite(state.model, SizedTree::Node(identity, ancestor, shade, value, left, right));
                 unfold(sized_flip_node(SizedTree::Node(identity, ancestor, shade, value, left, right))); normalize();
             }
             have color_bit(shade) == 0 by {
                 unfold(sized_flip_color(SizedTree::Node(identity, ancestor, shade, value, left, right)));
-                rewrite(color_bit(shade) == sized_flip_color(SizedTree::Node(identity, ancestor, shade, value, left, right)));
-                rewrite(SizedTree::Node(identity, ancestor, shade, value, left, right) == state.model); known();
+                rewrite(color_bit(shade), sized_flip_color(SizedTree::Node(identity, ancestor, shade, value, left, right)));
+                rewrite(SizedTree::Node(identity, ancestor, shade, value, left, right), state.model); known();
             }
             let { focus: focus, path: path } = unfold(state);
             let { metadata: metadata, left: l, right: r } = unfold(focus);
             have node->__rb_parent_color == address(ancestor) by {
-                rewrite(node->__rb_parent_color == address(ancestor) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1) == color_bit(shade));
-                rewrite(color_bit(shade) == 0); normalize();
+                rewrite(node->__rb_parent_color, address(ancestor) + (node->__rb_parent_color & 1));
+                rewrite((node->__rb_parent_color & 1), color_bit(shade));
+                rewrite(color_bit(shade), 0); normalize();
             }
             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
             mark m0; step();
@@ -54,9 +54,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             apply(sized_flip_context_parent(state.chain));
             apply(sized_flip_depth_nonnegative(state.chain));
             have parent == sized_flip_parent(state.chain) by {
-                rewrite(parent == ancestor);
-                rewrite(ancestor == sized_context_parent(state.context, 0));
-                rewrite(state.context == sized_flip_context(state.chain)); known();
+                rewrite(parent, ancestor);
+                rewrite(ancestor, sized_context_parent(state.context, 0));
+                rewrite(state.context, sized_flip_context(state.chain)); known();
             }
             loop {
                 owns state: sized_flip_state(root);
@@ -74,45 +74,45 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         SizedTree::Empty => { unfold(state); contradiction(false); },
                         SizedTree::Node(current, above, red, count, lo, hi) => {
                             have node == current by {
-                                rewrite(node == sized_flip_node(state.model));
-                                rewrite(state.model == SizedTree::Node(current, above, red, count, lo, hi));
+                                rewrite(node, sized_flip_node(state.model));
+                                rewrite(state.model, SizedTree::Node(current, above, red, count, lo, hi));
                                 unfold(sized_flip_node(SizedTree::Node(current, above, red, count, lo, hi))); normalize();
                             }
                             have color_bit(red) == 0 by {
                                 unfold(sized_flip_color(SizedTree::Node(current, above, red, count, lo, hi)));
-                                rewrite(color_bit(red) == sized_flip_color(SizedTree::Node(current, above, red, count, lo, hi)));
-                                rewrite(SizedTree::Node(current, above, red, count, lo, hi) == state.model); known();
+                                rewrite(color_bit(red), sized_flip_color(SizedTree::Node(current, above, red, count, lo, hi)));
+                                rewrite(SizedTree::Node(current, above, red, count, lo, hi), state.model); known();
                             }
                             let { focus: focus, path: path } = unfold(state);
                             apply(sized_flip_context_parent(at(iteration,state.chain)));
                             have parent == above by {
-                                rewrite(parent == sized_flip_parent(at(iteration,state.chain)));
-                                rewrite(sized_flip_parent(at(iteration,state.chain)) == sized_context_parent(sized_flip_context(at(iteration,state.chain)),0));
-                                rewrite(sized_flip_context(at(iteration,state.chain)) == at(iteration,state.context)); known();
+                                rewrite(parent, sized_flip_parent(at(iteration,state.chain)));
+                                rewrite(sized_flip_parent(at(iteration,state.chain)), sized_context_parent(sized_flip_context(at(iteration,state.chain)),0));
+                                rewrite(sized_flip_context(at(iteration,state.chain)), at(iteration,state.context)); known();
                             }
                             match at(iteration,state.chain) {
                                 SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => {
                                     have path.model == SizedContext::Left(p, g, Color::Red, pv, other, SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))) by {
-                                        rewrite(path.model == at(iteration,state.context));
-                                        rewrite(at(iteration,state.context) == sized_flip_context(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
+                                        rewrite(path.model, at(iteration,state.context));
+                                        rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_context(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     let { metadata: p_size, sibling: other_tree, up: g_path } = unfold(path);
                                     let { metadata: g_size, sibling: uncle_tree, up: outer_path } = unfold(g_path);
                                     have parent == p by {
-                                        rewrite(parent == sized_flip_parent(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
+                                        rewrite(parent, sized_flip_parent(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_parent(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     match uncle {
                                         SizedTree::Empty => {
                                             unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)));
                                             unfold(sized_flip_uncle_red(SizedTree::Empty));
-                                            have sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
+                                            have sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
                                             have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                rewrite(at(iteration,state.chain) == SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
-                                                rewrite(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                rewrite(at(iteration,state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
+                                                rewrite(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                             }
                                             contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                         },
@@ -121,10 +121,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 Color::Black => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
-                                                    have sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Black); unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
+                                                    have sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Black); unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
                                                     have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
-                                                        rewrite(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                                     }
                                                     contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                                 },
@@ -132,7 +132,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)) == sized_flip_allowed(up) by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Red);
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Red);
                                                         unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Red, uv, ul, ur), up)));
                                                         unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Red, uv, ul, ur))); normalize();
                                                     }
@@ -141,12 +141,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have ug == g by {
                                                         if ug == g { known(); } else {
                                                             have sized_parent_is(uncle,g) == 0 by {
-                                                                rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                                rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                                 unfold(sized_parent_is(SizedTree::Node(u, ug, uc, uv, ul, ur),g));
                                                                 normalize() using { not (ug == g); };
                                                             }
                                                             have not (sized_parent_is(uncle,g) == 1) by {
-                                                                rewrite(sized_parent_is(uncle,g) == 0); normalize();
+                                                                rewrite(sized_parent_is(uncle,g), 0); normalize();
                                                             }
                                                             contradiction(sized_parent_is(uncle,g) == 1);
                                                         }
@@ -184,55 +184,55 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right != u by known();
                                                     unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                                                     have (u->__rb_parent_color & 1) == 0 by {
-                                                        rewrite((u->__rb_parent_color & 1) == color_bit(uc));
-                                                        rewrite(uc == Color::Red);
+                                                        rewrite((u->__rb_parent_color & 1), color_bit(uc));
+                                                        rewrite(uc, Color::Red);
                                                         unfold(color_bit(Color::Red)); normalize();
                                                     }
                                                     have p->__rb_parent_color == address(g) by {
-                                                        rewrite(p->__rb_parent_color == address(g) + (p->__rb_parent_color & 1));
-                                                        rewrite((p->__rb_parent_color & 1) == color_bit(Color::Red));
-                                                        rewrite(color_bit(Color::Red) == 0); normalize();
+                                                        rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
+                                                        rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
+                                                        rewrite(color_bit(Color::Red), 0); normalize();
                                                     }
                                                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     have root->rb_node == at(iteration, root->rb_node) by solve();
                                                     mark pre_0; step();
                                                     have g->__rb_parent_color == at(pre_0, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_0, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_0, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_0, root->rb_node)); known(); }
                                                     mark pre_1; step();
                                                     have g->__rb_parent_color == at(pre_1, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_1, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_1, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_1, root->rb_node)); known(); }
                                                     mark pre_2; step();
                                                     have g->__rb_parent_color == at(pre_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_2, root->rb_node)); known(); }
                                                     mark pre_3; step();
                                                     have g->__rb_parent_color == at(pre_3, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_3, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_3, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_3, root->rb_node)); known(); }
                                                     mark pre_4; step();
                                                     have g->__rb_parent_color == at(pre_4, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_4, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_4, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_4, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_4, root->rb_node)); known(); }
                                                     mark pre_5; step();
                                                     have g->__rb_parent_color == at(pre_5, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_5, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_5, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_5, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_5, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_5, root->rb_node)); known(); }
                                                     have tmp == u by known();
                                                     have parent == p by known();
                                                     have parent != tmp by known();
                                                     mark pre_6; step();
                                                     have g->__rb_parent_color == at(pre_6, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_6, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_6, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_6, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_6, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_6, root->rb_node)); known(); }
                                                     have (tmp->__rb_parent_color & 1) == 0 by {
                                                         transport(at(before_recolor, (u->__rb_parent_color & 1) == 0), (tmp->__rb_parent_color & 1) == 0);
                                                     }
@@ -245,21 +245,21 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     mark recolor_e;
                                                     step();
                                                     have p->rb_left == at(recolor_e, p->rb_left) by solve();
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_e, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_e, p->rb_left)); known(); }
                                                     have p->rb_right == at(recolor_e, p->rb_right) by solve();
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_e, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_e, p->rb_right)); known(); }
                                                     have g->rb_left == at(recolor_e, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_e, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_e, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_e, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_e, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_e, g->rb_right)); known(); }
                                                     have u->rb_left == at(recolor_e, u->rb_left) by solve();
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_e, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_e, u->rb_left)); known(); }
                                                     have u->rb_right == at(recolor_e, u->rb_right) by solve();
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_e, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_e, u->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_e, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_e, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_e, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_e, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_e, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_e, root->rb_node)); known(); }
                                                     mark recolor_0;
                                                     step();
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_left)) by solve();
@@ -269,7 +269,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_0, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_0, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_0, p->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(p->rb_right)); };
@@ -277,7 +277,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_right == at(recolor_0, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_0, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_0, p->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_left)); };
@@ -285,7 +285,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_0, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_0, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_0, g->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_right)); };
@@ -293,7 +293,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_right == at(recolor_0, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_0, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_0, g->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_left)); };
@@ -301,7 +301,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_left == at(recolor_0, u->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_left)));
                                                     }
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_0, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_0, u->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_right)); };
@@ -309,7 +309,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right == at(recolor_0, u->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_right)));
                                                     }
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_0, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_0, u->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)); };
@@ -320,7 +320,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_0, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_0, g->__rb_parent_color)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(root->rb_node)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(root->rb_node)); };
@@ -328,7 +328,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have root->rb_node == at(recolor_0, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
                                                     let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
@@ -338,28 +338,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_1, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_1, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_1, p->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(p->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have p->rb_right == at(recolor_1, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_1, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_1, p->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(g->rb_left), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_left == at(recolor_1, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_1, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_1, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_1, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_1, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_1, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)); };
                                                     }
@@ -369,44 +369,44 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_1, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_1, g->__rb_parent_color)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(p->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_1, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_1, root->rb_node)); known(); }
                                                     have sized_parent_is(at(iteration,state.model), p) == 1 by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi),p));
                                                         normalize() using { above == p; };
                                                     }
                                                     unfold(sized_value(at(iteration,state.model)));
                                                     have to_integer(pv) == 1 + to_integer(sized_value(at(iteration,state.model))) + to_integer(sized_value(other)) by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
                                                     let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other) }, { metadata: p_size, left: focus, right: other_tree });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_2, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_2, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_2, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_2, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_2, g->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_2, root->rb_node)); known(); }
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     mark recolor_3;
                                                     step();
                                                     have g->rb_left == at(recolor_3, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_3, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_3, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_3, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_3, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_3, g->rb_right)); known(); }
                                                     have root->rb_node == at(recolor_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_3, root->rb_node)); known(); }
                                                     have parent == sized_flip_parent(up) by { known(); }
                                                     mark recolor_4;
                                                     step();
@@ -416,28 +416,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_4, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_4, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_4, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(g->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_4, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_4, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_4, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(g->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_4, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_4, root->rb_node)); known(); }
                                                     unfold(sized_parent_is(SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), g));
                                                     unfold(sized_value(SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other)));
                                                     unfold(sized_parent_is(SizedTree::Node(u, g, Color::Black, uv, ul, ur), g));
                                                     unfold(sized_value(SizedTree::Node(u, g, Color::Black, uv, ul, ur)));
                                                     unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_value(uncle) == uv by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
                                                     let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur)) }, { metadata: g_size, left: parent_tree, right: uncle_tree });
@@ -448,8 +448,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     apply(sized_flip_depth_nonnegative(up));
                                                     unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)));
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
-                                                        rewrite(state.chain == up);
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(state.chain, up);
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
                                                         unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
@@ -462,26 +462,26 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 },
                                 SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => {
                                     have path.model == SizedContext::Right(p, g, Color::Red, pv, other, SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))) by {
-                                        rewrite(path.model == at(iteration,state.context));
-                                        rewrite(at(iteration,state.context) == sized_flip_context(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
+                                        rewrite(path.model, at(iteration,state.context));
+                                        rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_context(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     let { metadata: p_size, sibling: other_tree, up: g_path } = unfold(path);
                                     let { metadata: g_size, sibling: uncle_tree, up: outer_path } = unfold(g_path);
                                     have parent == p by {
-                                        rewrite(parent == sized_flip_parent(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
+                                        rewrite(parent, sized_flip_parent(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_parent(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     match uncle {
                                         SizedTree::Empty => {
                                             unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)));
                                             unfold(sized_flip_uncle_red(SizedTree::Empty));
-                                            have sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
+                                            have sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
                                             have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                rewrite(at(iteration,state.chain) == SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
-                                                rewrite(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                rewrite(at(iteration,state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
+                                                rewrite(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                             }
                                             contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                         },
@@ -490,10 +490,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 Color::Black => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
-                                                    have sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Black); unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
+                                                    have sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Black); unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
                                                     have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
-                                                        rewrite(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                                     }
                                                     contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                                 },
@@ -501,7 +501,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)) == sized_flip_allowed(up) by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Red);
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Red);
                                                         unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Red, uv, ul, ur), up)));
                                                         unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Red, uv, ul, ur))); normalize();
                                                     }
@@ -510,12 +510,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have ug == g by {
                                                         if ug == g { known(); } else {
                                                             have sized_parent_is(uncle,g) == 0 by {
-                                                                rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                                rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                                 unfold(sized_parent_is(SizedTree::Node(u, ug, uc, uv, ul, ur),g));
                                                                 normalize() using { not (ug == g); };
                                                             }
                                                             have not (sized_parent_is(uncle,g) == 1) by {
-                                                                rewrite(sized_parent_is(uncle,g) == 0); normalize();
+                                                                rewrite(sized_parent_is(uncle,g), 0); normalize();
                                                             }
                                                             contradiction(sized_parent_is(uncle,g) == 1);
                                                         }
@@ -553,52 +553,52 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right != u by known();
                                                     unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                                                     have (u->__rb_parent_color & 1) == 0 by {
-                                                        rewrite((u->__rb_parent_color & 1) == color_bit(uc));
-                                                        rewrite(uc == Color::Red);
+                                                        rewrite((u->__rb_parent_color & 1), color_bit(uc));
+                                                        rewrite(uc, Color::Red);
                                                         unfold(color_bit(Color::Red)); normalize();
                                                     }
                                                     have p->__rb_parent_color == address(g) by {
-                                                        rewrite(p->__rb_parent_color == address(g) + (p->__rb_parent_color & 1));
-                                                        rewrite((p->__rb_parent_color & 1) == color_bit(Color::Red));
-                                                        rewrite(color_bit(Color::Red) == 0); normalize();
+                                                        rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
+                                                        rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
+                                                        rewrite(color_bit(Color::Red), 0); normalize();
                                                     }
                                                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     have root->rb_node == at(iteration, root->rb_node) by solve();
                                                     mark pre_0; step();
                                                     have g->__rb_parent_color == at(pre_0, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_0, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_0, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_0, root->rb_node)); known(); }
                                                     mark pre_1; step();
                                                     have g->__rb_parent_color == at(pre_1, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_1, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_1, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_1, root->rb_node)); known(); }
                                                     mark pre_2; step();
                                                     have g->__rb_parent_color == at(pre_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_2, root->rb_node)); known(); }
                                                     mark pre_3; step();
                                                     have g->__rb_parent_color == at(pre_3, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_3, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_3, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_3, root->rb_node)); known(); }
                                                     mark pre_4; step();
                                                     have g->__rb_parent_color == at(pre_4, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_4, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_4, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_4, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_4, root->rb_node)); known(); }
                                                     mark pre_5; step();
                                                     have g->__rb_parent_color == at(pre_5, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_5, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_5, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_5, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_5, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_5, root->rb_node)); known(); }
                                                     mark pre_6; step();
                                                     have g->__rb_parent_color == at(pre_6, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_6, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_6, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_6, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_6, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_6, root->rb_node)); known(); }
                                                     have (tmp->__rb_parent_color & 1) == 0 by {
                                                         transport(at(before_recolor, (u->__rb_parent_color & 1) == 0), (tmp->__rb_parent_color & 1) == 0);
                                                     }
@@ -611,21 +611,21 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     mark recolor_e;
                                                     step();
                                                     have p->rb_left == at(recolor_e, p->rb_left) by solve();
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_e, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_e, p->rb_left)); known(); }
                                                     have p->rb_right == at(recolor_e, p->rb_right) by solve();
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_e, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_e, p->rb_right)); known(); }
                                                     have g->rb_left == at(recolor_e, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_e, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_e, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_e, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_e, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_e, g->rb_right)); known(); }
                                                     have u->rb_left == at(recolor_e, u->rb_left) by solve();
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_e, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_e, u->rb_left)); known(); }
                                                     have u->rb_right == at(recolor_e, u->rb_right) by solve();
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_e, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_e, u->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_e, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_e, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_e, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_e, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_e, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_e, root->rb_node)); known(); }
                                                     mark recolor_0;
                                                     step();
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_left)) by solve();
@@ -635,7 +635,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_0, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_0, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_0, p->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(p->rb_right)); };
@@ -643,7 +643,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_right == at(recolor_0, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_0, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_0, p->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_left)); };
@@ -651,7 +651,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_0, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_0, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_0, g->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_right)); };
@@ -659,7 +659,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_right == at(recolor_0, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_0, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_0, g->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_left)); };
@@ -667,7 +667,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_left == at(recolor_0, u->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_left)));
                                                     }
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_0, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_0, u->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_right)); };
@@ -675,7 +675,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right == at(recolor_0, u->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(u->rb_right)));
                                                     }
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_0, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_0, u->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)); };
@@ -686,7 +686,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_0, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_0, g->__rb_parent_color)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(root->rb_node)) by solve();
                                                     have separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(root->rb_node)); };
@@ -694,7 +694,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have root->rb_node == at(recolor_0, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(0).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
                                                     let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
@@ -704,28 +704,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_1, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_1, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_1, p->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(p->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have p->rb_right == at(recolor_1, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_1, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_1, p->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(g->rb_left), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_left == at(recolor_1, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_1, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_1, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_1, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_1, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_1, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)); };
                                                     }
@@ -735,44 +735,44 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_1, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_1, g->__rb_parent_color)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(p->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_1, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_1, root->rb_node)); known(); }
                                                     have sized_parent_is(at(iteration,state.model), p) == 1 by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi),p));
                                                         normalize() using { above == p; };
                                                     }
                                                     unfold(sized_value(at(iteration,state.model)));
                                                     have to_integer(pv) == 1 + to_integer(sized_value(other)) + to_integer(sized_value(at(iteration,state.model))) by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
                                                     let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)) }, { metadata: p_size, left: other_tree, right: focus });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_2, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_2, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_2, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_2, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_2, g->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_2, root->rb_node)); known(); }
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     mark recolor_3;
                                                     step();
                                                     have g->rb_left == at(recolor_3, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_3, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_3, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_3, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_3, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_3, g->rb_right)); known(); }
                                                     have root->rb_node == at(recolor_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_3, root->rb_node)); known(); }
                                                     have parent == sized_flip_parent(up) by { known(); }
                                                     mark recolor_4;
                                                     step();
@@ -782,28 +782,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_4, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_4, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_4, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(g->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_4, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_4, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_4, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(g->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_4, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(0).statement(4).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_4, root->rb_node)); known(); }
                                                     unfold(sized_parent_is(SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), g));
                                                     unfold(sized_value(SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model))));
                                                     unfold(sized_parent_is(SizedTree::Node(u, g, Color::Black, uv, ul, ur), g));
                                                     unfold(sized_value(SizedTree::Node(u, g, Color::Black, uv, ul, ur)));
                                                     unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_value(uncle) == uv by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
                                                     let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur)) }, { metadata: g_size, left: parent_tree, right: uncle_tree });
@@ -814,8 +814,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     apply(sized_flip_depth_nonnegative(up));
                                                     unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)));
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
-                                                        rewrite(state.chain == up);
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(state.chain, up);
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
                                                         unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
@@ -828,26 +828,26 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 },
                                 SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => {
                                     have path.model == SizedContext::Left(p, g, Color::Red, pv, other, SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))) by {
-                                        rewrite(path.model == at(iteration,state.context));
-                                        rewrite(at(iteration,state.context) == sized_flip_context(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
+                                        rewrite(path.model, at(iteration,state.context));
+                                        rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_context(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     let { metadata: p_size, sibling: other_tree, up: g_path } = unfold(path);
                                     let { metadata: g_size, sibling: uncle_tree, up: outer_path } = unfold(g_path);
                                     have parent == p by {
-                                        rewrite(parent == sized_flip_parent(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
+                                        rewrite(parent, sized_flip_parent(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_parent(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     match uncle {
                                         SizedTree::Empty => {
                                             unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)));
                                             unfold(sized_flip_uncle_red(SizedTree::Empty));
-                                            have sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
+                                            have sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
                                             have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                rewrite(at(iteration,state.chain) == SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
-                                                rewrite(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                rewrite(at(iteration,state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
+                                                rewrite(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                             }
                                             contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                         },
@@ -856,10 +856,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 Color::Black => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
-                                                    have sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Black); unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
+                                                    have sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Black); unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
                                                     have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
-                                                        rewrite(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                                     }
                                                     contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                                 },
@@ -867,7 +867,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)) == sized_flip_allowed(up) by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Red);
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Red);
                                                         unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Red, uv, ul, ur), up)));
                                                         unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Red, uv, ul, ur))); normalize();
                                                     }
@@ -876,12 +876,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have ug == g by {
                                                         if ug == g { known(); } else {
                                                             have sized_parent_is(uncle,g) == 0 by {
-                                                                rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                                rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                                 unfold(sized_parent_is(SizedTree::Node(u, ug, uc, uv, ul, ur),g));
                                                                 normalize() using { not (ug == g); };
                                                             }
                                                             have not (sized_parent_is(uncle,g) == 1) by {
-                                                                rewrite(sized_parent_is(uncle,g) == 0); normalize();
+                                                                rewrite(sized_parent_is(uncle,g), 0); normalize();
                                                             }
                                                             contradiction(sized_parent_is(uncle,g) == 1);
                                                         }
@@ -919,57 +919,57 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right != u by known();
                                                     unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                                                     have (u->__rb_parent_color & 1) == 0 by {
-                                                        rewrite((u->__rb_parent_color & 1) == color_bit(uc));
-                                                        rewrite(uc == Color::Red);
+                                                        rewrite((u->__rb_parent_color & 1), color_bit(uc));
+                                                        rewrite(uc, Color::Red);
                                                         unfold(color_bit(Color::Red)); normalize();
                                                     }
                                                     have p->__rb_parent_color == address(g) by {
-                                                        rewrite(p->__rb_parent_color == address(g) + (p->__rb_parent_color & 1));
-                                                        rewrite((p->__rb_parent_color & 1) == color_bit(Color::Red));
-                                                        rewrite(color_bit(Color::Red) == 0); normalize();
+                                                        rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
+                                                        rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
+                                                        rewrite(color_bit(Color::Red), 0); normalize();
                                                     }
                                                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     have root->rb_node == at(iteration, root->rb_node) by solve();
                                                     mark pre_0; step();
                                                     have g->__rb_parent_color == at(pre_0, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_0, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_0, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_0, root->rb_node)); known(); }
                                                     mark pre_1; step();
                                                     have g->__rb_parent_color == at(pre_1, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_1, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_1, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_1, root->rb_node)); known(); }
                                                     mark pre_2; step();
                                                     have g->__rb_parent_color == at(pre_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_2, root->rb_node)); known(); }
                                                     mark pre_3; step();
                                                     have g->__rb_parent_color == at(pre_3, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_3, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_3, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_3, root->rb_node)); known(); }
                                                     mark pre_4; step();
                                                     have g->__rb_parent_color == at(pre_4, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_4, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_4, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_4, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_4, root->rb_node)); known(); }
                                                     mark pre_5; step();
                                                     have g->__rb_parent_color == at(pre_5, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_5, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_5, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_5, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_5, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_5, root->rb_node)); known(); }
                                                     mark pre_6; step();
                                                     have g->__rb_parent_color == at(pre_6, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_6, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_6, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_6, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_6, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_6, root->rb_node)); known(); }
                                                     mark pre_7; step();
                                                     have g->__rb_parent_color == at(pre_7, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_7, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_7, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_7, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_7, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_7, root->rb_node)); known(); }
                                                     have (tmp->__rb_parent_color & 1) == 0 by {
                                                         transport(at(before_recolor, (u->__rb_parent_color & 1) == 0), (tmp->__rb_parent_color & 1) == 0);
                                                     }
@@ -982,21 +982,21 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     mark recolor_e;
                                                     step();
                                                     have p->rb_left == at(recolor_e, p->rb_left) by solve();
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_e, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_e, p->rb_left)); known(); }
                                                     have p->rb_right == at(recolor_e, p->rb_right) by solve();
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_e, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_e, p->rb_right)); known(); }
                                                     have g->rb_left == at(recolor_e, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_e, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_e, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_e, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_e, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_e, g->rb_right)); known(); }
                                                     have u->rb_left == at(recolor_e, u->rb_left) by solve();
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_e, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_e, u->rb_left)); known(); }
                                                     have u->rb_right == at(recolor_e, u->rb_right) by solve();
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_e, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_e, u->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_e, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_e, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_e, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_e, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_e, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_e, root->rb_node)); known(); }
                                                     mark recolor_0;
                                                     step();
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_left)) by solve();
@@ -1006,7 +1006,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_0, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_0, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_0, p->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(p->rb_right)); };
@@ -1014,7 +1014,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_right == at(recolor_0, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_0, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_0, p->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_left)); };
@@ -1022,7 +1022,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_0, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_0, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_0, g->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_right)); };
@@ -1030,7 +1030,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_right == at(recolor_0, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_0, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_0, g->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_left)); };
@@ -1038,7 +1038,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_left == at(recolor_0, u->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_left)));
                                                     }
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_0, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_0, u->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_right)); };
@@ -1046,7 +1046,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right == at(recolor_0, u->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_right)));
                                                     }
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_0, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_0, u->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)); };
@@ -1057,7 +1057,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_0, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_0, g->__rb_parent_color)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(root->rb_node)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(root->rb_node)); };
@@ -1065,7 +1065,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have root->rb_node == at(recolor_0, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
                                                     let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
@@ -1075,28 +1075,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_1, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_1, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_1, p->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(p->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have p->rb_right == at(recolor_1, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_1, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_1, p->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(g->rb_left), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_left == at(recolor_1, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_1, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_1, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_1, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_1, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_1, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)); };
                                                     }
@@ -1106,44 +1106,44 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_1, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_1, g->__rb_parent_color)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(p->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_1, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_1, root->rb_node)); known(); }
                                                     have sized_parent_is(at(iteration,state.model), p) == 1 by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi),p));
                                                         normalize() using { above == p; };
                                                     }
                                                     unfold(sized_value(at(iteration,state.model)));
                                                     have to_integer(pv) == 1 + to_integer(sized_value(at(iteration,state.model))) + to_integer(sized_value(other)) by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
                                                     let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other) }, { metadata: p_size, left: focus, right: other_tree });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_2, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_2, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_2, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_2, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_2, g->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_2, root->rb_node)); known(); }
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     mark recolor_3;
                                                     step();
                                                     have g->rb_left == at(recolor_3, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_3, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_3, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_3, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_3, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_3, g->rb_right)); known(); }
                                                     have root->rb_node == at(recolor_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_3, root->rb_node)); known(); }
                                                     have parent == sized_flip_parent(up) by { known(); }
                                                     mark recolor_4;
                                                     step();
@@ -1153,28 +1153,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_4, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_4, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_4, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(g->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_4, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_4, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_4, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(g->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_4, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_4, root->rb_node)); known(); }
                                                     unfold(sized_parent_is(SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), g));
                                                     unfold(sized_value(SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other)));
                                                     unfold(sized_parent_is(SizedTree::Node(u, g, Color::Black, uv, ul, ur), g));
                                                     unfold(sized_value(SizedTree::Node(u, g, Color::Black, uv, ul, ur)));
                                                     unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_value(uncle) == uv by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
                                                     let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other)) }, { metadata: g_size, left: uncle_tree, right: parent_tree });
@@ -1185,8 +1185,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     apply(sized_flip_depth_nonnegative(up));
                                                     unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)));
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
-                                                        rewrite(state.chain == up);
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(state.chain, up);
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
                                                         unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other))));
@@ -1199,26 +1199,26 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 },
                                 SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => {
                                     have path.model == SizedContext::Right(p, g, Color::Red, pv, other, SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))) by {
-                                        rewrite(path.model == at(iteration,state.context));
-                                        rewrite(at(iteration,state.context) == sized_flip_context(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
+                                        rewrite(path.model, at(iteration,state.context));
+                                        rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_context(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     let { metadata: p_size, sibling: other_tree, up: g_path } = unfold(path);
                                     let { metadata: g_size, sibling: uncle_tree, up: outer_path } = unfold(g_path);
                                     have parent == p by {
-                                        rewrite(parent == sized_flip_parent(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
+                                        rewrite(parent, sized_flip_parent(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
                                         unfold(sized_flip_parent(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); normalize();
                                     }
                                     match uncle {
                                         SizedTree::Empty => {
                                             unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                                             unfold(sized_flip_uncle_red(SizedTree::Empty));
-                                            have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
+                                            have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
                                             have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                rewrite(at(iteration,state.chain) == SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                                rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
+                                                rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                             }
                                             contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                         },
@@ -1227,10 +1227,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 Color::Black => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
-                                                    have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Black); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
+                                                    have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Black); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
                                                     have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                                        rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0); normalize();
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); normalize();
                                                     }
                                                     contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                                 },
@@ -1238,7 +1238,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == sized_flip_allowed(up) by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc == Color::Red);
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Red);
                                                         unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Red, uv, ul, ur), up)));
                                                         unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Red, uv, ul, ur))); normalize();
                                                     }
@@ -1247,12 +1247,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have ug == g by {
                                                         if ug == g { known(); } else {
                                                             have sized_parent_is(uncle,g) == 0 by {
-                                                                rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                                rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                                 unfold(sized_parent_is(SizedTree::Node(u, ug, uc, uv, ul, ur),g));
                                                                 normalize() using { not (ug == g); };
                                                             }
                                                             have not (sized_parent_is(uncle,g) == 1) by {
-                                                                rewrite(sized_parent_is(uncle,g) == 0); normalize();
+                                                                rewrite(sized_parent_is(uncle,g), 0); normalize();
                                                             }
                                                             contradiction(sized_parent_is(uncle,g) == 1);
                                                         }
@@ -1290,57 +1290,57 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right != u by known();
                                                     unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                                                     have (u->__rb_parent_color & 1) == 0 by {
-                                                        rewrite((u->__rb_parent_color & 1) == color_bit(uc));
-                                                        rewrite(uc == Color::Red);
+                                                        rewrite((u->__rb_parent_color & 1), color_bit(uc));
+                                                        rewrite(uc, Color::Red);
                                                         unfold(color_bit(Color::Red)); normalize();
                                                     }
                                                     have p->__rb_parent_color == address(g) by {
-                                                        rewrite(p->__rb_parent_color == address(g) + (p->__rb_parent_color & 1));
-                                                        rewrite((p->__rb_parent_color & 1) == color_bit(Color::Red));
-                                                        rewrite(color_bit(Color::Red) == 0); normalize();
+                                                        rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
+                                                        rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
+                                                        rewrite(color_bit(Color::Red), 0); normalize();
                                                     }
                                                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     have root->rb_node == at(iteration, root->rb_node) by solve();
                                                     mark pre_0; step();
                                                     have g->__rb_parent_color == at(pre_0, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_0, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_0, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_0, root->rb_node)); known(); }
                                                     mark pre_1; step();
                                                     have g->__rb_parent_color == at(pre_1, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_1, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_1, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_1, root->rb_node)); known(); }
                                                     mark pre_2; step();
                                                     have g->__rb_parent_color == at(pre_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_2, root->rb_node)); known(); }
                                                     mark pre_3; step();
                                                     have g->__rb_parent_color == at(pre_3, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_3, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_3, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_3, root->rb_node)); known(); }
                                                     mark pre_4; step();
                                                     have g->__rb_parent_color == at(pre_4, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_4, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_4, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_4, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_4, root->rb_node)); known(); }
                                                     mark pre_5; step();
                                                     have g->__rb_parent_color == at(pre_5, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_5, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_5, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_5, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_5, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_5, root->rb_node)); known(); }
                                                     mark pre_6; step();
                                                     have g->__rb_parent_color == at(pre_6, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_6, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_6, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_6, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_6, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_6, root->rb_node)); known(); }
                                                     mark pre_7; step();
                                                     have g->__rb_parent_color == at(pre_7, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(pre_7, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(pre_7, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(pre_7, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(pre_7, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(pre_7, root->rb_node)); known(); }
                                                     have (tmp->__rb_parent_color & 1) == 0 by {
                                                         transport(at(before_recolor, (u->__rb_parent_color & 1) == 0), (tmp->__rb_parent_color & 1) == 0);
                                                     }
@@ -1353,21 +1353,21 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     mark recolor_e;
                                                     step();
                                                     have p->rb_left == at(recolor_e, p->rb_left) by solve();
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_e, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_e, p->rb_left)); known(); }
                                                     have p->rb_right == at(recolor_e, p->rb_right) by solve();
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_e, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_e, p->rb_right)); known(); }
                                                     have g->rb_left == at(recolor_e, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_e, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_e, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_e, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_e, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_e, g->rb_right)); known(); }
                                                     have u->rb_left == at(recolor_e, u->rb_left) by solve();
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_e, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_e, u->rb_left)); known(); }
                                                     have u->rb_right == at(recolor_e, u->rb_right) by solve();
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_e, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_e, u->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_e, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_e, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_e, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_e, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_e, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_e, root->rb_node)); known(); }
                                                     mark recolor_0;
                                                     step();
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_left)) by solve();
@@ -1377,7 +1377,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_0, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_0, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_0, p->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(p->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(p->rb_right)); };
@@ -1385,7 +1385,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_right == at(recolor_0, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_0, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_0, p->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_left)); };
@@ -1393,7 +1393,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_0, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_0, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_0, g->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->rb_right)); };
@@ -1401,7 +1401,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_right == at(recolor_0, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_0, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_0, g->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_left)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_left)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_left)); };
@@ -1409,7 +1409,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_left == at(recolor_0, u->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_left)));
                                                     }
-                                                    have u->rb_left != u by { rewrite(u->rb_left == at(recolor_0, u->rb_left)); known(); }
+                                                    have u->rb_left != u by { rewrite(u->rb_left, at(recolor_0, u->rb_left)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(u->rb_right)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_right)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(u->rb_right)); };
@@ -1417,7 +1417,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have u->rb_right == at(recolor_0, u->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(u->rb_right)));
                                                     }
-                                                    have u->rb_right != u by { rewrite(u->rb_right == at(recolor_0, u->rb_right)); known(); }
+                                                    have u->rb_right != u by { rewrite(u->rb_right, at(recolor_0, u->rb_right)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(g->__rb_parent_color)); };
@@ -1428,7 +1428,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_0, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_0, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_0, g->__rb_parent_color)); known(); }
                                                     have separate(memory(tmp->__rb_parent_color), memory(root->rb_node)) by solve();
                                                     have separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(tmp->__rb_parent_color), memory(root->rb_node)); };
@@ -1436,7 +1436,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have root->rb_node == at(recolor_0, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(0).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_0, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
                                                     let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
@@ -1446,28 +1446,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have p->rb_left == at(recolor_1, p->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_left)));
                                                     }
-                                                    have p->rb_left != p by { rewrite(p->rb_left == at(recolor_1, p->rb_left)); known(); }
+                                                    have p->rb_left != p by { rewrite(p->rb_left, at(recolor_1, p->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_right)) by {
                                                         normalize() using { separate(memory(p->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have p->rb_right == at(recolor_1, p->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_right)));
                                                     }
-                                                    have p->rb_right != p by { rewrite(p->rb_right == at(recolor_1, p->rb_right)); known(); }
+                                                    have p->rb_right != p by { rewrite(p->rb_right, at(recolor_1, p->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_left)) by {
                                                         normalize() using { separate(memory(g->rb_left), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_left == at(recolor_1, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_1, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_1, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(p->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_1, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_1, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_1, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->__rb_parent_color)) by {
                                                         normalize() using { separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)); };
                                                     }
@@ -1477,44 +1477,44 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == at(recolor_1, g->__rb_parent_color) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(g->__rb_parent_color)));
                                                     }
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_1, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_1, g->__rb_parent_color)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(p->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_1, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_1, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_1, root->rb_node)); known(); }
                                                     have sized_parent_is(at(iteration,state.model), p) == 1 by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi),p));
                                                         normalize() using { above == p; };
                                                     }
                                                     unfold(sized_value(at(iteration,state.model)));
                                                     have to_integer(pv) == 1 + to_integer(sized_value(other)) + to_integer(sized_value(at(iteration,state.model))) by {
-                                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
                                                     let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)) }, { metadata: p_size, left: other_tree, right: focus });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_2, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_2, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_2, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_2, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_2, g->rb_right)); known(); }
                                                     have g->__rb_parent_color == at(recolor_2, g->__rb_parent_color) by solve();
-                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color == at(recolor_2, g->__rb_parent_color)); known(); }
+                                                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { rewrite(g->__rb_parent_color, at(recolor_2, g->__rb_parent_color)); known(); }
                                                     have root->rb_node == at(recolor_2, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_2, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_2, root->rb_node)); known(); }
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == sized_flip_parent(up) by { known(); }
                                                     mark recolor_3;
                                                     step();
                                                     have g->rb_left == at(recolor_3, g->rb_left) by solve();
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_3, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_3, g->rb_left)); known(); }
                                                     have g->rb_right == at(recolor_3, g->rb_right) by solve();
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_3, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_3, g->rb_right)); known(); }
                                                     have root->rb_node == at(recolor_3, root->rb_node) by solve();
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_3, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_3, root->rb_node)); known(); }
                                                     have parent == sized_flip_parent(up) by { known(); }
                                                     mark recolor_4;
                                                     step();
@@ -1524,28 +1524,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->rb_left == at(recolor_4, g->rb_left) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(g->rb_left)));
                                                     }
-                                                    have g->rb_left != g by { rewrite(g->rb_left == at(recolor_4, g->rb_left)); known(); }
+                                                    have g->rb_left != g by { rewrite(g->rb_left, at(recolor_4, g->rb_left)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(g->rb_right)) by {
                                                         normalize() using { separate(memory(g->rb_right), memory(g->__rb_parent_color)); };
                                                     }
                                                     have g->rb_right == at(recolor_4, g->rb_right) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(g->rb_right)));
                                                     }
-                                                    have g->rb_right != g by { rewrite(g->rb_right == at(recolor_4, g->rb_right)); known(); }
+                                                    have g->rb_right != g by { rewrite(g->rb_right, at(recolor_4, g->rb_right)); known(); }
                                                     have separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(root->rb_node)) by {
                                                         normalize() using { separate(memory(root->rb_node), memory(g->__rb_parent_color)); };
                                                     }
                                                     have root->rb_node == at(recolor_4, root->rb_node) by {
                                                         preserve(separate(statement(1).statement(4).statement(10).statement(4).footprint, memory(root->rb_node)));
                                                     }
-                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node == at(recolor_4, root->rb_node)); known(); }
+                                                    have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_4, root->rb_node)); known(); }
                                                     unfold(sized_parent_is(SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), g));
                                                     unfold(sized_value(SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model))));
                                                     unfold(sized_parent_is(SizedTree::Node(u, g, Color::Black, uv, ul, ur), g));
                                                     unfold(sized_value(SizedTree::Node(u, g, Color::Black, uv, ul, ur)));
                                                     unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_value(uncle) == uv by {
-                                                        rewrite(uncle == SizedTree::Node(u, ug, uc, uv, ul, ur));
+                                                        rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
                                                     let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model))) }, { metadata: g_size, left: uncle_tree, right: parent_tree });
@@ -1556,8 +1556,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     apply(sized_flip_depth_nonnegative(up));
                                                     unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                                                     have sized_flip_depth(state.chain) < sized_flip_depth(at(iteration,state.chain)) by {
-                                                        rewrite(state.chain == up);
-                                                        rewrite(at(iteration,state.chain) == SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
+                                                        rewrite(state.chain, up);
+                                                        rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
                                                         unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); solve() using {};
                                                     }
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)))));
@@ -1570,16 +1570,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 },
                                 SizedFlipChain::Root => {
                                     have path.model == SizedContext::Top by {
-                                        rewrite(path.model == at(iteration,state.context));
-                                        rewrite(at(iteration,state.context) == sized_flip_context(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::Root);
+                                        rewrite(path.model, at(iteration,state.context));
+                                        rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::Root);
                                         unfold(sized_flip_context(SizedFlipChain::Root)); normalize();
                                     }
                                     have parent == 0 by {
-                                        rewrite(parent == above);
-                                        rewrite(above == sized_context_parent(at(iteration,state.context), 0));
-                                        rewrite(at(iteration,state.context) == sized_flip_context(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::Root);
+                                        rewrite(parent, above);
+                                        rewrite(above, sized_context_parent(at(iteration,state.context), 0));
+                                        rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::Root);
                                         unfold(sized_flip_context(SizedFlipChain::Root));
                                         unfold(sized_context_parent(SizedContext::Top, 0)); normalize();
                                     }
@@ -1588,25 +1588,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     unfold(color_bit(Color::Black));
                                     let focus = fold(sized_at(node), { model: SizedTree::Node(current, 0, Color::Black, count, lo, hi) }, { metadata: metadata, left: l, right: r });
                                     have sized_value(focus.model) == count by {
-                                        rewrite(focus.model == SizedTree::Node(current, 0, Color::Black, count, lo, hi));
+                                        rewrite(focus.model, SizedTree::Node(current, 0, Color::Black, count, lo, hi));
                                         unfold(sized_value(SizedTree::Node(current, 0, Color::Black, count, lo, hi))); normalize();
                                     }
                                     have sized_parent_is(focus.model, sized_context_parent(path.model, 0)) == 1 by {
-                                        rewrite(focus.model == SizedTree::Node(current, 0, Color::Black, count, lo, hi));
-                                        rewrite(path.model == SizedContext::Top);
+                                        rewrite(focus.model, SizedTree::Node(current, 0, Color::Black, count, lo, hi));
+                                        rewrite(path.model, SizedContext::Top);
                                         unfold(sized_context_parent(SizedContext::Top, 0));
                                         unfold(sized_parent_is(SizedTree::Node(current, 0, Color::Black, count, lo, hi), 0)); normalize();
                                     }
                                     have sized_plug(path.model, focus.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by {
-                                        rewrite(path.model == SizedContext::Top);
-                                        rewrite(focus.model == SizedTree::Node(current, 0, Color::Black, count, lo, hi));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::Root);
-                                        rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                        rewrite(path.model, SizedContext::Top);
+                                        rewrite(focus.model, SizedTree::Node(current, 0, Color::Black, count, lo, hi));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::Root);
+                                        rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                         unfold(sized_flip_result(SizedFlipChain::Root, SizedTree::Node(current, above, red, count, lo, hi)));
                                         unfold(sized_recolor(SizedTree::Node(current, above, red, count, lo, hi), Color::Black));
                                         unfold(sized_plug(SizedContext::Top, SizedTree::Node(current, 0, Color::Black, count, lo, hi)));
                                         have above == 0 by known();
-                                        rewrite(above == 0); normalize();
+                                        rewrite(above, 0); normalize();
                                     }
                                     let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: SizedContext::Top }, { focus: focus, path: path });
                                     have sized_plug(state.context, state.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by known();
@@ -1615,60 +1615,60 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 },
                                 SizedFlipChain::Stop(ctx) => {
                                     have path.model == ctx by {
-                                        rewrite(path.model == at(iteration,state.context));
-                                        rewrite(at(iteration,state.context) == sized_flip_context(at(iteration,state.chain)));
-                                        rewrite(at(iteration,state.chain) == SizedFlipChain::Stop(ctx));
+                                        rewrite(path.model, at(iteration,state.context));
+                                        rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
+                                        rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
                                         unfold(sized_flip_context(SizedFlipChain::Stop(ctx))); normalize();
                                     }
                                     have sized_flip_black_boundary(ctx) == 1 by {
                                         unfold(sized_flip_allowed(SizedFlipChain::Stop(ctx)));
-                                        rewrite(sized_flip_black_boundary(ctx) == sized_flip_allowed(SizedFlipChain::Stop(ctx)));
-                                        rewrite(SizedFlipChain::Stop(ctx) == at(iteration,state.chain)); known();
+                                        rewrite(sized_flip_black_boundary(ctx), sized_flip_allowed(SizedFlipChain::Stop(ctx)));
+                                        rewrite(SizedFlipChain::Stop(ctx), at(iteration,state.chain)); known();
                                     }
                                     match ctx {
                                         SizedContext::Top => {
                                             have not (sized_flip_black_boundary(ctx) == 1) by {
-                                                rewrite(ctx == SizedContext::Top);
+                                                rewrite(ctx, SizedContext::Top);
                                                 unfold(sized_flip_black_boundary(SizedContext::Top)); normalize();
                                             }
                                             contradiction(sized_flip_black_boundary(ctx) == 1);
                                         },
                                         SizedContext::Left(a, gp, color, cached, sibling, up) => {
                                             have parent == a by {
-                                                rewrite(parent == above);
-                                                rewrite(above == sized_context_parent(at(iteration,state.context), 0));
-                                                rewrite(at(iteration,state.context) == path.model);
-                                                rewrite(path.model == ctx); rewrite(ctx == SizedContext::Left(a, gp, color, cached, sibling, up));
+                                                rewrite(parent, above);
+                                                rewrite(above, sized_context_parent(at(iteration,state.context), 0));
+                                                rewrite(at(iteration,state.context), path.model);
+                                                rewrite(path.model, ctx); rewrite(ctx, SizedContext::Left(a, gp, color, cached, sibling, up));
                                                 unfold(sized_context_parent(SizedContext::Left(a, gp, color, cached, sibling, up), 0)); normalize();
                                             }
                                             have color_bit(color) == 1 by {
                                                 unfold(sized_flip_black_boundary(SizedContext::Left(a, gp, color, cached, sibling, up)));
-                                                rewrite(color_bit(color) == sized_flip_black_boundary(SizedContext::Left(a, gp, color, cached, sibling, up)));
-                                                rewrite(SizedContext::Left(a, gp, color, cached, sibling, up) == ctx); known();
+                                                rewrite(color_bit(color), sized_flip_black_boundary(SizedContext::Left(a, gp, color, cached, sibling, up)));
+                                                rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); known();
                                             }
                                             let { metadata: a_size, sibling: held_sibling, up: held_up } = unfold(path);
                                             have (a->__rb_parent_color & 1) == 1 by {
-                                                rewrite((a->__rb_parent_color & 1) == color_bit(color));
-                                                rewrite(color_bit(color) == 1); normalize();
+                                                rewrite((a->__rb_parent_color & 1), color_bit(color));
+                                                rewrite(color_bit(color), 1); normalize();
                                             }
                                             step(); step(); step();
                                             let path = fold(sized_context_at(node, root->rb_node, 0, count), { model: SizedContext::Left(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
                                             have sized_value(focus.model) == count by {
-                                                rewrite(focus.model == at(iteration,state.model));
-                                                rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                rewrite(focus.model, at(iteration,state.model));
+                                                rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                 unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); normalize();
                                             }
                                             have sized_parent_is(focus.model, sized_context_parent(path.model, 0)) == 1 by {
-                                                rewrite(focus.model == at(iteration,state.model));
-                                                rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                rewrite(focus.model, at(iteration,state.model));
+                                                rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                 unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi), sized_context_parent(path.model, 0)));
                                                 normalize() using { above == sized_context_parent(at(iteration,state.context), 0); at(iteration,state.context) == ctx; ctx == SizedContext::Left(a, gp, color, cached, sibling, up); path.model == SizedContext::Left(a, gp, color, cached, sibling, up); };
                                             }
                                             have sized_plug(path.model, focus.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by {
-                                                rewrite(at(iteration,state.chain) == SizedFlipChain::Stop(ctx));
+                                                rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
                                                 unfold(sized_flip_result(SizedFlipChain::Stop(ctx), at(iteration,state.model)));
-                                                rewrite(focus.model == at(iteration,state.model));
-                                                rewrite(path.model == SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up) == ctx); normalize();
+                                                rewrite(focus.model, at(iteration,state.model));
+                                                rewrite(path.model, SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); normalize();
                                             }
                                             let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
                                             have sized_plug(state.context, state.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by known();
@@ -1677,40 +1677,40 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         },
                                         SizedContext::Right(a, gp, color, cached, sibling, up) => {
                                             have parent == a by {
-                                                rewrite(parent == above);
-                                                rewrite(above == sized_context_parent(at(iteration,state.context), 0));
-                                                rewrite(at(iteration,state.context) == path.model);
-                                                rewrite(path.model == ctx); rewrite(ctx == SizedContext::Right(a, gp, color, cached, sibling, up));
+                                                rewrite(parent, above);
+                                                rewrite(above, sized_context_parent(at(iteration,state.context), 0));
+                                                rewrite(at(iteration,state.context), path.model);
+                                                rewrite(path.model, ctx); rewrite(ctx, SizedContext::Right(a, gp, color, cached, sibling, up));
                                                 unfold(sized_context_parent(SizedContext::Right(a, gp, color, cached, sibling, up), 0)); normalize();
                                             }
                                             have color_bit(color) == 1 by {
                                                 unfold(sized_flip_black_boundary(SizedContext::Right(a, gp, color, cached, sibling, up)));
-                                                rewrite(color_bit(color) == sized_flip_black_boundary(SizedContext::Right(a, gp, color, cached, sibling, up)));
-                                                rewrite(SizedContext::Right(a, gp, color, cached, sibling, up) == ctx); known();
+                                                rewrite(color_bit(color), sized_flip_black_boundary(SizedContext::Right(a, gp, color, cached, sibling, up)));
+                                                rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); known();
                                             }
                                             let { metadata: a_size, sibling: held_sibling, up: held_up } = unfold(path);
                                             have (a->__rb_parent_color & 1) == 1 by {
-                                                rewrite((a->__rb_parent_color & 1) == color_bit(color));
-                                                rewrite(color_bit(color) == 1); normalize();
+                                                rewrite((a->__rb_parent_color & 1), color_bit(color));
+                                                rewrite(color_bit(color), 1); normalize();
                                             }
                                             step(); step(); step();
                                             let path = fold(sized_context_at(node, root->rb_node, 0, count), { model: SizedContext::Right(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
                                             have sized_value(focus.model) == count by {
-                                                rewrite(focus.model == at(iteration,state.model));
-                                                rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                rewrite(focus.model, at(iteration,state.model));
+                                                rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                 unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); normalize();
                                             }
                                             have sized_parent_is(focus.model, sized_context_parent(path.model, 0)) == 1 by {
-                                                rewrite(focus.model == at(iteration,state.model));
-                                                rewrite(at(iteration,state.model) == SizedTree::Node(current, above, red, count, lo, hi));
+                                                rewrite(focus.model, at(iteration,state.model));
+                                                rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                 unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi), sized_context_parent(path.model, 0)));
                                                 normalize() using { above == sized_context_parent(at(iteration,state.context), 0); at(iteration,state.context) == ctx; ctx == SizedContext::Right(a, gp, color, cached, sibling, up); path.model == SizedContext::Right(a, gp, color, cached, sibling, up); };
                                             }
                                             have sized_plug(path.model, focus.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by {
-                                                rewrite(at(iteration,state.chain) == SizedFlipChain::Stop(ctx));
+                                                rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
                                                 unfold(sized_flip_result(SizedFlipChain::Stop(ctx), at(iteration,state.model)));
-                                                rewrite(focus.model == at(iteration,state.model));
-                                                rewrite(path.model == SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up) == ctx); normalize();
+                                                rewrite(focus.model, at(iteration,state.model));
+                                                rewrite(path.model, SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); normalize();
                                             }
                                             let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
                                             have sized_plug(state.context, state.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by known();

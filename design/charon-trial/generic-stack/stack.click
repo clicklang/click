@@ -411,7 +411,7 @@ impl<T> generic_stack::Stack<T> {
                             transport(at(region(103).exit, old(self.head.next).next) == at(region(103).exit, old(self.head.next).next), old(self.head.next).next == at(region(103).exit, old(self.head.next).next));
                         }
                         have self.head.next == old(self.head.next).next by {
-                            rewrite(self.head == old(self.head.next));
+                            rewrite(self.head, old(self.head.next));
                             known();
                         }
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });

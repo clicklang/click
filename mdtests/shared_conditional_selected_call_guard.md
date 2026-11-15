@@ -22,8 +22,8 @@ theorem selected(x: Payload) {
     requires value(wrapped(x)) == value(x);
     ensures joined(wrapped(x)) == 1 by {
         unfold(joined(wrapped(x)));
-        rewrite(flag(wrapped(x)) == flag(x));
-        rewrite(value(wrapped(x)) == value(x));
+        rewrite(flag(wrapped(x)), flag(x));
+        rewrite(value(wrapped(x)), value(x));
         normalize() using { flag(x) == 1; value(x) == 1; };
     }
 }

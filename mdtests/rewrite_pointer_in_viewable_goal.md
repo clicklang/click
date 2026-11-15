@@ -28,7 +28,7 @@ void keep(struct cell* c) {
         Link::Node(q) => {
             unfold(h);
             have viewable(q[0..1]) by {
-                rewrite(q == c);
+                rewrite(q, c);
                 known();
             }
             let h = fold(Cell(c), { model: Link::Node(q) });

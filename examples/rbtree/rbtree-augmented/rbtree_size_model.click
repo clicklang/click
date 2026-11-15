@@ -132,12 +132,12 @@ tactic certify_size(p: struct rb_node*) {
             let checked = fold(sized_at(p), { model: SizedTree::Empty });
             have checked.model == old(tree.model);
             have sized_counts_valid(checked.model) == 1 by {
-                rewrite(checked.model == SizedTree::Empty);
+                rewrite(checked.model, SizedTree::Empty);
                 unfold(sized_counts_valid(SizedTree::Empty));
                 normalize();
             }
             have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
-                rewrite(checked.model == SizedTree::Empty);
+                rewrite(checked.model, SizedTree::Empty);
                 unfold(sized_value(SizedTree::Empty));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_subtree_size(RbTree::Empty));
@@ -148,37 +148,37 @@ tactic certify_size(p: struct rb_node*) {
             let { metadata: metadata, left: left, right: right } = unfold(tree);
             apply(sized_child_descent(identity, parent, color, value, left_model, right_model));
             have rb_subtree_size(sized_shape(old(tree.model))) == rb_subtree_size(sized_shape(left_model)) + rb_subtree_size(sized_shape(right_model)) + 1 by {
-                rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
+                rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
                 normalize();
             }
             have 0 <= rb_subtree_size(sized_shape(left.model)) by {
-                rewrite(left.model == left_model);
+                rewrite(left.model, left_model);
                 known();
             }
             have rb_subtree_size(sized_shape(left.model)) < rb_subtree_size(sized_shape(old(tree.model))) by {
-                rewrite(left.model == left_model);
-                rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
+                rewrite(left.model, left_model);
+                rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 known();
             }
             let { checked: left } = certify_size(p->rb_left, { tree: left });
             have 0 <= rb_subtree_size(sized_shape(right.model)) by {
-                rewrite(right.model == right_model);
+                rewrite(right.model, right_model);
                 known();
             }
             have rb_subtree_size(sized_shape(right.model)) < rb_subtree_size(sized_shape(old(tree.model))) by {
-                rewrite(right.model == right_model);
-                rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
+                rewrite(right.model, right_model);
+                rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 known();
             }
             let { checked: right } = certify_size(p->rb_right, { tree: right });
             have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by {
-                rewrite(left_model == left.model);
+                rewrite(left_model, left.model);
                 known();
             }
             have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by {
-                rewrite(right_model == right.model);
+                rewrite(right_model, right.model);
                 known();
             }
             have to_integer(value) == rb_subtree_size(sized_shape(old(tree.model))) by {
@@ -189,12 +189,12 @@ tactic certify_size(p: struct rb_node*) {
                     rb_subtree_size(sized_shape(old(tree.model))) == rb_subtree_size(sized_shape(left_model)) + rb_subtree_size(sized_shape(right_model)) + 1;
                 };
             }
-            have sized_counts_valid(left_model) == 1 by { rewrite(left_model == left.model); known(); }
-            have sized_counts_valid(right_model) == 1 by { rewrite(right_model == right.model); known(); }
+            have sized_counts_valid(left_model) == 1 by { rewrite(left_model, left.model); known(); }
+            have sized_counts_valid(right_model) == 1 by { rewrite(right_model, right.model); known(); }
             let checked = fold(sized_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model) }, { metadata: metadata, left: left, right: right });
             have checked.model == old(tree.model);
             have sized_counts_valid(checked.model) == 1 by {
-                rewrite(checked.model == SizedTree::Node(identity, parent, color, value, left_model, right_model));
+                rewrite(checked.model, SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 normalize() using {
                     to_integer(value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
@@ -203,9 +203,9 @@ tactic certify_size(p: struct rb_node*) {
                 };
             }
             have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
-                rewrite(checked.model == SizedTree::Node(identity, parent, color, value, left_model, right_model));
+                rewrite(checked.model, SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
-                rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model) == old(tree.model));
+                rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model), old(tree.model));
                 known();
             }
         },

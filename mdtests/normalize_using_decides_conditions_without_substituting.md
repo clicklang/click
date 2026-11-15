@@ -3,7 +3,7 @@
 A cited `x == 7` decides every condition the cited equalities settle, such as
 the guard `x == 7` of a conditional expression, and a comparison of `x` itself
 with a constant, such as `x < 8`. It does not replace `x` by `7` inside
-another term, so the goal `x * 2 < 15` is not reduced; `rewrite(x == 7)`
+another term, so the goal `x * 2 < 15` is not reduced; `rewrite(x, 7)`
 followed by `normalize()` proves it.
 
 ```click
@@ -24,7 +24,7 @@ theorem constant_comparison_is_decided(x: int32) {
 theorem rewrite_substitutes(x: int32) {
     requires x == 7;
     ensures to_integer(x * 2) < 15 by {
-        rewrite(x == 7);
+        rewrite(x, 7);
         normalize();
     }
 }

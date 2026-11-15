@@ -263,7 +263,7 @@ theorem adler_lane_triangle_successor(n: Integer) {
         }
         unfold(adler_lane_triangle(n + 1));
         unfold(adler_lane_triangle(n));
-        rewrite((n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1));
+        rewrite((n + 1) * ((n + 1) + 1), n * (n + 1) + 2 * (n + 1));
         arithmetic_certificate rules {
             premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
             premise 1: 0 <= n + 1 => 0 <= n + 1;
@@ -281,7 +281,7 @@ theorem adler_lane_b_ceiling_successor(n: Integer) {
         unfold(adler_lane_b_ceiling(n + 1));
         unfold(adler_lane_b_ceiling(n));
         unfold(adler_lane_a_ceiling(n + 1));
-        rewrite(adler_lane_triangle(n + 1) == adler_lane_triangle(n) + (n + 1));
+        rewrite(adler_lane_triangle(n + 1), adler_lane_triangle(n) + (n + 1));
         arithmetic_certificate rules {
             integer_polynomial_identity bounds [] => 65520 + 65520 * (n + 1) + 255 * (adler_lane_triangle(n) + (n + 1)) == (65520 + 65520 * n + 255 * adler_lane_triangle(n)) + (65520 + 255 * (n + 1));
             conclusion 0;
@@ -301,7 +301,7 @@ theorem adler_lane_b_invariant_step(n: Integer, a: Integer, b: Integer, byte: In
                 a <= adler_lane_a_ceiling(n); byte <= 255;
             };
         have adler_lane_b_ceiling(n + 1) == adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1) by apply(adler_lane_b_ceiling_successor(n)) using { 0 <= n; n <= 5551; };
-        rewrite(adler_lane_b_ceiling(n + 1) == adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1));
+        rewrite(adler_lane_b_ceiling(n + 1), adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1));
         solve() using {
             b <= adler_lane_b_ceiling(n);
             a + byte <= adler_lane_a_ceiling(n + 1);
@@ -359,7 +359,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
         have to_integer(a + byte) == to_integer(a) + to_integer(byte);
-        rewrite(to_integer(a + byte) == to_integer(a) + to_integer(byte));
+        rewrite(to_integer(a + byte), to_integer(a) + to_integer(byte));
         apply(adler_lane_a_invariant_step(n, to_integer(a), to_integer(byte))) using {
             to_integer(a) <= adler_lane_a_ceiling(n); to_integer(byte) <= 255;
         };
@@ -436,8 +436,8 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
                 to_integer(a) <= adler_lane_a_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        rewrite(to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte));
-        rewrite(to_integer(a + byte) == to_integer(a) + to_integer(byte));
+        rewrite(to_integer(b + (a + byte)), to_integer(b) + to_integer(a + byte));
+        rewrite(to_integer(a + byte), to_integer(a) + to_integer(byte));
         apply(adler_lane_b_invariant_step(n, to_integer(a), to_integer(b), to_integer(byte))) using {
             0 <= n; n < 5552; to_integer(a) <= adler_lane_a_ceiling(n);
             to_integer(b) <= adler_lane_b_ceiling(n); to_integer(byte) <= 255;
