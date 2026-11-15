@@ -50,3 +50,37 @@ fn charon_range_loops_verify_from_their_bounds() {
         assert!(rendered.contains(expected), "{expected}: {rendered}");
     }
 }
+
+/// A range loop's failures name its iterator as the proof does, `iter.end`
+/// inside the loop and `loop(0).iter.start` after it, and its points by the
+/// `for` statement: no compiler temporary or bare region index appears.
+#[test]
+fn charon_range_loop_failures_name_the_iterator_as_the_proof_does() {
+    let p = Project::from_fixture("design/charon-trial/ranges");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    let failure = |before: &str, after: &str| {
+        assert!(SIDECAR.contains(before), "{before}");
+        let invalid = SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_function(&invalid, &prepared, "count_to")
+            .expect_err("a false claim about the loop fails");
+        click::languages::rust::names::display_rust_names(&format!("{error}")).into_owned()
+    };
+    // A false invariant fails at the loop's entry, naming the range's end.
+    let entry = failure(
+        "        invariant total == iter.start;\n",
+        "        invariant total == iter.start + 1u32;\n",
+    );
+    assert!(entry.contains("iter.end"), "{entry}");
+    // Without the bound, the exit is not pinned, and the facts there name
+    // the range's start after the loop.
+    let exit = failure(
+        "        invariant iter.start <= n;\n        invariant total == iter.start;\n",
+        "        invariant total == iter.start;\n",
+    );
+    assert!(exit.contains("loop(0).iter.start"), "{exit}");
+    for rendered in [&entry, &exit] {
+        assert!(!rendered.contains("__rust_mir"), "{rendered}");
+        assert!(!rendered.contains("at(region("), "{rendered}");
+    }
+}
