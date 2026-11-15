@@ -205,11 +205,6 @@ impl RecursionDeclarations {
                              nothing"
                         )));
                     }
-                    if !matches!(self.measures[callee], DeclaredMeasure::Expression { .. }) {
-                        return Err(error(
-                            "a recursive component cannot mix an expression measure with another measure kind",
-                        ));
-                    }
                 }
                 authority.expression = Some(ExpressionRecursionAuthority {
                     source: source.clone(),
