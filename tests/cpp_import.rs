@@ -18062,22 +18062,24 @@ fn cpp_native_word_and_byte_pointer_stores_verify_offline() {
         ("unsigned int", "uint32", "4294967295u32"),
         ("unsigned char", "uint8", "255u8"),
     ] {
-        let source = format!(
-            "{source_type} probe({source_type}* p, {source_type} value) noexcept {{ *(p + 1) = value; return *(p + 1); }}"
-        );
-        let project = Project::with_fixture("pointer.cpp", "probe", &source);
-        refresh_import(&project.config()).unwrap();
-        fs::remove_file(&project.exporter).unwrap();
-        let import = load_import(&project.config()).unwrap();
-        let sidecar = format!(
-            "verifying \"pointer.cpp\"; {contract_type} probe({contract_type}* p, {contract_type} value) {{ owns p[0..2]; requires value == {literal}; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; }}"
-        );
-        check_selected_claim_certificate(&project, &import, &sidecar);
-        let bad = sidecar.replace("owns p[0..2];", "views p[0..2];");
-        let path = project.directory.join("bad.click");
-        fs::write(&path, &bad).unwrap();
-        let parsed = read_click_project(&path, &bad).unwrap();
-        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        for access in ["*(p + 1)", "p[1]", "1[p]"] {
+            let source = format!(
+                "{source_type} probe({source_type}* p, {source_type} value) noexcept {{ {access} = value; return {access}; }}"
+            );
+            let project = Project::with_fixture("pointer.cpp", "probe", &source);
+            refresh_import(&project.config()).unwrap();
+            fs::remove_file(&project.exporter).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let sidecar = format!(
+                "verifying \"pointer.cpp\"; {contract_type} probe({contract_type}* p, {contract_type} value) {{ owns p[0..2]; requires value == {literal}; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; }}"
+            );
+            check_selected_claim_certificate(&project, &import, &sidecar);
+            let bad = sidecar.replace("owns p[0..2];", "views p[0..2];");
+            let path = project.directory.join("bad.click");
+            fs::write(&path, &bad).unwrap();
+            let parsed = read_click_project(&path, &bad).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
     }
 }
 

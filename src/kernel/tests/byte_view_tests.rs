@@ -654,3 +654,26 @@ fn execution_loads_read_character_cells_of_the_other_signedness() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/byte_view_tests.rs");
 }
+
+#[test]
+fn declared_word_read_representation_is_typed_live_and_snapshot_specific() {
+    use crate::kernel::eval::declared_uint32_read_representation as representation;
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
+    let first = representation(&memory, &word(0), Some(ByteOrder::Little)).unwrap();
+    let changed = memory.clone().store(word(0), crate::kernel::uint32(7u32));
+    let second = representation(&changed, &word(0), Some(ByteOrder::Little)).unwrap();
+    assert_ne!(first, second, "a write must change the byte observations");
+    for order in [None, Some(ByteOrder::Big)] {
+        assert!(representation(&memory, &word(0), order).is_none());
+    }
+    for unsupported in [
+        Memory::new().with_block(word(0).block, 4),
+        Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::Int32),
+        Memory::new().with_declared_scalar_block(word(0).block, 8, ProgramType::UInt64),
+        memory.clone().without_local_block(&word(0).block),
+    ] {
+        assert!(representation(&unsupported, &word(0), Some(ByteOrder::Little)).is_none());
+    }
+    assert!(representation(&memory, &word(1), Some(ByteOrder::Little)).is_none());
+}

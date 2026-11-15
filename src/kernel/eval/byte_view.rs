@@ -25,6 +25,56 @@ use super::*;
 /// many bytes minus one below the accessed byte.
 const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 
+/// A successful read of a declared uint32 observes precisely its four bytes.
+/// The equation names only the selected snapshot; it neither initializes
+/// storage nor transports observations across a write or call.
+pub(in crate::kernel) fn declared_uint32_read_representation(
+    memory: &Memory,
+    pointer: &Pointer,
+    byte_order: Option<ByteOrder>,
+) -> Option<Proposition> {
+    if byte_order != Some(ByteOrder::Little) || pointer.offset.as_const() != Some(0) {
+        return None;
+    }
+    crate::instrumentation::record_deterministic_work(1);
+    let declaration = memory.blocks.get(&pointer.block)?;
+    if declaration.declared_scalar_type != Some(ProgramType::UInt32)
+        || declaration.size().as_const() != Some(4)
+        || memory.is_ended_local_address(pointer)
+    {
+        return None;
+    }
+    let snapshot = crate::kernel::intern_memory_ref(memory);
+    let value = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
+        snapshot.clone(),
+        Box::new(pointer.clone()),
+        LoadKind::UInt32,
+    ));
+    let mut assembled = MachineTerm::constant(0);
+    for byte in 0..4 {
+        crate::instrumentation::record_deterministic_work(1);
+        let read = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
+            snapshot.clone(),
+            Box::new(pointer.offset_by_bytes(byte)),
+            LoadKind::UInt8,
+        ));
+        let bits = byte_word(&ProgramValue::UInt8(read))?;
+        assembled = MachineTerm::bitwise_or(
+            assembled,
+            MachineTerm::unsigned_shift_left(bits, MachineTerm::constant(8 * byte)),
+        );
+    }
+    Some(Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::Equal,
+            left: Box::new(value),
+            right: Box::new(assembled),
+        },
+        true,
+    ))
+}
+
 /// Completes an automatic uint32 object's representation when this character
 /// store supplies its last missing byte. Its declaration, not the requested
 /// load type or the allocation's size, selects the object being initialized.

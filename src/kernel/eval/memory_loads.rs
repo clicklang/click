@@ -129,6 +129,8 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
     let word_storage = (!volatile
         && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64))
     .then(|| pointer.clone());
+    let byte_representation =
+        (!volatile && value_type == ProgramType::UInt32).then(|| pointer.clone());
     let mut paths = evaluate_retained_memory_load_paths_with_alias_cache(
         memory,
         pointer,
@@ -146,6 +148,16 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
         source,
         byte_order,
     );
+    if let Some(address) = byte_representation {
+        for path in &mut paths {
+            if let ExpressionOutcome::Value(_) = &path.outcome
+                && let Some(equation) =
+                    declared_uint32_read_representation(memory, &address, byte_order)
+            {
+                path.facts.push(ExecutionPureFact::certified(equation));
+            }
+        }
+    }
     if let Some(address) = word_storage {
         for path in &mut paths {
             if let ExpressionOutcome::Value(value) = &mut path.outcome {

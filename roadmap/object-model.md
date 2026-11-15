@@ -79,15 +79,22 @@ rules; historical archive metadata is not evidence of upstream support.
 
 The shared `consumes uninitialized(...)` / `produces ...` contract already
 expresses body-checked output initialization. Do not rebuild this mechanism.
-The selected C++ byte tests separately cover ordinary modular byte writes and
-four stores initializing a declared uint32. What remains is their composition:
+The pinned C++ witness now composes modular byte writes with a declared uint32's
+byte view. A successful word read supplies its same-snapshot representation
+equation, so the helper's four byte postconditions establish the exact word.
 
-- [ ] Check a pinned C++ `std::byte*` helper that consumes four unwritten bytes
+- [x] Check a pinned C++ `std::byte*` helper that consumes four unwritten bytes
   and produces them initialized, called with a declared uint32's byte view.
   Prove the exact little-endian word after the modular call.
-- [ ] Reject an unwritten byte, missing write permission, a stale observation,
+- [x] Reject an unwritten byte, missing write permission, a stale observation,
   and a forged byte declaration. Check expansion, cold rewritten verification
   and retained checking for the positive witness.
+
+`pinned_std_byte_modular_output_initializes_uint32_offline` checks the original
+`p[i]` stores, modular call and exact `0x12345678` result across proof modes,
+with missing-byte, permission and stale-word controls. Existing forged-byte
+artifact tests check declaration authority. See the
+[composition repair](../design/object-model-current-audit.md#modular-byte-output-composition).
 
 This small composition is the foundation acceptance case. Bitcoin
 `ser_readdata32`, cursor exceptions, broader writable spans and owning containers

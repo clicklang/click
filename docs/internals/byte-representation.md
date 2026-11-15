@@ -180,6 +180,24 @@ counterpart refuses the typed read. `byte_view_tests` also checks out-of-order
 and signed byte stores, symbolic masking, later byte updates, profile refusals
 and deterministic work beside unrelated memory.
 
+A modular output contract uses the existing `consumes uninitialized(p[0..4])`
+and `produces p[0..4]` transfer. Its body must write every byte; ownership and
+value postconditions alone do not initialize storage. When the caller reads
+its declared uint32, the successful C read supplies an equation between the
+word and its four little-endian unsigned byte reads at that same snapshot.
+The equation also applies to the synchronized named-local read path. It keeps
+the read's value term unchanged and adds no initialization or authority.
+Four byte postconditions can then establish the exact word without inlining
+the callee. The rule selects the declaration and four reads directly; it does
+not search facts or memory history for byte values. Other scalar types,
+layouts, untyped storage and ended objects do not receive this equation.
+
+`pinned_std_byte_modular_output_initializes_uint32_offline` retains the C++
+`p[i]` stores and the caller's `reinterpret_cast<std::byte*>(&obj)`. It checks
+the modular contract and exact `0x12345678` result, including proof replay and
+missing-byte, permission and stale-word controls. Existing artifact controls
+check authenticated `std::byte` declarations independently.
+
 ## Typed and byte views never contradict
 
 Memory keeps one description of any byte. A one-byte store either rewrites
@@ -294,7 +312,8 @@ The regressions measure deterministic work at four or more sizes, under the
   `fixed_representation_copy_lookup_work_is_independent_of_unrelated_memory`
   (8 to 512 unrelated cells, constant work);
 - `src/scaling_tests/kernel/tests/byte_view_tests.rs`:
-  `containing_cell_lookup_work_is_independent_of_unrelated_cells`;
+  `containing_cell_lookup_work_is_independent_of_unrelated_cells` and
+  `declared_word_read_representation_ignores_unrelated_memory`;
 - `src/scaling_tests/surface/tests/scaling_tests.rs` (all nightly): the frozen round trip
   with the marginal work of one extra copy beside 2, 4, 8, and 16 unrelated
   live allocations

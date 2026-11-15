@@ -32,11 +32,10 @@ Historical archive passes/failures are not counted as current results.
    Absence of those APIs is not itself a false acceptance: importer restrictions,
    shared typed access, actual call checks and resource contracts also constrain
    the admitted programs. A new semantic rule needs a concrete current witness.
-5. Existing C++ tests separately establish modular byte writes into initialized
-   storage and four direct byte writes completing a declared uint32. They do not
-   by themselves establish the combination of a modular unwritten byte-output
-   contract, the byte view and the caller's exact typed word observation. That
-   composition remains a focused acceptance obligation.
+5. The modular byte-output composition below now checks unwritten-byte output,
+   the authenticated byte view and the caller's exact typed word observation
+   together. This closes the small foundation case, not general byte retyping
+   or Bitcoin serialization coverage.
 6. At the original audit baseline, the C++ external-backing reference witness
    fails before its getter
    call: stable-view planning cannot supply the receiver loan. Its construction
@@ -206,6 +205,55 @@ source/scaling/documentation/Rust run has 1,915 passes and nine Rust tests that
 stop during frontend setup because this environment lacks the pinned Charon
 bundle; those nine do not reach verification. The full nightly suite was not
 run. The focused proof-mode regression above passes separately.
+
+## Modular byte-output composition
+
+The witness in `tests/fixtures/cpp-byte-output/initialize.cpp` declares an
+uninitialized `unsigned int`, passes its `std::byte*` view to `fill`, and returns
+the word. `fill` retains four `p[i]` stores. Its sidecar consumes four unwritten
+bytes, produces them initialized and states each byte's value. The source is
+checked against the authenticated pinned libstdc++ declaration and reloaded
+offline.
+
+The first failure was exporter admission of builtin scalar pointer subscripts.
+They now use the existing pointer-add and load/store artifact nodes, retaining
+written operand order for `p[i]` and `i[p]`. Shared bounds, initialization and
+write-permission checks still apply. The next failure was the exact word value:
+output initialization and all four byte facts already transferred, but no rule
+connected them to the caller's typed word observation.
+
+A successful C read of a live declared uint32 under the installed little-endian
+layout now supplies its representation equation: that snapshot's typed read is
+the four unsigned byte reads zero-extended and shifted by 0, 8, 16 and 24 bits.
+Both pointer loads and synchronized named-local reads publish the equation.
+It leaves the read term unchanged and supplies no initialization or authority.
+Selection uses the declaration and five fixed read identities, with no fact
+search, memory scan or conversion of retained expression prefixes. Other types,
+untyped blocks, ended objects and unsupported byte orders stay outside this rule.
+
+`pinned_std_byte_modular_output_initializes_uint32_offline` proves `0x12345678`
+after the modular call, expands the proof, cold-checks it with implicit solving
+disabled for `probe.contract`, and replays it in a retained session. Controls
+refuse a missing write, missing write permission and reuse of a pre-call zero
+observation. The existing consistently rehashed forged-byte artifact controls
+check nominal identity, declaration location, underlying type and locked header
+authority. Kernel tests independently check snapshot, type, lifetime and target
+selection. The native pointer-store test retains `*(p + 1)` and adds `p[1]` and
+`1[p]` for unsigned word/byte loads and stores, including read-only refusal.
+
+The rule names the selected snapshot's typed read directly, preserving retained
+expression roots through existing C/Rust handoff controls. Its multi-size
+control grows unrelated memory at 8, 32, 128 and 512 blocks. The scalar-ownership
+control uses cold sessions and nonempty contexts at every size, retaining its
+tight work bound and deliberately injected scan refusal.
+
+
+Delivery validation on upstream `51a353b8b` with this increment: all 1,664 active
+scaling tests pass (two local test threads); all 82 selected byte/kernel,
+C++ compatibility, pointer-fold proof-mode and documentation checks pass. All 29
+`byte_representation_` fixtures pass with zero fact-stability differences.
+Rust/scaling-file formatting, mdBook and documentation lint pass. Only named
+relevant nightly tests were selected; the full nightly suite was not run.
 
 ## Remaining interface audit
 
