@@ -10,6 +10,29 @@ enum SurfaceSpellingPurpose {
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Retain a computational `known` leaf when possible, otherwise the exact
+    /// legacy normalizer requested by this search route. Premise-restricted
+    /// routes use only goal-local computation to make this choice.
+    pub(in crate::surface::proof) fn apply_normalization_closure(
+        search_input: &Proof<'a>,
+        premises: Option<Vec<ClickProposition>>,
+    ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("apply_normalization_closure");
+        let step = if search_input
+            .goal()
+            .is_some_and(crate::surface::planning::solve::computes_with_known)
+        {
+            ProofStep::Known
+        } else {
+            match premises {
+                Some(premises) => ProofStep::NormalizeUsing(premises),
+                None => ProofStep::Normalize,
+            }
+        };
+        search_input.driver().apply_step(step)
+    }
+
     /// Strategy dispatch for the smart arithmetic step. Keep the same selected
     /// premise order, explicit certificates, and refusal precedence as solve.
     pub(in crate::surface::proof) fn apply_arithmetic_using(
@@ -2015,13 +2038,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_solve_closure_strategies");
         let mut scope = attempt::search_scope("solve closure");
-        // A stated whole goal already has the shortest explicit proof. Do not
-        // decompose it or search for an alternative derivation.
-        if search_input
-            .goal()
-            .is_some_and(|goal| search_input.facts().contains(goal))
+        // Prefer the whole `known` closure, including computation, before
+        // decomposing the goal or searching for another derivation.
+        if let Some(proof) =
+            attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known))?
         {
-            let proof = search_input.driver().apply_step(ProofStep::Known)?;
             scope.succeed();
             return Ok(Some(proof));
         }
@@ -2578,13 +2599,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_solve_closure_with_surfaces");
         let mut scope = attempt::search_scope("solve closure with surfaces");
-        // A stated whole goal already has the shortest explicit proof. Do not
-        // decompose it or search for an alternative derivation.
-        if search_input
-            .goal()
-            .is_some_and(|goal| search_input.facts().contains(goal))
+        // Prefer the whole `known` closure, including computation, before
+        // decomposing the goal or searching for another derivation.
+        if let Some(proof) =
+            attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known))?
         {
-            let proof = search_input.driver().apply_step(ProofStep::Known)?;
             scope.succeed();
             return Ok(Some(proof));
         }
@@ -3889,10 +3908,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..),
                 true
             ))
-        ) && let Ok(proof) = search_input
-            .driver()
-            .apply_step(ProofStep::NormalizeUsing(Vec::new()))
-            && proof.is_complete()
+        ) && let Ok(proof) = crate::kernel::search::ProofSearch::apply_normalization_closure(
+            search_input,
+            Some(Vec::new()),
+        ) && proof.is_complete()
         {
             return Some(proof);
         }
@@ -3991,11 +4010,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if premises.is_empty() {
             return None;
         }
-        search_input
-            .driver()
-            .apply_step(ProofStep::NormalizeUsing(premises))
-            .ok()
-            .filter(Proof::is_complete)
+        crate::kernel::search::ProofSearch::apply_normalization_closure(
+            search_input,
+            Some(premises),
+        )
+        .ok()
+        .filter(Proof::is_complete)
     }
 
     /// Uses one explicitly supplied equality before unfolding applications in
@@ -7627,11 +7647,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
         match plan_solve_certificate(&goal, &assumptions_from_propositions(&restricted))? {
-            SolveEvidence::Normalize => search_input
-                .driver()
-                .apply_step(ProofStep::Normalize)
-                .ok()
-                .filter(Proof::is_complete),
+            SolveEvidence::Normalize => {
+                crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
+                    .ok()
+                    .filter(Proof::is_complete)
+            }
             SolveEvidence::Derivation(derivation) => {
                 crate::kernel::search::ProofSearch::check_typed_atomic_solve_candidate(
                     search_input,
@@ -9538,6 +9558,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .then_some((kernel, surface.clone()))
             })
             .collect::<Option<Vec<_>>>()?;
+        if crate::surface::planning::solve::computes_with_known(goal) {
+            return proof
+                .driver()
+                .apply_step(ProofStep::Known)
+                .ok()
+                .filter(|closed| closed.is_complete() || closed.focused_discharged());
+        }
         // A listed equality under a definedness guard the list does not
         // state: prove the guard from the other listed premises, extract the
         // consequent, and continue from the list with the consequent in the
@@ -9625,9 +9652,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &crate::kernel::proof::ProofFacts::from_ordered(&restricted),
                 )
                 .is_ok()
-                && let Ok(closed) = proof
-                    .driver()
-                    .apply_step(ProofStep::NormalizeUsing(conditions))
+                && let Ok(closed) = crate::kernel::search::ProofSearch::apply_normalization_closure(
+                    &proof,
+                    Some(conditions),
+                )
                 && closed.is_complete()
             {
                 return Some(closed);

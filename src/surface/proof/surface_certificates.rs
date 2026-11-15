@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
+use crate::surface::planning::solve::plan_context_free_closer;
 use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
 pub(super) fn surface_logical_children(
@@ -485,10 +486,7 @@ fn plan_explicit_universal_conclusion_discharge(
             }));
             tactics.push(ProofTactic::Have(ProofHave {
                 proposition: reverse.clone(),
-                proof: SourceProof::Script(vec![
-                    ProofTactic::Rewrite(forward),
-                    ProofTactic::Normalize,
-                ]),
+                proof: SourceProof::Script(vec![ProofTactic::Rewrite(forward), ProofTactic::Known]),
             }));
             tactics.push(ProofTactic::Rewrite(reverse));
         } else {
@@ -1626,7 +1624,7 @@ pub(super) fn viewability_restriction_steps(
                 right: right.clone(),
             }
         });
-        // Constant endpoint comparisons are ordinary normalization steps.
+        // Constant endpoint comparisons close by computation with `known`.
         // Nonconstant bounds still have to be explicitly selected by planning.
         for bound in &bounds {
             if premises.contains(bound) {
@@ -1648,8 +1646,8 @@ pub(super) fn viewability_restriction_steps(
             steps.push(ProofStep::Have {
                 proposition: bound.clone(),
                 proof: Box::new(
-                    ProofCertificate::from_steps(vec![ProofStep::Normalize])
-                        .expect("constant comparison is an ordinary normalization step"),
+                    ProofCertificate::from_steps(vec![ProofStep::Known])
+                        .expect("constant comparison is an ordinary known step"),
                 ),
             });
         }
@@ -2668,10 +2666,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
             rewrite_proposition_by_exact_equality(&current, &oriented_kernel, &available).ok()?;
         equality_tactics.push(ProofTactic::Rewrite(oriented_surface));
     }
-    if !normalizes_context_free(&current) {
-        return None;
-    }
-    equality_tactics.push(ProofTactic::Normalize);
+    equality_tactics.push(plan_context_free_closer(&current)?);
 
     let mut predecessor_tactics =
         plan_explicit_one_le_predecessor(goal, &[(one_le_kernel, one_le_surface.clone())])?;
@@ -2714,10 +2709,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor_is_zero(
             rewrite_proposition_by_exact_equality(&current, &oriented_kernel, &available).ok()?;
         tactics.push(ProofTactic::Rewrite(oriented_surface));
     }
-    if !normalizes_context_free(&current) {
-        return None;
-    }
-    tactics.push(ProofTactic::Normalize);
+    tactics.push(plan_context_free_closer(&current)?);
     Some(tactics)
 }
 
@@ -2910,16 +2902,13 @@ pub(super) fn plan_recorded_bitvector_equality_path(
             rewrite_proposition_by_exact_equality(&current, &oriented_kernel, &available).ok()?;
         tactics.push(ProofTactic::Rewrite(oriented_surface));
     }
-    if !normalizes_context_free(&current) {
-        return None;
-    }
-    tactics.push(ProofTactic::Normalize);
+    tactics.push(plan_context_free_closer(&current)?);
     Some(tactics)
 }
 
 /// A pointer-word equality decision is certified by a checked special
-/// certificate naming every retained fact, or by `normalize` when it used
-/// none.
+/// certificate naming every retained fact, or by a goal-local closer when it
+/// used none.
 pub(super) fn plan_recorded_pointer_word(
     goal: &Proposition,
     derivation: &PropositionDerivation,
@@ -2928,7 +2917,7 @@ pub(super) fn plan_recorded_pointer_word(
 ) -> Option<Vec<ProofTactic>> {
     let premises = derivation.pointer_word_premises()?;
     if premises.is_empty() {
-        return normalizes_context_free(goal).then(|| vec![ProofTactic::Normalize]);
+        return plan_context_free_closer(goal).map(|closer| vec![closer]);
     }
     let surfaces = premises
         .iter()
@@ -2965,7 +2954,7 @@ pub(super) fn plan_recorded_pointer_alignment(
     surface_goal: &ClickProposition,
 ) -> Option<Vec<ProofTactic>> {
     match derivation.pointer_alignment_premise()? {
-        None => normalizes_context_free(goal).then(|| vec![ProofTactic::Normalize]),
+        None => plan_context_free_closer(goal).map(|closer| vec![closer]),
         Some(premise) => {
             let (_, surface) = premise_pairs.iter().find(|(kernel, _)| kernel == premise)?;
             let plan = crate::surface::checking::plan_arithmetic(
@@ -2987,7 +2976,7 @@ pub(super) fn plan_recorded_pointer_alignment(
 
 /// Expand registered-load address congruence into the ordinary exact
 /// equality rewrites that establish it. `rewrite` descends through the
-/// registered load origins, while `normalize` checks that the resulting
+/// registered load origins, while `known` checks that the resulting
 /// memory version and complete pointer are identical.
 pub(super) fn plan_recorded_load_address_congruence(
     goal: &Proposition,
@@ -3025,10 +3014,7 @@ pub(super) fn plan_recorded_load_address_congruence(
             tactics.push(ProofTactic::Rewrite(oriented_surface));
         }
     }
-    if !normalizes_context_free(&current) {
-        return None;
-    }
-    tactics.push(ProofTactic::Normalize);
+    tactics.push(plan_context_free_closer(&current)?);
     Some(tactics)
 }
 
@@ -4496,7 +4482,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
             }),
             ProofTactic::Rewrite(pointer_surface),
             ProofTactic::Rewrite(index_surface),
-            ProofTactic::Normalize,
+            ProofTactic::Known,
         ]);
     }
     None

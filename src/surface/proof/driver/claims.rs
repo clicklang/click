@@ -2775,28 +2775,34 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             };
             // Keep the checked authority for the original claims,
             // but close the rewritten goals in the expanded proof.
-            // Keep the normalization spelling for computational residuals until
-            // their expansion route is migrated. With
+            // Prefer `known` for the residuals, keeping the legacy normalizer
+            // only when a goal needs its broader rules. With
             // resource claims, keep the ordinary `known` closers: they
             // follow contract order, whose next goal may be ownership.
             if proof_context.constants.grouped_contract
                 && direct_resource_claims.is_empty()
                 && !direct_claims.is_empty()
-                && direct_claims.iter().all(|(index, _, _)| {
-                    rewritten_claim_proofs[*index]
-                        .as_ref()
-                        .is_some_and(|(proof, _)| {
-                            proof.driver().apply_step(ProofStep::Normalize).is_ok()
-                        })
-                })
+                && let Some(closer) = [ProofStep::Known, ProofStep::Normalize]
+                    .into_iter()
+                    .find(|closer| direct_claims.iter().all(|(index, _, _)| {
+                        rewritten_claim_proofs[*index]
+                            .as_ref()
+                            .is_some_and(|(proof, _)| {
+                                proof.driver().apply_step(closer.clone()).is_ok()
+                            })
+                    }))
             {
                 let mut tactics = direct_proof
                     .certificate_since(&direct_base)?
                     .to_proof_tactics();
-                tactics.push(ProofTactic::Normalize);
+                tactics.push(match closer {
+                    ProofStep::Known => ProofTactic::Known,
+                    ProofStep::Normalize => ProofTactic::Normalize,
+                    _ => unreachable!("selected a residual closer above"),
+                });
                 let certificate = ProofCertificate::from_proof_tactics(&tactics)
                     .map_err(|error| ClickError::new(format!(
-                        "checked normalization closure is not simple: {error}"
+                        "checked residual closure is not simple: {error}"
                     )))?;
                 return Ok(Some((direct_proof, certificate, completed.1)));
             }

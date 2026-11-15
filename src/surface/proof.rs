@@ -764,7 +764,7 @@ mod certificate_tests {
         );
         assert_eq!(
             verified[1].proof_tactics().as_deref(),
-            Some([ProofTactic::Normalize].as_slice())
+            Some([ProofTactic::Known].as_slice())
         );
         assert!(matches!(
             verified[2].proof_tactics().as_deref(),

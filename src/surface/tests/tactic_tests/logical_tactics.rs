@@ -1380,9 +1380,9 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
     assert!(
         matches!(
             body.as_slice(),
-            [ProofTactic::Witness(_), ProofTactic::Normalize]
+            [ProofTactic::Witness(_), ProofTactic::Known]
         ),
-        "the expansion should be the exact checked witness/normalize path: {body:?}"
+        "the expansion should be the exact checked witness/known path: {body:?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the witness/solve have expansion should be a surface certificate");
@@ -1405,7 +1405,7 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
         expand_c_tactic_source_at(click_source, &[("current_have.c", c_source)], line, column)
             .expect("the checked witness/solve path should expand at its source site");
     verify_c_sources(&rewritten, &[("current_have.c", c_source)])
-        .expect("the serialized witness/normalize path should independently verify");
+        .expect("the serialized witness/known path should independently verify");
 }
 
 #[test]
