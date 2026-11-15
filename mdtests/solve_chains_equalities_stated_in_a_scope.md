@@ -15,13 +15,10 @@ and `normalize()`, and it re-verifies. The chain's work is linear in its
 length and an unrelated query's is flat
 (`solve_equality_chain_is_linear_and_unrelated_queries_are_flat`).
 
-The two frame links are explicit `transport`s from a reflexive source. Each
-call's havoc edge records the caller's `occ[0..n]` as kept (the caller owns it
-outside the transfer), so a context holding only `0 <= k` and `k < n` already
-decides a link. `solve` chose that condition-only context, and none of its
-certificate planners spells a frame equality from those premises alone; a
-`solve()` link fails promptly and names the call. The chain itself, the
-subject here, is still one `solve`.
+The two frame links use explicit preservation. Each call publishes that its
+footprint is contained in `other[0..1]`; the resource separation and selected
+cell containment restrict that separation to `occ[k]`. The final chain stays
+one `solve`, which expands to ordinary equality steps.
 
 ```c filename=solve_chains_equalities_stated_in_a_scope.c
 void mark_one(int* other) {
@@ -36,6 +33,8 @@ int caller(int* occ, int* other, int n) {
 ```
 
 ```click
+import click::separation;
+
 verifying "solve_chains_equalities_stated_in_a_scope.c";
 
 void mark_one(int32* other) {
@@ -54,6 +53,7 @@ int32 caller(int32* occ, int32* other, int32 n) {
         0 <= k and k < n implies occ[k] == 0
     };
 } by {
+    have separate(memory(other[0..1]), memory(occ[0..n])) by { solve(); }
     mark a;
     step();
     mark b;
@@ -63,15 +63,31 @@ int32 caller(int32* occ, int32* other, int32 n) {
     } by {
         intro();
         intro();
+        extract(0 <= k); extract(k < n);
+        have contains(memory(occ[0..n]), memory(occ[k])) by {
+            apply(separation::contains_element(occ, 0, n, k)) using { 0 <= k; k < n; };
+        }
+        have contains(memory(other[0..1]), statement(1).footprint) by { known(); }
+        have separate(statement(1).footprint, memory(occ[k])) by {
+            apply(separation::separate_restrict(memory(other[0..1]), memory(occ[0..n]), statement(1).footprint, memory(occ[k]))) using {
+                separate(memory(other[0..1]), memory(occ[0..n]));
+                contains(memory(other[0..1]), statement(1).footprint);
+                contains(memory(occ[0..n]), memory(occ[k]));
+            };
+        }
         have occ[k] == at(b, occ[k]) by {
-            transport(at(b, occ[k]) == at(b, occ[k]), occ[k] == at(b, occ[k])) using {
-                at(b, occ[k]) == at(b, occ[k]);
+            preserve(separate(statement(1).footprint, memory(occ[k])));
+        }
+        have contains(memory(other[0..1]), statement(0).footprint) by { known(); }
+        have separate(statement(0).footprint, memory(occ[k])) by {
+            apply(separation::separate_restrict(memory(other[0..1]), memory(occ[0..n]), statement(0).footprint, memory(occ[k]))) using {
+                separate(memory(other[0..1]), memory(occ[0..n]));
+                contains(memory(other[0..1]), statement(0).footprint);
+                contains(memory(occ[0..n]), memory(occ[k]));
             };
         }
         have at(b, occ[k]) == at(a, occ[k]) by {
-            transport(at(a, occ[k]) == at(a, occ[k]), at(b, occ[k]) == at(a, occ[k])) using {
-                at(a, occ[k]) == at(a, occ[k]);
-            };
+            preserve(separate(statement(0).footprint, memory(occ[k])));
         }
         have at(a, occ[k]) == 0 by {
             instantiate(forall (j: int32) {

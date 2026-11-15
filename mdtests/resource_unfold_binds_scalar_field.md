@@ -164,10 +164,16 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 rewrite(i, p);
                 known();
             }
-            transport(at(before_store, occupied[k]) == 1, occupied[k] == 1) using {
-                at(before_store, occupied[k]) == 1;
-                k != i;
-            };
+            have separate(memory(occupied[i]), memory(occupied[k])) by {
+                apply(click::separation::separate_elements(occupied, i, k)) using { k != i; };
+            }
+            have separate(statement(3).footprint, memory(occupied[k])) by {
+                normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+            }
+            have occupied[k] == at(before_store, occupied[k]) by {
+                preserve(separate(statement(3).footprint, memory(occupied[k])));
+            }
+            known();
         } else {
             have k <= p;
             have k == p;
@@ -200,10 +206,16 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             known();
         }
         have i != k;
-        transport(at(before_store, occupied[k]) == 0, occupied[k] == 0) using {
-            at(before_store, occupied[k]) == 0;
-            i != k;
-        };
+        have separate(memory(occupied[i]), memory(occupied[k])) by {
+            apply(click::separation::separate_elements(occupied, i, k)) using { i != k; };
+        }
+        have separate(statement(3).footprint, memory(occupied[k])) by {
+            normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+        }
+        have occupied[k] == at(before_store, occupied[k]) by {
+            preserve(separate(statement(3).footprint, memory(occupied[k])));
+        }
+        known();
     }
     let after = fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 });
     step();
