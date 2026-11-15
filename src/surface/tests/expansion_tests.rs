@@ -20414,6 +20414,57 @@ fn original_arena_free_expands_and_rechecks_without_implicit_search() {
 }
 
 #[test]
+#[ignore = "nightly: original arena initialization expansion and replay"]
+fn original_arena_init_expands_without_transport_and_rechecks() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
+    let prefix = sidecar
+        .split("verifying \"arena_alloc.c\";")
+        .next()
+        .unwrap();
+    // The common resource definitions also refer to the region layout.
+    let source = format!("verifying \"arena_free.c\";\n{prefix}");
+    let init = std::fs::read_to_string(root.join("examples/arena/arena_init.c")).unwrap();
+    let free = std::fs::read_to_string(root.join("examples/arena/arena_free.c")).unwrap();
+    let sources = [
+        ("arena_init.c", init.as_str()),
+        ("arena_free.c", free.as_str()),
+    ];
+    let expanded =
+        expand_c_claim_source_by_label(&source, &sources, "arena_init.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("arena_init.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: original arena write expansion and replay"]
+fn original_arena_write_expands_without_transport_and_rechecks() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
+    let definitions = sidecar.split("verifying \"arena_init.c\";").next().unwrap();
+    let proof = sidecar
+        .split("verifying \"arena_write.c\";")
+        .nth(1)
+        .unwrap()
+        .split("verifying \"arena_read.c\";")
+        .next()
+        .unwrap();
+    let source = format!("{definitions}\nverifying \"arena_write.c\";\n{proof}");
+    let c = std::fs::read_to_string(root.join("examples/arena/arena_write.c")).unwrap();
+    let sources = [("arena_write.c", c.as_str())];
+    let expanded =
+        expand_c_claim_source_by_label(&source, &sources, "arena_write.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("arena_write.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_85")]
 fn scoped_conversion_requirements_expand_before_the_have() {
     let source = r#"
