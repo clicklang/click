@@ -1737,7 +1737,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                     proposition,
                     &PureFactContext::new(),
                     contract_environment,
-                    FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                    FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                     spec_definitions,
                 )
             {
@@ -3143,7 +3143,7 @@ fn symbolic_segment_covers_range(
             &ContractExpression::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
-            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             spec_definitions,
             &BTreeSet::new(),
         )
@@ -3191,7 +3191,7 @@ fn symbolic_segment_covers_index(
             &ContractExpression::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
-            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             spec_definitions,
             &BTreeSet::new(),
         )
