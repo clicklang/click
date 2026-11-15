@@ -1016,6 +1016,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
                 &VerifiedFunctionRule {
                     pointer_result: None,
                     function,
+                    concrete_loop_exits: None,
                     loop_semantics: LoopSemantics::Verify,
                     checked_callees: None,
                     applied_tactics: Default::default(),

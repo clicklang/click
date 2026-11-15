@@ -7084,17 +7084,18 @@ impl<'a> ExecutionContext<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedFunctionRule {
+    /// Producer-owned concrete/avoided loop coverage. Independent legacy
+    /// inputs have no ordinary body owner and use their separate adapter.
+    pub(super) concrete_loop_exits:
+        Option<Arc<crate::kernel::termination::loop_evidence::ConcreteLoopExits>>,
     /// Only the positive object-type premises consumed by the checked proof.
     /// Checked result origins, instantiated with the caller's actual types.
     pub(super) pointer_result: Option<Arc<PurePointerResult>>,
 
     pub(super) function: ProgramFunction,
-    /// The loop semantics every claim of this rule was certified under, or
-    /// `Verify` when any was, or when the rule is a recursion hypothesis
-    /// that certified nothing. Written by the kernel from its own
-    /// certification, so the termination check may trust it: under
-    /// `ApplyVerifiedRules` a loop with no verified loop rule ran to its
-    /// exit on every certified path.
+    /// Compatibility mode for independent execution/certification APIs.
+    /// Ordinary body proofs publish concrete loop coverage separately;
+    /// this mode alone is not source-bound exit evidence.
     pub(super) loop_semantics: LoopSemantics,
     /// The user-defined tactics this rule's certified proofs applied, by
     /// name. A tactic's procedure runs no code, so its body has no calls;

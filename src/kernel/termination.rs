@@ -3800,11 +3800,11 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
 /// `Verify`, it may have been summarized, and nothing is granted. Nothing is
 /// granted either unless the certified body's loops are the source body's
 /// loops, shape for shape, since the indices name source loops.
-fn loops_executed_to_exit(
+fn independent_loop_exit_evidence(
     function: &ProgramFunction,
     loop_semantics: LoopSemantics,
     ruled_loops: &BTreeSet<usize>,
-) -> BTreeSet<usize> {
+) -> Arc<loop_evidence::ConcreteLoopExits> {
     let source_body = if contains_natural_control_loop(function.body()) {
         function.body()
     } else {
@@ -3820,9 +3820,9 @@ fn loops_executed_to_exit(
             .zip(&certified_loops)
             .any(|(source, certified)| !same_statement_shape(source, certified))
     {
-        return BTreeSet::new();
+        return loop_evidence::ConcreteLoopExits::independent(source_loops.len(), BTreeSet::new());
     }
-    certified_loops
+    let concrete = certified_loops
         .iter()
         .enumerate()
         .filter(|(index, certified)| {
@@ -3858,7 +3858,49 @@ fn loops_executed_to_exit(
                 && loop_semantics == LoopSemantics::ApplyVerifiedRules
         })
         .map(|(index, _)| index)
+        .collect();
+    loop_evidence::ConcreteLoopExits::independent(source_loops.len(), concrete)
+}
+
+/// Independent API inputs have no ordinary body owner. Adapt those inputs
+/// before generating the proof; an owned rule's retained authority is consumed
+/// directly and never compared with source again.
+pub(in crate::kernel) fn prepare_independent_loop_exits(
+    rules: &[VerifiedFunctionRule],
+    summaries: &BTreeMap<String, Vec<VerifiedLoopRule>>,
+) -> Vec<VerifiedFunctionRule> {
+    rules
+        .iter()
+        .map(|rule| {
+            charge_termination_work(1);
+            let mut rule = rule.clone();
+            if rule.concrete_loop_exits.is_none() {
+                let summarized = summaries
+                    .get(rule.function.name())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|rule| rule.loop_evidence.as_ref().map(|evidence| evidence.index))
+                    .collect();
+                rule.concrete_loop_exits = Some(independent_loop_exit_evidence(
+                    &rule.function,
+                    rule.loop_semantics,
+                    &summarized,
+                ));
+            }
+            rule
+        })
         .collect()
+}
+
+#[cfg(test)]
+fn loops_executed_to_exit(
+    function: &ProgramFunction,
+    semantics: LoopSemantics,
+    rules: &BTreeSet<usize>,
+) -> BTreeSet<usize> {
+    independent_loop_exit_evidence(function, semantics, rules)
+        .concrete
+        .clone()
 }
 
 fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
@@ -4962,8 +5004,9 @@ pub fn program_verified_function_termination_rules(
     declared_diverging: &BTreeSet<String>,
     diverging_contracts: &BTreeSet<String>,
 ) -> Result<TerminationVerdicts, TerminationError> {
+    let partial_rules = prepare_independent_loop_exits(partial_rules, verified_loop_rules);
     obligations::TerminationObligations::generate(
-        partial_rules,
+        &partial_rules,
         plan_entries,
         verified_loop_rules,
         inline_bodies,
@@ -5760,6 +5803,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -5953,6 +5997,7 @@ mod local_descent_tests {
             }
             VerifiedFunctionRule {
                 pointer_result: None,
+                concrete_loop_exits: None,
                 loop_semantics: LoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
                 applied_tactics: Default::default(),
@@ -6112,6 +6157,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, parameters, body),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6329,6 +6375,7 @@ mod local_descent_tests {
     fn a_loop_certification_executed_to_its_exit_owes_no_measure() {
         let bare = |name: &str| VerifiedFunctionRule {
             pointer_result: None,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6576,6 +6623,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6612,6 +6660,7 @@ mod local_descent_tests {
         VerifiedFunctionRule {
             pointer_result: None,
             function,
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: BTreeSet::from([name.to_string()]),
@@ -6799,6 +6848,7 @@ mod local_descent_tests {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body)
                 .with_recursion_measure(vec![declared_component()]),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -7119,6 +7169,7 @@ mod termination_scaling_tests {
                 Vec::new(),
                 calls_body(callees),
             ),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -7223,6 +7274,7 @@ mod checked_callee_certification_tests {
                 vec![],
                 crate::kernel::program_call("callee", vec![]),
             ),
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             applied_tactics: Default::default(),
             checked_callees,

@@ -198,3 +198,38 @@ fn proving_one_source_only_clause_cannot_cover_a_false_sibling() {
         assert!(verify_c_sources(&source_only_clauses(grouped, 9), SOURCE_CELLS_C).is_err());
     }
 }
+
+#[test]
+fn concrete_and_avoided_loops_need_no_summary_measure() {
+    let c = [(
+        "concrete_exits.c",
+        "int32 concrete(int32 n) { while (n > 0) { n = n - 1; } return n; } int32 avoided(int32 n) { if (n < 0) { while (1) {} } return n; }",
+    )];
+    let source = r#"verifying "concrete_exits.c";
+        int32 concrete(int32 n) { requires n == 2; ensures result == 0; }
+        int32 avoided(int32 n) { requires n >= 0; ensures result == n; }
+    "#;
+    verify_c_sources(source, &c).unwrap();
+    let expanded = expand_function_proof_source(source, &c, "concrete").unwrap();
+    let expanded = expand_function_proof_source(&expanded, &c, "avoided").unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &c))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+fn an_empty_loop_summary_does_not_publish_concrete_exit_evidence() {
+    let c = [(
+        "concrete_summary.c",
+        "int32 summarized(void) { while (1) {} return 0; }",
+    )];
+    let source = r#"verifying "concrete_summary.c";
+        int32 summarized() { ensures result == 0; } by { loop {} }
+    "#;
+    let error =
+        verify_c_sources(source, &c).expect_err("an unranked summary is only partial correctness");
+    assert!(
+        error.message().contains("loop") && error.message().contains("decreases"),
+        "{}",
+        error.message()
+    );
+}
