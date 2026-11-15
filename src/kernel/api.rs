@@ -2164,6 +2164,7 @@ pub fn program_call_value(
     let result = ProgramExpression::StepResult {
         step: call,
         origin: StepOrigin::Call(function_name.clone()),
+        ends: true,
     };
     (
         ProgramStatement::CallResult {

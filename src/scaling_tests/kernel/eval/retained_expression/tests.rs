@@ -313,6 +313,7 @@ fn retained_pointer_step_receipts_do_not_walk_dags_or_sibling_results() {
             let expression = ProgramExpression::StepResult {
                 step: 11,
                 origin: crate::kernel::StepOrigin::Call("step".into()),
+                ends: true,
             };
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

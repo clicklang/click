@@ -4407,6 +4407,7 @@ impl CExpression {
             Self::StepResult { step, origin, .. } => crate::kernel::ProgramExpression::StepResult {
                 step: *step,
                 origin: origin.clone(),
+                ends: true,
             },
             Self::Void => crate::kernel::program_void_value(),
             Self::Variable(name) => crate::kernel::program_expression::variable(name.clone()),

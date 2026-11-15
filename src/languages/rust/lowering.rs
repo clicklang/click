@@ -2301,6 +2301,7 @@ impl Context<'_> {
             E::CallResult { call, function } => Ok(ProgramExpression::StepResult {
                 step: *call,
                 origin: crate::kernel::StepOrigin::Call(function.clone()),
+                ends: true,
             }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
