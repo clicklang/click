@@ -9778,7 +9778,12 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
     }
     // Interning borrows the arena, so it has to finish before the write.
     let read_identity = match derivation.as_ref() {
-        MemoryDerivation::CellsForgotten { base } | MemoryDerivation::CellObserved { base } => {
+        MemoryDerivation::CellsForgotten { base }
+        | MemoryDerivation::CellObserved { base }
+        | MemoryDerivation::BlockDeclared { base, .. }
+        | MemoryDerivation::ObjectInitializationRecorded { base, .. } => {
+            // Declaration/initialization metadata writes no values. Keep the
+            // bytes' identity; type, lifetime and access use this snapshot.
             Some(base.read_identity())
         }
         MemoryDerivation::CellsSeeded { base, run }

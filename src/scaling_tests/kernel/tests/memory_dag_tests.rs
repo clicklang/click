@@ -385,7 +385,7 @@ fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history()
         let mut memory = original.memory().clone();
         let context = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            for _ in 0..size {
+            for index in 0..size {
                 memory = memory
                     .clone()
                     .with_seeded_cells(
@@ -396,7 +396,9 @@ fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history()
                         2,
                         original.clone(),
                     )
-                    .without_possible_aliasing_cells(&unknown, 4, &context);
+                    .without_possible_aliasing_cells(&unknown, 4, &context)
+                    .with_block(format!("local:read-metadata-{index}"), 4)
+                    .with_initialized_object(&address.offset_by_bytes(index * 8), 8);
             }
         });
         let current = intern_memory(memory);

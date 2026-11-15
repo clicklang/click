@@ -2726,8 +2726,14 @@ mod tests {
         // Fill the recent display with later, distinct memories. The exact
         // read-identity index must still name the old iteration entry.
         for index in 0..40 {
-            let state = ExecutionState::new()
-                .with_memory(Memory::new().with_block(format!("later{index}"), 4));
+            // Metadata-only declarations retain the same read identity.
+            // Real writes give these later points distinct program bytes.
+            let state = ExecutionState::new().with_memory(
+                Memory::new().with_block(format!("later{index}"), 4).store(
+                    cell.clone(),
+                    crate::kernel::ProgramValue::UInt64(MachineTerm::uint64_constant(index as u64)),
+                ),
+            );
             snapshots.insert(
                 ProgramPointRef {
                     region: CodeRegionRef::Region(index),

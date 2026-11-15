@@ -7840,7 +7840,18 @@ mod tests {
         let sibling = PureFactContext::new();
         assert!(sibling.pointers_known_equal(value.pointer(), &application));
         assert!(sibling.pure_facts().is_empty());
-        let later = intern_memory(Memory::new().with_block(PointerBlock::from("global:other"), 8));
+        let declared =
+            intern_memory(Memory::new().with_block(PointerBlock::from("global:other"), 8));
+        assert!(
+            context
+                .pointers_known_equal(value.pointer(), &Pointer::loaded_value(&declared, &address))
+        );
+        let later = intern_memory(
+            declared
+                .memory()
+                .clone()
+                .store(address.offset_by_bytes(4), crate::kernel::uint8(1u32)),
+        );
         assert!(
             !context
                 .pointers_known_equal(value.pointer(), &Pointer::loaded_value(&later, &address))
@@ -8052,10 +8063,17 @@ mod tests {
         assert!(owner.permits_memory_read(&y, 4, &address_only));
         assert!(!ResourceContext::new().permits_memory_read(&y, 4, &address_only));
         assert!(!address_only.pointers_known_equal(&x, &y.offset_by_bytes(8)));
-        let later = intern_memory(
+        let declared = intern_memory(
             memory
                 .clone()
                 .with_block(PointerBlock::from("global:later"), 8),
+        );
+        assert!(available.pointers_known_equal(&x, &Pointer::loaded_value(&declared, &a)));
+        let later = intern_memory(
+            declared
+                .memory()
+                .clone()
+                .store(a.offset_by_bytes(4), crate::kernel::uint8(1u32)),
         );
         assert!(!available.pointers_known_equal(&x, &Pointer::loaded_value(&later, &a)));
         let volatile_address = Pointer::symbolic(Variable(92_102));

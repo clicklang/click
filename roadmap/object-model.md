@@ -20,31 +20,37 @@ Already implemented: pointer subobject bounds and designation, complete pointer
 read names, exact construction destinations, initialized/unwritten storage,
 initialized output-resource transfer, and the bounded typed/byte representation
 rules. These are mechanisms to preserve, not unfinished implementation groups.
-The audit distinguishes checked witnesses from broader claims still needing
-coverage.
+Constructed-view getters preserve external backing references through cleanup,
+with the original read/write and hostile-contract witnesses checked. The audit
+distinguishes checked witnesses from broader claims still needing coverage.
 
 ## Remaining work
 
-### 1. Restore the constructed-view getter call
+### 1. Repair pointer-field resource folding and preserve compatibility
 
-The current-master audit reproduces
-`tests/cpp_import.rs::cpp_external_backing_reference_survives_descriptor_destruction_offline`
-failing in `run.contract` at tactic 0. A local `View` stores the caller's
-pointer; its `get() const` should return a reference to that live backing. The
-call is refused before destruction: stable-view planning cannot supply the
-loan for `views view[0]`, despite the constructed descriptor and caller's backing
-view being present. This is a compatibility failure, not a reproduced false
-acceptance or an established failure of lifetime retirement.
+The audit also reproduces
+[`rb_produces_through_the_root_cell.md`](../mdtests/rb_produces_through_the_root_cell.md)
+failing in `rb_set_root.contract` at tactic 4: folding the produced tree needs
+a generated equality for `root->rb_node` that has no Surface spelling.
 
-- [ ] Reduce the receiver-loan refusal without changing the original C++ or
-  weakening its contract, then repair the missing evidence transfer or explain
-  the necessary contract correction under current borrowing rules.
-- [ ] Restore the original read-only witness, check its writable counterpart
-  and hostile contracts, and preserve the existing rejection of references to
-  destroyed local backing. Require proof-mode agreement for the repaired path.
+- [ ] Restore that original fixture, retaining a spellable pointer-field
+  equality through the store and resource fold. Keep the same C and contract;
+  verify the resulting proof across the supported proof modes.
+- [ ] Check the affected existing descriptor/resource, pointer-field,
+  constructor and cleanup witnesses when delivering a remaining slice.
+  Pointer identity, extent and the relevant frame must survive calls, resource
+  unfold/refold, branches and loops; unrelated writes must not destroy them.
+- [ ] Keep ordinary verification, expansion, cold and retained checking in
+  agreement. Use existing deterministic multi-size controls for changed hot
+  paths, and the required CI/merge-queue checks for delivery. Do not raise
+  budgets or weaken contracts to obtain a pass.
 
-The audit contains the exact command and refusal. Do not treat this case as
-already supported merely because its regression test exists in nightly.
+Current rbtree refusals have their own
+[launch work](rbtree-example.md) and existing bug reports. Reproduce their
+current frontier there before attributing one to the object model. In
+particular, the pointer-cell representation repair is implemented but its
+[original sidecars still need end-to-end closure](../bugs/pointer-field-cells-are-cached-as-words-a-pointer-read-cannot-use.md).
+Historical failure counts are not a current defect list for this item.
 
 ### 2. Finish the native-interface evidence matrix
 
@@ -85,32 +91,6 @@ This small composition is the foundation acceptance case. Bitcoin
 belong to [C++ coverage](cpp-support.md); they are not prerequisites for closing
 this item.
 
-### 4. Repair pointer-field resource folding and preserve compatibility
-
-The audit also reproduces
-[`rb_produces_through_the_root_cell.md`](../mdtests/rb_produces_through_the_root_cell.md)
-failing in `rb_set_root.contract` at tactic 4: folding the produced tree needs
-a generated equality for `root->rb_node` that has no Surface spelling.
-
-- [ ] Restore that original fixture, retaining a spellable pointer-field
-  equality through the store and resource fold. Keep the same C and contract;
-  verify the resulting proof across the supported proof modes.
-- [ ] Check the affected existing descriptor/resource, pointer-field,
-  constructor and cleanup witnesses when delivering a remaining slice.
-  Pointer identity, extent and the relevant frame must survive calls, resource
-  unfold/refold, branches and loops; unrelated writes must not destroy them.
-- [ ] Keep ordinary verification, expansion, cold and retained checking in
-  agreement. Use existing deterministic multi-size controls for changed hot
-  paths, and the required CI/merge-queue checks for delivery. Do not raise
-  budgets or weaken contracts to obtain a pass.
-
-Current rbtree refusals have their own
-[launch work](rbtree-example.md) and existing bug reports. Reproduce their
-current frontier there before attributing one to the object model. In
-particular, the pointer-cell representation repair is implemented but its
-[original sidecars still need end-to-end closure](../bugs/pointer-field-cells-are-cached-as-words-a-pointer-read-cannot-use.md).
-Historical failure counts are not a current defect list for this item.
-
 ## Small intended regression
 
 The modular byte-output witness above must read the exact uint32 after the
@@ -123,8 +103,8 @@ exercise the shared output-transfer prerequisite.
 
 ## Acceptance and scope
 
-Close this item when the two reproduced compatibility failures are resolved,
-the interface matrix has named evidence or explicit refusals, the modular
+Close this item when the reproduced pointer-field resource-fold failure is
+resolved, the interface matrix has named evidence or explicit refusals, the modular
 byte-output composition passes its positive and hostile checks, and affected existing C/C++/Rust behavior and proof modes remain checked.
 Record any confirmed residual defect at its current reproduction; a missing
 coverage check is not itself a demonstrated semantic bug.

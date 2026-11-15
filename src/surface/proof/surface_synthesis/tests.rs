@@ -3223,7 +3223,15 @@ fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
     // `between` is next recorded at `second`; a read in `last` was last
     // recorded at `second`, then `first`.
     let memory = |block: &str| {
-        let memory = Memory::new().with_block(block, 4);
+        // Give each point distinct bytes; a declaration alone preserves
+        // read identity and intentionally selects its newest recorded point.
+        let memory = Memory::new().with_block(block, 4).store(
+            Pointer {
+                block: block.into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            ProgramValue::Int32(MachineTerm::constant(0)),
+        );
         crate::kernel::intern_memory_ref(&memory)
     };
     let point = |index| {
