@@ -3905,10 +3905,27 @@ impl ExecutionEnvironment {
         let Some(anchor) = self.recursion_anchor() else {
             return true;
         };
-        !crate::kernel::termination::statement_calls_function(
-            &rule.loop_statement,
-            anchor.function(),
-        ) || rule.recursion_anchor.as_deref() == Some(anchor)
+        if rule
+            .recursion_anchor
+            .as_ref()
+            .zip(self.recursion_anchor.as_ref())
+            .is_some_and(|(produced, current)| Arc::ptr_eq(produced, current))
+        {
+            return true;
+        }
+        let calls;
+        let calls = if let Some(evidence) = &rule.loop_evidence {
+            &*evidence.calls
+        } else {
+            // Independent raw summaries have no opened source inventory.
+            // Source-owned summaries always retain their call footprint.
+            calls = crate::kernel::termination::statement_callees(&rule.loop_statement);
+            &calls
+        };
+        !calls.iter().any(|callee| {
+            crate::kernel::termination::charge_termination_work(1);
+            callee.ends_with("#indirect") || anchor.ranks_call_to(callee)
+        }) || rule.recursion_anchor.as_deref() == Some(anchor)
     }
 
     /// Whether every verified loop rule here answers for the recursion this

@@ -731,6 +731,7 @@ mod tests {
                     vec![],
                     ProgramStatement::Skip,
                 ),
+                descent_completion: None,
                 concrete_loop_exits: None,
                 loop_semantics: LoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,

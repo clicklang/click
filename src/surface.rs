@@ -5659,6 +5659,7 @@ pub enum SourceProof {
 #[doc(hidden)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
+    pub(crate) native_step: std::sync::Arc<crate::kernel::SymbolicExecutionPath>,
     pub(crate) call_result: Option<ProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).

@@ -14,6 +14,9 @@ type RootProof = ProofObject<Arc<PreparedContractEntryCases>, ContractRootObliga
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum ContractCompletionGoal {
+    RecursiveDescent {
+        case: usize,
+    },
     Boundary {
         case: usize,
     },
@@ -207,6 +210,9 @@ impl WholeContractProof {
         for case in 0..entry.cases.len() {
             crate::instrumentation::record_deterministic_work(1);
             goals.push(ContractCompletionGoal::Boundary { case });
+            if function.contract_interface().has_call_ranked_recursion() {
+                goals.push(ContractCompletionGoal::RecursiveDescent { case });
+            }
             for claim in function.contract_claims() {
                 crate::instrumentation::record_deterministic_work(1);
                 goals.push(ContractCompletionGoal::Claim {
@@ -342,6 +348,7 @@ impl AdmittedContractProof {
         let rule = VerifiedFunctionRule {
             pointer_result: self.execution.pointer_result.clone(),
             function: self.function,
+            descent_completion: None,
             concrete_loop_exits: Some(self.owner.loop_exits.unknown()),
             loop_semantics: self.execution.loop_semantics,
             checked_callees: self.execution.checked_callees.clone(),
@@ -386,6 +393,7 @@ impl Eq for ContractProofProgress {}
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum ContractPathGoal {
+    RecursiveDescent,
     Boundary,
     Claim(FunctionContractClaimKey),
 }
@@ -429,6 +437,19 @@ impl ContractProofProgress {
             remaining_paths,
             "contract boundary",
         );
+        if owner
+            .entry
+            .function
+            .contract_interface()
+            .has_call_ranked_recursion()
+            && execution.retained_descent
+        {
+            progress.open_goal(
+                ContractPathGoal::RecursiveDescent,
+                remaining_paths,
+                "recursive descent",
+            );
+        }
         let claims = owner.entry.function.contract_claims();
         for claim in claims {
             let operation = match claim.target() {
@@ -476,6 +497,9 @@ impl ContractProofProgress {
             crate::instrumentation::record_deterministic_work(1);
             let closed = match &goal {
                 ContractPathGoal::Boundary => ContractCompletionGoal::Boundary { case },
+                ContractPathGoal::RecursiveDescent => {
+                    ContractCompletionGoal::RecursiveDescent { case }
+                }
                 ContractPathGoal::Claim(key) => ContractCompletionGoal::Claim {
                     case,
                     key: key.clone(),
@@ -529,6 +553,7 @@ impl ContractProofProgress {
         }
         match (claims, closing) {
             (Some(claims), Some(closing)) => {
+                next.finish_goal(ContractPathGoal::RecursiveDescent);
                 for key in claims
                     .completed_outcome_claim_keys()
                     .chain(closing.completed_claim_keys())
