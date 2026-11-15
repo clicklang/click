@@ -76,6 +76,16 @@ pub enum KernelTermNode {
     BoolRead(KernelBooleanRead),
     AlgebraicRead(KernelSnapshotRead),
     FloatRead(KernelSnapshotRead),
+    FloatCompare {
+        format: KernelFloatType,
+        operator: ComparisonOperator,
+        arguments: [KernelTerm; 2],
+    },
+    FloatClassify {
+        format: KernelFloatType,
+        classification: FloatClassification,
+        operand: KernelTerm,
+    },
     BoolCast {
         destination: MachineIntegerType,
         operand: KernelTerm,
@@ -427,6 +437,7 @@ impl NodeKey {
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::FloatBinary { arguments, .. }
+            | KernelTermNode::FloatCompare { arguments, .. }
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
@@ -449,6 +460,7 @@ impl NodeKey {
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
+            | KernelTermNode::FloatClassify { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
@@ -794,6 +806,7 @@ impl KernelTerm {
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::FloatBinary { arguments, .. }
+            | KernelTermNode::FloatCompare { arguments, .. }
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
@@ -806,6 +819,7 @@ impl KernelTerm {
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
+            | KernelTermNode::FloatClassify { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
