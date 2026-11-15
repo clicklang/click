@@ -531,7 +531,7 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
     let body_error = parser::parse_file_items(&format!(
         "function too_deep_body() -> int32 {{ {body_expression} }}"
     ))
-    .expect_err("over-deep C0 result expressions should fail at the parser boundary");
+    .expect_err("over-deep C result expressions should fail at the parser boundary");
     assert!(
         body_error
             .message()

@@ -111,8 +111,8 @@ Inspect these symbols at the receiving checkout before proposing edits:
   `ExpandedCSource` currently carries expanded text and a dependency set, not
   an original-source map.
 - `src/surface/verification.rs`: `parse_c_source_unit`,
-  `parse_verified_sources`, `c0_imported_headers`, and
-  `c0_incremental_selection`. The source is expanded, then each dependency
+  `parse_verified_sources`, `c_imported_headers`, and
+  `c_incremental_selection`. The source is expanded, then each dependency
   header is separately expanded and validated. Do not use that independent
   header interpretation for the compiler-backed path: inclusion macro state
   matters, and repeated expansion can cause excessive work.

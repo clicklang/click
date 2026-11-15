@@ -60,7 +60,7 @@ nothing compares the access type with the object afterwards.
   pointer class.
 - **Object type:** a scalar class, a struct or union (translation-unit-qualified
   tag, size, members by offset), or an array of an object type.
-- **Built in the frontend** from `C0Type` and `C0StructLayout` next to
+- **Built in the frontend** from `CType` and `CStructLayout` next to
   `to_kernel_type`. `Long` and `LongLong` come from `LongRank`, which lowering
   erases today.
 - **Object side:**

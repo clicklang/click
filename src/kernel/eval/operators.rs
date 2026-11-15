@@ -190,7 +190,7 @@ impl ScalarWidth {
 // Integer promotions turn a boolean rvalue into int before an ordinary
 // scalar operation. Keep pointer cases outside this conversion: a boolean
 // variable is not a null pointer constant, and boolean pointer arithmetic is
-// outside the supported C0 subset.
+// outside the supported C subset.
 fn promote_program_bool_scalar_operands(
     left: ProgramValue,
     right: ProgramValue,

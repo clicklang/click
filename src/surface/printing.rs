@@ -285,11 +285,11 @@ pub(super) fn print_proposition(
         } => format!(
             "{}({})",
             match classification {
-                syntax::C0FloatClassification::Finite => "isfinite",
-                syntax::C0FloatClassification::Infinite => "isinf",
-                syntax::C0FloatClassification::Zero => "iszero",
-                syntax::C0FloatClassification::Subnormal => "issubnormal",
-                syntax::C0FloatClassification::Nan => "isnan",
+                syntax::CFloatClassification::Finite => "isfinite",
+                syntax::CFloatClassification::Infinite => "isinf",
+                syntax::CFloatClassification::Zero => "iszero",
+                syntax::CFloatClassification::Subnormal => "issubnormal",
+                syntax::CFloatClassification::Nan => "isnan",
             },
             describe_contract_expression(expression)
         ),

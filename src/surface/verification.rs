@@ -118,7 +118,7 @@ pub(in crate::surface) struct ProgramSourceContext<'a> {
     source: ProgramSource<'a>,
     input_digest: [u8; 32],
     specification_digest: Option<[u8; 32]>,
-    parsed_units: RefCell<BTreeMap<String, Arc<syntax::C0TranslationUnit>>>,
+    parsed_units: RefCell<BTreeMap<String, Arc<syntax::CTranslationUnit>>>,
     /// Bundle sources extracted from a larger file, from the Click project.
     /// Their locations are reported as lines of that file.
     c_source_containers: BTreeMap<String, crate::source::SourceContainer>,
@@ -1010,9 +1010,9 @@ fn with_tactic_procedures(
         ));
         append_on_every_path(&mut script, &suffix);
         block.grouped_proof = Some(std::sync::Arc::new(SourceProof::Script(script)));
-        let procedure = external_c_function(&block).with_proof_body(syntax::C0Statement::Return(
-            syntax::C0Expression::Void,
-            syntax::C0Site::NONE,
+        let procedure = external_c_function(&block).with_proof_body(syntax::CStatement::Return(
+            syntax::CExpression::Void,
+            syntax::CSite::NONE,
         ));
         parsed_sources.insert(name, ("<tactic>".to_string(), procedure));
         file.function_blocks.push(block);
@@ -3872,7 +3872,7 @@ fn modeled_thread_runtime_names() -> impl Iterator<Item = String> {
 fn modeled_pthread_create_workers(
     function: &crate::languages::interface::ImportedFunction,
 ) -> BTreeSet<String> {
-    use syntax::{C0Expression as E, C0Statement as S};
+    use syntax::{CExpression as E, CStatement as S};
     let mut workers = BTreeSet::new();
     let mut pending = vec![function.body()];
     while let Some(statement) = pending.pop() {
@@ -3967,22 +3967,22 @@ fn c_statement_calls_recording(
     allocator: &mut BTreeSet<&'static str>,
 ) -> Vec<BTreeSet<String>> {
     fn collect_function_pointer_names(
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
         names: &mut BTreeSet<String>,
     ) {
         match statement {
-            syntax::C0Statement::Declare {
+            syntax::CStatement::Declare {
                 interface_type: crate::languages::interface::InterfaceType::FunctionPointer(_),
                 name,
                 ..
             } => {
                 names.insert(name.clone());
             }
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 collect_function_pointer_names(first, names);
                 collect_function_pointer_names(second, names);
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3990,10 +3990,10 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(then_branch, names);
                 collect_function_pointer_names(else_branch, names);
             }
-            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
                 collect_function_pointer_names(body, names);
             }
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 step,
                 body,
@@ -4003,47 +4003,47 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(body, names);
                 collect_function_pointer_names(step, names);
             }
-            syntax::C0Statement::Switch { cases, .. } => {
+            syntax::CStatement::Switch { cases, .. } => {
                 for case in cases {
                     collect_function_pointer_names(case.body(), names);
                 }
             }
-            syntax::C0Statement::Label { statement, .. } => {
+            syntax::CStatement::Label { statement, .. } => {
                 collect_function_pointer_names(statement, names)
             }
-            syntax::C0Statement::Skip
-            | syntax::C0Statement::Break
-            | syntax::C0Statement::Continue
-            | syntax::C0Statement::Goto { .. }
-            | syntax::C0Statement::Declare { .. }
-            | syntax::C0Statement::DeclareStructValue { .. }
-            | syntax::C0Statement::Assign { .. }
-            | syntax::C0Statement::CallAssign { .. }
-            | syntax::C0Statement::Call { .. }
-            | syntax::C0Statement::CallResult { .. }
-            | syntax::C0Statement::IndirectCall { .. }
-            | syntax::C0Statement::HeapAllocate { .. }
-            | syntax::C0Statement::HeapFree { .. }
-            | syntax::C0Statement::Return(_, _)
-            | syntax::C0Statement::Store { .. }
-            | syntax::C0Statement::SequentialStore { .. }
-            | syntax::C0Statement::AggregateCopy { .. }
-            | syntax::C0Statement::Update { .. }
-            | syntax::C0Statement::Assert { .. }
-            | syntax::C0Statement::StepValue { .. }
-            | syntax::C0Statement::LoopTest { .. } => {}
+            syntax::CStatement::Skip
+            | syntax::CStatement::Break
+            | syntax::CStatement::Continue
+            | syntax::CStatement::Goto { .. }
+            | syntax::CStatement::Declare { .. }
+            | syntax::CStatement::DeclareStructValue { .. }
+            | syntax::CStatement::Assign { .. }
+            | syntax::CStatement::CallAssign { .. }
+            | syntax::CStatement::Call { .. }
+            | syntax::CStatement::CallResult { .. }
+            | syntax::CStatement::IndirectCall { .. }
+            | syntax::CStatement::HeapAllocate { .. }
+            | syntax::CStatement::HeapFree { .. }
+            | syntax::CStatement::Return(_, _)
+            | syntax::CStatement::Store { .. }
+            | syntax::CStatement::SequentialStore { .. }
+            | syntax::CStatement::AggregateCopy { .. }
+            | syntax::CStatement::Update { .. }
+            | syntax::CStatement::Assert { .. }
+            | syntax::CStatement::StepValue { .. }
+            | syntax::CStatement::LoopTest { .. } => {}
         }
     }
 
-    fn collect_function_addresses(expression: &syntax::C0Expression, names: &mut BTreeSet<String>) {
+    fn collect_function_addresses(expression: &syntax::CExpression, names: &mut BTreeSet<String>) {
         match expression {
-            syntax::C0Expression::ScalarUpdate { .. } => {}
-            syntax::C0Expression::Call { arguments, .. } => {
+            syntax::CExpression::ScalarUpdate { .. } => {}
+            syntax::CExpression::Call { arguments, .. } => {
                 for argument in arguments {
                     collect_function_addresses(argument, names);
                 }
             }
-            syntax::C0Expression::IndirectCall {
+            syntax::CExpression::IndirectCall {
                 function,
                 arguments,
                 ..
@@ -4053,51 +4053,51 @@ fn c_statement_calls_recording(
                     collect_function_addresses(argument, names);
                 }
             }
-            syntax::C0Expression::StatementExpression { value, .. } => {
+            syntax::CExpression::StatementExpression { value, .. } => {
                 collect_function_addresses(value, names);
             }
-            syntax::C0Expression::Assignment { value, .. } => {
+            syntax::CExpression::Assignment { value, .. } => {
                 collect_function_addresses(value, names);
             }
-            syntax::C0Expression::FunctionAddress(name) => {
+            syntax::CExpression::FunctionAddress(name) => {
                 names.insert(name.clone());
             }
-            syntax::C0Expression::Cast { expression, .. }
-            | syntax::C0Expression::FloatNegate(expression)
-            | syntax::C0Expression::FloatClassification { expression, .. }
-            | syntax::C0Expression::AddressOf(expression)
-            | syntax::C0Expression::AggregateAddress {
+            syntax::CExpression::Cast { expression, .. }
+            | syntax::CExpression::FloatNegate(expression)
+            | syntax::CExpression::FloatClassification { expression, .. }
+            | syntax::CExpression::AddressOf(expression)
+            | syntax::CExpression::AggregateAddress {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::UnionAddress {
+            | syntax::CExpression::UnionAddress {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::PointerOffsetBytes {
+            | syntax::CExpression::PointerOffsetBytes {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::Subobject {
+            | syntax::CExpression::Subobject {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Expression::CheckedArrayIndex {
+            | syntax::CExpression::CheckedArrayIndex {
                 index: expression, ..
             }
-            | syntax::C0Expression::Not(expression)
-            | syntax::C0Expression::BitwiseNot(expression)
-            | syntax::C0Expression::Load(expression, _)
-            | syntax::C0Expression::SequentialRead {
+            | syntax::CExpression::Not(expression)
+            | syntax::CExpression::BitwiseNot(expression)
+            | syntax::CExpression::Load(expression, _)
+            | syntax::CExpression::SequentialRead {
                 target: expression, ..
             } => {
                 collect_function_addresses(expression, names);
             }
-            syntax::C0Expression::SequentialWrite { target, value, .. } => {
+            syntax::CExpression::SequentialWrite { target, value, .. } => {
                 collect_function_addresses(target, names);
                 collect_function_addresses(value, names);
             }
-            syntax::C0Expression::Ternary {
+            syntax::CExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -4106,47 +4106,47 @@ fn c_statement_calls_recording(
                 collect_function_addresses(then_branch, names);
                 collect_function_addresses(else_branch, names);
             }
-            syntax::C0Expression::LessThan(left, right)
-            | syntax::C0Expression::LessEqual(left, right)
-            | syntax::C0Expression::GreaterThan(left, right)
-            | syntax::C0Expression::GreaterEqual(left, right)
-            | syntax::C0Expression::Equal(left, right)
-            | syntax::C0Expression::NotEqual(left, right)
-            | syntax::C0Expression::And(left, right)
-            | syntax::C0Expression::Or(left, right)
-            | syntax::C0Expression::Add(left, right)
-            | syntax::C0Expression::Subtract(left, right)
-            | syntax::C0Expression::Multiply(left, right)
-            | syntax::C0Expression::Divide(left, right)
-            | syntax::C0Expression::Remainder(left, right)
-            | syntax::C0Expression::ShiftLeft(left, right)
-            | syntax::C0Expression::ShiftRight(left, right)
-            | syntax::C0Expression::BitwiseAnd(left, right)
-            | syntax::C0Expression::BitwiseOr(left, right)
-            | syntax::C0Expression::BitwiseXor(left, right)
-            | syntax::C0Expression::Index(left, right, _) => {
+            syntax::CExpression::LessThan(left, right)
+            | syntax::CExpression::LessEqual(left, right)
+            | syntax::CExpression::GreaterThan(left, right)
+            | syntax::CExpression::GreaterEqual(left, right)
+            | syntax::CExpression::Equal(left, right)
+            | syntax::CExpression::NotEqual(left, right)
+            | syntax::CExpression::And(left, right)
+            | syntax::CExpression::Or(left, right)
+            | syntax::CExpression::Add(left, right)
+            | syntax::CExpression::Subtract(left, right)
+            | syntax::CExpression::Multiply(left, right)
+            | syntax::CExpression::Divide(left, right)
+            | syntax::CExpression::Remainder(left, right)
+            | syntax::CExpression::ShiftLeft(left, right)
+            | syntax::CExpression::ShiftRight(left, right)
+            | syntax::CExpression::BitwiseAnd(left, right)
+            | syntax::CExpression::BitwiseOr(left, right)
+            | syntax::CExpression::BitwiseXor(left, right)
+            | syntax::CExpression::Index(left, right, _) => {
                 collect_function_addresses(left, names);
                 collect_function_addresses(right, names);
             }
-            syntax::C0Expression::Field { pointer, .. } => {
+            syntax::CExpression::Field { pointer, .. } => {
                 collect_function_addresses(pointer, names);
             }
-            syntax::C0Expression::UnionField { pointer, .. } => {
+            syntax::CExpression::UnionField { pointer, .. } => {
                 collect_function_addresses(pointer, names);
             }
-            syntax::C0Expression::Void
-            | syntax::C0Expression::Variable(_)
-            | syntax::C0Expression::StepResult { .. }
-            | syntax::C0Expression::Int32Literal(_)
-            | syntax::C0Expression::UInt8Literal(_)
-            | syntax::C0Expression::UInt32Literal(_)
-            | syntax::C0Expression::Int64Literal(_)
-            | syntax::C0Expression::UInt64Literal(_)
-            | syntax::C0Expression::Float32Literal(_)
-            | syntax::C0Expression::Float64Literal(_)
-            | syntax::C0Expression::SizeOfStruct { .. }
-            | syntax::C0Expression::SizeOfUnion { .. }
-            | syntax::C0Expression::SizeOfType { .. } => {}
+            syntax::CExpression::Void
+            | syntax::CExpression::Variable(_)
+            | syntax::CExpression::StepResult { .. }
+            | syntax::CExpression::Int32Literal(_)
+            | syntax::CExpression::UInt8Literal(_)
+            | syntax::CExpression::UInt32Literal(_)
+            | syntax::CExpression::Int64Literal(_)
+            | syntax::CExpression::UInt64Literal(_)
+            | syntax::CExpression::Float32Literal(_)
+            | syntax::CExpression::Float64Literal(_)
+            | syntax::CExpression::SizeOfStruct { .. }
+            | syntax::CExpression::SizeOfUnion { .. }
+            | syntax::CExpression::SizeOfType { .. } => {}
         }
     }
 
@@ -4164,24 +4164,23 @@ fn c_statement_calls_recording(
     collect_function_pointer_names(function.body(), &mut function_pointer_names);
 
     fn visit(
-        statement: &syntax::C0Statement,
+        statement: &syntax::CStatement,
         calls: &mut Vec<BTreeSet<String>>,
         function_pointer_names: &BTreeSet<String>,
         allocator: &mut BTreeSet<&'static str>,
     ) {
         match statement {
-            syntax::C0Statement::Skip
-            | syntax::C0Statement::Break
-            | syntax::C0Statement::Continue => {}
-            syntax::C0Statement::Goto { .. } => calls.push(BTreeSet::new()),
-            syntax::C0Statement::Label { statement, .. } => {
+            syntax::CStatement::Skip | syntax::CStatement::Break | syntax::CStatement::Continue => {
+            }
+            syntax::CStatement::Goto { .. } => calls.push(BTreeSet::new()),
+            syntax::CStatement::Label { statement, .. } => {
                 visit(statement, calls, function_pointer_names, allocator)
             }
-            syntax::C0Statement::Seq(first, second) => {
+            syntax::CStatement::Seq(first, second) => {
                 visit(first, calls, function_pointer_names, allocator);
                 visit(second, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::If {
+            syntax::CStatement::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -4193,10 +4192,10 @@ fn c_statement_calls_recording(
                 visit(then_branch, calls, function_pointer_names, allocator);
                 visit(else_branch, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::While {
+            syntax::CStatement::While {
                 condition, body, ..
             }
-            | syntax::C0Statement::DoWhile {
+            | syntax::CStatement::DoWhile {
                 condition, body, ..
             } => {
                 let mut dependencies = BTreeSet::new();
@@ -4204,7 +4203,7 @@ fn c_statement_calls_recording(
                 calls.push(dependencies);
                 visit(body, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::For {
+            syntax::CStatement::For {
                 initializer,
                 condition,
                 step,
@@ -4218,7 +4217,7 @@ fn c_statement_calls_recording(
                 visit(body, calls, function_pointer_names, allocator);
                 visit(step, calls, function_pointer_names, allocator);
             }
-            syntax::C0Statement::Switch {
+            syntax::CStatement::Switch {
                 expression, cases, ..
             } => {
                 let mut dependencies = BTreeSet::new();
@@ -4228,7 +4227,7 @@ fn c_statement_calls_recording(
                     visit(case.body(), calls, function_pointer_names, allocator);
                 }
             }
-            syntax::C0Statement::CallAssign {
+            syntax::CStatement::CallAssign {
                 function_name,
                 arguments,
                 ..
@@ -4249,13 +4248,13 @@ fn c_statement_calls_recording(
                 }
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Call {
+            syntax::CStatement::Call {
                 function_name,
                 arguments,
                 callee,
                 ..
             }
-            | syntax::C0Statement::CallResult {
+            | syntax::CStatement::CallResult {
                 function_name,
                 arguments,
                 callee,
@@ -4281,7 +4280,7 @@ fn c_statement_calls_recording(
                 }
                 calls.push(dependencies);
             }
-            syntax::C0Statement::IndirectCall {
+            syntax::CStatement::IndirectCall {
                 function,
                 arguments,
                 ..
@@ -4293,28 +4292,28 @@ fn c_statement_calls_recording(
                 }
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Declare {
+            syntax::CStatement::Declare {
                 initializer: None, ..
             }
-            | syntax::C0Statement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
-            syntax::C0Statement::Declare {
+            | syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
+            syntax::CStatement::Declare {
                 initializer: Some(expression),
                 ..
             }
-            | syntax::C0Statement::Assign { expression, .. }
-            | syntax::C0Statement::HeapAllocate {
+            | syntax::CStatement::Assign { expression, .. }
+            | syntax::CStatement::HeapAllocate {
                 bytes: expression, ..
             }
-            | syntax::C0Statement::HeapFree {
+            | syntax::CStatement::HeapFree {
                 pointer: expression,
                 ..
             }
-            | syntax::C0Statement::Return(expression, _) => {
+            | syntax::CStatement::Return(expression, _) => {
                 match statement {
-                    syntax::C0Statement::HeapAllocate { zeroed, .. } => {
+                    syntax::CStatement::HeapAllocate { zeroed, .. } => {
                         allocator.insert(if *zeroed { "calloc" } else { "malloc" });
                     }
-                    syntax::C0Statement::HeapFree { .. } => {
+                    syntax::CStatement::HeapFree { .. } => {
                         allocator.insert("free");
                     }
                     _ => {}
@@ -4323,25 +4322,25 @@ fn c_statement_calls_recording(
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Store { pointer, value, .. } => {
+            syntax::CStatement::Store { pointer, value, .. } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(pointer, &mut dependencies);
                 collect_function_addresses(value, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::SequentialStore { target, value, .. } => {
+            syntax::CStatement::SequentialStore { target, value, .. } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(target, &mut dependencies);
                 collect_function_addresses(value, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::AggregateCopy { target, source, .. } => {
+            syntax::CStatement::AggregateCopy { target, source, .. } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(target, &mut dependencies);
                 collect_function_addresses(source, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Update {
+            syntax::CStatement::Update {
                 target, operand, ..
             } => {
                 let mut dependencies = BTreeSet::new();
@@ -4349,9 +4348,9 @@ fn c_statement_calls_recording(
                 collect_function_addresses(operand, &mut dependencies);
                 calls.push(dependencies);
             }
-            syntax::C0Statement::Assert { condition, .. }
-            | syntax::C0Statement::LoopTest { condition, .. }
-            | syntax::C0Statement::StepValue {
+            syntax::CStatement::Assert { condition, .. }
+            | syntax::CStatement::LoopTest { condition, .. }
+            | syntax::CStatement::StepValue {
                 expression: condition,
                 ..
             } => {
@@ -5385,10 +5384,10 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
 }
 
 fn validate_modeled_pthread_calls(
-    statement: &syntax::C0Statement,
+    statement: &syntax::CStatement,
     source_path: &str,
 ) -> Result<(), ClickError> {
-    use syntax::{C0Expression as E, C0Statement as S};
+    use syntax::{CExpression as E, CStatement as S};
     fn is_null(expression: &E) -> bool {
         match expression {
             E::Int32Literal(0) => true,

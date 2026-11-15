@@ -2929,7 +2929,7 @@ mod tests {
         let project = root.join("project");
         fs::create_dir_all(&project).unwrap();
         fs::write(root.join("actual.c"), "int32 actual() { return 1; }").unwrap();
-        fs::write(project.join("unrelated.c"), "this is not C0").unwrap();
+        fs::write(project.join("unrelated.c"), "this is not C").unwrap();
         let click_path = project.join("proof.click");
         let click_source = "verifying \"../actual.c\";\n";
 

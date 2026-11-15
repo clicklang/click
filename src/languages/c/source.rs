@@ -1,10 +1,10 @@
-//! Source-bundle utilities for the C0 frontend.
+//! Source-bundle utilities for the C frontend.
 //!
 //! This is deliberately a small source expander, not a general C preprocessor.
 //! It expands supplied project-local headers, object-like replacement macros,
 //! a bounded function-like macro subset, a bounded
 //! conditional-compilation subset, and rejects all other preprocessor
-//! directives so the C0 parser never silently verifies a different program.
+//! directives so the C parser never silently verifies a different program.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -164,9 +164,9 @@ enum MacroDefinition {
 }
 
 /// Kernel-header macros whose semantics are modeled directly by the checked
-/// C0 lowering.  Keeping these as source-level operations is important: the
+/// C lowering.  Keeping these as source-level operations is important: the
 /// GNU replacement text commonly contains statement expressions and helper
-/// macros that are outside the ordinary C0 preprocessor subset.
+/// macros that are outside the source expander's supported subset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum KernelPrimitive {
     ReadOnce,
