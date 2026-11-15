@@ -1407,8 +1407,7 @@ pub(super) fn local_naming_tables(
         .filter(|(name, _)| !name.starts_with("__rust_"))
         .map(|(name, value)| {
             (
-                call_result_spelling(name)
-                    .unwrap_or_else(|| crate::kernel::program_local_source_name(name).to_string()),
+                crate::kernel::program_local_source_name(name).to_string(),
                 value.clone().into_native(),
             )
         })
@@ -1454,21 +1453,6 @@ pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractEx
             Some(ContractExpression::RegionResult(CodeRegionRef::Path(steps)))
         }
     }
-}
-
-/// `<region>.result` for a call's result temporary, which no source name
-/// spells: the call that introduced the value names it.
-pub(in crate::surface) fn call_result_spelling(local: &str) -> Option<String> {
-    if !is_call_result_temporary(local) {
-        return None;
-    }
-    let layout = spelling_layout()?;
-    let region = layout.temporary_call_region(local)?;
-    let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
-    Some(format!(
-        "{}.result",
-        describe_code_region_ref(&CodeRegionRef::Path(steps))
-    ))
 }
 
 /// Name current locals with their source declarations, when available.
@@ -1859,12 +1843,7 @@ pub(super) fn describe_runtime_error(
                 format!("cannot verify call: no contract fact for the function pointer `{source}` with this call signature")
             } else {
                 format!(
-                    "cannot verify call through {}: no matching named contract is available for this value",
-                    if is_call_result_temporary(name) {
-                        "a function pointer loaded from memory".to_string()
-                    } else {
-                        format!("function pointer `{name}`")
-                    }
+                    "cannot verify call through function pointer `{name}`: no matching named contract is available for this value"
                 )
             }
         }
@@ -5762,12 +5741,6 @@ fn name_string_literal_storage(message: &str) -> String {
     )
 }
 
-/// Whether `name` is a temporary the C lowering introduced for the result of
-/// a call or load nested inside a larger expression.
-pub(in crate::surface) fn is_call_result_temporary(name: &str) -> bool {
-    name.starts_with("__click_call_result")
-}
-
 pub(in crate::surface) fn describe_callback_source(expression: &syntax::C0Expression) -> String {
     match expression {
         syntax::C0Expression::Field {
@@ -5948,6 +5921,10 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             origin: crate::kernel::StepOrigin::Operator(kind),
             ..
         } => format!("the value of {}", describe_operator_kind(*kind)),
+        ProgramExpression::StepResult {
+            origin: crate::kernel::StepOrigin::Value(what),
+            ..
+        } => format!("the value of {what}"),
         ProgramExpression::Cast {
             expression,
             target_type,
@@ -6742,11 +6719,6 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ),
         ProgramStatement::Assign {
             name, expression, ..
-        } if is_call_result_temporary(name) => {
-            format!("{};", describe_program_expression(expression))
-        }
-        ProgramStatement::Assign {
-            name, expression, ..
         } => {
             format!("{name} = {};", describe_program_expression(expression))
         }
@@ -6760,15 +6732,12 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
                 describe_called_function(function_name),
                 describe_program_expression_list(arguments)
             );
-            if is_call_result_temporary(target) {
-                call
-            } else {
-                format!("{target} = {call}")
-            }
+            format!("{target} = {call}")
         }
         ProgramStatement::Call {
             function_name,
             arguments,
+            ..
         }
         | ProgramStatement::CallResult {
             function_name,
@@ -6864,14 +6833,10 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
     truncate_utf8_with_suffix(&head, MAX_STATEMENT_HEAD_BYTES, "…")
 }
 
-/// The callee as the C names it; a function pointer the lowering loaded into
-/// a temporary has no name there.
+/// The callee as the C names it: a function, or the function pointer a call
+/// goes through as the source writes it.
 pub(in crate::surface) fn describe_called_function(function_name: &str) -> &str {
-    if is_call_result_temporary(function_name) {
-        "(the loaded function pointer)"
-    } else {
-        function_name
-    }
+    function_name
 }
 
 /// A guard already sits inside the parentheses the statement writes, so drop
@@ -7700,6 +7665,7 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Loop(index) => format!("loop({index})"),
                 SourcePathStep::Region(index) => format!("region({index})"),
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
+                SourcePathStep::AnyCall(index) => format!("call({index})"),
                 SourcePathStep::Test => "test()".to_string(),
                 SourcePathStep::Assignment(local, index) => format!("assignment({local}, {index})"),
                 SourcePathStep::Operator(kind, index) => {

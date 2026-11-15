@@ -5413,18 +5413,27 @@ pub enum ProgramStatement {
         /// contract's own.
         result_type: Option<ProgramType>,
         result_pointee_constant: bool,
+        /// The function pointer the call goes through, when it is not a
+        /// call of a named function; `function_name` then only describes it.
+        callee: Option<Callee>,
     },
     Call {
         function_name: String,
         arguments: Vec<ProgramExpression>,
+        /// The function pointer the call goes through, when it is not a
+        /// call of a named function; `function_name` then only describes it.
+        callee: Option<Callee>,
     },
-    /// The value an operator that decides between its operands (`&&`, `||`,
-    /// the ternary operator) takes on this path, at the end of the arm that
-    /// computed it: the result of step `step`, which the rest of the
-    /// statement reads. It has `value_type` when one is given, as an
-    /// assignment to a local of that type would give it.
+    /// A value the rest of its statement reads: the value an operator that
+    /// decides between its operands (`&&`, `||`, the ternary operator) takes
+    /// at the end of the arm that computed it, a statement expression's
+    /// value, or a value read before a call. It is the result of each of
+    /// `steps`, one per expression that reads it; with none, the value is
+    /// evaluated and discarded, as an expression statement's is. It has
+    /// `value_type` when one is given, as an assignment to a local of that
+    /// type would give it.
     StepValue {
-        step: u32,
+        steps: Vec<u32>,
         expression: ProgramExpression,
         value_type: Option<ProgramType>,
         pointee_constant: bool,
@@ -10185,6 +10194,13 @@ pub struct ExecutionState {
     pub(crate) step_results: Option<Arc<BTreeMap<u32, StoredMemoryValue>>>,
 }
 
+/// The function pointer a call goes through, with its type.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Callee {
+    pub pointer: ProgramExpression,
+    pub pointer_type: ProgramType,
+}
+
 /// What made a statement's step result.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum StepOrigin {
@@ -10195,6 +10211,9 @@ pub enum StepOrigin {
     Prior(String),
     /// An operator that decides between its operands took it.
     Operator(OperatorKind),
+    /// A value step recorded it: what this describes, such as a statement
+    /// expression's value.
+    Value(&'static str),
 }
 
 /// An operator that decides which of its operands run.
@@ -10209,13 +10228,6 @@ pub enum OperatorKind {
 }
 
 impl ProgramExpression {
-    /// Whether evaluating this expression reads a step's result.
-    pub(crate) fn reads_step_result(&self) -> bool {
-        let mut steps = Vec::new();
-        self.collect_step_results_read(&mut steps);
-        !steps.is_empty()
-    }
-
     /// The steps whose results evaluating this expression reads.
     pub(crate) fn collect_step_results_read(&self, steps: &mut Vec<u32>) {
         match self {

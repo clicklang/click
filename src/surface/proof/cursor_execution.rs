@@ -2404,6 +2404,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ProgramStatement::Call {
                 function_name,
                 arguments,
+                ..
             }
             | ProgramStatement::CallAssign {
                 function_name,
@@ -4266,6 +4267,7 @@ fn describe_call_bindings(
         ProgramStatement::Call {
             function_name,
             arguments,
+            ..
         }
         | ProgramStatement::CallAssign {
             function_name,
@@ -4330,11 +4332,6 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::DeclareAggregate { name, .. } => format!("declare aggregate {name}"),
         ProgramStatement::Assign {
             name, expression, ..
-        } if crate::surface::diagnostics::is_call_result_temporary(name) => {
-            describe_program_expression(expression)
-        }
-        ProgramStatement::Assign {
-            name, expression, ..
         } => {
             format!("{name} = {}", describe_program_expression(expression))
         }
@@ -4352,15 +4349,12 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
                     .collect::<Vec<_>>()
                     .join(", ")
             );
-            if crate::surface::diagnostics::is_call_result_temporary(target) {
-                call
-            } else {
-                format!("{target} = {call}")
-            }
+            format!("{target} = {call}")
         }
         ProgramStatement::Call {
             function_name,
             arguments,
+            ..
         }
         | ProgramStatement::CallResult {
             function_name,

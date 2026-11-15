@@ -560,11 +560,27 @@ pub(super) fn execute_program_call_paths(
     state: &ExecutionState,
     result_call: Option<u32>,
     function_name: &str,
+    callee: Option<&Callee>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    // A call through a function pointer calls whatever the pointer holds.
+    if let Some(callee) = callee {
+        let paths = indirect_call_statement_paths(execute_program_indirect_call_paths(
+            state,
+            function_name,
+            &callee.pointer,
+            callee.pointer_type,
+            arguments,
+            assumptions,
+            execution_context,
+            budget,
+        )?);
+        budget.check_path_width(paths.len())?;
+        return Ok(paths);
+    }
     if !is_modeled_pthread_call(function_name, execution_context.environment)
         && !matches!(
             state.locals.object_type(function_name),
@@ -667,41 +683,16 @@ pub(super) fn execute_program_call_paths(
         return Ok(vec![path]);
     }
     if let Some(ProgramType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
-        let paths = execute_program_indirect_call_paths(
+        let paths = indirect_call_statement_paths(execute_program_indirect_call_paths(
             state,
             function_name,
+            &crate::kernel::program_expression::variable(function_name.to_string()),
             ProgramType::FunctionPointer(signature),
             arguments,
             assumptions,
             execution_context,
             budget,
-        )?
-        .into_iter()
-        .map(|path| StatementExecutionPath {
-            call_parameters: path.call_parameters.clone(),
-            loop_invariant_correspondence: Default::default(),
-            call_result: match &path.outcome {
-                FunctionOutcome::Return { value, .. }
-                    if value.program_type() != ProgramType::Void =>
-                {
-                    Some(value.clone())
-                }
-                _ => None,
-            },
-            outcome: match path.outcome {
-                FunctionOutcome::Return { state, .. } => StatementOutcome::Normal(state),
-                FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
-                FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
-                FunctionOutcome::UndefinedBehavior(error) => {
-                    StatementOutcome::UndefinedBehavior(error)
-                }
-                FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
-            },
-            facts: path.facts,
-            obligations: path.obligations,
-            loan_evidence: path.loan_evidence,
-        })
-        .collect::<Vec<_>>();
+        )?);
         budget.check_path_width(paths.len())?;
         return Ok(paths);
     }
@@ -1663,6 +1654,7 @@ fn execute_program_indirect_call_assign_paths(
     let paths = execute_program_indirect_call_paths(
         state,
         function_name,
+        &crate::kernel::program_expression::variable(function_name.to_string()),
         function_type,
         arguments,
         assumptions,
@@ -1720,9 +1712,42 @@ fn execute_program_indirect_call_assign_paths(
         .collect())
 }
 
+/// The statement paths of an indirect call's function paths: each returned
+/// value is the call's result.
+fn indirect_call_statement_paths(paths: Vec<FunctionPath>) -> Vec<StatementExecutionPath> {
+    paths
+        .into_iter()
+        .map(|path| StatementExecutionPath {
+            call_parameters: path.call_parameters.clone(),
+            loop_invariant_correspondence: Default::default(),
+            call_result: match &path.outcome {
+                FunctionOutcome::Return { value, .. }
+                    if value.program_type() != ProgramType::Void =>
+                {
+                    Some(value.clone())
+                }
+                _ => None,
+            },
+            outcome: match path.outcome {
+                FunctionOutcome::Return { state, .. } => StatementOutcome::Normal(state),
+                FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
+                FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
+                FunctionOutcome::UndefinedBehavior(error) => {
+                    StatementOutcome::UndefinedBehavior(error)
+                }
+                FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+            },
+            facts: path.facts,
+            obligations: path.obligations,
+            loan_evidence: path.loan_evidence,
+        })
+        .collect()
+}
+
 fn execute_program_indirect_call_paths(
     state: &ExecutionState,
     function_name: &str,
+    pointer: &ProgramExpression,
     function_type: ProgramType,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
@@ -1740,12 +1765,7 @@ fn execute_program_indirect_call_paths(
         )]);
     }
     let mut paths = Vec::new();
-    for target_path in evaluate_program_expression_paths(
-        state,
-        &crate::kernel::program_expression::variable(function_name.to_string()),
-        assumptions,
-        budget,
-    )? {
+    for target_path in evaluate_program_expression_paths(state, pointer, assumptions, budget)? {
         let ExpressionPath {
             outcome,
             facts,
@@ -9400,9 +9420,18 @@ fn for_each_statement_expression<'a>(
         | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
-        ProgramStatement::CallAssign { arguments, .. }
-        | ProgramStatement::Call { arguments, .. }
-        | ProgramStatement::CallResult { arguments, .. } => arguments.iter().for_each(&mut *visit),
+        ProgramStatement::CallAssign { arguments, .. } => arguments.iter().for_each(&mut *visit),
+        ProgramStatement::Call {
+            arguments, callee, ..
+        }
+        | ProgramStatement::CallResult {
+            arguments, callee, ..
+        } => {
+            if let Some(callee) = callee {
+                visit(&callee.pointer);
+            }
+            arguments.iter().for_each(&mut *visit);
+        }
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
             visit(pointer);

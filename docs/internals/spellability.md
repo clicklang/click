@@ -51,9 +51,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   number; `SourceExecutionLayout::step_region` maps the number to its step).
   A postfix update's result, the value it replaced, is
   `at(<its region>.entry, x)`.
-  Source-layout result locals preserve allocation naming, and the remaining
-  frontend result temporaries map back to their calls
-  (`SourceExecutionLayout::temporary_call_region`).
+  Source-layout result locals preserve allocation naming.
   A call that copies a by-value aggregate argument into its parameter object
   names that copy `<region>.parameter(name)`: the call producer hands back
   the memory just after the copies, with only those parameters bound

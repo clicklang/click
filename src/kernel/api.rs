@@ -2172,6 +2172,7 @@ pub fn program_call(
     ProgramStatement::Call {
         function_name: function_name.into(),
         arguments,
+        callee: None,
     }
 }
 
@@ -8217,6 +8218,7 @@ pub(crate) fn prove_executed_contract_refinement(
         ProgramStatement::Call {
             function_name: callback.name().to_string(),
             arguments,
+            callee: None,
         }
     } else {
         ProgramStatement::seq(
@@ -8423,6 +8425,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
         ProgramStatement::Call {
             function_name: callee_name.to_string(),
             arguments,
+            callee: None,
         }
     } else {
         ProgramStatement::seq(

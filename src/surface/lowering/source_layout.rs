@@ -100,6 +100,9 @@ struct SourceExecutionLayoutData {
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
+    /// Every call region, including calls through a function pointer, which
+    /// name no function and so have no entry in `call_targets`.
+    calls: BTreeSet<usize>,
     /// The regions that are a loop's own test, `loop(i).test()`.
     loop_tests: BTreeSet<usize>,
     /// The number of each region that is a call inside an expression: its
@@ -119,7 +122,6 @@ struct SourceExecutionLayoutData {
     /// temporary, which no other name spells.
     call_results: BTreeMap<usize, String>,
     allocation_regions: BTreeSet<usize>,
-    temporary_call_regions: BTreeMap<String, usize>,
     /// The source path of the statement each region belongs to: the inverse
     /// of `source_statements`, for spelling a region by its statement.
     region_paths: BTreeMap<usize, Vec<u32>>,
@@ -650,6 +652,18 @@ impl SourceExecutionLayout {
                 layout.call_numbers.insert(index, operator.step);
                 layout.step_regions.insert(operator.step, index);
             }
+            // A value step's region makes the value its steps name, unless
+            // an operator `if` already made those steps its own.
+            if let syntax::C0Statement::StepValue { steps, .. } = statement {
+                for step in steps {
+                    if let std::collections::btree_map::Entry::Vacant(entry) =
+                        layout.step_regions.entry(*step)
+                    {
+                        entry.insert(index);
+                        layout.call_numbers.entry(index).or_insert(*step);
+                    }
+                }
+            }
             if let syntax::C0Statement::Assign {
                 name,
                 prior_result: Some(step),
@@ -659,9 +673,23 @@ impl SourceExecutionLayout {
                 layout.step_regions.insert(*step, index);
                 layout.prior_steps.insert(*step, name.clone());
             }
+            if let syntax::C0Statement::CallAssign { .. }
+            | syntax::C0Statement::Call { .. }
+            | syntax::C0Statement::CallResult { .. } = statement
+            {
+                layout.calls.insert(index);
+            }
             if let syntax::C0Statement::CallAssign { function_name, .. }
-            | syntax::C0Statement::Call { function_name, .. }
-            | syntax::C0Statement::CallResult { function_name, .. } = statement
+            | syntax::C0Statement::Call {
+                function_name,
+                callee: None,
+                ..
+            }
+            | syntax::C0Statement::CallResult {
+                function_name,
+                callee: None,
+                ..
+            } = statement
             {
                 layout.call_targets.insert(
                     index,
@@ -672,9 +700,6 @@ impl SourceExecutionLayout {
             | syntax::C0Statement::HeapAllocate { target, .. } = statement
             {
                 layout.call_results.insert(index, target.clone());
-                if crate::surface::diagnostics::is_call_result_temporary(target) {
-                    layout.temporary_call_regions.insert(target.clone(), index);
-                }
             }
             if matches!(statement, syntax::C0Statement::HeapAllocate { .. }) {
                 layout.allocation_regions.insert(index);
@@ -1098,11 +1123,6 @@ impl SourceExecutionLayout {
             .flatten()
     }
 
-    /// The call region whose result the frontend temporary `local` holds.
-    pub(in crate::surface) fn temporary_call_region(&self, local: &str) -> Option<usize> {
-        self.data.temporary_call_regions.get(local).copied()
-    }
-
     pub(in crate::surface) fn source_path_region(
         &self,
         steps: &[crate::surface::SourcePathStep],
@@ -1213,6 +1233,19 @@ impl SourceExecutionLayout {
                         )
                     });
                 }
+                SourcePathStep::AnyCall(index) if last => {
+                    let calls = own(&path)
+                        .iter()
+                        .filter(|region| data.calls.contains(region))
+                        .collect::<Vec<_>>();
+                    return calls.get(*index).map(|region| **region).ok_or_else(|| {
+                        format!(
+                            "`{}` makes {} call(s), so it has no `call({index})`",
+                            describe(&path),
+                            calls.len()
+                        )
+                    });
+                }
                 SourcePathStep::Test if last => {
                     return own(&path)
                         .iter()
@@ -1254,6 +1287,7 @@ impl SourceExecutionLayout {
                 | SourcePathStep::Test
                 | SourcePathStep::Assignment(..)
                 | SourcePathStep::Operator(..)
+                | SourcePathStep::AnyCall(_)
                 | SourcePathStep::Read(_) => {
                     return Err(
                         "`region(j)`, `call(f, j)`, `test()`, `assignment(x, j)`, `read(j)`, `and(j)`, `or(j)` and `ternary(j)` end a chained region"
@@ -1306,6 +1340,13 @@ impl SourceExecutionLayout {
             let position = own.iter().position(|own| *own == region)?;
             steps.push(match data.call_targets.get(&region) {
                 None if data.loop_tests.contains(&region) => SourcePathStep::Test,
+                // A call through a function pointer names no function.
+                None if data.calls.contains(&region) => SourcePathStep::AnyCall(
+                    own[..position]
+                        .iter()
+                        .filter(|earlier| data.calls.contains(earlier))
+                        .count(),
+                ),
                 None if let Some(kind) = data.operator_regions.get(&region) => {
                     SourcePathStep::Operator(
                         *kind,
@@ -2001,6 +2042,7 @@ mod source_execution_layout_tests {
                 sites: BTreeMap::new(),
                 source_statements: BTreeMap::new(),
                 call_targets: BTreeMap::new(),
+                calls: BTreeSet::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),
                 step_regions: BTreeMap::new(),
@@ -2008,7 +2050,6 @@ mod source_execution_layout_tests {
                 operator_regions: BTreeMap::new(),
                 call_results: BTreeMap::new(),
                 allocation_regions: BTreeSet::new(),
-                temporary_call_regions: BTreeMap::new(),
                 region_paths: BTreeMap::new(),
                 loop_paths: BTreeMap::new(),
                 diagnostic_places: std::sync::OnceLock::new(),

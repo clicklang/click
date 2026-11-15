@@ -7216,6 +7216,9 @@ pub enum SourcePathStep {
     Region(usize),
     /// The statement's `j`th call of `f`, in evaluation order; a chain's end.
     Call(String, usize),
+    /// The statement's `j`th call of any callee, including one through a
+    /// function pointer, in evaluation order: `call(j)`; a chain's end.
+    AnyCall(usize),
     /// A loop's own test, after the calls its condition makes: `test()`; a
     /// chain's end.
     Test,

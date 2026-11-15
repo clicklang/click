@@ -768,9 +768,6 @@ fn synthesize_snapshot_local(term: &MachineTerm) -> Option<ContractExpression> {
                 crate::kernel::MachineIntegerType::from_program_type(value.program_type()).is_some()
             })
         })?;
-        if let Some(result) = call_result_expression(name) {
-            return Some(result);
-        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
@@ -791,9 +788,6 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
         let (selector, name, _) = slot.as_ref()?.point_naming_integer(term)?;
-        if let Some(result) = call_result_expression(name) {
-            return Some(result);
-        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
@@ -4111,21 +4105,7 @@ fn synthesize_population_entry_count(
 fn synthesize_named_integer_local<'a>(
     mut holders: impl Iterator<Item = &'a str>,
 ) -> Option<SurfaceTerm> {
-    let first = holders.next();
-    let named = first
-        .filter(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
-        .or_else(|| {
-            if STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.get()) {
-                return None;
-            }
-            holders.find(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
-        });
-    if named.is_none()
-        && let Some(result) = first.and_then(call_result_expression)
-    {
-        return Some(result);
-    }
-    if let Some(name) = named {
+    if let Some(name) = holders.next() {
         return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
             ContractExpression::ProgramExpression(ProgramExpression::Variable("result".to_string()))
         } else if crate::surface::is_click_value_name(name) {
@@ -5733,9 +5713,6 @@ fn synthesize_surface_pointer(
     if let Some(expression) = state
         .locals()
         .pointer_objects_in_block(&pointer.block)
-        // A call's result temporary is spelled by its call, never by the
-        // frontend's name for it.
-        .filter(|(name, _)| !crate::surface::diagnostics::is_call_result_temporary(name))
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
             let element_width = base.program_type().pointee_type()?.byte_width();
@@ -5912,36 +5889,6 @@ fn state_call_result(
     crate::surface::diagnostics::step_result_expression(*step)
 }
 
-/// `<region>.result` for a call's result temporary `local`, which no source
-/// name spells.
-pub(super) fn call_result_expression(local: &str) -> Option<ContractExpression> {
-    if !crate::surface::diagnostics::is_call_result_temporary(local) {
-        return None;
-    }
-    let layout = crate::surface::diagnostics::spelling_layout()?;
-    let region = layout.temporary_call_region(local)?;
-    let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
-    Some(ContractExpression::RegionResult(CodeRegionRef::Path(steps)))
-}
-
-/// `<region>.result` for a pointer a call's result temporary holds: the
-/// call names the value it introduced, which no source name spells.
-fn synthesize_call_result_pointer(
-    pointer: &Pointer,
-    state: &ExecutionState,
-) -> Option<ContractExpression> {
-    state
-        .locals()
-        .pointer_objects_in_block(&pointer.block)
-        .find_map(|(name, base)| {
-            crate::instrumentation::record_deterministic_work(1);
-            if base.pointer() != pointer {
-                return None;
-            }
-            call_result_expression(name)
-        })
-}
-
 fn synthesize_surface_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
@@ -5978,9 +5925,6 @@ fn synthesize_surface_pointer_expression(
         synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)
     {
         return Some(ContractExpression::ProgramExpression(pointer));
-    }
-    if let Some(result) = synthesize_call_result_pointer(pointer, state) {
-        return Some(result);
     }
     if let Some(result) = state_call_result(
         state,

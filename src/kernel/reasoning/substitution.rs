@@ -985,12 +985,17 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         ProgramStatement::Call {
             function_name,
             arguments,
+            callee,
         } => ProgramStatement::Call {
             function_name: function_name.clone(),
             arguments: arguments
                 .iter()
                 .map(|argument| s.program_expression(argument))
                 .collect(),
+            callee: callee.as_ref().map(|callee| Callee {
+                pointer: s.program_expression(&callee.pointer),
+                pointer_type: callee.pointer_type,
+            }),
         },
         ProgramStatement::CallResult {
             call,
@@ -998,6 +1003,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             arguments,
             result_type,
             result_pointee_constant,
+            callee,
         } => ProgramStatement::CallResult {
             call: *call,
             function_name: function_name.clone(),
@@ -1007,6 +1013,10 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
                 .collect(),
             result_type: *result_type,
             result_pointee_constant: *result_pointee_constant,
+            callee: callee.as_ref().map(|callee| Callee {
+                pointer: s.program_expression(&callee.pointer),
+                pointer_type: callee.pointer_type,
+            }),
         },
         ProgramStatement::HeapAllocate {
             target,
@@ -1029,12 +1039,12 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             label: label.clone(),
         },
         ProgramStatement::StepValue {
-            step,
+            steps,
             expression,
             value_type,
             pointee_constant,
         } => ProgramStatement::StepValue {
-            step: *step,
+            steps: steps.clone(),
             expression: s.program_expression(expression),
             value_type: *value_type,
             pointee_constant: *pointee_constant,
