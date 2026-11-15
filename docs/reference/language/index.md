@@ -4568,3 +4568,25 @@ proposition. C proofs receive this fact from a little-endian execution
 environment; a big-endian environment supplies its negation. Pure theorems
 have no target assumption and must require the fact explicitly. It is the
 target premise of `integer::uint32_from_le_bytes`.
+
+
+## Program termination proofs
+
+After function bodies have been proved, program closing has an ordinary goal
+combining the selected return promises, divergence policies, and callback safety.
+An optional top-level `termination by { ... }` block supplies its proof. With no
+block, or with proofs omitted at its end, the implicit solver runs on that goal.
+Ordinary `have`, logical tactics, `known`, and `solve` work inside the block.
+
+The propositions are `termination_returns("f")`, `termination_divergence("f")`,
+and `termination_callbacks()`. Checked steps also expose `termination_local("f")`,
+`termination_strict("f")`, and `termination_body("f")`. Quoted names identify
+functions rather than proof variables. Negations record refused classifications;
+these scoped propositions cannot be declared as assumptions in unrelated
+contracts or theorems.
+
+`click expand --claim program.termination file.click` writes a replayable block
+of [termination checks](../tactics/index.md#termination-checks) and ordinary proof
+steps. `click verify --trace-proof program.termination file.click` traces that
+proof. Completion publishes the captured return promises after the ordinary
+root goal closes and discovers no additional obligations.

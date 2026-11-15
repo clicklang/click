@@ -1256,6 +1256,11 @@ impl<'a> Proof<'a> {
         }
         let selected_obligation = retain_outcome_root.then(|| body_goal.obligation.clone());
         let body_state = KernelProofObject::root(self.state().locals().clone(), body_goal);
+        let body_state = if let Some(scope) = self.termination_scope() {
+            body_state.with_termination_context(scope.clone())
+        } else {
+            body_state
+        };
         let body_state = if let Some(obligation) = selected_obligation {
             body_state
                 .replace_focused_obligation_and_facts(obligation, body_facts)

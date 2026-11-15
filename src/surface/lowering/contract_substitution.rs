@@ -491,6 +491,11 @@ fn substitute_click_proposition_nonlogical(
                 body: Box::new(body),
             })
         }
+        ClickProposition::PredicateCall { name, .. }
+            if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() =>
+        {
+            Ok(proposition.clone())
+        }
         ClickProposition::PredicateCall { name, arguments } => {
             Ok(ClickProposition::PredicateCall {
                 name: name.clone(),
@@ -3098,6 +3103,8 @@ fn collect_click_proposition_referenced_names_one(
                 names.insert(item.clone());
             }
         }
+        ClickProposition::PredicateCall { name, .. }
+            if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() => {}
         ClickProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_referenced_names(argument, names);

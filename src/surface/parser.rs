@@ -2026,6 +2026,8 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut tactic_definitions = Vec::new();
+        let mut termination_proof = None;
+        let mut termination_span = None;
         let mut library_imports = self
             .implied_library_modules
             .iter()
@@ -2045,6 +2047,15 @@ impl Parser {
                 }
             } else if self.peek_ident() == Some("import") {
                 imports.push(self.parse_import()?);
+            } else if self.peek_ident() == Some("termination") {
+                let start = self.positions[self.position].clone();
+                self.position += 1;
+                if termination_proof.is_some() {
+                    return Err(self.error("only one `termination by` block is allowed"));
+                }
+                self.expect_ident_spelling("by")?;
+                termination_proof = Some(self.parse_possibly_empty_tactic_block()?);
+                termination_span = Some((start, self.positions[self.position - 1].clone()));
             } else if self.peek_ident() == Some("verifying") {
                 verifying_sources.push(self.parse_verifying_source()?);
             } else if let Some(directive @ ("target" | "mode")) =
@@ -2378,6 +2389,8 @@ impl Parser {
             contract_definitions,
             function_blocks,
             tactic_definitions,
+            termination_proof,
+            termination_span,
             declaration_owners: BTreeMap::new(),
             entry_module: None,
             source_spans: std::sync::Arc::new(SourceSpans {
@@ -8537,6 +8550,22 @@ impl Parser {
             {
                 return self.parse_contract_value_application();
             }
+            if let Some(kind) = self
+                .peek_ident()
+                .and_then(crate::kernel::TerminationAtomKind::from_spelling)
+            {
+                let name = self.expect_ident("termination predicate")?;
+                self.expect(Token::LParen)?;
+                let arguments = if kind == crate::kernel::TerminationAtomKind::Callbacks {
+                    Vec::new()
+                } else {
+                    vec![ContractExpression::Binding(
+                        self.expect_string("function name")?,
+                    )]
+                };
+                self.expect(Token::RParen)?;
+                return Ok(ClickProposition::PredicateCall { name, arguments });
+            }
             let start = self.position;
             let (name, arguments) = self.parse_call_arguments("predicate or function name")?;
             if let Some(classification) = float_classification_from_name(&name) {
@@ -10874,6 +10903,28 @@ impl Parser {
                 return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
             }
             "obtain" => return self.parse_obtain(),
+            "check_termination_local" => {
+                self.expect(Token::LParen)?;
+                let function = self.expect_string("function name")?;
+                self.expect(Token::RParen)?;
+                ProofTactic::CheckTerminationLocal(function)
+            }
+            "check_termination_component" => {
+                self.expect(Token::LParen)?;
+                let function = self.expect_string("function name")?;
+                self.expect(Token::Comma)?;
+                let strict = match self.expect_ident("strict or normal")?.as_str() {
+                    "strict" => true,
+                    "normal" => false,
+                    _ => return Err(self.error("expected `strict` or `normal`")),
+                };
+                self.expect(Token::RParen)?;
+                ProofTactic::CheckTerminationComponent { function, strict }
+            }
+            "check_termination_callbacks" => {
+                self.expect_empty_tactic_args(&name)?;
+                ProofTactic::CheckTerminationCallbacks
+            }
             "known" => {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Known

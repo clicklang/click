@@ -616,7 +616,11 @@ fn verify_expansion(
     whole_claim: bool,
 ) -> Result<(), String> {
     let check = || {
-        if whole_claim {
+        if whole_claim && claim == "program.termination" {
+            click::surface::without_implicit_solve_for_claim(claim, || {
+                verify_expansion_now(project, expanded, inputs, claim)
+            })
+        } else if whole_claim {
             click::surface::without_implicit_solve(|| {
                 verify_expansion_now(project, expanded, inputs, claim)
             })

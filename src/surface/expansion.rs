@@ -779,6 +779,41 @@ pub fn expand_claim_by_label(
         Some(project) => resolve_click_project_context(project, &sources)?,
         None => parse_source_with_program_layouts_context(click_source, &sources)?,
     };
+    if claim_label == "program.termination" {
+        let (result, certificate) = capture_termination_certificate(|| {
+            crate::surface::verification::verify_program_with_context(
+                click_source,
+                &sources,
+                None,
+                None,
+                None,
+                Some(file.clone()),
+            )
+        });
+        result?;
+        let certificate =
+            certificate.expect("successful program verification publishes its proof certificate");
+        let replacement = format!(
+            "termination {}\n",
+            printing::format_proof_certificate(&certificate)
+        );
+        let source = if let Some((start, end)) = &file.termination_span {
+            let first = offset_at_position(click_source, start.line, start.column)?;
+            let last = offset_at_position(click_source, end.line, end.column)? + 1;
+            format!(
+                "{}{}{}",
+                &click_source[..first],
+                replacement,
+                &click_source[last..]
+            )
+        } else {
+            format!("{click_source}\n{replacement}")
+        };
+        return Ok(ClaimExpansion {
+            source,
+            proof_unit: claim_label.to_string(),
+        });
+    }
     let at = at
         .map(|at| offset_at_position(click_source, at.line, at.column))
         .transpose()?;
@@ -1269,6 +1304,24 @@ pub(in crate::surface) fn verification_target_at_file(
     column: usize,
 ) -> Result<VerificationTarget, ClickError> {
     let wanted = offset_at_position(click_source, line, column)?;
+    if let Some((start, end)) = &file.termination_span {
+        let first = offset_at_position(click_source, start.line, start.column)?;
+        let last = offset_at_position(click_source, end.line, end.column)?;
+        if first <= wanted && wanted <= last {
+            return Ok(VerificationTarget::Functions(
+                file.function_blocks()
+                    .iter()
+                    .filter(|block| file.function_is_selected(block.signature().name()))
+                    .map(|block| block.signature().name().to_string())
+                    .chain(
+                        file.tactic_definitions()
+                            .iter()
+                            .map(|tactic| tactic.name().to_string()),
+                    )
+                    .collect(),
+            ));
+        }
+    }
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let declarations = DeclarationSources::new(&tokens);
     for theorem in file.theorem_definitions() {
@@ -4163,6 +4216,22 @@ fn claim_source_regions(
         let start = tokens[clause].span.start;
         start..edit.span().end.max(start)
     };
+    if let Some((start, end)) = &file.termination_span {
+        let first = declarations
+            .token_at(start, Some("termination"))
+            .expect("parser recorded termination keyword");
+        let last = declarations
+            .token_at(end, Some("}"))
+            .expect("parser recorded termination block");
+        let span = tokens[first].span.start..tokens[last].span.end;
+        regions.push(ClaimRegion {
+            anchor: span.start,
+            span,
+            label: "program.termination".into(),
+            owner: "program.termination".into(),
+            written_phase: None,
+        });
+    }
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
@@ -5330,6 +5399,27 @@ fn tactic_source_offsets_with_tokens(
     let claim_label = &*resolve_source_claim_label(file, claim_label);
     let tokens = &ProofTokens::new(file, tokens);
     let declarations = DeclarationSources::new(tokens);
+    if claim_label == "program.termination" {
+        let (start, end) = file
+            .termination_span
+            .as_ref()
+            .ok_or_else(|| ClickError::new("the program termination proof is omitted"))?;
+        let first = declarations
+            .token_at(start, Some("termination"))
+            .expect("parser recorded termination keyword");
+        let last = declarations
+            .token_at(end, Some("}"))
+            .expect("parser recorded termination block");
+        let span = tokens[first + 1].span.start..tokens[last].span.end;
+        let tactics = file
+            .termination_proof
+            .as_ref()
+            .expect("the parsed termination block");
+        return Ok(collect_source_tactic_spans(tokens, &span, tactics)?
+            .iter()
+            .map(|span| span.start)
+            .collect());
+    }
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
@@ -5809,4 +5899,32 @@ mod tests;
 mod loop_entry_capture_scaling_tests {
     use super::*;
     include!("../scaling_tests/surface/expansion/loop_entry_captures.rs");
+}
+
+thread_local! {
+    static TERMINATION_CERTIFICATE: std::cell::RefCell<Option<Option<ProofCertificate>>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(in crate::surface) fn record_termination_certificate(certificate: &ProofCertificate) {
+    TERMINATION_CERTIFICATE.with(|slot| {
+        if let Some(output) = slot.borrow_mut().as_mut() {
+            *output = Some(certificate.clone());
+        }
+    });
+}
+
+fn capture_termination_certificate<T>(
+    operation: impl FnOnce() -> T,
+) -> (T, Option<ProofCertificate>) {
+    struct Restore(Option<Option<ProofCertificate>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TERMINATION_CERTIFICATE.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(TERMINATION_CERTIFICATE.with(|slot| slot.replace(Some(None))));
+    let result = operation();
+    let certificate =
+        TERMINATION_CERTIFICATE.with(|slot| slot.borrow_mut().as_mut().and_then(Option::take));
+    (result, certificate)
 }

@@ -1101,6 +1101,9 @@ step is still checked.
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
+| `check_termination_local("f")` | simple | Expansion output | Establish the generated local descent classification. | [Reference](#termination-checks) |
+| `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
+| `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
@@ -4270,3 +4273,30 @@ miss. No stack size or work budget is raised.
 checks that an extra machine bound does not make an arithmetic proof recurse
 indefinitely. Its false-small-bound companion keeps an unprovable conversion
 bound rejected.
+
+
+## Termination checks
+
+These checked steps run inside `termination by { ... }`, including its nested
+`have` bodies. They establish ordinary propositions; `known()` then closes the
+corresponding goal. See [program termination proofs](../language/index.md#program-termination-proofs).
+
+**Accepts:** `check_termination_local("f")` names a generated function body;
+`check_termination_component("f", mode)` names a generated component with
+`mode` equal to `strict` or `normal`, and needs its local classifications and
+lower-callee classifications as available facts. Strict mode refuses indirect
+calls; normal mode uses the established callback classification when necessary.
+`check_termination_callbacks()` needs strict classifications for the generated
+callback targets. Each needed classification may be positive or negative.
+
+**Guarantee:** the step publishes the corresponding checked classifications,
+including negations for refused descent or dependencies. It does not search for
+premises or complete the enclosing proof by itself. Work follows the named
+body, generated component, or program callback obligations and produced facts;
+unrelated functions and proof facts are not enumerated.
+
+**Outside it:** these steps cannot run in an unrelated function or theorem
+proof, introduce a function absent from the generated scope, or replace a
+missing premise. Establish that premise in a `have` proof or use `solve()` to
+plan the required steps. The checked example is
+[`termination_ordinary_proof_steps.md`](../../../mdtests/termination_ordinary_proof_steps.md).

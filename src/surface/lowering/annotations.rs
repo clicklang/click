@@ -4781,6 +4781,29 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecProposition, String> {
         match proposition {
             ClickProposition::PredicateCall { name, arguments } => {
+                if let Some(kind) = crate::kernel::TerminationAtomKind::from_spelling(name) {
+                    let scope = self.spec_definitions.termination_scope
+                        .ok_or("termination propositions are available only inside `termination by` proofs")?;
+                    let function = match (kind, arguments.as_slice()) {
+                        (crate::kernel::TerminationAtomKind::Callbacks, []) => "",
+                        (_, [ContractExpression::Binding(name)])
+                            if kind != crate::kernel::TerminationAtomKind::Callbacks =>
+                        {
+                            name
+                        }
+                        _ => return Err(format!("invalid arguments to `{name}`")),
+                    };
+                    let Proposition::Predicate { name, arguments } = scope.atom(kind, function)?
+                    else {
+                        unreachable!()
+                    };
+                    debug_assert!(matches!(arguments.as_slice(), [Term::ExecutionState(_)]));
+                    return Ok(SpecProposition::Predicate {
+                        name,
+                        arguments: vec![],
+                        resource_state_dependent: false,
+                    });
+                }
                 if name == "held" {
                     let [mutex] = arguments.as_slice() else {
                         return Err(format!(

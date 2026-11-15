@@ -666,3 +666,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	2
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_recorded_footprint_preservation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_recorded_footprint_preservation	driver	1
+src/surface/proof/program_termination.rs	mixed	::prove	driver	1
+src/surface/proof/program_termination.rs	mixed	::solve_omitted	try_solve_closure	1
+src/surface/proof/program_termination.rs	mixed	::try_closure	driver	2
