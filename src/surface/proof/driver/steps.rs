@@ -435,9 +435,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     }),
             ),
             ProofStep::Preserve(separation) => Some(driver_proof.apply_preserve(separation)),
-            ProofStep::TransportCertificate(certificate) => {
-                Some(driver_proof.apply_transport_certificate(certificate))
-            }
             ProofStep::ArithmeticCertificate(certificate) => {
                 Some(driver_proof.apply_arithmetic_certificate(certificate))
             }

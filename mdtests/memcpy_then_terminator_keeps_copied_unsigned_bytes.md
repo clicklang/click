@@ -39,11 +39,7 @@ void copy_u(uint8* dst, const uint8* src) {
         have separate(statement(1).footprint, memory(dst[0u64 + k])) by {
             normalize() using { separate(memory(dst[4]), memory(dst[0u64 + k])); };
         }
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(dst[0u64 + k])) => separate(statement(1).footprint, memory(dst[0u64 + k]));
-            preserve 0 => dst[0u64 + k] == at(copied, dst[0u64 + k]);
-            conclusion 1;
-        }
+        preserve(separate(statement(1).footprint, memory(dst[0u64 + k])));
     }
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         transport(

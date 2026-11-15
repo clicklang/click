@@ -2,9 +2,20 @@ use super::expansion_tests::mdtest_sources;
 use super::*;
 
 #[test]
+fn removed_transport_certificate_is_not_a_tactic() {
+    let source = "theorem retired() { ensures true by { transport_certificate { premise 0: true => true; conclusion 0; } } }";
+    let error = verify_click_theorems(source).unwrap_err();
+    assert!(
+        error.report().contains("transport_certificate"),
+        "{}",
+        error.report()
+    );
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
-fn transport_certificate_preserves_byte_reads_without_search() {
-    let (source, sources) = mdtest_sources("mdtests/transport_certificate_byte_read.md");
+fn preserve_checks_byte_reads_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/preserve_byte_read.md");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -23,8 +34,8 @@ fn transport_certificate_preserves_byte_reads_without_search() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
-fn transport_certificate_preserves_pointer_read() {
-    let (source, sources) = mdtest_sources("mdtests/transport_certificate.md");
+fn preserve_checks_pointer_read() {
+    let (source, sources) = mdtest_sources("mdtests/preserve_pointer_read.md");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -40,14 +51,14 @@ fn transport_certificate_preserves_pointer_read() {
     });
     let expanded =
         expand_c_claim_source(&source, &sources, "copy_pos", ContractProofClaim::Grouped).unwrap();
-    assert!(expanded.contains("transport_certificate"));
+    assert!(!expanded.contains("transport_certificate"));
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let scalar_source = source.replace("source->data", "source->len");
     without_implicit_solve(|| verify_c_sources(&scalar_source, &sources)).unwrap();
     for (from, to) in [
         ("memory(target->pos))", "memory(target->len))"),
-        ("preserve 0 =>", "preserve 1 =>"),
-        ("conclusion 1", "conclusion 0"),
+        ("statement(0).footprint", "statement(1).footprint"),
+        ("at(before, source->data)", "at(after, source->data)"),
     ] {
         let invalid = source.replace(from, to);
         assert_ne!(invalid, source);
@@ -57,36 +68,27 @@ fn transport_certificate_preserves_pointer_read() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
-fn transport_certificate_transitive_and_bad_indices() {
+fn ordinary_equalities_compose_without_search() {
     let source = r#"
         theorem transitive_values(x: int32*, y: int32*, z: int32*) {
             requires x == y;
             requires y == z;
             ensures x == z by {
-                transport_certificate {
-                    premise 0: x == y => x == y;
-                    premise 1: y == z => y == z;
-                    transitive 0, 1 => x == z;
-                    conclusion 2;
-                }
+                rewrite(x == y);
+                known();
             }
         }
     "#;
     without_implicit_solve(|| verify_click_theorems(source)).unwrap();
-    for (from, to) in [
-        ("transitive 0, 1", "transitive 1, 0"),
-        ("transitive 0, 1", "transitive 0, 2"),
-        ("premise 1:", "premise 4:"),
-        ("premise 0: x == y => x == y", "premise 0: x == y => x == z"),
-        ("conclusion 2;", "conclusion 2; conclusion 2;"),
-    ] {
-        assert!(verify_click_theorems(&source.replace(from, to)).is_err());
-    }
+    let missing = source.replace("requires y == z;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    let wrong = source.replace("ensures x == z", "ensures x != z");
+    assert!(without_implicit_solve(|| verify_click_theorems(&wrong)).is_err());
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
-fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
+fn preserve_checks_signed_and_unsigned_64_bit_reads() {
     for (interface_type, click_type) in [("long", "int64"), ("unsigned long", "uint64")] {
         let c =
             format!("void write(int *dest, {interface_type} *kept) {{ *dest = 1; *dest = 2; }}");
@@ -102,29 +104,18 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                 step() by {{ known(); }}
                 mark after;
                 have *kept == at(before, *kept) by {{
-                    transport_certificate {{
-                        premise 0: changes_only(before, after, memory(dest[0..1]))
-                            => changes_only(before, after, memory(dest[0..1]));
-                        premise 1: at(before, separate(memory(dest[0..1]), memory(kept[0..1])))
-                            => at(before, separate(memory(dest[0..1]), memory(kept[0..1])));
-                        preserve 0, 1 => *kept == at(before, *kept);
-                        conclusion 2;
-                    }}
+                    have separate(statement(0).footprint, at(before, memory(*kept))) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                    preserve(separate(statement(0).footprint, at(before, memory(*kept))));
                 }}
                 step() by {{ known(); }}
                 mark final;
                 have *kept == at(before, *kept) by {{
-                    transport_certificate {{
-                        premise 0: changes_only(after, final, memory(dest[0..1]))
-                            => changes_only(after, final, memory(dest[0..1]));
-                        premise 1: at(before, separate(memory(dest[0..1]), memory(kept[0..1])))
-                            => at(before, separate(memory(dest[0..1]), memory(kept[0..1])));
-                        preserve 0, 1 => *kept == at(after, *kept);
-                        premise 3: at(after, *kept) == at(before, *kept)
-                            => at(after, *kept) == at(before, *kept);
-                        transitive 2, 3 => *kept == at(before, *kept);
-                        conclusion 4;
+                    have *kept == at(after, *kept) by {{
+                        have separate(statement(1).footprint, at(after, memory(*kept))) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                        preserve(separate(statement(1).footprint, at(after, memory(*kept))));
                     }}
+                    rewrite(*kept == at(after, *kept));
+                    known();
                 }}
                 step();
                 known(); known(); known(); known();
@@ -213,7 +204,7 @@ fn region_footprint_free_and_call_certificates_expand_without_search() {
         without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
         let expanded =
             expand_c_claim_source(&source, &sources, claim, ContractProofClaim::Grouped).unwrap();
-        assert!(expanded.contains("transport_certificate"));
+        assert!(!expanded.contains("transport_certificate"));
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
         if claim == "beside_call" {
             // The contract still supplies this separation. A selected proof
@@ -250,7 +241,7 @@ fn cell_source_removal_repairs_expand_and_replay_without_implicit_search() {
             .collect::<Vec<_>>();
         let expanded = expand_c_claim_source(&source, &sources, claim, ContractProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
-        assert!(expanded.contains("transport_certificate"), "{fixture}");
+        assert!(!expanded.contains("transport_certificate"), "{fixture}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap_or_else(|error| {
             panic!(
                 "{fixture}: {}\nExpanded source:\n{expanded}",
@@ -261,7 +252,7 @@ fn cell_source_removal_repairs_expand_and_replay_without_implicit_search() {
 }
 
 fn check_resource_field_certificate(ty: &str) {
-    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+    let (source, sources) = mdtest_sources("mdtests/preserve_resource_field.md");
     let source = source
         .replace(
             "abstract resource model()",
@@ -281,34 +272,34 @@ fn check_resource_field_certificate(ty: &str) {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
-fn transport_certificate_preserves_named_resource_field() {
+fn preserve_checks_named_resource_field() {
     check_resource_field_certificate("int32");
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
-fn transport_certificate_preserves_integer_resource_field() {
+fn preserve_checks_integer_resource_field() {
     check_resource_field_certificate("Integer");
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
-fn transport_certificate_preserves_wide_resource_field() {
+fn preserve_checks_wide_resource_field() {
     check_resource_field_certificate("uint64");
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
-fn transport_certificate_preserves_pointer_resource_field() {
+fn preserve_checks_pointer_resource_field() {
     check_resource_field_certificate("int32*");
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
-fn transport_certificate_preserves_algebraic_resource_field() {
+fn preserve_checks_algebraic_resource_field() {
     check_resource_field_certificate("ModelValue");
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
-fn transport_certificate_resource_descriptors_follow_call_bindings() {
-    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+fn preserve_resource_descriptors_follow_call_bindings() {
+    let (source, sources) = mdtest_sources("mdtests/preserve_resource_field.md");
     let caller = format!(
         "{source}\n{}",
         r#"
@@ -330,8 +321,8 @@ fn transport_certificate_resource_descriptors_follow_call_bindings() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
-fn transport_certificate_refuses_other_or_modified_resource() {
-    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+fn preserve_refuses_other_or_modified_resource() {
+    let (source, sources) = mdtest_sources("mdtests/preserve_resource_field.md");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -359,8 +350,8 @@ fn transport_certificate_refuses_other_or_modified_resource() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
-fn transport_certificate_named_resource_is_a_theorem_argument() {
-    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+fn preserve_named_resource_is_a_theorem_argument() {
+    let (source, sources) = mdtest_sources("mdtests/preserve_resource_field.md");
     let source = format!(
         "{}\n{source}",
         r#"
@@ -406,7 +397,7 @@ fn destructor_footprint_cleanup_expands_and_replays() {
         None,
     )
     .unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(expanded.source.contains("transport_certificate"));
+    assert!(!expanded.source.contains("transport_certificate"));
     let line = expanded
         .source
         .lines()
@@ -479,37 +470,16 @@ fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
 fn preserve_step_supports_memory_and_resource_observations() {
     for fixture in [
-        "transport_certificate_byte_read.md",
-        "transport_certificate.md",
-        "transport_certificate_resource_field.md",
+        "preserve_byte_read.md",
+        "preserve_pointer_read.md",
+        "preserve_resource_field.md",
     ] {
         let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}"));
-        // Replace each single preserve certificate while leaving the
-        // two-transition composition in the pointer fixture intact.
-        let mut rewritten = source.clone();
-        while let Some(start) = rewritten.find("transport_certificate {\n            premise 0:") {
-            let end = start + rewritten[start..].find("\n        }").unwrap() + "\n        }".len();
-            let block = &rewritten[start..end];
-            if !block.contains("conclusion 1;") {
-                break;
-            }
-            let premise = block
-                .split("premise 0:")
-                .nth(1)
-                .unwrap()
-                .split("=>")
-                .next()
-                .unwrap()
-                .trim();
-            let replacement = format!("preserve({premise});");
-            rewritten.replace_range(start..end, &replacement);
-        }
-        assert_ne!(source, rewritten, "{fixture}");
         let sources = sources
             .iter()
             .map(|(n, s)| (n.as_str(), s.as_str()))
             .collect::<Vec<_>>();
-        without_implicit_solve(|| verify_c_sources(&rewritten, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
     }
 }
 
@@ -1506,29 +1476,29 @@ fn compound_implication_transport_crosses_multiple_statements() {
 
 #[cfg(feature = "fast-gate")]
 test_batches! {
-    file: "transport_certificates.rs",
+    file: "preservation.rs",
     marker: "transport_batch_",
     transport_batch_00: [
-        transport_certificate_preserves_byte_reads_without_search,
-        transport_certificate_preserves_pointer_read,
-        transport_certificate_transitive_and_bad_indices,
-        transport_certificate_preserves_signed_and_unsigned_64_bit_reads,
+        preserve_checks_byte_reads_without_search,
+        preserve_checks_pointer_read,
+        ordinary_equalities_compose_without_search,
+        preserve_checks_signed_and_unsigned_64_bit_reads,
     ],
     transport_batch_01: [
         region_footprint_refuses_unrecorded_memory_changes,
         region_footprint_identity_survives_unrelated_snapshots,
-        transport_certificate_preserves_named_resource_field,
-        transport_certificate_preserves_integer_resource_field,
+        preserve_checks_named_resource_field,
+        preserve_checks_integer_resource_field,
     ],
     transport_batch_02: [
-        transport_certificate_preserves_wide_resource_field,
-        transport_certificate_preserves_pointer_resource_field,
-        transport_certificate_preserves_algebraic_resource_field,
-        transport_certificate_resource_descriptors_follow_call_bindings,
+        preserve_checks_wide_resource_field,
+        preserve_checks_pointer_resource_field,
+        preserve_checks_algebraic_resource_field,
+        preserve_resource_descriptors_follow_call_bindings,
     ],
     transport_batch_03: [
-        transport_certificate_refuses_other_or_modified_resource,
-        transport_certificate_named_resource_is_a_theorem_argument,
+        preserve_refuses_other_or_modified_resource,
+        preserve_named_resource_is_a_theorem_argument,
         preserve_step_carries_a_fact_with_ordinary_rewriting,
         preserve_step_supports_memory_and_resource_observations,
     ],

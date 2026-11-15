@@ -76,13 +76,13 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 
 The first link that fails becomes the new `G`; go back to step 2.
 
-For one recorded transition, `transport_certificate` cites
-`separate(region.footprint, B)` as a `premise`, then applies `preserve`.
+For one recorded transition, write
+`preserve(separate(region.footprint, B));` under a read-equality goal.
 The execution-produced footprint includes stores, call effects and releases;
 no free-specific rule is needed. Establish footprint separation with explicitly
-selected premises in `normalize() using`. Compose transitions with `transitive`;
+selected premises in `normalize() using`. Compose transitions with `have`, `rewrite` and `known`;
 do not replace the explicit sequence with a walk over a whole region. Read the limits in
-`docs/reference/tactics/index.md#transport-certificates`; unsupported resource
+`docs/reference/tactics/index.md#preservation`; unsupported resource
 effects are not grounds for silently falling back to a history search.
 
 Before refining, use the primitive-rule map in

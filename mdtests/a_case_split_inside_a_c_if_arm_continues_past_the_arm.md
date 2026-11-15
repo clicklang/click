@@ -63,12 +63,7 @@ int32 read_back(int32 u, int32 c) {
                 normalize() using { separate(memory(loc[u]), memory(loc[0])); };
             }
             have loc[0] == at(before_store, loc[0]) by {
-                transport_certificate {
-                    premise 0: separate(statement(4).footprint, memory(loc[0]))
-                        => separate(statement(4).footprint, memory(loc[0]));
-                    preserve 0 => loc[0] == at(before_store, loc[0]);
-                    conclusion 1;
-                }
+                preserve(separate(statement(4).footprint, memory(loc[0])));
             }
             have loc[0] == 3 by { normalize() using { loc[0] == at(before_store, loc[0]); at(before_store, loc[0]) == 3; }; }
             known();

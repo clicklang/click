@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn transport_certificate_does_not_walk_prior_memory_history() {
+fn preservation_does_not_walk_prior_memory_history() {
     for cached in [false, true] {
         let costs = [4, 16, 64, 256].map(|history| {
             let _session = crate::kernel::VerificationSession::enter();
             let _reads = typed_reads::ReadScope::enter();
-            let (certificate, goal) = tests::fixture(history, cached);
+            let (preservation, goal) = tests::fixture(history, cached);
             let (result, cost) =
-                crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+                crate::instrumentation::measure_deterministic_work(|| preservation.apply(|_| true));
             assert_eq!(result.unwrap(), goal);
             assert!(cost > 0);
             cost
@@ -21,79 +21,33 @@ fn transport_certificate_does_not_walk_prior_memory_history() {
 }
 
 #[test]
-fn transport_certificate_work_is_linear_in_explicit_nodes() {
+fn preservation_work_is_linear_in_explicit_steps() {
     let costs = [1u64, 4, 16, 64].map(|length| {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
-        let equality = |left: u64, right: u64| {
-            Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(
-                    Box::new(PointerValue::new(
-                        Pointer::symbolic(Variable(8_390_000 + left)),
-                        ProgramType::Int32Pointer,
-                    )),
-                    Box::new(PointerValue::new(
-                        Pointer::symbolic(Variable(8_390_000 + right)),
-                        ProgramType::Int32Pointer,
-                    )),
-                ),
-                true,
-            )
-        };
-        let mut certificate = TransportCertificate {
-            nodes: vec![TransportNode::Premise {
-                proposition: equality(0, 1),
-                result: equality(0, 1),
-            }],
-            conclusion: 0,
-        };
-        let mut previous = 0;
-        for i in 1..length {
-            let next = certificate.nodes.len();
-            certificate.nodes.push(TransportNode::Premise {
-                proposition: equality(i, i + 1),
-                result: equality(i, i + 1),
-            });
-            certificate.nodes.push(TransportNode::Transitive {
-                left: previous,
-                right: next,
-                result: equality(0, i + 1),
-            });
-            previous = next + 1;
-        }
-        let goal = equality(0, length);
-        certificate.conclusion = previous;
-        let (result, cost) =
-            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
-        assert_eq!(result.unwrap(), goal);
+        let (preservation, goal) = tests::fixture(4, false);
+        let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..length {
+                assert_eq!(preservation.apply(|_| true).unwrap(), goal);
+            }
+        });
         (length, cost)
     });
-    assert!(costs.windows(2).all(|p| p[1].1 <= p[0].1 * 8), "{costs:?}");
+    assert!(costs[0].1 > 0);
+    assert!(costs.windows(2).all(|p| p[1].1 == p[0].1 * 4), "{costs:?}");
 }
 
 #[test]
-fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
+fn preservation_scalar_names_do_not_walk_prior_memory_history() {
     for value_type in [ProgramType::Int32, ProgramType::UInt8] {
         let costs = [4, 16, 64, 256].map(|history| {
             let _session = crate::kernel::VerificationSession::enter();
             let _reads = typed_reads::ReadScope::enter();
-            let (mut certificate, _) = tests::fixture(history, false);
-            let TransportNode::Premise {
-                proposition: Proposition::MemoryMutatesOnly { before, after, .. },
-                ..
-            } = &certificate.nodes[0]
-            else {
-                unreachable!()
-            };
+            let (mut preservation, _) = tests::fixture(history, false);
+            let (before, after) = preservation.memories();
             let before = intern_memory(before.clone());
             let after = intern_memory(after.clone());
-            let TransportNode::Premise {
-                proposition,
-                result,
-            } = &mut certificate.nodes[1]
-            else {
-                unreachable!()
-            };
+            let proposition = &mut preservation.separation;
             let Proposition::ResourceSeparate { right, .. } = proposition else {
                 unreachable!()
             };
@@ -107,7 +61,6 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                 1u32.into(),
                 value_type.byte_width(),
             ));
-            *result = proposition.clone();
             // A byte read is compared through its `int32` widening, as C
             // promotes it.
             let read = |memory: &SharedMemory| {
@@ -132,14 +85,9 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                 },
                 true,
             );
-            certificate.nodes[2] = TransportNode::Preserve {
-                field: None,
-                effect: Some(0),
-                separation: 1,
-                result: goal.clone(),
-            };
+            preservation.result = goal.clone();
             let (result, cost) =
-                crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+                crate::instrumentation::measure_deterministic_work(|| preservation.apply(|_| true));
             assert_eq!(result.unwrap(), goal);
             if value_type == ProgramType::UInt8 {
                 // A one-byte separation must not preserve a four-byte read,
@@ -157,13 +105,8 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                     ),
                     true,
                 );
-                certificate.nodes[2] = TransportNode::Preserve {
-                    field: None,
-                    effect: Some(0),
-                    separation: 1,
-                    result: wider,
-                };
-                assert!(certificate.apply(|_| true).is_err());
+                preservation.result = wider;
+                assert!(preservation.apply(|_| true).is_err());
             }
             cost
         });
@@ -173,11 +116,11 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
 }
 
 #[test]
-fn transport_certificate_uses_selected_observations_without_scanning_the_registry() {
+fn preservation_uses_selected_observations_without_scanning_the_registry() {
     let costs = [4, 16, 64, 256].map(|unrelated| {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
-        let (certificate, goal) = tests::fixture(2, false);
+        let (preservation, goal) = tests::fixture(2, false);
         let memory = Memory::new();
         for index in 0..unrelated {
             tests::observe(
@@ -187,7 +130,7 @@ fn transport_certificate_uses_selected_observations_without_scanning_the_registr
             );
         }
         let (result, cost) =
-            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+            crate::instrumentation::measure_deterministic_work(|| preservation.apply(|_| true));
         assert_eq!(result.unwrap(), goal);
         cost
     });
@@ -201,19 +144,10 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
         let (original, goal) = tests::fixture(history, false);
-        let TransportNode::Premise {
-            proposition: effect,
-            ..
-        } = &original.nodes[0]
-        else {
-            unreachable!()
-        };
-        let Proposition::MemoryMutatesOnly { before, after, .. } = effect else {
-            unreachable!()
-        };
+        let (before, after) = original.memories();
         let entry = ExecutionState::new().with_memory(before.clone());
         let exit = entry.clone().with_memory(after.clone());
-        let effects = vec![ExecutionPureFact::certified(effect.clone())];
+        let effects = Vec::<ExecutionPureFact>::new();
         let (footprint, recording_cost) =
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::RegionFootprint::transition(
@@ -223,34 +157,20 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
                     &effects,
                 )
             });
-        let TransportNode::Premise {
-            proposition: Proposition::ResourceSeparate { right, .. },
-            ..
-        } = &original.nodes[1]
-        else {
+        let Proposition::ResourceSeparate { right, .. } = &original.separation else {
             unreachable!()
         };
         let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Footprint(footprint)),
             right: right.clone(),
         };
-        let certificate = TransportCertificate {
-            nodes: vec![
-                TransportNode::Premise {
-                    proposition: separation.clone(),
-                    result: separation,
-                },
-                TransportNode::Preserve {
-                    field: None,
-                    effect: None,
-                    separation: 0,
-                    result: goal.clone(),
-                },
-            ],
-            conclusion: 1,
+        let preservation = tests::Preservation {
+            separation,
+            field: None,
+            result: goal.clone(),
         };
         let (result, application_cost) =
-            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+            crate::instrumentation::measure_deterministic_work(|| preservation.apply(|_| true));
         assert_eq!(result.unwrap(), goal);
         (recording_cost, application_cost)
     });
@@ -406,9 +326,9 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
 fn selected_resource_field_preservation_does_not_scan_ambient_instances() {
     let costs = [4, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let (certificate, goal) = tests::resource_fixture(size);
+        let (preservation, goal) = tests::resource_fixture(size);
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+            crate::instrumentation::measure_deterministic_work(|| preservation.apply(|_| true));
         assert_eq!(result.unwrap(), goal);
         work
     });
@@ -420,9 +340,9 @@ fn selected_resource_field_preservation_does_not_scan_ambient_instances() {
 fn selected_resource_field_preservation_does_not_walk_instance_history() {
     let costs = [4, 16, 64, 256].map(|history| {
         let _session = crate::kernel::VerificationSession::enter();
-        let (certificate, goal) = tests::resource_history_fixture(history);
+        let (preservation, goal) = tests::resource_history_fixture(history);
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+            crate::instrumentation::measure_deterministic_work(|| preservation.apply(|_| true));
         assert_eq!(result.unwrap(), goal);
         work
     });
@@ -435,9 +355,9 @@ fn abstract_memory_preservation_does_not_walk_read_history() {
     let costs = [4, 16, 64, 256].map(|history| {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
-        let (certificate, goal) = tests::abstract_fixture(history);
+        let (preservation, goal) = tests::abstract_fixture(history);
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+            crate::instrumentation::measure_deterministic_work(|| preservation.apply(|_| true));
         assert_eq!(result.unwrap(), goal);
         work
     });
@@ -449,7 +369,7 @@ fn abstract_memory_preservation_does_not_walk_read_history() {
 fn definedness_preservation_ignores_history_and_ambient_facts() {
     let costs = [4, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let (certificate, separation, old, goal) =
+        let (preservation, separation, old, goal) =
             tests::definedness_fixture(size, ProgramType::UInt8);
         let mut facts = crate::kernel::proof::ProofFacts::from_ordered(&[]);
         facts = facts.with_fact(separation);
@@ -477,7 +397,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
             });
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            certificate.apply(|p| facts.contains(p))
+            preservation.apply(|p| facts.contains(p))
         });
         assert_eq!(result.unwrap(), goal);
         work

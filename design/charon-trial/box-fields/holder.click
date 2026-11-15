@@ -62,11 +62,7 @@ impl box_fields::Holder {
                     at(before_put, separate(memory(*self.slot), memory(self.slot)));
                 }; }
                 have at(region(56).exit, self.slot) == at(region(56).entry, self.slot) by {
-                    transport_certificate {
-                        premise 0: separate(region(56).footprint, memory(self.slot)) => separate(region(56).footprint, memory(self.slot));
-                        preserve 0 => at(region(56).exit, self.slot) == at(region(56).entry, self.slot);
-                        conclusion 1;
-                    }
+                    preserve(separate(region(56).footprint, memory(self.slot)));
                 }
                 let after = fold(slot(self.slot), { value: Option<u32>::Some(x) }, {});
             }

@@ -1,140 +1,48 @@
-//! Apply explicit transport nodes, constructing each result from its cited facts.
+//! Preserve one selected observation across an explicitly separated footprint.
 //! No history, read reconstruction, or premise discovery belongs here.
 use crate::kernel::eval::typed_reads::{self, ReadType};
 use crate::kernel::prelude::*;
 
-#[derive(Clone, Debug)]
-pub(crate) enum TransportNode {
-    Premise {
-        proposition: Proposition,
-        result: Proposition,
-    },
-    Preserve {
-        field: Option<typed_reads::FieldSelection>,
-        effect: Option<usize>,
-        separation: usize,
-        result: Proposition,
-    },
-    Transitive {
-        left: usize,
-        right: usize,
-        result: Proposition,
-    },
-}
-
-pub(crate) struct TransportCertificate {
-    pub nodes: Vec<TransportNode>,
-    pub conclusion: usize,
-}
-
-impl TransportCertificate {
-    pub(crate) fn apply(
-        &self,
-        available: impl Fn(&Proposition) -> bool,
-    ) -> Result<Proposition, String> {
-        let mut results: Vec<Proposition> = Vec::with_capacity(self.nodes.len());
-        for (index, node) in self.nodes.iter().enumerate() {
-            crate::instrumentation::record_deterministic_work(1);
-            let prior = |n: usize| {
-                results
-                    .get(n)
-                    .ok_or_else(|| format!("node {index} must reference an earlier node"))
-            };
-            let (derived, written) = match node {
-                TransportNode::Premise {
-                    proposition,
-                    result,
-                } => {
-                    if !available(proposition) {
-                        return Err(format!("premise node {index} is not exactly available"));
-                    }
-                    (proposition.clone(), result)
-                }
-                TransportNode::Preserve {
-                    field,
-                    effect,
-                    separation,
-                    result,
-                } => {
-                    let separation = prior(*separation)?;
-                    if effect.is_none() {
-                        let derived = if let Proposition::MemoryReadDefined { value_type, .. } =
-                            result
-                        {
-                            let (before, after) = preserve_definedness(separation, *value_type)
-                                .ok_or("preserve definedness requires a footprint separated from a complete typed cell")?;
-                            if !available(&before) {
-                                return Err(
-                                    "preserve requires definedness at the footprint entry".into()
-                                );
-                            }
-                            after
-                        } else if let Some(field) = field {
-                            preserve_field(separation, *field)
-                                .ok_or("preserve requires the selected field of a resource separated from the footprint")?
-                        } else if matches!(
-                            result,
-                            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                        ) {
-                            result.clone()
-                        } else {
-                            preserve_footprint(separation, read_type(result).ok_or("unsupported footprint observation")?)
-                                .ok_or("preserve requires a region footprint separated from the selected complete observation")?
-                        };
-                        if &derived != result {
-                            return Err(format!(
-                                "node {index}'s constructed result does not match its written result"
-                            ));
-                        }
-                        results.push(derived);
-                        continue;
-                    }
-                    let effect = prior(effect.unwrap())?;
-                    let derived = match result {
-                        // Lowering a reflexive 64-bit equality erases the
-                        // observation to true. Introduce that constant fact;
-                        // there is no remaining read to preserve or discover.
-                        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                            if matches!(effect, Proposition::MemoryMutatesOnly { .. })
-                                && matches!(separation, Proposition::ResourceSeparate { .. }) =>
-                        {
-                            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                        }
-                        _ => {
-                            let kind = read_type(result).ok_or_else(|| {
-                                format!("preserve node {index} requires a supported typed equality")
-                            })?;
-                            preserve(effect, separation, kind)
-                                .ok_or_else(|| format!("preserve node {index} requires a matching write footprint, separation, and recorded typed reads"))?
-                        }
-                    };
-                    (derived, result)
-                }
-                TransportNode::Transitive {
-                    left,
-                    right,
-                    result,
-                } => {
-                    let derived = transitive(prior(*left)?, prior(*right)?).ok_or_else(|| {
-                        format!("transitive node {index} has mismatched equality endpoints")
-                    })?;
-                    (derived, result)
-                }
-            };
-            // Connect the constructed result to the user's annotation. This
-            // is syntactic equality, not a second derivation or a search.
-            if &derived != written {
-                return Err(format!(
-                    "node {index}'s constructed result does not match its written result"
-                ));
-            }
-            results.push(derived);
-        }
-        results
-            .get(self.conclusion)
-            .cloned()
-            .ok_or_else(|| "transport conclusion must select a node".into())
+pub(crate) fn apply(
+    separation: &Proposition,
+    field: Option<typed_reads::FieldSelection>,
+    result: &Proposition,
+    available: impl Fn(&Proposition) -> bool,
+) -> Result<(), String> {
+    crate::instrumentation::record_deterministic_work(1);
+    if !available(separation) {
+        return Err("preserve separation is not exactly available".into());
     }
+    let derived = if let Proposition::MemoryReadDefined { value_type, .. } = result {
+        let (before, after) = preserve_definedness(separation, *value_type).ok_or(
+            "preserve definedness requires a footprint separated from a complete typed cell",
+        )?;
+        if !available(&before) {
+            return Err("preserve requires definedness at the footprint entry".into());
+        }
+        after
+    } else if let Some(field) = field {
+        preserve_field(separation, field).ok_or(
+            "preserve requires the selected field of a resource separated from the footprint",
+        )?
+    } else if matches!(
+        result,
+        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+    ) {
+        result.clone()
+    } else {
+        preserve_footprint(
+            separation,
+            read_type(result).ok_or("unsupported footprint observation")?,
+        )
+        .ok_or(
+            "preserve requires a region footprint separated from the selected complete observation",
+        )?
+    };
+    if &derived != result {
+        return Err("preserve's constructed result does not match the goal".into());
+    }
+    Ok(())
 }
 
 // The written result selects only the observation's type. Its endpoints are
@@ -190,41 +98,6 @@ fn observation_footprint(range: &MemoryRange) -> Option<(Pointer, u32)> {
     let elements = u32::try_from(end.checked_sub(start)?).ok()?;
     let bytes = elements.checked_mul(range.element_width())?;
     (bytes > 0).then(|| (range.start_pointer(), bytes))
-}
-
-/// A single separated write preserves the selected complete observation.
-/// The read producer supplied its value, including pointer provenance; apply
-/// this law directly to those values, without inspecting the memory DAG.
-fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> Option<Proposition> {
-    let Proposition::MemoryMutatesOnly {
-        before,
-        after,
-        writes,
-    } = effect
-    else {
-        return None;
-    };
-    let [(written, write_bytes)] = writes.as_slice() else {
-        return None;
-    };
-    let Proposition::ResourceSeparate { left, right } = separation else {
-        return None;
-    };
-    let (Resource::Memory(left), Resource::Memory(right)) = (left.as_ref(), right.as_ref()) else {
-        return None;
-    };
-    let left_footprint = observation_footprint(left)?;
-    let right_footprint = observation_footprint(right)?;
-    let is_write = |(address, bytes): &(Pointer, u32)| address == written && bytes == write_bytes;
-    let (address, bytes) = if is_write(&left_footprint) {
-        right_footprint
-    } else if is_write(&right_footprint) {
-        left_footprint
-    } else {
-        return None;
-    };
-    let observed = observation_type(kind, bytes)?;
-    observation_equality(before, after, address, observed, kind)
 }
 
 fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Proposition> {
@@ -440,127 +313,39 @@ fn integer_equality(
     })
 }
 
-fn transitive(a: &Proposition, b: &Proposition) -> Option<Proposition> {
-    let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-    // A complete-pointer identity can lower either to true or to a retained
-    // reflexive address equality. Both carry no new information: keep the
-    // other cited equality without reconstructing the erased pointer domain.
-    let identity = |p: &Proposition| {
-        p == &truth
-            || matches!(p,
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(x, y), true) if x == y)
-    };
-    let supported = |p: &Proposition| {
-        matches!(
-            p,
-            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-        ) || read_type(p).is_some()
-            || matches!(
-                p,
-                Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
-            )
-    };
-    if identity(a) && (identity(b) || supported(b)) {
-        return Some(b.clone());
-    }
-    if identity(b) && supported(a) {
-        return Some(a.clone());
-    }
-    if let (
-        Proposition::Equal(Term::Algebraic(x), Term::Algebraic(y)),
-        Proposition::Equal(Term::Algebraic(y2), Term::Algebraic(z)),
-    ) = (a, b)
-        && y == y2
-    {
-        return Some(if x == z {
-            truth
-        } else {
-            Proposition::Equal(Term::Algebraic(x.clone()), Term::Algebraic(z.clone()))
-        });
-    }
-    let condition = match (a, b) {
-        (
-            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(x, y), true),
-            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(y2, z), true),
-        ) if y == y2 => ConditionTerm::AlgebraicEqual(x.clone(), z.clone()),
-        (
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(x, y), true),
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(y2, z), true),
-        ) if y == y2 => ConditionTerm::IntegerEqual(x.clone(), z.clone()),
-        (
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(x, y), true),
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(y2, z), true),
-        ) if y == y2 => ConditionTerm::pointer_equal((**x).clone(), (**z).clone()),
-        (
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(x, y), true),
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(y2, z), true),
-        ) if y == y2 => ConditionTerm::pointer_value_equal((**x).clone(), (**z).clone()),
-        (
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: f,
-                    relation: CompareRelation::Equal,
-                    left: x,
-                    right: y,
-                },
-                true,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: g,
-                    relation: CompareRelation::Equal,
-                    left: y2,
-                    right: z,
-                },
-                true,
-            ),
-        ) if f == g && y == y2 => integer_equality(*f, (**x).clone(), (**z).clone())?,
-        _ => return None,
-    };
-    Some(Proposition::ConditionIs(condition, true))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn reflexive_address_equality_composes_with_complete_pointer_equality() {
-        let a = PointerValue::new(
-            Pointer::symbolic(Variable(8_390_890)),
-            ProgramType::Int32Pointer,
-        );
-        let b = PointerValue::new(
-            Pointer::symbolic(Variable(8_390_891)),
-            ProgramType::Int32Pointer,
-        );
-        let identity = Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
-                Box::new(a.pointer().clone()),
-                Box::new(a.pointer().clone()),
-            ),
-            true,
-        );
-        let address_only = Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
-                Box::new(a.pointer().clone()),
-                Box::new(b.pointer().clone()),
-            ),
-            true,
-        );
-        let complete = Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(a), Box::new(b)),
-            true,
-        );
-        assert_eq!(transitive(&identity, &complete), Some(complete.clone()));
-        assert_eq!(transitive(&complete, &identity), Some(complete.clone()));
-        assert!(transitive(&address_only, &complete).is_none());
+    #[derive(Clone)]
+    pub(super) struct Preservation {
+        pub separation: Proposition,
+        pub field: Option<typed_reads::FieldSelection>,
+        pub result: Proposition,
+    }
+    impl Preservation {
+        pub fn apply(
+            &self,
+            available: impl Fn(&Proposition) -> bool,
+        ) -> Result<Proposition, String> {
+            super::apply(&self.separation, self.field, &self.result, available)?;
+            Ok(self.result.clone())
+        }
+        pub fn memories(&self) -> (&Memory, &Memory) {
+            let Proposition::ResourceSeparate { left, .. } = &self.separation else {
+                unreachable!()
+            };
+            let Resource::Footprint(fp) = left.as_ref() else {
+                unreachable!()
+            };
+            (&fp.before, &fp.after)
+        }
     }
 
     pub(super) fn definedness_fixture(
         history: u64,
         ty: ProgramType,
-    ) -> (TransportCertificate, Proposition, Proposition, Proposition) {
+    ) -> (Preservation, Proposition, Proposition, Proposition) {
         let pointer = Pointer::symbolic(Variable(8_410_000));
         let mut memory = Memory::new();
         for i in 0..history {
@@ -605,20 +390,10 @@ mod tests {
             value_type: ty,
         };
         (
-            TransportCertificate {
-                nodes: vec![
-                    TransportNode::Premise {
-                        proposition: separation.clone(),
-                        result: separation.clone(),
-                    },
-                    TransportNode::Preserve {
-                        field: None,
-                        effect: None,
-                        separation: 0,
-                        result: goal.clone(),
-                    },
-                ],
-                conclusion: 1,
+            Preservation {
+                separation: separation.clone(),
+                field: None,
+                result: goal.clone(),
             },
             separation,
             old,
@@ -660,16 +435,16 @@ mod tests {
             ProgramType::UInt64,
             ProgramType::Int32Pointer,
         ] {
-            let (mut certificate, separation, old, goal) = definedness_fixture(4, ty);
+            let (mut preservation, separation, old, goal) = definedness_fixture(4, ty);
             let available = |p: &Proposition| p == &separation || p == &old;
-            assert_eq!(certificate.apply(available).unwrap(), goal);
+            assert_eq!(preservation.apply(available).unwrap(), goal);
             assert!(
-                certificate
+                preservation
                     .apply(|p| p == &separation)
                     .unwrap_err()
                     .contains("footprint entry")
             );
-            assert!(certificate.apply(|p| p == &old).is_err());
+            assert!(preservation.apply(|p| p == &old).is_err());
             for corruption in 0..3 {
                 let mut bad = goal.clone();
                 let Proposition::MemoryReadDefined {
@@ -691,12 +466,10 @@ mod tests {
                         }
                     }
                 }
-                let TransportNode::Preserve { result, .. } = &mut certificate.nodes[1] else {
-                    unreachable!()
-                };
+                let result = &mut preservation.result;
                 *result = bad;
                 assert!(
-                    certificate.apply(available).is_err(),
+                    preservation.apply(available).is_err(),
                     "corruption {corruption}"
                 );
             }
@@ -709,7 +482,7 @@ mod tests {
         }
     }
 
-    pub(super) fn resource_fixture(size: u64) -> (TransportCertificate, Proposition) {
+    pub(super) fn resource_fixture(size: u64) -> (Preservation, Proposition) {
         let schema = ResourceFieldSchema::new(vec![(
             "value".into(),
             ResourceFieldType::Program(ProgramType::Int32),
@@ -745,7 +518,7 @@ mod tests {
         ));
         // A supplied frame premise relates these symbolic endpoint values.
         // As with the memory fixture, establishing the premise is a separate
-        // obligation, never performed by certificate application.
+        // obligation, never performed by preservation application.
         let footprint = crate::kernel::RegionFootprint::transition(
             "selected".into(),
             &before,
@@ -764,37 +537,21 @@ mod tests {
             true,
         );
         (
-            TransportCertificate {
-                nodes: vec![
-                    TransportNode::Premise {
-                        proposition: separation.clone(),
-                        result: separation,
-                    },
-                    TransportNode::Preserve {
-                        field: Some(typed_reads::FieldSelection {
-                            identity: Variable(8_390_900),
-                            index: 0,
-                        }),
-                        effect: None,
-                        separation: 0,
-                        result: goal.clone(),
-                    },
-                ],
-                conclusion: 1,
+            Preservation {
+                separation,
+                field: Some(typed_reads::FieldSelection {
+                    identity: Variable(8_390_900),
+                    index: 0,
+                }),
+                result: goal.clone(),
             },
             goal,
         )
     }
 
-    pub(super) fn resource_history_fixture(history: u64) -> (TransportCertificate, Proposition) {
-        let (mut certificate, goal) = resource_fixture(1);
-        let TransportNode::Premise {
-            proposition,
-            result,
-        } = &mut certificate.nodes[0]
-        else {
-            unreachable!()
-        };
+    pub(super) fn resource_history_fixture(history: u64) -> (Preservation, Proposition) {
+        let (mut preservation, goal) = resource_fixture(1);
+        let proposition = &mut preservation.separation;
         let Proposition::ResourceSeparate { left, right } = proposition else {
             unreachable!()
         };
@@ -820,16 +577,15 @@ mod tests {
             &after,
             &Vec::<ExecutionPureFact>::new(),
         ));
-        *result = proposition.clone();
-        (certificate, goal)
+        (preservation, goal)
     }
 
     #[test]
     fn resource_preservation_selects_exact_identity_field_and_values() {
-        let (certificate, goal) = resource_fixture(8);
-        assert_eq!(certificate.apply(|_| true).unwrap(), goal);
+        let (preservation, goal) = resource_fixture(8);
+        assert_eq!(preservation.apply(|_| true).unwrap(), goal);
         assert!(
-            certificate.apply(|_| false).is_err(),
+            preservation.apply(|_| false).is_err(),
             "separation must be available"
         );
         for field in [
@@ -842,26 +598,19 @@ mod tests {
                 index: 1,
             },
         ] {
-            let (mut certificate, _) = resource_fixture(8);
-            let TransportNode::Preserve {
-                field: selected, ..
-            } = &mut certificate.nodes[1]
-            else {
-                unreachable!()
-            };
+            let (mut preservation, _) = resource_fixture(8);
+            let selected = &mut preservation.field;
             *selected = Some(field);
-            assert!(certificate.apply(|_| true).is_err());
+            assert!(preservation.apply(|_| true).is_err());
         }
-        let (mut certificate, _) = resource_fixture(8);
-        let TransportNode::Preserve { result, .. } = &mut certificate.nodes[1] else {
-            unreachable!()
-        };
+        let (mut preservation, _) = resource_fixture(8);
+        let result = &mut preservation.result;
         *result = Proposition::ConditionIs(
             ConditionTerm::equal(MachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
             true,
         );
         assert!(
-            certificate.apply(|_| true).is_err(),
+            preservation.apply(|_| true).is_err(),
             "the annotation cannot invent a value"
         );
     }
@@ -884,7 +633,7 @@ mod tests {
         value.clone()
     }
 
-    pub(super) fn fixture(history: u64, cached: bool) -> (TransportCertificate, Proposition) {
+    pub(super) fn fixture(history: u64, cached: bool) -> (Preservation, Proposition) {
         let address = Pointer::symbolic(Variable(8_310_000));
         let changed = Pointer::symbolic(Variable(8_310_001));
         let mut before = Memory::new();
@@ -918,8 +667,17 @@ mod tests {
                 bytes,
             )))
         };
+        let entry = ExecutionState::new().with_memory(before.clone());
+        let exit = entry.clone().with_memory(after.clone());
         let separation = Proposition::ResourceSeparate {
-            left: resource(changed.clone(), 4),
+            left: Box::new(Resource::Footprint(
+                crate::kernel::RegionFootprint::transition(
+                    "selected".into(),
+                    &entry,
+                    &exit,
+                    &Vec::<ExecutionPureFact>::new(),
+                ),
+            )),
             right: resource(address.clone(), C_POINTER_BYTE_WIDTH),
         };
         let ProgramValue::Pointer(before_value) =
@@ -936,42 +694,19 @@ mod tests {
             ConditionTerm::pointer_value_equal(after_value, before_value),
             true,
         );
-        let effect = Proposition::MemoryMutatesOnly {
-            before,
-            after,
-            writes: vec![(changed, 4)],
-        };
-        let premise = |p: Proposition| TransportNode::Premise {
-            proposition: p.clone(),
-            result: p,
-        };
         (
-            TransportCertificate {
-                nodes: vec![
-                    premise(effect),
-                    premise(separation),
-                    TransportNode::Preserve {
-                        field: None,
-                        effect: Some(0),
-                        separation: 1,
-                        result: result.clone(),
-                    },
-                ],
-                conclusion: 2,
+            Preservation {
+                separation,
+                field: None,
+                result: result.clone(),
             },
             result,
         )
     }
 
-    pub(super) fn abstract_fixture(history: u64) -> (TransportCertificate, Proposition) {
-        let (mut certificate, _) = fixture(history, false);
-        let TransportNode::Premise {
-            proposition: Proposition::MemoryMutatesOnly { before, after, .. },
-            ..
-        } = &certificate.nodes[0]
-        else {
-            unreachable!()
-        };
+    pub(super) fn abstract_fixture(history: u64) -> (Preservation, Proposition) {
+        let (mut preservation, _) = fixture(history, false);
+        let (before, after) = preservation.memories();
         let address = Pointer::symbolic(Variable(8_310_000));
         let ty = ProgramType::Parameter(TypeParameterName::intern("TransportValue"));
         let ProgramValue::Parameter(a) = observe(after, &address, ty) else {
@@ -981,34 +716,30 @@ mod tests {
             unreachable!()
         };
         let goal = Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true);
-        let TransportNode::Preserve { result, .. } = &mut certificate.nodes[2] else {
-            unreachable!()
-        };
+        let result = &mut preservation.result;
         *result = goal.clone();
-        (certificate, goal)
+        (preservation, goal)
     }
 
     #[test]
     fn abstract_memory_preservation_uses_recorded_typed_values() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
-        let (mut certificate, goal) = abstract_fixture(8);
-        assert_eq!(certificate.apply(|_| true).unwrap(), goal);
-        let TransportNode::Preserve { result, .. } = &mut certificate.nodes[2] else {
-            unreachable!()
-        };
+        let (mut preservation, goal) = abstract_fixture(8);
+        assert_eq!(preservation.apply(|_| true).unwrap(), goal);
+        let result = &mut preservation.result;
         let Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(_, old), true) = result else {
             unreachable!()
         };
         old.algebraic_type = TypeParameterName::intern("WrongTransportValue").algebraic_type();
         assert!(
-            certificate.apply(|_| true).is_err(),
+            preservation.apply(|_| true).is_err(),
             "abstract types must agree"
         );
-        let (certificate, _) = abstract_fixture(8);
+        let (preservation, _) = abstract_fixture(8);
         let _empty_reads = typed_reads::ReadScope::enter();
         assert!(
-            certificate.apply(|_| true).is_err(),
+            preservation.apply(|_| true).is_err(),
             "no reconstruction when observations are absent"
         );
     }
@@ -1017,33 +748,14 @@ mod tests {
     fn preserve_constructs_its_result_independently_of_the_annotation() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
-        let (mut certificate, goal) = fixture(8, false);
-        let TransportNode::Premise {
-            proposition: effect,
-            ..
-        } = &certificate.nodes[0]
-        else {
-            unreachable!()
-        };
-        let TransportNode::Premise {
-            proposition: separation,
-            ..
-        } = &certificate.nodes[1]
-        else {
-            unreachable!()
-        };
+        let (mut preservation, goal) = fixture(8, false);
         assert_eq!(
-            preserve(effect, separation, read_type(&goal).unwrap()),
+            preserve_footprint(&preservation.separation, read_type(&goal).unwrap()),
             Some(goal)
         );
-        let mut wrong_domain = TransportCertificate {
-            nodes: certificate.nodes.clone(),
-            conclusion: certificate.conclusion,
-        };
-        let TransportNode::Preserve {
-            result: Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, _), true),
-            ..
-        } = &mut wrong_domain.nodes[2]
+        let mut wrong_domain = preservation.clone();
+        let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, _), true) =
+            &mut wrong_domain.result
         else {
             panic!("distinct complete read domains");
         };
@@ -1056,9 +768,7 @@ mod tests {
                 .unwrap_err()
                 .contains("constructed result")
         );
-        let TransportNode::Preserve { result, .. } = &mut certificate.nodes[2] else {
-            unreachable!()
-        };
+        let result = &mut preservation.result;
         *result = Proposition::ConditionIs(
             ConditionTerm::PointerEqual(
                 Box::new(Pointer::symbolic(Variable(8_399_000))),
@@ -1067,7 +777,7 @@ mod tests {
             true,
         );
         assert!(
-            certificate
+            preservation
                 .apply(|_| true)
                 .unwrap_err()
                 .contains("constructed result")
@@ -1124,21 +834,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
         for cached in [false, true] {
-            let (certificate, goal) = fixture(8, cached);
-            assert_eq!(certificate.apply(|_| true).unwrap(), goal);
-            assert!(certificate.apply(|_| false).is_err());
-            let mut partial = TransportCertificate {
-                nodes: certificate.nodes.clone(),
-                conclusion: 2,
-            };
-            let TransportNode::Premise {
-                proposition,
-                result,
-            } = &mut partial.nodes[1]
-            else {
-                unreachable!()
-            };
-            let Proposition::ResourceSeparate { right, .. } = proposition else {
+            let (preservation, goal) = fixture(8, cached);
+            assert_eq!(preservation.apply(|_| true).unwrap(), goal);
+            assert!(preservation.apply(|_| false).is_err());
+            let mut partial = preservation.clone();
+            let Proposition::ResourceSeparate { right, .. } = &mut partial.separation else {
                 unreachable!()
             };
             let Resource::Memory(range) = right.as_ref() else {
@@ -1151,38 +851,39 @@ mod tests {
                 1u32.into(),
                 1,
             ));
-            *result = proposition.clone();
             assert!(partial.apply(|_| true).is_err());
-            for corruption in 0..4 {
-                let mut broken = TransportCertificate {
-                    nodes: certificate.nodes.clone(),
-                    conclusion: 2,
-                };
-                let TransportNode::Premise {
-                    proposition,
-                    result,
-                } = &mut broken.nodes[0]
-                else {
+            for corruption in 0..3 {
+                let mut broken = preservation.clone();
+                let Proposition::ResourceSeparate { left, right } = &mut broken.separation else {
                     unreachable!()
                 };
-                let Proposition::MemoryMutatesOnly {
-                    before,
-                    after,
-                    writes,
-                } = proposition
-                else {
-                    unreachable!()
-                };
-                match corruption {
-                    0 => writes[0].1 = 1,
-                    1 => writes.push(writes[0].clone()),
-                    2 => writes[0].0 = Pointer::symbolic(Variable(8_310_099)),
-                    _ => {
-                        *before = Memory::new();
-                        *after = Memory::new();
+                if corruption == 0 {
+                    **right = Resource::Memory(MemoryRange::new_with_element_width(
+                        Pointer::symbolic(Variable(8_310_099)),
+                        0u32.into(),
+                        1u32.into(),
+                        C_POINTER_BYTE_WIDTH,
+                    ));
+                } else {
+                    let Resource::Footprint(fp) = left.as_ref() else {
+                        unreachable!()
+                    };
+                    let mut before = fp.before.clone();
+                    let mut after = fp.after.clone();
+                    if corruption == 1 {
+                        before = Memory::new();
+                    } else {
+                        after = Memory::new();
                     }
+                    let entry = ExecutionState::new().with_memory(before);
+                    let exit = entry.clone().with_memory(after);
+                    **left = Resource::Footprint(crate::kernel::RegionFootprint::transition(
+                        "wrong endpoint".into(),
+                        &entry,
+                        &exit,
+                        &Vec::<ExecutionPureFact>::new(),
+                    ));
                 }
-                *result = proposition.clone();
                 assert!(
                     broken.apply(|_| true).is_err(),
                     "corruption {corruption}, cached={cached}"
@@ -1194,5 +895,5 @@ mod tests {
 
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../scaling_tests/kernel/proof/transport_certificate.rs");
+    include!("../../scaling_tests/kernel/proof/preservation.rs");
 }

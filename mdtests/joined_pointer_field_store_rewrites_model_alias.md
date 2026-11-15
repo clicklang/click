@@ -2,7 +2,7 @@
 
 After `sibling->right = parent`, `normalize` reads the stored pointer back
 through the model alias `sibling == model`. A read follows at most one
-recorded transition, so transport certificates carry the parent's `left` and
+recorded transition, so explicit preservation steps carry the parent's `left` and
 `right` fields across that store, and the leaf and cell are folded at the
 identities their reads were established under.
 
@@ -125,25 +125,13 @@ void inspect(struct node* parent) {
                             step();
                             mark after_store;
                             have pid->left == at(before_store, pid->left) by {
-                                transport_certificate {
-                                    premise 0: changes_only(before_store, after_store, memory(sibling->right))
-                                        => changes_only(before_store, after_store, memory(sibling->right));
-                                    premise 1: at(before_store, separate(memory(sibling->right), memory(pid->left)))
-                                        => at(before_store, separate(memory(sibling->right), memory(pid->left)));
-                                    preserve 0, 1 => pid->left == at(before_store, pid->left);
-                                    conclusion 2;
-                                }
+                                have separate(loop(0).statement(2).footprint, at(before_store, memory(pid->left))) by { normalize() using { at(before_store, separate(memory(sibling->right), memory(pid->left))); }; }
+                                preserve(separate(loop(0).statement(2).footprint, at(before_store, memory(pid->left))));
                             }
                             have pid->left == model;
                             have pid->right == at(before_store, pid->right) by {
-                                transport_certificate {
-                                    premise 0: changes_only(before_store, after_store, memory(sibling->right))
-                                        => changes_only(before_store, after_store, memory(sibling->right));
-                                    premise 1: at(before_store, separate(memory(sibling->right), memory(pid->right)))
-                                        => at(before_store, separate(memory(sibling->right), memory(pid->right)));
-                                    preserve 0, 1 => pid->right == at(before_store, pid->right);
-                                    conclusion 2;
-                                }
+                                have separate(loop(0).statement(2).footprint, at(before_store, memory(pid->right))) by { normalize() using { at(before_store, separate(memory(sibling->right), memory(pid->right))); }; }
+                                preserve(separate(loop(0).statement(2).footprint, at(before_store, memory(pid->right))));
                             }
                             have pid->right == at(split, parent->right);
                             have sibling->right == parent;

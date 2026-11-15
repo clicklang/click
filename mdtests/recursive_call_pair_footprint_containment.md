@@ -36,11 +36,7 @@ void caller(struct node* child, struct node* other, int32* slot) {
         contains(memory(*slot), memory(*slot));
     };
     have *slot == at(before_call, *slot) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(*slot)) => separate(statement(0).footprint, memory(*slot));
-            preserve 0 => *slot == at(before_call, *slot);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(*slot)));
     }
 }
 ```

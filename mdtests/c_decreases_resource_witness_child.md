@@ -52,12 +52,7 @@ uint32 count_nodes(struct node* node) {
             normalize() using {};
         }
         have *((&node->word) as (int32 **)) == at(before_local, *((&node->word) as (int32 **))) by {
-            transport_certificate {
-                premise 0: separate(statement(1).region(0).footprint, memory(node->word))
-                    => separate(statement(1).region(0).footprint, memory(node->word));
-                preserve 0 => *((&node->word) as (int32 **)) == at(before_local, *((&node->word) as (int32 **)));
-                conclusion 1;
-            }
+            preserve(separate(statement(1).region(0).footprint, memory(node->word)));
         }
         have ((node->word & ~1) as (struct node *)) == child by { known(); }
         have separate(marked_list(child), memory(node->word)) by { known(); }
@@ -71,12 +66,7 @@ uint32 count_nodes(struct node* node) {
             contains(memory(node->word), memory(node->word));
         };
         have *((&node->word) as (int32 **)) == at(before_call, *((&node->word) as (int32 **))) by {
-            transport_certificate {
-                premise 0: separate(statement(1).region(1).footprint, memory(node->word))
-                    => separate(statement(1).region(1).footprint, memory(node->word));
-                preserve 0 => *((&node->word) as (int32 **)) == at(before_call, *((&node->word) as (int32 **)));
-                conclusion 1;
-            }
+            preserve(separate(statement(1).region(1).footprint, memory(node->word)));
         }
         have ((node->word & ~1) as (struct node *)) == child by { known(); }
 

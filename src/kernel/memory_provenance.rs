@@ -7688,7 +7688,6 @@ mod opaque_pointer_frame_tests {
         write: &Pointer,
         facts: &PureFactContext,
     ) -> Option<(PointerValue, Proposition)> {
-        use crate::kernel::proof::transport_certificate::{TransportCertificate, TransportNode};
         let resource = |p: Pointer, bytes| {
             Resource::Memory(MemoryRange::new_with_element_width(
                 p,
@@ -7725,38 +7724,21 @@ mod opaque_pointer_frame_tests {
             ConditionTerm::pointer_value_equal(after_value.clone(), before_value),
             true,
         );
-        let effect = Proposition::MemoryMutatesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            writes: vec![(write.clone(), 4)],
-        };
+        let entry = ExecutionState::new().with_memory(before.clone());
+        let exit = entry.clone().with_memory(after.clone());
+        let footprint = crate::kernel::RegionFootprint::transition(
+            "selected".into(),
+            &entry,
+            &exit,
+            &Vec::<ExecutionPureFact>::new(),
+        );
         let separation = Proposition::ResourceSeparate {
-            left: Box::new(changed),
+            left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(kept),
         };
-        let premise = |p: &Proposition| TransportNode::Premise {
-            proposition: p.clone(),
-            result: p.clone(),
-        };
-        let certificate = TransportCertificate {
-            nodes: vec![
-                premise(&effect),
-                premise(&separation),
-                TransportNode::Preserve {
-                    field: None,
-                    effect: Some(0),
-                    separation: 1,
-                    result,
-                },
-            ],
-            conclusion: 2,
-        };
-        Some((
-            after_value,
-            certificate
-                .apply(|p| p == &effect || p == &separation)
-                .unwrap(),
-        ))
+        crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
+            .unwrap();
+        Some((after_value, result))
     }
 
     #[test]

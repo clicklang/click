@@ -60,14 +60,8 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             step();
             mark after_store;
             have gparent->rb_left == at(before_store, gparent->rb_left) by {
-                transport_certificate {
-                    premise 0: changes_only(before_store, after_store, memory(gparent->rb_left->rb_right))
-                        => changes_only(before_store, after_store, memory(gparent->rb_left->rb_right));
-                    premise 1: at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)))
-                        => at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)));
-                    preserve 0, 1 => gparent->rb_left == at(before_store, gparent->rb_left);
-                    conclusion 2;
-                }
+                have separate(loop(0).statement(0).footprint, at(before_store, memory(gparent->rb_left))) by { normalize() using { at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right))); }; }
+                preserve(separate(loop(0).statement(0).footprint, at(before_store, memory(gparent->rb_left))));
             }
             have parent == at(before_store, gparent->rb_left) by { known(); }
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
