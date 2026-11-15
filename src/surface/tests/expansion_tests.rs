@@ -22461,3 +22461,41 @@ fn initialized_input_and_preserved_reads_expand_without_legacy_transport() {
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
+
+#[test]
+#[ignore = "nightly: original pointer-field resource fold, expansion and retained replay"]
+fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
+    let (source, sources) = mdtest_sources("mdtests/rb_produces_through_the_root_cell.md");
+    let refs = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let (session, verified) = ProgramVerificationSession::new(&source, &refs).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "rb_set_root").unwrap();
+    let at = expansion::position_at_offset(&expanded, expanded.find("produces u:").unwrap());
+    session
+        .verify_at(&expanded, at.line, at.column)
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    drop(session);
+    without_implicit_solve_for_claim("rb_set_root.contract", || {
+        verify_c_sources(&expanded, &refs).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    let wrong_sources = sources
+        .iter()
+        .map(|(name, text)| {
+            (
+                name.clone(),
+                text.replace("root->rb_node = node;", "root->rb_node = 0;"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let wrong_refs = wrong_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &wrong_refs)
+        .err()
+        .expect("a null store cannot produce the nonempty tree");
+    assert!(!error.message().contains("no Surface spelling"), "{error}");
+}

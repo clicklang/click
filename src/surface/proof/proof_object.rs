@@ -483,6 +483,7 @@ impl CheckedFocusedTransition {
 #[derive(Clone)]
 struct ProofLocals {
     values: PersistentMap<String, ContractExpression>,
+    value_names: binding_names::BindingNames,
     integer_values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
     /// Authored spellings used for premise lookup and certificate printing.
@@ -495,10 +496,38 @@ struct ProofLocals {
     next_choice_variable: u64,
 }
 
+pub(in crate::surface::proof) mod binding_names;
+
+impl ProofLocals {
+    fn set_values(&mut self, values: PersistentMap<String, ContractExpression>) {
+        self.value_names.update_values(&self.values, &values);
+        self.values = values;
+    }
+
+    fn set_integer_values(
+        &mut self,
+        values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    ) {
+        self.value_names
+            .update_integers(&self.integer_values, &values);
+        self.integer_values = values;
+    }
+
+    fn set_algebraic_values(
+        &mut self,
+        values: PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+    ) {
+        self.value_names
+            .update_algebraics(&self.algebraic_values, &values);
+        self.algebraic_values = values;
+    }
+}
+
 impl Default for ProofLocals {
     fn default() -> Self {
         Self {
             values: PersistentMap::default(),
+            value_names: binding_names::BindingNames::default(),
             integer_values: PersistentMap::default(),
             algebraic_values: PersistentMap::default(),
             surface_facts: SurfacePropositionMap::default(),
@@ -1440,6 +1469,20 @@ fn goal_binder_program_values(
 }
 
 impl Proof<'_> {
+    /// Retain lexical names without enumerating unrelated proof bindings.
+    pub(in crate::surface::proof) fn requirement_binder_name_scope(
+        &self,
+    ) -> super::surface_synthesis::ProofBindingNamesScope {
+        let shadows = match self.focused_obligation() {
+            Some(Obligation::Proposition(goal)) => goal.surface_bindings.clone(),
+            _ => PersistentMap::default(),
+        };
+        super::surface_synthesis::ProofBindingNamesScope::enter(
+            self.state.locals().value_names.clone(),
+            shadows,
+        )
+    }
+
     /// The kernel variables the proof's binders name, as synthesis reads
     /// them: scalar and algebraic binder values, and a pointer binder whose
     /// value is a symbolic block's base. The first map holds the goal's `intro`

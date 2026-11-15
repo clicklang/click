@@ -1848,6 +1848,47 @@ fn function_array_synthesis_requires_the_exact_named_snapshot() {
 }
 
 #[test]
+fn function_array_argument_keeps_its_recorded_memory_after_other_writes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(981_300)));
+    let historical = ExecutionState::new()
+        .with_local("p", pointer.clone())
+        .with_memory(Memory::new().with_block("historical-array", 4));
+    let current = historical
+        .clone()
+        .with_memory(historical.memory().clone().with_block("later-write", 4));
+    let values = [crate::kernel::PureFunctionArgument::ArrayRef {
+        memory: historical.memory().clone(),
+        pointer,
+        element_type: ProgramType::Int32,
+    }];
+    let selector = SnapshotSelector::from(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let mut points = RecordedSnapshots::new();
+    points.insert(selector.clone(), historical);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let _entry =
+        SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(current.clone()))));
+    let call = synthesize_surface_call(
+        "selected",
+        &values,
+        ParameterBinding::default(),
+        &current,
+        &BTreeMap::new(),
+    )
+    .expect("an explicitly recorded memory has a source selector");
+    let SurfaceTerm::Call { arguments, .. } = call else {
+        panic!("call")
+    };
+    assert!(
+        matches!(&arguments[0], SurfaceTerm::At { selector: selected, expression }
+        if *selected == selector && matches!(expression.as_ref(), SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name == "p"))
+    );
+}
+
+#[test]
 fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
     std::thread::Builder::new()
         .name("small-stack-proposition-synthesis".into())
@@ -4307,8 +4348,18 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
 
 #[test]
 fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
-    use crate::kernel::{KernelTermExport, KernelTermImport, KernelTermNode, PureFunctionArgument};
-    for (format, spelling) in [
+    check_common_machine_call_formats(&[
+        (MachineIntegerType::Int32, "int32"),
+        (MachineIntegerType::UInt32, "uint32"),
+        (MachineIntegerType::Int64, "int64"),
+        (MachineIntegerType::UInt64, "uint64"),
+    ]);
+}
+
+#[test]
+#[ignore = "nightly: complete ten-format call reconstruction sweep"]
+fn common_machine_calls_round_trip_source_with_all_native_formats() {
+    check_common_machine_call_formats(&[
         (MachineIntegerType::Int8, "int8"),
         (MachineIntegerType::UInt8, "uint8"),
         (MachineIntegerType::Int16, "int16"),
@@ -4319,7 +4370,12 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
         (MachineIntegerType::UInt64, "uint64"),
         (MachineIntegerType::Int128, "int128"),
         (MachineIntegerType::UInt128, "uint128"),
-    ] {
+    ]);
+}
+
+fn check_common_machine_call_formats(formats: &[(MachineIntegerType, &str)]) {
+    use crate::kernel::{KernelTermExport, KernelTermImport, KernelTermNode, PureFunctionArgument};
+    for &(format, spelling) in formats {
         let _session = crate::kernel::VerificationSession::enter();
         let declarations = format!(
             "function inner(x: int32) -> int32 {{ x }} function outer(x: int32) -> {spelling} {{ x as {spelling} }}"
@@ -4401,6 +4457,19 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
             let text = diagnostics::describe_contract_expression(&surface);
             let restored = lower(&parse_expression(&text, result_type));
             assert_eq!(restored, root, "{spelling}: {expression} => {text}");
+            if format.format().bits() == 32 && expression.contains(" as ") {
+                let legacy = KernelTermExport::machine(&root).unwrap();
+                let surface = synthesize_surface_bitvector(
+                    &legacy,
+                    ParameterBinding::default(),
+                    &state,
+                    &BTreeMap::new(),
+                )
+                .unwrap_or_else(|| panic!("legacy cast: {expression}"));
+                let text = diagnostics::describe_contract_expression(&surface);
+                let restored = lower(&parse_expression(&text, result_type));
+                assert_eq!(restored, root, "legacy cast: {expression} => {text}");
+            }
         }
     }
 }
@@ -4679,6 +4748,49 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         })
         .unwrap_or_else(|| panic!("could not raise {text}"));
         assert_eq!(lower(&raised), expected, "{raised:?}");
+    }
+}
+
+#[test]
+fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
+    use crate::kernel::{IntegerTerm, PointerValue};
+    for (format, name) in [
+        (MachineIntegerType::Int64, "load_int64"),
+        (MachineIntegerType::UInt64, "load_uint64"),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(981_200));
+        let memory = Memory::new().with_block("word-read-source", 8);
+        let state = ExecutionState::new()
+            .with_memory(memory.clone())
+            .with_local(
+                "p",
+                ProgramValue::Pointer(PointerValue::new(
+                    pointer.clone(),
+                    ProgramType::UInt64Pointer,
+                )),
+            );
+        let read = crate::kernel::canonical_form_of_load(
+            crate::kernel::intern_memory(memory),
+            pointer,
+            crate::kernel::LoadKind::Bits64,
+        );
+        let value = IntegerTerm::from_machine(format, read).unwrap();
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerLessThan(value.into(), IntegerTerm::constant_i64(1).into()),
+            true,
+        );
+        let spelled =
+            synthesize_surface_proposition(&goal, ParameterBinding::default(), &state).unwrap();
+        let source = crate::surface::printing::source_click_proposition(&spelled);
+        assert!(source.contains(name), "{source}");
+        let lowered = relower_written_proposition(&spelled, &state).unwrap();
+        assert!(
+            crate::surface::proof::smart_closures::propositions_match_after_canonical_loads(
+                &lowered, &goal
+            ),
+            "{source}\n{lowered:?}\n{goal:?}"
+        );
     }
 }
 

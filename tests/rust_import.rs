@@ -3581,7 +3581,9 @@ fn charon_vec_values_read_as_the_library_vec() {
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
-        assert!(rendered.contains(expected), "{rendered}");
+        // A bounded search refusal names the whole contract root, while a
+        // direct failed check can name its individual ensures clause.
+        assert!(rendered.contains(function), "{rendered}");
     }
 }
 
@@ -6718,6 +6720,13 @@ fn rust_slice_values_read_with_rust_methods() {
          have bytes[0..4] == slice::from_raw_parts(bytes, 4u64);",
     );
     ProgramVerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    // The subslice bound follows from the function definition and the entry
+    // length, without a preceding `have half(bytes).len() == 2u64`.
+    ProgramVerificationSession::new_program_prepared(
+        &sidecar("have half(bytes)[1..].len() == 1u64;"),
+        &prepared,
+    )
+    .unwrap();
     // Each refused claim, and the goal it leaves, print in spellings that
     // read back as the same terms: a slice built as a subslice is that
     // subslice, and one built any other way is its constructor at its
@@ -6773,8 +6782,8 @@ fn rust_slice_values_read_with_rust_methods() {
             &["the subslice `[3..1]` starts past its end"],
         ),
         (
-            "have half(bytes)[1..].len() == 1u64;",
-            &["not established", "`1u64 <= half(old(bytes)).len()`"],
+            "have half(bytes)[3..].len() == 0u64;",
+            &["not established", "`3u64 <= half(old(bytes)).len()`"],
         ),
         (
             "have forall (k: uint64) { bytes[k..2] == bytes[k..2] };",

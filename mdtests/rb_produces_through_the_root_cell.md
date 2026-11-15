@@ -104,6 +104,10 @@ void rb_set_root(struct rb_node* node, struct rb_root* root) {
         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
         RbTree::Node(identity, parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
+            // State the owned cells' frame across the root-pointer store.
+            have separate(memory(node->__rb_parent_color), memory(root->rb_node)) by { known(); };
+            have separate(memory(node->rb_left), memory(root->rb_node)) by { known(); };
+            have separate(memory(node->rb_right), memory(root->rb_node)) by { known(); };
             step_until(function.exit);
             let u = fold(rb_at(root->rb_node), { model: old(t.model) },
                          { left: l, right: r });

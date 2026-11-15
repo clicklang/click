@@ -3039,3 +3039,81 @@ fn retained_conditional_premise_spelling_does_not_search_snapshot_history() {
         );
     }
 }
+
+#[test]
+fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
+    let binding = |variable| {
+        ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(variable)),
+                ProgramType::Int32Pointer,
+            ),
+        ))
+    };
+    let mut samples = Vec::new();
+    for size in [8_u64, 32, 128, 512] {
+        let mut locals = ProofLocals::default();
+        let (((), production), _) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for index in 0..size {
+                    locals.set_values(
+                        locals
+                            .values
+                            .with_inserted(format!("binder{index:05}"), binding(9_810_000 + index)),
+                    );
+                    // Grow the selected variable's alias set too.
+                    locals.set_values(
+                        locals
+                            .values
+                            .with_inserted(format!("alias{index:05}"), binding(9_820_000)),
+                    );
+                    locals.set_integer_values(locals.integer_values.with_inserted(
+                        format!("integer{index:05}"),
+                        crate::kernel::SpecIntegerExpression::Term(IntegerTerm::Variable(
+                            Variable(9_840_000 + index),
+                        )),
+                    ));
+                    locals.set_algebraic_values(locals.algebraic_values.with_inserted(
+                        format!("model{index:05}"),
+                        crate::kernel::SpecAlgebraicExpression {
+                            algebraic_type: crate::kernel::AlgebraicType::parameter("T".into()),
+                            node: crate::kernel::SpecAlgebraicExpressionNode::Variable(Variable(
+                                9_850_000 + index,
+                            )),
+                        },
+                    ));
+                }
+            })
+        });
+        assert_eq!(production, 4 * size as usize);
+        let parent = locals.clone();
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(
+                    locals.value_names.name(Variable(9_810_000)),
+                    Some("binder00000")
+                );
+                assert_eq!(
+                    locals.value_names.name(Variable(9_820_000)),
+                    Some("alias00000")
+                );
+                assert_eq!(locals.value_names.name(Variable(9_830_000)), None);
+                locals.set_values(
+                    locals
+                        .values
+                        .with_inserted("new".into(), binding(9_830_000)),
+                );
+                assert_eq!(locals.value_names.name(Variable(9_830_000)), Some("new"));
+                locals.set_values(parent.values.clone());
+                assert_eq!(locals.value_names.name(Variable(9_830_000)), None);
+                assert_eq!(parent.value_names.name(Variable(9_830_000)), None);
+            })
+        });
+        assert_eq!(work, 8);
+        samples.push(map_work);
+    }
+    assert!(
+        samples[3] < samples[0] * 4 + 128,
+        "binding update/query scanned a scope: {samples:?}"
+    );
+}
