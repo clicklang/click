@@ -1403,7 +1403,7 @@ fn collect_condition_operand_reads(
             return;
         }
 
-        if let Some((_, _, operands)) = leaf.comparison() {
+        if let Some((_, operands)) = leaf.machine_arguments() {
             for operand in operands {
                 collect_operand_reads(operand, reads);
             }

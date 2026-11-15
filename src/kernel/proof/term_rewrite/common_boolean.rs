@@ -10,7 +10,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
     B::Shared(root).for_each_dependency_leaf(|leaf| {
-        if let Some((_, _, operands)) = leaf.comparison() {
+        if let Some((_, operands)) = leaf.machine_arguments() {
             for operand in operands {
                 collect_machine_operand_carriers(operand, &mut variables);
             }
@@ -67,6 +67,9 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 }
             }
             return Ok(KernelTerm::boolean_comparison_raw(*format, *relation, arguments));
+        }
+        if let KernelTermNode::BoolOverflow { format,operation,arguments } = leaf.node() {
+            return Ok(KernelTerm::boolean_overflow_raw(*format,*operation,[rewrite.shared_machine_operand(&arguments[0]).ok_or(())?,rewrite.shared_machine_operand(&arguments[1]).ok_or(())?]));
         }
         if let KernelTermNode::PointerValueEqual(pair) = leaf.node() {
             let [a,b] = pair.arguments();

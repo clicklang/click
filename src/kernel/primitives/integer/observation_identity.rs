@@ -97,6 +97,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     .collect(),
                 KernelTermNode::Fold(fold) => fold.arguments.to_vec(),
                 KernelTermNode::MachineBinary { arguments, .. }
+                | KernelTermNode::BoolOverflow { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
                 | KernelTermNode::IntegerCompare { arguments, .. }
                 | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
@@ -222,6 +223,15 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     KernelTermNode::BoolEqual {
                         arguments: arguments.each_ref().map(|arg| get(arg)),
                     },
+                ),
+                KernelTermNode::BoolOverflow {
+                    format,
+                    operation,
+                    arguments,
+                } => KernelTerm::boolean_overflow_raw(
+                    *format,
+                    *operation,
+                    arguments.each_ref().map(|arg| get(arg)),
                 ),
                 KernelTermNode::BoolCompare {
                     format,

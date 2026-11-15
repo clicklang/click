@@ -63,6 +63,11 @@ pub enum KernelTermNode {
         destination: MachineIntegerType,
         operand: KernelTerm,
     },
+    BoolOverflow {
+        format: MachineIntegerType,
+        operation: OverflowOperation,
+        arguments: [KernelTerm; 2],
+    },
     BoolCompare {
         format: MachineIntegerType,
         relation: CompareRelation,
@@ -368,6 +373,7 @@ impl NodeKey {
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments
@@ -716,6 +722,7 @@ impl KernelTerm {
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments,

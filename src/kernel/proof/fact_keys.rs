@@ -476,6 +476,13 @@ fn snapshot_blind_boolean_operand_key(
             right,
         );
     }
+    if let Some((format, operation, [a, b])) = condition.overflow() {
+        return SnapshotBlindConditionKey::Comparison(
+            BitvectorComparisonOp::Overflows(format, operation),
+            snapshot_operands::operand(a),
+            snapshot_operands::operand(b),
+        );
+    }
     if let Some([a, b]) = condition.pointer_offsets() {
         return SnapshotBlindConditionKey::PointerOffsetEqual(
             pointer_keys::snapshot_offset(&a),
@@ -5180,6 +5187,39 @@ mod complete_pointer_condition_tests {
             assert_eq!(actual, snapshot_blind_condition_key(&source));
             assert!(!keys.contains(&actual));
             keys.push(actual);
+        }
+    }
+}
+
+#[cfg(test)]
+mod overflow_condition_tests {
+    use super::*;
+    #[test]
+    fn overflow_conditions_keep_exact_format_and_operation_keys() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut keys = Vec::new();
+        for format in crate::kernel::machine_integer::FORMATS {
+            for op in [
+                crate::kernel::OverflowOperation::Add,
+                crate::kernel::OverflowOperation::Subtract,
+                crate::kernel::OverflowOperation::Multiply,
+                crate::kernel::OverflowOperation::Divide,
+                crate::kernel::OverflowOperation::ShiftLeft,
+            ] {
+                let source = ConditionTerm::Overflows {
+                    format,
+                    op,
+                    left: Box::new(MachineTerm::Variable(Variable(998630))),
+                    right: Box::new(MachineTerm::Variable(Variable(998631))),
+                };
+                let root = crate::kernel::KernelTermImport::default().condition(&source);
+                let actual = snapshot_blind_boolean_operand_key(
+                    crate::kernel::BooleanOperandView::Shared(&root),
+                );
+                assert_eq!(actual, snapshot_blind_condition_key(&source));
+                assert!(!keys.contains(&actual));
+                keys.push(actual);
+            }
         }
     }
 }

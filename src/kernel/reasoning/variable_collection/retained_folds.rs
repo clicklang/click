@@ -448,6 +448,15 @@ mod tests {
             IntegerTerm::Variable(Variable(970_002)).into(),
         );
         for source in [
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: crate::kernel::OverflowOperation::Add,
+                left: Box::new(MachineTerm::IntegerToMachine {
+                    value: IntegerTerm::Variable(Variable(970_020)).into(),
+                    destination: MachineIntegerType::Int32,
+                }),
+                right: Box::new(MachineTerm::Variable(Variable(970_021))),
+            },
             ConditionTerm::PointerValueEqual(
                 Box::new(
                     PointerValue::new(

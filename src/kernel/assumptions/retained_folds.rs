@@ -128,6 +128,9 @@ pub(super) fn collect_common_memory_loads(
             }
             KernelTermNode::BoolCompare {
                 format, arguments, ..
+            }
+            | KernelTermNode::BoolOverflow {
+                format, arguments, ..
             } => {
                 pending.extend(
                     arguments

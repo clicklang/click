@@ -6289,7 +6289,7 @@ fn collect_condition_operand_memories(
             return;
         }
 
-        if let Some((_, _, operands)) = leaf.comparison() {
+        if let Some((_, operands)) = leaf.machine_arguments() {
             let mut seen = BTreeSet::new();
             for operand in operands {
                 collect_operand_memories(operand, memories, &mut seen);
@@ -6599,9 +6599,10 @@ pub(in crate::kernel) fn transport_framed_common_condition(
             ))
         }
         Node::BoolCompare {
-            format,
-            relation,
-            arguments,
+            format, arguments, ..
+        }
+        | Node::BoolOverflow {
+            format, arguments, ..
         } => {
             let mut mapped = Vec::with_capacity(2);
             for argument in arguments {
@@ -6612,11 +6613,16 @@ pub(in crate::kernel) fn transport_framed_common_condition(
                     value.operand_view(),
                 ));
             }
-            let mapped = crate::kernel::KernelTerm::boolean_comparison(
-                *format,
-                *relation,
-                [mapped[0].clone(), mapped[1].clone()],
-            );
+            let arguments = [mapped[0].clone(), mapped[1].clone()];
+            let mapped = match condition.node() {
+                Node::BoolCompare { relation, .. } => {
+                    crate::kernel::KernelTerm::boolean_comparison(*format, *relation, arguments)
+                }
+                Node::BoolOverflow { operation, .. } => {
+                    crate::kernel::KernelTerm::boolean_overflow(*format, *operation, arguments)
+                }
+                _ => unreachable!(),
+            };
             Some(
                 if crate::kernel::BooleanOperandView::Shared(condition)
                     .syntax_equal(crate::kernel::BooleanOperandView::Shared(&mapped))
@@ -9213,6 +9219,16 @@ mod common_boolean_transport_tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         for source in [
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: crate::kernel::OverflowOperation::Add,
+                left: Box::new(MachineTerm::MemoryLoad(
+                    memory.clone(),
+                    Box::new(address.clone()),
+                    LoadKind::Int32,
+                )),
+                right: Box::new(MachineTerm::constant(1)),
+            },
             ConditionTerm::PointerValueEqual(
                 Box::new(PointerValue::new(
                     Pointer {
