@@ -3,18 +3,18 @@
 `mark_run` marks the cells `[start, end)` of an occupancy map through a
 loop that owns a field-bearing `window` instance, and the window owns the
 whole map. After the loop the proof tries to carry the value that
-`occupied[start]` had before the loop across it with `transport`, which
+`occupied[start]` had before the loop across it with `known()`, which
 would let it conclude `start < 0` from `0 <= start` once the loop's own
 store is known.
 
 A loop that declares resources havocs the memory those resources own. The
 footprint was computed by expanding composites only, and an owned
 field-bearing instance (or an iterated ownership fact) contributed nothing,
-so the loop was summarized as writing none of the map and the transport
-succeeded. The footprint now opens the instance one body layer at its own
-fields, as `unfold` does, and an iterated fact contributes the span of the
-elements it could hold, so the transport has no frame evidence for a cell
-the loop may write.
+so the loop was summarized as writing none of the map and the old value
+could be retained. The footprint now opens the instance one body layer at its
+own fields, as `unfold` does, and an iterated fact contributes the span of the
+elements it could hold, so the final lookup must refuse equality with the old
+value of a cell the loop writes.
 
 ```c filename=loop_binder_instance_footprint_includes_its_memory.c
 void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
@@ -97,13 +97,21 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                         known();
                     }
                     have 0 <= k by solve();
-                    transport(at(opened, occupied[k]) == 1, occupied[k] == 1) using {
-                        at(opened, occupied[k]) == 1;
-                        k < at(opened, i);
-                        0 <= k;
-                        0 <= at(opened, i);
-                        at(opened, i) < capacity;
-                    };
+                    have k != at(opened, i) by { solve() using { k < at(opened, i); }; }
+                    have at(opened, separate(memory(occupied[i]), memory(occupied[k]))) by {
+                        apply(click::separation::separate_elements(occupied, at(opened, i), k)) using { k != at(opened, i); };
+                    }
+                    have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
+                        normalize() using { at(opened, separate(memory(occupied[i]), memory(occupied[k]))); };
+                    }
+                    have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
+                        preserve(separate(loop(0).statement(0).footprint, memory(occupied[k])));
+                    }
+                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { normalize() using { }; }
+                    have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
+                        preserve(separate(loop(0).statement(1).footprint, memory(occupied[k])));
+                    }
+                    known();
                 } else {
                     have k <= at(opened, i);
                     have k == at(opened, i);
@@ -138,13 +146,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
     }
     let { next: n } = unfold(w);
     have occupied[start] == at(pre, occupied[start]) by {
-        transport(
-            at(pre, occupied[start]) == at(pre, occupied[start]),
-            occupied[start] == at(pre, occupied[start])
-        ) using {
-            0 <= start;
-            start < capacity;
-        };
+        known();
     }
     have n == i by solve();
     have n <= end by solve();
@@ -179,5 +181,5 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence
+fail: `have` failed for `occupied[start] == at(pre, occupied[start])`
 ```
