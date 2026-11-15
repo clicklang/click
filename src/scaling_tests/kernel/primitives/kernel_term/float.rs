@@ -133,3 +133,21 @@ fn float_arithmetic_native_boundaries_walk_only_explicit_output_size() {
         }
     }
 }
+
+#[test]
+fn conversion_rebuild_does_not_scan_symbolic_operand_prefixes() {
+    for size in [16, 64, 256] {
+        let mut operand = MachineTerm::Variable(Variable(999951));
+        for _ in 0..size {
+            operand = MachineTerm::Float32Negate(Box::new(operand));
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            MachineTerm::rebuild_pure_application("c_float32_to_float64".into(), vec![operand])
+        });
+        assert!(matches!(
+            result,
+            MachineTerm::PureFunctionApplication { .. }
+        ));
+        assert!(work <= 1, "size={size}: work={work}");
+    }
+}

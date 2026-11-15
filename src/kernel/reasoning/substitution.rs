@@ -5848,13 +5848,13 @@ pub(crate) fn substitute_bitvector_variable(
             )
         }
         MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::PureFunctionApplication {
-                name: name.clone(),
-                arguments: arguments
+            MachineTerm::rebuild_pure_application(
+                name.clone(),
+                arguments
                     .iter()
                     .map(|argument| substitute_bitvector_variable(argument, from, to))
                     .collect(),
-            }
+            )
         }
         MachineTerm::ClickFunctionApplication { name, arguments } => {
             MachineTerm::ClickFunctionApplication {
@@ -9806,5 +9806,144 @@ mod checked_surface_load_resolution_tests {
             registry,
             Err(IntegerPureSubstitutionError::WorkLimitExceeded)
         );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn float_conversion_substitution_matches_direct_constant_cast() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999950);
+    let evaluate_cast = |value: ProgramValue, target_type: ProgramType| {
+        let state = ExecutionState::new();
+        let expression = SpecExpression::ProgramExpression(ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(value)),
+            target_type,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        });
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &expression,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap()
+        .0
+    };
+    let sources = [
+        crate::kernel::int8(u32::MAX),
+        crate::kernel::uint8(0xff),
+        crate::kernel::int16(u32::MAX),
+        crate::kernel::uint16(0xffff),
+        ProgramValue::Int32(MachineTerm::constant(16_777_217)),
+        ProgramValue::Int32(MachineTerm::constant(i32::MIN as u32)),
+        ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+        ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+        ProgramValue::Float32(MachineTerm::constant(0x80000000)),
+        ProgramValue::Float32(MachineTerm::constant(1)),
+        ProgramValue::Float32(MachineTerm::constant(0x7f800000)),
+        ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x3ff0000010000000)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff0000000000000)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0xfff8000000000123)),
+    ];
+    for value in sources {
+        for target in [ProgramType::Float32, ProgramType::Float64] {
+            let (symbolic_value, literal) = match &value {
+                ProgramValue::Float32(term) => {
+                    (ProgramValue::Float32(MachineTerm::Variable(variable)), term)
+                }
+                ProgramValue::Float64(term) => {
+                    (ProgramValue::Float64(MachineTerm::Variable(variable)), term)
+                }
+                crate::kernel::integer64_c_value!(term) => (
+                    MachineIntegerType::from_program_type(value.program_type())
+                        .unwrap()
+                        .value_from_term(MachineTerm::Variable(variable)),
+                    term,
+                ),
+                _ => unreachable!(),
+            };
+            let symbolic = evaluate_cast(symbolic_value, target);
+            let term = match symbolic {
+                ProgramValue::Float32(term) | ProgramValue::Float64(term) => term,
+                _ => unreachable!(),
+            };
+            let instantiated = substitute_bitvector_variable(&term, variable, literal);
+            let actual = if target == ProgramType::Float32 {
+                ProgramValue::Float32(instantiated)
+            } else {
+                ProgramValue::Float64(instantiated)
+            };
+            assert_eq!(
+                actual,
+                evaluate_cast(value.clone(), target),
+                "{:?} -> {target:?}",
+                value
+            );
+        }
+    }
+    let nested = evaluate_cast(
+        evaluate_cast(
+            ProgramValue::Int32(MachineTerm::Variable(variable)),
+            ProgramType::Float32,
+        ),
+        ProgramType::Float64,
+    );
+    let ProgramValue::Float64(nested) = nested else {
+        unreachable!()
+    };
+    assert_eq!(
+        ProgramValue::Float64(substitute_bitvector_variable(
+            &nested,
+            variable,
+            &MachineTerm::constant(16_777_217)
+        )),
+        evaluate_cast(
+            evaluate_cast(
+                ProgramValue::Int32(MachineTerm::constant(16_777_217)),
+                ProgramType::Float32
+            ),
+            ProgramType::Float64
+        ),
+    );
+    for source in [
+        ProgramValue::Float32(MachineTerm::constant(0x3fe00000)),
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x3ffc000000000000)),
+    ] {
+        for target in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let (symbolic, literal) = match &source {
+                ProgramValue::Float32(term) => {
+                    (ProgramValue::Float32(MachineTerm::Variable(variable)), term)
+                }
+                ProgramValue::Float64(term) => {
+                    (ProgramValue::Float64(MachineTerm::Variable(variable)), term)
+                }
+                _ => unreachable!(),
+            };
+            let crate::kernel::integer64_c_value!(term) =
+                evaluate_cast(symbolic, target.program_type())
+            else {
+                unreachable!()
+            };
+            let actual =
+                target.value_from_term(substitute_bitvector_variable(&term, variable, literal));
+            assert_eq!(actual, evaluate_cast(source.clone(), target.program_type()));
+        }
     }
 }

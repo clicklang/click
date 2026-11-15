@@ -3,270 +3,10 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::bits32_constant;
 use crate::kernel::effective_type::CAccessClass;
-
-fn integer_to_float_bits(
-    negative: bool,
-    magnitude: u128,
-    fraction_bits: u32,
-    exponent_bits: u32,
-    bias: i32,
-    sign_bit: u64,
-) -> u64 {
-    let sign = if negative { sign_bit } else { 0 };
-    if magnitude == 0 {
-        return sign;
-    }
-
-    let precision = fraction_bits + 1;
-    let highest_bit = 127 - magnitude.leading_zeros();
-    let mut exponent = highest_bit as i32;
-    let mut significand = if highest_bit < precision - 1 {
-        magnitude << (precision - 1 - highest_bit)
-    } else {
-        crate::kernel::primitives::round_right_to_even(magnitude, highest_bit - (precision - 1))
-    };
-
-    if significand == 1u128 << precision {
-        significand >>= 1;
-        exponent += 1;
-    }
-
-    let exponent_limit = (1u32 << exponent_bits) - 1;
-    let encoded_exponent = exponent + bias;
-    if encoded_exponent >= exponent_limit as i32 {
-        return sign | (u64::from(exponent_limit) << fraction_bits);
-    }
-
-    sign | ((encoded_exponent as u64) << fraction_bits)
-        | ((significand as u64) & ((1u64 << fraction_bits) - 1))
-}
-
-fn integer_to_float32_bits(negative: bool, magnitude: u128) -> u32 {
-    integer_to_float_bits(negative, magnitude, 23, 8, 127, 0x8000_0000) as u32
-}
-
-fn integer_to_float64_bits(negative: bool, magnitude: u128) -> u64 {
-    integer_to_float_bits(negative, magnitude, 52, 11, 1023, 0x8000_0000_0000_0000)
-}
-
-fn float32_to_float64_bits(bits: u32) -> u64 {
-    let sign = u64::from(bits & 0x8000_0000) << 32;
-    let exponent = (bits >> 23) & 0xff;
-    let fraction = bits & 0x007f_ffff;
-    if exponent == 0xff {
-        // An infinity widens to an infinity of the same sign. A NaN keeps its
-        // payload, which cannot vanish under the shift because a nonzero
-        // binary32 fraction stays nonzero in the wider fraction field.
-        if fraction == 0 {
-            return sign | (0x7ffu64 << 52);
-        }
-        return sign | (0x7ffu64 << 52) | (u64::from(fraction) << 29);
-    }
-    if exponent != 0 {
-        return sign | (u64::from(exponent + 1023 - 127) << 52) | (u64::from(fraction) << 29);
-    }
-    if fraction == 0 {
-        return sign;
-    }
-
-    let highest_bit = 31 - fraction.leading_zeros();
-    let unbiased_exponent = highest_bit as i32 - 149;
-    let encoded_exponent = (unbiased_exponent + 1023) as u64;
-    let significand = fraction ^ (1u32 << highest_bit);
-    sign | (encoded_exponent << 52) | (u64::from(significand) << (52 - highest_bit))
-}
-
-fn float64_to_float32_bits(bits: u64) -> u32 {
-    let sign = (bits >> 32) as u32 & 0x8000_0000;
-    let exponent = ((bits >> 52) & 0x7ff) as u32;
-    let fraction = bits & 0x000f_ffff_ffff_ffff;
-    if exponent == 0x7ff {
-        return sign
-            | if fraction == 0 {
-                0x7f80_0000
-            } else {
-                0x7fc0_0000
-            };
-    }
-    if exponent == 0 && fraction == 0 {
-        return sign;
-    }
-
-    let (significand, base, highest_bit) = if exponent == 0 {
-        let highest_bit = 63 - fraction.leading_zeros();
-        (u128::from(fraction), -1074i32, highest_bit)
-    } else {
-        let significand = (1u128 << 52) | u128::from(fraction);
-        let highest_bit = 52;
-        (significand, exponent as i32 - 1023 - 52, highest_bit)
-    };
-    let top_exponent = highest_bit as i32 + base;
-
-    if top_exponent >= -126 {
-        let shift = (top_exponent - 23 - base) as u32;
-        let mut rounded = crate::kernel::primitives::round_right_to_even(significand, shift);
-        let mut exponent = top_exponent;
-        if rounded == 1u128 << 24 {
-            rounded >>= 1;
-            exponent += 1;
-        }
-        if exponent > 127 {
-            return sign | 0x7f80_0000;
-        }
-        return sign | (((exponent + 127) as u32) << 23) | ((rounded as u32) & 0x007f_ffff);
-    }
-
-    let shift = (-149 - base) as u32;
-    let rounded = crate::kernel::primitives::round_right_to_even(significand, shift);
-    if rounded >= 1u128 << 23 {
-        sign | 0x0080_0000
-    } else {
-        sign | rounded as u32
-    }
-}
-
-fn integer_constant_as_sign_magnitude(value: &ProgramValue) -> Option<(bool, u128)> {
-    match value.numeric_value() {
-        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
-        ProgramValue::Bool(bits) => Some((false, u128::from(bits.as_const()?))),
-        narrow @ (ProgramValue::Int8(_)
-        | ProgramValue::UInt8(_)
-        | ProgramValue::Int16(_)
-        | ProgramValue::UInt16(_)) => {
-            let value = MachineIntegerType::from_program_type(narrow.program_type())?
-                .constant_from_value(narrow)?
-                .to_i128()?;
-            Some((value < 0, value.unsigned_abs()))
-        }
-        ProgramValue::Int32(bits) => {
-            let value = bits.as_const()? as i32;
-            Some((value < 0, u128::from(value.unsigned_abs())))
-        }
-        ProgramValue::UInt32(bits) => Some((false, u128::from(bits.as_const()?))),
-        ProgramValue::Int64(bits) => {
-            let value = bits.int64_as_const()?;
-            Some((value < 0, u128::from(value.unsigned_abs())))
-        }
-        ProgramValue::UInt64(bits) => Some((false, u128::from(bits.uint64_as_const()?))),
-        ProgramValue::Int128(_)
-        | ProgramValue::UInt128(_)
-        | ProgramValue::Void
-        | ProgramValue::Float32(_)
-        | ProgramValue::Float64(_)
-        | ProgramValue::Pointer(_)
-        | ProgramValue::Parameter(_) => None,
-    }
-}
-
-fn float_significand_as_integer(
-    negative: bool,
-    exponent: u32,
-    fraction: u64,
-    fraction_bits: u32,
-    exponent_bits: u32,
-    bias: i32,
-) -> Option<(bool, u128)> {
-    let exponent_limit = (1u32 << exponent_bits) - 1;
-    if exponent == exponent_limit {
-        return None;
-    }
-    let (significand, base) = if exponent == 0 {
-        (u128::from(fraction), 1 - bias - fraction_bits as i32)
-    } else {
-        (
-            (1u128 << fraction_bits) | u128::from(fraction),
-            exponent as i32 - bias - fraction_bits as i32,
-        )
-    };
-    let magnitude = if base >= 0 {
-        // `checked_shl` only rejects a shift count of 128 or more; it drops
-        // any bits carried off the top, which would turn a value too large
-        // for the container into a small in-range magnitude. A value that
-        // does not fit has no integer conversion at all, which is the same
-        // answer the range check below gives for a merely out-of-range one.
-        let shift = base as u32;
-        if shift >= 128 || significand.leading_zeros() < shift {
-            return None;
-        }
-        significand << shift
-    } else if (-base) >= 128 {
-        0
-    } else {
-        significand >> (-base as u32)
-    };
-    Some((negative && magnitude != 0, magnitude))
-}
-
-fn float_to_integer_value(
-    negative: bool,
-    magnitude: u128,
-    target_type: ProgramType,
-) -> Option<ProgramValue> {
-    let signed_limit = |bits: u32| (1i128 << (bits - 1)) - 1;
-    let (signed, bits) = match target_type {
-        ProgramType::Int8 => (true, 8),
-        ProgramType::Int16 => (true, 16),
-        ProgramType::Int32 => (true, 32),
-        ProgramType::Int64 => (true, 64),
-        ProgramType::UInt8 => (false, 8),
-        ProgramType::UInt16 => (false, 16),
-        ProgramType::UInt32 => (false, 32),
-        ProgramType::UInt64 => (false, 64),
-        _ => return None,
-    };
-    if signed {
-        let limit = signed_limit(bits) as u128;
-        let negative_limit = limit + 1;
-        if magnitude > if negative { negative_limit } else { limit } {
-            return None;
-        }
-        let value = if negative {
-            -(magnitude as i128)
-        } else {
-            magnitude as i128
-        };
-        return Some(match target_type {
-            ProgramType::Int8 => crate::kernel::int8(value as i32 as u32),
-            ProgramType::Int16 => crate::kernel::int16(value as i32 as u32),
-            ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(value as i32 as u32)),
-            ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(value as i64)),
-            _ => unreachable!(),
-        });
-    }
-    if negative && magnitude != 0 {
-        return None;
-    }
-    let limit = (1u128 << bits) - 1;
-    if magnitude > limit {
-        return None;
-    }
-    let value = magnitude as u64;
-    Some(match target_type {
-        ProgramType::UInt8 => crate::kernel::uint8(value as u32),
-        ProgramType::UInt16 => crate::kernel::uint16(value as u32),
-        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(value as u32)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(value)),
-        _ => unreachable!(),
-    })
-}
-
-fn float32_to_integer_value(bits: u32, target_type: ProgramType) -> Option<ProgramValue> {
-    let negative = bits & 0x8000_0000 != 0;
-    let exponent = (bits >> 23) & 0xff;
-    let fraction = u64::from(bits & 0x007f_ffff);
-    let (negative, magnitude) =
-        float_significand_as_integer(negative, exponent, fraction, 23, 8, 127)?;
-    float_to_integer_value(negative, magnitude, target_type)
-}
-
-fn float64_to_integer_value(bits: u64, target_type: ProgramType) -> Option<ProgramValue> {
-    let negative = bits & (1u64 << 63) != 0;
-    let exponent = ((bits >> 52) & 0x7ff) as u32;
-    let fraction = bits & 0x000f_ffff_ffff_ffff;
-    let (negative, magnitude) =
-        float_significand_as_integer(negative, exponent, fraction, 52, 11, 1023)?;
-    float_to_integer_value(negative, magnitude, target_type)
-}
+use crate::kernel::primitives::float_conversion::{
+    float32_to_integer_value, float64_to_integer_value, integer_to_float32_bits,
+    integer_to_float64_bits,
+};
 
 fn integer_to_float_value(value: ProgramValue, target_type: ProgramType) -> Option<ProgramValue> {
     let (source_name, term) = match value.numeric_value() {
@@ -293,17 +33,6 @@ fn integer_to_float_value(value: ProgramValue, target_type: ProgramType) -> Opti
         ProgramType::Float64 => "float64",
         _ => return None,
     };
-    if let Some((negative, magnitude)) = integer_constant_as_sign_magnitude(&value) {
-        return Some(match target_type {
-            ProgramType::Float32 => ProgramValue::Float32(MachineTerm::constant(
-                integer_to_float32_bits(negative, magnitude),
-            )),
-            ProgramType::Float64 => ProgramValue::Float64(MachineTerm::uint64_constant(
-                integer_to_float64_bits(negative, magnitude),
-            )),
-            _ => unreachable!(),
-        });
-    }
     let term =
         MachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), term.clone());
     Some(match target_type {
@@ -904,18 +633,20 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
         ) => convert_program_integer(value, target, conversion, obligations, assumptions),
         (ProgramType::Float32, ProgramValue::Float32(value)) => Some(ProgramValue::Float32(value)),
         (ProgramType::Float32, ProgramValue::Float64(value)) => {
-            let converted = value
+            let operand = value
                 .float64_as_const()
-                .map(|value| MachineTerm::constant(float64_to_float32_bits(value)))
-                .unwrap_or_else(|| MachineTerm::opaque_conversion("c_float64_to_float32", value));
+                .map(MachineTerm::uint64_constant)
+                .unwrap_or(value);
+            let converted = MachineTerm::opaque_conversion("c_float64_to_float32", operand);
             Some(ProgramValue::Float32(converted))
         }
         (ProgramType::Float64, ProgramValue::Float64(value)) => Some(ProgramValue::Float64(value)),
         (ProgramType::Float64, ProgramValue::Float32(value)) => {
-            let converted = value
+            let operand = value
                 .float32_as_const()
-                .map(|value| MachineTerm::uint64_constant(float32_to_float64_bits(value)))
-                .unwrap_or_else(|| MachineTerm::opaque_conversion("c_float32_to_float64", value));
+                .map(MachineTerm::constant)
+                .unwrap_or(value);
+            let converted = MachineTerm::opaque_conversion("c_float32_to_float64", operand);
             Some(ProgramValue::Float64(converted))
         }
         (

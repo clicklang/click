@@ -2237,13 +2237,13 @@ impl PureFactContext {
                 self.simplify_bitvector_under_assumptions(body),
             ),
             MachineTerm::PureFunctionApplication { name, arguments } => {
-                MachineTerm::PureFunctionApplication {
-                    name: name.clone(),
-                    arguments: arguments
+                MachineTerm::rebuild_pure_application(
+                    name.clone(),
+                    arguments
                         .iter()
                         .map(|argument| self.simplify_bitvector_under_assumptions(argument))
                         .collect(),
-                }
+                )
             }
             // Rule C1: a decided `Bool` casts to 1 or 0.
             MachineTerm::BoolCast { value, .. } => match self.decide(value) {
@@ -3771,4 +3771,22 @@ mod shared_offset_evidence_tests {
             "../../../scaling_tests/kernel/assumptions/condition_reasoning/shared_offset_evidence.rs"
         );
     }
+}
+
+#[cfg(test)]
+#[test]
+fn float_conversion_checker_rebuild_matches_constant_evaluation() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(999953));
+    let term = MachineTerm::opaque_conversion("c_int32_to_float32", variable.clone());
+    let empty = PureFactContext::new();
+    assert_eq!(empty.simplify_bitvector_under_assumptions(&term), term);
+    let facts = empty.assume_condition(
+        ConditionTerm::equal(variable, MachineTerm::constant(1)),
+        true,
+    );
+    assert_eq!(
+        facts.simplify_bitvector_under_assumptions(&term),
+        MachineTerm::constant(0x3f800000)
+    );
 }
