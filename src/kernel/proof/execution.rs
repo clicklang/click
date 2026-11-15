@@ -8118,6 +8118,21 @@ impl ExecutionProofCore {
         call_events
     }
 
+    pub(crate) fn at_entry_with_descent(
+        state: ExecutionState,
+        frontier: ExecutionFrontier,
+        function: &ProgramFunction,
+        environment: &crate::kernel::ExecutionEnvironment,
+    ) -> Result<Self, String> {
+        let descent = crate::kernel::termination::descent_completion::OpenedDescent::open(
+            function,
+            environment,
+        )?;
+        let mut core = Self::at_entry(state, frontier);
+        core.descent = descent;
+        Ok(core)
+    }
+
     pub(crate) fn at_entry(state: ExecutionState, frontier: ExecutionFrontier) -> Self {
         let state: SharedValue<ExecutionState> = state.into();
         Self {
@@ -8297,6 +8312,7 @@ impl ExecutionProofCore {
     /// Records one statement theorem and the fact context it was proved
     /// under on the single open trace, once the theorem is checked to
     /// advance this frontier (`check_statement_evidence`).
+    #[cfg(test)]
     pub(crate) fn record_statement_transition(
         &mut self,
         function: &ProgramFunction,
@@ -8317,6 +8333,7 @@ impl ExecutionProofCore {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn record_statement_transition_with_loan_evidence(
         &mut self,
         function: &ProgramFunction,
@@ -8646,6 +8663,7 @@ impl ExecutionProofCore {
     /// Forks the single open trace into one trace per outcome theorem, each
     /// recording its theorem and the shared context they were proved under,
     /// once every theorem is checked to advance this frontier.
+    #[cfg(test)]
     pub(crate) fn record_statement_outcomes(
         &mut self,
         function: &ProgramFunction,
