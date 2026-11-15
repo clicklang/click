@@ -26,7 +26,7 @@ use super::*;
 const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 
 /// A completed byte output for a declared uint32 relates its word and bytes.
-/// The equation names only the selected output snapshot; initialization and
+/// The equation names only the selected output state; initialization and
 /// authority come from the checked output transfer, not from this equation.
 pub(in crate::kernel) fn declared_uint32_read_representation(
     memory: &Memory,
@@ -44,9 +44,9 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
     {
         return None;
     }
-    let snapshot = crate::kernel::intern_memory_ref(memory);
+    let retained_state = crate::kernel::intern_memory_ref(memory);
     let value = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
-        snapshot.clone(),
+        retained_state.clone(),
         Box::new(pointer.clone()),
         LoadKind::UInt32,
     ));
@@ -54,7 +54,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
         let read = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
-            snapshot.clone(),
+            retained_state.clone(),
             Box::new(pointer.offset_by_bytes(byte)),
             LoadKind::UInt8,
         ));

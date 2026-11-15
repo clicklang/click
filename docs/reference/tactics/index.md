@@ -3602,7 +3602,7 @@ explicit `at(...)`. Thus an old comparison of two reads can carry one read
 while the target explicitly keeps the other at its old point, but this route
 does not silently substitute the other's current value. The original source
 fact remains in the proof and is checked by `known()`.
-See `mdtests/snapshot_comparison_transport_expansion.md`.
+See `mdtests/state_comparison_transport_expansion.md`.
 
 When both operands are reads at earlier points, the comparison route can
 preserve both: `transport(at(statement(0).entry, *q == *r), *q == *r)`.

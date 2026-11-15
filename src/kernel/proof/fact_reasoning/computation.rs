@@ -105,7 +105,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                     CompareRelation::GreaterEqual => left >= right,
                 });
             }
-            // Raw goal atoms retain their exact typed snapshot identities.
+            // Raw goal atoms retain their exact typed state identities.
             // In particular, this key must never canonicalize a memory read.
             machine_affine_equality(condition, Clone::clone)
         }

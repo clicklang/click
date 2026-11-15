@@ -111,8 +111,8 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
         } else if let Some((operator, arguments)) = value.binary() {
             2u8.hash(&mut hash);
             // The existing memory-blind selector omits float operators;
-            // exact snapshot syntax keeps them. Preserve both candidate policies.
-            if matches!(policy, OperandFingerprintPolicy::Snapshot(_)) {
+            // exact state syntax keeps them. Preserve both candidate policies.
+            if matches!(policy, OperandFingerprintPolicy::MemoryState(_)) {
                 operator.hash(&mut hash);
             }
             arguments.to_vec()
@@ -123,7 +123,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                 OperandFingerprintPolicy::MemoryBlind => {
                     hash_memory_blind_bitvector(native, &mut hash)
                 }
-                OperandFingerprintPolicy::Snapshot(_) => native.hash(&mut hash),
+                OperandFingerprintPolicy::MemoryState(_) => native.hash(&mut hash),
             }
             Vec::new()
         };
@@ -238,7 +238,7 @@ mod tests {
                 ),
                 operand_fingerprint(
                     MachineOperandView::Shared(&root),
-                    OperandFingerprintPolicy::Snapshot(false),
+                    OperandFingerprintPolicy::MemoryState(false),
                 ),
             );
             assert_eq!(
@@ -252,7 +252,7 @@ mod tests {
                 pair.1,
                 operand_fingerprint(
                     MachineOperandView::Legacy(&native),
-                    OperandFingerprintPolicy::Snapshot(false)
+                    OperandFingerprintPolicy::MemoryState(false)
                 )
             );
             fingerprints.push(pair);
@@ -303,8 +303,8 @@ mod tests {
             let exports = crate::kernel::KernelTermExport::machine_export_count();
             for policy in [
                 OperandFingerprintPolicy::MemoryBlind,
-                OperandFingerprintPolicy::Snapshot(false),
-                OperandFingerprintPolicy::Snapshot(true),
+                OperandFingerprintPolicy::MemoryState(false),
+                OperandFingerprintPolicy::MemoryState(true),
             ] {
                 assert_eq!(
                     operand_fingerprint(MachineOperandView::Shared(&root), policy),
@@ -340,8 +340,8 @@ mod tests {
                 .machine(MachineIntegerType::Int32, &native);
             for policy in [
                 OperandFingerprintPolicy::MemoryBlind,
-                OperandFingerprintPolicy::Snapshot(false),
-                OperandFingerprintPolicy::Snapshot(true),
+                OperandFingerprintPolicy::MemoryState(false),
+                OperandFingerprintPolicy::MemoryState(true),
             ] {
                 assert_eq!(
                     operand_fingerprint(MachineOperandView::Shared(&root), policy),
@@ -355,7 +355,7 @@ mod tests {
                 ),
                 operand_fingerprint(
                     MachineOperandView::Shared(&root),
-                    OperandFingerprintPolicy::Snapshot(false),
+                    OperandFingerprintPolicy::MemoryState(false),
                 ),
             ));
             let mut expected = BTreeSet::new();
