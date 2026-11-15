@@ -1331,6 +1331,17 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
+    // A modular by-value return creates fresh caller storage, just as a
+    // body return materializes a local return object. Copying that value
+    // does not borrow an external resource. Use the temporary's recorded
+    // extent, not merely its identity, to authorize this selected copy.
+    if matches!(source.block, PointerBlock::Temporary(_))
+        && source.extent_is_known()
+        && assumptions.designations_equal(source.designation(), &source.pointer().object_identity())
+        && state.memory.access_in_bounds(source, layout.size_bytes())
+    {
+        return None;
+    }
     if (!crate::kernel::eval::is_external_memory_pointer(source)
         && source.extent_is_known()
         && assumptions

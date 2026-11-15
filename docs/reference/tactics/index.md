@@ -674,6 +674,11 @@ proof interface. Any statement region names a target:
 `.assignment(x, j)` and `.read(j)` end a chain the same way, at the
 statement's `j`th own store to `x` or memory load
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`).
+An ordinary scalar C call assignment has a call-result step followed by an
+assignment step. A C aggregate call with a declared return type similarly has
+a call-result step followed by a destination-copy step. Their `.call(...).exit`
+and `.assignment(...).exit` name distinct points, even when both effects come
+from one C statement (`mdtests/aggregate_call_and_destination_copy_have_separate_points.md`).
 `step_until(region(N))` stops before the `N`th atomic region;
 `step_until(loop(N))` selects the indexed loop entry;
 `step_until(assignment(local, N))` selects the Nth static local assignment

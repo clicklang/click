@@ -13226,8 +13226,40 @@ impl Parser {
         Ok(balanced_statement_sequence(steps).unwrap_or(C0Statement::Skip))
     }
 
+    fn lower_aggregate_call_result(
+        &mut self,
+        function_name: String,
+        arguments: Vec<C0Expression>,
+        struct_name: String,
+    ) -> Result<(Vec<C0Statement>, C0Expression), C0SyntaxError> {
+        let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+        let call = self.next_call_result;
+        self.next_call_result = self.next_call_result.saturating_add(1);
+        // Value returns already materialize independent aggregate storage.
+        // Retain its pointer; copying into the destination is a separate effect.
+        prefix.push(C0Statement::CallResult {
+            call,
+            function_name: function_name.clone(),
+            arguments,
+            result_type: Some(InterfaceType::UInt8Pointer),
+            result_pointee_constant: false,
+            site: C0Site::NONE,
+            callee: None,
+        });
+        Ok((
+            prefix,
+            C0Expression::StepResult {
+                step: call,
+                origin: crate::kernel::StepOrigin::Call(function_name),
+                interface_type: Some(InterfaceType::UInt8Pointer),
+                pointee_constant: false,
+                struct_name: Some(struct_name),
+            },
+        ))
+    }
+
     fn call_assignment_statement(
-        &self,
+        &mut self,
         target: String,
         function_name: String,
         arguments: Vec<C0Expression>,
@@ -13279,6 +13311,26 @@ impl Parser {
                         prior_result: None,
                     });
                 }
+            }
+            if let Some(struct_name) = self
+                .function_declaration_for_call(&function_name)
+                .and_then(|function| function.return_struct_name.clone())
+            {
+                if self.variable_struct_values.get(&target) != Some(&struct_name) {
+                    return Err(self.error_here(format!(
+                        "aggregate call result requires a destination of type `struct {struct_name}`"
+                    )));
+                }
+                let layout = self.scalar_struct_value_layout(&struct_name)?;
+                let (mut prefix, source) =
+                    self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
+                prefix.push(C0Statement::AggregateCopy {
+                    target: C0Expression::Variable(target),
+                    source,
+                    layout,
+                    site: C0Site::NONE,
+                });
+                return Ok(balanced_statement_sequence(prefix).expect("call and aggregate copy"));
             }
             if !self.variable_struct_values.contains_key(&target)
                 && !self
@@ -15132,13 +15184,16 @@ impl Parser {
                     let (target, layout) = self.declare_synthesized_aggregate(&struct_name)?;
                     prefix.push(C0Statement::DeclareStructValue {
                         name: target.clone(),
-                        layout,
+                        layout: layout.clone(),
                         site: C0Site::NONE,
                     });
-                    prefix.push(C0Statement::CallAssign {
-                        target: target.clone(),
-                        function_name,
-                        arguments,
+                    let (call, source) =
+                        self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
+                    prefix.extend(call);
+                    prefix.push(C0Statement::AggregateCopy {
+                        target: C0Expression::Variable(target.clone()),
+                        source,
+                        layout,
                         site: C0Site::NONE,
                     });
                     return Ok((prefix, C0Expression::Variable(target)));

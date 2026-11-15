@@ -14962,3 +14962,42 @@ fn scalar_call_assignment_retains_a_result_between_two_operations() {
     assert!(body.contains("Assign {"), "{body}");
     assert!(!body.contains("CallAssign"), "{body}");
 }
+
+#[test]
+fn aggregate_call_assignment_retains_a_result_before_copying() {
+    let functions = syntax::parse_functions(
+        "struct pair { int32 x; int32 y; }; struct pair make();
+         int32 caller() { struct pair p = make(); p = make(); return p.x; }",
+    )
+    .expect("aggregate call assignments parse");
+    let body = format!("{:?}", functions[0].body());
+    assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
+    assert_eq!(body.matches("AggregateCopy {").count(), 2, "{body}");
+    assert!(!body.contains("CallAssign"), "{body}");
+}
+
+#[test]
+fn aggregate_call_assignment_rejects_a_different_struct_destination() {
+    let error = syntax::parse_functions(
+        "struct a { int32 x; }; struct b { int32 x; }; struct a make();
+         int32 caller() { struct b p = make(); return p.x; }",
+    )
+    .expect_err("same-sized structs are not interchangeable");
+    assert!(
+        error.message().contains("destination of type `struct a`"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
+    let functions = syntax::parse_functions(
+        "struct pair { int32 x; int32 y; }; struct pair make();
+         int32 read(struct pair p); int32 caller() { return read(make()); }",
+    )
+    .expect("nested aggregate call parses");
+    let body = format!("{:?}", functions[0].body());
+    assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
+    assert_eq!(body.matches("AggregateCopy {").count(), 1, "{body}");
+    assert!(!body.contains("CallAssign"), "{body}");
+}

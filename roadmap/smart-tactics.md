@@ -210,7 +210,10 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
   separation, and `preserve`; neither needs a history fallback or automatic
   restatement. The overwrite regression
   `call_result_and_destination_write_have_separate_points.md` distinguishes
-  the two snapshots. Remaining producers include aggregate value returns,
+  the two snapshots. Declared C aggregate value returns similarly lower to
+  `CallResult` followed by `AggregateCopy`; their call and destination-copy
+  points are covered by `aggregate_call_and_destination_copy_have_separate_points.md`.
+  Remaining producers include C aggregate calls without a local declaration,
   destination-directed C++ construction, `realloc`, Rust/C++ scalar lowering,
   and generated one-call theorem adapters. Construction must remain a call
   into its supplied destination, not acquire an invented aggregate copy.

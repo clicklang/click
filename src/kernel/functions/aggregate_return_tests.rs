@@ -1513,3 +1513,46 @@ fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_return_tests.rs");
 }
+
+#[test]
+fn aggregate_return_temporary_copy_requires_its_recorded_extent() {
+    let layout = node_layout();
+    let temporary = Pointer::verifier_temporary(Variable(870_101));
+    let source = PointerValue::new(temporary.clone(), ProgramType::UInt8Pointer);
+    let assumptions = PureFactContext::new();
+    for bytes in [0, 8, 16] {
+        let state = ExecutionState::new()
+            .with_memory(Memory::new().with_block(temporary.block.clone(), bytes));
+        assert_eq!(
+            crate::kernel::eval::missing_aggregate_copy_read_resource(
+                &state,
+                &source,
+                &layout,
+                &assumptions
+            )
+            .is_none(),
+            bytes == 16,
+        );
+    }
+    for block in [
+        PointerBlock::Heap(870_102),
+        PointerBlock::Symbolic(Variable(870_103)),
+    ] {
+        let pointer = Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = PointerValue::new(pointer, ProgramType::UInt8Pointer);
+        let state = ExecutionState::new().with_memory(Memory::new().with_block(block, 16));
+        assert!(
+            crate::kernel::eval::missing_aggregate_copy_read_resource(
+                &state,
+                &source,
+                &layout,
+                &assumptions
+            )
+            .is_some(),
+            "external storage still requires a resource"
+        );
+    }
+}

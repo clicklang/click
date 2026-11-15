@@ -882,6 +882,10 @@ impl SourceExecutionLayout {
                     record_site(layout, statement_index, statement, enclosing);
                     if let syntax::C0Statement::Assign { name, .. }
                     | syntax::C0Statement::CallAssign { target: name, .. }
+                    | syntax::C0Statement::AggregateCopy {
+                        target: syntax::C0Expression::Variable(name),
+                        ..
+                    }
                     | syntax::C0Statement::Update {
                         target: syntax::C0Expression::Variable(name),
                         ..

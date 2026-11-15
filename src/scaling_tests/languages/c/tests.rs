@@ -230,3 +230,38 @@ fn scalar_call_assignments_lower_to_linear_explicit_operations() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn aggregate_call_assignments_lower_to_linear_explicit_operations() {
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let source = format!(
+            "struct pair {{ int32 x; int32 y; }}; struct pair make();
+             int32 caller() {{ struct pair p; {} return p.x; }}",
+            "p = make();".repeat(count),
+        );
+        let (functions, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let functions = syntax::parse_functions(&source).expect("aggregate calls parse");
+            let _kernel = functions[0].to_kernel_function();
+            functions
+        });
+        let mut pending = vec![functions[0].body()];
+        let (mut calls, mut copies) = (0, 0);
+        while let Some(statement) = pending.pop() {
+            match statement {
+                syntax::C0Statement::Seq(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                syntax::C0Statement::CallResult { .. } => calls += 1,
+                syntax::C0Statement::AggregateCopy { .. } => copies += 1,
+                syntax::C0Statement::CallAssign { .. } => panic!("combined aggregate call"),
+                _ => {}
+            }
+        }
+        assert_eq!((calls, copies), (count, count));
+        assert!(work > 0);
+        samples.push(work);
+    }
+    assert!(samples.windows(2).all(|pair| pair[1] <= pair[0] * 6), "{samples:?}");
+}
