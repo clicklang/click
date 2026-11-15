@@ -83,7 +83,8 @@ impl<'ast> Visit<'ast> for Inventory {
                 self.owner
             ));
         }
-        if (self.owner == "ProofScope" && name == "join")
+        if (self.owner == "ResourceContext" && name == "admit_without_discovery")
+            || (self.owner == "ProofScope" && name == "join")
             || (self.owner == "ProofObject" && name == "focus_contract_claim")
             || self.owner == "Proof"
                 && matches!(

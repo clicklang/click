@@ -994,7 +994,7 @@ fn recover_candidate_stable_view_resources(
             continue;
         }
         let (next, mut inserted) = recovered_resources
-            .try_compose_into_valid_context_with_occurrences([escrow], assumptions)
+            .try_compose_with_legacy_discovery_and_occurrences([escrow], assumptions)
             .map_err(resource_context_runtime_error)?;
         let occurrence = inserted.pop().map(|(_, occurrence)| occurrence);
         recovered_resources = next;
@@ -13053,7 +13053,7 @@ fn evaluate_contract_return_resources(
                         )
                     }
                     ReturnResourceComposition::ValidateDescriptions => frame
-                        .try_compose_into_valid_context_with_occurrences(
+                        .try_compose_with_legacy_discovery_and_occurrences(
                             ensured_resources.facts().iter().cloned(),
                             assumptions,
                         ),
