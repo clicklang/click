@@ -187,10 +187,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 41 | 88 |
+| `mdtests/` | 37 | 84 |
 | `examples/` | 27 | 358 |
 | `library/` | 0 | 0 |
-| Total | 68 | 446 |
+| Total | 64 | 442 |
 
 The 16 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text

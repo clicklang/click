@@ -1,4 +1,4 @@
-# Explicit field transport after a store inside an ownership loop
+# Explicit field preservation after a store inside an ownership loop
 ```c filename=probe.c
 struct arena { int32* data; int32* occupied; int32 capacity; };
 struct region { struct arena* arena; int32 start; int32 end; };
@@ -53,14 +53,25 @@ void clear(struct region* region) {
             have m == i;
             have 0 <= i;
             have i < arena->capacity;
+            have contains(memory(*region), memory(region->start)) by { normalize(); }
+            have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i])) by {
+                apply(click::separation::contains_element(arena->occupied, 0, arena->capacity, i)) using { 0 <= i; i < arena->capacity; };
+            }
+            have separate(memory(region->start), memory(arena->occupied[i])) by {
+                apply(click::separation::separate_restrict(memory(*region), memory(arena->occupied[0..arena->capacity]), memory(region->start), memory(arena->occupied[i]))) using {
+                    separate(memory(*region), memory(arena->occupied[0..arena->capacity]));
+                    contains(memory(*region), memory(region->start));
+                    contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i]));
+                };
+            }
             mark opened;
             step();
-            transport(at(opened, region->start) == at(opened, region->start),
-                      region->start == at(opened, region->start)) using {
-                at(opened, separate(memory(*region), memory(arena->occupied[0..arena->capacity])));
-                0 <= at(opened, i);
-                at(opened, i) < at(opened, arena->capacity);
-            };
+            have separate(loop(0).statement(0).footprint, memory(region->start)) by {
+                normalize() using { at(opened, separate(memory(region->start), memory(arena->occupied[i]))); };
+            }
+            have region->start == at(opened, region->start) by {
+                preserve(separate(loop(0).statement(0).footprint, memory(region->start)));
+            }
             step();
         }
     }

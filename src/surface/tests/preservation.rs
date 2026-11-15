@@ -1648,3 +1648,37 @@ fn copy_loop_preservation_migrations_expand_and_replay() {
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
     }
 }
+
+#[test]
+#[ignore = "nightly: loop ownership preservation migration expansion and cold replay"]
+fn loop_ownership_preservation_migrations_expand_and_replay() {
+    for (fixture, claim) in [
+        (
+            "mdtests/retained_loop_metadata_transport_crosses_a_separated_store.md",
+            "clear.contract",
+        ),
+        (
+            "mdtests/empty_loop_footprint_preserves_nested_read_transport.md",
+            "fill.contract",
+        ),
+        (
+            "mdtests/iterated_ownership_claim_loop.md",
+            "claim_run.contract",
+        ),
+        (
+            "mdtests/iterated_ownership_release_loop.md",
+            "release_run.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+    }
+}
