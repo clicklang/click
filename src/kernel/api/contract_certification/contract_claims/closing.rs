@@ -846,6 +846,17 @@ fn preexisting_write(
     if pointer.block.is_local_block() || pointer.block.is_havoc_block() {
         return false;
     }
+    // A descriptor can retain a loaded spelling of this function's local.
+    // Its checked address-class anchor identifies that private storage with
+    // one lookup; no external mutable footprint is needed for those bytes.
+    if assumptions
+        .equality_graph
+        .storage_address(pointer)
+        .block
+        .is_local_block()
+    {
+        return false;
+    }
     if !matches!(
         pointer.block,
         PointerBlock::Heap(_) | PointerBlock::Symbolic(_)
@@ -875,4 +886,73 @@ fn preexisting_write(
         pending.extend(assumptions.exact_pointer_aliases(&candidate).cloned());
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn aliased_write_fixture(
+        local: bool,
+        size: u32,
+    ) -> (ExecutionState, ExecutionFacts, PureFactContext) {
+        let anchor = if local {
+            Memory::local_pointer("private-output")
+        } else {
+            Pointer {
+                block: "global:public-output".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            }
+        };
+        let mut memory = Memory::new().with_block(anchor.block.clone(), 4);
+        let alias = Pointer::loaded_value(
+            &crate::kernel::intern_memory(memory.clone()),
+            &Pointer::symbolic(Variable(988_000)),
+        );
+        let mut assumptions = PureFactContext::new();
+        let mut previous = alias.clone();
+        for i in 0..size {
+            let next = Pointer::symbolic(Variable(988_001 + u64::from(i)));
+            assumptions = assumptions
+                .assume_condition(ConditionTerm::pointer_equal(previous, next.clone()), true);
+            previous = next;
+            memory = memory.with_block(format!("unrelated-write-{i}"), 4);
+        }
+        assumptions =
+            assumptions.assume_condition(ConditionTerm::pointer_equal(previous, anchor), true);
+        let effects = vec![crate::kernel::ExecutionPureFact::certified(
+            Proposition::MemoryEffectSummary {
+                before: memory.clone(),
+                after: memory.clone(),
+                mutable_ranges: vec![MemoryRange::new_with_element_width(
+                    alias,
+                    0u32.into(),
+                    4u32.into(),
+                    1,
+                )],
+            },
+        )];
+        (
+            ExecutionState::new().with_memory(memory),
+            effects.into(),
+            assumptions,
+        )
+    }
+
+    #[test]
+    fn private_storage_aliases_need_no_external_write_footprint() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (caller, effects, assumptions) = aliased_write_fixture(true, 8);
+        assert!(check_empty_footprint(&caller, &effects, &assumptions).is_ok());
+        assert!(check_empty_footprint(&caller, &effects, &PureFactContext::new()).is_err());
+        let (caller, effects, assumptions) = aliased_write_fixture(false, 8);
+        assert!(check_empty_footprint(&caller, &effects, &assumptions).is_err());
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../../scaling_tests/kernel/api/contract_certification/contract_claims/closing.rs"
+        );
+    }
 }

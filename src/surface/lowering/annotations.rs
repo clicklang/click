@@ -8539,14 +8539,31 @@ impl AnnotationLowerer<'_> {
                 diagnostics::describe_code_region_ref(region)
             )
         })?;
-        let [RegionParameterAccess::Field(field_name), rest @ ..] = accesses else {
+        let field_count = accesses
+            .iter()
+            .take_while(|access| matches!(access, RegionParameterAccess::Field(_)))
+            .count();
+        if field_count == 0 {
             return Err(format!("read a field of `{}`", spelled()));
-        };
+        }
+        // Aggregate layouts flatten embedded records into dotted field paths.
+        // Keep that exact path when reading a copied parameter, just as a
+        // returned aggregate field does; a span's size is such a nested field.
+        let field_name = accesses[..field_count]
+            .iter()
+            .map(|access| match access {
+                RegionParameterAccess::Field(name) => *name,
+                _ => unreachable!(),
+            })
+            .collect::<Vec<_>>()
+            .join(".");
+        let rest = &accesses[field_count..];
         let field = layout
             .fields()
             .iter()
             .find(|field| {
-                field.name() == *field_name || field.name().strip_prefix('_') == Some(*field_name)
+                field.name() == field_name
+                    || field.name().strip_prefix('_') == Some(field_name.as_str())
             })
             .ok_or_else(|| format!("`{}` has no field `{field_name}`", spelled()))?;
         let (offset, value_type) = match rest {

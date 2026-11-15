@@ -6522,7 +6522,16 @@ types it maps to them. The model accessors `std_span_data`,
 
 ### `std::span<T>`
 
+The dynamic pointer/count constructor initializes the descriptor and establishes
+its address and count. Its contract grants no authority over the backing.
+
 ```click
+template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count) {
+    consumes uninitialized(this[0..1]);
+    produces this[0..1];
+    ensures std_span_data(this) == first;
+    ensures std_span_size(this) == count;
+}
 template<class T> extern unsigned long std::span<T>::size() const {
     views std_span_size(this);
     ensures result == std_span_size(this);
