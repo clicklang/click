@@ -67,7 +67,7 @@ fn context_with_member_view(
         "forward",
         vec![program_parameter("input", ProgramType::Int32)],
         program_seq(
-            program_call_assign(
+            program_call_construct(
                 C_CONTRACT_RESULT_NAME,
                 "factory",
                 vec![crate::kernel::program_expression::variable("input")],
@@ -83,7 +83,7 @@ fn context_with_member_view(
         program_seq(
             program_allocate_aggregate_destination("node", layout),
             program_seq(
-                program_call_assign(
+                program_call_construct(
                     "node",
                     "forward",
                     vec![crate::kernel::program_expression::variable("input")],

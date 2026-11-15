@@ -202,22 +202,6 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- Finish retiring combined call/assignment operations. Ordinary scalar and
-  pointer C calls now lower to `CallResult` followed by `Assign`. Their call
-  exit and assignment entry/exit are separately nameable. The reduced
-  `call_result_assignment_retains_defined_pointer_output.md` and binary-tree
-  proofs use the call's explicit `defined` postcondition, assignment footprint
-  separation, and `preserve`; neither needs a history fallback or automatic
-  restatement. The overwrite regression
-  `call_result_and_destination_write_have_separate_points.md` distinguishes
-  the two snapshots. Declared C aggregate value returns similarly lower to
-  `CallResult` followed by `AggregateCopy`; their call and destination-copy
-  points are covered by `aggregate_call_and_destination_copy_have_separate_points.md`.
-  Remaining producers include C aggregate calls without a local declaration,
-  destination-directed C++ construction, `realloc`, Rust/C++ scalar lowering,
-  and generated one-call theorem adapters. Construction must remain a call
-  into its supplied destination, not acquire an invented aggregate copy.
-  Retire those producers before deleting the kernel variant/dispatcher.
 - Migrate the negative `transport_wide_viewable_range_to_element_definedness.md`
   fixture without inferring initialized contents from its pure `viewable`
   premise. Its legacy rule must remain refused; initializedness needs an

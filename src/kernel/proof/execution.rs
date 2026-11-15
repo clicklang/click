@@ -5829,7 +5829,7 @@ impl CheckedCallOutcomeSplit {
         if !matches!(
             statement,
             ProgramStatement::Call { .. }
-                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
         ) || !matches!(normal, StatementOutcome::Normal(_))
             || !matches!(exceptional, StatementOutcome::Throw { .. })

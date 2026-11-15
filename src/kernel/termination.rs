@@ -569,7 +569,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                     path
                 })
                 .collect()),
-            ProgramStatement::CallAssign {
+            ProgramStatement::CallConstruct {
                 target,
                 function_name,
                 arguments,
@@ -1350,7 +1350,7 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         | ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => escapes(expression),
-        ProgramStatement::CallAssign { arguments, .. }
+        ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().for_each(escapes),
         ProgramStatement::HeapAllocate { bytes, .. } => escapes(bytes),
@@ -1700,7 +1700,7 @@ fn statement_calls_visiting(
         } => {
             calls.insert(format!("{function_name}#indirect"));
         }
-        ProgramStatement::CallAssign { function_name, .. }
+        ProgramStatement::CallConstruct { function_name, .. }
         | ProgramStatement::Call { function_name, .. }
         | ProgramStatement::CallResult { function_name, .. } => {
             calls.insert(function_name.clone());
@@ -1767,7 +1767,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
     match statement {
         ProgramStatement::Declare { name, .. }
         | ProgramStatement::DeclareAggregate { name, .. }
-        | ProgramStatement::CallAssign { target: name, .. }
+        | ProgramStatement::CallConstruct { target: name, .. }
         | ProgramStatement::HeapAllocate { target: name, .. } => {
             names.insert(name.clone());
         }
@@ -2116,7 +2116,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
                 )))
             }
             ProgramStatement::HeapAllocate { .. } => Ok(lower_bounds),
-            ProgramStatement::CallAssign {
+            ProgramStatement::CallConstruct {
                 target,
                 function_name,
                 arguments,
@@ -3449,7 +3449,7 @@ fn collect_loops_in_order<'a>(
         | ProgramStatement::Declare { .. }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -3762,7 +3762,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
         | ProgramStatement::Declare { .. }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -4036,7 +4036,7 @@ fn check_loops(
         | ProgramStatement::Declare { .. }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -4281,7 +4281,7 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         | ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
-        ProgramStatement::CallAssign { arguments, .. }
+        ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => {
             arguments.iter().for_each(visit);
@@ -4646,7 +4646,7 @@ pub(super) fn statement_calls_function(statement: &ProgramStatement, callee: &st
     match statement {
         ProgramStatement::Call { function_name, .. }
         | ProgramStatement::CallResult { function_name, .. }
-        | ProgramStatement::CallAssign { function_name, .. } => function_name == callee,
+        | ProgramStatement::CallConstruct { function_name, .. } => function_name == callee,
         ProgramStatement::While { body, .. } => statement_calls_function(body, callee),
         ProgramStatement::Seq(statements) => both(statements.first(), &statements.rest()),
         ProgramStatement::If {
@@ -4710,7 +4710,7 @@ fn self_call_loop_indices(
     match statement {
         ProgramStatement::Call { function_name, .. }
         | ProgramStatement::CallResult { function_name, .. }
-        | ProgramStatement::CallAssign { function_name, .. } => {
+        | ProgramStatement::CallConstruct { function_name, .. } => {
             if callee.contains(function_name) {
                 found.extend(enclosing.iter().copied());
             }

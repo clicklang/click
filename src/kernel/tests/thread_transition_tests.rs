@@ -169,7 +169,7 @@ fn modeled_pthread_calls_cannot_fall_back_to_ordinary_function_rules() {
             program_return(crate::kernel::program_expression::int32_literal(0)),
         ));
     for statement in [
-        program_call_assign("result", "pthread_create", vec![]),
+        program_call_then_assign(0, "result", "pthread_create", vec![]),
         program_call("pthread_create", vec![]),
     ] {
         let paths = execute_execution_statement_paths(
@@ -308,7 +308,8 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
         crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
     ));
     let join = |handle: ThreadHandle| {
-        program_call_assign(
+        program_call_then_assign(
+            1,
             "status",
             "pthread_join",
             vec![
@@ -342,7 +343,8 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
     ));
     let paths = execute_execution_statement_paths(
         &state,
-        &program_call_assign(
+        &program_call_then_assign(
+            2,
             "status",
             "pthread_join",
             vec![
@@ -365,7 +367,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
     let (checked, _) =
         prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
             state.clone(),
-            program_call_assign(
+            program_call_then_assign(3,
                 "status",
                 "pthread_join",
                 vec![
@@ -506,7 +508,8 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         panic!("prior handle value should initialize");
     };
     state = *initialized.clone();
-    let create = program_call_assign(
+    let create = program_call_then_assign(
+        4,
         "rc",
         "pthread_create",
         vec![
@@ -741,7 +744,8 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         success.memory().load(&pointer(0)),
         state.memory().load(&pointer(0))
     );
-    let join = program_call_assign(
+    let join = program_call_then_assign(
+        5,
         "rc",
         "pthread_join",
         vec![
@@ -836,7 +840,8 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
     }
     let paths = execute_execution_statement_paths(
         &state,
-        &program_call_assign(
+        &program_call_then_assign(
+            6,
             "rc",
             "pthread_create",
             vec![

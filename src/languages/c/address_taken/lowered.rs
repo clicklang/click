@@ -74,7 +74,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             }
             ProgramStatement::Call { arguments, .. }
             | ProgramStatement::CallResult { arguments, .. }
-            | ProgramStatement::CallAssign { arguments, .. } => {
+            | ProgramStatement::CallConstruct { arguments, .. } => {
                 expressions.extend(arguments.iter().map(|argument| (argument, false)));
             }
             ProgramStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),

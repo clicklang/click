@@ -990,7 +990,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
                 }
             } else {
                 program_seq(
-                    program_call_assign("result", callee, vec![argument]),
+                    program_call_then_assign(0, "result", callee, vec![argument]),
                     program_return(if alter_result {
                         crate::kernel::program_expression::int32_literal(0)
                     } else {

@@ -1852,7 +1852,7 @@ pub(super) fn prepare_call_outcome_split(
     if !matches!(
         statement,
         ProgramStatement::Call { .. }
-            | ProgramStatement::CallAssign { .. }
+            | ProgramStatement::CallConstruct { .. }
             | ProgramStatement::CallResult { .. }
     ) {
         return Ok(None);
@@ -2390,8 +2390,8 @@ fn execute_step_from_frontier_position_selecting_path(
     // to run has to be that call: one comparison against the statement, not a
     // search for a matching call.
     if let Some(transport) = &function_environment.selected_call_binders {
-        // A non-void one-call theorem runs its generated call assignment and
-        // return together. Validate the selected binder map against that one
+        // A non-void one-call theorem runs its generated call and return
+        // together. Validate the selected binder map against that one
         // leading call, not against the sequence wrapper. Ordinary C steps
         // still require a call at the exact frontier.
         let selected_statement = if function_block.one_call_proof
@@ -2400,8 +2400,6 @@ fn execute_step_from_frontier_position_selecting_path(
                 FrontierPosition::FunctionEntry
             )
             && let ProgramStatement::Seq(statements) = &step_statement
-            && statements.len() == 2
-            && matches!(statements.rest().as_ref(), ProgramStatement::Return(_))
         {
             statements.first().as_ref()
         } else {
@@ -2413,7 +2411,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 arguments,
                 ..
             }
-            | ProgramStatement::CallAssign {
+            | ProgramStatement::CallConstruct {
                 function_name,
                 arguments,
                 ..
@@ -2514,7 +2512,7 @@ fn execute_step_from_frontier_position_selecting_path(
         && matches!(
             step_statement,
             ProgramStatement::Call { .. }
-                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
                 | ProgramStatement::TryCatchInt32 { .. }
         )
@@ -2534,7 +2532,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 (&step_statement, &transition.outcome),
                 (
                     ProgramStatement::Call { .. }
-                        | ProgramStatement::CallAssign { .. }
+                        | ProgramStatement::CallConstruct { .. }
                         | ProgramStatement::CallResult { .. },
                     StatementOutcome::Throw { .. }
                 ) | (
@@ -2567,7 +2565,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     (&step_statement, &transition.outcome),
                     (
                         ProgramStatement::Call { .. }
-                            | ProgramStatement::CallAssign { .. }
+                            | ProgramStatement::CallConstruct { .. }
                             | ProgramStatement::CallResult { .. },
                         StatementOutcome::Return { .. } | StatementOutcome::Throw { .. }
                     ) | (
@@ -2591,7 +2589,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 && matches!(
                     try_body.as_ref(),
                     ProgramStatement::Call { .. }
-                        | ProgramStatement::CallAssign { .. }
+                        | ProgramStatement::CallConstruct { .. }
                         | ProgramStatement::CallResult { .. }
                 )
                 && matches!(handler.as_ref(), ProgramStatement::Return(_))
@@ -2614,7 +2612,7 @@ fn execute_step_from_frontier_position_selecting_path(
             } else if matches!(
                 step_statement,
                 ProgramStatement::Call { .. }
-                    | ProgramStatement::CallAssign { .. }
+                    | ProgramStatement::CallConstruct { .. }
                     | ProgramStatement::CallResult { .. }
             ) {
                 // A direct call's continuing normal edge is its returned
@@ -2853,7 +2851,7 @@ fn execute_step_from_frontier_position_selecting_path(
         && matches!(
             step_statement,
             ProgramStatement::Call { .. }
-                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
         )
         && matches!(
@@ -4276,7 +4274,7 @@ fn describe_call_bindings(
             arguments,
             ..
         }
-        | ProgramStatement::CallAssign {
+        | ProgramStatement::CallConstruct {
             function_name,
             arguments,
             ..
@@ -4342,7 +4340,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         } => {
             format!("{name} = {}", describe_program_expression(expression))
         }
-        ProgramStatement::CallAssign {
+        ProgramStatement::CallConstruct {
             target,
             function_name,
             arguments,

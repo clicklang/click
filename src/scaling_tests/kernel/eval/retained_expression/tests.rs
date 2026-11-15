@@ -246,10 +246,11 @@ fn complete_c_and_rust_machine_handoffs_retain_roots_without_prefix_exports() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let (environment, statement) = complete_machine_handoff_program(rust, size, false);
+            let caller = machine_handoff_caller(rust);
             let exports = KernelTermExport::machine_export_count();
             let (paths, measured) = crate::instrumentation::measure_deterministic_work(|| {
                 super::super::super::statements::execute_execution_statement_paths(
-                    &ExecutionState::new(),
+                    &caller,
                     &statement,
                     &PureFactContext::new(),
                     ExecutionContext::execute_bodies(&environment),

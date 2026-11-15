@@ -5396,7 +5396,9 @@ pub enum ProgramStatement {
         /// value of a postfix `p++`.
         prior_result: Option<u32>,
     },
-    CallAssign {
+    /// Invoke a construction-return function in an already allocated destination.
+    /// The call constructs the object; there is no result assignment or copy.
+    CallConstruct {
         target: String,
         function_name: String,
         arguments: Vec<ProgramExpression>,
@@ -5412,6 +5414,7 @@ pub enum ProgramStatement {
         /// assignment to a local of that type would; `None` keeps the
         /// contract's own.
         result_type: Option<ProgramType>,
+        result_aggregate_layout: Option<AggregateLayout>,
         result_pointee_constant: bool,
         /// The function pointer the call goes through, when it is not a
         /// call of a named function; `function_name` then only describes it.

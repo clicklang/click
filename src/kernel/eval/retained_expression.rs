@@ -1366,6 +1366,20 @@ mod tests {
         assert!(roots.windows(2).all(|pair| pair[0] == pair[1]));
     }
 
+    fn machine_handoff_caller(rust: bool) -> ExecutionState {
+        let format = if rust {
+            MachineIntegerType::UInt8
+        } else {
+            MachineIntegerType::UInt32
+        };
+        let zero = if rust {
+            MachineTerm::narrow_constant(format, 0)
+        } else {
+            MachineTerm::uint32_constant(0)
+        };
+        ExecutionState::new().with_local("received", format.value_from_term(zero))
+    }
+
     fn complete_machine_handoff_program(
         rust: bool,
         size: usize,
@@ -1415,7 +1429,8 @@ mod tests {
         );
         let environment = ExecutionEnvironment::new().with_function(helper);
         let statement = program_seq(
-            program_call_assign(
+            program_call_then_assign(
+                0,
                 "received",
                 "machine_handoff",
                 vec![ProgramExpression::Value(
@@ -1435,7 +1450,7 @@ mod tests {
                 let (environment, statement) = complete_machine_handoff_program(rust, size, true);
                 let exports = KernelTermExport::machine_export_count();
                 let paths = super::super::statements::execute_execution_statement_paths(
-                    &ExecutionState::new(),
+                    &machine_handoff_caller(rust),
                     &statement,
                     &PureFactContext::new(),
                     ExecutionContext::execute_bodies(&environment),

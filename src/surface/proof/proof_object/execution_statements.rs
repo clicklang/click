@@ -484,7 +484,7 @@ impl<'a> Proof<'a> {
         )?;
         match statement {
             ProgramStatement::Assign { name, .. } if assignment => Ok(FrontierResult::Local(name)),
-            ProgramStatement::CallAssign { target, .. } if !assignment => {
+            ProgramStatement::CallConstruct { target, .. } if !assignment => {
                 Ok(FrontierResult::Local(target))
             }
             ProgramStatement::CallResult { call, .. } if !assignment => Ok(FrontierResult::Call(call)),
@@ -1146,7 +1146,7 @@ impl<'a> Proof<'a> {
                 arguments,
                 ..
             }
-            | ProgramStatement::CallAssign {
+            | ProgramStatement::CallConstruct {
                 function_name,
                 arguments,
                 ..

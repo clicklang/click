@@ -2454,7 +2454,8 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
             checked_callees: None,
             applied_tactics: Default::default(),
         });
-    let call = program_call_assign(
+    let call = program_call_then_assign(
+        0,
         "observed",
         "peek",
         vec![crate::kernel::program_expression::variable("p")],
@@ -2463,7 +2464,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
     let mut samples = Vec::new();
     for size in [2usize, 4, 8, 16] {
         let _session = crate::kernel::VerificationSession::enter();
-        let caller = caller_beside_unrelated_allocations(size);
+        let caller = caller_beside_unrelated_allocations(size).with_local("observed", int32(0));
         // The steps before the call have already published the caller's
         // resources to the equality graph, counted its memory's variables,
         // and observed its resources; each of those is a one-time cost of

@@ -1012,7 +1012,8 @@ fn function_call_does_not_inherit_undeclared_resources() {
         ProgramType::Int32,
         "caller",
         vec![program_parameter("p", ProgramType::Int32Pointer)],
-        program_call_assign(
+        program_call_then_assign(
+            0,
             "result",
             "store_and_load",
             vec![crate::kernel::program_expression::variable("p")],
@@ -1143,7 +1144,7 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
 }
 
 #[test]
-fn call_assign_uses_function_environment() {
+fn call_result_then_assignment_uses_function_environment() {
     let increment = program_function(
         ProgramType::Int32,
         "increment",
@@ -1154,16 +1155,18 @@ fn call_assign_uses_function_environment() {
         )),
     );
     let environment = ExecutionEnvironment::new().with_function(increment);
-    let state = ExecutionState::new();
+    let state = ExecutionState::new().with_local("result", int32(0));
     let statement = program_seq(
-        program_call_assign(
+        program_call_then_assign(
+            1,
             "result",
             "increment",
             vec![crate::kernel::program_expression::int32_literal(41)],
         ),
         program_return(crate::kernel::program_expression::variable("result")),
     );
-    let final_state = ExecutionState::new().with_local("result", int32(42));
+    let mut final_state = ExecutionState::new().with_local("result", int32(42));
+    final_state.set_step_result(1, int32(42));
     let theorem = prove_symbolic_program_execution_with_environment(
         state.clone(),
         statement.clone(),
@@ -1198,7 +1201,7 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
     let environment = ExecutionEnvironment::new().with_function(thrower);
     let state = ExecutionState::new().with_local("result", int32(1));
     let statement = program_seq(
-        program_call_assign("result", "thrower", Vec::new()),
+        program_call_then_assign(2, "result", "thrower", Vec::new()),
         program_return(crate::kernel::program_expression::variable("result")),
     );
     let theorem = prove_symbolic_program_execution_with_environment(
@@ -1952,7 +1955,7 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
 #[test]
 fn unknown_call_assign_is_runtime_error() {
     let state = ExecutionState::new();
-    let statement = program_call_assign("result", "missing", Vec::new());
+    let statement = program_call_then_assign(3, "result", "missing", Vec::new());
     let theorem = prove_symbolic_program_execution_with_environment(
         state.clone(),
         statement.clone(),

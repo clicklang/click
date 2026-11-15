@@ -520,7 +520,7 @@ pub(super) fn lower(
                 let call = if **result == Type::Unit {
                     program_call(function, arguments_values)
                 } else {
-                    program_call_assign(destination, function, arguments_values)
+                    cx.call_then_assign(destination, function, arguments_values)
                 };
                 program_seq(
                     accesses(&arguments.iter().collect::<Vec<_>>(), &live),
@@ -576,10 +576,21 @@ pub(super) fn lower(
                 }
                 let call = if let Type::Record { name } = &callee.return_type {
                     let flag = check(destination, name)?;
+                    let layout = cx
+                        .layouts
+                        .get(name.as_str())
+                        .ok_or("missing returned record layout")?
+                        .to_kernel_aggregate_layout();
+                    let (call, result) = cx.call_value(function, arguments_values);
+                    let copy = crate::kernel::program_copy_aggregate(
+                        crate::kernel::program_expression::variable(destination),
+                        result,
+                        layout,
+                    );
                     program_seq(
                         assertion(flag, false),
                         program_seq(
-                            program_call_assign(destination, function, arguments_values),
+                            program_seq(call, copy),
                             program_assign(
                                 flag,
                                 crate::kernel::program_expression::int32_literal(1),
@@ -599,7 +610,7 @@ pub(super) fn lower(
                     program_seq(
                         program_seq(
                             program_declare(&temporary, value_type),
-                            program_call_assign(&temporary, function, arguments_values),
+                            cx.call_then_assign(&temporary, function, arguments_values),
                         ),
                         program_typed_store(
                             address,
@@ -608,7 +619,7 @@ pub(super) fn lower(
                         ),
                     )
                 } else {
-                    program_call_assign(destination, function, arguments_values)
+                    cx.call_then_assign(destination, function, arguments_values)
                 };
                 program_seq(
                     accesses(&arguments.iter().collect::<Vec<_>>(), &live),
@@ -763,7 +774,7 @@ pub(super) fn lower(
                     }
                     program_seq(
                         checks,
-                        program_call_assign(
+                        cx.call_then_assign(
                             name,
                             crate::languages::rust::names::closure_instance_name(function),
                             values,
@@ -1833,6 +1844,7 @@ mod tests {
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
                 next_temporary: 0,
+                next_call_result: std::cell::Cell::new(0),
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
                 return_type: InterfaceType::Void,

@@ -1122,7 +1122,7 @@ pub(super) fn describe_multiple_statement_successors_guidance(
         || !matches!(
             statement,
             ProgramStatement::Call { .. }
-                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
         )
     {
@@ -6722,7 +6722,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         } => {
             format!("{name} = {};", describe_program_expression(expression))
         }
-        ProgramStatement::CallAssign {
+        ProgramStatement::CallConstruct {
             target,
             function_name,
             arguments,

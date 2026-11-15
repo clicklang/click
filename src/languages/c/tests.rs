@@ -5265,7 +5265,6 @@ fn c_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::CStatement::Assign { .. }
             | syntax::CStatement::Call { .. }
             | syntax::CStatement::CallResult { .. }
-            | syntax::CStatement::CallAssign { .. }
             | syntax::CStatement::IndirectCall { .. }
             | syntax::CStatement::HeapAllocate { .. }
             | syntax::CStatement::HeapFree { .. }
@@ -6460,7 +6459,7 @@ fn c_syntax_accepts_realloc_with_two_arguments() {
 
     fn find_realloc(statement: &syntax::CStatement) -> Option<usize> {
         match statement {
-            syntax::CStatement::CallAssign {
+            syntax::CStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -10324,8 +10323,7 @@ fn c_field_source_ids_survive_expression_rebuilds() {
     .expect("call argument field access should parse");
     fn call_argument(statement: &syntax::CStatement) -> Option<&syntax::CExpression> {
         match statement {
-            syntax::CStatement::CallAssign { arguments, .. }
-            | syntax::CStatement::CallResult { arguments, .. } => arguments.first(),
+            syntax::CStatement::CallResult { arguments, .. } => arguments.first(),
             syntax::CStatement::Seq(first, second) => {
                 call_argument(first).or_else(|| call_argument(second))
             }
@@ -14954,7 +14952,7 @@ fn scalar_call_assignment_retains_a_result_between_two_operations() {
     assert!(body.contains("CallResult {"), "{body}");
     assert!(body.contains("StepResult {"), "{body}");
     assert!(body.contains("Assign {"), "{body}");
-    assert!(!body.contains("CallAssign"), "{body}");
+    assert!(!body.contains("CallConstruct"), "{body}");
 }
 
 #[test]
@@ -14967,7 +14965,7 @@ fn aggregate_call_assignment_retains_a_result_before_copying() {
     let body = format!("{:?}", functions[0].body());
     assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
     assert_eq!(body.matches("AggregateCopy {").count(), 2, "{body}");
-    assert!(!body.contains("CallAssign"), "{body}");
+    assert!(!body.contains("CallConstruct"), "{body}");
 }
 
 #[test]
@@ -14993,5 +14991,44 @@ fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
     let body = format!("{:?}", functions[0].body());
     assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
     assert_eq!(body.matches("AggregateCopy {").count(), 1, "{body}");
-    assert!(!body.contains("CallAssign"), "{body}");
+    assert!(!body.contains("CallConstruct"), "{body}");
+}
+
+#[test]
+fn realloc_argument_calls_are_separate_retained_operations() {
+    let functions = syntax::parse_functions(
+        "int32* prior(int32* p); int32 bytes();
+         int32* resize(int32* p) { p = realloc(prior(p), bytes()); return p; }",
+    )
+    .expect("realloc argument calls parse");
+    let mut pending = vec![functions[0].body()];
+    let mut calls = std::collections::BTreeSet::new();
+    let mut reallocation = None;
+    while let Some(statement) = pending.pop() {
+        match statement {
+            syntax::CStatement::Seq(left, right) => pending.extend([left.as_ref(), right.as_ref()]),
+            syntax::CStatement::CallResult {
+                call,
+                function_name,
+                arguments,
+                ..
+            } => {
+                assert!(
+                    calls.insert(*call),
+                    "each retained result has its own identity"
+                );
+                if function_name == "realloc" {
+                    reallocation = Some(arguments);
+                }
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(calls.len(), 3);
+    let arguments = reallocation.expect("a realloc call");
+    assert!(
+        arguments
+            .iter()
+            .all(|argument| matches!(argument, syntax::CExpression::StepResult { .. }))
+    );
 }

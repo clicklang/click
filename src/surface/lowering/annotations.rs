@@ -1485,7 +1485,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         | ProgramStatement::Declare { .. }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }

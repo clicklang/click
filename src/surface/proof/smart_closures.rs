@@ -4352,7 +4352,7 @@ fn source_backed_call_requirement_surface(
             arguments,
             ..
         }
-        | ProgramStatement::CallAssign {
+        | ProgramStatement::CallConstruct {
             function_name,
             arguments,
             ..

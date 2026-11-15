@@ -282,9 +282,10 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_execution_statement_paths(
                 &state,
-                &program_call_assign(
+                &program_reallocate_then_assign(
+                    0,
                     "q",
-                    "realloc",
+                    ProgramType::Int32Pointer,
                     vec![
                         crate::kernel::program_expression::variable("p"),
                         crate::kernel::program_expression::int32_literal(8),

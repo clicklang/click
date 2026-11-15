@@ -149,7 +149,7 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
         construction_function(
             name,
             program_seq(
-                program_call_assign(
+                program_call_construct(
                     C_CONTRACT_RESULT_NAME,
                     callee,
                     vec![crate::kernel::program_expression::variable("input")],
@@ -413,7 +413,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             ),
             program_allocate_aggregate_destination("node", node_layout()),
             program_allocate_aggregate_destination("temporary", node_layout()),
-            program_call_assign(
+            program_call_construct(
                 "temporary",
                 "materialize_descriptor",
                 vec![crate::kernel::program_expression::addr_of("backing")],
