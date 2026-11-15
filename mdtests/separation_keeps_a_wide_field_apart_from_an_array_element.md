@@ -11,8 +11,8 @@ theorem last_element_separate(field: uint64*, data: int32*, n: int32) {
     ensures separate(memory(*field), memory(data[n - 1])) by {
         have 0 <= n - 1 by { solve() using { 1 <= n; n <= 1073741823; }; }
         have n - 1 < n by { solve() using { 1 <= n; n <= 1073741823; }; }
-        have separate(memory(*field), memory(data[n - 1])) by assumption();
-        assumption();
+        have separate(memory(*field), memory(data[n - 1])) by known();
+        known();
     }
 }
 ```

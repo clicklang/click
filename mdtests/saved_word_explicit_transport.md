@@ -30,10 +30,10 @@ void copy(unsigned long* slot, int32* p) {
         }
     }
     have ((*slot & ~1) as (int32 *)) == p by {
-        assumption();
+        known();
     }
     step();
-    have ((saved & ~1) as (int32 *)) == p by { assumption(); }
+    have ((saved & ~1) as (int32 *)) == p by { known(); }
 }
 ```
 

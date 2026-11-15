@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn smart_proof_calls_have_identical_meaning_with_optional_braces() {
-    for tactic in ["solve", "assumption", "normalize"] {
+    for tactic in ["solve", "known", "normalize"] {
         let call = format!("by {tactic}();");
         let block = format!("by {{ {tactic}(); }}");
         let source = |proof: &str| {
@@ -34,8 +34,8 @@ fn bare_smart_tactics_are_rejected_in_proofs_and_scripts() {
     for proof in [
         "by solve;",
         "by { solve; }",
-        "by { have x == 7 by assumption(); solve; }",
-        "by { have x == 7 by solve; assumption(); }",
+        "by { have x == 7 by known(); solve; }",
+        "by { have x == 7 by solve; known(); }",
         "by solve using { x == 7; };",
     ] {
         let source =
@@ -64,7 +64,7 @@ fn nested_single_tactic_calls_keep_their_checked_scopes() {
         ensures x == 7 by {
             have first: x == 7;
             have second: x == 7 by { solve(); }
-            have x == 7 by assumption();
+            have x == 7 by known();
             solve() using { first; second; };
         }
     }",
@@ -110,7 +110,7 @@ fn binary_splits_require_then_exactly_when_they_have_an_interface() {
     for head in ["if x == 0", "branch"] {
         for interface in ["", "ensuring { fact x == x; } then "] {
             let written = source(&format!(
-                "{head} {interface}{{ assumption(); }} else {{ assumption(); }}"
+                "{head} {interface}{{ known(); }} else {{ known(); }}"
             ));
             let parsed = parser::parse(&written).unwrap();
             let proof = parsed.function_blocks()[0].ensures()[0].proof();
@@ -125,7 +125,7 @@ fn binary_splits_require_then_exactly_when_they_have_an_interface() {
             assert_eq!(proof, reparsed.function_blocks()[0].ensures()[0].proof());
         }
         let error = parser::parse(&source(&format!(
-            "{head} then {{ assumption(); }} else {{ assumption(); }}"
+            "{head} then {{ known(); }} else {{ known(); }}"
         )))
         .unwrap_err();
         assert!(
@@ -133,23 +133,25 @@ fn binary_splits_require_then_exactly_when_they_have_an_interface() {
             "{error:?}"
         );
         let error = parser::parse(&source(&format!(
-            "{head} ensuring {{ fact x == x; }} {{ assumption(); }} else {{ assumption(); }}"
+            "{head} ensuring {{ fact x == x; }} {{ known(); }} else {{ known(); }}"
         )))
         .unwrap_err();
         assert!(error.message().contains("then"), "{error:?}");
     }
 }
 
-/// `auto`, `arithmetic` and `execute_until` are removed spellings:
+/// `assumption`, `auto`, `arithmetic` and `execute_until` are removed spellings:
 /// in each place a tactic or a one-tactic proof stands, the parser refuses
 /// them and names what replaced them.
 #[test]
 fn removed_tactic_spellings_name_their_replacement() {
     for (proof, replacement) in [
+        ("by assumption();", "`known()`"),
+        ("by { assumption(); }", "`known()`"),
         ("by auto();", "the omitted proof"),
         ("by { auto(); }", "the omitted proof"),
         (
-            "by { have x == 7 by auto(); assumption(); }",
+            "by { have x == 7 by auto(); known(); }",
             "the omitted proof",
         ),
         ("by arithmetic();", "`solve() using {}`"),

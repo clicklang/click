@@ -19,7 +19,7 @@ fn integer_symbolic_aliases_keep_simple_verification_bounded() {
         }
         source.push_str(&format!(
             "requires a{depth} == a{depth};\n\
-             ensures a{depth} == a{depth} by {{ assumption(); }} }}"
+             ensures a{depth} == a{depth} by {{ known(); }} }}"
         ));
         let (result, work) =
             crate::instrumentation::measure_deterministic_work(|| verify_click_theorems(&source));

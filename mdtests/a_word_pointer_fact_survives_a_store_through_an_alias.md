@@ -32,7 +32,7 @@ void update(struct node *g, struct node *p) {
             preserve(separate(statement(0).footprint, memory(g->word)));
         }
         rewrite(g->word == at(before, g->word));
-        assumption();
+        known();
     }
     step();
 }

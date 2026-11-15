@@ -22,7 +22,7 @@ void caller(struct node* child, int32* slot) {
 } by {
     unfold(b);
     let d = fold(box(child), { tag: 0 });
-    have separate(d, memory(*slot)) by { assumption(); }
+    have separate(d, memory(*slot)) by { known(); }
 }
 ```
 

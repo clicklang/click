@@ -21,8 +21,8 @@ theorem range_variable_is_read_under_its_new_name(n: int32) {
     ensures (0..n).all(|k| { k < n }) by {
         intro() as i;
         intro();
-        have i < n by assumption();
-        assumption();
+        have i < n by known();
+        known();
     }
 }
 

@@ -448,14 +448,14 @@ void use(struct root* root) {
     let { out: out } = step(produce, { cell: cell });
     match out.model {
         Out::Done(v) => {
-            have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v) == out.model); assumption(); }
-            have v == old(cell.model) by { unfold(out_value(Out::Done(v))); assumption(); }
+            have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v) == out.model); known(); }
+            have v == old(cell.model) by { unfold(out_value(Out::Done(v))); known(); }
             let { whole: whole } = unfold(out);
             step_until(function.exit); solve();
         },
         Out::Pending(v) => {
-            have out_value(Out::Pending(v)) == old(cell.model) by { rewrite(Out::Pending(v) == out.model); assumption(); }
-            have v == old(cell.model) by { unfold(out_value(Out::Pending(v))); assumption(); }
+            have out_value(Out::Pending(v)) == old(cell.model) by { rewrite(Out::Pending(v) == out.model); known(); }
+            have v == old(cell.model) by { unfold(out_value(Out::Pending(v))); known(); }
             let { pending: whole } = unfold(out);
             step_until(function.exit); solve();
         },
@@ -511,7 +511,7 @@ int32 shadowed_c(int32 x) {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
-        expanded.contains("have outer.x == 0 by {\n        assumption();"),
+        expanded.contains("have outer.x == 0 by {\n        known();"),
         "{expanded}"
     );
     assert!(expanded.contains("outer.x"), "{expanded}");
@@ -546,7 +546,7 @@ int32 shadowed_twice_c(int32 x) {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
-        expanded.contains("have outer.outer.x == 0 by {\n        assumption();"),
+        expanded.contains("have outer.outer.x == 0 by {\n        known();"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("expanded nested C proof must reverify");
@@ -570,7 +570,7 @@ theorem shadowed_twice(x: int32) {
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("selected smart tactic should expand");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(expanded.contains("outer.outer.x"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("expanded proof must reverify");
 
@@ -628,7 +628,7 @@ fn trace_target_selects_only_the_arm_containing_its_source_position() {
 
 #[test]
 fn nested_tactic_position_follows_have_and_open_bodies() {
-    let source = "resource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\nhave true by {\n    open(cell(p)) {\n        have true by {\n            assumption();\n        }\n    }\n}\n}\n";
+    let source = "resource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\nhave true by {\n    open(cell(p)) {\n        have true by {\n            known();\n        }\n    }\n}\n}\n";
     let have = position_at_offset(source, source.find("have").unwrap());
     let position = ProofSourceIndex::new(source)
         .unwrap()
@@ -636,7 +636,7 @@ fn nested_tactic_position_follows_have_and_open_bodies() {
         .expect("nested step has a source position");
     assert_eq!(
         position,
-        position_at_offset(source, source.find("assumption").unwrap())
+        position_at_offset(source, source.find("known").unwrap())
     );
 }
 
@@ -1028,7 +1028,7 @@ theorem reflexive(xs: TestList<int32>) {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("a smart tactic in an induction arm should expand");
     assert!(expanded.contains("TestList::Nil => {\n                normalize();"));
-    assert!(expanded.contains("TestList::Cons(head, tail) => {\n                assumption();"));
+    assert!(expanded.contains("TestList::Cons(head, tail) => {\n                known();"));
     verify_c_sources(&expanded, &[]).expect("the expanded structural proof should re-verify");
 }
 
@@ -1705,7 +1705,7 @@ int32 caller() {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("public call facts should compose through their receiving locals");
 
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("call-havoc"), "{expanded}");
     assert!(!expanded.contains("symbolic-pointer"), "{expanded}");
     verify_c_sources(&expanded, &sources)
@@ -1763,12 +1763,12 @@ int32 caller() {
 } by {
     step_until(function.exit);
     have at(region(2).entry, c(result)) == 0 by {
-        assumption();
+        known();
     }
     have result == at(region(2).entry, c(result)) by {
         normalize();
     }
-    assumption();
+    known();
 }
 "#;
     verify_c_sources(explicit_source, &sources)
@@ -1841,7 +1841,7 @@ int32 identity(int32 x) {
     .expect("grouped solve should expand");
 
     assert_eq!(
-        expanded.matches("\n    assumption();").count(),
+        expanded.matches("\n    known();").count(),
         1,
         "the first solve should close only its own claim:\n{expanded}"
     );
@@ -2087,7 +2087,7 @@ int32 contains(uint8 p[], int32 n) {
     // The `solve` closes the proof the `witness` opened, so it expands to
     // that one step rather than restating the claim.
     assert!(
-        expanded.contains("witness { k: found };\n        assumption();"),
+        expanded.contains("witness { k: found };\n        known();"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("contains.c", c_source)])
@@ -2258,7 +2258,7 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
 /// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
 /// and the expansion verifies with no `arithmetic()` left to plan. A
 /// comparison and its observed reading are one fact, so an order premise is
-/// carried by `assumption()`; a type range is its explicit `type_range`
+/// carried by `known()`; a type range is its explicit `type_range`
 /// certificate, and each sum its in-range identity from its two Integer
 /// bounds, with no standard-library bridge theorem.
 #[test]
@@ -2268,7 +2268,7 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     let expanded = expand_c_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the uint64 arithmetic step expands");
     for step in [
-        "have to_integer((i + 1u64)) < to_integer(length) by {\n            assumption();",
+        "have to_integer((i + 1u64)) < to_integer(length) by {\n            known();",
         "type_range => 0 <= to_integer(i);",
         "integer_operation_identity bounds [0, 1] => to_integer((i + 2u64)) ==",
         "arithmetic_certificate {",
@@ -2963,7 +2963,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
     );
     assert!(selected.contains("x >= 0;"), "{selected}");
     assert!(selected.contains("extract(x >= 0);"), "{selected}");
-    assert!(selected.contains("assumption();"), "{selected}");
+    assert!(selected.contains("known();"), "{selected}");
     assert!(!selected.contains("apply(required(x));"), "{selected}");
     assert!(!selected.contains("solve();"), "{selected}");
     verify_click_theorems(&expanded)
@@ -2976,14 +2976,14 @@ fn pure_branch_local_apply_expands_the_retained_proof_object_paths() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
@@ -3023,14 +3023,14 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
         theorem equality_case_nested(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
         theorem inequality_case_nested(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
@@ -3045,7 +3045,7 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
                         solve();
                     }
                 }
-                assumption();
+                known();
             }
         }
     "#;
@@ -3451,7 +3451,7 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { assumption(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { solve(); }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } then { step(); } else { solve(); }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { solve(); }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } then { step(); } else { solve(); }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
@@ -3468,7 +3468,7 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     let have = position_at_offset(source, source.find("have").unwrap());
     assert_eq!(
         index.nested_position(&have, &[0, 0]).unwrap(),
-        position_at_offset(source, source.find("assumption").unwrap())
+        position_at_offset(source, source.find("known").unwrap())
     );
     // Each second arm's first tactic.
     for (kind, inner) in [
@@ -3542,7 +3542,7 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
     let source = r#"
         import click::integer;
         theorem unconditional(x: int32) { ensures x == x by solve(); }
-        theorem conditional(x: int32) { requires x == 0; ensures x == 0 by assumption(); }
+        theorem conditional(x: int32) { requires x == 0; ensures x == 0 by known(); }
         theorem value_identity(z: Integer) { ensures z == z by solve(); }
         theorem computed(x: int64) {
             requires defined(x + 1i64);

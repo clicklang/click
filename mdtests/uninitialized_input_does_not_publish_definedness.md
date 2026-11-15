@@ -9,9 +9,9 @@ void f(int32 *p, int32 n) {
     requires 0 < n;
     owns uninitialized(p[0..n]);
 } by {
-    have forall (j: int32) { 0 <= j and j < n implies defined(p[j]) } by { assumption(); }
+    have forall (j: int32) { 0 <= j and j < n implies defined(p[j]) } by { known(); }
 }
 ```
 ```expect
-fail: `assumption`
+fail: `known`
 ```

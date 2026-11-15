@@ -17,9 +17,9 @@ void redirect(struct link *r, struct box *q) {
     requires separate(memory(r->ptr->value), memory(q->value));
 } by {
     mark before;
-    have separate(memory(at(before, &r->ptr->value)[0]), memory((&q->value)[0..1])) by { assumption(); }
+    have separate(memory(at(before, &r->ptr->value)[0]), memory((&q->value)[0..1])) by { known(); }
     step();
-    have separate(memory(at(before, &r->ptr->value)[0]), memory((&q->value)[0..1])) by { assumption(); }
+    have separate(memory(at(before, &r->ptr->value)[0]), memory((&q->value)[0..1])) by { known(); }
     step();
 }
 ```

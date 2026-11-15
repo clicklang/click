@@ -94,7 +94,7 @@ a parameter, the binder prints as `k`, `k1`, ... instead, so the printed
 proposition never captures. A binder Click introduced itself has no written
 name and always prints that way.
 
-Missing assumption sides and bare-instantiation guards in step refusals and
+Missing `known` sides and bare-instantiation guards in step refusals and
 search-candidate details use the goal's source and recorded-point names. They are retained
 as propositions and named when the report is rendered.
 

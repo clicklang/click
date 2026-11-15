@@ -11,8 +11,8 @@ void touch(struct packet input) {
     owns input.data[0..1];
     requires input.data[0] == 3;
 } by {
-    have input.data[0] == 3 by { assumption(); }
-    have old(input.data[0]) == 3 by { assumption(); }
+    have input.data[0] == 3 by { known(); }
+    have old(input.data[0]) == 3 by { known(); }
 }
 ```
 

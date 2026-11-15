@@ -5,13 +5,13 @@ spec enum Tree { Empty, Node(int32), }
 
 theorem nonempty(child: Tree) {
     requires not(child == Tree::Empty);
-    ensures not(child == Tree::Empty) by assumption();
+    ensures not(child == Tree::Empty) by known();
 }
 
 theorem empty_is_not_nonempty() {
     ensures not(Tree::Empty == Tree::Empty) by {
         apply(nonempty(Tree::Empty));
-        assumption();
+        known();
     }
 }
 ```

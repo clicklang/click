@@ -406,14 +406,14 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             .initialize
             .as_ref()
             .map(|certificate| certificate.to_proof_tactics().to_vec())
-            .unwrap_or_else(|| vec![ProofTactic::Assumption]),
+            .unwrap_or_else(|| vec![ProofTactic::Known]),
     ));
     expanded_loop.preserve_proof = Some(SourceProof::Script(
         certificates
             .preserve
             .as_ref()
             .map(|certificate| certificate.to_proof_tactics().to_vec())
-            .unwrap_or_else(|| vec![ProofTactic::Assumption]),
+            .unwrap_or_else(|| vec![ProofTactic::Known]),
     ));
     // The claim's environment with every frontier rule before this one,
     // extended from the one the previous loop on this path built.

@@ -33,7 +33,7 @@ int32 set_second_return_first(int32 p[2]) {
                 old(p[0]) == 7;
             };
         }
-        assumption();
+        known();
     }
     step();
     solve();

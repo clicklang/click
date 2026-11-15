@@ -16,7 +16,7 @@ verifying "aggregate_parameter_dangling_out.c";
 void leak(struct packet input, int32** out) {
     owns out[0..1];
     ensures *out[0] == 7;
-} by { step_until(function.exit); assumption(); solve(); }
+} by { step_until(function.exit); known(); solve(); }
 ```
 
 ```expect

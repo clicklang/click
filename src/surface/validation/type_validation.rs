@@ -2560,7 +2560,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::ApplyInductionUsing { .. }
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
-            | ProofTactic::Assumption
+            | ProofTactic::Known
             | ProofTactic::Extract(_)
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
@@ -2691,7 +2691,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::LetSatisfy(_) => "obtain",
         ProofTactic::Sorry => "sorry",
         ProofTactic::Choose(_) => "choose",
-        ProofTactic::Assumption => "assumption",
+        ProofTactic::Known => "known",
         ProofTactic::Extract(_) => "extract",
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",

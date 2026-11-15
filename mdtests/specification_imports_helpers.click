@@ -11,7 +11,7 @@ int32 imported_helper(int32 x) {
 tactic retain_equal(x: int32, y: int32) {
     requires x == y;
     ensures x == y;
-} by { have x == y by assumption(); }
+} by { have x == y by known(); }
 
 resource imported_cell(p: int32*) {
     field value: int32;

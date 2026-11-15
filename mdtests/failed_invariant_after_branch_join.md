@@ -16,7 +16,7 @@ uint64 branch_drain(uint64 len, int32 flag) {
 } by {
     loop {
         invariant len == 16u64;
-        initialize by assumption();
+        initialize by known();
         preserve by {
             branch { step(); } else { step(); }
         }

@@ -29,7 +29,7 @@ int32 parent(int32 x) {
 } by {
     let { result: r } = step(child, {});
     have exists (path: Path) { pick(x, path) == r } by {
-        assumption();
+        known();
     }
     step();
     solve();

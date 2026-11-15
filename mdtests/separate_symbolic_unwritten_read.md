@@ -51,7 +51,7 @@ int32 write_i_read_j(int32 p[], int32 i, int32 j, int32 n) {
             contains(memory(p[j..j + 1]), memory(p[j..j + 1]));
         };
     }
-    step() by { assumption(); }
+    step() by { known(); }
 }
 ```
 

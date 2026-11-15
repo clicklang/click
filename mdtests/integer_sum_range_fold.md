@@ -81,21 +81,21 @@ int32 sum(int32 a[], int32 n) {
             have i <= n by {
                 if n < 1073741823 {
                     have n != 1073741823;
-                    assumption();
+                    known();
                 } else {
                     have n == 1073741823 by {
                         have n <= 1073741823 by {
-                            assumption();
+                            known();
                         }
                         have n == 1073741823;
-                        assumption();
+                        known();
                     }
                     rewrite(n == 1073741823);
                     normalize();
                 }
             }
             have to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                assumption();
+                known();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 have (-1000 * to_integer(i)) == 0 by {
@@ -125,7 +125,7 @@ int32 sum(int32 a[], int32 n) {
         preserve by {
             have -1000 <= a[i] and a[i] <= 1000 by {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 }, i);
-                assumption();
+                known();
             }
             have -1000 <= to_integer(a[i]);
             have to_integer(a[i]) <= 1000;
@@ -208,9 +208,9 @@ int32 sum(int32 a[], int32 n) {
             have defined((total + a[i])) by {
                 have defined(total + a[i]);
                 both {
-                    assumption();
+                    known();
                 } and {
-                    assumption();
+                    known();
                 }
             }
             have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
@@ -228,7 +228,7 @@ int32 sum(int32 a[], int32 n) {
                     normalize();
                 }
                 have i < 2147483647;
-                assumption();
+                known();
             }
             have defined((i + 1));
             have to_integer((i + 1)) == (to_integer(i) + to_integer(1));
@@ -299,7 +299,7 @@ int32 sum(int32 a[], int32 n) {
             }
             have to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 rewrite(to_integer(i) == to_integer((at(region(5).entry, i) + 1)));
-                assumption();
+                known();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 arithmetic_certificate {
@@ -347,13 +347,13 @@ int32 sum(int32 a[], int32 n) {
     }
     have to_integer(total) == (0..n).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
         rewrite(n == i);
-        assumption();
+        known();
     }
     step();
     have to_integer(result) == (0..n).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-        assumption();
+        known();
     }
-    assumption();
+    known();
 }
 ```
 

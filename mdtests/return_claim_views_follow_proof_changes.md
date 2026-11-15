@@ -19,10 +19,10 @@ int32 echo(int32 x, int32* p) {
     ensures p[0] == old(p[0]);
 } by {
     step();
-    assumption();
+    known();
     have x == x by normalize();
     unfold(same);
-    assumption();
+    known();
     normalize();
 }
 ```

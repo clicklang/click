@@ -240,7 +240,7 @@ mod tests {
         let proof = root
             .focus_contract_claim(&claim, ())
             .unwrap()
-            .apply_assumption(PropositionAssumptionContext::Exact)
+            .apply_known(PropositionKnownContext::Exact)
             .unwrap_or_else(|_| panic!("the selected true claim closes"));
         let branch = root
             .state()
@@ -331,7 +331,7 @@ mod tests {
         let proved = frontier
             .focus_contract_claim(&claim, ())
             .unwrap()
-            .apply_assumption(PropositionAssumptionContext::Exact)
+            .apply_known(PropositionKnownContext::Exact)
             .unwrap_or_else(|_| panic!("the true frontier goal closes"));
         let proof = proved.completed_proposition().unwrap();
         assert!(proof.outcome().is_none());

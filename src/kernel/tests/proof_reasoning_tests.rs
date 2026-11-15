@@ -893,7 +893,7 @@ fn equality_graph_queries_do_not_build_the_condition_fact_index() {
 
 /// One pure-theorem scenario: a two-step rewrite chain whose conclusion is
 /// also an exactly available requirement, so a real kernel proof object can
-/// close it by assumption and issue the completion these constructors consume.
+/// close it by `known()` and issue the completion these constructors consume.
 ///
 /// The chain uses products, which no smart term constructor folds, so the
 /// order of the two cited equalities is observable.
@@ -965,14 +965,14 @@ fn pure_rewrite_scenario() -> PureRewriteScenario {
 /// A kernel-issued completion for `conclusion` under exactly `requirements`.
 ///
 /// Nothing here manufactures authority: the record comes from a real proof
-/// object that closed its root judgment by an exact assumption.
+/// object that closed its root judgment with an exact `known` step.
 fn checked_pure_completion(
     requirements: &[Proposition],
     conclusion: &Proposition,
 ) -> crate::kernel::proof::CheckedProposition {
     use crate::kernel::proof::{
         OutcomeProofState, PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts,
-        ProofObject, ProofObligation, PropositionAssumptionContext, PropositionObligation,
+        ProofObject, ProofObligation, PropositionKnownContext, PropositionObligation,
     };
 
     let branch = ProofBranch::new(
@@ -985,7 +985,7 @@ fn checked_pure_completion(
     );
     let proof: ProofObject<(), ProofObligation<(), std::sync::Arc<OutcomeProofState<()>>>, ()> =
         ProofObject::root((), branch);
-    let Ok(closed) = proof.apply_assumption(PropositionAssumptionContext::Exact) else {
+    let Ok(closed) = proof.apply_known(PropositionKnownContext::Exact) else {
         panic!("the scenario's conclusion is an exactly available requirement");
     };
     closed

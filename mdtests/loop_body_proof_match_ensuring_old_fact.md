@@ -63,23 +63,23 @@ void spin(struct cell* node, int32 n) {
                 Sign::Neg(value) => {
                     have Sign::Neg(value) == old(c.model) by {
                         rewrite(Sign::Neg(value) == c.model);
-                        assumption();
+                        known();
                     }
                     unfold(c);
                     let c = fold(cell(node), { model: Sign::Neg(value) });
                     have c.model == old(c.model) by {
-                        assumption();
+                        known();
                     }
                 }
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
                         rewrite(Sign::Pos(value) == c.model);
-                        assumption();
+                        known();
                     }
                     unfold(c);
                     let c = fold(cell(node), { model: Sign::Pos(value) });
                     have c.model == old(c.model) by {
-                        assumption();
+                        known();
                     }
                 }
             }

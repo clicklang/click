@@ -1,12 +1,12 @@
 # Leaf conjuncts of a fact are available facts
 
 Recording a conjunction as a fact also records each of its leaf conjuncts,
-so every tactic may cite a leaf directly: `assumption()` closes `x <= 5`,
+so every tactic may cite a leaf directly: `known()` closes `x <= 5`,
 and an arithmetic certificate names `x <= 100` as a premise, with no
 `extract`. A conjunct that is itself a conjunction is not a leaf, so it is
-not recorded as a fact; `assumption()` still closes it from its leaves, and
+not recorded as a fact; `known()` still closes it from its leaves, and
 `extract` adds it when a `using` list must cite it whole. See
-`mdtests/sub_conjunction_closes_by_assumption.md`.
+`mdtests/sub_conjunction_closes_by_known.md`.
 
 ```c filename=leaf_conjuncts_are_available_facts.c
 int32 inc(int32 x) {
@@ -19,14 +19,14 @@ verifying "leaf_conjuncts_are_available_facts.c";
 
 theorem leaf(x: int32, y: int32) {
     requires (x >= 0 and x <= 5) and y == 1;
-    ensures x <= 5 by assumption();
+    ensures x <= 5 by known();
 }
 
 theorem sub_extracted(x: int32, y: int32) {
     requires (x >= 0 and x <= 5) and y == 1;
     ensures x >= 0 and x <= 5 by {
         extract(x >= 0 and x <= 5);
-        assumption();
+        known();
     }
 }
 
@@ -47,7 +47,7 @@ int32 inc(int32 x) {
                 conclusion 7;
             }
         }
-        assumption();
+        known();
     }
 }
 ```

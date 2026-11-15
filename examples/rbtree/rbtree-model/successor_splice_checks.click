@@ -73,7 +73,7 @@ theorem immediate_successor(erased: struct rb_node*, successor: struct rb_node*,
         }
         apply(rb_erase_black_successor_splice(erased, successor, above, Color::Black,
             splice_black_leaf(l, erased), splice_black_leaf(successor, erased), Context::Top, above));
-        assumption();
+        known();
     }
 
     ensures rb_successor_context(successor, above, Color::Black, splice_black_leaf(l, erased),
@@ -147,7 +147,7 @@ theorem deep_red_right_subtree(erased: struct rb_node*, successor: struct rb_nod
         apply(rb_erase_black_successor_splice(erased, successor, above, Color::Black,
             splice_black_leaf(l, erased), RbTree::Node(r, erased, Color::Red, splice_black_leaf(successor,
                 r), splice_black_leaf(far, r)), Context::Top, above));
-        assumption();
+        known();
     }
 
     ensures rb_successor_context(successor, above, Color::Black, splice_black_leaf(l, erased),
@@ -294,7 +294,7 @@ theorem immediate_red_successor(erased: struct rb_node*, successor: struct rb_no
         }
         apply(rb_erase_red_successor_splice(erased, successor, above, Color::Black, splice_red_leaf(l,
             erased), splice_red_leaf(successor, erased), Context::Top, above));
-        assumption();
+        known();
     }
 }
 
@@ -388,6 +388,6 @@ theorem deep_red_successor(erased: struct rb_node*, successor: struct rb_node*, 
             Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
             RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty),
             Context::Top, above));
-        assumption();
+        known();
     }
 }

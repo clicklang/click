@@ -12,7 +12,7 @@ theorem lift(callback: int32 (*)(int32)) executes callback(int32 value) {
             solve();
         } else {
             step(Raw);
-            have result == value by assumption();
+            have result == value by known();
             solve();
         }
     }

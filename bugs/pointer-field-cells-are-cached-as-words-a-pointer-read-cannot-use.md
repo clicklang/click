@@ -102,7 +102,7 @@ in current syntax; the recorded reproduction used the removed `auto()`).
 The same cause probably explains two rbtree-augmented sidecars that already
 failed before #1806 but now fail earlier:
 `rbtree_size_insert_context_double_far_rotation.click` (a `solve` for
-`node->rb_right == 0` at line 269, which `rewrite` plus `assumption` closed
+`node->rb_right == 0` at line 269, which `rewrite` plus `known` closed
 before) and `rbtree_size_insert_mirrored_context_double_rotation.click`
 (line 205). This is unconfirmed.
 

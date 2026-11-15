@@ -101,7 +101,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     });
     let corrected = source
         .replace("x == 43", "x == 42")
-        .replace("intro();", "intro(); assumption();");
+        .replace("intro();", "intro(); known();");
     verify_c_sources(&corrected, &[("f.c", "int f(int x) { return x; }")]).unwrap();
 }
 
@@ -122,7 +122,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
     });
     let corrected = source
         .replace("x == 43", "x == 42")
-        .replace("intro();", "intro(); assumption();");
+        .replace("intro();", "intro(); known();");
     verify_c_sources(&corrected, &[]).unwrap();
 }
 
@@ -344,9 +344,9 @@ fn implicit_loop_closure_is_smart() {
     assert!(
         !events.iter().any(|event| matches!(event,
             VerificationEvent::TacticStarted(tactic)
-                if tactic.tactic_name == "assumption" && tactic.class == "simple"
+                if tactic.tactic_name == "known" && tactic.class == "simple"
         )),
-        "smart planning must not inherit a simple assumption budget"
+        "smart planning must not inherit a simple known budget"
     );
 }
 
@@ -450,7 +450,7 @@ fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
         uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
             have a <= b - b % 4u64 by {
                 have a <= b - b % 4u64 by { solve(); }
-                assumption();
+                known();
             }
             step_until(function.exit); solve();
         }
@@ -1950,7 +1950,7 @@ theorem good(x: int32, y: int32) {
     requires x == y;
     ensures y == x by {
         have y == x by { solve(); }
-        assumption();
+        known();
     }
 }
 theorem split(x: int32) {
@@ -2002,7 +2002,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let trace = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
         assert_eq!(
             trace,
-            "proof trace (checked tactics and branch facts):\ntactic@5: have y == x\n  adds: y == x\ntactic@6: assumption()"
+            "proof trace (checked tactics and branch facts):\ntactic@5: have y == x\n  adds: y == x\ntactic@6: known()"
         );
     });
     with_proof_trace("split", || {
@@ -2392,7 +2392,7 @@ fn pure_theorem_tactics_emit_claims_and_nested_written_source_paths() {
         requires x <= 100;
         ensures x <= 1000 by {
             have x <= 1000 by { solve() using { x <= 100; } }
-            assumption();
+            known();
         }
         ensures x == x by { normalize(); }
     }"#;
@@ -2550,7 +2550,7 @@ void run(int32 n, int32 x) { requires n >= 0; requires x == 7; ensures x == 7; }
         preserve by {
             step();
             have n >= 0 by { solve(); }
-            have x == 7 by { assumption(); }
+            have x == 7 by { known(); }
         }
     }
     step_until(function.exit); solve();
@@ -2695,7 +2695,7 @@ void f(struct node* p) {
         Tree::Node(id, link, lm, rm) => {
             let { left: l, right: r } = unfold(t);
             mark before_store;
-            have p->right == link by { assumption(); }
+            have p->right == link by { known(); }
             step();
             let t = fold(tree(id), { model: Tree::Node(id, link, lm, rm) }, { left: l, right: r });
             step_until(function.exit); solve();
@@ -2985,7 +2985,7 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
                 " have x <= {index} by {{ rewrite(x == 0); normalize(); }}\n"
             ));
         }
-        source.push_str(" assumption();\n }\n}\n");
+        source.push_str(" known();\n }\n}\n");
         let project = ClickProject::new(
             "entry.click",
             [ClickModuleSource::new("entry.click", source, [])],
@@ -3014,7 +3014,7 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
                 );
                 assert_eq!(trace.matches(": have x <= ").count(), size);
                 assert!(trace.contains("tactic@4: have x <= 0"));
-                assert!(trace.ends_with(&format!("tactic@{}: assumption()", size + 4)));
+                assert!(trace.ends_with(&format!("tactic@{}: known()", size + 4)));
                 assert!(!trace.contains("limit reached"));
                 assert!(!trace.contains("no recorded checked step"));
                 if size >= 2048 {
@@ -3395,7 +3395,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
         } by {
             loop {
                 invariant len == 16u64;
-                initialize by assumption();
+                initialize by known();
                 preserve by {
                     if flag == 0 {
                         step();
@@ -3428,7 +3428,7 @@ fn native_view_solve_selects_only_coverage_premises() {
     let extra_bounds = 63;
     for body in [
         "solve();",
-        "have viewable(p[0u64..1u64]) by { solve(); } assumption();",
+        "have viewable(p[0u64..1u64]) by { solve(); } known();",
     ] {
         let mut source = String::from(
             "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
@@ -3564,7 +3564,7 @@ void symbolic(int *p, const struct callbacks *cb) { cb->call(p); }
             r#"
 void concrete(int32* p) { ensures true; } by {
     step(); step(); step(); step();
-    have false by { assumption(); }
+    have false by { known(); }
 }
 "#,
         ),
@@ -3575,7 +3575,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
     views cb->call;
 } by {
     step(); step();
-    have false by { assumption(); }
+    have false by { known(); }
 }
 "#,
         ),
@@ -3682,7 +3682,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
-fn failed_final_assumption_preserves_its_checked_trace_context() {
+fn failed_final_known_preserves_its_checked_trace_context() {
     let source = r#"verifying "f.c";
         void f(int32 *cell, int32 value) {
             owns cell[0..1];
@@ -3691,9 +3691,9 @@ fn failed_final_assumption_preserves_its_checked_trace_context() {
         } by {
             step(); step();
             have cell[0] == value by { solve(); }
-            assumption();
-            assumption();
-            assumption();
+            known();
+            known();
+            known();
         }
     "#;
     with_proof_trace("f", || {
@@ -3731,7 +3731,7 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
             void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
                 step(); mark saved;
                 transport(at(saved, p[0] == 7), p[0] == 7){suffix};
-                step_until(function.exit); assumption();
+                step_until(function.exit); known();
             }}
         "#
         );
@@ -3776,7 +3776,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
             void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
                 step(); mark saved;
                 transport(at(saved, p[0] == 7), p[0] == 7){suffix};
-                step_until(function.exit); assumption();
+                step_until(function.exit); known();
             }}
         "#
         );
@@ -3842,7 +3842,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
             void f(int32 *p) {{ owns p[0..10]; requires p[0] == 7; ensures true; }} by {{
                 {steps} mark stored; step();
                 {transport}
-                step_until(function.exit); assumption();
+                step_until(function.exit); known();
             }}
         "#
         );
@@ -3903,7 +3903,7 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
         void f(uint64 *p) { owns p[0]; ensures true; } by {
             step();
             have p[0] == 7u64 by { normalize() using {}; };
-            step_until(function.exit); assumption();
+            step_until(function.exit); known();
         }
     "#;
     with_proof_trace("f", || {
@@ -3949,7 +3949,7 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
                     };
                 }
             }
-            step_until(function.exit); assumption();
+            step_until(function.exit); known();
         }
     "#;
     with_proof_trace("f", || {
@@ -4094,7 +4094,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 owns p[0];
                 invariant p[0] == 7;
                 decreases 0;
-                initialize by { assumption(); }
+                initialize by { known(); }
                 preserve by {
                     mark before;
                     step();
@@ -4337,7 +4337,7 @@ fn resource_separation_matches_written_goal_with_pointer_alias() {
             views cb->call;
             owns out->call;
         } by {
-            have separate(memory(out->call), memory(cb->call)) by assumption();
+            have separate(memory(out->call), memory(cb->call)) by known();
         }"#;
     // Resource admission and the written goal must retain the same pointer
     // carrier, even when a precondition equates its address to a global object.
@@ -4395,7 +4395,7 @@ fn failed_invariant_after_branch_join_reports_the_join() {
             } by {
                 loop {
                     invariant len == 16u64;
-                    initialize by assumption();
+                    initialize by known();
                     preserve by { branch { step(); } else { step(); } }
                 }
                 step_until(function.exit); solve();
@@ -4605,7 +4605,7 @@ test_batches! {
         pending_call_obligations_use_shared_goal_printer_and_snapshot_legend,
         function_pointer_load_trace_shows_produced_value_and_read_snapshot,
         call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots,
-        failed_final_assumption_preserves_its_checked_trace_context,
+        failed_final_known_preserves_its_checked_trace_context,
     ],
     diagnostic_batch_20: [
         known_transport_trace_retains_its_written_source_occurrence,

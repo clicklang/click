@@ -48,21 +48,21 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);
-            have parent != 0 by { rewrite(parent == a); assumption(); }
+            have parent != 0 by { rewrite(parent == a); known(); }
             have new != a by {
                 rewrite(a == parent);
                 cases {
                     parent == 0 => { contradiction(parent == 0); }
-                    new != parent => { assumption(); }
+                    new != parent => { known(); }
                 }
             }
-            have a->rb_right != a by assumption();
+            have a->rb_right != a by known();
             mark a_links;
             step(); step();
-            have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-            have separate(memory(a->rb_left), memory(a->__rb_parent_color)) by { assumption(); }
+            have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { known(); }
+            have separate(memory(a->rb_left), memory(a->__rb_parent_color)) by { known(); }
             have separate(memory(parent->rb_left), memory(a->__rb_parent_color)) by {
-                rewrite(parent == a); assumption();
+                rewrite(parent == a); known();
             }
             mark before_store;
             step();
@@ -79,7 +79,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                 }
             }
             have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
-                rewrite(a->__rb_parent_color == at(before_store, a->__rb_parent_color)); assumption();
+                rewrite(a->__rb_parent_color == at(before_store, a->__rb_parent_color)); known();
             }
             step_until(function.exit);
             have a->rb_right != a by {
@@ -98,26 +98,26 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);
-            have parent != 0 by { rewrite(parent == a); assumption(); }
+            have parent != 0 by { rewrite(parent == a); known(); }
             have new != a by {
                 rewrite(a == parent);
                 cases {
                     parent == 0 => { contradiction(parent == 0); }
-                    new != parent => { assumption(); }
+                    new != parent => { known(); }
                 }
             }
             match sibling.model {
                 SizedTree::Empty => {
                     unfold(sibling);
-                    have parent->rb_left == 0 by { assumption(); }
+                    have parent->rb_left == 0 by { known(); }
                     have parent->rb_left != old by {
-                        rewrite(parent->rb_left == 0); assumption();
+                        rewrite(parent->rb_left == 0); known();
                     }
                     step(); step();
-                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { known(); }
                     have separate(memory(parent->rb_right), memory(a->__rb_parent_color)) by {
-                        have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { assumption(); }
-                        rewrite(parent == a); assumption();
+                        have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { known(); }
+                        rewrite(parent == a); known();
                     }
                     mark before_right_store;
                     step();
@@ -132,7 +132,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                         }
                     }
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
-                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); assumption();
+                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); known();
                     }
                     step_until(function.exit);
                     have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by solve();
@@ -143,15 +143,15 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                 },
                 SizedTree::Node(identity, sp, sc, size, sl, sr) => {
                     let { metadata: s_size, left: s_left, right: s_right } = unfold(sibling);
-                    have parent->rb_left->rb_left != parent->rb_left by assumption();
-                    have parent->rb_left->rb_right != parent->rb_left by assumption();
+                    have parent->rb_left->rb_left != parent->rb_left by known();
+                    have parent->rb_left->rb_right != parent->rb_left by known();
                     step();
                     step();
                     let sibling = fold(sized_at(parent->rb_left), { model: SizedTree::Node(identity,sp,sc,size,sl,sr) }, { metadata: s_size, left: s_left, right: s_right });
-                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { known(); }
                     have separate(memory(parent->rb_right), memory(a->__rb_parent_color)) by {
-                        have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { assumption(); }
-                        rewrite(parent == a); assumption();
+                        have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { known(); }
+                        rewrite(parent == a); known();
                     }
                     mark before_right_store;
                     step();
@@ -166,7 +166,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                         }
                     }
                     have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
-                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); assumption();
+                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); known();
                     }
                     step_until(function.exit);
                     have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by solve();

@@ -6,10 +6,10 @@ tactic name without its call is refused with the spelling to write.
 ```click
 theorem missing_call(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x by assumption;
+    ensures 0 <= x by known;
 }
 ```
 
 ```expect
-fail: expected a proof after `by`, got `assumption`: write one tactic call such as `assumption();`, or a block `{ ... }`
+fail: expected a proof after `by`, got `known`: write one tactic call such as `known();`, or a block `{ ... }`
 ```

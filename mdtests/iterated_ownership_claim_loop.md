@@ -96,7 +96,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 have i <= k;
                 have n <= k by {
                     rewrite(n == i);
-                    assumption();
+                    known();
                 }
                 instantiate(forall (k: int32) {
                     n <= k and k < end implies occupied[k] == 0
@@ -104,7 +104,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     n <= k;
                     k < end;
                 };
-                assumption();
+                known();
             }
             have occupied[i] == 0 by {
                 instantiate(forall (k: int32) {
@@ -113,7 +113,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     n <= i;
                     i < end;
                 };
-                assumption();
+                known();
             }
             take(data[i..i + 1]);
             have start <= i;
@@ -135,13 +135,13 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                         to_integer(at(opened, i) + 1) <= to_integer(k);
                         k < end;
                     };
-                    assumption();
+                    known();
                 }
                 have at(opened, i) < end;
                 have at(opened, i) < at(opened, i) + 1;
                 have at(opened, i) < k;
-                have 0 <= at(opened, i) by assumption();
-                have at(opened, i) < capacity by assumption();
+                have 0 <= at(opened, i) by known();
+                have at(opened, i) < capacity by known();
                 have 0 <= k;
                 have k < capacity;
                 transport(
@@ -156,7 +156,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     k < capacity;
                     separate(memory(occupied[0..capacity]), memory(data[0..capacity]));
                 };
-                assumption();
+                known();
             }
             step();
             let w = fold(arena_window(data, occupied, capacity, start, end), {

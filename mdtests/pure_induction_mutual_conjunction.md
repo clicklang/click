@@ -44,7 +44,7 @@ theorem parity_is_complementary(n: int32) {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
-            assumption();
+            known();
         }
     }
 }

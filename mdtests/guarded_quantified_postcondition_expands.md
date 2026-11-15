@@ -3,13 +3,13 @@
 `vacuous` returns `0`, so its postcondition `result == 1 implies forall (k:
 int32) { ... }` holds vacuously. The omitted proof proves it, and claim
 expansion renders the closer as a `have` of the claim followed by
-`assumption()`. The `have` and the claim lower the same guarded quantifier
-with independent fresh binders, and `assumption` used to compare an
-implication only exactly, so the rewrite failed with "`assumption` did not
+`known()`. The `have` and the claim lower the same guarded quantifier
+with independent fresh binders, and `known` used to compare an
+implication only exactly, so the rewrite failed with "`known` did not
 match any current proposition goal" although verification accepted the
 original proof. The quantified alpha index now covers an implication chain
 whose conclusion is quantified. `by_hand` states that `have` and
-`assumption()` directly, as a user would.
+`known()` directly, as a user would.
 
 The expansion regression in `src/surface/tests/expansion_tests.rs` expands
 `vacuous` and re-verifies the rewrite.
@@ -48,8 +48,8 @@ int by_hand(int32* occ, int32 cap) {
     } by {
         solve();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }
 ```
 

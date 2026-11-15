@@ -286,6 +286,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "int32_range",
     "intro",
     "invariant",
+    "known",
     "let",
     "load_int32",
     "load_int32_pointer",
@@ -5730,7 +5731,7 @@ pub enum ProofTactic {
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
-    Assumption,
+    Known,
     Extract(ClickProposition),
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
@@ -5840,7 +5841,7 @@ pub enum SimpleTactic {
     Witness,
     LetSatisfy,
     Choose,
-    Assumption,
+    Known,
     Extract,
     Normalize,
     Arithmetic,
@@ -6147,8 +6148,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "assumption",
-        syntax: "assumption()",
+        id: "known",
+        syntax: "known()",
         class: "simple",
     },
     PublicTacticForm {
@@ -6378,7 +6379,7 @@ impl ProofTactic {
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
             Self::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
-            Self::Assumption => TacticClass::Simple(SimpleTactic::Assumption),
+            Self::Known => TacticClass::Simple(SimpleTactic::Known),
             Self::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
             Self::Normalize | Self::NormalizeUsing(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
@@ -10692,7 +10693,7 @@ impl ClickError {
                     context.push(legend);
                 }
             }
-            if self.failed_tactic == Some("assumption()")
+            if self.failed_tactic == Some("known()")
                 && let Some(Proposition::Exists { name, .. }) = state.kernel_goal()
             {
                 let binder = if name.is_empty() { "name" } else { name };

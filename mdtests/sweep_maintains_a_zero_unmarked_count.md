@@ -64,7 +64,7 @@ void sweep(int32 visited[], int32 n) {
                 ) using {
                     at(iter, unmarked(visited, 0, i)) == 0;
                 };
-                assumption();
+                known();
             }
             have unmarked(visited, 0, i + 1) == 0 by {
                 peel(unmarked(visited, 0, i + 1)) using {

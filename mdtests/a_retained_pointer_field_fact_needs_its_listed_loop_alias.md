@@ -103,7 +103,7 @@ void probe(struct node* g, struct node* n) {
                 invariant state.anchor == Anchor::At(gg, nn, saved, tag);
                 invariant n == old(n);
                 decreases 0;
-                initialize by { assumption(); }
+                initialize by { known(); }
                 preserve by {
                     let { word: w } = unfold(state);
                     let kept = fold(saved_right(n), { value: SavedPointer::At(saved) });
@@ -122,14 +122,14 @@ void probe(struct node* g, struct node* n) {
                                 at(before_call, n->right == saved);
                             };
                         }
-                        assumption();
+                        known();
                     }
 
                     step(); step();
                 }
             }
 
-            step_until(function.exit); assumption();
+            step_until(function.exit); known();
         },
     }
 }

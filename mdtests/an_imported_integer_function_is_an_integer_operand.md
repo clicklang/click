@@ -20,7 +20,7 @@ theorem doubled_is_twice(x: int32) {
 theorem doubled_beside_an_observation(x: int32) {
     requires x == 3;
     ensures to_integer(x) * 2 == doubled(x) by {
-        have to_integer(x) == 3 by assumption();
+        have to_integer(x) == 3 by known();
         unfold(doubled(x));
         solve() using { to_integer(x) == 3; };
     }

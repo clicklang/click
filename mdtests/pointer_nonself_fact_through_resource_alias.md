@@ -36,7 +36,7 @@ void keep(struct item* root) {
                 Tree::Leaf(parent) => { unfold(inner); step_until(function.exit); solve(); },
                 Tree::Parent(parent, tail) => {
                     let { child: leaf } = unfold(inner);
-                    have parent->child != parent by { assumption(); }
+                    have parent->child != parent by { known(); }
                     step_until(function.exit); solve();
                 },
             }

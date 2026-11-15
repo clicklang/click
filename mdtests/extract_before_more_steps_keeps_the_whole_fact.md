@@ -16,8 +16,8 @@ theorem t(x: int32, y: int32, z: int32) {
     requires x < y;
     ensures y > 0 by {
         extract(y > 0 and z == 1);
-        have z == 1 by assumption();
-        assumption();
+        have z == 1 by known();
+        known();
     }
 }
 ```

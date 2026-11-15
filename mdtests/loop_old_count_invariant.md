@@ -84,7 +84,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
         };
     }
-    assumption();
+    known();
 }
 ```
 

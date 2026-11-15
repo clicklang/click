@@ -274,7 +274,7 @@ theorem heap_rotate_left_preserves_inorder(tree: HeapTree) {
             }
             HeapTree::Node(node, value, left, right) => {
                 apply(heap_rotate_left_node_preserves_inorder(node, value, left, right));
-                assumption();
+                known();
             }
         }
     }
@@ -324,7 +324,7 @@ theorem heap_rotate_right_preserves_inorder(tree: HeapTree) {
             }
             HeapTree::Node(node, value, left, right) => {
                 apply(heap_rotate_right_node_preserves_inorder(node, value, left, right));
-                assumption();
+                known();
             }
         }
     }
@@ -337,7 +337,7 @@ theorem plug_inorder_transport(ctx: Context, a: HeapTree, b: HeapTree) {
             Context::Top => {
                 unfold(plug(Context::Top, a));
                 unfold(plug(Context::Top, b));
-                assumption();
+                known();
             }
             Context::Left(parent, value, sibling, up) => {
                 have heap_inorder(HeapTree::Node(parent, value, a, sibling))
@@ -351,7 +351,7 @@ theorem plug_inorder_transport(ctx: Context, a: HeapTree, b: HeapTree) {
                          HeapTree::Node(parent, value, b, sibling)));
                 unfold(plug(Context::Left(parent, value, sibling, up), a));
                 unfold(plug(Context::Left(parent, value, sibling, up), b));
-                assumption();
+                known();
             }
             Context::Right(parent, value, sibling, up) => {
                 have heap_inorder(HeapTree::Node(parent, value, sibling, a))
@@ -365,7 +365,7 @@ theorem plug_inorder_transport(ctx: Context, a: HeapTree, b: HeapTree) {
                          HeapTree::Node(parent, value, sibling, b)));
                 unfold(plug(Context::Right(parent, value, sibling, up), a));
                 unfold(plug(Context::Right(parent, value, sibling, up), b));
-                assumption();
+                known();
             }
         }
     }
@@ -473,7 +473,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                     }
                     have heap_member(l.model, target) != false;
                     rewrite(left_model == l.model);
-                    assumption();
+                    known();
                 }
                 let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
                 solve();
@@ -529,13 +529,13 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                         unfold(plug(Context::Left(identity, value, right_model, ctx.model),
                             left_model));
                         rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
-                        assumption();
+                        known();
                     }
                     let { left: l, right: rt } = unfold(t);
                     have plug(Context::Left(root, value, right_model, ctx.model), left_model)
                         == old(t.model) by {
                         rewrite(root == identity);
-                        assumption();
+                        known();
                     }
                     let frame = fold(ctx_at(root->left), {
                         model: Context::Left(root, value, right_model, ctx.model)
@@ -550,7 +550,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
             have plug(ctx.model, HeapTree::Node(identity, value, left_model, right_model))
                 == old(t.model) by {
                 rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
-                assumption();
+                known();
             }
             let { left: l, right: rt } = unfold(t);
             have heap_left(HeapTree::Node(identity, value, left_model, right_model))
@@ -595,13 +595,13 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
                         unfold(plug(Context::Right(identity, value, left_model, ctx.model),
                             right_model));
                         rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
-                        assumption();
+                        known();
                     }
                     let { left: l, right: rt } = unfold(t);
                     have plug(Context::Right(root, value, left_model, ctx.model), right_model)
                         == old(t.model) by {
                         rewrite(root == identity);
-                        assumption();
+                        known();
                     }
                     let frame = fold(ctx_at(root->right), {
                         model: Context::Right(root, value, left_model, ctx.model)
@@ -616,7 +616,7 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
             have plug(ctx.model, HeapTree::Node(identity, value, left_model, right_model))
                 == old(t.model) by {
                 rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
-                assumption();
+                known();
             }
             let { left: l, right: rt } = unfold(t);
             have heap_right(HeapTree::Node(identity, value, left_model, right_model))

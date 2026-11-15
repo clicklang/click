@@ -1107,7 +1107,7 @@ pub(crate) fn condition_polarity_forms(proposition: &Proposition) -> Vec<Proposi
 
 /// The fixed set of condition forms accepted by [`order_claim_equivalent`]:
 /// [`condition_polarity_forms`] extended to every order family. The explicit
-/// closers (`assumption`, and the written step that adds the goal under its
+/// closers (`known`, and the written step that adds the goal under its
 /// other spelling) probe an exact index for these; the planners and
 /// availability paths keep [`condition_polarity_forms`].
 pub(crate) fn order_claim_forms(proposition: &Proposition) -> Vec<Proposition> {
@@ -1226,7 +1226,7 @@ pub(crate) fn listed_comparison_fact_is_available(
 }
 
 /// Complete an explicit theorem application across an equality representation
-/// boundary. Order claims retain their existing explicit assumption step.
+/// boundary. Order claims retain their existing explicit `known` step.
 pub(crate) fn listed_equality_fact_is_available(
     required: &Proposition,
     available: &[Proposition],
@@ -2598,7 +2598,7 @@ mod tests {
 
     /// `have result == 1 implies forall (k) { ... }` and the claim it
     /// discharges lower the same guarded quantifier with independent fresh
-    /// binders. An explicit `assumption` must find the alpha-equivalent fact
+    /// binders. An explicit `known` must find the alpha-equivalent fact
     /// through the quantified index, and must still refuse a different guard
     /// or a different quantified body.
     #[test]
@@ -2652,9 +2652,9 @@ mod tests {
         );
 
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&fact));
-        assert!(facts.pure_assumption_available(&renamed));
-        assert!(!facts.pure_assumption_available(&other_guard));
-        assert!(!facts.pure_assumption_available(&other_body));
+        assert!(facts.pure_known_available(&renamed));
+        assert!(!facts.pure_known_available(&other_guard));
+        assert!(!facts.pure_known_available(&other_body));
     }
 
     #[test]

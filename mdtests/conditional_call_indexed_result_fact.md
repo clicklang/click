@@ -50,10 +50,10 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
             old(next[cur]) == old(next[cur]); 0 <= cur; cur < n;
             separate(memory(next[0..n]), memory(visited[0..n]));
         };
-        assumption();
+        known();
     }
     let { result: r } = step(visit, {});
-    have r == 0 implies visited[at(entry, next[cur])] != 0 by { assumption(); }
+    have r == 0 implies visited[at(entry, next[cur])] != 0 by { known(); }
     branch { step(); solve(); } else {}
     step(); solve();
 }

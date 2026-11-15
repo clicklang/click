@@ -678,7 +678,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // nested proofs. The kernel checks exact availability (including
         // conjunction leaves); a miss continues with bounded planning below.
         if let Some(closed) =
-            attempt::candidate_outcome(driver_proof.driver().apply_step(ProofStep::Assumption))?
+            attempt::candidate_outcome(driver_proof.driver().apply_step(ProofStep::Known))?
         {
             scope.succeed();
             return Ok(Some(closed));
@@ -688,7 +688,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // the kernel, so descend that structure directly and retain the
         // ordinary Both/Intro certificate nodes.
         // The bundle is closed member by member, `have m by { ... }` for
-        // each and then `assumption`, as a function's exit closes its
+        // each and then `known`, as a function's exit closes its
         // `ensures`; expansion writes those `have`s at the back edge. A
         // member's own proof does not take this path again.
         if !IN_BUNDLE_MEMBER_HAVE.with(std::cell::Cell::get)
@@ -706,7 +706,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 proof = closed.join()?;
             }
             if let Some(closed) =
-                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))?
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
             {
                 return Ok(Some(closed));
             }

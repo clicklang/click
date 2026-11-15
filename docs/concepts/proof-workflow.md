@@ -87,7 +87,7 @@ on its path, with `step_until(function.exit)` or inside one arm of a proof
 `if`, the tactics that follow act on that path. Its open goals are the
 contract's claims in contract order, resource claims included. `fold`,
 `apply`, and `have` transform the current path. A closer such as `solve()`,
-`assumption()`, `normalize() using` or `solve() using` acts on the first open
+`known()`, `normalize() using` or `solve() using` acts on the first open
 goal, the last two from exactly their listed premises when the explicit closer
 is preferable to search, and the implicit tail closes every goal still open.
 A later fact or fold does not retroactively affect an earlier closing step.
@@ -218,7 +218,7 @@ expansion output.
   established; use `have` first when it is not.
 - `witness { k: expression };`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
-- `assumption();`: close a goal already present as the same semantic fact; it
+- `known();`: close a goal already present as the same semantic fact; it
   does not normalize, extract, or transport a new fact.
 - `normalize();`: close a pure goal by context-free computation.
 - `rewrite(equality);`: rewrite the current proposition once using an exact
@@ -408,7 +408,7 @@ ensures exists (a: Integer, b: Integer) { a == b } by {
     obtain (left: Integer, right: Integer) { left == right }
     witness { a: left };
     witness { b: right };
-    assumption();
+    known();
 }
 ```
 
@@ -490,7 +490,7 @@ have y >= 0 by {
 }
 step();
 have at(region(4).entry, y) >= 0 by {
-    assumption();
+    known();
 }
 ```
 

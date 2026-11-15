@@ -36,7 +36,7 @@ int32 ident(int32 x) {
         have x >= 0 by {
             apply(two_bounds(x)) using { small(x); };
             apply(needs_upper(x)) using { x <= 10; };
-            assumption();
+            known();
         }
     }
 }

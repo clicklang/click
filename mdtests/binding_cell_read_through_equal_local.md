@@ -96,7 +96,7 @@ int32 read_through_equal_local(struct cell* node, struct cell* parent) {
             have value == 7 by {
                 rewrite(value == holder_value(Holder::Full(identity, value)));
                 rewrite(Holder::Full(identity, value) == f.model);
-                assumption();
+                known();
             }
             unfold(f);
             step();

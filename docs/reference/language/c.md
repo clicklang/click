@@ -1886,7 +1886,7 @@ the complete modeled function-pointer signature.
 For a callback read through an initialized constant table, a checked equality
 such as `cb == &table` and permission to read the slot establish its target.
 After applying the target's
-contract theorem, `have Invoke(cb->call) by { assumption(); }` records that
+contract theorem, `have Invoke(cb->call) by { known(); }` records that
 contract for the read pointer. The captured state and complete callback
 signature must match.
 
@@ -1932,7 +1932,7 @@ contract with resource handles are in
 [Automatic formation at `&f`](index.md#automatic-formation-at-f).
 
 A refinement outside that route is stated as a closed pure theorem, whose proof
-spells the step with `both`, `assumption`, `intro`, `extract`, `rewrite`, or
+spells the step with `both`, `known`, `intro`, `extract`, `rewrite`, or
 `contradiction`, and `click expand` prints the spelling. `apply` the theorem
 before the call that needs the contract.
 

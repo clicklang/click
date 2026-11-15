@@ -29,7 +29,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     step();
     have peek(at(entry, v), 0, i) == peek(v, 0, i) by {
         solve();
-        assumption();
+        known();
     }
 }
 ```

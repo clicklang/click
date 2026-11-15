@@ -50,7 +50,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
         preserve by {
             have a > 0 by {
                 if a > 0 {
-                    assumption();
+                    known();
                 } else {
                     have a == 0;
                     contradiction(a == 0);
@@ -64,12 +64,12 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
             cases {
                 a == 0 => {
                     have a == 0 by {
-                        assumption();
+                        known();
                     }
                     contradiction(a == 0);
                 }
                 p[0] == 0 => {
-                    assumption();
+                    known();
                 }
             }
         }

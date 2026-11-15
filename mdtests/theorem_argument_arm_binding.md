@@ -75,7 +75,7 @@ int peek(struct node* p) {
             step();
             have depth_ok(Tree::Node(id, value, left_model)) == 1 by {
                 apply(depth_ok_node(id, value, left_model));
-                assumption();
+                known();
             }
             let u = fold(tree_at(p), { model: Tree::Node(id, value, left_model) },
                          { left: l });

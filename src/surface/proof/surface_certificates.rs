@@ -256,7 +256,7 @@ fn contract_expression_for_instantiation_value(value: &MachineTerm) -> Option<Co
 /// Plans an explicit universal-instantiation certificate: one listed
 /// universal premise, specialized at an explicit constant, proves the goal
 /// after its guards discharge from the remaining listed premises. The named
-/// `instantiate ... using` step adds the specialized fact and `assumption`
+/// `instantiate ... using` step adds the specialized fact and `known`
 /// closes the exact goal, matching independent proof-step check.
 pub(super) fn plan_explicit_forall_instantiation(
     goal: &Proposition,
@@ -293,8 +293,8 @@ pub(super) fn plan_explicit_forall_instantiation(
             else {
                 continue;
             };
-            // The closer is `assumption`, so the instantiated conclusion must
-            // match the goal by exactly the equivalence assumption checks.
+            // The closer is `known`, so the instantiated conclusion must
+            // match the goal by exactly the equivalence `known` checks.
             if conclusion != *goal {
                 continue;
             }
@@ -304,7 +304,7 @@ pub(super) fn plan_explicit_forall_instantiation(
                     argument,
                     premises: Some(other_surfaces.clone()),
                 },
-                ProofTactic::Assumption,
+                ProofTactic::Known,
             ];
             return Some(tactics);
         }
@@ -369,7 +369,7 @@ pub(super) fn plan_explicit_forall_instantiation_transport(
 /// Plans an explicit certificate for a universal goal: introduce the binder
 /// (and implication antecedent), then specialize one listed universal premise
 /// at the introduced binder. Instantiation adds the specialized fact; an
-/// optional transport adds its target, and `assumption` closes the exact goal.
+/// optional transport adds its target, and `known` closes the exact goal.
 /// The instantiated guards discharge from the introduced antecedent plus the
 /// remaining listed premises.
 #[allow(clippy::too_many_arguments)]
@@ -396,12 +396,12 @@ fn plan_explicit_universal_conclusion_discharge(
     let instantiated =
         substitute_int32_variable_in_proposition(premise_body, *premise_var, argument_term);
     let (_, conclusion) = discharge_instantiated_guards(instantiated, discharge_kernels).ok()?;
-    let closes_by_assumption =
+    let closes_by_known =
         conclusion == *goal_conclusion || conclusion.clone() == goal_conclusion.clone();
     // Constant-argument instances offer several instantiation candidates, so
     // the caller may insist the instantiated conclusion provably reaches the
     // goal before accepting a transport that check would reject.
-    if !closes_by_assumption
+    if !closes_by_known
         && let Some(gate) = conclusion_gate
         && !gate(&conclusion)
     {
@@ -412,7 +412,7 @@ fn plan_explicit_universal_conclusion_discharge(
     // from the instantiated conclusion instead. The transported closure is
     // validated by the caller's immediate certificate validation, so no weaker
     // equivalence pre-check runs here.
-    let transport_closure = if closes_by_assumption {
+    let transport_closure = if closes_by_known {
         None
     } else {
         // A loop-exit universal invariant fact is written through an
@@ -501,7 +501,7 @@ fn plan_explicit_universal_conclusion_discharge(
             });
         }
     }
-    tactics.push(ProofTactic::Assumption);
+    tactics.push(ProofTactic::Known);
     Some(tactics)
 }
 
@@ -891,7 +891,7 @@ pub(super) fn statement_preservation_steps(
     if !includes_start {
         return None;
     }
-    steps.push(ProofStep::Assumption);
+    steps.push(ProofStep::Known);
     Some(steps)
 }
 
@@ -960,7 +960,7 @@ pub(super) fn implication_preservation_steps(
         }
     }
     let (mut steps, _) = read_preservation_steps(source, pairs, premises)?;
-    steps.push(ProofStep::Assumption);
+    steps.push(ProofStep::Known);
     Some(steps)
 }
 
@@ -971,7 +971,7 @@ fn read_preservation_rewrite_steps(
 ) -> Option<Vec<ProofStep>> {
     let (mut steps, equalities) = read_preservation_steps(source, pairs, premises)?;
     steps.extend(equalities.into_iter().map(ProofStep::Rewrite));
-    steps.push(ProofStep::Assumption);
+    steps.push(ProofStep::Known);
     Some(steps)
 }
 
@@ -1024,7 +1024,7 @@ fn read_preservation_steps(
     };
     // The written source is a premise, not a new assumption. Each written
     // separation is used by at least one preservation proof and checked there.
-    let mut steps = vec![have(source.clone(), vec![ProofStep::Assumption])];
+    let mut steps = vec![have(source.clone(), vec![ProofStep::Known])];
     let mut equalities = Vec::new();
     for ((historical, current), separations) in pairs.into_iter().zip(selected) {
         let reflexive = ClickProposition::Comparison {
@@ -1051,7 +1051,7 @@ fn comparison_preservation_reads(
 ) -> Option<Vec<(ContractExpression, ContractExpression)>> {
     // Distribute only a comparison's written snapshot. Literal integers are
     // snapshot-independent; every other operand keeps its explicit snapshot.
-    // Retain the original source below, so ordinary assumption checks connect
+    // Retain the original source below, so ordinary `known` checks connect
     // the written fact to the rewritten goal without a new trusted rule.
     let distributed;
     let comparison = if let ClickProposition::At {
@@ -1336,7 +1336,7 @@ fn conjunction_leaf_preservation_steps(
 ) -> Option<Vec<ProofStep>> {
     use std::collections::{HashMap, HashSet};
     // Hash each explicit source once, rather than compare the whole conjunction
-    // with every premise. Each leaf is still proved by ordinary assumption.
+    // with every premise. Each leaf is still proved by ordinary `known`.
     let mut sources = leaves
         .iter()
         .map(|(source, _)| source)
@@ -1509,7 +1509,7 @@ pub(super) fn resource_descriptor_rewrite_steps(
     if steps.is_empty() {
         return None;
     }
-    steps.push(ProofStep::Assumption);
+    steps.push(ProofStep::Known);
     Some(steps)
 }
 
@@ -1576,7 +1576,7 @@ pub(super) fn viewability_restriction_steps(
                         ),
                     },
                     ProofStep::Rewrite(equality),
-                    ProofStep::Assumption,
+                    ProofStep::Known,
                 ],
                 narrow_range,
             ));
@@ -1879,7 +1879,7 @@ pub(super) fn native_viewability_restriction_steps(
                 ..
             }
         ) {
-            ProofStep::Assumption
+            ProofStep::Known
         } else {
             ProofStep::ArithmeticUsing(cited.clone())
         };
@@ -1982,7 +1982,7 @@ pub(super) fn computed_viewability_restriction_steps(
     let defined = ClickProposition::Defined {
         expression: inner_hi.clone(),
     };
-    steps.push(have(defined.clone(), vec![ProofStep::Assumption]));
+    steps.push(have(defined.clone(), vec![ProofStep::Known]));
     cited.push(defined.clone());
     let identity = compare(observe(inner_hi.clone()), ComparisonOperator::Equal, exact);
     steps.push(have(
@@ -2006,7 +2006,7 @@ pub(super) fn computed_viewability_restriction_steps(
         let bound = compare(left, ComparisonOperator::LessEqual, right);
         steps.push(have(
             bound.clone(),
-            vec![ProofStep::Rewrite(identity.clone()), ProofStep::Assumption],
+            vec![ProofStep::Rewrite(identity.clone()), ProofStep::Known],
         ));
         cited.push(bound);
     }
@@ -2244,7 +2244,7 @@ pub(super) fn plan_explicit_loadability_transport(
                         ..
                     }
                 ) {
-                    ProofTactic::Assumption
+                    ProofTactic::Known
                 } else {
                     ProofTactic::ArithmeticUsing(premises.clone())
                 };
@@ -2260,7 +2260,7 @@ pub(super) fn plan_explicit_loadability_transport(
             target: surface_goal.clone(),
             premises,
         });
-        tactics.push(ProofTactic::Assumption);
+        tactics.push(ProofTactic::Known);
         return Some(tactics);
     }
     None
@@ -3324,7 +3324,7 @@ fn plan_explicit_implies_refuted_antecedent(
 /// implication whose antecedents are each listed premises, and close the goal
 /// when a consequent along the walk is the goal. The emitted `extract` names
 /// the consequent's surface form, so the checker revalidates the same bounded
-/// rule; `assumption` then closes the goal from the extracted fact.
+/// rule; `known` then closes the goal from the extracted fact.
 fn plan_explicit_discharged_implication_consequent(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
@@ -3347,7 +3347,7 @@ fn plan_explicit_discharged_implication_consequent(
             if consequent.as_ref() == goal || condition_polarity_equivalent(consequent, goal) {
                 return Some(vec![
                     ProofTactic::Extract(surface_consequent.as_ref().clone()),
-                    ProofTactic::Assumption,
+                    ProofTactic::Known,
                 ]);
             }
             current = (consequent, surface_consequent);
@@ -4044,7 +4044,7 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
             },
             premises: vec![nonnegative_surface.clone(), headroom_surface.clone()],
         },
-        ProofTactic::Assumption,
+        ProofTactic::Known,
     ])
 }
 
@@ -4109,7 +4109,7 @@ fn int32_definedness_by_integer_bounds(
             less_equal(exact, literal("2147483647")),
             vec![ProofTactic::ArithmeticUsing(listed)],
         ),
-        ProofTactic::Assumption,
+        ProofTactic::Known,
     ]
 }
 
@@ -5203,7 +5203,7 @@ mod selected_premise_tests {
                     target: surface.clone(),
                     premises: vec![surface],
                 },
-                ProofTactic::Assumption,
+                ProofTactic::Known,
             ])
         );
     }

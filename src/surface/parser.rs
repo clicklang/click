@@ -624,6 +624,9 @@ fn is_tactic_name(name: &str) -> bool {
 /// The refusal of a removed tactic spelling, naming what replaced it.
 fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
     Some(match name {
+        "assumption" => {
+            "`assumption()` is now `known()`; use `known()` to close a goal from available facts"
+        }
         "auto" => {
             "`auto()` is removed: a `by auto();` proof is the omitted proof, so delete it, and a written `auto();` is `solve();`"
         }
@@ -10812,9 +10815,9 @@ impl Parser {
                 return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
             }
             "obtain" => return self.parse_obtain(),
-            "assumption" => {
+            "known" => {
                 self.expect_empty_tactic_args(&name)?;
-                ProofTactic::Assumption
+                ProofTactic::Known
             }
             "sorry" => {
                 self.expect_empty_tactic_args(&name)?;
@@ -10867,7 +10870,7 @@ impl Parser {
             }
             "split" | "left" | "right" => {
                 return Err(self.error(format!(
-                    "`{name}()` is now `assumption()`, which closes a conjunction whose sides are facts and a disjunction with one side a fact"
+                    "`{name}()` is now `known()`, which closes a conjunction whose sides are facts and a disjunction with one side a fact"
                 )));
             }
             "enumerate" => {
@@ -17694,8 +17697,8 @@ mod integer_quantifier_parser_tests {
             function identity(x: int32) -> int32 { x }
             theorem snapshot_call(x: int32) {
                 ensures x == x by {
-                    have at(saved, identity(x)) == at(saved, 1) by { assumption(); }
-                    assumption();
+                    have at(saved, identity(x)) == at(saved, 1) by { known(); }
+                    known();
                 }
             }
         "#;
@@ -17811,7 +17814,7 @@ mod tactic_classification_tests {
         ("observe-resource", "observe(reference(p));"),
         ("witness", "witness { x: 1 };"),
         ("obtain", "obtain (x: Integer) { x == x }"),
-        ("assumption", "assumption();"),
+        ("known", "known();"),
         ("extract", "extract(x == 1);"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),

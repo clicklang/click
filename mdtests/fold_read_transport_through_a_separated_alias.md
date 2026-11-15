@@ -30,7 +30,7 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
         if hi <= lo {
             peel(zeros(p, lo, hi)) using { hi <= lo; };
             peel(zeros(q, lo, hi)) using { hi <= lo; };
-            assumption();
+            known();
         } else {
             have lo < hi;
             have 0 <= to_integer(hi - 1) by { solve(); }
@@ -56,7 +56,7 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             peel(zeros(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             peel(zeros(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             rewrite(p[hi - 1] == q[hi - 1]);
-            assumption();
+            known();
         }
     }
 }
@@ -87,7 +87,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
     }
     have 0 <= 0 by { normalize(); }
     have 0 <= n by { solve(); }
-    have viewable(a[0..n]) by { observe(a[0..n]); assumption(); }
+    have viewable(a[0..n]) by { observe(a[0..n]); known(); }
     step();
     have zeros(at(entry, a), 0, n) == zeros(a, 0, n) by {
         have forall (k: int32) { 0 <= k and k < n implies a[k] == at(entry, a[k]) } by {
@@ -110,13 +110,13 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
             }
             preserve(separate(statement(0).footprint, memory(a[k])));
         }
-        have viewable(a[0..n]) by { observe(a[0..n]); assumption(); }
+        have viewable(a[0..n]) by { observe(a[0..n]); known(); }
         apply(same_zeros(a, at(entry, a), 0, n, n)) using {
             0 <= 0; 0 <= n; n <= n;
             viewable(a[0..n]); at(entry, viewable(a[0..n]));
             forall (k: int32) { 0 <= k and k < n implies a[k] == at(entry, a[k]) };
         };
-        assumption();
+        known();
     }
 }
 ```

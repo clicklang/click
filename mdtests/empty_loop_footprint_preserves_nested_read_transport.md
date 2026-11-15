@@ -141,7 +141,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
                         m <= k;
                         k < end;
                     };
-                    assumption();
+                    known();
                 }
                 have 0 <= k;
                 have k < at(opened, arena->capacity);
@@ -160,7 +160,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
                     0 <= k;
                     k < at(opened, arena->capacity);
                 };
-                assumption();
+                known();
             }
             step();
         }

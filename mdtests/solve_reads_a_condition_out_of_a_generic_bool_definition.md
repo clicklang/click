@@ -7,7 +7,7 @@ that applies a function its arguments decide. `list::contains` is generic and
 returns `bool`; at `Cons(v, Nil)` its `else` end is `list::contains(Nil, x)`,
 which the implicit closer follows into the definition to `false`. So the fact
 `list::contains(Cons(v, Nil), x)` forces `v == x`. The proof the implicit closer writes is
-the one written by hand: `if v == x`, `assumption`; otherwise
+the one written by hand: `if v == x`, `known`; otherwise
 `have not list::contains(..)` by unfolding both applications and normalizing
 with `not (v == x)`, then `contradiction`.
 

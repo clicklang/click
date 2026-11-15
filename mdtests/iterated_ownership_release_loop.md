@@ -102,7 +102,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     have to_integer(i + 1) <= to_integer(k);
                     have n <= k by {
                         rewrite(n == at(opened, i));
-                        assumption();
+                        known();
                     }
                     have at(opened, occupied[k]) == 0 by {
                         instantiate(forall (k: int32) {
@@ -111,7 +111,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                             n <= k;
                             k < end;
                         };
-                        assumption();
+                        known();
                     }
                     have 0 < k;
                     have 0 <= k;
@@ -128,7 +128,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                         0 <= k;
                         k < capacity;
                     };
-                    assumption();
+                    known();
                 } else {
                     have i == k;
                     have k == i;
@@ -136,10 +136,10 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     normalize();
                 }
             }
-            have at(opened, i) <= end by assumption();
+            have at(opened, i) <= end by known();
             have i <= end by {
                 have to_integer(at(opened, i) - 1) <= to_integer(end);
-                assumption();
+                known();
             }
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
             have 0 <= to_integer(0 - start + at(region(3).entry, i) - 1) by {

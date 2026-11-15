@@ -4,7 +4,7 @@ The store writes `v` through `b + i * 4`, the bytes of `q` at the written byte
 offset `i * 4`; the contract reads `q[i]`. The two addresses are spelled
 differently and are one address because `i * 4` does not wrap, which the
 pointer arithmetic records as `defined(i * 4)`. The equality graph joins the
-byte offset to element `i` at stride four, so `assumption()` finds the stored
+byte offset to element `i` at stride four, so `known()` finds the stored
 value for `q[i]` in the outcome state.
 
 The implicit closer does not try that `have` for an `ensures` whose read is
@@ -36,10 +36,10 @@ void set(int32_t* q, int i, int32_t v) {
     step();
     step();
     have q[i] == v by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }
 ```
 

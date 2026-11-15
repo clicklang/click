@@ -6,7 +6,7 @@ theorem quantified_pointer_refl() {
     ensures forall (p: int32*) { p == p } by {
         intro();
         apply(pointer_refl(p));
-        assumption();
+        known();
     }
 }
 ```

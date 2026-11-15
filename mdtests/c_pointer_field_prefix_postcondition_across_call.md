@@ -71,22 +71,22 @@ int32 vector_push(struct vector* owner, int32 value) {
             0 <= k;
             k < old(owner->len);
         };
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
 }
 
 int32 caller(struct vector* owner, int32 value) {
     requires owner->len < owner->cap;
     owns vector_storage(owner);
     ensures forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) };
-} by { step_until(function.exit); assumption(); solve(); }
+} by { step_until(function.exit); known(); solve(); }
 ```
 
 ```expect

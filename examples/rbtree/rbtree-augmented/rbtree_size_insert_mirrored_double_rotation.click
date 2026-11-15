@@ -41,13 +41,13 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     step(); step();
     have parent == 0 by { normalize(); }
     step();
-    have new->__rb_parent_color == 1 by { assumption(); }
+    have new->__rb_parent_color == 1 by { known(); }
     have ((new->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
         rewrite(new->__rb_parent_color == 1); normalize();
     }
     let promoted = fold(mirrored_parent_word(new, 0), { bits: 1u64 });
     step();
-    have old->__rb_parent_color == (address(new) | color) by { assumption(); }
+    have old->__rb_parent_color == (address(new) | color) by { known(); }
     have old->__rb_parent_color == address(new) by {
         rewrite(old->__rb_parent_color == (address(new) | color));
         rewrite(color == 0); normalize();
@@ -60,7 +60,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             conclusion 0;
         }
     }
-    have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == new by { assumption(); }
+    have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == new by { known(); }
     let demoted = fold(mirrored_parent_word(old, new), { bits: address(new) });
     step();
     unfold(demoted);
@@ -158,72 +158,72 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(node->__rb_parent_color == address(p) + (node->__rb_parent_color & 1));
                 rewrite((node->__rb_parent_color & 1) == 0); normalize();
             }
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
-            have p->rb_left == node by { assumption(); }
-            have p->rb_right != p by { assumption(); }
-            have p->rb_left != p by { assumption(); }
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
+            have p->rb_left == node by { known(); }
+            have p->rb_right != p by { known(); }
+            have p->rb_left != p by { known(); }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { known(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { known(); }
             mark m0; step();
             have p->rb_left == at(m0, p->rb_left) by solve();
-            have p->rb_left == node by { assumption(); }
+            have p->rb_left == node by { known(); }
             have *((&p->__rb_parent_color) as (int32 **)) == at(m0, *((&p->__rb_parent_color) as (int32 **))) by solve();
             have *((&g->__rb_parent_color) as (int32 **)) == at(m0, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { known(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { known(); }
             have p->rb_right == at(m0, p->rb_right) by solve();
-            have p->rb_right != p by { assumption(); }
-            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { known(); }
+            have p->rb_left != p by { known(); }
             have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
             mark m1; step();
             have p->rb_left == at(m1, p->rb_left) by solve();
-            have p->rb_left == node by { assumption(); }
+            have p->rb_left == node by { known(); }
             have *((&p->__rb_parent_color) as (int32 **)) == at(m1, *((&p->__rb_parent_color) as (int32 **))) by solve();
             have *((&g->__rb_parent_color) as (int32 **)) == at(m1, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { known(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { known(); }
             have p->rb_right == at(m1, p->rb_right) by solve();
-            have p->rb_right != p by { assumption(); }
-            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { known(); }
+            have p->rb_left != p by { known(); }
             have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
             mark m2; step();
             have p->rb_left == at(m2, p->rb_left) by solve();
-            have p->rb_left == node by { assumption(); }
+            have p->rb_left == node by { known(); }
             have *((&p->__rb_parent_color) as (int32 **)) == at(m2, *((&p->__rb_parent_color) as (int32 **))) by solve();
             have *((&g->__rb_parent_color) as (int32 **)) == at(m2, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { known(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { known(); }
             have p->rb_right == at(m2, p->rb_right) by solve();
-            have p->rb_right != p by { assumption(); }
-            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { known(); }
+            have p->rb_left != p by { known(); }
             have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
             mark m3; step();
             have p->rb_left == at(m3, p->rb_left) by solve();
-            have p->rb_left == node by { assumption(); }
+            have p->rb_left == node by { known(); }
             have *((&p->__rb_parent_color) as (int32 **)) == at(m3, *((&p->__rb_parent_color) as (int32 **))) by solve();
             have *((&g->__rb_parent_color) as (int32 **)) == at(m3, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { known(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { known(); }
             have p->rb_right == at(m3, p->rb_right) by solve();
-            have p->rb_right != p by { assumption(); }
-            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { known(); }
+            have p->rb_left != p by { known(); }
             have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
             unfold(n_right); unfold(n_left);
-            have node->rb_right == 0 by { assumption(); }
-            have node->rb_left == 0 by { assumption(); }
+            have node->rb_right == 0 by { known(); }
+            have node->rb_left == 0 by { known(); }
             let n_right = fold(sized_at(node->rb_right), { model: SizedTree::Empty });
             let n_left = fold(sized_at(node->rb_left), { model: SizedTree::Empty });
             let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: n_size, right: n_right, left: n_left });
-            have p->rb_left == node by { assumption(); }
+            have p->rb_left == node by { known(); }
             have p->rb_right != p by {
-                assumption();
+                known();
             }
             have p->rb_left != p by {
-                assumption();
+                known();
             }
             let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty) }, { metadata: p_size, right: p_right, left: focus });
             let tree = fold(sized_at(g), { model: old(state.model) }, { metadata: g_size, right: parent_tree, left: g_left });
@@ -264,30 +264,30 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(color_bit(Color::Black) == 1); normalize();
                     }
                     step(); step(); step(); step(); step(); step(); step();
-                    have gparent == g by { assumption(); }
-                    have parent == p by { assumption(); }
+                    have gparent == g by { known(); }
+                    have parent == p by { known(); }
                     step(); step(); step(); step();
-                    have tmp == node by { assumption(); }
+                    have tmp == node by { known(); }
                     step();
                     let { metadata: n_size, right: n_right, left: n_left } = unfold(focus);
                     unfold(n_right); unfold(n_left);
-                    have node->rb_left == 0 by { assumption(); }
-                    have gparent->rb_right == parent by { assumption(); }
+                    have node->rb_left == 0 by { known(); }
+                    have gparent->rb_right == parent by { known(); }
                     have separate(memory(node->rb_left), memory(parent->rb_left));
                     have separate(memory(node->rb_left), memory(node->rb_right));
                     have separate(memory(node->rb_left), memory(parent->__rb_parent_color));
                     have separate(memory(node->__rb_parent_color), memory(parent->rb_left));
                     have separate(memory(node->__rb_parent_color), memory(node->rb_right));
                     have separate(memory(node->__rb_parent_color), memory(parent->__rb_parent_color));
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
                     mark before_tmp_read; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(before_tmp_read, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
                     mark before_inner_stores;
                     let saved_parent = fold(mirrored_parent_word(node, p), { bits: node->__rb_parent_color });
                     step(); mark after_inner_child_store;
                     step();
-                    have node->rb_right == parent by { assumption(); }
+                    have node->rb_right == parent by { known(); }
                     have separate(memory(node->rb_right), memory(parent->__rb_parent_color));
                     mark after_inner_right_write;
                     step(); step(); step();
@@ -296,11 +296,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     let written_parent = fold(mirrored_parent_word(parent, node), { bits: parent->__rb_parent_color });
                     unfold(saved_parent);
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
-                    have at(after_inner_child_store, parent) == p by { assumption(); }
-                    have p->rb_left == parent->rb_left by { assumption(); }
-                    have separate(memory(parent->rb_left), memory(node->rb_right)) by { assumption(); }
-                    have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
+                    have at(after_inner_child_store, parent) == p by { known(); }
+                    have p->rb_left == parent->rb_left by { known(); }
+                    have separate(memory(parent->rb_left), memory(node->rb_right)) by { known(); }
+                    have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
                     transport(at(after_inner_child_store, parent->rb_left == 0), parent->rb_left == 0) using {
                         at(after_inner_child_store, parent->rb_left == 0);
                         parent == p;
@@ -308,7 +308,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(parent->rb_left), memory(node->rb_right));
                         separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
                     };
-                    have p->rb_left == 0 by { assumption(); }
+                    have p->rb_left == 0 by { known(); }
                     transport(at(before_inner_rotation, p->rb_right == 0), p->rb_right == 0) using {
                         at(before_inner_rotation, p->rb_right == 0);
                         parent == p;
@@ -318,7 +318,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     };
                     let p_right = fold(sized_at(p->rb_right), { model: SizedTree::Empty });
                     let p_left = fold(sized_at(p->rb_left), { model: SizedTree::Empty });
-                    have at(before_inner_rotation, old(root->rb_node)->rb_right) == parent by { assumption(); }
+                    have at(before_inner_rotation, old(root->rb_node)->rb_right) == parent by { known(); }
                     unfold(written_parent);
                     have parent->__rb_parent_color == address(node) by {
                         normalize() using { at(before_inner_stores, gparent->rb_right) == parent; };
@@ -326,7 +326,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->__rb_parent_color == address(node) by {
                         normalize() using { parent == p; at(before_inner_stores, gparent->rb_right) == parent; };
                     }
-                    have (address(node) & 7) == 0 by { assumption(); }
+                    have (address(node) & 7) == 0 by { known(); }
                     have (p->__rb_parent_color & 1) == 0 by {
                         rewrite(p->__rb_parent_color == address(node)); solve() using { aligned(node, 8); };
                     }
@@ -404,11 +404,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_shape(SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))); normalize();
                     }
                     apply(sized_model_unique(first.model, SizedTree::Node(node, p, Color::Red, 2, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))));
-                    have first.model == SizedTree::Node(node, p, Color::Red, 2, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)) by { assumption(); }
+                    have first.model == SizedTree::Node(node, p, Color::Red, 2, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)) by { known(); }
                     let { metadata: n_size, right: p_leaf, left: outer_empty } = unfold(first);
                     unfold(outer_empty);
                     let { metadata: kept_metadata, right: kept_empty_right, left: kept_empty_left } = unfold(p_leaf);
-                    have node->rb_right == p by { assumption(); }
+                    have node->rb_right == p by { known(); }
                     let p_leaf = fold(sized_at(node->rb_right), {
                         model: SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: kept_metadata, right: kept_empty_right, left: kept_empty_left });
@@ -416,7 +416,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let kept_right = fold(mirrored_right_link(node), { child: p });
                     mark before_outer_rotation;
                     step(); step(); step();
-                    have gparent->rb_right == 0 by { assumption(); }
+                    have gparent->rb_right == 0 by { known(); }
                     have separate(memory(gparent->rb_right), memory(node->rb_left));
                     mark after_outer_right_write;
                     step(); step(); step();
@@ -427,16 +427,16 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     };
                     let { metadata: p_size, right: p_empty_right, left: p_empty_left } = unfold(p_leaf);
                     unfold(p_size); unfold(n_size);
-                    have separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory(p->rb_right)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory(p->rb_left)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory((p as (void *) as (struct sized_node *))->size)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory(node->__rb_parent_color)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory(node->rb_right)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory(node->rb_left)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory((node as (void *) as (struct sized_node *))->size)) by { assumption(); }
-                    have separate(memory(g->__rb_parent_color), memory(g->rb_right)) by { assumption(); }
-                    have at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1) by { assumption(); }
+                    have separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory(p->rb_right)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory(p->rb_left)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory((p as (void *) as (struct sized_node *))->size)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory(node->__rb_parent_color)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory(node->rb_right)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory(node->rb_left)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory((node as (void *) as (struct sized_node *))->size)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory(g->rb_right)) by { known(); }
+                    have at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1) by { known(); }
                     transport(at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1), old(root->rb_node)->__rb_parent_color == 1) using {
                         at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1);
                         old(root->rb_node) == g;
@@ -456,15 +456,15 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let p_size = fold(size_metadata(p), { value: 1 });
                     let n_size = fold(size_metadata(node), { value: 2 });
                     let p_leaf = fold(sized_at(p), { model: SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: p_size, right: p_empty_right, left: p_empty_left });
-                    have gparent == g by { assumption(); }
-                    have gparent->__rb_parent_color == 1 by { assumption(); }
+                    have gparent == g by { known(); }
+                    have gparent->__rb_parent_color == 1 by { known(); }
                     have separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
                     have separate(memory(gparent->rb_right), memory(node->__rb_parent_color));
                     have separate(memory(gparent->rb_right), memory(root->rb_node));
-                    have gparent != 0 by { assumption(); }
+                    have gparent != 0 by { known(); }
                     have parent != 0 by { normalize() using { parent == node; node != 0; }; }
                     have aligned(parent, 8) by {
-                        rewrite(parent == node); assumption();
+                        rewrite(parent == node); known();
                     }
                     mark before_outer_parent_helper;
                     step();
@@ -475,7 +475,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(gparent->rb_right), memory(node->__rb_parent_color));
                         separate(memory(gparent->rb_right), memory(root->rb_node));
                     };
-                    have g->rb_right == 0 by { assumption(); }
+                    have g->rb_right == 0 by { known(); }
                     let g_right = fold(sized_at(0), { model: SizedTree::Empty });
                     transport(at(before_inner_rotation, old(root->rb_node)->rb_left == 0), old(root->rb_node)->rb_left == 0) using {
                         at(before_inner_rotation, old(root->rb_node)->rb_left == 0);
@@ -492,7 +492,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(g->rb_left), memory(node->__rb_parent_color));
                         separate(memory(g->rb_left), memory(root->rb_node));
                     };
-                    have g->rb_left == 0 by { assumption(); }
+                    have g->rb_left == 0 by { known(); }
                     let g_left = fold(sized_at(0), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
@@ -507,9 +507,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have node->rb_left == g by {
                         rewrite(node == parent);
                         rewrite(g == gparent);
-                        assumption();
+                        known();
                     }
-                    have parent == node by { assumption(); }
+                    have parent == node by { known(); }
                     have parent->__rb_parent_color == at(before_outer_parent_helper, gparent->__rb_parent_color) by { solve(); }
                     have parent->__rb_parent_color == 1 by { solve(); }
                     transport(parent->__rb_parent_color == 1, node->__rb_parent_color == 1);
@@ -588,7 +588,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
 
                 }
             }
-            have node == old(node) by { assumption(); }
+            have node == old(node) by { known(); }
             step_until(function.exit);
         },
     }

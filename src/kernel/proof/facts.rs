@@ -57,9 +57,9 @@ mod constant_truth_tests {
             (&negative_true, &positive_false),
         ] {
             let branch = root.with_fact(held.clone());
-            assert!(branch.pure_assumption_available(requested));
-            assert!(!root.pure_assumption_available(requested));
-            assert!(!true_branch.pure_assumption_available(requested));
+            assert!(branch.pure_known_available(requested));
+            assert!(!root.pure_known_available(requested));
+            assert!(!true_branch.pure_known_available(requested));
         }
     }
 
@@ -972,7 +972,7 @@ impl ProofFacts {
                                 crate::kernel::memory_provenance::checked_recorded_atomic_load_equality(
                                     &a, &b, self.assumptions()))
                         };
-                        if !self.pure_assumption_available(&selected)
+                        if !self.pure_known_available(&selected)
                             && !(wide && recorded_wide_read())
                             && !self
                                 .with_selected_load_equality_bridge(&selected)
@@ -1039,7 +1039,7 @@ impl ProofFacts {
             ),
             true,
         );
-        if self.pure_assumption_available(&selected)
+        if self.pure_known_available(&selected)
             || shared_premise_bridged_by_load_chain(
                 &selected,
                 &self.load_equalities_mentioning(&selected),
@@ -1706,7 +1706,7 @@ impl ProofFacts {
                     facts = facts.with_fact(part.clone());
                 }
             }
-            all_available &= facts.pure_assumption_available(part);
+            all_available &= facts.pure_known_available(part);
         }
         // Publish the requested conjunction once. Publishing every nested
         // prefix would repeatedly clone it and take quadratic work.
@@ -1717,13 +1717,13 @@ impl ProofFacts {
     }
 
     /// Materializes one selected equality across a checked chain of load
-    /// variables. This keeps the ordinary `Assumption` checker exact while
+    /// variables. This keeps the ordinary `Known` checker exact while
     /// allowing a new fixed-state goal to consume equality transport explicitly
     /// carried through the preceding statement. Selection follows only the
     /// goal's indexed equality buckets; unrelated ambient equalities remain
     /// implicit and are never visited.
     pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
-        if self.pure_assumption_available(goal)
+        if self.pure_known_available(goal)
             || !matches!(goal, Proposition::ConditionIs(condition, true)
                 if matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16 | MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
                     || condition.pointer_offset_sides().is_some())
@@ -1855,11 +1855,11 @@ impl ProofFacts {
         Some(view.integer_proposition())
     }
 
-    /// Availability of a proposition to the explicit pure `assumption`
+    /// Availability of a proposition to the explicit pure `known`
     /// judgment used inside fixed-state proofs. This deliberately excludes
     /// cross-effect snapshot transport: such a transport needs its own
-    /// retained proof step before a later assumption may consume it.
-    pub(crate) fn pure_assumption_available(&self, required: &Proposition) -> bool {
+    /// retained proof step before a later `known` step may consume it.
+    pub(crate) fn pure_known_available(&self, required: &Proposition) -> bool {
         self.materialization_available(required)
             || self.integer_alpha_fact_available(required)
             || self.quantified_fact_available(required)
@@ -2160,7 +2160,7 @@ impl ProofFacts {
     ///
     /// One probe of the projection index selects the candidates, and each is
     /// accepted only when one of its own projections is binder-equivalent to
-    /// `required` by the same check `assumption` applies to quantified facts.
+    /// `required` by the same check `known` applies to quantified facts.
     /// A different guard, binder sort, or conjunct has a different key or
     /// fails that check. The returned fact is not itself `required`; the
     /// caller must still establish the weakening with checked steps.
@@ -2282,7 +2282,7 @@ impl ProofFacts {
     /// admits a binder-equivalent quantified fact. Every `using` list checks
     /// its premises through this one method, so a premise is accepted by one
     /// list exactly when it is accepted by another. Goal-closing tactics such
-    /// as `assumption` use the same scoped equality knowledge directly.
+    /// as `known` use the same scoped equality knowledge directly.
     pub(crate) fn listed_premise_available(
         &self,
         premise: &Proposition,
@@ -4224,7 +4224,7 @@ mod integer_equality_fact_index_tests {
             Some(source_fact.clone())
         );
         assert!(facts.exact_available_across_effects(&required_fact, &[]));
-        assert!(facts.pure_assumption_available(&required_fact));
+        assert!(facts.pure_known_available(&required_fact));
     }
 
     #[test]
@@ -4256,7 +4256,7 @@ mod integer_equality_fact_index_tests {
             Some(source_fact.clone())
         );
         assert!(facts.exact_available_across_effects(&required_fact, &[]));
-        assert!(facts.pure_assumption_available(&required_fact));
+        assert!(facts.pure_known_available(&required_fact));
     }
 
     #[test]
@@ -4695,7 +4695,7 @@ mod integer_equality_fact_index_tests {
                     .is_none()
             );
             assert!(!facts.exact_available_across_effects(&candidate, &[]));
-            assert!(!facts.pure_assumption_available(&candidate));
+            assert!(!facts.pure_known_available(&candidate));
         }
     }
 
@@ -4937,7 +4937,7 @@ mod held_separation_tests {
             ] {
                 let root = ProofFacts::default();
                 let facts = root.with_fact(source);
-                assert!(facts.pure_assumption_available(goal));
+                assert!(facts.pure_known_available(goal));
                 assert!(!root.contains(goal));
                 for changed in [
                     range(2, 1, 3, 4),

@@ -21,7 +21,7 @@ void caller(struct node* child, int32* slot) {
 } by {
     step();
     step();
-    have contains(list(child), statement(0).region(1).footprint) by { assumption(); }
+    have contains(list(child), statement(0).region(1).footprint) by { known(); }
 }
 ```
 

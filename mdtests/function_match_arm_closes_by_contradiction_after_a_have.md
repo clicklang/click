@@ -67,7 +67,7 @@ int32 peek(struct node* p) {
         Cell::Missing => {
             have is_present(Cell::Missing) == 1 by {
                 rewrite(Cell::Missing == x.model);
-                assumption();
+                known();
             }
             have is_present(Cell::Missing) != 0 by {
                 rewrite(is_present(Cell::Missing) == 1);

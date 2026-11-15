@@ -25,7 +25,7 @@ int32 caller(int32 x, int32 y) {
         step();
         step();
         step();
-        assumption();
+        known();
     }
 }
 ```

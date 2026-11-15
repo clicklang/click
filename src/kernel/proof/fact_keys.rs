@@ -3808,7 +3808,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
 /// implication chain whose final consequent is quantified. Guarded
 /// quantifiers such as `result == 1 implies forall (k) { ... }` are
 /// independently lowered with fresh binders by a `have` and by the claim it
-/// discharges; indexing the whole chain lets an explicit `assumption` find
+/// discharges; indexing the whole chain lets an explicit `known` find
 /// the alpha-equivalent fact without a derivation search.
 pub(crate) fn quantified_equivalence_index_key(
     proposition: &Proposition,

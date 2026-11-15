@@ -9,7 +9,7 @@ verifying "leak.c";
 void leak(int32** out) {
     owns out[0..1];
     ensures *out[0] == 3;
-} by { step_until(function.exit); assumption(); solve(); }
+} by { step_until(function.exit); known(); solve(); }
 ```
 
 ```expect

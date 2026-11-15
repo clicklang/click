@@ -92,7 +92,7 @@ void claim(int32* data, int32 capacity, int32 start) {
             old(before.start) <= k;
             k < capacity;
         };
-        assumption();
+        known();
     }
     let after = fold(zero_suffix(data, capacity), { start: old(before.start) + 1 });
 }

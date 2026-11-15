@@ -2311,7 +2311,7 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     assert!(
         expanded.contains("outcomes {")
             && returned_proof.contains("normalize();")
-            && threw_proof.contains("assumption();")
+            && threw_proof.contains("known();")
             && !threw_proof.contains("normalize();")
             && !expanded.contains("trivial();"),
         "distinct exact path closers should retain returned/threw certificates: {expanded}"
@@ -2494,7 +2494,7 @@ int32 many({parameters}, int32& value) {{ owns value; requires value == 7; ensur
             .replace("ensures result == 7;", "ensures result == 8;")
             .replace(
                 "ensures value == 7; }",
-                "ensures value == 7; } by { step_until(function.exit); assumption(); }",
+                "ensures value == 7; } by { step_until(function.exit); known(); }",
             );
         let sidecar = project.directory.join("bad.click");
         fs::write(&sidecar, &hostile).unwrap();
@@ -10714,7 +10714,7 @@ int32 many(bool early, int32 value) { ensures result == value; }
             check_selected_claim_certificate(&project, &import, source);
             let hostile = source.replace(
                 "ensures result == value; }",
-                "requires value == 5; ensures result == 6; } by { step_until(function.exit); assumption(); }",
+                "requires value == 5; ensures result == 6; } by { step_until(function.exit); known(); }",
             );
             let sidecar = project.directory.join("bad.click");
             fs::write(&sidecar, &hostile).unwrap();

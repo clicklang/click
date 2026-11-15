@@ -127,7 +127,7 @@ theorem rb_remove_min_reparent(tree: RbTree, new_parent: struct rb_node*) {
             }
             RbTree::Node(node, parent, color, left, right) => {
                 apply(rb_remove_min_node_reparent(node, parent, color, left, right, new_parent));
-                assumption();
+                known();
             }
         }
     }
@@ -232,7 +232,7 @@ theorem rb_minimum_list(tree: RbTree, successor: struct rb_node*, color: Color, 
                         == RbMinimum::Found(successor, color, child) by {
                         rewrite(RbMinimum::Found(node, ncolor, right)
                             == rb_minimum(RbTree::Node(node, parent, ncolor, left, right)));
-                        assumption();
+                        known();
                     }
                     extract(node == successor);
                     rewrite(left == RbTree::Empty);
@@ -243,13 +243,13 @@ theorem rb_minimum_list(tree: RbTree, successor: struct rb_node*, color: Color, 
                     have rb_minimum(RbTree::Node(node, parent, ncolor, left, right))
                         == rb_minimum(left) by {
                         apply(rb_minimum_nonempty_left(node, parent, ncolor, left, right));
-                        assumption();
+                        known();
                     }
                     apply(ih(left, successor, color, child));
                     apply(rb_min_list_nonempty_left(node, parent, ncolor, left, right));
                     rewrite(rb_min_list(RbTree::Node(node, parent, ncolor, left, right))
                         == rb_min_list(left));
-                    assumption();
+                    known();
                 }
             }
         }
@@ -272,7 +272,7 @@ theorem rb_minimum_child_empty_left(node: struct rb_node*, parent: struct rb_nod
         }
         rewrite(RbMinimum::Found(node, color, right)
             == rb_minimum(RbTree::Node(node, parent, color, left, right)));
-        assumption();
+        known();
     }
 }
 
@@ -293,7 +293,7 @@ theorem rb_minimum_empty_left(node: struct rb_node*, parent: struct rb_node*,
         }
         rewrite(RbMinimum::Found(node, color, right)
             == rb_minimum(RbTree::Node(node, parent, color, left, right)));
-        assumption();
+        known();
     }
 }
 
@@ -374,7 +374,7 @@ theorem rb_min_context_child(tree: RbTree, up: Context, successor: struct rb_nod
                     have rb_color(RbTree::Node(node, parent, color, left, right)) == min_color;
                     rewrite(left == RbTree::Empty);
                     unfold(rb_min_context(RbTree::Node(node, parent, color, RbTree::Empty, right), up));
-                    assumption();
+                    known();
                 } else {
                     apply(rb_minimum_nonempty_left(node, parent, color, left, right));
                     apply(is_rb_node_left(node, parent, color, left, right));
@@ -398,7 +398,7 @@ theorem rb_min_context_child(tree: RbTree, up: Context, successor: struct rb_nod
                     apply(rb_min_context_nonempty_left(node, parent, color, left, right, up));
                     rewrite(rb_min_context(RbTree::Node(node, parent, color, left, right), up)
                         == rb_min_context(left, Context::Left(node, parent, color, right, up)));
-                    assumption();
+                    known();
                 }
             }
         }
@@ -411,7 +411,7 @@ theorem rb_min_context_leaf(tree: RbTree, up: Context, successor: struct rb_node
     requires is_rb(tree) == 1;
     requires ctx_rb(up, black_height(tree), rb_color(tree)) == 1;
     ensures ctx_rb(rb_min_context(tree, up), frame_black_height(min_color, Nat::Zero), min_color) == 1 by {
-        apply(rb_min_context_child(tree, up, successor, min_color, RbTree::Empty)); assumption();
+        apply(rb_min_context_child(tree, up, successor, min_color, RbTree::Empty)); known();
     }
 }
 
@@ -423,7 +423,7 @@ theorem rb_min_context_black_deficit(tree: RbTree, up: Context, successor: struc
         apply(rb_min_context_leaf(tree, up, successor, Color::Black));
         unfold(frame_black_height(Color::Black, Nat::Zero));
         rewrite(Nat::Succ(Nat::Zero) == frame_black_height(Color::Black, Nat::Zero));
-        assumption();
+        known();
     }
 }
 
@@ -436,7 +436,7 @@ theorem rb_min_context_red_exit(tree: RbTree, up: Context, successor: struct rb_
         unfold(frame_black_height(Color::Red, Nat::Zero));
         have ctx_rb(rb_min_context(tree, up), Nat::Zero(), Color::Red()) == 1;
         apply(ctx_rb_black_focus(rb_min_context(tree, up), Nat::Zero, Color::Red));
-        assumption();
+        known();
     }
 }
 
@@ -474,7 +474,7 @@ theorem ctx_rb_node_right_summary(node: struct rb_node*, parent: struct rb_node*
         rewrite(ctx_rb(up, frame_black_height(color, black_height(right)), color)
             == ctx_rb(up, black_height(RbTree::Node(node, parent, color, left, right)),
                 rb_color(RbTree::Node(node, parent, color, left, right))));
-        assumption();
+        known();
     }
 }
 
@@ -499,22 +499,22 @@ theorem ctx_rb_successor_right(erased: struct rb_node*, successor: struct rb_nod
         have black_height(rb_reparent(left, successor)) == black_height(rb_reparent(right, successor)) by {
             rewrite(black_height(rb_reparent(left, successor)) == black_height(left));
             rewrite(black_height(rb_reparent(right, successor)) == black_height(right));
-            assumption();
+            known();
         }
         have node_color_ok(color, rb_color(rb_reparent(left, successor)),
             rb_color(rb_reparent(right, successor))) == 1 by {
             rewrite(rb_color(rb_reparent(left, successor)) == rb_color(left));
             rewrite(rb_color(rb_reparent(right, successor)) == rb_color(right));
-            assumption();
+            known();
         }
         have ctx_rb(up, frame_black_height(color, black_height(rb_reparent(right, successor))), color) == 1
             by {
             rewrite(black_height(rb_reparent(right, successor)) == black_height(right));
-            assumption();
+            known();
         }
         apply(ctx_rb_right_frame(successor, parent, color, rb_reparent(left, successor), up,
             black_height(rb_reparent(right, successor)), rb_color(rb_reparent(right, successor))));
-        assumption();
+        known();
     }
 }
 
@@ -528,7 +528,7 @@ theorem rb_successor_splice_cut(successor: struct rb_node*, parent: struct rb_no
         have rb_minimum(rb_reparent(right, successor))
             == RbMinimum::Found(successor, min_color, RbTree::Empty) by {
             rewrite(rb_minimum(rb_reparent(right, successor)) == rb_minimum(right));
-            assumption();
+            known();
         }
         apply(rb_min_context_cut_leaf(rb_reparent(right, successor),
             Context::Right(successor, parent, color, rb_reparent(left, successor), up),
@@ -568,19 +568,19 @@ theorem rb_erase_black_successor_splice(erased: struct rb_node*, successor: stru
         have rb_minimum(rb_reparent(right, successor))
             == RbMinimum::Found(successor, Color::Black, RbTree::Empty) by {
             rewrite(rb_minimum(rb_reparent(right, successor)) == rb_minimum(right));
-            assumption();
+            known();
         }
         have is_rb(rb_reparent(right, successor)) == 1;
         apply(rb_min_context_black_deficit(rb_reparent(right, successor),
             Context::Right(successor, parent, color, rb_reparent(left, successor), up), successor));
         unfold(rb_successor_context(successor, parent, color, left, right, up));
-        assumption();
+        known();
     }
 
     ensures plug(rb_successor_context(successor, parent, color, left, right, up), RbTree::Empty)
         == plug(up, rb_successor_splice(successor, parent, color, left, right)) by {
         apply(rb_successor_splice_cut(successor, parent, color, left, right, up, Color::Black));
-        assumption();
+        known();
     }
 
     ensures rb_inorder(rb_successor_splice(successor, parent, color, left, right))
@@ -588,7 +588,7 @@ theorem rb_erase_black_successor_splice(erased: struct rb_node*, successor: stru
         apply(rb_minimum_list(right, successor, Color::Black, RbTree::Empty));
         apply(rb_erase_two_child_splice(erased, successor, parent, color, left, right));
         unfold(rb_successor_splice(successor, parent, color, left, right));
-        assumption();
+        known();
     }
 
     ensures ctx_consistent(rb_successor_context(successor, parent, color, left, right, up),
@@ -601,7 +601,7 @@ theorem rb_erase_black_successor_splice(erased: struct rb_node*, successor: stru
         have rb_parent_consistent(rb_successor_splice(successor, parent, color, left, right), parent) == 1
             by {
             unfold(rb_successor_splice(successor, parent, color, left, right));
-            assumption();
+            known();
         }
         apply(ctx_consistent_swap(up, erased, parent, color, left, right,
             rb_successor_splice(successor, parent, color, left, right), root_parent));
@@ -613,11 +613,11 @@ theorem rb_erase_black_successor_splice(erased: struct rb_node*, successor: stru
                 root_parent) == 1 by {
             rewrite(plug(rb_successor_context(successor, parent, color, left, right, up), RbTree::Empty)
                 == plug(up, rb_successor_splice(successor, parent, color, left, right)));
-            assumption();
+            known();
         }
         apply(plug_parent_consistent_ctx(rb_successor_context(successor, parent, color, left, right, up),
             RbTree::Empty, root_parent));
-        assumption();
+        known();
     }
 }
 
@@ -639,7 +639,7 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
         apply(rb_minimum_reparent(right, successor));
         have rb_minimum(rb_reparent(right, successor))
             == RbMinimum::Found(successor, Color::Red, RbTree::Empty) by {
-            rewrite(rb_minimum(rb_reparent(right, successor)) == rb_minimum(right)); assumption();
+            rewrite(rb_minimum(rb_reparent(right, successor)) == rb_minimum(right)); known();
         }
         have is_rb(rb_reparent(right, successor)) == 1;
         apply(rb_min_context_red_exit(rb_reparent(right, successor),
@@ -647,7 +647,7 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
         have ctx_rb(rb_successor_context(successor, parent, color, left, right, up),
             black_height(RbTree::Empty), rb_color(RbTree::Empty)) == 1 by {
             unfold(rb_successor_context(successor, parent, color, left, right, up));
-            unfold(black_height(RbTree::Empty)); unfold(rb_color(RbTree::Empty)); assumption();
+            unfold(black_height(RbTree::Empty)); unfold(rb_color(RbTree::Empty)); known();
         }
         unfold(is_rb(RbTree::Empty));
         apply(plug_rb_from_ctx_rb(rb_successor_context(successor, parent, color, left, right, up),
@@ -655,14 +655,14 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
         apply(rb_successor_splice_cut(successor, parent, color, left, right, up, Color::Red));
         rewrite(plug(up, rb_successor_splice(successor, parent, color, left, right))
             == plug(rb_successor_context(successor, parent, color, left, right, up), RbTree::Empty));
-        assumption();
+        known();
     }
 
     ensures rb_inorder(rb_successor_splice(successor, parent, color, left, right))
         == list::append(rb_inorder(left), rb_inorder(right)) by {
         apply(rb_minimum_list(right, successor, Color::Red, RbTree::Empty));
         apply(rb_erase_two_child_splice(erased, successor, parent, color, left, right));
-        unfold(rb_successor_splice(successor, parent, color, left, right)); assumption();
+        unfold(rb_successor_splice(successor, parent, color, left, right)); known();
     }
 
     ensures rb_parent_consistent(plug(up, rb_successor_splice(successor, parent, color, left, right)),
@@ -673,13 +673,13 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
         apply(rb_erase_two_child_splice_parent_consistent(erased, successor, parent, color,
             left, right, parent));
         have rb_parent_consistent(rb_successor_splice(successor, parent, color, left, right), parent) == 1 by {
-            unfold(rb_successor_splice(successor, parent, color, left, right)); assumption();
+            unfold(rb_successor_splice(successor, parent, color, left, right)); known();
         }
         apply(ctx_consistent_swap(up, erased, parent, color, left, right,
             rb_successor_splice(successor, parent, color, left, right), root_parent));
         apply(plug_parent_consistent_transport(up,
             rb_successor_splice(successor, parent, color, left, right), root_parent));
-        assumption();
+        known();
     }
 }
 

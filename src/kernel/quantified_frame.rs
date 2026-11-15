@@ -10,7 +10,7 @@
 //! ```
 //!
 //! is carried across `visited[cur] = 1` in one step instead of by `intro`,
-//! `extract`, a per-index transport and `assumption`.
+//! `extract`, a per-index transport and `known`.
 //!
 //! **The rule.** `prove(from, to, context)` establishes `from => to`:
 //!

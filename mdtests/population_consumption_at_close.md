@@ -54,7 +54,7 @@ uint32 contribute_early(struct counter* p) {
 } by {
     open(control(p)) {
         have to_integer(count(remaining(p))) <= 3 by {
-            assumption();
+            known();
         }
     }
     open(control(p)) {
@@ -248,7 +248,7 @@ uint32 contribute_early(struct counter* p) {
     open(control(p)) {
         step();
     }
-    assumption();
+    known();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
             arithmetic_certificate {
@@ -283,7 +283,7 @@ uint32 contribute_early(struct counter* p) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
     have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
         rewrite(at(function.entry, to_integer(p->value)) == at(function.entry, (3 - to_integer(count(remaining(p))))));
@@ -291,8 +291,8 @@ uint32 contribute_early(struct counter* p) {
         rewrite(to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1));
         normalize();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }
 uint32 read_current(struct counter* p) {
     owns control(p);
@@ -300,7 +300,7 @@ uint32 read_current(struct counter* p) {
     open(control(p)) {
         step();
     }
-    assumption();
+    known();
 }
 uint32 contribute_nested(struct counter* p) {
     owns control(p);
@@ -650,7 +650,7 @@ uint32 contribute_nested(struct counter* p) {
         }
     }
     step();
-    assumption();
+    known();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1) by {
             arithmetic_certificate {
@@ -726,10 +726,10 @@ uint32 contribute_nested(struct counter* p) {
         }
     }
     have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }
 uint32 contribute_branch(struct counter* p, int32 report) {
     owns control(p);
@@ -931,7 +931,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             step();
             step();
         }
-        assumption();
+        known();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
                 arithmetic_certificate {
@@ -966,7 +966,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
                     conclusion 0;
                 }
             }
-            assumption();
+            known();
         }
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
             rewrite(at(function.entry, to_integer(p->value)) == at(function.entry, (3 - to_integer(count(remaining(p))))));
@@ -974,13 +974,13 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             rewrite(to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1));
             normalize();
         }
-        assumption();
-        assumption();
+        known();
+        known();
     } else {
         step();
         step();
         step();
-        assumption();
+        known();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
                 arithmetic_certificate {
@@ -1015,7 +1015,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
                     conclusion 0;
                 }
             }
-            assumption();
+            known();
         }
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
             rewrite(at(function.entry, to_integer(p->value)) == at(function.entry, (3 - to_integer(count(remaining(p))))));
@@ -1023,8 +1023,8 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             rewrite(to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1));
             normalize();
         }
-        assumption();
-        assumption();
+        known();
+        known();
     }
 }
 uint32 sequential_early(struct counter* p) {
@@ -1167,11 +1167,11 @@ uint32 sequential_early(struct counter* p) {
     unfold(remaining(p));
     unfold(authority(remaining(p)));
     step();
-    assumption();
+    known();
     have result == 2 by {
-        assumption();
+        known();
     }
-    assumption();
+    known();
 }
 ```
 

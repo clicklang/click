@@ -1511,7 +1511,7 @@ mod observed_integer_argument_tests {
         let source = r#"
             theorem equal_arguments(a: Integer, b: Integer) {
                 requires a == b;
-                ensures a == b by { assumption(); }
+                ensures a == b by { known(); }
             }
             theorem reverse_requirement(a: Integer, b: Integer) {
                 requires b == a;
@@ -1574,11 +1574,11 @@ mod observed_integer_argument_tests {
     #[test]
     fn pure_argument_obligations_solve_and_expand_without_evidence_selection() {
         let source = r#"
-            theorem identity(value: int32) { ensures value == value by assumption(); }
+            theorem identity(value: int32) { ensures value == value by known(); }
             theorem use_argument(x: int32) {
                 requires 0 <= x;
                 requires x < 10;
-                ensures x == x by { apply(identity(x + 1)); assumption(); }
+                ensures x == x by { apply(identity(x + 1)); known(); }
             }
         "#;
         verify_c_sources(source, &[]).unwrap();
@@ -1688,10 +1688,10 @@ theorem nested_count(value: int32) {
         unfold(count(Count::At(value - 1)));
         have to_integer(value - 1) == to_integer(value) - 1;
         have to_integer(count(Count::At(value - 1))) == to_integer(value) - 1 by {
-            rewrite(count(Count::At(value - 1)) == value - 1); assumption();
+            rewrite(count(Count::At(value - 1)) == value - 1); known();
         }
         apply(count_less(value, Count::At(value - 1)));
-        assumption();
+        known();
     }
 }
 "#;
@@ -1738,7 +1738,7 @@ theorem nested_count(value: int32) {
                 theorem guarded(x: int32, y: int32) {{
                     requires defined(x + y);
                     requires to_integer(count_value({argument})) == 0;
-                    ensures to_integer(count_value({argument})) <= 0 by {{ apply(known_count({argument})); assumption(); }}
+                    ensures to_integer(count_value({argument})) <= 0 by {{ apply(known_count({argument})); known(); }}
                 }}
             "#
             );

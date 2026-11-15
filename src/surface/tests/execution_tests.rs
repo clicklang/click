@@ -1327,8 +1327,8 @@ fn bounded_execute_resumes_and_explores_symbolic_branches() {
                 _ => None,
             })
             .expect("bounded branch execution should retain its surface branch");
-        assert_eq!(proof_if.then_tactics.last(), Some(&ProofTactic::Assumption));
-        assert_eq!(proof_if.else_tactics.last(), Some(&ProofTactic::Assumption));
+        assert_eq!(proof_if.then_tactics.last(), Some(&ProofTactic::Known));
+        assert_eq!(proof_if.else_tactics.last(), Some(&ProofTactic::Known));
         ProofCertificate::from_proof_tactics(&expanded)
             .expect("bounded branch expansion should be a surface certificate");
     }

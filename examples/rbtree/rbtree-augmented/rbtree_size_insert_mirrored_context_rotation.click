@@ -104,17 +104,17 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             }
             step(); step(); step(); step();
             unfold(n_left); unfold(n_right);
-            have node->rb_right == 0 by { assumption(); }
-            have node->rb_left == 0 by { assumption(); }
+            have node->rb_right == 0 by { known(); }
+            have node->rb_left == 0 by { known(); }
             let n_left = fold(sized_at(node->rb_right), { model: SizedTree::Empty });
             let n_right = fold(sized_at(node->rb_left), { model: SizedTree::Empty });
             let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: n_size, right: n_left, left: n_right });
-            have p->rb_right == node by { assumption(); }
+            have p->rb_right == node by { known(); }
             have p->rb_right != p by {
-                assumption();
+                known();
             }
             have p->rb_left != p by {
-                assumption();
+                known();
             }
             let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)) }, { metadata: p_size, right: focus, left: p_left });
             let tree = fold(sized_at(g), { model: old(state.model) }, { metadata: g_size, right: parent_tree, left: g_left });
@@ -154,20 +154,20 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(color_bit(Color::Black) == 1); normalize();
                     }
                     step(); step(); step(); step(); step(); step(); step(); step();
-                    have gparent == g by { assumption(); }
-                    have parent == p by { assumption(); }
-                    have parent->rb_right == node by { assumption(); }
+                    have gparent == g by { known(); }
+                    have parent == p by { known(); }
+                    have parent->rb_right == node by { known(); }
                     mark before_link_writes;
-                    have at(before_link_writes, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above) by assumption();
-                    have at(before_link_writes, parent->rb_right == node) by { assumption(); }
-                    have at(before_link_writes, g->rb_right) == parent by { assumption(); }
+                    have at(before_link_writes, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above) by known();
+                    have at(before_link_writes, parent->rb_right == node) by { known(); }
+                    have at(before_link_writes, g->rb_right) == parent by { known(); }
                     step(); step(); step();
-                    have tmp == 0 by { assumption(); }
-                    have node != 0 by { assumption(); }
+                    have tmp == 0 by { known(); }
+                    have node != 0 by { known(); }
                     step(); step(); step();
                     mark after_right_write;
-                    have at(after_right_write, g->rb_right == 0) by { assumption(); }
-                    have separate(memory(g->rb_right), memory(parent->rb_left)) by { assumption(); }
+                    have at(after_right_write, g->rb_right == 0) by { known(); }
+                    have separate(memory(g->rb_right), memory(parent->rb_left)) by { known(); }
                     step(); step(); step();
                     have gparent->__rb_parent_color == address(above) + 1 by { solve(); }
                     unfold(g_size);
@@ -184,15 +184,15 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     transport(at(before_link_writes, parent->rb_right == node), parent->rb_right == node);
                     have parent->rb_left == gparent by { solve(); }
                     mark before_parent_update;
-                    have at(before_parent_update, g->rb_right == 0) by { assumption(); }
-                    have at(before_parent_update, parent->rb_right == node) by { assumption(); }
-                    have at(before_parent_update, parent->rb_left == gparent) by { assumption(); }
+                    have at(before_parent_update, g->rb_right == 0) by { known(); }
+                    have at(before_parent_update, parent->rb_right == node) by { known(); }
+                    have at(before_parent_update, parent->rb_left == gparent) by { known(); }
                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
                         transport(at(before_link_writes, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above),
                             ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above);
                     }
                     have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(link.model, 0) by {
-                        rewrite(sized_context_parent(link.model, 0) == above); assumption();
+                        rewrite(sized_context_parent(link.model, 0) == above); known();
                     }
                     let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     let g_size = fold(size_metadata(g), { value: 3 });
@@ -216,17 +216,17 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->rb_left == g by {
                         rewrite(p == parent);
                         rewrite(g == gparent);
-                        assumption();
+                        known();
                     }
-                    have parent == p by { assumption(); }
+                    have parent == p by { known(); }
                     have p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { solve(); }
                     have p->__rb_parent_color == address(above) + (p->__rb_parent_color & 1) by {
                         rewrite(p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
-                        assumption();
+                        known();
                     }
                     have (p->__rb_parent_color & 1) == color_bit(Color::Black) by {
                         rewrite(p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color));
-                        assumption();
+                        known();
                     }
                     have sized_parent_is(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), p) == 1 by {
                         unfold(sized_parent_is(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), p)); normalize();
@@ -288,7 +288,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have to_integer(sized_value(checked.model)) == 3 by {
                         rewrite(to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)));
                         rewrite(sized_shape(checked.model) == sized_mirrored_context_three_after(g, p, node, above));
-                        assumption();
+                        known();
                     }
                     have sized_value(checked.model) == 3;
                     apply(sized_parent_is_shape(checked.model, above));
@@ -299,23 +299,23 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     have sized_parent_is(checked.model, above) == 1 by {
                         rewrite(sized_parent_is(checked.model, above) == rb_parent_is(sized_shape(checked.model), above));
-                        assumption();
+                        known();
                     }
                     let { frames: path } = unfold(link);
-                    have path.model == old(state.context) by { assumption(); }
+                    have path.model == old(state.context) by { known(); }
                     have sized_parent_is(checked.model, sized_context_parent(path.model, 0)) == 1 by {
                         rewrite(path.model == old(state.context));
                         rewrite(sized_context_parent(old(state.context), 0) == above);
-                        assumption();
+                        known();
                     }
                     mark before_restore;
                     let { whole: whole } = restore_sized_context(p, root->rb_node, 0, 3, { path: path, sub: checked });
-                    have whole.model == sized_plug(old(state.context), at(before_restore, checked.model)) by { assumption(); }
+                    have whole.model == sized_plug(old(state.context), at(before_restore, checked.model)) by { known(); }
                     let state = fold(sized_insert_mirrored_context_three_at(node, root), {
                         phase: SizedInsertMirroredContextThreePhase::After(g, p, above), model: at(before_restore, checked.model), context: old(state.context), whole_model: whole.model
                     }, { whole: whole });
-                    have state.context == old(state.context) by { assumption(); }
-                    have state.whole_model == sized_plug(old(state.context), state.model) by { assumption(); }
+                    have state.context == old(state.context) by { known(); }
+                    have state.whole_model == sized_plug(old(state.context), state.model) by { known(); }
                     have state.phase == sized_mirrored_context_three_finish(old(state.phase)) by {
                         unfold(sized_mirrored_context_three_finish(SizedInsertMirroredContextThreePhase::Before(g, p, above))); solve();
                     }
@@ -326,7 +326,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     step();
                 }
             }
-            have node == old(node) by { assumption(); }
+            have node == old(node) by { known(); }
             step_until(function.exit);
         },
     }

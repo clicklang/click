@@ -18,7 +18,7 @@ theorem lemma_def(t: int32, pos: int32) {
   have to_integer(t + pos) + to_integer(4) >= -2147483648 by solve() using { to_integer(t + pos) == to_integer(t) + to_integer(pos); 0 <= t; 0 <= pos; };
   have to_integer(t + pos) + to_integer(4) <= 2147483647 by solve() using { to_integer(t + pos) == to_integer(t) + to_integer(pos); to_integer(t) <= 1000; to_integer(pos) <= 1000; };
   have defined((t + pos) + 4);
-  both { assumption(); } and { assumption(); }
+  both { known(); } and { known(); }
  }
 }
 theorem needs_def(t: int32, pos: int32) {
@@ -36,8 +36,8 @@ theorem caller(t: int32, r: int32, x: int32) {
   have 0 <= to_integer(r - x) by solve();
   have to_integer(r - x) <= 1000 by solve();
   apply(lemma_def(t, r - x));
-  have defined(t + (r - x)) by assumption();
-  have defined((t + (r - x)) + 4) by assumption();
+  have defined(t + (r - x)) by known();
+  have defined((t + (r - x)) + 4) by known();
   apply(needs_def(t, r - x)) using { defined(r - x); defined(t + (r - x)); defined((t + (r - x)) + 4); };
   solve();
  }

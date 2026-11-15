@@ -31,7 +31,7 @@ void caller(struct pool* pool, struct object* object) {
     open(control(pool)) {
         apply(population_member_count_zero(count(item(pool, object))));
         have old(count(item(pool, object))) == 0 by {
-            assumption();
+            known();
         }
     }
     step();

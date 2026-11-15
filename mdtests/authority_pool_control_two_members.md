@@ -56,19 +56,19 @@ void initialize(struct pool* pool, int32 amount) {
     fold(control(pool));
     step();
     unfold(valid_pool);
-    assumption();
+    known();
     unfold(valid_pool);
     have to_integer(count(item(pool, _))) == 0 by {
-        assumption();
+        known();
     }
     have 0 <= pool->checked_out and to_integer(pool->checked_out) == to_integer(count(item(pool, _))) and to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-        assumption();
+        known();
     }
-    assumption();
+    known();
     normalize();
     normalize();
-    assumption();
-    assumption();
+    known();
+    known();
 }
 void checkout(struct pool* pool, struct payload* p) {
     owns control(pool);
@@ -83,7 +83,7 @@ void checkout(struct pool* pool, struct payload* p) {
 } by {
     open(control(pool)) {
         have 1 <= to_integer(count(slot(pool))) by {
-            assumption();
+            known();
         }
         have defined((pool->checked_out + 1)) by {
             arithmetic_certificate rules {
@@ -252,7 +252,7 @@ void checkout(struct pool* pool, struct payload* p) {
         }
     }
     step();
-    assumption();
+    known();
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) by {
             arithmetic_certificate {
@@ -284,7 +284,7 @@ void checkout(struct pool* pool, struct payload* p) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) + 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) + 1) by {
@@ -444,12 +444,12 @@ void checkout(struct pool* pool, struct payload* p) {
         }
     }
     have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) + 1) by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
     normalize();
 }
 void give_back(struct pool* pool, struct payload* p) {
@@ -469,11 +469,11 @@ void give_back(struct pool* pool, struct payload* p) {
 } by {
     open(control(pool)) {
         have 1 <= to_integer(count(item(pool, _))) by {
-            assumption();
+            known();
         }
         have 1 <= pool->checked_out by {
             rewrite(to_integer(pool->checked_out) == to_integer(count(item(pool, _))));
-            assumption();
+            known();
         }
         have defined((count(slot(pool)) + 1)) by {
             have (to_integer(count(slot(pool))) + to_integer(1)) >= -2147483648 by {
@@ -515,7 +515,7 @@ void give_back(struct pool* pool, struct payload* p) {
                     conclusion 7;
                 }
             }
-            assumption();
+            known();
         }
         unfold(item(pool, p));
         have separate(memory(p->value), memory(pool->checked_out));
@@ -533,7 +533,7 @@ void give_back(struct pool* pool, struct payload* p) {
             }
         }
         have to_integer(pool->checked_out) == to_integer(count(item(pool, _))) by {
-            assumption();
+            known();
         }
         have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
             have -2147483648 <= (to_integer(old(pool->checked_out)) - 1) by {
@@ -692,7 +692,7 @@ void give_back(struct pool* pool, struct payload* p) {
     }
     step();
     unfold(valid_pool);
-    assumption();
+    known();
     unfold(valid_pool);
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
@@ -726,7 +726,7 @@ void give_back(struct pool* pool, struct payload* p) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) - 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) - 1) by {
@@ -886,7 +886,7 @@ void give_back(struct pool* pool, struct payload* p) {
         }
     }
     have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) - 1) by {
-        assumption();
+        known();
     }
     have defined((pool->checked_out + count(slot(pool)))) by {
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) >= -2147483648 by {
@@ -928,23 +928,23 @@ void give_back(struct pool* pool, struct payload* p) {
                 conclusion 8;
             }
         }
-        assumption();
+        known();
     }
     have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-        assumption();
+        known();
     }
     have 0 <= pool->checked_out and to_integer(pool->checked_out) == to_integer(count(item(pool, _))) and to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
     normalize();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
     transport(old(p->value) == old(p->value), p->value == old(p->value)) using {
         separate(memory(p->value), memory(pool->checked_out));
     };
@@ -963,7 +963,7 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
 } by {
     step();
     have to_integer(count(item(pool, _))) == 0 by {
-        assumption();
+        known();
     }
     have defined((count(item(pool, _)) + 1)) by {
         have (to_integer(count(item(pool, _))) + to_integer(1)) >= -2147483648 by {
@@ -987,11 +987,11 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
                 conclusion 3;
             }
         }
-        assumption();
+        known();
     }
     step();
     have to_integer(count(item(pool, _))) == 1 by {
-        assumption();
+        known();
     }
     have defined((count(item(pool, _)) + 1)) by {
         have (to_integer(count(item(pool, _))) + to_integer(1)) >= -2147483648 by {
@@ -1016,7 +1016,7 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
                 conclusion 3;
             }
         }
-        assumption();
+        known();
     }
     step();
     open(item(pool, first)) {
@@ -1037,26 +1037,26 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
     }
     step();
     step();
-    assumption();
+    known();
     have pool->checked_out == 0 by {
-        assumption();
+        known();
     }
     have pool->capacity == 2 by {
-        assumption();
+        known();
     }
     have first->value == 11 by {
-        assumption();
+        known();
     }
     have second->value == 22 by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
 }
 ```
 

@@ -40,7 +40,7 @@ int32 later(int32 u) {
     have a[0] == 3 or a[0] == 7 by {
         if u == 0 {
             have a[0] == 7 by { normalize() using { a[u] == 7; u == 0; }; }
-            assumption();
+            known();
         } else {
             have separate(memory(a[u]), memory(a[0])) by {
                 apply(separation::separate_elements(a, u, 0)) using { u != 0; };
@@ -57,7 +57,7 @@ int32 later(int32 u) {
                 }
             }
             have a[0] == 3 by { normalize() using { a[0] == at(before_store, a[0]); at(before_store, a[0]) == 3; }; }
-            assumption();
+            known();
         }
     }
     mark stored;

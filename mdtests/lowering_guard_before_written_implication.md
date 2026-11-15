@@ -13,7 +13,7 @@ theorem guarded_universal() {
         intro();
         intro();
         intro();
-        assumption();
+        known();
     }
 }
 ```

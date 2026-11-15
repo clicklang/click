@@ -23,7 +23,7 @@ void set_seven(int32* cell) {
             normalize();
         }
     }
-    assumption();
+    known();
 }
 ```
 

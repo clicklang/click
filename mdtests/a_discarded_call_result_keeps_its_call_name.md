@@ -15,10 +15,10 @@ extern Bool flag() { ensures result == true; }
 verifying "discarded.c";
 void discard() { ensures true; } by {
     step();
-    have statement(0).result >= 0 by assumption();
+    have statement(0).result >= 0 by known();
     step();
-    have statement(1).result == true by assumption();
-    have statement(0).result >= 0 by assumption();
+    have statement(1).result == true by known();
+    have statement(0).result >= 0 by known();
     step_until(function.exit);
 }
 ```

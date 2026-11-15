@@ -18,7 +18,7 @@ int32 touch(struct packet input) {
     ensures old(input.data[0]) == 3;
 } by {
     mark copied_entry;
-    have old(input.data[0]) == 3 by { assumption(); }
+    have old(input.data[0]) == 3 by { known(); }
     have at(copied_entry, input.data) == old(input.data);
     have at(copied_entry, input.data[0]) == old(input.data[0]) by {
         rewrite(at(copied_entry, input.data) == old(input.data));

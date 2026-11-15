@@ -3768,7 +3768,7 @@ mod tests {
             let guard = format!("requires defined({expression});");
             let observation = format!("requires to_integer({expression}) == 1;");
             let source = format!(
-                "theorem guarded({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ assumption(); }} }}"
+                "theorem guarded({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ known(); }} }}"
             );
             crate::surface::verify_c_sources(&source, &[]).unwrap();
             let expanded =
@@ -3789,11 +3789,11 @@ mod tests {
                 );
             }
             let caller = format!(
-                "{source} theorem caller({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ apply(guarded({arguments})); assumption(); }} }}"
+                "{source} theorem caller({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ apply(guarded({arguments})); known(); }} }}"
             );
             crate::surface::verify_c_sources(&caller, &[]).unwrap();
         }
-        let source = "theorem byte_at_next(bytes: uint8[], n: int32, value: Integer) { requires defined(n + 1); requires value == to_integer(bytes[n + 1] as int32); ensures value == to_integer(bytes[n + 1] as int32) by { assumption(); } }";
+        let source = "theorem byte_at_next(bytes: uint8[], n: int32, value: Integer) { requires defined(n + 1); requires value == to_integer(bytes[n + 1] as int32); ensures value == to_integer(bytes[n + 1] as int32) by { known(); } }";
         crate::surface::verify_c_sources(source, &[]).unwrap();
         assert!(
             crate::surface::verify_c_sources(&source.replace("requires defined(n + 1);", ""), &[])
@@ -3808,7 +3808,7 @@ mod tests {
         for body in [
             "normalize();",
             "solve();",
-            "have x == x by { solve(); } assumption();",
+            "have x == x by { solve(); } known();",
             "if x == 0 { normalize(); } else { normalize(); }",
         ] {
             let source = format!("theorem ordinary(x: int32) {{ ensures x == x by {{ {body} }} }}");
@@ -3845,7 +3845,7 @@ mod tests {
     #[test]
     fn ordinary_pure_fact_producers_preserve_written_suffixes() {
         let source = r#"
-            theorem identity(x: int32) { requires x == 0; ensures x == 0 by { assumption(); } }
+            theorem identity(x: int32) { requires x == 0; ensures x == 0 by { known(); } }
             theorem application(x: int32) {
                 requires x == 0;
                 ensures x == 0 by { apply(identity(x)); rewrite(x == 0); normalize(); }
@@ -3969,7 +3969,7 @@ mod tests {
                 instantiate(forall (k: int32) {
                     0 <= k and k < limit implies k <= upper
                 }, x) using { 0 <= x; x < limit; }
-                assumption();
+                known();
             }
         }
     "#;
@@ -4052,7 +4052,7 @@ mod tests {
     fn pure_instantiate_preserves_an_unrelated_open_goal() {
         let open = INSTANTIATE_BOUND
             .replace("ensures x <= upper", "ensures x == upper")
-            .replace("                assumption();", "");
+            .replace("                known();", "");
         let error = verify_instantiation_theorem(&open)
             .expect_err("instantiation does not change the selected goal");
         assert!(
@@ -4063,11 +4063,7 @@ mod tests {
         let failed = INSTANTIATE_BOUND.replace("ensures x <= upper", "ensures x == upper");
         let error = verify_instantiation_theorem(&failed)
             .expect_err("the explicit closer must fail on the original goal");
-        assert!(
-            error.message().contains("assumption"),
-            "{}",
-            error.message()
-        );
+        assert!(error.message().contains("known"), "{}", error.message());
         assert!(
             !error.message().contains("round-trip"),
             "{}",
@@ -4086,9 +4082,9 @@ mod tests {
                     have x <= 20 by {
                         instantiate(forall (x: int32) { x <= 10 implies x <= 20 }, x)
                             using { x <= 10; }
-                        assumption();
+                        known();
                     }
-                    assumption();
+                    known();
                 }
             }
         "#;
@@ -4109,7 +4105,7 @@ mod tests {
                 requires forall (k: int32) { forall (k: int32) { k == k } };
                 ensures forall (x: int32) { x == x } by {
                     instantiate(forall (k: int32) { forall (k: int32) { k == k } }, 0) using {}
-                    assumption();
+                    known();
                 }
             }
         "#;
@@ -4263,7 +4259,7 @@ mod tests {
                     } else {
                         instantiate(forall (k: int32) { k <= k }, x) using {}
                     }
-                    assumption();
+                    known();
                 }
             }
         "#;
@@ -4271,8 +4267,8 @@ mod tests {
             .replace("if x == 0 {", "cases {\n x == 0 => {")
             .replace("} else {", "}\n x != 0 => {")
             .replace(
-                "using {}\n                    }\n                    assumption();",
-                "using {}\n                    }\n }\n                    assumption();",
+                "using {}\n                    }\n                    known();",
+                "using {}\n                    }\n }\n                    known();",
             );
         for source in [source, cases.as_str()] {
             let verified = verify_instantiation_theorem(source).unwrap();
@@ -4310,11 +4306,7 @@ mod tests {
                 1,
             );
             let error = verify_instantiation_theorem(&wrong_sibling).unwrap_err();
-            assert!(
-                error.message().contains("assumption"),
-                "{}",
-                error.message()
-            );
+            assert!(error.message().contains("known"), "{}", error.message());
         }
     }
 

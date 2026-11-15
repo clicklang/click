@@ -36,7 +36,7 @@ void set_end(int32 *v, int32 i, int32 n) {
         ) using {
             through(at(entry, v), 0, i) == through(at(entry, v), 0, i);
         };
-        assumption();
+        known();
     }
 }
 ```

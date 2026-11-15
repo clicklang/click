@@ -535,9 +535,9 @@ fn an_expansion_that_does_more_work_fails_the_comparison_deterministically() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/scalar.md");
     let source = load_audit_source(&path).unwrap();
     let original = source.container_source.clone();
-    let explicit = "by {\n        step();\n        have result == 1 by {\n            normalize();\n        }\n        assumption();\n    }";
+    let explicit = "by {\n        step();\n        have result == 1 by {\n            normalize();\n        }\n        known();\n    }";
     let redundant = format!(
-        "by {{\n        step();\n{}        assumption();\n    }}",
+        "by {{\n        step();\n{}        known();\n    }}",
         "        have result == 1 by {\n            normalize();\n        }\n".repeat(300)
     );
     let with_proof = |proof: &str| {
@@ -1117,7 +1117,7 @@ fn smart_have_inside_an_open_scope_audits_instead_of_reporting_a_missing_tactic(
     // so audit failed the site with `has no source tactic 1` while `click
     // verify` accepted the same sidecar. The grouped closer in the same proof
     // covers the produced resource claim whose closure the certificate spells
-    // `assumption`.
+    // `known`.
     let directory =
         std::env::temp_dir().join(format!("click-audit-scope-have-{}", std::process::id()));
     if directory.exists() {
@@ -1225,7 +1225,7 @@ int32 compare_self(uint8 bytes[]) {
         step();
         step();
         have 1 == 1 by { normalize(); }
-        assumption();
+        known();
     }
 }
 
@@ -1302,7 +1302,7 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     step_until(function.exit);
     fold(packed(node));
-    assumption();
+    known();
     solve() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
@@ -1641,10 +1641,10 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
     let source = original.replacen(
         "function plug(",
         "theorem ptr_self(p: struct rb_node*) { ensures p == p by { solve(); } }\n\
-         theorem ptr_equal(p: struct rb_node*, q: struct rb_node*) { requires p == q; ensures p == q by { assumption(); } }\n\nfunction plug(",
+         theorem ptr_equal(p: struct rb_node*, q: struct rb_node*) { requires p == q; ensures p == q by { known(); } }\n\nfunction plug(",
         1,
     ).replace("initialize by solve();", "");
-    let anchor = "                    have identity == parent by assumption();";
+    let anchor = "                    have identity == parent by known();";
     assert!(
         source.contains(anchor),
         "fixture must retain the Left arm's pointer equality"
@@ -1653,8 +1653,8 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
         anchor,
         &format!(
             "{anchor}\n\
-        have identity == identity by {{ apply(ptr_self(identity)); assumption(); }}\n\
-        have identity == parent by {{ apply(ptr_equal(identity, parent)); assumption(); }}"
+        have identity == identity by {{ apply(ptr_self(identity)); known(); }}\n\
+        have identity == parent by {{ apply(ptr_equal(identity, parent)); known(); }}"
         ),
         1,
     );
@@ -1731,7 +1731,7 @@ fn short_circuit_conditions_audit_every_site() {
 }
 
 /// Ranked loops without invariants have an empty initialization certificate.
-/// The printer retains `assumption();` there; audit must also establish that
+/// The printer retains `known();` there; audit must also establish that
 /// every rewrite parses, re-verifies in the retained session and directly,
 /// reaches an expansion fixed point, and respects the ordinary work limits.
 #[test]
@@ -1934,11 +1934,11 @@ fn result_parameter_postconditions_audit_every_site() {
 #[test]
 fn a_claims_rewrites_combine_into_one_source() {
     let original = "step;\nsolve;\nstep;\nauto;\nstep;\n";
-    let first = "step;\nrewrite(a);\nassumption();\nstep;\nauto;\nstep;\n";
+    let first = "step;\nrewrite(a);\nknown();\nstep;\nauto;\nstep;\n";
     let second = "step;\nsolve;\nstep;\nstep;\n";
     assert_eq!(
         combine_rewrites(original, &[second, first]).as_deref(),
-        Some("step;\nrewrite(a);\nassumption();\nstep;\nstep;\n"),
+        Some("step;\nrewrite(a);\nknown();\nstep;\nstep;\n"),
     );
     assert_eq!(combine_rewrites(original, &[first]).as_deref(), Some(first));
 }
@@ -2038,7 +2038,7 @@ fn inventory_keeps_distinct_sites_inside_have_bodies() {
     let source = r#"
 theorem helper(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x by { assumption(); }
+    ensures 0 <= x by { known(); }
 }
 theorem nested(x: int32) {
     requires 0 <= x;
@@ -2046,9 +2046,9 @@ theorem nested(x: int32) {
         have 0 <= x by {
             have 0 <= x by { apply(helper(x)); }
             apply(helper(x));
-            assumption();
+            known();
         }
-        assumption();
+        known();
     }
 }
 "#;
@@ -2191,8 +2191,7 @@ int32 compare(uint8 bytes[]) {
     // Supply an incomplete expansion at the session boundary. It is valid
     // with implicit solve and has no smart sites, so only the whole-claim
     // cold check can detect the omitted evidence.
-    let incomplete =
-        click_source.replace("solve();", "have 1 == 1 by { normalize(); } assumption();");
+    let incomplete = click_source.replace("solve();", "have 1 == 1 by { normalize(); } known();");
     verify_c_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
     // Even an unchanged candidate must fail if a bare step still relies on
     // implicit solving. Exercise both changed and byte-identical replies.

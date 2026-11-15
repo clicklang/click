@@ -12,7 +12,7 @@ void tag(struct node* n) {
     ensures ((n->word & ~3) as (struct node *)) == 0;
 } by {
     step();
-    have n->word == 1 by { assumption(); }
+    have n->word == 1 by { known(); }
     have ((n->word & ~3) as (struct node *)) == 0 by {
         rewrite(n->word == 1);
         normalize();

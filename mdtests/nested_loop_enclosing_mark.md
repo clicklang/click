@@ -32,7 +32,7 @@ int32 count() {
                 invariant j >= 0 and j <= 2;
                 invariant i >= 0 and i <= 3;
                 preserve by {
-                    have at(outer_head, i) < 3 by { assumption(); }
+                    have at(outer_head, i) < 3 by { known(); }
                     step_until(back_edge());
                 }
             }

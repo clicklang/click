@@ -48,7 +48,7 @@ theorem rewrite_application(p: int32*, q: int32*) {
     }
 }
 theorem applied_identity(p: int32*) {
-    ensures identity(p) == p by { apply(use_identity(p)); assumption(); }
+    ensures identity(p) == p by { apply(use_identity(p)); known(); }
 }
 theorem opaque_assumption(p: int32*, q: int32*) {
     requires identity(p) == q;

@@ -7,12 +7,12 @@ a `using` list.
 ```click
 theorem one_step_proofs(x: int32) {
     requires 0 <= x;
-    ensures 0 <= x by assumption();
+    ensures 0 <= x by known();
     ensures x + 0 == x + 0 by normalize();
     ensures 0 <= x by {
         have x == x by normalize();
         have 0 <= x by solve() using { 0 <= x; };
-        assumption();
+        known();
     }
 }
 ```

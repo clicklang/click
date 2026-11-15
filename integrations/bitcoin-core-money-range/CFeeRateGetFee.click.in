@@ -58,7 +58,7 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
                       and (to_integer(result) + -1) * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes))
                      or (result == -1i64 and virtual_bytes != 0 and this->m_feerate.base.fee < 0i64
                          and -to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes)
-                         and to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0)) by { intro(); assumption(); }
+                         and to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0)) by { intro(); known(); }
                 solve();
             } else {
                 step_until(function.exit); solve();

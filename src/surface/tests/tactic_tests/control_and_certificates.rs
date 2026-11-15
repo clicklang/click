@@ -10,7 +10,7 @@ theorem carried_nonzero(u: int64, v: {ty}, z: Integer) {{
  ensures u != 0i64 by {{
   rewrite(to_integer(u) == z);
   rewrite(z == to_integer(v));
-  assumption();
+  known();
  }}
 }}"#
     );
@@ -21,22 +21,22 @@ theorem carried_nonzero(u: int64, v: {ty}, z: Integer) {{
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
-fn assumption_closes_rewritten_native_int32_nonzero() {
+fn known_closes_rewritten_native_int32_nonzero() {
     check_nonzero_after_integer_rewrites("int32", "");
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
-fn assumption_closes_rewritten_native_uint32_nonzero() {
+fn known_closes_rewritten_native_uint32_nonzero() {
     check_nonzero_after_integer_rewrites("uint32", "u32");
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
-fn assumption_closes_rewritten_native_int64_nonzero() {
+fn known_closes_rewritten_native_int64_nonzero() {
     check_nonzero_after_integer_rewrites("int64", "i64");
 }
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
-fn assumption_closes_rewritten_native_uint64_nonzero() {
+fn known_closes_rewritten_native_uint64_nonzero() {
     check_nonzero_after_integer_rewrites("uint64", "u64");
 }
 
@@ -49,7 +49,7 @@ fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
         requires y <= 20;
         ensures x <= 10{suffix} and x <= 20{suffix} by {{
             rewrite(to_integer(x) == y);
-            both {{ assumption(); }} and {{ assumption(); }}
+            both {{ known(); }} and {{ known(); }}
         }}
     }}"#
     );
@@ -97,7 +97,7 @@ theorem prefix_bound(n: uint64) {
   both {
    solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
   } and {
-   assumption();
+   known();
   }
  }
 }
@@ -271,7 +271,7 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
-            both { intro(); assumption(); } and { assumption(); }
+            both { intro(); known(); } and { known(); }
         }
     }"#;
     assert!(
@@ -874,7 +874,7 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
             condition: nonnegative.clone(),
             then_tactics: vec![ProofTactic::Have(ProofHave {
                 proposition: nonnegative.clone(),
-                proof: SourceProof::Script(vec![ProofTactic::Assumption]),
+                proof: SourceProof::Script(vec![ProofTactic::Known]),
             })],
             else_tactics: vec![ProofTactic::Normalize],
         }),
@@ -917,8 +917,8 @@ fn canonical_tactic_printer_round_trips_cases_certificate() {
         ProofTactic::Have(ProofHave {
             proposition: disjunction.clone(),
             proof: SourceProof::Script(vec![ProofTactic::Cases(ProofCases::new(vec![
-                ProofCaseArm::new(nonnegative.clone(), vec![ProofTactic::Assumption]),
-                ProofCaseArm::new(negative.clone(), vec![ProofTactic::Assumption]),
+                ProofCaseArm::new(nonnegative.clone(), vec![ProofTactic::Known]),
+                ProofCaseArm::new(negative.clone(), vec![ProofTactic::Known]),
             ]))]),
         }),
         ProofTactic::Enumerate,
@@ -958,7 +958,7 @@ fn proof_certificate_round_trips_nested_surface_steps() {
         }),
         ProofTactic::Branch(ProofBranch {
             ensuring: Some(vec![ProofAssertion::Fact(reflexive)]),
-            then_tactics: vec![ProofTactic::Assumption],
+            then_tactics: vec![ProofTactic::Known],
             else_tactics: vec![ProofTactic::Normalize],
         }),
     ];
@@ -1159,7 +1159,7 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
                 .expect("a simple step is a certificate"),
         )),
         preserve_proof: Some(Box::new(
-            ProofCertificate::from_steps(vec![ProofStep::Assumption])
+            ProofCertificate::from_steps(vec![ProofStep::Known])
                 .expect("a simple step is a certificate"),
         )),
     };
@@ -1396,10 +1396,10 @@ test_batches! {
     file: "control_and_certificates.rs",
     marker: "control_batch_",
     control_batch_00: [
-        assumption_closes_rewritten_native_int32_nonzero,
-        assumption_closes_rewritten_native_uint32_nonzero,
-        assumption_closes_rewritten_native_int64_nonzero,
-        assumption_closes_rewritten_native_uint64_nonzero,
+        known_closes_rewritten_native_int32_nonzero,
+        known_closes_rewritten_native_uint32_nonzero,
+        known_closes_rewritten_native_int64_nonzero,
+        known_closes_rewritten_native_uint64_nonzero,
     ],
     control_batch_01: [
         integer_rewrite_reaches_nested_native_int32_bounds,

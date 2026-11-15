@@ -31,12 +31,12 @@ int32 read_packed(unsigned long* slot, struct node* p) {
         }
     }
     have ((*slot & ~1) as (struct node *)) == p by {
-        assumption();
+        known();
     }
     step();
-    have ((saved & ~1) as (struct node *)) == p by { assumption(); }
+    have ((saved & ~1) as (struct node *)) == p by { known(); }
     step();
-    have ((saved & ~1) as (struct node *)) == p by { assumption(); }
+    have ((saved & ~1) as (struct node *)) == p by { known(); }
     step();
 }
 ```

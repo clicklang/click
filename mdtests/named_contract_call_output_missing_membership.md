@@ -34,9 +34,9 @@ void direct(int32* x) {
     ensures done.value == 1;
 } by {
     let { result: status, output: done } = step(Repair, { input: dirty });
-    have status == 0 by { assumption(); }
+    have status == 0 by { known(); }
     unfold(done);
-    have x[0] == 1 by { assumption(); }
+    have x[0] == 1 by { known(); }
     let done = fold(Ready(x), { value: 1 });
 }
 ```

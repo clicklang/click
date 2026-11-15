@@ -22,7 +22,7 @@ theorem hypothesis_owes_the_range_extent(v: int32[], lo: int32, hi: int32) {
     ensures 0 <= hi by {
         induct(hi) as ih;
         if hi <= lo {
-            assumption();
+            known();
         } else {
             have lo < hi;
             have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
@@ -39,7 +39,7 @@ theorem hypothesis_owes_the_range_extent(v: int32[], lo: int32, hi: int32) {
                 0 <= lo;
                 to_integer(hi - 1) <= 1073741823;
             };
-            assumption();
+            known();
         }
     }
 }

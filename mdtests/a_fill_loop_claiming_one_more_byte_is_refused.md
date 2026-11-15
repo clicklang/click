@@ -73,9 +73,9 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                     }
                     have bytes[k] == value by {
                         rewrite(bytes[k] == at(before, bytes[k]));
-                        assumption();
+                        known();
                     }
-                    assumption();
+                    known();
                 } else {
                     have k < at(before, i) + 1;
                     have k <= at(before, i) by {
@@ -95,15 +95,15 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
         intro();
         have k < at(loop(0).exit, i) by {
             rewrite(at(loop(0).exit, i) == length);
-            assumption();
+            known();
         }
         instantiate(forall (k: uint64) { k < at(loop(0).exit, i) implies at(loop(0).exit, bytes[k]) == at(loop(0).exit, value) }, k) using {
             k < at(loop(0).exit, i);
         };
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }
 ```
 

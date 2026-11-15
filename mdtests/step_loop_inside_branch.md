@@ -30,11 +30,11 @@ int32 branch_count_to_one(int32 flag, int32 i) {
         and at(region(4).entry, i) == 1;
 } by {
     have flag != 0 by {
-        assumption();
+        known();
     }
     step();
     have i == 1 by {
-        assumption();
+        known();
     }
     loop as count {
         invariant i == 1;

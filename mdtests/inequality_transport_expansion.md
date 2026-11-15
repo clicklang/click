@@ -23,7 +23,7 @@ void keep(int32* p, int32* q) {
         };
     }
     step();
-    assumption();
+    known();
 }
 ```
 

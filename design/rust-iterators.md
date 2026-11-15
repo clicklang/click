@@ -55,7 +55,7 @@ Iterators are a core part of Rust, so Click supports iterators **generically**.
 Click does not special-case any particular iterator **type**. A type such as
 `ChunksExact`, `slice::Iter`, `Enumerate` or `Range` is described by
 contracts in the Click library, the same way `library/rust/vec.click`
-describes `Vec<T>`. Those contracts are trusted: they are assumptions, like
+describes `Vec<T>`. Those contracts are trusted: they are knowns, like
 an `extern fn` contract. A later effort could verify the real implementations
 against them. That is not part of this proposal.
 

@@ -17,8 +17,8 @@ int32 read_after_write(int32** slot, int32* target, int32* other) {
     requires *target == 7;
     ensures result == 7;
 } by {
-    have separate(memory(*other), memory(*slot)) by { assumption(); }
-    have separate(memory(*other), memory(*target)) by { assumption(); }
+    have separate(memory(*other), memory(*slot)) by { known(); }
+    have separate(memory(*other), memory(*target)) by { known(); }
     mark before;
     step();
     have separate(statement(0).footprint, memory(*slot)) by {

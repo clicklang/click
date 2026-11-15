@@ -10,7 +10,7 @@ theorem unfold_an_obtained_integer(rest: Walk) {
     ensures black(rest) == 1 by {
         obtain (d: Integer) { black(Walk::At(d, rest)) == 1 };
         unfold(black(Walk::At(d, rest)));
-        assumption();
+        known();
     }
 }
 ```

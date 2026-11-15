@@ -123,7 +123,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1);
                 have at(iteration, i) < i by {
                     rewrite(to_integer(i) == to_integer(at(iteration, i) + 1));
-                    assumption();
+                    known();
                 }
                 have at(iteration, i) <= i;
                 have lo <= i;
@@ -154,7 +154,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     solve();
                 }
                 have 0 <= at(iteration, i) by {
-                    assumption();
+                    known();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
                     solve() using {
@@ -184,7 +184,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     lo: i, hi: i
                 });
                 have 0 <= at(iteration, i) by {
-                    assumption();
+                    known();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
                     solve() using {

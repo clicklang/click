@@ -8,7 +8,7 @@ theorem choices_are_distinct_from_an_arbitrary_machine_value() {
         obtain (integer_choice: Integer) { integer_choice == 0 }
         intro();
         obtain (machine_choice: int32) { machine_choice == 0 }
-        assumption();
+        known();
     }
 }
 ```

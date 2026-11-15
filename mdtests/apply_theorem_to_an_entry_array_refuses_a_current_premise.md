@@ -47,7 +47,7 @@ int32 clear_head(int32 box[2]) {
             to_integer(0 - 1) < to_integer(box[0]);
             box[0] < 1;
         };
-        assumption();
+        known();
     }
 }
 ```

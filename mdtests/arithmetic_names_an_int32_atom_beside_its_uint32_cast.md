@@ -54,9 +54,9 @@ int32 bounded_by_expansion(int32 m, int32 n) {
     }
     step();
     have result < 2147483647 by {
-        assumption();
+        known();
     }
-    assumption();
+    known();
 }
 ```
 

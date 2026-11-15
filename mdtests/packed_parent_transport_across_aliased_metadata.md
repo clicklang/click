@@ -47,7 +47,7 @@ tactic word_metadata_separation(p: struct node*, q: struct node*) {
     owns b: metadata(q);
     ensures b.value == old(b.value);
     ensures separate(memory(p->word), memory((q as (void *) as (struct sized *))->size));
-} by { unfold(b); have separate(memory(p->word), memory((q as (void *) as (struct sized *))->size)) by assumption(); fold(b); }
+} by { unfold(b); have separate(memory(p->word), memory((q as (void *) as (struct sized *))->size)) by known(); fold(b); }
 verifying "frame.c";
 void update(struct node* p, struct node* q) {
     owns a: metadata(p);
@@ -69,7 +69,7 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
     step(update, { a: a, b: b });
     unfold(kept);
     have p->word == at(before_update, p->word) by { transport(at(before_update, p->word) == at(before_update, p->word), p->word == at(before_update, p->word)); }
-    have ((p->word & ~3) as (struct node *)) == parent by { assumption(); }
+    have ((p->word & ~3) as (struct node *)) == parent by { known(); }
 }
 ```
 

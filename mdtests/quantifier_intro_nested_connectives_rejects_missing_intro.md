@@ -22,10 +22,10 @@ theorem nested_universal_body(n: int32) {
         extract(0 <= k);
         extract(k < n);
         both {
-            assumption();
+            known();
         } and {
-            have k < n by assumption();
-            assumption();
+            have k < n by known();
+            known();
         }
     }
 }

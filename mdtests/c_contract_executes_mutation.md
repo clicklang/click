@@ -19,7 +19,7 @@ theorem lift(callback: void (*)(int32*)) executes callback(int32* cell) {
  have to_integer(old(cell[0])) < to_integer(old(cell[0]) + 1);
  have cell[0] > old(cell[0]) by {
      rewrite(to_integer(cell[0]) == to_integer(old(cell[0]) + 1));
-     assumption();
+     known();
  }
  fold(Buffer(cell)); solve();
  }

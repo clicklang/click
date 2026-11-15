@@ -25,7 +25,7 @@ int32 drain(int32 n) {
         invariant n >= 0;
         initialize by {
             have n >= 0 by extract(n >= 0);
-            assumption();
+            known();
         }
         preserve by {
             have 0 <= to_integer(n - 1);

@@ -268,7 +268,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             k < capacity;
             i == capacity;
         };
-        assumption();
+        known();
     }
     step();
     step();
@@ -279,7 +279,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         intro();
         intro();
         have k < capacity by {
-            assumption();
+            known();
         }
         instantiate(forall (j: int32) {
             0 <= j and j < capacity implies occupied[j] == 0
@@ -287,14 +287,14 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             0 <= k;
             k < capacity;
         };
-        assumption();
+        known();
     }
     step();
     have result == 1 by {
         normalize();
     }
     have result == 0 or result == 1 by {
-        assumption();
+        known();
     }
     have forall (k: int32) {
         result == 1 and 0 <= k and k < arena->capacity implies
@@ -308,7 +308,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             0 <= k;
             k < arena->capacity;
         };
-        assumption();
+        known();
     }
     fold(arena_initialized_storage(
         arena->data,
@@ -323,10 +323,10 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         result
     ));
     fold(arena_init_result(arena, result));
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
 }
 
 ```

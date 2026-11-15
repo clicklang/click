@@ -46,9 +46,9 @@ void walk(int32 n) {
         cases {
             not (n > 0) => {
                 have n == 0 by { solve(); }
-                assumption();
+                known();
             }
-            pending(state.model) == 0 => { assumption(); }
+            pending(state.model) == 0 => { known(); }
         }
     }
     solve();

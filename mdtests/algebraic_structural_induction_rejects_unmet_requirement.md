@@ -22,7 +22,7 @@ theorem rev_onto_length_transport(xs: List<int32>, a: List<int32>, b: List<int32
             List::Nil => {
                 unfold(rev_onto(List<int32>::Nil, a));
                 unfold(rev_onto(List<int32>::Nil, b));
-                assumption();
+                known();
             }
             List::Cons(head, tail) => {
                 have list::length(List<int32>::Cons(head, a))
@@ -35,7 +35,7 @@ theorem rev_onto_length_transport(xs: List<int32>, a: List<int32>, b: List<int32
                 apply(ih(tail, List<int32>::Cons(head, a), b));
                 unfold(rev_onto(List<int32>::Cons(head, tail), a));
                 unfold(rev_onto(List<int32>::Cons(head, tail), b));
-                assumption();
+                known();
             }
         }
     }

@@ -28,7 +28,7 @@ int32 service_init(struct service* owner, int32 cell[]) {
     have owner->cell[0] == owner->phase by {
         rewrite(owner->cell == cell);
         rewrite(owner->phase == 0);
-        assumption();
+        known();
     }
     fold(service(owner));
     solve();

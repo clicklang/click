@@ -70,28 +70,28 @@ theorem compute_size_restores_subtree_size()
                 }
                 have 0 <= sized_value(left_model) by {
                     rewrite(left_model == sized_left(old(tree.model)));
-                    assumption();
+                    known();
                 }
                 have 0 <= sized_value(right_model) by {
                     rewrite(right_model == sized_right(old(tree.model)));
-                    assumption();
+                    known();
                 }
                 have sized_value(right_model) <= 2147483646 by {
                     rewrite(right_model == sized_right(old(tree.model)));
-                    assumption();
+                    known();
                 }
                 have defined(2147483646 - sized_value(right_model));
                 have sized_value(left_model) <= 2147483646 - sized_value(right_model) by {
                     rewrite(left_model == sized_left(old(tree.model)));
                     rewrite(right_model == sized_right(old(tree.model)));
-                    assumption();
+                    known();
                 }
                 let { checked: left } = certify_size(node->rb.rb_left, { tree: left });
                 let { checked: right } = certify_size(node->rb.rb_right, { tree: right });
-                have sized_counts_valid(left_model) == 1 by { rewrite(left_model == left.model); assumption(); }
-                have sized_counts_valid(right_model) == 1 by { rewrite(right_model == right.model); assumption(); }
-                have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by { rewrite(left_model == left.model); assumption(); }
-                have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by { rewrite(right_model == right.model); assumption(); }
+                have sized_counts_valid(left_model) == 1 by { rewrite(left_model == left.model); known(); }
+                have sized_counts_valid(right_model) == 1 by { rewrite(right_model == right.model); known(); }
+                have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by { rewrite(left_model == left.model); known(); }
+                have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by { rewrite(right_model == right.model); known(); }
                 unfold(sized_left(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 unfold(sized_right(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 match left.model {
@@ -109,9 +109,9 @@ theorem compute_size_restores_subtree_size()
                                 mark before_compute;
                                 step(compute_size, { parent: metadata, left: l, right: r });
 
-                                have metadata.value == 1 + l.value + r.value by { assumption(); }
-                                have l.value == 0 by { assumption(); }
-                                have r.value == 0 by { assumption(); }
+                                have metadata.value == 1 + l.value + r.value by { known(); }
+                                have l.value == 0 by { known(); }
+                                have r.value == 0 by { known(); }
                                 have metadata.value == 1 by {
                                     rewrite(metadata.value == 1 + l.value + r.value);
                                     rewrite(l.value == 0);
@@ -137,8 +137,8 @@ theorem compute_size_restores_subtree_size()
                                 }
                                 have result == 0 or 1 == value by {
                                     cases {
-                                        result == 0 => { assumption(); }
-                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
+                                        result == 0 => { known(); }
+                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { known(); }
                                     }
                                 }
                                 let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1, left_model, right_model) }, { metadata: metadata, left: left, right: right });
@@ -156,7 +156,7 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
-                                    assumption();
+                                    known();
                                 }
                                 have sized_shape(checked.model) == sized_shape(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1, left_model, right_model));
@@ -189,9 +189,9 @@ theorem compute_size_restores_subtree_size()
                                 mark before_compute;
                                 step(compute_size, { parent: metadata, left: l, right: r });
 
-                                have l.value == 0 by { assumption(); }
-                                have r.value == rv by { assumption(); }
-                                have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                have l.value == 0 by { known(); }
+                                have r.value == rv by { known(); }
+                                have metadata.value == 1 + l.value + r.value by { known(); }
                                 have metadata.value == 1 + rv by {
                                     rewrite(metadata.value == 1 + l.value + r.value);
                                     rewrite(l.value == 0);
@@ -202,7 +202,7 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(left_model == SizedTree::Empty);
                                     unfold(sized_value(SizedTree::Empty));
                                     rewrite(sized_value(right_model) == rv);
-                                    assumption();
+                                    known();
                                 }
                                 unfold(l);
                                 let left = fold(sized_at(node->rb.rb_left), { model: SizedTree::Empty });
@@ -211,12 +211,12 @@ theorem compute_size_restores_subtree_size()
                                 let right = fold(sized_at(node->rb.rb_right), { model: SizedTree::Node(rid, rp, rc, rv, rl, rr) }, { metadata: rm, left: rleft, right: rright });
                                 have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                     rewrite(metadata.value == 1 + rv);
-                                    assumption();
+                                    known();
                                 }
                                 have result == 0 or 1 + rv == value by {
                                     cases {
-                                        result == 0 => { assumption(); }
-                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
+                                        result == 0 => { known(); }
+                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { known(); }
                                     }
                                 }
                                 let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
@@ -234,7 +234,7 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
-                                    assumption();
+                                    known();
                                 }
                                 have sized_shape(checked.model) == sized_shape(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model));
@@ -277,8 +277,8 @@ theorem compute_size_restores_subtree_size()
                                 have 0 <= l.value by { solve(); }
                                 have 0 <= r.value by { solve(); }
                                 have r.value <= 2147483646 by { solve(); }
-                                have sized_value(right_model) == r.value by { assumption(); }
-                                have sized_value(left_model) == l.value by { assumption(); }
+                                have sized_value(right_model) == r.value by { known(); }
+                                have sized_value(left_model) == l.value by { known(); }
                                 have 2147483646 - sized_value(right_model) == 2147483646 - r.value by {
                                     rewrite(sized_value(right_model) == r.value);
                                     normalize();
@@ -289,9 +289,9 @@ theorem compute_size_restores_subtree_size()
                                 mark before_compute;
                                 step(compute_size, { parent: metadata, left: l, right: r });
 
-                                have l.value == lv by { assumption(); }
-                                have r.value == 0 by { assumption(); }
-                                have metadata.value == 1 + lv by { assumption(); }
+                                have l.value == lv by { known(); }
+                                have r.value == 0 by { known(); }
+                                have metadata.value == 1 + lv by { known(); }
                                 unfold(l);
                                 let lm = fold(size_metadata(node->rb.rb_left), { value: lv });
                                 let left = fold(sized_at(node->rb.rb_left), { model: SizedTree::Node(lid, lp, lc, lv, ll, lr) }, { metadata: lm, left: lleft, right: lright });
@@ -303,16 +303,16 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(right_model == SizedTree::Empty);
                                     unfold(sized_value(SizedTree::Empty));
                                     normalize();
-                                    assumption();
+                                    known();
                                 }
                                 have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                     rewrite(metadata.value == 1 + lv);
-                                    assumption();
+                                    known();
                                 }
                                 have result == 0 or 1 + lv == value by {
                                     cases {
-                                        result == 0 => { assumption(); }
-                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
+                                        result == 0 => { known(); }
+                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { known(); }
                                     }
                                 }
                                 let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
@@ -330,7 +330,7 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
-                                    assumption();
+                                    known();
                                 }
                                 have sized_shape(checked.model) == sized_shape(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model));
@@ -370,9 +370,9 @@ theorem compute_size_restores_subtree_size()
                                 mark before_compute;
                                 step(compute_size, { parent: metadata, left: l, right: r });
 
-                                have l.value == lv by { assumption(); }
-                                have r.value == rv by { assumption(); }
-                                have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                have l.value == lv by { known(); }
+                                have r.value == rv by { known(); }
+                                have metadata.value == 1 + l.value + r.value by { known(); }
                                 have metadata.value == 1 + lv + rv by {
                                     rewrite(metadata.value == 1 + l.value + r.value);
                                     rewrite(l.value == lv);
@@ -391,16 +391,16 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr));
                                     unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
                                     normalize();
-                                    assumption();
+                                    known();
                                 }
                                 have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                     rewrite(metadata.value == 1 + lv + rv);
-                                    assumption();
+                                    known();
                                 }
                                 have result == 0 or 1 + lv + rv == value by {
                                     cases {
-                                        result == 0 => { assumption(); }
-                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { assumption(); }
+                                        result == 0 => { known(); }
+                                        at(before_compute, metadata.value) == 1 + at(before_compute, l.value) + at(before_compute, r.value) => { known(); }
                                     }
                                 }
                                 let checked = fold(sized_at(node as (void *) as (struct rb_node *)), { model: SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model) }, { metadata: metadata, left: left, right: right });
@@ -418,7 +418,7 @@ theorem compute_size_restores_subtree_size()
                                     rewrite(old(tree.model) == SizedTree::Node(identity, parent, color, value, left_model, right_model));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                     unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
-                                    assumption();
+                                    known();
                                 }
                                 have sized_shape(checked.model) == sized_shape(old(tree.model)) by {
                                     rewrite(checked.model == SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model));

@@ -55,7 +55,7 @@ int32 write_zero(struct buffer* buffer) {
                     0 <= 0;
                     0 < end;
                 };
-                assumption();
+                known();
             }
             unfold(prefix);
             step();

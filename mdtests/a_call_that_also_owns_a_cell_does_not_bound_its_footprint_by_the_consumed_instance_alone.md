@@ -28,13 +28,13 @@ void caller(struct node* child, int32* slot) {
     owns *slot;
     produces c: box(child);
 } by {
-    have separate(b, memory(*slot)) by { assumption(); }
+    have separate(b, memory(*slot)) by { known(); }
     mark before_call;
     let { c: c } = step(touch, { b: b });
-    have contains(at(before_call, b), statement(0).footprint) by { assumption(); }
+    have contains(at(before_call, b), statement(0).footprint) by { known(); }
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

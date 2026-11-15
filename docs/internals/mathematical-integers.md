@@ -90,7 +90,7 @@ holds exactly when the native comparison `x OP y` or `x OP c` does
 states such a fact in one form, the native comparison
 (`structural_native_comparison_of_integer_observation`, applied when a contract lowers and
 again by `canonical_observation_form` on every kernel-built verification
-condition). Written either way it is the same fact: `assumption()` closes
+condition). Written either way it is the same fact: `known()` closes
 `to_integer(i) < to_integer(n)` from `i < n`, and a dropped `requires right !=
 0u32;` beside `requires to_integer(right) != 0;` changes nothing. The order and
 equality bridge theorems below therefore restate a fact rather than derive one.
@@ -1171,10 +1171,10 @@ are kernel standard theorems with checked parameter types, declaration shape,
 exact premise and conclusion. The add, multiply and subtract laws are proved:
 their pinned proofs derive the Integer range of the exact result from the
 premise and the operand ranges (`integer_product_bounds` for the product's
-lower bound) and apply the `integer_operation_identity` certificate rule. The order law is proved by `assumption()`: a
+lower bound) and apply the `integer_operation_identity` certificate rule. The order law is proved by `known()`: a
 machine comparison and the Integer comparison of its operands' observations
 lower to one fact, so its conclusion is its premise. The forward
-direction needs no lemma: `assumption()` or `solve` reads `a <= b` as
+direction needs no lemma: `known()` or `solve` reads `a <= b` as
 `A <= B` directly.
 These laws use the same observation model and theorem application path as the
 existing uint32 and signed bridges, without changing source-language arithmetic. Division states both the native
@@ -1198,12 +1198,12 @@ The standard-library `integer::int32_to_integer_less_equal_implies_less_equal` a
 `integer::int64_to_integer_less_equal_implies_less_equal` lemmas restore native order from an exact
 Integer comparison. The forward direction, and injectivity at `int64`, need no
 lemma: the machine comparison and the Integer comparison of the observations
-lower to one fact, so `assumption()` or `solve` reads one as the other.
+lower to one fact, so `known()` or `solve` reads one as the other.
 `integer::uint32_to_integer_equal_implies_equal` is an injectivity bridge for the unsigned
 32-bit carrier: equal pattern bits do not depend on signedness, and every
 pattern has one unsigned Integer value.
 
-These are width-specific library theorems proved by `assumption()`: the
+These are width-specific library theorems proved by `known()`: the
 native comparison and the Integer comparison of the observations lower to one
 fact. They require no overflow fact because an already-existing bit pattern
 has one exact Integer value.
@@ -1392,7 +1392,7 @@ to_integer(a) + to_integer(b)` and `result == a + b + c` needs no stated step
 equality goal is proved from its two bounds, each inside its own `have`; when
 the facts alone miss the first bound, the goal's own identities are proved
 once beforehand, so both bounds read them, and a goal that is one of them
-closes by `assumption`.
+closes by `known`.
 
 A typed integral cast is assumed the same way: `to_integer((T)x) ==
 to_integer(x)`, proved by `integer_cast_identity` from `x`'s bounds inside

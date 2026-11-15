@@ -929,7 +929,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
             unfold(format::decimal_digit(v, k));
             have 48u8 <= (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
             normalize() using { k < format::decimal_length(v); };
-            assumption();
+            known();
         } else {
             unfold(format::decimal_digit(v, k));
             normalize() using { not (k < format::decimal_length(v)); };

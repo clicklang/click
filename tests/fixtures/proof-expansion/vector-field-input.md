@@ -91,8 +91,8 @@ int32 composite_resource_vector_fill_loop_snapshot(
     have result == owner->len by {
         normalize();
     }
-    assumption();
-    assumption();
+    known();
+    known();
 }
 ```
 

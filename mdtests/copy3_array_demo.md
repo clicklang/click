@@ -92,7 +92,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 if to_integer(k) < to_integer((i - 1)) {
                     have to_integer(k) != to_integer((i - 1)) by {
                         have to_integer(k) < to_integer((i - 1)) by {
-                            assumption();
+                            known();
                         }
                         intro();
                         arithmetic_certificate {
@@ -111,7 +111,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     have to_integer((i - 1)) == to_integer(at(region(3).entry, i)) by { normalize(); }
                     have to_integer(k) < to_integer(at(region(3).entry, i)) by {
                         rewrite(to_integer(at(region(3).entry, i)) == to_integer((i - 1)));
-                        assumption();
+                        known();
                     }
                     have k != at(region(3).entry, i) by {
                         solve() using { to_integer(k) < to_integer(at(region(3).entry, i)); };
@@ -206,7 +206,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                                 conclusion 2;
                             }
                         }
-                        assumption();
+                        known();
                     }
                     instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, 3) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {
                         0 <= k;
@@ -223,7 +223,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                             to_integer(k) == to_integer((i - 1));
                         };
                     }
-                    assumption();
+                    known();
                 }
             }
         }
@@ -234,7 +234,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             at(loop(0).exit, i) >= at(loop(0).exit, 0);
         };
-        assumption();
+        known();
     }
     have dst[1] == old(src[1]) by {
         instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 1) using {
@@ -242,7 +242,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             at(loop(0).exit, i) >= at(loop(0).exit, 0);
         };
-        assumption();
+        known();
     }
     have dst[2] == old(src[2]) by {
         instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, 2) using {
@@ -250,25 +250,25 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             at(loop(0).exit, i) >= at(loop(0).exit, 0);
         };
-        assumption();
+        known();
     }
     step();
     have dst[0] == old(src[0]) by {
-        assumption();
+        known();
     }
     have dst[1] == old(src[1]) by {
-        assumption();
+        known();
     }
     have dst[2] == old(src[2]) by {
-        assumption();
+        known();
     }
     have result == old(src[2]) by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
 }
 ```
 

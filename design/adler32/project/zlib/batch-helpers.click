@@ -58,7 +58,7 @@ theorem zlib_batch_remaining_limit(n: uint32) {
  ensures zlib_batch_remaining(n) <= 5552u64 by {
   apply(zlib_batch_remaining_bounds(n));
   have to_integer(zlib_batch_remaining(n)) <= 5552 by solve() using { to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n); to_integer(n) <= 347; };
-  assumption();
+  known();
  }
 }
 theorem zlib_batch_prefix_observation(n: uint32) {
@@ -90,7 +90,7 @@ theorem zlib_batch_nonempty_prefix(n: uint32) {
  ensures zlib_batch_count(n) <= 5536 by {
   apply(zlib_batch_prefix_observation(n));
   have to_integer(zlib_batch_count(n)) <= 5536 by solve() using { to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n); to_integer(1u32) <= to_integer(n); };
-  assumption();
+  known();
  }
 }
 theorem zlib_batch_empty_components(bytes: uint8[]) {
@@ -108,13 +108,13 @@ theorem zlib_batch_predecessor(n: uint32) {
  ensures to_integer(n - 1u32) <= to_integer(347u32) by {
   have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
   have to_integer(n - 1u32) <= 347 by solve() using { to_integer(n - 1u32) == to_integer(n) - to_integer(1u32); to_integer(n) <= 347; };
-  assumption();
+  known();
  }
 }
 theorem zlib_batch_prefix_step(n: uint32) {
  requires 1u32 <= n;
  requires n <= 347u32;
- ensures to_integer(n - 1u32) <= to_integer(347u32) by { apply(zlib_batch_predecessor(n)); assumption(); }
+ ensures to_integer(n - 1u32) <= to_integer(347u32) by { apply(zlib_batch_predecessor(n)); known(); }
  ensures zlib_batch_count(n - 1u32) == zlib_batch_count(n) + 16 by {
   apply(zlib_batch_predecessor(n));
   apply(zlib_batch_prefix_observation(n));
@@ -130,14 +130,14 @@ theorem zlib_batch_prefix_step(n: uint32) {
    to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n);
    to_integer(zlib_batch_count(n) + 16) == to_integer(zlib_batch_count(n)) + to_integer(16);
   };
-  assumption();
+  known();
  }
 }
 theorem zlib_batch_prefix_initial() {
  ensures zlib_batch_count(347u32) == 0 by {
   apply(zlib_batch_prefix_observation(347u32));
   have to_integer(zlib_batch_count(347u32)) == to_integer(0) by solve() using { to_integer(zlib_batch_count(347u32)) == 5552 - 16 * to_integer(347u32); };
-  assumption();
+  known();
  }
 }
 // The sum is defined, stated apart so the observations of it in
@@ -172,7 +172,7 @@ theorem zlib_batch_lane(n: uint32, lane: int32) {
    to_integer(zlib_batch_count(n) + lane) == to_integer(zlib_batch_count(n)) + to_integer(lane);
    to_integer(zlib_batch_count(n)) <= 5536; to_integer(lane) <= 15;
   };
-  both { assumption(); }
+  both { known(); }
   and { solve() using { to_integer(zlib_batch_count(n) + lane) <= 5551; }; }
  }
 }
@@ -193,7 +193,7 @@ theorem zlib_batch_nonempty_remaining(n: uint32) {
  ensures 16u64 <= zlib_batch_remaining(n) by {
   apply(zlib_batch_remaining_bounds(n));
   have to_integer(16u64) <= to_integer(zlib_batch_remaining(n)) by solve() using { to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n); to_integer(1u32) <= to_integer(n); };
-  assumption();
+  known();
  }
 }
 theorem zlib_batch_read_bound(n: uint32, lane: uint64) {
@@ -233,7 +233,7 @@ theorem zlib_batch_positive(n: uint32) {
   apply(integer::uint32_remainder_less_than_divisor(0u32, n));
   have 0 <= to_integer(0u32 % n); have to_integer(0u32 % n) <= 4294967295;
   have 1 <= to_integer(n) by solve() using { 0 <= to_integer(0u32 % n); to_integer(0u32 % n) < to_integer(n); };
-  assumption();
+  known();
  }
 }
 
@@ -258,7 +258,7 @@ theorem zlib_batch_capacity_step(n: uint32) {
    to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
    to_integer(16u64 * n as uint64 - 16u64) == to_integer(16u64 * n as uint64) - to_integer(16u64);
   };
-  assumption();
+  known();
  }
 }
 
@@ -268,7 +268,7 @@ theorem zlib_batch_prefix_final() {
   have to_integer(zlib_batch_count(0u32)) == to_integer(5552) by solve() using {
    to_integer(zlib_batch_count(0u32)) == 5552 - 16 * to_integer(0u32);
   };
-  assumption();
+  known();
  }
 }
 
@@ -279,7 +279,7 @@ theorem zlib_batch_reduced_components(bytes: uint8[], a: uint64, b: uint64) {
   apply(integer::uint64_remainder_to_integer(a, 65521u64));
   unfold(adler_spec_a(bytes, 5552, 1));
   rewrite(1 + adler_byte_sum(bytes, 5552) == to_integer(a));
-  assumption();
+  known();
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, 5552, 1, 0) by {
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
@@ -288,6 +288,6 @@ theorem zlib_batch_reduced_components(bytes: uint8[], a: uint64, b: uint64) {
    to_integer(b) == to_integer(5552) + adler_weighted_sum(bytes, 5552, 5552);
   };
   rewrite(0 + to_integer(5552) * 1 + adler_weighted_sum(bytes, 5552, 5552) == to_integer(b));
-  assumption();
+  known();
  }
 }

@@ -25,10 +25,10 @@ theorem nested_universal_body(n: int32) {
         intro();
         intro();
         both {
-            assumption();
+            known();
         } and {
-            have k < n by assumption();
-            assumption();
+            have k < n by known();
+            known();
         }
     }
 }

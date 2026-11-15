@@ -23,7 +23,7 @@ int32 use_allocation() { ensures true; } by {
     have statement(1).allocation == p;
     have statement(1).allocation != 0;
     step();
-    have statement(1).allocation != 0 by assumption();
+    have statement(1).allocation != 0 by known();
     step();
 }
 ```

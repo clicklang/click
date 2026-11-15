@@ -70,7 +70,7 @@ int32 snapshot_y(int32 x) {
     }
     step();
     have at(region(4).entry, y) >= 0 by {
-        assumption();
+        known();
     }
 }
 

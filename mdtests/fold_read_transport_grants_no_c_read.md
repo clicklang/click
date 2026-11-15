@@ -34,7 +34,7 @@ int32 set_then_read(int32 *v, int32 i) {
         ) using {
             at(entry, zeros(v, 0, i)) == 0;
         };
-        assumption();
+        known();
     }
 }
 ```

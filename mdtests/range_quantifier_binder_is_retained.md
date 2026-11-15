@@ -17,9 +17,9 @@ theorem range_binder_is_retained() {
         intro();
         have k < 3 by {
             extract(k < 3);
-            assumption();
+            known();
         }
-        assumption();
+        known();
     }
 }
 ```

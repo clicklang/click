@@ -1003,11 +1003,11 @@ impl<'a> Proof<'a> {
 
     /// Apply exact facts and the selected live-partition separation rule.
     /// No ambient compositions or candidate resources are enumerated.
-    pub(super) fn apply_assumption(&self) -> Result<KernelProofHandle, ClickError> {
+    pub(super) fn apply_known(&self) -> Result<KernelProofHandle, ClickError> {
         let context = match self.context.as_ref() {
-            ProofContext::FixedState(_) => PropositionAssumptionContext::Pure,
-            ProofContext::Execution(_) => PropositionAssumptionContext::Materialized,
-            ProofContext::Pure(_) => PropositionAssumptionContext::Exact,
+            ProofContext::FixedState(_) => PropositionKnownContext::Pure,
+            ProofContext::Execution(_) => PropositionKnownContext::Materialized,
+            ProofContext::Pure(_) => PropositionKnownContext::Exact,
         };
         // A completed outcome owns its post-state; the execution branch may
         // still retain an earlier frontier. Never use that stale partition.
@@ -1032,15 +1032,15 @@ impl<'a> Proof<'a> {
                         .clone(),
                     facts,
                 )
-                .map_err(|_| self.step_error("assumption requires an open goal"))?
+                .map_err(|_| self.step_error("known requires an open goal"))?
         } else {
             self.state.clone()
         };
         state
-            .apply_assumption(context)
+            .apply_known(context)
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
-                    self.step_error("`assumption` requires a proposition goal")
+                    self.step_error("`known` requires a proposition goal")
                 }
                 PropositionCloseError::Unavailable => {
                     // A goal that substitution already evaluated is closed by
@@ -1049,25 +1049,25 @@ impl<'a> Proof<'a> {
                         crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(goal)
                     }) {
                         return self.step_error(
-                            "`assumption` closes a goal from available facts, but this goal is true by evaluation alone; close it with `normalize()`",
+                            "`known` closes a goal from available facts, but this goal is true by evaluation alone; close it with `normalize()`",
                         );
                     }
                     let detail = self
                         .goal()
-                        .map(|goal| format!(": current goal is {}", describe_assumption_goal(goal)))
+                        .map(|goal| format!(": current goal is {}", describe_known_goal(goal)))
                         .unwrap_or_default();
                     self.step_error(format!(
-                        "`assumption` requires the current goal as an available semantic fact{detail}"
+                        "`known` requires the current goal as an available semantic fact{detail}"
                     ))
                 }
                 PropositionCloseError::UnavailableSide(side) => {
                     self.step_error_with_requirement(
-                        "`assumption` closes a conjunction when every side is an available fact and a disjunction when one side is; a required side is not available",
+                        "`known` closes a conjunction when every side is an available fact and a disjunction when one side is; a required side is not available",
                         None,
                         Some(("missing exact fact", Box::new(side), None)),
                     )
                 }
-                _ => unreachable!("kernel returned an unrelated assumption error"),
+                _ => unreachable!("kernel returned an unrelated known error"),
             })
     }
 
@@ -3355,7 +3355,7 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::ExpectedIntroduction(goal) => self.step_error(format!(
                     "`intro` requires an implication, negation, or universal goal, got {}",
-                    describe_assumption_goal(&goal)
+                    describe_known_goal(&goal)
                 )),
                 PropositionCloseError::IntegerFresheningExhausted => {
                     self.step_error("`intro` requires a fresh Integer binder variable")
@@ -3781,7 +3781,7 @@ fn trace_resource_fact(
     text
 }
 
-fn describe_assumption_goal(goal: &Proposition) -> &'static str {
+fn describe_known_goal(goal: &Proposition) -> &'static str {
     match goal {
         Proposition::And(..) => "a conjunction",
         Proposition::Or(..) => "a disjunction",

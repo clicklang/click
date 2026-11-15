@@ -16,7 +16,7 @@ theorem below(n: int32) {
     ensures exists (m: int32) { m < n } by {
         obtain (k: int32) { k < n };
         witness { m: k };
-        assumption();
+        known();
     }
 }
 ```

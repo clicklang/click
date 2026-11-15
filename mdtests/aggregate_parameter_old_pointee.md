@@ -18,7 +18,7 @@ void dispose(struct packet input) {
 } by {
     unfold(cell(input.data));
     mark copied_entry;
-    have old(input.data[0]) == 7 by { assumption(); }
+    have old(input.data[0]) == 7 by { known(); }
     have at(copied_entry, input.data) == old(input.data);
     have at(copied_entry, input.data[0]) == old(input.data[0]) by {
         rewrite(at(copied_entry, input.data) == old(input.data));

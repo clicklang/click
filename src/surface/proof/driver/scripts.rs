@@ -287,14 +287,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 // conclusion, an `unfold` whose refreshed goal was already
                 // an available fact) asserts a closed judgment: a harmless
                 // no-op that emits no redundant certificate step. That is
-                // `assumption`, a bare `solve`, and the context-free `normalize`,
+                // `known`, a bare `solve`, and the context-free `normalize`,
                 // in any position, so `unfold(f(x)); normalize();` means the
                 // same whether or not the unfold alone closed the goal. Any
                 // other suffix after closure is a declined shape, named with
                 // the tactic that closed the goal.
                 if matches!(
                     tactic,
-                    ProofTactic::Assumption
+                    ProofTactic::Known
                         | ProofTactic::Solve
                         | ProofTactic::Normalize
                         | ProofTactic::NormalizeUsing(_)
@@ -319,7 +319,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     tactic => tactic_name(tactic),
                 };
                 return Err(proof.step_error(format!(
-                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `assumption()`, a bare `solve()`, or `normalize()` may follow it",
+                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `known()`, a bare `solve()`, or `normalize()` may follow it",
                 )));
             }
             // A step that adds a fact can close the goal before a written
@@ -338,14 +338,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::LetSatisfy(_)
             ) && tactics
                 .get(index + 1)
-                .is_some_and(|next| !matches!(next, ProofTactic::Assumption | ProofTactic::Solve));
+                .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve));
             let retain_application = retain_application
                 || (matches!(
                     tactic,
                     ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
-                ) && tactics.get(index + 1).is_some_and(|next| {
-                    !matches!(next, ProofTactic::Assumption | ProofTactic::Solve)
-                }));
+                ) && tactics
+                    .get(index + 1)
+                    .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve)));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
                 ProofTactic::ApplyInduction {
@@ -690,7 +690,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
             // A written step that checks the goal under another spelling of
             // the same order claim (`0 <= e` for the goal `e >= 0`) has
-            // proved the goal. Close it with a recorded `assumption`, which
+            // proved the goal. Close it with a recorded `known`, which
             // accepts that spelling, so the certificate re-runs on its own;
             // a planned step sequence never reaches this runner and keeps
             // the goal open after such a step.
@@ -707,7 +707,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ) && !proof.focused_discharged()
                 && checked_fact_spells_the_goal(&proof)
             {
-                proof = proof.driver().apply_step(ProofStep::Assumption)?;
+                proof = proof.driver().apply_step(ProofStep::Known)?;
             }
             if let Some(before) = before_application
                 && proof.focused_discharged()

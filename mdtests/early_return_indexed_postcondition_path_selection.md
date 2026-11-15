@@ -87,8 +87,8 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
                 model: WriteOutcome::Skipped
             });
             have result == 0 by normalize();
-            have result == 0 or result == 1 by assumption();
-            have after.model == WriteOutcome::Skipped by assumption();
+            have result == 0 or result == 1 by known();
+            have after.model == WriteOutcome::Skipped by known();
             have not (enabled == 1) by {
                 rewrite(enabled == 0);
                 normalize();
@@ -101,7 +101,7 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
             }
             have enabled == 0 implies after.model == WriteOutcome::Skipped by {
                 intro();
-                assumption();
+                known();
             }
             have enabled == 1 implies after.model == WriteOutcome::Written(
                 selected_index(old(before.shape))

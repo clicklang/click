@@ -51,13 +51,13 @@ int32 f(int32 u, int32 w) {
             have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::separate_elements(buf, 3 as uint64, 0 as uint64)) using {}; }
             have separate(memory(buf[u]), memory(buf[0])) by {
                 if u == 1 {
-                    rewrite(u == 1); assumption();
+                    rewrite(u == 1); known();
                 } else {
                     if u == 2 {
-                        rewrite(u == 2); assumption();
+                        rewrite(u == 2); known();
                     } else {
                         have u == 3 by { solve() using { 1 <= u; u < 4; u != 1; u != 2; }; }
-                        rewrite(u == 3); assumption();
+                        rewrite(u == 3); known();
                     }
                 }
             }

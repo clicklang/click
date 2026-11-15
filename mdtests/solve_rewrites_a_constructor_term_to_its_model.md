@@ -4,7 +4,7 @@ The arm knows `c.model == Walk::At(wd, rest)` and the requirement states
 `black(c.model) == 1`. `solve` misses the goal, which names the constructor term
 (`have_by_solve_misses_a_constructor_rewrite.md`). The implicit closer searches short chains
 of rewrites by the equalities connected to the goal, in either direction, and
-closes the rewritten goal by `assumption`. Each rewrite is a checked step, and
+closes the rewritten goal by `known`. Each rewrite is a checked step, and
 `click expand` writes the chain it found as `rewrite` steps.
 
 ```c filename=solve_rewrites_a_constructor_term_to_its_model.c

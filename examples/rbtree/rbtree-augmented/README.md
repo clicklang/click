@@ -316,7 +316,7 @@ callback and whole-context restoration.
 `rbtree_size_link_distinct.click` proves the remaining parent-update separation
 precondition from owned ancestor frames and the promoted node's word. It
 handles root, left-parent, and right-parent contexts, preserves the exact link
-model, and uses the shared indexed separation rule through `assumption()`.
+model, and uses the shared indexed separation rule through `known()`.
 The sized parent-update helper now calls this proof internally, so its callers
 no longer need an explicit parent-disequality premise. Full non-root insertion
 still needs the writable callback and whole-context restoration.

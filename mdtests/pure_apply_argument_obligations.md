@@ -2,14 +2,14 @@
 
 ```click
 theorem identity(value: int32) {
-    ensures value == value by assumption();
+    ensures value == value by known();
 }
 theorem use_argument(x: int32) {
     requires 0 <= x;
     requires x < 10;
     ensures x == x by {
         apply(identity(x + 1));
-        assumption();
+        known();
     }
 }
 ```

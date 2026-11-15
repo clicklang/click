@@ -35,9 +35,9 @@ uint64 seed(uint64 word, uint64 len) {
    solve();
   }
   preserve by {
-   have len > 0u64 by assumption();
+   have len > 0u64 by known();
    have 0u64 < len by {
-    if 0u64 < len { assumption(); } else {
+    if 0u64 < len { known(); } else {
      have 0u64 <= len by normalize();
      have 0u64 == len;
      have len == 0u64 by { rewrite(0u64 == len); normalize(); }
@@ -53,7 +53,7 @@ uint64 seed(uint64 word, uint64 len) {
    have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64);
    mark before_decrement;
    step();
-   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by assumption();
+   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by known();
    have to_integer(len) <= 15 by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; at(before_decrement, to_integer(len)) <= 15; };
    have 0 <= to_integer(len) by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(len)); };
    have to_integer(len) < at(before_decrement, to_integer(len)) by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };

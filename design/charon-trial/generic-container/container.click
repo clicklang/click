@@ -602,8 +602,8 @@ impl<T> generic_container::Stack<T> {
                         conclusion 1;
                     }
                 }
-                have at(region(91).exit, self.head) == old(self.head.next) by { assumption(); }
-                have self.head == old(self.head.next) by { assumption(); }
+                have at(region(91).exit, self.head) == old(self.head.next) by { known(); }
+                have self.head == old(self.head.next) by { known(); }
                 have result == Option::Some(v) by {
                     transport(old(self.head.value) == v, result == Option::Some(v)) using {
                         at(before_pop, separate(memory(*self.head), memory(self.head)));

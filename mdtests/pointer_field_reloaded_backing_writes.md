@@ -35,9 +35,9 @@ int32 probe(struct owner* owner, int32 index, int32 value) {
     have owner->data[0] == value by { solve(); }
     fold(buffer(owner));
     step();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }
 ```
 

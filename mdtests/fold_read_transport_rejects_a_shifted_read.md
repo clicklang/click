@@ -28,7 +28,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     step();
     have ahead(at(entry, v), 0, i) == ahead(v, 0, i) by {
         solve();
-        assumption();
+        known();
     }
 }
 ```

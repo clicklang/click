@@ -1178,7 +1178,7 @@ mod tests {
     fn contract_scalar_casts_check_all_supported_widths_and_recheck_expansion() {
         for ty in ["int32", "uint32", "int64", "uint64", "int128", "uint128"] {
             let source = format!(
-                "theorem cast(x: {ty}) {{ ensures x as {ty} == x by {{ have x as {ty} == x by solve(); assumption(); }} }}"
+                "theorem cast(x: {ty}) {{ ensures x as {ty} == x by {{ have x as {ty} == x by solve(); known(); }} }}"
             );
             verify_c_sources(&source, &[]).unwrap();
             let expanded = expand_c_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();
@@ -1373,7 +1373,7 @@ mod tests {
             let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
             verify_c_sources(&expanded, &[]).unwrap();
         }
-        let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { have to_integer(x + 1i64) == to_integer(x) + 1; have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); assumption(); } apply(integer::positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
+        let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { have to_integer(x + 1i64) == to_integer(x) + 1; have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); known(); } apply(integer::positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
         verify_c_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires defined(x + 1i64);", ""),

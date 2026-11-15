@@ -99,7 +99,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                 requires separate(memory(dest[0..1]), memory(kept[0..1]));
             }} by {{
                 mark before;
-                step() by {{ assumption(); }}
+                step() by {{ known(); }}
                 mark after;
                 have *kept == at(before, *kept) by {{
                     transport_certificate {{
@@ -111,7 +111,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                         conclusion 2;
                     }}
                 }}
-                step() by {{ assumption(); }}
+                step() by {{ known(); }}
                 mark final;
                 have *kept == at(before, *kept) by {{
                     transport_certificate {{
@@ -127,7 +127,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                     }}
                 }}
                 step();
-                assumption(); assumption(); assumption(); assumption();
+                known(); known(); known(); known();
             }}
         "#
         );
@@ -317,9 +317,9 @@ fn transport_certificate_resource_descriptors_follow_call_bindings() {
             owns other: model();
             requires separate(memory(*p), other);
         } by {
-            step() { requires separate(memory(*p), other) by assumption(); }
+            step() { requires separate(memory(*p), other) by known(); }
             step();
-            assumption(); assumption(); assumption(); assumption(); assumption();
+            known(); known(); known(); known(); known();
         }
     "#
     );
@@ -366,7 +366,7 @@ fn transport_certificate_named_resource_is_a_theorem_argument() {
         r#"
         theorem keep_separation(A: Resource, B: Resource) {
             requires separate(A, B);
-            ensures separate(A, B) by { assumption(); }
+            ensures separate(A, B) by { known(); }
         }
     "#
     )
@@ -427,7 +427,7 @@ fn pointer_rejection_prefixes_expand_and_replay() {
             "joined_pointer_field_read_rejects_different_field",
             "inspect",
             "have model->right == leaf by {\n                                normalize() using { sibling == model; sibling->left == child; child == leaf; };\n                            }",
-            "have child == leaf by { assumption(); }",
+            "have child == leaf by { known(); }",
         ),
         (
             "mutex_protected_pointer_footprint_stale_read_rejected",
@@ -682,7 +682,7 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
 }
 
 #[test]
-fn inequality_transport_expands_to_preserve_rewrite_and_assumption() {
+fn inequality_transport_expands_to_preserve_rewrite_and_known() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let sources = sources
         .iter()
@@ -1624,7 +1624,7 @@ fn a_returned_have_expands_the_same_single_preservation() {
             "    requires separate(memory(*p), memory(*q));\n    ensures 1 == 1;",
         )
         .replace("    have *q ==", "    step();\n    have *q ==")
-        .replace("    step();\n}", "    assumption();\n}");
+        .replace("    step();\n}", "    known();\n}");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -1670,7 +1670,7 @@ fn memory_observation_does_not_establish_initialization() {
         } by {
             step_until(function.exit);
             observe(p[0..2]);
-            assumption();
+            known();
         }
     "#;
     let sources = [("unwritten.c", "void unwritten(int32 *p) {}")];

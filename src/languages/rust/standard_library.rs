@@ -1,5 +1,5 @@
 //! The contracts Click supplies for the Rust core methods an import calls.
-//! They are assumptions, as an `extern fn` contract is. The `Vec`, slice,
+//! They are knowns, as an `extern fn` contract is. The `Vec`, slice,
 //! slice-iterator, `ChunksExact`, `Option::unwrap` and `Result::unwrap`
 //! methods are generic `extern fn` blocks in `library/rust/core.click`,
 //! written out at each instance as a sidecar's generic functions are. The

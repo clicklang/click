@@ -9,7 +9,7 @@ theorem range_scope(n: int32) {
     ensures (0..n).all(|k| { k < n }) by {
         intro() as n;
         intro();
-        assumption();
+        known();
     }
 }
 ```

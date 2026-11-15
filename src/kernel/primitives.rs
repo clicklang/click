@@ -7082,7 +7082,7 @@ pub struct RepresentationCopyEffect {
 
 /// A contract supplied for a C function whose implementation is outside the
 /// verified source set. External rules are intentionally distinct from
-/// [`VerifiedFunctionRule`]: they are assumptions accepted at call sites,
+/// [`VerifiedFunctionRule`]: they are knowns accepted at call sites,
 /// not evidence that Click checked a function body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalFunctionRule {

@@ -213,7 +213,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                                                   sibling_model, up_model), t.model));
                         rewrite(Context::Left(identity, grandparent, color,
                                               sibling_model, up_model) == c.model);
-                        assumption();
+                        known();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     step();
@@ -234,7 +234,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                                                    sibling_model, up_model), t.model));
                         rewrite(Context::Right(identity, grandparent, color,
                                                sibling_model, up_model) == c.model);
-                        assumption();
+                        known();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     step();

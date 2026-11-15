@@ -486,7 +486,7 @@ theorem only_element(v: int32, x: int32) {
             predicate positive(x: int32) { x > 0 }
             theorem from_positive(x: int32) {
                 requires positive(x);
-                ensures x > 0 by { unfold(positive); assumption(); }
+                ensures x > 0 by { unfold(positive); known(); }
             }
         "#;
         let checked = capture(|| {

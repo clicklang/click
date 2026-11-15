@@ -288,11 +288,11 @@ template<class T> Stack<T>::~Stack() {
                             conclusion 1;
                         }
                     }
-                    have node == this->head by { assumption(); }
+                    have node == this->head by { known(); }
                     step();
-                    have this->head == at(before_node, this->head->next) by { assumption(); }
+                    have this->head == at(before_node, this->head->next) by { known(); }
                     // Delete affects the whole typed node, not just its first scalar cell.
-                    have at(region(1).exit, separate(memory(*this->head), memory(this->head))) by { assumption(); }
+                    have at(region(1).exit, separate(memory(*this->head), memory(this->head))) by { known(); }
                     mark before_delete;
                     step();
                     have separate(region(3).footprint, memory(this->head)) by {
@@ -306,7 +306,7 @@ template<class T> Stack<T>::~Stack() {
                             conclusion 1;
                         }
                     }
-                    have this->head == at(before_node, this->head->next) by { assumption(); }
+                    have this->head == at(before_node, this->head->next) by { known(); }
                 },
             }
         }

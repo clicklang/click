@@ -286,7 +286,7 @@ observation routes can still derive separation before the written proof runs.
 `single_write_resource_transport_expands_to_preserve_without_search`
 is a focused positive reproduction. Claim opening retains its goal and reports
 missing evaluation prerequisites; it does not materialize the separation being
-claimed. The explicit proof can use the exact partition rule in `assumption()`
+claimed. The explicit proof can use the exact partition rule in `known()`
 or ordinary separation laws. Driver-owned implicit solve remains outside the
 operation guard.
 

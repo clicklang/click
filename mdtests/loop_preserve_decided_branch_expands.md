@@ -55,7 +55,7 @@ int32 count_zero_run(int32* a, int32 n) {
             mark iteration;
             have a[i] == 1 by {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] == 1 }, i);
-                assumption();
+                known();
             }
             have to_integer(i + 1) <= to_integer(n);
             branch { contradiction(a[i] == 0); } else {

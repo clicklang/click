@@ -354,7 +354,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     );
     let error = root
         .driver()
-        .try_authoritative_linear_script(&[ProofTactic::Assumption])
+        .try_authoritative_linear_script(&[ProofTactic::Known])
         .err()
         .expect("the available chunk size does not prove a zero remainder");
     let text = error.message();
@@ -365,7 +365,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
 }
 
 #[test]
-fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
+fn missing_known_side_uses_recorded_names_in_fixed_state_errors() {
     let before = MachineTerm::Variable(Variable(70));
     let after = MachineTerm::Variable(Variable(71));
     let entry = ExecutionState::new().with_local("remaining", ProgramValue::UInt64(before.clone()));
@@ -415,7 +415,7 @@ fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
     for traced in [false, true] {
         let render = || {
             root.driver()
-                .try_authoritative_linear_script(&[ProofTactic::Assumption])
+                .try_authoritative_linear_script(&[ProofTactic::Known])
                 .err()
                 .expect("neither conjunct is available")
                 .to_string()
@@ -848,11 +848,11 @@ fn invariant_bundle_closure_descends_surface_free_both_and_intro_and_rechecks() 
     assert!(matches!(
         certificate.steps(),
         [ProofStep::Both { left_proof, right_proof }]
-            if left_proof.steps() == [ProofStep::Assumption]
+            if left_proof.steps() == [ProofStep::Known]
                 && right_proof.steps() == [
                     ProofStep::Intro,
                     ProofStep::Intro,
-                    ProofStep::Assumption,
+                    ProofStep::Known,
                 ]
     ));
     let rechecked = root
@@ -1001,7 +1001,7 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
             ProofStep::Enumerate,
             ProofStep::Enumerate,
             ProofStep::Enumerate,
-            ProofStep::Assumption,
+            ProofStep::Known,
         ],
         |shared, step| {
             attempts += 1;
@@ -1010,12 +1010,12 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
         },
     )
     .expect("candidate misses must not abort the search")
-    .expect("the assumption suffix should close the goal");
+    .expect("the known suffix should close the goal");
     assert_eq!(attempts, 4);
     assert!(selected.is_complete());
     assert_eq!(
         selected.certificate().steps(),
-        &[ProofStep::Intro, ProofStep::Assumption],
+        &[ProofStep::Intro, ProofStep::Known],
         "the retained certificate contains only the accepted path"
     );
 
@@ -1025,11 +1025,7 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
     let bounded = attempt::first_success(
         &prefix,
         &mut budget,
-        [
-            ProofStep::Enumerate,
-            ProofStep::Assumption,
-            ProofStep::Enumerate,
-        ],
+        [ProofStep::Enumerate, ProofStep::Known, ProofStep::Enumerate],
         |shared, step| {
             attempts += 1;
             attempt::candidate_outcome(shared.driver().apply_step(step))
@@ -1049,16 +1045,12 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
     .expect("a rejected sequence tail is a miss");
     assert!(sequence.is_none());
     let mut budget = attempt::AttemptBudget::unbounded();
-    let sequence = attempt::try_sequence(
-        &root,
-        &mut budget,
-        &[ProofStep::Intro, ProofStep::Assumption],
-    )
-    .expect("an accepted sequence is not an error")
-    .expect("the checked sequence should close the goal");
+    let sequence = attempt::try_sequence(&root, &mut budget, &[ProofStep::Intro, ProofStep::Known])
+        .expect("an accepted sequence is not an error")
+        .expect("the checked sequence should close the goal");
     assert_eq!(
         sequence.certificate().steps(),
-        &[ProofStep::Intro, ProofStep::Assumption]
+        &[ProofStep::Intro, ProofStep::Known]
     );
 }
 
@@ -1387,14 +1379,14 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
         .expect("the left sibling is open")
         .begin_execution_match()
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("the shared disjunction fact closes the left claim");
     assert!(left_closed.state.open_branches().get(ids[1]).is_some());
     let both_closed = left_closed
         .focus_branch(ids[1])
         .expect("the right sibling is still open")
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("the shared disjunction fact closes the right claim");
     assert!(both_closed.is_complete());
 
@@ -1435,8 +1427,8 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
             left_proof,
             right_proof,
             ..
-        }] if left_proof.steps() == [ProofStep::Assumption]
-            && right_proof.steps() == [ProofStep::Assumption]
+        }] if left_proof.steps() == [ProofStep::Known]
+            && right_proof.steps() == [ProofStep::Known]
     ));
     assert!(root.certificate().steps().is_empty());
     assert_eq!(root.sole_branch_id(), Some(root_goal));
@@ -1485,7 +1477,7 @@ fn attempt_reports_deadline_failure_instead_of_a_rejection() {
 
     // Without a deadline the unprovable candidate is an ordinary miss.
     let mut budget = attempt::AttemptBudget::unbounded();
-    let missed = attempt::try_steps(&root, &mut budget, [ProofStep::Assumption])
+    let missed = attempt::try_steps(&root, &mut budget, [ProofStep::Known])
         .expect("a rejected candidate is a miss");
     assert!(missed.is_none());
 
@@ -1494,7 +1486,7 @@ fn attempt_reports_deadline_failure_instead_of_a_rejection() {
     // one more rejected candidate and continuing.
     let aborted = crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
         let mut budget = attempt::AttemptBudget::unbounded();
-        attempt::try_steps(&root, &mut budget, [ProofStep::Assumption])
+        attempt::try_steps(&root, &mut budget, [ProofStep::Known])
     });
     assert!(
         aborted.is_err(),
@@ -1546,10 +1538,10 @@ fn proof_failure_preserves_ancestor_and_selected_provenance() {
 
     let complete = root
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("the exact root fact should close the goal");
     assert!(complete.is_complete());
-    assert_eq!(complete.certificate().steps(), &[ProofStep::Assumption]);
+    assert_eq!(complete.certificate().steps(), &[ProofStep::Known]);
     assert!(!root.is_complete());
     assert!(root.certificate().steps().is_empty());
 }
@@ -1607,7 +1599,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
     // never reuses the retired identifier.
     let complete = introduced
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("the introduced fact should close the consequent");
     assert!(complete.is_complete());
     assert_eq!(complete.sole_branch_id(), None);
@@ -1653,7 +1645,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
     let introduced_checkpoint = introduced.checkpoint();
     let complete = introduced
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("the introduced fact should close the consequent");
 
     assert_eq!(
@@ -1661,14 +1653,14 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
             .certificate_since(&root_checkpoint)
             .expect("root is an ancestor")
             .steps(),
-        &[ProofStep::Intro, ProofStep::Assumption]
+        &[ProofStep::Intro, ProofStep::Known]
     );
     assert_eq!(
         complete
             .certificate_since(&introduced_checkpoint)
             .expect("introduced proof is an ancestor")
             .steps(),
-        &[ProofStep::Assumption]
+        &[ProofStep::Known]
     );
     assert!(
         root.certificate_since(&introduced_checkpoint).is_err(),
@@ -1742,7 +1734,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
     assert_eq!(enclosing.added_facts().len(), 1);
     let complete = enclosing
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("published have fact should close the enclosing goal");
     assert_eq!(
         complete.certificate().steps(),
@@ -1751,7 +1743,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
                 proposition: proposition.clone(),
                 proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
             },
-            ProofStep::Assumption,
+            ProofStep::Known,
         ]
     );
     assert!(!root.is_complete());
@@ -1779,7 +1771,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         .expect("an explicit Have step should use the owned checked scope");
     let complete = checked_have
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("the checked Have step should publish its proposition");
     assert_eq!(
         complete.certificate().steps(),
@@ -1788,7 +1780,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
                 proposition,
                 proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
             },
-            ProofStep::Assumption,
+            ProofStep::Known,
         ]
     );
 }
@@ -1922,7 +1914,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
         .join()
         .expect("the checked intro certificate should join")
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .expect("the joined have fact should close the enclosing goal");
     assert!(enclosing.is_complete());
 }
@@ -2220,7 +2212,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             .expect("the completed nested proof should join");
         let complete = enclosing
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the published have fact should close the outer goal");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
@@ -2238,7 +2230,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
                         ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()
                     ),
                 },
-                ProofStep::Assumption,
+                ProofStep::Known,
             ]
         );
 
@@ -2251,7 +2243,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             })
             .expect("the explicit Have should check through its owned scope")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the explicit Have should publish its proposition");
         let allocations = fact_node_allocations() - before;
         assert!(
@@ -2267,7 +2259,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
                         ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()
                     ),
                 },
-                ProofStep::Assumption,
+                ProofStep::Known,
             ]
         );
         assert!(root.certificate().steps().is_empty());
@@ -2277,7 +2269,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
 #[test]
 fn execution_have_indexes_only_its_delta_and_scales_with_history() {
     let click_file = crate::surface::parse(
-        "int32 idle() { ensures reflexive: result == result by { assumption(); } }",
+        "int32 idle() { ensures reflexive: result == result by { known(); } }",
     )
     .expect("test contract should parse");
     let function_block = &click_file.function_blocks()[0];
@@ -2448,7 +2440,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
 
         let complete = shared
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("fixed local step should succeed");
         assert!(complete.is_complete());
         assert!(Arc::ptr_eq(
@@ -2680,7 +2672,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         r#"
             predicate selected(x: int32) { x == x }
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -2797,16 +2789,16 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         );
         let complete = unfolded
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the unfolded predicate fact should close the unfolded goal");
         assert!(complete.is_complete());
         assert_eq!(
             complete.certificate().steps(),
-            &[unfold.clone(), ProofStep::Assumption]
+            &[unfold.clone(), ProofStep::Known]
         );
 
         let certificate =
-            ProofCertificate::from_steps(vec![unfold.clone(), ProofStep::Assumption]).unwrap();
+            ProofCertificate::from_steps(vec![unfold.clone(), ProofStep::Known]).unwrap();
         let checked = root
             .driver()
             .try_authoritative_linear_script(&certificate.to_proof_tactics())
@@ -2825,7 +2817,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
         r#"
             predicate selected(x: int32) { x == x }
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -2881,7 +2873,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
     );
     let certificate = ProofCertificate::from_steps(vec![
         ProofStep::UnfoldPredicate("selected".to_string()),
-        ProofStep::Assumption,
+        ProofStep::Known,
     ])
     .unwrap();
     let checked = root
@@ -2978,7 +2970,7 @@ fn fixed_state_proof_root_borrows_inherited_unfold_history_without_reindexing_it
 
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate"]
-fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
+fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_known() {
     let state = ExecutionState::new();
     let result = int32(0);
     let recorded_snapshots = RecordedSnapshots::new();
@@ -3021,7 +3013,7 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
             root.focus_fixed_state_goal(missing.clone())
                 .expect("focusing does not prove the selected goal")
                 .driver()
-                .apply_step(ProofStep::Assumption)
+                .apply_step(ProofStep::Known)
                 .is_err()
         );
         assert!(
@@ -3032,10 +3024,10 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
 
         let complete = focused_branch
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the focused exact goal should close through Proof");
         assert!(complete.is_complete());
-        assert_eq!(complete.certificate().steps(), &[ProofStep::Assumption]);
+        assert_eq!(complete.certificate().steps(), &[ProofStep::Known]);
         assert!(root.certificate().steps().is_empty());
     }
 }
@@ -3156,7 +3148,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             .open_have(proposition.clone())
             .expect("the checked successor should open a dependent scope")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the later scope should see the first checked fact")
             .join()
             .expect("the dependent scope should publish its retained proof");
@@ -3173,7 +3165,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
                 ProofStep::Have { proof: first, .. },
                 ProofStep::Have { proof: second, .. }
             ] if first.steps() == [ProofStep::Normalize]
-                && second.steps() == [ProofStep::Assumption]
+                && second.steps() == [ProofStep::Known]
         ));
         let completed = second
             .driver()
@@ -3184,7 +3176,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             [
                 ProofStep::Have { .. },
                 ProofStep::Have { .. },
-                ProofStep::Assumption
+                ProofStep::Known
             ]
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -3230,7 +3222,7 @@ fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
         .open_have(surface)
         .expect("the current fixed-state goal should lower independently");
     assert!(
-        scope.driver().apply_step(ProofStep::Assumption).is_err(),
+        scope.driver().apply_step(ProofStep::Known).is_err(),
         "an older fact with the same surface form must not close the current goal"
     );
     assert!(root.certificate().steps().is_empty());
@@ -3295,12 +3287,12 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
         let marker = split_proof.checkpoint();
         let joined = split_proof
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the condition closes the then arm")
             .focus_branch(ids[1])
             .expect("the else sibling remains open")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the exact negation closes the else arm")
             .join_focused_if(&marker, split, ids, condition.clone())
             .expect("both discharged siblings should join");
@@ -3309,8 +3301,8 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
         assert!(matches!(
             joined.certificate().steps(),
             [ProofStep::If { then_proof, else_proof, .. }]
-                if then_proof.steps() == [ProofStep::Assumption]
-                    && else_proof.steps() == [ProofStep::Assumption]
+                if then_proof.steps() == [ProofStep::Known]
+                    && else_proof.steps() == [ProofStep::Known]
         ));
         assert!(root.certificate().steps().is_empty());
     }
@@ -3340,7 +3332,7 @@ fn execution_frontier_rejects_proposition_closers_transactionally() {
     assert!(root.goal().is_none());
     assert!(root.state.shares_state_with(&fork.state));
     assert!(Arc::ptr_eq(&root.node, &fork.node));
-    for closer in [ProofStep::Assumption, ProofStep::Normalize] {
+    for closer in [ProofStep::Known, ProofStep::Normalize] {
         let error = fork
             .driver()
             .apply_step(closer)
@@ -3560,7 +3552,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         r#"
             int32 choose_source(int32 x) {
                 requires exists (k: int32) { k == x };
-                ensures result == x by { assumption(); }
+                ensures result == x by { known(); }
             }
         "#,
     )
@@ -3677,7 +3669,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             )))
             .expect("witness should resolve the one referenced proof local")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the chosen existential fact should close the refined goal");
         assert!(completed.is_complete());
         assert!(matches!(
@@ -3685,7 +3677,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             [
                 ProofStep::Choose(_),
                 ProofStep::Witness(_),
-                ProofStep::Assumption
+                ProofStep::Known
             ]
         ));
         assert!(root.certificate().steps().is_empty());
@@ -3704,7 +3696,7 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
                 requires 100 / (x + 1) >= 0;
                 requires selected(x);
                 requires x >= 0;
-                ensures result == x by { assumption(); }
+                ensures result == x by { known(); }
             }
         "#,
     )
@@ -4386,7 +4378,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 selected.expect("the selected universal candidate should close through Proof");
             assert!(selected.is_complete());
             // The instantiation adds the goal, so it closes it with no
-            // separate `assumption`.
+            // separate `known`.
             assert!(matches!(
                 selected.certificate().steps(),
                 [ProofStep::InstantiateUsing { .. }]
@@ -4470,7 +4462,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         r#"
             theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -5307,12 +5299,12 @@ fn smart_retry_uses_static_local_array_qualified_source() {
 }
 
 #[test]
-fn nested_have_accepts_trailing_assumption_after_closure() {
+fn nested_have_accepts_trailing_known_after_closure() {
     let click_file = crate::surface::parse(
         r#"
             theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -5368,7 +5360,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         .record_lowering(&premise, &kernel_premise)
         .expect("the selected premise form should be recorded");
     let root = Proof::for_execution_frontier(
-        "trailing assumption",
+        "trailing `known`",
         0,
         ExecutionProofState::at_entry(
             state.clone(),
@@ -5389,7 +5381,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         &theorem_environment,
     );
     // The theorem application's conclusion is the have's goal, so the goal
-    // is discharged before the script's final `assumption`; that trailing
+    // is discharged before the script's final `known`; that trailing
     // tactic asserts a closed judgment and must not decline the script.
     let scope = root
         .driver()
@@ -5397,7 +5389,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         .expect("the have scope opens on the execution proof");
     let script = [
         ProofTactic::ApplyTheorem(application.clone()),
-        ProofTactic::Assumption,
+        ProofTactic::Known,
     ];
     let closed = scope
         .driver()
@@ -5405,7 +5397,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         .expect("the nested script is a bounded check");
     assert!(
         closed.is_some(),
-        "a trailing `assumption` after the discharging application must be accepted"
+        "a trailing `known` after the discharging application must be accepted"
     );
 
     let script = [
@@ -5415,9 +5407,9 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         },
         ProofTactic::Have(ProofHave {
             proposition: conclusion.clone(),
-            proof: SourceProof::Script(vec![ProofTactic::Assumption]),
+            proof: SourceProof::Script(vec![ProofTactic::Known]),
         }),
-        ProofTactic::Assumption,
+        ProofTactic::Known,
     ];
     take_checked_have_operations();
     let completed = scope
@@ -5431,7 +5423,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         "three written proof steps plus the nested have's open and join; retaining the application adds no checks"
     );
     assert!(matches!(completed.body().certificate().steps(), [
-        ProofStep::Have { proof, .. }, ProofStep::Have { .. }, ProofStep::Assumption
+        ProofStep::Have { proof, .. }, ProofStep::Have { .. }, ProofStep::Known
     ] if matches!(proof.steps(), [ProofStep::ApplyTheoremUsing { .. }])));
     let error = scope
         .driver()
@@ -5440,7 +5432,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
                 application: missing_application,
                 premises: vec![premise],
             },
-            ProofTactic::Assumption,
+            ProofTactic::Known,
         ])
         .err()
         .expect("wrong theorem guards must preserve their checked error");
@@ -5455,7 +5447,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
         r#"
             theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 choose(int32 left, int32 right, int32 choose_left) {
-                ensures reflexive_result: result == result by { assumption(); }
+                ensures reflexive_result: result == result by { known(); }
             }
         "#,
     )
@@ -5610,7 +5602,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .open_have(premise.clone())
             .expect("the then arm should open a proposition proof")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the root premise should close the then-arm proof")
             .join()
             .expect("the completed proof should advance the then arm")
@@ -5620,7 +5612,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .open_have(premise.clone())
             .expect("the else arm should open a proposition proof")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the root premise should close the else-arm proof")
             .join()
             .expect("the completed proof should advance the else arm");
@@ -5639,7 +5631,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
                     proposition: retained,
                     proof,
                 }] if retained == &premise
-                    && proof.steps() == [ProofStep::Assumption]
+                    && proof.steps() == [ProofStep::Known]
             ));
         }
 
@@ -5777,7 +5769,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         r#"
             theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -5924,7 +5916,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             complete.certificate().steps().get(1),
             Some(&ProofStep::Have {
                 proposition: premise.clone(),
-                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Assumption]).unwrap()),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
             })
         );
         assert_eq!(complete.certificate().steps().get(2), Some(&step));
@@ -6403,7 +6395,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
         assert!(root.certificate().steps().is_empty());
 
         // A nested smart `have` must not serialize the goal's ambient
-        // copy as `assumption()`: the surface proposition may lower in a
+        // copy as `known()`: the surface proposition may lower in a
         // different snapshot when expansion is verified from source.
         // Search through a context weakened by only that exact fact and
         // retain the same checked signed-order theorem path on Proof.
@@ -6436,7 +6428,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             .driver()
             .try_solve_closure()
             .expect("nested smart search must not exceed its deadline")
-            .expect("the exact goal should close directly by assumption");
+            .expect("the exact goal should close directly by `known()`");
         let allocations = fact_node_allocations() - before;
         // Retaining the exact premise must also keep persistent updates local.
         // Measure their growth against their own smallest sample.
@@ -6448,10 +6440,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             "size {size} exact-goal have allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(selected.body().is_complete());
-        assert_eq!(
-            selected.body().certificate().steps(),
-            &[ProofStep::Assumption],
-        );
+        assert_eq!(selected.body().certificate().steps(), &[ProofStep::Known],);
         assert!(exact_root.certificate().steps().is_empty());
     }
 }
@@ -6777,7 +6766,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         );
         assert!(closed.is_complete());
         assert!(
-            matches!(closed.certificate().steps(), [.., ProofStep::Assumption]),
+            matches!(closed.certificate().steps(), [.., ProofStep::Known]),
             "{:?}",
             closed.certificate().steps()
         );
@@ -6998,7 +6987,7 @@ fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_up
         );
         assert!(closed.is_complete());
         assert!(
-            matches!(closed.certificate().steps(), [ProofStep::Assumption]),
+            matches!(closed.certificate().steps(), [ProofStep::Known]),
             "{:?}",
             closed.certificate().steps()
         );
@@ -7095,7 +7084,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         );
         assert!(closed.is_complete());
         assert!(
-            matches!(closed.certificate().steps(), [ProofStep::Assumption]),
+            matches!(closed.certificate().steps(), [ProofStep::Known]),
             "{:?}",
             closed.certificate().steps()
         );
@@ -8856,7 +8845,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                         retained_steps.steps(),
                         [
                             ProofStep::Have { proof, .. },
-                            ProofStep::Assumption,
+                            ProofStep::Known,
                         ] if is_one_arithmetic_certificate_over(proof.steps(), std::slice::from_ref(&left_positive))
                     ),
                     "{retained_steps:#?}"
@@ -8864,7 +8853,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                 "implication" => assert!(
                     matches!(
                         retained_steps.steps(),
-                        [ProofStep::Intro, ProofStep::Assumption,]
+                        [ProofStep::Intro, ProofStep::Known,]
                     ),
                     "{retained_steps:#?}"
                 ),
@@ -9245,7 +9234,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
             complete.certificate().steps().first(),
             Some(&ProofStep::Have {
                 proposition: premise.clone(),
-                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Assumption]).unwrap()),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
             })
         );
         assert_eq!(complete.certificate().steps().get(1), Some(&step));
@@ -9392,7 +9381,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         r#"
             predicate selected(x: int32) { x == x }
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -10025,7 +10014,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
                 ProofStep::StepProved {
                     step: Box::new(ProofStep::FoldResource(resource.clone())),
                     proof: StepProofCertificate::By(Box::new(
-                        ProofCertificate::from_steps(vec![ProofStep::Assumption]).unwrap(),
+                        ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap(),
                     )),
                 },
             ]
@@ -10158,7 +10147,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             .open_have(reflexive.clone())
             .expect("the open scope should begin a proposition subproof")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the exposed marker fact should close the nested proof");
         let scope = scope
             .join_nested(nested)
@@ -10185,7 +10174,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
                         ProofStep::Have {
                             proposition: reflexive.clone(),
                             proof: Box::new(
-                                ProofCertificate::from_steps(vec![ProofStep::Assumption]).unwrap(),
+                                ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap(),
                             ),
                         },
                         ProofStep::Step,
@@ -10204,7 +10193,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             .open_have(reflexive.clone())
             .expect("the sibling should begin its own nested proof")
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the sibling nested proof should close");
         let unrelated_scope = root
             .begin_open(resource.clone(), 0, None)
@@ -10263,7 +10252,7 @@ fn execution_transport_forks_without_copying_unrelated_state() {
     let click_file = crate::surface::parse(
         r#"
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -10375,7 +10364,7 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
     let click_file = crate::surface::parse(
         r#"
             int32 choose_second(int32 first, int32 second) {
-                ensures returns_second: result == second by { assumption(); }
+                ensures returns_second: result == second by { known(); }
             }
         "#,
     )
@@ -10520,7 +10509,7 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
     let click_file = crate::surface::parse(
         r#"
             int32 set_one(int32 x) {
-                ensures returns_one: result == 1 by { assumption(); }
+                ensures returns_one: result == 1 by { known(); }
             }
         "#,
     )
@@ -10718,7 +10707,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
     let click_file = crate::surface::parse(
         r#"
             int32 constant(int32 x) {
-                ensures returns_one: result == 1 by { assumption(); }
+                ensures returns_one: result == 1 by { known(); }
             }
         "#,
     )
@@ -10844,7 +10833,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
     let click_file = crate::surface::parse(
         r#"
             int32 loop_region(int32 x) {
-                ensures unchanged: result == x by { assumption(); }
+                ensures unchanged: result == x by { known(); }
             }
         "#,
     )
@@ -11110,7 +11099,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             int32 identity(int32 x) {
                 ensures result == x;
             } by {
-                assumption();
+                known();
             }
         "#,
     )
@@ -11337,7 +11326,7 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
             int32 identity(int32 x) {
                 ensures result == x;
             } by {
-                assumption();
+                known();
             }
         "#,
     )
@@ -11444,7 +11433,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
     let click_file = crate::surface::parse(
         r#"
             int32 identity(int32 x) {
-                ensures returns_x: result == x by { assumption(); }
+                ensures returns_x: result == x by { known(); }
             }
         "#,
     )
@@ -11573,7 +11562,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     let click_file = crate::surface::parse(
         r#"
             int32 branch_load(int32 x, int32 p[1]) {
-                ensures returns_any: result == result by { assumption(); }
+                ensures returns_any: result == result by { known(); }
             }
         "#,
     )
@@ -11963,7 +11952,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
             }
 
             int32 constant(int32 x) {
-                ensures returns_one: result == 1 by { assumption(); }
+                ensures returns_one: result == 1 by { known(); }
             }
         "#,
     )
@@ -12117,7 +12106,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
         ));
         let refined = scope
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .expect("the theorem conclusion should close the nested proposition")
             .join()
             .expect("the completed nested proposition should rejoin its root Proof");
@@ -12131,7 +12120,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                     proof,
                 },
             ] if proposition == &reflexive
-                && proof.steps() == [ProofStep::Assumption]
+                && proof.steps() == [ProofStep::Known]
         ));
         let completed = refined
             .driver()
@@ -12269,7 +12258,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             }
 
             int32 nonnegative(int32 x) {
-                ensures nonnegative_result: result >= 0 by { assumption(); }
+                ensures nonnegative_result: result >= 0 by { known(); }
             }
         "#,
     )
@@ -12863,7 +12852,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
     let click_file = crate::surface::parse(
         r#"
             int32 nested(int32 x, int32 flag) {
-                ensures nonnegative_result: result >= 0 by { assumption(); }
+                ensures nonnegative_result: result >= 0 by { known(); }
             }
         "#,
     )
@@ -13229,7 +13218,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
     let click_file = crate::surface::parse(
         r#"
             int32 selected(int32 x) {
-                ensures returns_one: result == 1 by { assumption(); }
+                ensures returns_one: result == 1 by { known(); }
             }
         "#,
     )
@@ -13499,7 +13488,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
     let click_file = crate::surface::parse(
         r#"
             int32 choose(int32 x) {
-                ensures returns_one_or_two: result == 1 or result == 2 by { assumption(); }
+                ensures returns_one_or_two: result == 1 or result == 2 by { known(); }
             }
         "#,
     )
@@ -13924,7 +13913,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             );
             retained
                 .driver()
-                .apply_step(ProofStep::Assumption)
+                .apply_step(ProofStep::Known)
                 .unwrap()
                 .completed_proposition()
                 .unwrap();
@@ -13985,12 +13974,12 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
         &[],
     );
     let retained = root.clone();
-    let script = [ProofTactic::Normalize, ProofTactic::Assumption];
+    let script = [ProofTactic::Normalize, ProofTactic::Known];
     let error = root
         .driver()
         .try_authoritative_linear_script(&script)
         .err()
-        .expect("a named normalization must fail even though assumption could close the goal");
+        .expect("a named normalization must fail even though known could close the goal");
     assert!(error.message().contains("`normalize`"), "{error:?}");
     assert!(error.message().contains("tactic 1"), "{error:?}");
     assert!(
@@ -14002,7 +13991,7 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
     assert!(root.certificate().steps().is_empty());
     let completed = root
         .driver()
-        .try_authoritative_linear_script(&[ProofTactic::Assumption])
+        .try_authoritative_linear_script(&[ProofTactic::Known])
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -14011,7 +14000,7 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
     );
     assert_eq!(
         completed.completed_certificate().unwrap().steps(),
-        &[ProofStep::Assumption]
+        &[ProofStep::Known]
     );
 }
 
@@ -14995,7 +14984,7 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
 }
 
 #[test]
-fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
+fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
     let cell = |name: &str| {
         Resource::Memory(MemoryRange::new(
             Pointer {
@@ -15031,7 +15020,7 @@ fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
             )
         };
         let root = Proof::for_fixed_state_frontier(
-            "partition assumption",
+            "partition known",
             0,
             &[],
             ParameterBinding::default(),
@@ -15052,7 +15041,7 @@ fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
             )
             .unwrap_or_else(|_| panic!("the selected goal must stay open"));
         let focused = focused.with_kernel_state(state);
-        let _guard = crate::kernel::search::FastOperationScope::enter("partition assumption");
-        assert_eq!(focused.apply_assumption().is_ok(), retained);
+        let _guard = crate::kernel::search::FastOperationScope::enter("partition known");
+        assert_eq!(focused.apply_known().is_ok(), retained);
     }
 }

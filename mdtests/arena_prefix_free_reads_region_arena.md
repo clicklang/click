@@ -143,7 +143,7 @@ void arena_release(struct region* region) {
     have separate(memory(at(after_assignment, &arena->live_regions)[0]), memory((&arena->data)[0..1]));
     have separate(memory(at(after_assignment, &arena->live_regions)[0]), memory(at(after_assignment, &region->arena->data)[0])) by {
         rewrite(at(after_assignment, region->arena) == arena);
-        assumption();
+        known();
     }
     have separate(memory(arena->live_regions), memory(region->arena));
     step();
@@ -208,7 +208,7 @@ void arena_release(struct region* region) {
         };
     }
     have region->end == e by {
-        assumption();
+        known();
     }
     have region->arena->data == old(region->arena->data);
     let after = fold(arena_live_count(region->arena), { live: n - 1 });

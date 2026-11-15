@@ -1153,7 +1153,7 @@ wide overflow, expansion, and retained audit have regression coverage.
 The `scalar-braces` fixture admits one Clang-resolved integer or Boolean
 brace initializer, including `__int128{a}` and `long value{n}`. It preserves
 the semantic child's resolved conversion through the existing expression
-model, including argument stability and compiler-assumption checks. C++
+model, including argument stability and compiler-`known` checks. C++
 narrowing list initialization remains a compiler error; empty lists,
 unsupported scalar widths, and unsupported effects remain refused. This
 normalization adds no artifact node or schema version.

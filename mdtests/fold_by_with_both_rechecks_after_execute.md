@@ -34,7 +34,7 @@ void bump(struct holder* h) {
     step();
     fold(holder_of(h)) by {
         both {
-            assumption();
+            known();
         } and {
             have h->count < 200 by {
                 arithmetic_certificate signed_int32 {
@@ -48,10 +48,10 @@ void bump(struct holder* h) {
                     conclusion 6;
                 }
             }
-            assumption();
+            known();
         }
     }
-    assumption();
+    known();
 }
 ```
 

@@ -36,7 +36,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
         };
     }
     mark before;
-    step() by { assumption(); }
+    step() by { known(); }
     mark after;
     have separate(statement(0).footprint, memory(source->data)) by {
         normalize() using { separate(memory(target->pos), memory(source->data)); };
@@ -49,7 +49,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
             conclusion 1;
         }
     }
-    step() by { assumption(); }
+    step() by { known(); }
     mark final;
     have separate(statement(1).footprint, memory(source->data)) by {
         normalize() using { separate(memory(target->pos), memory(source->data)); };
@@ -66,8 +66,8 @@ void copy_pos(struct cursor *target, struct cursor *source) {
         }
     }
     step();
-    assumption();
-    assumption(); assumption(); assumption();
+    known();
+    known(); known(); known();
 }
 ```
 

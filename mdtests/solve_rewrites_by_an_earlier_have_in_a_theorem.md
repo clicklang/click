@@ -29,7 +29,7 @@ theorem black_through_an_earlier_have(v: Walk, d: Integer, rest: Walk) {
             normalize();
         }
         have black(v) == 1;
-        assumption();
+        known();
     }
 }
 ```

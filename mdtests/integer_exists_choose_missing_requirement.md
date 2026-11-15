@@ -6,7 +6,7 @@ theorem integer_exists_choose_missing_requirement() {
     ensures exists (k: Integer) { k == k } by {
         obtain (candidate: Integer) { candidate != candidate }
         witness { k: candidate };
-        assumption();
+        known();
     }
 }
 ```

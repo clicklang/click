@@ -41,7 +41,7 @@ int spin(int n) {
         initialize by {
             have i >= 0;
             have i <= n;
-            assumption();
+            known();
         }
         preserve by solve();
     }

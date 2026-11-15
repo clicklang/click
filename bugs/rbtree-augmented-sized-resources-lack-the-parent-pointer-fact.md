@@ -67,7 +67,7 @@ the repair below:
   the child inequalities in the C local's spelling required by `compute_size`.
   The C and contracts are unchanged. All 18 smart sites pass expansion audit.
 - `rbtree_size_propagate_tree.click` now verifies both proofs. It cites the
-  available parent equality with `assumption()`, transports the explicitly
+  available parent equality with `known()`, transports the explicitly
   typed packed-parent read across the read-only `rb_parent` helper, and
   extracts the loop-exit disjunction before matching and unfolding the walk
   changes its model spelling. C, contracts, and verifier are unchanged.

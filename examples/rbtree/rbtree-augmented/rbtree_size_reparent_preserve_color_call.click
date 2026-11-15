@@ -60,7 +60,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         }
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
-                        assumption();
+                        known();
                     }
                     have (rb->__rb_parent_color & 1) == 1 by {
                         rewrite(rb->__rb_parent_color == address(p) + 1);
@@ -72,7 +72,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     }
                     have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by {
                         rewrite((rb->__rb_parent_color & 1) == 1);
-                        assumption();
+                        known();
                     }
                     unfold(color_bit(Color::Black));
                     let after = fold(sized_recompute_at(rb), {
@@ -102,7 +102,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         }
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
-                        assumption();
+                        known();
                     }
                     have (rb->__rb_parent_color & 1) == 0 by {
                         rewrite(rb->__rb_parent_color == address(p) + 0);
@@ -114,7 +114,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     }
                     have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by {
                         rewrite((rb->__rb_parent_color & 1) == 0);
-                        assumption();
+                        known();
                     }
                     unfold(color_bit(Color::Red));
                     let after = fold(sized_recompute_at(rb), {

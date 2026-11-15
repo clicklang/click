@@ -71,7 +71,7 @@ void walk(struct Node* p, int32* marker) {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => {
             let { up: above } = unfold(c);
-            have p == 0 by assumption();
+            have p == 0 by known();
             have identity != 0;
             let whole = fold(path(p), { model: Path::Step(identity, before) }, { up: above });
             match t.model {

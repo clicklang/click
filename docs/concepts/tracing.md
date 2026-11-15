@@ -137,7 +137,7 @@ and `conclusion`. Cite `separate(region.footprint, B)` as a premise;
 `preserve` establishes the after-to-before read equality. The execution-produced
 footprint includes writes, call effects and allocation release. Establish its
 separation with explicitly supplied evidence. When a checked call publishes
-`contains(R, region.footprint)`, select it with `assumption()` and apply the
+`contains(R, region.footprint)`, select it with `known()` and apply the
 named `separation::separate_restrict` law; `contains_refl` supplies reflexivity and
 `separate_star` combines separation of several input resources. This route
 does not unfold recursive resources or normalize a footprint. The older

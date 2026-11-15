@@ -21,12 +21,12 @@ theorem lift(callback: int32 (*)(int32)) {
             intro();
             intro();
             rewrite(k == x);
-            assumption();
+            known();
         }
         have result == x implies result >= 0 by {
             intro();
             instantiate(forall (k: int32) { k == x implies k >= 0 }, result);
-            assumption();
+            known();
         }
         solve();
     }

@@ -37,7 +37,7 @@ theorem a_missing_conclusion_is_not_invented(x: int32) {
     ensures x >= 0 by {
         apply(lower_bound(x));
         apply(needs_tighter_upper(x));
-        assumption();
+        known();
     }
 }
 ```

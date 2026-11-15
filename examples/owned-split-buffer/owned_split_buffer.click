@@ -254,9 +254,9 @@ int32 owned_split_buffer_pipeline(
     step();
     unfold(owned_split_buffer(owner));
     step();
-    have owner->split == 1 by { assumption(); }
-    have owner->len == length by { assumption(); }
-    have owner->data == data by { assumption(); }
+    have owner->split == 1 by { known(); }
+    have owner->len == length by { known(); }
+    have owner->data == data by { known(); }
     have 1 < length by {
         arithmetic_certificate {
             premise 0: at(function.entry, 2 <= length) => at(function.entry, 2 <= length);
@@ -264,11 +264,11 @@ int32 owned_split_buffer_pipeline(
         }
     }
     have 1 < owner->len by {
-        assumption();
+        known();
     }
     step();
-    have owner->data == data by { assumption(); }
-    have 1 < owner->len by { assumption(); }
+    have owner->data == data by { known(); }
+    have 1 < owner->len by { known(); }
     have data[1] == right_value by {
         normalize() using {
             at(region(5).entry, *(owner->data + 1)) == at(region(5).entry, right_value);
@@ -277,7 +277,7 @@ int32 owned_split_buffer_pipeline(
     }
     step();
     have to_integer(at(region(5).exit, owner->split)) == (to_integer(at(region(5).entry, owner->split)) + 1) by {
-        assumption();
+        known();
     }
     apply(incremented_one_is_two(at(region(5).entry, owner->split), at(region(5).exit, owner->split))) using {
         at(region(5).entry, owner->split) == 1;
@@ -286,36 +286,36 @@ int32 owned_split_buffer_pipeline(
     };
     fold(owned_split_buffer(owner));
     step();
-    have data[1] == right_value by { assumption(); }
+    have data[1] == right_value by { known(); }
     apply(int32_equality_transitive(c(result), data[1], right_value)) using {
         c(result) == data[1];
         data[1] == right_value;
     };
     step();
-    assumption();
+    known();
     have owner->split == 2 by {
-        assumption();
+        known();
     }
     have owner->len == length by {
-        assumption();
+        known();
     }
     have owner->data == data by {
-        assumption();
+        known();
     }
     have data[0] == left_value by {
         rewrite(data == at(region(3).entry, owner->data));
-        assumption();
+        known();
     }
     have data[1] == right_value by {
-        assumption();
+        known();
     }
     have result == right_value by {
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
+    known();
 }

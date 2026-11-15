@@ -24,7 +24,7 @@ void keep(struct node* p) {
     match held.model {
         Ref::At(identity) => {
             unfold(held);
-            have p == identity by assumption();
+            have p == identity by known();
             have Ref::At(p) == Ref::At(identity) by { solve(); }
             let held = fold(token(p), { model: Ref::At(identity) });
             step_until(function.exit); solve();

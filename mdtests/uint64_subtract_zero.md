@@ -23,7 +23,7 @@ theorem subtract_self(n: uint64) {
 
 theorem subtract_self_compound(n: uint64) {
     ensures to_integer((n + 1u64) - (n + 1u64)) == to_integer(0u64) by {
-        apply(subtract_self(n + 1u64)); assumption();
+        apply(subtract_self(n + 1u64)); known();
     }
 }
 

@@ -353,7 +353,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
             have result == 1 by {
                 normalize();
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -369,7 +369,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
-fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
+fn known_reuses_facts_but_does_not_normalize_or_extract_implications() {
     let c_source = r#"
         int32 keep(int32 x, int32 y) {
             x = x;
@@ -396,27 +396,27 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
     verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("explicit extraction and normalization should verify");
 
-    let implicit_extract = click_source.replace("extract(y == 0);", "assumption();");
+    let implicit_extract = click_source.replace("extract(y == 0);", "known();");
     let error = verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
-        .expect_err("assumption must not discharge an implication");
+        .expect_err("known must not discharge an implication");
     assert!(
         error
             .message()
-            .contains("`assumption` requires the current goal as an available semantic fact"),
+            .contains("`known` requires the current goal as an available semantic fact"),
         "{}",
         error.message()
     );
 
-    let implicit_normalize = click_source.replacen("normalize();", "assumption();", 1);
+    let implicit_normalize = click_source.replacen("normalize();", "known();", 1);
     let error = verify_c_sources(&implicit_normalize, &[("keep.c", c_source)])
-        .expect_err("assumption must not normalize a proposition");
+        .expect_err("known must not normalize a proposition");
     assert!(
         error
             .message()
-            .contains("`assumption` found no available fact or held instance for the current goal")
+            .contains("`known` found no available fact or held instance for the current goal")
             || error
                 .message()
-                .contains("`assumption` requires the current goal as an available semantic fact"),
+                .contains("`known` requires the current goal as an available semantic fact"),
         "{}",
         error.message()
     );
@@ -571,9 +571,9 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
                     intro();
                     intro();
                     extract(k == k);
-                    assumption();
+                    known();
                 }
-                assumption();
+                known();
             }
         }
     "#;
@@ -1076,7 +1076,7 @@ fn heap_dependent_ensures_still_owes_its_loads() {
 
 /// A caller must establish the callee's heap-dependent precondition, including
 /// the loadability its evaluation needs. This is the obligation side of the
-/// definedness rule; if it ever starts passing, the assumption side has become
+/// definedness rule; if it ever starts passing, the `known` side has become
 /// a way to manufacture readability out of nothing.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_08")]
@@ -1463,10 +1463,10 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
             [
                 ProofTactic::LetSatisfy(_),
                 ProofTactic::Witness(_),
-                ProofTactic::Assumption
+                ProofTactic::Known
             ]
         ),
-        "the expansion should be the exact retained choose/witness/assumption path: {body:?}"
+        "the expansion should be the exact retained choose/witness/known path: {body:?}"
     );
 
     let have_offset = click_source
@@ -1585,7 +1585,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
         expanded_have.contains("witness { j: x }"),
         "{expanded_have}"
     );
-    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
+    assert!(expanded_have.contains("known();"), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("witness_pair.c", c_source)])
         .expect("the expanded witness and structural proof should verify independently");
@@ -1666,9 +1666,9 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
                 instantiate(forall (k: int32) {
                     0 <= k and k < 3 implies k <= value
                 }, 2) using {}
-                assumption();
+                known();
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -1699,9 +1699,9 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies k <= value
                 }, 2) using {}
-                assumption();
+                known();
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -1872,10 +1872,10 @@ fn pure_cases_certificate_uses_checked_proof_branches() {
             ensures x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        assumption();
+                        known();
                     }
                     x > 0 => {
-                        assumption();
+                        known();
                     }
                 }
             }
@@ -1893,9 +1893,9 @@ fn pure_if_certificate_uses_checked_proof_branches() {
         theorem equality_excluded_middle(x: int32) {
             ensures x == 0 or not (x == 0) by {
                 if x == 0 {
-                    assumption();
+                    known();
                 } else {
-                    assumption();
+                    known();
                 }
             }
         }
@@ -1914,9 +1914,9 @@ fn pure_have_certificate_uses_checked_proof_scope() {
 
             ensures x == 0 by {
                 have x == 0 by {
-                    assumption();
+                    known();
                 }
-                assumption();
+                known();
             }
         }
     "#;
@@ -1952,7 +1952,7 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
         theorem restate_zero(x: int32) {
             requires x == 0;
             ensures x == 0 by {
-                assumption();
+                known();
             }
         }
 
@@ -1964,7 +1964,7 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
                     apply(restate_zero(x));
                     solve();
                 }
-                assumption();
+                known();
             }
         }
     "#;
@@ -2010,7 +2010,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
         theorem restate_zero(x: int32) {
             requires x == 0;
             ensures x == 0 by {
-                assumption();
+                known();
             }
         }
 
@@ -2025,7 +2025,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
                     apply(restate_zero(x));
                     solve();
                 }
-                assumption();
+                known();
             }
             step_until(function.exit);
             solve();
@@ -2093,27 +2093,27 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
                 extract(y == 0);
             }
             have x == 0 and y == 0 by {
-                assumption();
+                known();
             }
             have x == 0 implies x == 0 by {
                 intro();
-                assumption();
+                known();
             }
             have x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        assumption();
+                        known();
                     }
                     x > 0 => {
-                        assumption();
+                        known();
                     }
                 }
             }
             have x == 0 or not (x == 0) by {
                 if x == 0 {
-                    assumption();
+                    known();
                 } else {
-                    assumption();
+                    known();
                 }
             }
             step_until(function.exit);
@@ -2131,7 +2131,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
         .expanded_proof_tactics()
         .expect("the checked logical scopes should expose retained provenance");
     let expanded_debug = format!("{expanded:#?}");
-    for operation in ["Extract", "Assumption", "Intro", "Cases", "If"] {
+    for operation in ["Extract", "Known", "Intro", "Cases", "If"] {
         assert!(
             expanded_debug.contains(operation),
             "the expansion should retain {operation}: {expanded_debug}"
@@ -2171,29 +2171,29 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
                 instantiate(forall (k: int32) {
                     0 <= k and k < 2 implies k <= x
                 }, 1) using {}
-                assumption();
+                known();
             }
             have forall (k: int32) {
                 0 <= k and k < 2 implies x <= 5
             } by {
                 have 0 <= 0 and 0 < 2 implies x <= 5 by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have 0 <= 1 and 1 < 2 implies x <= 5 by {
                     intro();
-                    assumption();
+                    known();
                 }
                 enumerate();
             }
             have (0..2).all(|k| { x <= 5 }) by {
                 have 0 <= 0 and 0 < 2 implies x <= 5 by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have 0 <= 1 and 1 < 2 implies x <= 5 by {
                     intro();
-                    assumption();
+                    known();
                 }
                 enumerate();
             }
@@ -2297,14 +2297,14 @@ fn smart_pure_if_retains_checked_arm_proofs_directly() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
@@ -2368,14 +2368,14 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
             have x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        assumption();
+                        known();
                     }
                     x > 0 => {
-                        assumption();
+                        known();
                     }
                 }
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -2395,14 +2395,14 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                assumption();
+                known();
             }
         }
 
@@ -2421,7 +2421,7 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
                     solve();
                 }
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -2497,11 +2497,11 @@ fn enumerate_closes_a_constant_bounded_universal_goal() {
         } by {
             step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies x <= 5 } by {
-                have 0 <= 0 and 0 < 2 implies x <= 5 by { intro(); assumption(); }
-                have 0 <= 1 and 1 < 2 implies x <= 5 by { intro(); assumption(); }
+                have 0 <= 0 and 0 < 2 implies x <= 5 by { intro(); known(); }
+                have 0 <= 1 and 1 < 2 implies x <= 5 by { intro(); known(); }
                 enumerate();
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -2529,10 +2529,10 @@ fn enumerate_requires_each_in_range_instance_as_an_available_fact() {
         } by {
             step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies k <= x } by {
-                have 0 <= 1 and 1 < 2 implies 1 <= x by { intro(); assumption(); }
+                have 0 <= 1 and 1 < 2 implies 1 <= x by { intro(); known(); }
                 enumerate();
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -2568,7 +2568,7 @@ fn enumerate_requires_a_constant_bounded_universal_goal() {
             have forall (k: int32) { 0 <= k and k < x implies x <= 5 } by {
                 enumerate();
             }
-            assumption();
+            known();
         }
     "#;
 
@@ -2613,13 +2613,13 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
                     step();
                     have selected == left or selected == right by {
                         have selected == left by { normalize(); }
-                        assumption();
+                        known();
                     }
                 } else {
                     step();
                     have selected == left or selected == right by {
                         have selected == right by { normalize(); }
-                        assumption();
+                        known();
                     }
                 }
                 step();
@@ -2699,7 +2699,7 @@ fn pure_rewrite_rejects_an_int32_equality_that_is_not_available() {
 
             ensures base + offset == target by {
                 rewrite(offset == 1);
-                assumption();
+                known();
             }
         }
     "#;
@@ -2737,16 +2737,16 @@ fn branching_pure_disjunction_lowers_to_left_right_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_18")]
-fn assumption_rejects_a_disjunction_neither_side_of_which_is_a_fact() {
+fn known_rejects_a_disjunction_neither_side_of_which_is_a_fact() {
     // The then-branch assumes `x <= 3`, which is neither `x <= 0` nor
-    // `x > 5`; `assumption` looks the two sides up and derives nothing.
+    // `x > 5`; `known` looks the two sides up and derives nothing.
     let click_source = r#"
         theorem neither_side_is_a_fact(x: int32) {
             ensures x <= 0 or x > 5 by {
                 if x <= 3 {
-                    assumption();
+                    known();
                 } else {
-                    assumption();
+                    known();
                 }
             }
         }
@@ -2801,7 +2801,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
                 apply(less_equal_less_than_transitive(0, x, y)) using {
                     x < y;
                 };
-                assumption();
+                known();
             }
         }
     "#;
@@ -2857,7 +2857,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
                 apply(less_than_less_equal_transitive(2, 2, bound)) using {
                     2 <= bound;
                 };
-                assumption();
+                known();
             }
         }
     "#;
@@ -2969,7 +2969,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
                 apply(nonnegative_predecessor_upper_bound(value, bound)) using {
                     value <= bound;
                 };
-                assumption();
+                known();
             }
         }
     "#;
@@ -3003,7 +3003,7 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
                 apply(nonnegative_predecessor_upper_bound(-1, bound)) using {
                     -1 <= bound;
                 };
-                assumption();
+                known();
             }
         }
     "#;
@@ -3460,7 +3460,7 @@ test_batches! {
     ],
     logical_tactics_batch_02: [
         failed_fixed_state_normalize_does_not_dump_internal_memory,
-        assumption_reuses_facts_but_does_not_normalize_or_extract_implications,
+        known_reuses_facts_but_does_not_normalize_or_extract_implications,
         parses_local_have_proof_tactic,
         contract_lets_do_not_capture_later_quantifier_binders,
     ],
@@ -3556,7 +3556,7 @@ test_batches! {
     ],
     logical_tactics_batch_18: [
         branching_pure_disjunction_lowers_to_left_right_certificate,
-        assumption_rejects_a_disjunction_neither_side_of_which_is_a_fact,
+        known_rejects_a_disjunction_neither_side_of_which_is_a_fact,
         smart_nonstrict_then_strict_transitivity_closes_a_pure_goal,
         apply_le_lt_transitive_requires_its_nonstrict_leg_listed,
     ],

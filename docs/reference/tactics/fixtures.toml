@@ -178,9 +178,9 @@ path = "mdtests/integer_exists_choose.md"
 needle = "obtain (candidate: Integer) { candidate == candidate }"
 
 [[form]]
-id = "assumption"
-path = "mdtests/assumption_uses_equality_congruence.md"
-needle = "assumption();"
+id = "known"
+path = "mdtests/known_uses_equality_congruence.md"
+needle = "known();"
 
 [[form]]
 id = "outcomes"

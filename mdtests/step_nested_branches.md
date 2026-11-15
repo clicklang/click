@@ -45,9 +45,9 @@ int32 nested_branch_steps(int32 x) {
         }
         step();
         have result >= 0 by {
-            assumption();
+            known();
         }
-        assumption();
+        known();
     }
 }
 ```
