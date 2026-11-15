@@ -24,6 +24,7 @@ int32 caller(int32* p) {
 } by {
     step();
     step();
+    step();
     have x == *p by { assumption(); }
     step();
 }

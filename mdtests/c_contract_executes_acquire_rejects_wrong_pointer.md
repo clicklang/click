@@ -21,7 +21,7 @@ int32* read_wrong(int32* (*acquire)(), int32* value, int32* other) {
     owns value[0..1];
     produces MaybeCell(result);
 } by {
-    step(); step(Boxed);
+    step(); step(Boxed); step();
     if c(cell) != 0 {
         unfold(MaybeCell(c(cell)));
         unfold(Cell(c(cell)));

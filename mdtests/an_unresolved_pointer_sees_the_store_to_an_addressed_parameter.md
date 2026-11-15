@@ -36,6 +36,7 @@ void v(int32 x) {
     step();
     step();
     step();
+    step();
     have q[0] == 5;
 }
 ```

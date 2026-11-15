@@ -4840,7 +4840,8 @@ int32 arena_pipeline(
     step();
     step();
     let { outcome: o0 } = step(arena_init, {});
-    if at(region(6).entry, initialized) == at(region(6).entry, 0) {
+    step();
+    if at(region(7).entry, initialized) == at(region(7).entry, 0) {
         step();
         have o0.model == ArenaInitOutcome::Failure() by {
             extract(o0.model == ArenaInitOutcome::Failure());
@@ -4887,13 +4888,14 @@ int32 arena_pipeline(
     }
     mark a1;
     let { outcome: o1 } = step(arena_alloc, { st: s0 });
+    step();
     have allocated == 1 implies first->arena == arena by {
         assumption();
     }
     have arena->capacity == at(a1, arena->capacity) by {
         assumption();
     }
-    if at(region(10).entry, allocated) == at(region(10).entry, 0) {
+    if at(region(12).entry, allocated) == at(region(12).entry, 0) {
         step();
         have o1.model == ArenaAllocOutcome::Failure() by {
             extract(o1.model == ArenaAllocOutcome::Failure());
@@ -5042,29 +5044,30 @@ int32 arena_pipeline(
     };
     mark a2;
     let { outcome: o2 } = step(arena_alloc, { st: s0 });
-    have contains(at(a2, s0) * memory(*second), statement(9).footprint) by { assumption(); }
+    have contains(at(a2, s0) * memory(*second), statement(9).call(0).footprint) by { assumption(); }
     have contains(memory(*first), memory(first->arena)) by { normalize(); }
-    have separate(statement(9).footprint, memory(first->arena)) by {
-        apply(separation::separate_restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).footprint, memory(first->arena))) using {
+    have separate(statement(9).call(0).footprint, memory(first->arena)) by {
+        apply(separation::separate_restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).call(0).footprint, memory(first->arena))) using {
             separate(at(a2, s0) * memory(*second), memory(*first));
-            contains(at(a2, s0) * memory(*second), statement(9).footprint);
+            contains(at(a2, s0) * memory(*second), statement(9).call(0).footprint);
             contains(memory(*first), memory(first->arena));
         };
     }
     have first->arena == at(a2, first->arena) by {
         transport_certificate {
-            premise 0: separate(statement(9).footprint, memory(first->arena)) => separate(statement(9).footprint, memory(first->arena));
+            premise 0: separate(statement(9).call(0).footprint, memory(first->arena)) => separate(statement(9).call(0).footprint, memory(first->arena));
             preserve 0 => first->arena == at(a2, first->arena);
             conclusion 1;
         }
     }
+    step();
     have allocated == 1 implies second->arena == arena by {
         assumption();
     }
     have arena->capacity == at(a2, arena->capacity) by {
         assumption();
     }
-    if at(region(15).entry, allocated) == at(region(15).entry, 0) {
+    if at(region(18).entry, allocated) == at(region(18).entry, 0) {
         step();
         have o2.model == ArenaAllocOutcome::Failure() by {
             extract(o2.model == ArenaAllocOutcome::Failure());
@@ -5111,11 +5114,11 @@ int32 arena_pipeline(
         }
         have 1 <= s0.live by {
             arithmetic_certificate signed_int32 {
-                premise 0: (at(region(16).entry, s0.live) as int32) == (at(region(16).entry, 1) as
-                    int32) => (at(region(16).entry, s0.live) as int32) == (at(region(16).entry, 1)
+                premise 0: (at(region(19).entry, s0.live) as int32) == (at(region(19).entry, 1) as
+                    int32) => (at(region(19).entry, s0.live) as int32) == (at(region(19).entry, 1)
                     as int32);
-                less_equal_from_equal 0 reverse => to_integer((at(region(16).entry, 1) as int32)) <=
-                    to_integer((at(region(16).entry, s0.live) as int32));
+                less_equal_from_equal 0 reverse => to_integer((at(region(19).entry, 1) as int32)) <=
+                    to_integer((at(region(19).entry, s0.live) as int32));
                 conclusion 1;
             }
         }
@@ -5793,22 +5796,22 @@ int32 arena_pipeline(
         };
     }
     let { live: framed_live, capacity: framed_capacity } = unfold(s0);
-    have at(region(22).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
+    have at(region(25).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
-        have arena->occupied == at(region(22).entry, arena->occupied) by assumption();
-        have arena->data == at(region(22).entry, arena->data) by assumption();
-        rewrite(arena->occupied == at(region(22).entry, arena->occupied));
-        rewrite(arena->data == at(region(22).entry, arena->data));
+        have arena->occupied == at(region(25).entry, arena->occupied) by assumption();
+        have arena->data == at(region(25).entry, arena->data) by assumption();
+        rewrite(arena->occupied == at(region(25).entry, arena->occupied));
+        rewrite(arena->data == at(region(25).entry, arena->data));
         assumption();
     }
     have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by {
-        have arena->data == at(region(22).entry, arena->data) by assumption();
-        rewrite(arena->data == at(region(22).entry, arena->data));
+        have arena->data == at(region(25).entry, arena->data) by assumption();
+        rewrite(arena->data == at(region(25).entry, arena->data));
         assumption();
     }
     have separate(memory(*arena), memory(arena->occupied[0..arena->capacity])) by {
-        have arena->occupied == at(region(22).entry, arena->occupied) by assumption();
-        rewrite(arena->occupied == at(region(22).entry, arena->occupied));
+        have arena->occupied == at(region(25).entry, arena->occupied) by assumption();
+        rewrite(arena->occupied == at(region(25).entry, arena->occupied));
         assumption();
     }
     let { start: framed_start, end: framed_end } = unfold(r1);
@@ -5871,23 +5874,24 @@ int32 arena_pipeline(
     let kept = fold(preserved_cell((second->arena->data + kept_start)), { value: 22 });
     let s0 = fold(arena_state(arena), { live: kept_live, capacity: kept_capacity });
     step(arena_read, { r: r1, st: s0 });
+    step();
     let { live: returned_live, capacity: returned_capacity } = unfold(s0);
-    have at(region(23).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
+    have at(region(27).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
-        have arena->occupied == at(region(23).entry, arena->occupied) by assumption();
-        have arena->data == at(region(23).entry, arena->data) by assumption();
-        rewrite(arena->occupied == at(region(23).entry, arena->occupied));
-        rewrite(arena->data == at(region(23).entry, arena->data));
+        have arena->occupied == at(region(27).entry, arena->occupied) by assumption();
+        have arena->data == at(region(27).entry, arena->data) by assumption();
+        rewrite(arena->occupied == at(region(27).entry, arena->occupied));
+        rewrite(arena->data == at(region(27).entry, arena->data));
         assumption();
     }
     have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by {
-        have arena->data == at(region(23).entry, arena->data) by assumption();
-        rewrite(arena->data == at(region(23).entry, arena->data));
+        have arena->data == at(region(27).entry, arena->data) by assumption();
+        rewrite(arena->data == at(region(27).entry, arena->data));
         assumption();
     }
     have separate(memory(*arena), memory(arena->occupied[0..arena->capacity])) by {
-        have arena->occupied == at(region(23).entry, arena->occupied) by assumption();
-        rewrite(arena->occupied == at(region(23).entry, arena->occupied));
+        have arena->occupied == at(region(27).entry, arena->occupied) by assumption();
+        rewrite(arena->occupied == at(region(27).entry, arena->occupied));
         assumption();
     }
     let {  } = unfold(kept);
@@ -6084,22 +6088,23 @@ int32 arena_pipeline(
     let r1 = fold(arena_region(first), { start: m4_start, end: m4_end });
     mark m4;
     step(arena_read, { r: r2, st: s0 });
-    have contains(at(m4, r2) * at(m4, s0), statement(14).footprint) by { assumption(); }
+    have contains(at(m4, r2) * at(m4, s0), statement(14).call(0).footprint) by { assumption(); }
     have contains(memory(*first), memory(first->arena)) by { normalize(); }
-    have separate(statement(14).footprint, memory(first->arena)) by {
-        apply(separation::separate_restrict(at(m4, r2) * at(m4, s0), memory(*first), statement(14).footprint, memory(first->arena))) using {
+    have separate(statement(14).call(0).footprint, memory(first->arena)) by {
+        apply(separation::separate_restrict(at(m4, r2) * at(m4, s0), memory(*first), statement(14).call(0).footprint, memory(first->arena))) using {
             separate(at(m4, r2) * at(m4, s0), memory(*first));
-            contains(at(m4, r2) * at(m4, s0), statement(14).footprint);
+            contains(at(m4, r2) * at(m4, s0), statement(14).call(0).footprint);
             contains(memory(*first), memory(first->arena));
         };
     }
     have first->arena == at(m4, first->arena) by {
         transport_certificate {
-            premise 0: separate(statement(14).footprint, memory(first->arena)) => separate(statement(14).footprint, memory(first->arena));
+            premise 0: separate(statement(14).call(0).footprint, memory(first->arena)) => separate(statement(14).call(0).footprint, memory(first->arena));
             preserve 0 => first->arena == at(m4, first->arena);
             conclusion 1;
         }
     }
+    step();
     have r1.start == at(m4, r1.start) by {
         normalize();
     }
@@ -6247,14 +6252,14 @@ int32 arena_pipeline(
     }
     have 1 <= s0.live by {
         arithmetic_certificate signed_int32 {
-            premise 0: (at(region(25).entry, s0.live) as int32) == (at(region(25).entry, 2) as
-                int32) => (at(region(25).entry, s0.live) as int32) == (at(region(25).entry, 2) as
+            premise 0: (at(region(30).entry, s0.live) as int32) == (at(region(30).entry, 2) as
+                int32) => (at(region(30).entry, s0.live) as int32) == (at(region(30).entry, 2) as
                 int32);
-            less_equal_from_equal 0 reverse => to_integer((at(region(25).entry, 2) as int32)) <=
-                to_integer((at(region(25).entry, s0.live) as int32));
+            less_equal_from_equal 0 reverse => to_integer((at(region(30).entry, 2) as int32)) <=
+                to_integer((at(region(30).entry, s0.live) as int32));
             trivial => -1 <= 0;
-            add 1, 2 => (to_integer((at(region(25).entry, 2) as int32)) + -1) <=
-                (to_integer((at(region(25).entry, s0.live) as int32)) + 0);
+            add 1, 2 => (to_integer((at(region(30).entry, 2) as int32)) + -1) <=
+                (to_integer((at(region(30).entry, s0.live) as int32)) + 0);
             conclusion 3;
         }
     }
@@ -6514,11 +6519,11 @@ int32 arena_pipeline(
     }
     have 1 <= g2.live by {
         arithmetic_certificate signed_int32 {
-            premise 0: (at(region(26).entry, g2.live) as int32) == (at(region(26).entry, 1) as
-                int32) => (at(region(26).entry, g2.live) as int32) == (at(region(26).entry, 1) as
+            premise 0: (at(region(31).entry, g2.live) as int32) == (at(region(31).entry, 1) as
+                int32) => (at(region(31).entry, g2.live) as int32) == (at(region(31).entry, 1) as
                 int32);
-            less_equal_from_equal 0 reverse => to_integer((at(region(26).entry, 1) as int32)) <=
-                to_integer((at(region(26).entry, g2.live) as int32));
+            less_equal_from_equal 0 reverse => to_integer((at(region(31).entry, 1) as int32)) <=
+                to_integer((at(region(31).entry, g2.live) as int32));
             conclusion 1;
         }
     }
@@ -6719,13 +6724,14 @@ int32 arena_pipeline(
     }
     mark a3;
     let { outcome: o3 } = step(arena_alloc, { st: g3 });
+    step();
     have allocated == 1 implies combined->arena == arena by {
         assumption();
     }
     have arena->capacity == at(a3, arena->capacity) by {
         assumption();
     }
-    if at(region(28).entry, allocated) == at(region(28).entry, 0) {
+    if at(region(34).entry, allocated) == at(region(34).entry, 0) {
         step();
         have o3.model == ArenaAllocOutcome::Failure() by {
             extract(o3.model == ArenaAllocOutcome::Failure());
@@ -6797,23 +6803,23 @@ int32 arena_pipeline(
         }
         have combined->start < 536870911 by {
             arithmetic_certificate {
-                premise 0: at(region(32).entry, combined->end) <= at(region(32).entry,
-                    arena->capacity) => at(region(32).entry, combined->end) <= at(region(32).entry,
+                premise 0: at(region(38).entry, combined->end) <= at(region(38).entry,
+                    arena->capacity) => at(region(38).entry, combined->end) <= at(region(38).entry,
                     arena->capacity);
-                premise 1: at(region(32).entry, arena->capacity) <= at(region(32).entry, 536870911)
-                    => at(region(32).entry, arena->capacity) <= at(region(32).entry, 536870911);
-                add 0, 1 => (at(region(32).entry, to_integer((combined->end as int32))) +
-                    at(region(32).entry, to_integer((arena->capacity as int32)))) <=
-                    (at(region(32).entry, to_integer((arena->capacity as int32))) +
-                    at(region(32).entry, to_integer((536870911 as int32))));
-                premise 2: at(region(32).entry, combined->start) < at(region(32).entry,
-                    combined->end) => at(region(32).entry, combined->start) < at(region(32).entry,
+                premise 1: at(region(38).entry, arena->capacity) <= at(region(38).entry, 536870911)
+                    => at(region(38).entry, arena->capacity) <= at(region(38).entry, 536870911);
+                add 0, 1 => (at(region(38).entry, to_integer((combined->end as int32))) +
+                    at(region(38).entry, to_integer((arena->capacity as int32)))) <=
+                    (at(region(38).entry, to_integer((arena->capacity as int32))) +
+                    at(region(38).entry, to_integer((536870911 as int32))));
+                premise 2: at(region(38).entry, combined->start) < at(region(38).entry,
+                    combined->end) => at(region(38).entry, combined->start) < at(region(38).entry,
                     combined->end);
-                add 2, 3 => (at(region(32).entry, to_integer((combined->end as int32))) +
-                    at(region(32).entry, to_integer((arena->capacity as int32))) +
-                    at(region(32).entry, to_integer((combined->start as int32)))) <
-                    (at(region(32).entry, to_integer((arena->capacity as int32))) +
-                    at(region(32).entry, to_integer((536870911 as int32))) + at(region(32).entry,
+                add 2, 3 => (at(region(38).entry, to_integer((combined->end as int32))) +
+                    at(region(38).entry, to_integer((arena->capacity as int32))) +
+                    at(region(38).entry, to_integer((combined->start as int32)))) <
+                    (at(region(38).entry, to_integer((arena->capacity as int32))) +
+                    at(region(38).entry, to_integer((536870911 as int32))) + at(region(38).entry,
                     to_integer((combined->end as int32))));
                 conclusion 4;
             }
@@ -6892,22 +6898,22 @@ int32 arena_pipeline(
         }
         have r3.start < 2147483643 by {
             arithmetic_certificate {
-                premise 0: at(region(32).entry, combined->start) < at(region(32).entry, 536870911)
-                    => at(region(32).entry, combined->start) < at(region(32).entry, 536870911);
+                premise 0: at(region(38).entry, combined->start) < at(region(38).entry, 536870911)
+                    => at(region(38).entry, combined->start) < at(region(38).entry, 536870911);
                 trivial => -1610612732 <= 0;
-                add 0, 1 => (at(region(32).entry, to_integer((combined->start as int32))) +
-                    -1610612732) < (at(region(32).entry, 536870911) + 0);
+                add 0, 1 => (at(region(38).entry, to_integer((combined->start as int32))) +
+                    -1610612732) < (at(region(38).entry, 536870911) + 0);
                 conclusion 2;
             }
         }
         have r3.start <= 2147483643 by {
             arithmetic_certificate signed_int32 {
-                premise 0: (at(region(32).entry, combined->start) as int32) < (at(region(32).entry,
-                    536870911) as int32) => (at(region(32).entry, combined->start) as int32) <
-                    (at(region(32).entry, 536870911) as int32);
+                premise 0: (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
+                    536870911) as int32) => (at(region(38).entry, combined->start) as int32) <
+                    (at(region(38).entry, 536870911) as int32);
                 trivial => -1610612733 <= 0;
-                add 0, 1 => (to_integer((at(region(32).entry, combined->start) as int32)) +
-                    -1610612733) < (to_integer((at(region(32).entry, 536870911) as int32)) + 0);
+                add 0, 1 => (to_integer((at(region(38).entry, combined->start) as int32)) +
+                    -1610612733) < (to_integer((at(region(38).entry, 536870911) as int32)) + 0);
                 conclusion 2;
             }
         }
@@ -6980,12 +6986,12 @@ int32 arena_pipeline(
         }
         have r3.start <= 2147483644 by {
             arithmetic_certificate signed_int32 {
-                premise 0: (at(region(32).entry, combined->start) as int32) < (at(region(32).entry,
-                    536870911) as int32) => (at(region(32).entry, combined->start) as int32) <
-                    (at(region(32).entry, 536870911) as int32);
+                premise 0: (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
+                    536870911) as int32) => (at(region(38).entry, combined->start) as int32) <
+                    (at(region(38).entry, 536870911) as int32);
                 trivial => -1610612734 <= 0;
-                add 0, 1 => (to_integer((at(region(32).entry, combined->start) as int32)) +
-                    -1610612734) < (to_integer((at(region(32).entry, 536870911) as int32)) + 0);
+                add 0, 1 => (to_integer((at(region(38).entry, combined->start) as int32)) +
+                    -1610612734) < (to_integer((at(region(38).entry, 536870911) as int32)) + 0);
                 conclusion 2;
             }
         }
@@ -7125,6 +7131,7 @@ int32 arena_pipeline(
         }
         mark m5;
         step(arena_read, { r: r3, st: g3 });
+        step();
         have value == at(m5, combined->arena->data[(r3.start + 3)]) by {
             assumption();
         }
@@ -7464,6 +7471,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
     }
     mark allocating;
     let { outcome: outcome } = step(arena_alloc, { st: after });
+    step();
     have middle->arena->capacity == at(allocating, middle->arena->capacity);
     have forall (k: int32) {
         allocated == 1 and reused->start <= k and k < reused->end implies 2 <= k and k < 4

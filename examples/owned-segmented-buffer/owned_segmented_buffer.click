@@ -334,14 +334,17 @@ int32 owned_segmented_buffer_pipeline(
     step();
     step();
     step();
+    step();
     unfold(owned_segmented_buffer(owner));
     step();
-    have at(region(4).entry, first_data[0]) == at(region(4).entry, first_value) by {
-        rewrite(at(region(4).entry, first_value) == at(region(4).entry, owner->first_data[0]));
-        rewrite(at(region(4).entry, owner->first_data) == at(region(4).entry, first_data));
+    step();
+    have at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value) by {
+        rewrite(at(statement(4).entry, first_value) == at(statement(4).entry, owner->first_data[0]));
+        rewrite(at(statement(4).entry, owner->first_data) == at(statement(4).entry, first_data));
         normalize();
     }
     have first_data[0] == first_value by { assumption(); }
+    step();
     step();
     have owner->first_len == first_len by { assumption(); }
     have owner->second_len == second_len by { assumption(); }
@@ -350,13 +353,14 @@ int32 owned_segmented_buffer_pipeline(
     have first_data[0] == first_value by { assumption(); }
     have owner->first_data == first_data by { assumption(); }
     have owner->second_data == second_data by { assumption(); }
-    have at(region(5).entry, second_data[0]) == at(region(5).entry, second_value) by {
-        rewrite(at(region(5).entry, second_value) == at(region(5).entry, owner->second_data[0]));
-        rewrite(at(region(5).entry, owner->second_data) == at(region(5).entry, second_data));
+    have at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value) by {
+        rewrite(at(statement(5).entry, second_value) == at(statement(5).entry, owner->second_data[0]));
+        rewrite(at(statement(5).entry, owner->second_data) == at(statement(5).entry, second_data));
         normalize();
     }
     have second_data[0] == second_value by { assumption(); }
     fold(owned_segmented_buffer(owner));
+    step();
     step();
     have first_data[0] == first_value by { assumption(); }
     apply(int32_equality_transitive(c(result), first_data[0], first_value)) using {

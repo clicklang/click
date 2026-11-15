@@ -32,6 +32,7 @@ uint64 label_copy(char* dst, const char* src) {
     step();
     step();
     step();
+    step();
     have 0u64 <= n by { normalize(); }
     have n < 32u64 by { solve(); }
     have contains(memory(dst[0u64..32u64]), memory(dst[n])) by {

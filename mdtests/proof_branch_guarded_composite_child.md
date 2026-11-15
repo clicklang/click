@@ -70,8 +70,10 @@ int32 select_guarded(int32 key, int32 choose_left) {
             views ready_permit(key);
         } then {
             step();
+            step();
             fold(ready_bundle(key));
         } else {
+            step();
             step();
             fold(ready_bundle(key));
         }

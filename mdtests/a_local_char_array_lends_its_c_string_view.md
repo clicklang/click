@@ -58,6 +58,7 @@ uint64 f() {
     let { result: first } = step(measure, { n: 0u64 });
     step();
     step();
+    step();
     let { result: second } = step(two, { na: 1u64, nb: 1u64 });
 }
 ```

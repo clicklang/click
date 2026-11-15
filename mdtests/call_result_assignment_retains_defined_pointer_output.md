@@ -28,7 +28,15 @@ int32 caller(int32 **slot) {
 } by {
     step();
     step();
-    have defined(*slot) by { solve(); }
+    have at(statement(1).call(0).exit, defined(*slot)) by { assumption(); }
+    have separate(memory(ignored), memory(*slot)) by { assumption(); }
+    step();
+    have separate(statement(1).assignment(ignored, 0).footprint, memory(*slot)) by {
+        normalize() using { separate(memory(ignored), memory(*slot)); };
+    }
+    have defined(*slot) by {
+        preserve(separate(statement(1).assignment(ignored, 0).footprint, memory(*slot)));
+    }
 }
 ```
 

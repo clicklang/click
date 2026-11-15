@@ -190,3 +190,43 @@ fn c0_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_t
          {samples:?}"
     );
 }
+
+#[test]
+fn scalar_call_assignments_lower_to_linear_explicit_operations() {
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let source = format!(
+            "int32 caller() {{ int32 x; {} return x; }}",
+            "x = other();".repeat(count),
+        );
+        let (function, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let function = syntax::parse_function(&source).expect("scalar calls parse");
+            let _kernel = function.to_kernel_function();
+            function
+        });
+        let mut pending = vec![function.body()];
+        let mut calls = 0;
+        let mut assignments = 0;
+        while let Some(statement) = pending.pop() {
+            match statement {
+                syntax::C0Statement::Seq(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                syntax::C0Statement::CallResult { .. } => calls += 1,
+                syntax::C0Statement::Assign { .. } => assignments += 1,
+                syntax::C0Statement::CallAssign { .. } => panic!("combined scalar call"),
+                _ => {}
+            }
+        }
+        assert_eq!((calls, assignments), (count, count));
+        assert!(work > 0);
+        samples.push(work);
+    }
+    // Each size quadruples its explicit calls and assignments. Leave room
+    // for indexing, but reject quadratic growth in retained results/history.
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+        "{samples:?}"
+    );
+}

@@ -1313,6 +1313,7 @@ int32 caller(int32 x) {
     step();
     step();
     step();
+    step();
     solve();
 }
 "#;
@@ -1366,6 +1367,7 @@ int32 wait_for_zero(int32 x) diverges {
 int32 caller(int32 x) {
     ensures result == 1;
 } by {
+    step();
     step();
     step();
     step();
@@ -1458,6 +1460,7 @@ int32 drain(int32 n) {
             have 0 <= to_integer(n - 1) by {
                 solve() using { n > 0; }
             }
+            step();
             step();
             step();
         }

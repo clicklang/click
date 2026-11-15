@@ -44,6 +44,7 @@ void f() {
     step();
     step();
     step();
+    step();
     have a == &g[0];
     have a[0] == 1;
 }

@@ -13280,6 +13280,25 @@ impl Parser {
                     });
                 }
             }
+            if !self.variable_struct_values.contains_key(&target)
+                && !self
+                    .function_declaration_for_call(&function_name)
+                    .is_some_and(|function| function.return_struct_name.is_some())
+            {
+                // Use the ordinary expression-call lowering: the call
+                // retains its value, then the assignment writes it. Both
+                // effects receive source points, without a temporary local.
+                return Ok(C0Statement::Assign {
+                    name: target,
+                    expression: C0Expression::Call {
+                        function_name,
+                        arguments,
+                        position: None,
+                    },
+                    prior_result: None,
+                    site: C0Site::NONE,
+                });
+            }
             return Ok(C0Statement::CallAssign {
                 target,
                 function_name,

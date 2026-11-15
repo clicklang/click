@@ -43,6 +43,7 @@ int use_pick(int x) {
 } by {
     step();
     step();
+    step();
     branch {
         step_until(function.exit);
     } else {

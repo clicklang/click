@@ -90,21 +90,28 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     ensures node->left == 0;
     ensures node->right == 0;
 } by {
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
+    step_until(statement(8));
     unfold(tree(node));
     step();
-    have defined(node->left);
-    have defined(node->right);
+    have at(statement(8).call(0).exit, defined(node->left)) by { assumption(); }
+    have at(statement(8).call(0).exit, defined(node->right)) by { assumption(); }
+    have separate(memory(swapped), memory(node->left)) by { assumption(); }
+    have separate(memory(swapped), memory(node->right)) by { assumption(); }
+    step();
+    have separate(statement(8).assignment(swapped, 0).footprint, memory(node->left)) by {
+        normalize() using { separate(memory(swapped), memory(node->left)); };
+    }
+    have separate(statement(8).assignment(swapped, 0).footprint, memory(node->right)) by {
+        normalize() using { separate(memory(swapped), memory(node->right)); };
+    }
+    have defined(node->left) by {
+        preserve(separate(statement(8).assignment(swapped, 0).footprint, memory(node->left)));
+    }
+    have defined(node->right) by {
+        preserve(separate(statement(8).assignment(swapped, 0).footprint, memory(node->right)));
+    }
     fold(tree(node));
-    step();
-    step();
+    step_until(function.exit);
     assumption();
     assumption();
     assumption();
@@ -268,6 +275,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
+            step();
             assumption();
         }
     } else {
@@ -284,8 +292,11 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
+            step();
             assumption();
         } else {
+            step();
+            step();
             step();
             step();
             step();

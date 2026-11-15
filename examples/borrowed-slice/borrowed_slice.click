@@ -170,10 +170,15 @@ int32 borrowed_slice_buffer_pipeline(
     step();
     step();
     step();
+    step();
+    step();
+    step();
     unfold(buffer_without_slice(owner, data, length, start, end));
     unfold(owned_slice(data, start, end));
     step();
+    step();
     fold(owned_borrowable_buffer(owner, data, length));
+    step();
     step();
     step();
     solve();

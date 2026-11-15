@@ -221,7 +221,7 @@ int32 input_cursor_shared_pipeline(
     ensures right->pos == 0;
     ensures result == data[0];
 } by {
-    step_until(region(4));
+    step_until(statement(4));
     have separate(memory(*right), memory(left->data[0..left->len])) by {
         solve() using {
             left->len == length;
@@ -239,6 +239,7 @@ int32 input_cursor_shared_pipeline(
     }
     have left->data == data;
     step();
+    step();
     have left->pos < left->len by { assumption(); }
     have right->pos < right->len by {
         solve() using {
@@ -255,6 +256,7 @@ int32 input_cursor_shared_pipeline(
     }
     have left->len == length by { assumption(); }
     step();
+    step();
     have right->len == length by { assumption(); }
     have left->len == length by { assumption(); }
     have right->pos == 0 by {
@@ -268,9 +270,10 @@ int32 input_cursor_shared_pipeline(
         };
     }
     apply(incremented_zero_is_one(
-        at(region(5).entry, left->pos),
+        at(statement(5).entry, left->pos),
         left->pos
     ));
+    step();
     step();
     have right_value == right->data[right->pos] by {
         assumption();

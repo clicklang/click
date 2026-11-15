@@ -51,6 +51,7 @@ void f() {
     step();
     step();
     step();
+    step();
     have a[0] == 5;
 }
 ```

@@ -52,6 +52,7 @@ int32 drain(int32 n) {
         }
         step();
         step();
+        step();
         solve();
     } else {}
     step();

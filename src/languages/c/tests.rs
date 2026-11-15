@@ -11251,7 +11251,7 @@ fn c0_syntax_lowers_aggregate_conditional_call_argument() {
     let debug = format!("{:?}", caller.body());
     assert!(debug.contains("DeclareStructValue"));
     assert!(debug.contains("If {"));
-    assert!(debug.contains("CallAssign"));
+    assert!(debug.contains("CallResult"));
     assert!(!debug.contains("Ternary {"));
 }
 
@@ -11904,7 +11904,7 @@ fn c0_function_pointer_signatures_preserve_struct_pointer_tags() {
         signature.parameters()[0].interface_type(),
         crate::languages::interface::InterfaceType::Int32Pointer
     );
-    assert!(format!("{:?}", apply.body()).contains("CallAssign"));
+    assert!(format!("{:?}", apply.body()).contains("CallResult"));
 }
 
 #[test]
@@ -14950,4 +14950,15 @@ fn library_function_declarations_must_match_the_library_prototype() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/languages/c/tests.rs");
+}
+
+#[test]
+fn scalar_call_assignment_retains_a_result_between_two_operations() {
+    let function = syntax::parse_function("int32 caller() { int32 x; x = other(); return x; }")
+        .expect("scalar call assignment parses");
+    let body = format!("{:?}", function.body());
+    assert!(body.contains("CallResult {"), "{body}");
+    assert!(body.contains("StepResult {"), "{body}");
+    assert!(body.contains("Assign {"), "{body}");
+    assert!(!body.contains("CallAssign"), "{body}");
 }

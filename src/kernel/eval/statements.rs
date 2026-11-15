@@ -3761,7 +3761,9 @@ fn execute_execution_statement_leaf_paths(
                 name, expression, ..
             } if matches!(
                 expression,
-                ProgramExpression::Value(_) | ProgramExpression::Variable(_)
+                ProgramExpression::Value(_)
+                    | ProgramExpression::Variable(_)
+                    | ProgramExpression::StepResult { .. }
             ) && state.locals.slot(name).is_some()
                 && !pending.protects_local(state, name) =>
             {

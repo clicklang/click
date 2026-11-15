@@ -202,18 +202,19 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- Call outputs can name an intermediate snapshot that has no Surface selector.
-  The red fixture `call_result_assignment_retains_defined_pointer_output.md`
-  reduces the binary-tree failure to `ignored = reset(slot)`, where `reset`
-  explicitly ensures `defined(*slot)`. The call publishes that fact before
-  storing its scalar result in `ignored`; the subsequent goal is at the
-  statement exit. Discarding the call result instead is a passing control.
-  `solve` reports the useful premise as `defined(at(<state A>, slot[0]))`,
-  with `<state A>` described as memory after a call, and omits it because it
-  cannot spell it. Resolve this publication/spellability boundary without a
-  history fallback; do not rewrite the C or infer initialization from a value
-  equality or a pure viewability fact. The initialization-repair branch is
-  not ready to publish while this positive regression and binary-tree fail.
+- Finish retiring combined call/assignment operations. Ordinary scalar and
+  pointer C calls now lower to `CallResult` followed by `Assign`. Their call
+  exit and assignment entry/exit are separately nameable. The reduced
+  `call_result_assignment_retains_defined_pointer_output.md` and binary-tree
+  proofs use the call's explicit `defined` postcondition, assignment footprint
+  separation, and `preserve`; neither needs a history fallback or automatic
+  restatement. The overwrite regression
+  `call_result_and_destination_write_have_separate_points.md` distinguishes
+  the two snapshots. Remaining producers include aggregate value returns,
+  destination-directed C++ construction, `realloc`, Rust/C++ scalar lowering,
+  and generated one-call theorem adapters. Construction must remain a call
+  into its supplied destination, not acquire an invented aggregate copy.
+  Retire those producers before deleting the kernel variant/dispatcher.
 - Migrate the negative `transport_wide_viewable_range_to_element_definedness.md`
   fixture without inferring initialized contents from its pure `viewable`
   premise. Its legacy rule must remain refused; initializedness needs an

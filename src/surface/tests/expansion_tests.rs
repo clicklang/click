@@ -1705,7 +1705,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
         .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
-        expanded.contains(" if at(region(2).entry, copied)"),
+        expanded.contains(" if at(region(3).entry, copied)"),
         "{expanded}"
     );
     assert!(
@@ -5812,7 +5812,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                step_until(region(2));
+                step_until(statement(2));
                 apply(int32_equality_transitive(observed, data[0], expected));
                 step_until(function.exit);
                 solve();
@@ -12229,7 +12229,7 @@ fn transformed_resource_branch_interface_retains_its_common_descendant() {
         .expect("select_ready should be the final verified function")
         .expanded_proof_tactics()
         .expect("the transformed interface should retain an expansion");
-    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
+    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
     assert!(
         matches!(
             tactics.as_slice(),
