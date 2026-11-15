@@ -425,9 +425,10 @@ not scan siblings to locate a case. Registration selects the retained entry
 of a coherent proof, including frontier-loop proofs, and consumes its prepared
 case contexts. `WholeContractProof` opens a boundary obligation and each
 declared clause for every entry case before body tactics run. Clause-specific
-proofs can finish while this owner still has open obligations. Admission and
-consumption of their checked receipts update the owner; a finished clause or
-case cannot stand in for another. Different cases may use different complete
+proofs can finish while this owner still has open obligations. Ordinary
+outcome completion directly retires this strategy's whole-contract obligations;
+admission transfers those explicit closed cells to the shared owner. A
+finished clause or case cannot stand in for another. Different cases may use different complete
 execution strategies. Persistent candidate owners retain independent progress.
 `complete()` returns `CompletedContract` only when the indexed open-goal set is
 empty. Registration consumes its already constructed rule and performs no
@@ -460,10 +461,21 @@ the immutable entry input. Conditional resource exits remain work of the open
 returned-resource goal; conditional effect cases consume their prepared entry
 views and projections without sharing case-local facts with siblings.
 
-Batch receipt association, including the legacy per-path specification
-wrappers, remains migration work for direct updates to the whole-contract
-owner. Independent conditional execution artifacts have no opened-entry
-authority and retain their separate entry preparation and rule-packaging APIs.
+Ordinary outcome completion updates `ContractProofProgress` for the retained
+whole-contract owner. Each execution strategy binds its exact generative
+outcomes once and keeps persistent counters for the declared obligations.
+Completing an outcome credits its closed proposition goals and its completed
+resource/effect boundary; a checked refutation discharges that outcome's
+obligations vacuously. An obligation retires only when every path of one
+strategy completes it. Partial strategies cannot combine their path coverage,
+and proof forks retain independent progress. Completed obligations transfer
+directly to the whole-contract owner during admission; registration does not
+scan proposition or exit receipts to infer coverage.
+
+Legacy per-path specification wrappers still package the source theorems;
+they do not supply whole-contract completion authority. Independent conditional
+execution artifacts have no opened-entry authority and retain their separate
+entry preparation and rule-packaging APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using

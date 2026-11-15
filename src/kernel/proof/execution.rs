@@ -317,6 +317,16 @@ impl CheckedReturnPath {
 }
 
 impl crate::kernel::CheckedFunctionExecution {
+    pub(crate) fn with_contract_completion(
+        mut self,
+        progress: Option<crate::kernel::ContractProofProgress>,
+    ) -> Self {
+        self.contract_completion = progress
+            .filter(|progress| progress.belongs_to(&self))
+            .map(Arc::new);
+        self
+    }
+
     pub(crate) fn with_closed_exit_obligations(
         mut self,
         completions: Vec<crate::kernel::ClosedContractExit>,
@@ -11466,6 +11476,7 @@ impl ExecutionProofCore {
             )?;
         let path_count = paths.len();
         Ok(crate::kernel::CheckedFunctionExecution {
+            contract_completion: None,
             entry_authority: has_checked_entry
                 .then_some(contract_entry)
                 .flatten()

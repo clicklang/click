@@ -519,6 +519,22 @@ enum ClaimGoalState {
 }
 
 impl OutcomeClaimGoals {
+    pub(in crate::kernel) fn completed_proposition_keys(
+        &self,
+    ) -> impl Iterator<Item = &FunctionContractClaimKey> {
+        self.claims.iter().filter_map(|(key, goal)| {
+            crate::instrumentation::record_deterministic_work(1);
+            matches!(
+                goal.target,
+                Some(
+                    FunctionContractClaimTarget::EnsureProposition(_)
+                        | FunctionContractClaimTarget::ExceptionalEnsureProposition(_)
+                )
+            )
+            .then_some(key)
+        })
+    }
+
     pub(crate) fn open(
         claims: impl IntoIterator<
             Item = (

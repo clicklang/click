@@ -532,13 +532,24 @@ impl<'a> Proof<'a> {
             .map_err(|reason| self.step_error(reason))
     }
 
+    pub(in crate::surface::proof) fn start_contract_completion(
+        &self,
+        owner: &crate::kernel::WholeContractProof,
+        execution: &CheckedFunctionExecution,
+        branches: impl Iterator<Item = BranchId>,
+    ) -> Option<crate::kernel::ContractProofProgress> {
+        self.state
+            .start_contract_completion(owner, execution, branches)
+    }
+
     pub(in crate::surface::proof) fn complete_outcome_in(
         &self,
         owner: &Self,
+        progress: Option<&mut crate::kernel::ContractProofProgress>,
     ) -> Result<Self, ClickError> {
         let state = self
             .state
-            .complete_function_outcome_in(&owner.state)
+            .complete_function_outcome_with_contract_in(&owner.state, progress)
             .map_err(|reason| self.step_error(reason))?;
         Ok(owner.with_kernel_state(state))
     }
@@ -641,6 +652,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn prepare_outcome_cases(
         &self,
         owner: &mut Self,
+        progress: Option<&mut crate::kernel::ContractProofProgress>,
     ) -> Result<Option<Self>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome routing requires an execution proof"));
@@ -693,7 +705,7 @@ impl<'a> Proof<'a> {
                         )
                         .map_err(|_| self.step_error("outcome goal is no longer open"))?;
                     let state = state
-                        .refute_function_outcome_in(&owner.state, &fact)
+                        .refute_function_outcome_with_contract_in(&owner.state, &fact, progress)
                         .map_err(|reason| self.step_error(reason))?;
                     *owner = owner.with_kernel_state(state);
                     return Ok(None);

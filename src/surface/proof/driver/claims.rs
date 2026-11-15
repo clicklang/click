@@ -3417,6 +3417,18 @@ pub(super) fn finish_ordered_proof<'a>(
             &completed_execution,
             resource_prefix,
         );
+        let mut contract_progress = proof_context
+            .constants
+            .entry_context
+            .as_ref()
+            .and_then(|entry| entry.completion.as_ref())
+            .and_then(|owner| {
+                outcome_substrate.start_contract_completion(
+                    owner,
+                    &completed_execution,
+                    outcome_branches.values().copied(),
+                )
+            });
         let mut closed_exit_obligations = Vec::new();
         let mut verified = Vec::new();
         let mut checked_resource_claims_by_path =
@@ -3686,7 +3698,10 @@ pub(super) fn finish_ordered_proof<'a>(
                         })?;
                             outcome_substrate
                                 .focus_branch(goal)?
-                                .prepare_outcome_cases(&mut outcome_substrate)?
+                                .prepare_outcome_cases(
+                                    &mut outcome_substrate,
+                                    contract_progress.as_mut(),
+                                )?
                         };
                     if outcome_proof.is_none()
                         && !matches!(outcome, FunctionOutcome::VerificationDiverges)
@@ -5568,7 +5583,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     if let Some(root) = outcome_proof.take() {
                         // Retire only this checked outcome. Sibling paths are
                         // completed by their own retained proofs.
-                        outcome_substrate = root.complete_outcome_in(&outcome_substrate)?;
+                        outcome_substrate = root
+                            .complete_outcome_in(&outcome_substrate, contract_progress.as_mut())?;
                     }
                     drop(_path_certification_timing);
                 }
@@ -5641,7 +5657,9 @@ pub(super) fn finish_ordered_proof<'a>(
             .with_checked_resource_transitions(checked_resource_transitions_by_path);
         let completed_with_resource_claims = completed_with_resource_claims
             .with_checked_returned_resources(checked_returned_resources_by_path);
-        let completed_with_resource_claims = std::sync::Arc::new(completed_with_resource_claims);
+        let completed_with_resource_claims = std::sync::Arc::new(
+            completed_with_resource_claims.with_contract_completion(contract_progress),
+        );
         for theorem in &mut verified {
             theorem.checked_execution = std::sync::Arc::clone(&completed_with_resource_claims);
         }
