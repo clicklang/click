@@ -301,7 +301,20 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
     .unwrap();
     assert_eq!(returned.resources.facts().len(), 3);
     assert_eq!(returned.resources.facts()[0], held);
-    assert_eq!(returned.entry_borrows, [true, false, false]);
+    assert_eq!(
+        returned
+            .occurrences
+            .iter()
+            .map(|entry| entry.entry_borrow)
+            .collect::<Vec<_>>(),
+        [true, false, false]
+    );
+    for (fact, entry) in returned.resources.facts().iter().zip(&returned.occurrences) {
+        assert_eq!(
+            returned.resources.owned_fact_for_occurrence(entry.source),
+            Some(fact)
+        );
+    }
 }
 
 #[test]
@@ -433,7 +446,14 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
     )
     .unwrap()
     .unwrap();
-    assert_eq!(evaluated.entry_borrows, [false, false]);
+    assert_eq!(
+        evaluated
+            .occurrences
+            .iter()
+            .map(|entry| entry.entry_borrow)
+            .collect::<Vec<_>>(),
+        [false, false]
+    );
     let prepared = evaluated
         .restore_entry_borrows(
             frame,

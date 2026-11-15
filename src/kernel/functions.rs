@@ -22,7 +22,9 @@ mod construction_return;
 mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
-use mixed_return_resources::EvaluatedReturnResources;
+use mixed_return_resources::{
+    EvaluatedReturnResources, ProjectedReturnResource, project_return_resource_cores,
+};
 #[cfg(test)]
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
@@ -12400,7 +12402,7 @@ fn evaluate_contract_return_resource_context(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<EvaluatedReturnResources, RuntimeError>> {
-    let mut context = ResourceContext::new_with_equalities(assumptions);
+    let mut evaluated = EvaluatedReturnResources::new(assumptions);
     // `owns` requirements that are returned as entry-state borrows carry
     // caller identity in the checked transition. Re-evaluating an address
     // such as `self->pointer` in the callee entry state can replace that
@@ -12768,7 +12770,6 @@ fn evaluate_contract_return_resource_context(
     // just as it does not decide what it requires.
     let mut deferred: Vec<(usize, &ResourceSpec, RuntimeError)> = Vec::new();
     let mut returned: Vec<ResourceFact> = Vec::new();
-    let mut returned_entry_borrows = Vec::new();
     for (clause_index, resource) in interface.resource_ensures().iter().take(count).enumerate() {
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
@@ -12817,14 +12818,11 @@ fn evaluate_contract_return_resource_context(
         // its occurrence. Consumers compose the pieces of their requested
         // footprint; constructing outputs must not discover optional merges
         // by walking the ambient pointer/endpoint equality classes.
-        context = match context
-            .try_compose_into_valid_context_delaying_normalization([resource.clone()], assumptions)
-        {
-            Ok(context) => context,
+        evaluated = match evaluated.admit(resource.clone(), return_entry_borrow, assumptions) {
+            Ok(evaluated) => evaluated,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
         returned.push(resource);
-        returned_entry_borrows.push(return_entry_borrow);
     }
     // Each retry pass returns at least one waiting clause or stops, so the
     // passes are bounded by the number of clauses that waited.
@@ -12840,17 +12838,11 @@ fn evaluate_contract_return_resource_context(
                 budget,
             )? {
                 Ok(fact) => {
-                    context = match context.try_compose_into_valid_context_delaying_normalization(
-                        [fact.clone()],
-                        assumptions,
-                    ) {
-                        Ok(context) => context,
+                    evaluated = match evaluated.admit(fact.clone(), false, assumptions) {
+                        Ok(evaluated) => evaluated,
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
                     returned.push(fact);
-                    // A checked entry borrow is returned immediately above;
-                    // a deferred description has no retained entry occurrence.
-                    returned_entry_borrows.push(false);
                 }
                 Err(retry_error) if resource_clause_failure_awaits_supply(&retry_error) => {
                     waiting.push((clause_index, resource, error));
@@ -12865,10 +12857,7 @@ fn evaluate_contract_return_resource_context(
         }
         deferred = waiting;
     }
-    Ok(Ok(EvaluatedReturnResources {
-        resources: context,
-        entry_borrows: returned_entry_borrows,
-    }))
+    Ok(Ok(evaluated))
 }
 
 /// The memory a context's owned composites hold, opened through their
@@ -13087,54 +13076,19 @@ fn evaluate_contract_return_resources(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
-    let mut source_ranks = BTreeMap::<ResourceFact, usize>::new();
     let Some(projected_cores_by_support) = crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource core projection",
         || {
-            let _assumptions_id_scope = crate::kernel::PureFactContextIdScope::enter(assumptions);
-            ensured_resources
-                .facts()
-                .iter()
-                .filter(|support| support.is_own())
-                .map(|support| {
-                    let source_rank = source_ranks.entry(support.clone()).or_default();
-                    let support_occurrence = ensured_resources
-                        .owned_occurrences_for_fact(support)
-                        .get(*source_rank)
-                        .copied()?;
-                    *source_rank += 1;
-                    let singleton = ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_fact(support.clone());
-                    let expanded = {
-                        let projection_state =
-                            post_state.clone().with_resource_context(singleton.clone());
-                        expand_all_composite_resource_facts_at_state(
-                            &singleton,
-                            interface.composite_resource_definitions(),
-                            &projection_state,
-                            assumptions,
-                        )?
-                    };
-                    let expansion = expanded.facts().to_vec();
-                    let projected = expansion
-                        .iter()
-                        .filter_map(|fact| fact.core_with_assumptions(assumptions))
-                        // These duplicable cores are certified projections of
-                        // `support`; publishing them needs no proof-aware
-                        // search through the caller's existing resources.
-                        // Exact duplicates are the only entries worth
-                        // suppressing here. Equivalent alternate spellings
-                        // remain supported by this occurrence and disappear
-                        // with it.
-                        .filter(|core| !return_resources.contains_exact_representation(core))
-                        .collect::<BTreeSet<_>>()
-                        .into_iter()
-                        .collect::<Vec<_>>();
-                    Some((support.clone(), support_occurrence, expansion, projected))
-                })
-                .collect::<Option<Vec<_>>>()
+            project_return_resource_cores(
+                ensured_resources,
+                &inserted_ensured_occurrences,
+                interface.composite_resource_definitions(),
+                post_state,
+                assumptions,
+                &return_resources,
+            )
         },
     ) else {
         return Ok(Err(RuntimeError::FunctionContract(format!(
@@ -13147,36 +13101,15 @@ fn evaluate_contract_return_resources(
     // certified ownership, not independent persistent caller capabilities.
     // Record their exact support so consuming that ownership removes only
     // its projections through the reverse index.
-    let mut destination_occurrences = std::collections::BTreeMap::<
-        ResourceFact,
-        Vec<crate::kernel::primitives::ResourceOccurrenceId>,
-    >::new();
-    for (fact, occurrence) in inserted_ensured_occurrences {
-        destination_occurrences
-            .entry(fact)
-            .or_default()
-            .push(occurrence);
-    }
-    let mut destination_source_ranks = std::collections::BTreeMap::<ResourceFact, usize>::new();
-    let mut destination_by_source_occurrence = std::collections::BTreeMap::new();
-    for (support, source_occurrence, _, _) in &projected_cores_by_support {
-        let rank = destination_source_ranks.entry(support.clone()).or_default();
-        let Some(destination_occurrence) = destination_occurrences
-            .get(support)
-            .and_then(|occurrences| occurrences.get(*rank))
-            .copied()
-        else {
-            return Ok(Err(RuntimeError::FunctionContract(format!(
-                "ensured resource support `{}` was not preserved after call",
-                support.diagnostic_summary()
-            ))));
-        };
-        *rank += 1;
-        destination_by_source_occurrence.insert(*source_occurrence, destination_occurrence);
-    }
     let mut return_resources = return_resources;
     let mut produced_borrowing_pieces = Vec::new();
-    for (support, source_occurrence, expansion, projected) in projected_cores_by_support {
+    for ProjectedReturnResource {
+        support,
+        destination: support_occurrence,
+        expansion,
+        projected,
+    } in projected_cores_by_support
+    {
         // Only the one-level frontier names the borrows this composite
         // packages; a nested composite's own body is that composite's
         // business (the 4b rule). The viewed pieces of an observed
@@ -13210,15 +13143,6 @@ fn evaluate_contract_return_resources(
                     .map(|piece| (support.clone(), piece)),
             );
         }
-        let Some(support_occurrence) = destination_by_source_occurrence
-            .get(&source_occurrence)
-            .copied()
-        else {
-            return Ok(Err(RuntimeError::FunctionContract(format!(
-                "ensured resource support `{}` was not preserved after call",
-                support.diagnostic_summary()
-            ))));
-        };
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
                 support_occurrence,

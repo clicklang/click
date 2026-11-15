@@ -152,6 +152,13 @@ validation does not authorize restoration from a role marker.
 An entry-borrow marker is recorded only when evaluation retrieves the checked
 entry occurrence; an unmatched or deferred description keeps ordinary admission.
 
+Return construction captures each source occurrence ID from admission alongside
+its entry-borrow provenance. Composition pairs that ID with the destination ID
+returned by restoration or admission. Core projection selects the owned source
+by its occurrence ID and attaches observations to the paired destination; it does
+not enumerate equal descriptions or reconstruct occurrence ranks. Equal resource
+descriptions retain independent support and removal lifetimes across the return.
+
 Direct order queries read persistent constant-bound extrema and strict-upper
 witnesses keyed by the written or canonical endpoint. Admission updates only the
 new fact's endpoints; queries do not filter an endpoint's condition bucket.
