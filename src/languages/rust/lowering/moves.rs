@@ -579,6 +579,7 @@ pub(super) fn lower(
                     // A call step: its successor reads the result as the
                     // value of the expression that holds the call.
                     ProgramStatement::CallResult {
+                        aggregate_layout: None,
                         call: *step,
                         function_name: function.clone(),
                         arguments: arguments_values,

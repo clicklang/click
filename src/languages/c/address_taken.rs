@@ -359,7 +359,8 @@ pub(crate) fn child_statements<'a>(
     statements: &mut Vec<&'a CStatement>,
 ) {
     match statement {
-        CStatement::Skip
+        CStatement::EndAggregateLifetimes { .. }
+        | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

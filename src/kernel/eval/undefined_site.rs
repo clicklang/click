@@ -83,7 +83,7 @@ pub(super) fn statement_expressions<'a>(
         | ProgramStatement::Switch { expression, .. }
         | ProgramStatement::StepValue { expression, .. } => expressions.push((expression, false)),
         ProgramStatement::Assert { condition, .. }
-        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::If { condition, .. }
         | ProgramStatement::While { condition, .. } => expressions.push((condition, true)),
         ProgramStatement::CallConstruct { arguments, .. } => {

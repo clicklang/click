@@ -4012,6 +4012,7 @@ fn loop_exit_state_difference(
         next_local_lifetime,
         enclosing_frame_holds_locals,
         step_results,
+        aggregate_step_objects,
         locals,
         memory: _,
         resources: _,
@@ -4111,6 +4112,7 @@ fn loop_exit_state_difference(
         "enclosing frame holds automatic objects",
         values
     );
+    component!(aggregate_step_objects, "aggregate expression storage");
     component!(step_results, "call results");
     Some(differences.join(", "))
 }
@@ -8721,7 +8723,7 @@ pub(super) fn collect_loop_modified_locals(
         ProgramStatement::ScalarReferenceScope(scope) => {
             names.extend(scope.cleared_locals().iter().map(|(name, _)| name.clone()))
         }
-        ProgramStatement::EndAutomaticLifetimes { names: retired } => {
+        ProgramStatement::EndAutomaticLifetimes { names: retired, .. } => {
             names.extend(retired.iter().cloned())
         }
         ProgramStatement::Skip
@@ -8979,6 +8981,7 @@ fn for_each_statement_expression<'a>(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
+            ..
         }
         | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
@@ -9086,7 +9089,7 @@ pub(crate) fn collect_address_taken_locals(
             collect_address_taken_in_expression(pointer, names);
         }
         ProgramStatement::Assert { condition, .. }
-        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::StepValue {
             expression: condition,
             ..

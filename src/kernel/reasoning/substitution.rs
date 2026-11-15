@@ -872,6 +872,11 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
         .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
         .collect();
     ExecutionState {
+        aggregate_step_objects: state
+            .aggregate_step_objects
+            .iter()
+            .map(|(step, pointer)| (*step, s.pointer(pointer)))
+            .collect(),
         step_results: state.step_results.as_ref().map(|results| {
             std::sync::Arc::new(
                 results
@@ -998,6 +1003,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             }),
         },
         ProgramStatement::CallResult {
+            aggregate_layout,
             call,
             function_name,
             arguments,
@@ -1005,7 +1011,9 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             result_aggregate_layout,
             result_pointee_constant,
             callee,
+            ..
         } => ProgramStatement::CallResult {
+            aggregate_layout: aggregate_layout.clone(),
             call: *call,
             function_name: function_name.clone(),
             arguments: arguments
@@ -1041,17 +1049,25 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             label: label.clone(),
         },
         ProgramStatement::StepValue {
+            aggregate_layout,
             steps,
             expression,
             value_type,
             pointee_constant,
+            ..
         } => ProgramStatement::StepValue {
+            aggregate_layout: aggregate_layout.clone(),
             steps: steps.clone(),
             expression: s.program_expression(expression),
             value_type: *value_type,
             pointee_constant: *pointee_constant,
         },
-        ProgramStatement::LoopTest { condition } => ProgramStatement::LoopTest {
+        ProgramStatement::LoopTest {
+            aggregate_steps,
+            condition,
+            ..
+        } => ProgramStatement::LoopTest {
+            aggregate_steps: aggregate_steps.clone(),
             condition: s.program_expression(condition),
         },
         ProgramStatement::Seq(statements) => ProgramStatement::Seq(
@@ -2739,6 +2755,7 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
+            ..
         }
         | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bound_variables(expression, variables)

@@ -351,6 +351,7 @@ pub(super) fn verify_execution_theorem(
     } else {
         syntax::CStatement::Seq(
             Box::new(syntax::CStatement::CallResult {
+                aggregate_layout: None,
                 call: 0,
                 function_name: call_name.to_string(),
                 arguments,

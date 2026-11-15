@@ -34,7 +34,7 @@ int32 caller() {
     have load_int32(statement(1).call(0).result) == 3 by { known(); }
     step();
     have at(statement(1).assignment(p, 0).exit, p.x == 3) by { known(); }
-    step();
+    step_until(function.exit);
     known();
 }
 ```

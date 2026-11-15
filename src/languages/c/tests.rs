@@ -5257,7 +5257,8 @@ fn c_syntax_models_missing_else_and_empty_statements_as_skip() {
                 cases.iter().any(|case| contains_skip(case.body()))
             }
             syntax::CStatement::Label { statement, .. } => contains_skip(statement),
-            syntax::CStatement::Break
+            syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::Break
             | syntax::CStatement::Continue
             | syntax::CStatement::Goto { .. }
             | syntax::CStatement::Declare { .. }
@@ -14945,6 +14946,74 @@ mod scaling_tests {
 }
 
 #[test]
+fn aggregate_expression_results_are_steps_instead_of_program_locals() {
+    let source = "struct pair { int32 left; int32 right; };\n\
+        struct pair make(struct pair input) { return input; }\n\
+        int32 nested(struct pair input, int32 choose) {\n\
+            struct pair output = choose ? make(input) : input;\n\
+            return make(output).right;\n\
+        }";
+    let functions = syntax::parse_functions(source).expect("aggregate expressions parse");
+    let body = format!("{:?}", functions.last().unwrap().body());
+    assert!(!body.contains("__click_aggregate_result"), "{body}");
+    assert!(body.contains("CallResult"), "{body}");
+    assert!(body.contains("StepValue"), "{body}");
+    assert!(body.contains("StepResult"), "{body}");
+}
+
+#[test]
+fn aggregate_results_in_control_conditions_end_before_the_controlled_statement() {
+    let source = r#"
+        struct box { int32 value; };
+        struct box make(int32 value) { struct box out = {value}; return out; }
+        int32 while_guard() { int32 n = 1; while (make(n).value) { n = 0; } return n; }
+        int32 do_guard() { int32 n = 1; do { n = 0; continue; } while (make(n).value); return n; }
+        int32 for_guard() { int32 n = 1; for (; make(n).value;) { n = 0; } return n; }
+        int32 if_guard() { if (make(0).value) return 1; return 0; }
+        int32 switch_guard() { switch (make(1).value) { case 1: return 0; default: return 1; } }
+    "#;
+    let functions = syntax::parse_functions(source).expect("aggregate result conditions");
+    let factory = functions[0].to_kernel_function();
+    let environment = crate::kernel::ExecutionEnvironment::new().with_function(factory);
+    for function in &functions[1..] {
+        let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
+            crate::kernel::ExecutionState::new(),
+            function.to_kernel_function(),
+            Vec::new(),
+            Default::default(),
+            environment.clone(),
+            crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
+        )
+        .unwrap_or_else(|| panic!("{} could not execute", function.name()));
+        let crate::kernel::Proposition::ProgramFunctionExecutes {
+            outcome: crate::kernel::FunctionOutcome::Return { state, value },
+            ..
+        } = theorem.proposition()
+        else {
+            panic!("{}: {:?}", function.name(), theorem.proposition());
+        };
+        assert_eq!(value.native().as_ref(), &crate::kernel::int32(0));
+        assert!(
+            state.aggregate_step_objects.is_empty(),
+            "{} retains temporary storage",
+            function.name()
+        );
+    }
+}
+
+#[test]
+fn aggregate_expression_result_members_are_not_source_lvalues() {
+    for statement in ["int32* p = &(make().value);", "(make().value) = 7;"] {
+        let source = format!(
+            "struct box {{ int32 value; }}; struct box make(); int32 invalid() {{ {statement} return 0; }}"
+        );
+        let error =
+            syntax::parse_functions(&source).expect_err("aggregate result member is not an lvalue");
+        assert!(error.to_string().contains("not an lvalue"), "{error}");
+    }
+}
+
+#[test]
 fn scalar_call_assignment_retains_a_result_between_two_operations() {
     let function = syntax::parse_function("int32 caller() { int32 x; x = other(); return x; }")
         .expect("scalar call assignment parses");
@@ -14982,7 +15051,7 @@ fn aggregate_call_assignment_rejects_a_different_struct_destination() {
 }
 
 #[test]
-fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
+fn nested_aggregate_call_result_has_no_generated_destination_copy() {
     let functions = syntax::parse_functions(
         "struct pair { int32 x; int32 y; }; struct pair make();
          int32 read(struct pair p); int32 caller() { return read(make()); }",
@@ -14990,7 +15059,9 @@ fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
     .expect("nested aggregate call parses");
     let body = format!("{:?}", functions[0].body());
     assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
-    assert_eq!(body.matches("AggregateCopy {").count(), 1, "{body}");
+    assert_eq!(body.matches("AggregateCopy {").count(), 0, "{body}");
+    assert!(!body.contains("DeclareStructValue"), "{body}");
+    assert!(!body.contains("__click_aggregate_result"), "{body}");
     assert!(!body.contains("CallConstruct"), "{body}");
 }
 

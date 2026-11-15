@@ -943,6 +943,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
+            ..
         }
         | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bitvector_variables(expression, variables);

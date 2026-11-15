@@ -1344,6 +1344,18 @@ statement that holds the expression:
   surface names any call `S.call(j)`, counting every call of the statement, and
   a call of a named function also `S.call(f, j)`.
 
+An aggregate expression result carries an `AggregateResultLayout`, retaining
+its byte layout and declared access class. A call publishes its already
+materialized return object under its step. A selected ternary arm copies its
+aggregate into fresh `PointerBlock::Temporary` storage and publishes that
+address under the operator step. No `LocalEnvironment` binding is introduced.
+`ExecutionState::aggregate_step_objects` indexes these objects by step, and an
+explicit full-expression boundary retires their storage and ownership. A loop
+test retires its condition's temporaries on both outcomes; a return first
+materializes its aggregate return value and then retires expression storage.
+Historical result field reads use the producer's exit snapshot. Source layout
+indexes flattened fields by producer region and field path.
+
 A step's result stays in the path state by its number
 (`ExecutionState::step_results`), and the statement reads it as
 `ProgramExpression::StepResult`. Each result ends with the statement that

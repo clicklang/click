@@ -3909,7 +3909,8 @@ fn c_statement_calls_recording(
             syntax::CStatement::Label { statement, .. } => {
                 collect_function_pointer_names(statement, names)
             }
-            syntax::CStatement::Skip
+            syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue
             | syntax::CStatement::Goto { .. }
@@ -4067,8 +4068,10 @@ fn c_statement_calls_recording(
         allocator: &mut BTreeSet<&'static str>,
     ) {
         match statement {
-            syntax::CStatement::Skip | syntax::CStatement::Break | syntax::CStatement::Continue => {
-            }
+            syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::Skip
+            | syntax::CStatement::Break
+            | syntax::CStatement::Continue => {}
             syntax::CStatement::Goto { .. } => calls.push(BTreeSet::new()),
             syntax::CStatement::Label { statement, .. } => {
                 visit(statement, calls, function_pointer_names, allocator)

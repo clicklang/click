@@ -543,7 +543,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 .collect()
         };
         match statement {
-            ProgramStatement::EndAutomaticLifetimes { names } => {
+            ProgramStatement::EndAutomaticLifetimes { names, .. } => {
                 Ok(names.iter().fold(paths, |paths, name| forget(name, paths)))
             }
             ProgramStatement::Skip
@@ -1365,7 +1365,7 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         ProgramStatement::HeapAllocate { bytes, .. } => escapes(bytes),
         ProgramStatement::HeapFree { pointer } => escapes(pointer),
         ProgramStatement::Assert { condition, .. }
-        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::StepValue {
             expression: condition,
             ..
@@ -2089,7 +2089,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
     ) -> Result<Vec<i64>, TerminationError> {
         let measure = self.measure;
         match statement {
-            ProgramStatement::EndAutomaticLifetimes { names } => {
+            ProgramStatement::EndAutomaticLifetimes { names, .. } => {
                 if names.iter().any(|name| name == measure) {
                     return Err(error(format!(
                         "termination measure `{measure}` leaves its lifetime"
@@ -4274,7 +4274,7 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         ProgramStatement::HeapAllocate { bytes, .. } => visit(bytes),
         ProgramStatement::HeapFree { pointer } => visit(pointer),
         ProgramStatement::Assert { condition, .. }
-        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::LoopTest { condition, .. }
         | ProgramStatement::StepValue {
             expression: condition,
             ..

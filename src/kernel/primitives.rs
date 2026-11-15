@@ -2942,13 +2942,13 @@ pub enum PointerBlock {
     /// fresh and distinct from every other block identity.
     Heap(u64),
     /// Storage the verifier introduced for an object the C abstract machine
-    /// creates but the program never names: today, the temporary that holds an
-    /// aggregate a call returns by value.
+    /// creates but the program never names: an aggregate call or conditional
+    /// expression result.
     ///
     /// Soundness of treating this as fresh and distinct from every other
     /// block: the object does not exist before the call that produces it, so
-    /// no pointer the program already holds can point into it, and C gives the
-    /// program no way to obtain its address afterwards either. A by-value
+    /// no pointer the program already holds can point into it. Later pointers
+    /// derived from the result retain this identity and its lifetime. A by-value
     /// return is a copy: the callee's own storage, whatever it was, is a
     /// different object from this temporary, and the copy is what the caller
     /// reads. Every later use spells the temporary through this identity or
@@ -5321,6 +5321,13 @@ pub enum AggregateDeclarationKind {
     ConstructionDestination,
 }
 
+/// Storage type of an aggregate expression result. It has no program-local name.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct AggregateResultLayout {
+    pub layout: AggregateLayout,
+    pub declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+}
+
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ProgramStatement {
     Skip,
@@ -5407,6 +5414,7 @@ pub enum ProgramStatement {
     /// result is that statement's `ProgramExpression::StepResult { step, .. }`,
     /// never a variable of the program.
     CallResult {
+        aggregate_layout: Option<AggregateResultLayout>,
         call: u32,
         function_name: String,
         arguments: Vec<ProgramExpression>,
@@ -5436,6 +5444,7 @@ pub enum ProgramStatement {
     /// `value_type` when one is given, as an assignment to a local of that
     /// type would give it.
     StepValue {
+        aggregate_layout: Option<AggregateResultLayout>,
         steps: Vec<u32>,
         expression: ProgramExpression,
         value_type: Option<ProgramType>,
@@ -5521,6 +5530,7 @@ pub enum ProgramStatement {
     /// the loop. It is a position of the loop as written, `loop(i).test`, never
     /// a statement of the source program.
     LoopTest {
+        aggregate_steps: Vec<u32>,
         condition: ProgramExpression,
     },
     While {
@@ -5567,6 +5577,7 @@ pub enum ProgramStatement {
     /// their storage and ownership, never the allocations their fields name.
     EndAutomaticLifetimes {
         names: Vec<String>,
+        steps: Vec<u32>,
     },
 }
 
@@ -10199,7 +10210,9 @@ pub struct ExecutionState {
     /// call step sets one, the rest of the statement reads it, and the
     /// statement's end drops what it read. `None` is the canonical state at
     /// every statement boundary.
-    pub(crate) step_results: Option<Arc<BTreeMap<u32, StoredExecutionValue>>>,
+    pub(crate) step_results: Option<Arc<PersistentMap<u32, StoredExecutionValue>>>,
+    /// Anonymous aggregate storage created by expression steps, keyed by producer.
+    pub(crate) aggregate_step_objects: crate::persistent::PersistentMap<u32, Pointer>,
 }
 
 /// The function pointer a call goes through, with its type.
