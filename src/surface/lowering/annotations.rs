@@ -4370,6 +4370,28 @@ impl AnnotationLowerer<'_> {
             return self.lower_proposition_value(&reduced, environment);
         }
         match expression {
+            ContractExpression::Call { name, arguments }
+                if self
+                    .spec_definitions
+                    .functions
+                    .get(name)
+                    .is_some_and(|definition| {
+                        definition.return_type() == &ClickType::Proposition
+                    }) =>
+            {
+                let definition = self
+                    .spec_definitions
+                    .functions
+                    .get(name)
+                    .filter(|definition| definition.return_type() == &ClickType::Proposition)
+                    .cloned()
+                    .ok_or("a proposition call must return Prop")?;
+                let definition =
+                    self.instantiate_click_function_for_call(&definition, arguments, environment)?;
+                let body = lambdas::specialize_call(&definition, arguments)?
+                    .ok_or("a Prop function needs a concrete body")?;
+                self.lower_proposition_value(&body, environment)
+            }
             ContractExpression::Proposition(proposition) => {
                 self.click_proposition_to_spec_proposition(proposition, environment)
             }
@@ -4389,6 +4411,15 @@ impl AnnotationLowerer<'_> {
                 value,
                 body,
             } => {
+                if self.contract_expression_click_type_in_scope(value, environment, &mut Vec::new())
+                    == Some(ClickType::Proposition)
+                {
+                    let substituted = substitute_contract_expression(
+                        body,
+                        &BTreeMap::from([(name.clone(), value.as_ref().clone())]),
+                    )?;
+                    return self.lower_proposition_value(&substituted, environment);
+                }
                 let mut body_environment = environment.clone();
                 body_environment.values.remove(name);
                 body_environment.integer_values.remove(name);
@@ -4400,6 +4431,18 @@ impl AnnotationLowerer<'_> {
                 {
                     let value = self.lower_contract_integer_to_spec(value, environment)?;
                     body_environment.integer_values.insert(name.clone(), value);
+                } else if matches!(click_type, Some(ClickType::Algebraic(_)))
+                    || contract_expression_is_algebraic(
+                        value,
+                        self.spec_definitions.functions,
+                        environment,
+                        &mut Vec::new(),
+                    )
+                {
+                    let value = self.lower_contract_algebraic_to_spec(value, environment)?;
+                    body_environment
+                        .algebraic_values
+                        .insert(name.clone(), value);
                 } else {
                     let mut value = self.lower_contract_expression_to_spec(value, environment)?;
                     if let Some(ClickType::Program(ty)) = click_type {
@@ -4851,6 +4894,23 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecProposition, String> {
         match proposition {
             ClickProposition::PredicateCall { name, arguments } => {
+                if let Some(definition) = self
+                    .spec_definitions
+                    .functions
+                    .get(name)
+                    .filter(|definition| definition.return_type() == &ClickType::Proposition)
+                    .cloned()
+                {
+                    let definition = self.instantiate_click_function_for_call(
+                        &definition,
+                        arguments,
+                        environment,
+                    )?;
+                    let body = lambdas::specialize_call(&definition, arguments)?
+                        .ok_or("a Prop function needs a concrete body")?;
+                    return self.lower_proposition_value(&body, environment);
+                }
+
                 if let Some(kind) = crate::kernel::TerminationAtomKind::from_spelling(name) {
                     let scope = self.spec_definitions.termination_scope
                         .ok_or("termination propositions are available only inside `termination by` proofs")?;
@@ -5944,6 +6004,10 @@ impl AnnotationLowerer<'_> {
                     .clone();
                 let definition =
                     self.instantiate_click_function_for_call(&definition, arguments, environment)?;
+                if let Some(body) = lambdas::specialize_call(&definition, arguments)? {
+                    return self.lower_contract_integer_to_spec(&body, environment);
+                }
+
                 if definition.return_type() != &ClickType::Integer {
                     return Err(format!(
                         "function `{name}` does not return an Integer value"
@@ -6350,7 +6414,8 @@ impl AnnotationLowerer<'_> {
                 Err("a specification lambda must be applied to produce a scalar".into())
             }
             ContractExpression::Apply { .. } => {
-                let reduced = lambdas::reduce_head(expression)?.expect("an application reduces");
+                let reduced = lambdas::reduce_head(expression)?
+                    .ok_or("application needs a concrete lambda")?;
                 self.lower_contract_expression_to_spec(&reduced, environment)
             }
 
@@ -7620,13 +7685,41 @@ impl AnnotationLowerer<'_> {
                 self.lower_contract_algebraic_to_spec(expression, &retained_state)
             }
             ContractExpression::Let {
-                name, value, body, ..
+                name,
+                click_type,
+                value,
+                body,
             } => {
-                let value = self.lower_contract_algebraic_to_spec(value, environment)?;
                 let mut body_environment = environment.clone();
-                body_environment
-                    .algebraic_values
-                    .insert(name.clone(), value);
+                body_environment.values.remove(name);
+                body_environment.integer_values.remove(name);
+                body_environment.algebraic_values.remove(name);
+                body_environment.array_refs.remove(name);
+                if *click_type == Some(ClickType::Integer)
+                    || (click_type.is_none()
+                        && self.contract_expression_is_integer(value, environment))
+                {
+                    let value = self.lower_contract_integer_to_spec(value, environment)?;
+                    body_environment.integer_values.insert(name.clone(), value);
+                } else if matches!(click_type, Some(ClickType::Algebraic(_)))
+                    || contract_expression_is_algebraic(
+                        value,
+                        self.spec_definitions.functions,
+                        environment,
+                        &mut Vec::new(),
+                    )
+                {
+                    let value = self.lower_contract_algebraic_to_spec(value, environment)?;
+                    body_environment
+                        .algebraic_values
+                        .insert(name.clone(), value);
+                } else {
+                    let mut value = self.lower_contract_expression_to_spec(value, environment)?;
+                    if let Some(ClickType::Program(ty)) = click_type {
+                        value = value.at_machine_type(ty.to_kernel_type());
+                    }
+                    body_environment.values.insert(name.clone(), value);
+                }
                 self.lower_contract_algebraic_to_spec(body, &body_environment)
             }
             ContractExpression::Call { name, arguments } => {
@@ -7733,6 +7826,9 @@ impl AnnotationLowerer<'_> {
             .clone();
         let definition =
             self.instantiate_click_function_for_call(&definition, arguments, environment)?;
+        if let Some(body) = lambdas::specialize_call(&definition, arguments)? {
+            return self.lower_contract_algebraic_to_spec(&body, environment);
+        }
         let ClickType::Algebraic(result_type) = definition.return_type() else {
             return Err(format!(
                 "function `{name}` does not return an algebraic value"
@@ -7966,9 +8062,11 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Option<ClickType>, String> {
         match expected {
             ClickType::Resource => Ok(Some(ClickType::Resource)),
-            ClickType::Proposition | ClickType::Function { .. } => {
-                Err("specification function parameters are not supported yet".into())
-            }
+            ClickType::Function { .. } => self
+                .contract_expression_click_type_in_scope(argument, environment, &mut Vec::new())
+                .map(Some)
+                .ok_or_else(|| "callback argument needs a concrete lambda".into()),
+            ClickType::Proposition => Err("proposition parameters are not supported yet".into()),
             ClickType::Algebraic(_) => {
                 let value = self.lower_contract_algebraic_to_spec(argument, environment)?;
                 Ok(Some(generics::click_type_from_algebraic_value_type(
@@ -9243,6 +9341,10 @@ impl AnnotationLowerer<'_> {
             .clone();
         let definition =
             self.instantiate_click_function_for_call(&definition, arguments, environment)?;
+        if let Some(body) = lambdas::specialize_call(&definition, arguments)? {
+            return self.lower_contract_expression_to_spec(&body, environment);
+        }
+
         if arguments.len() != definition.parameters().len() {
             return Err(format!(
                 "function `{}` expects {} argument(s), got {}",

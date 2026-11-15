@@ -1705,6 +1705,7 @@ impl std::fmt::Display for ContractApplication {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickFunctionType {
+    value_parameter: bool,
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
@@ -7966,6 +7967,10 @@ fn memory_independent_click_functions(definitions: &[ClickFunctionDefinition]) -
         let Some(body) = definition.body() else {
             continue;
         };
+        if lambdas::has_function_parameters(definition) {
+            dependent.push(definition.name());
+            continue;
+        }
         let mut callees = Vec::new();
         let reads = contract_expression_reads_memory(body, &mut callees);
         let unknown_callee = callees

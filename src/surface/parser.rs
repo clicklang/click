@@ -488,6 +488,7 @@ pub(super) fn parse_file_items_for_module(
     imported_resources: &[&ResourceDefinition],
     imported_declarations: &[(names::DeclarationKind, String)],
     imported_integer_functions: &BTreeSet<String>,
+    imported_proposition_functions: &BTreeSet<String>,
     imported_pointer_functions: &BTreeSet<String>,
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
@@ -509,6 +510,9 @@ pub(super) fn parse_file_items_for_module(
     parser
         .integer_function_names
         .extend(imported_integer_functions.iter().cloned());
+    parser
+        .proposition_function_names
+        .extend(imported_proposition_functions.iter().cloned());
     // An imported pointer result has only a C meaning, as a local one has.
     parser
         .pointer_result_functions
@@ -1031,6 +1035,7 @@ struct Parser {
     /// Pure functions declared `-> Integer`, whose calls are Integer
     /// operands.
     integer_function_names: BTreeSet<String>,
+    proposition_function_names: BTreeSet<String>,
     /// The pure functions whose declared result is a pointer: a call of one
     /// is a pointer operand, so arithmetic on it is pointer arithmetic and
     /// a comparison of it keeps its C meaning.
@@ -1744,6 +1749,7 @@ impl Parser {
             pure_function_slices: BTreeMap::new(),
             slice_result_functions: BTreeSet::new(),
             integer_function_names: BTreeSet::new(),
+            proposition_function_names: BTreeSet::new(),
             pointer_result_functions: BTreeSet::new(),
             integer_parameter_positions: BTreeMap::new(),
             let_operands: Default::default(),
@@ -1849,6 +1855,9 @@ impl Parser {
                     }
                     if self.declares_integer_result(parameters) {
                         self.integer_function_names.insert(name.clone());
+                    }
+                    if self.declares_named_result(parameters, "Prop") {
+                        self.proposition_function_names.insert(name.clone());
                     }
                     if self.declares_slice_result(parameters) {
                         self.slice_result_functions.insert(name.clone());
@@ -3130,7 +3139,9 @@ impl Parser {
         );
         self.expect(Token::LParen)?;
         self.pending_slice_params = Some(Vec::new());
-        let parsed_parameters = self.parse_click_parameters();
+        let parsed_parameters = self
+            .parse_parameters_with_resources_and_functions(false, true)
+            .map(|(parameters, _)| parameters);
         let slice_params = self.pending_slice_params.take().unwrap_or_default();
         let parsed_parameters = parsed_parameters?;
         self.expect(Token::RParen)?;
@@ -3141,10 +3152,7 @@ impl Parser {
         );
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
-        if matches!(
-            return_type,
-            ClickType::Proposition | ClickType::Function { .. }
-        ) {
+        if matches!(return_type, ClickType::Function { .. }) {
             return Err(
                 self.error("specification function declaration results are not supported yet")
             );
@@ -3215,7 +3223,21 @@ impl Parser {
             &mut self.spec_parameter_types,
             spec_parameter_types(&parsed_parameters.parameters),
         );
-        let body = self.parse_branch_value(return_type == ClickType::Program(InterfaceType::Bool));
+        let shadowed_callbacks = parsed_parameters
+            .parameters
+            .iter()
+            .filter(|parameter| matches!(parameter.click_type(), ClickType::Function { .. }))
+            .map(|parameter| {
+                self.bind_let_operand(parameter.name(), Some(parameter.click_type()), None)
+            })
+            .collect();
+        let body = if return_type == ClickType::Proposition {
+            self.parse_proposition()
+                .map(|body| ContractExpression::Proposition(Box::new(body)))
+        } else {
+            self.parse_branch_value(return_type == ClickType::Program(InterfaceType::Bool))
+        };
+        self.unbind_let_operands(shadowed_callbacks);
         self.spec_parameter_types = previous_spec_parameter_types;
         let body = body?;
         // A `-> Integer` body is read where its result is used.
@@ -3894,6 +3916,14 @@ impl Parser {
         &mut self,
         allow_resources: bool,
     ) -> Result<(ParsedParameters, Vec<ResourceClause>), ClickError> {
+        self.parse_parameters_with_resources_and_functions(allow_resources, false)
+    }
+
+    fn parse_parameters_with_resources_and_functions(
+        &mut self,
+        allow_resources: bool,
+        allow_functions: bool,
+    ) -> Result<(ParsedParameters, Vec<ResourceClause>), ClickError> {
         let mut resource_parameters = Vec::new();
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
@@ -3961,10 +3991,9 @@ impl Parser {
                     });
                 } else {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
-                    if matches!(
-                        click_type,
-                        ClickType::Proposition | ClickType::Function { .. }
-                    ) {
+                    if click_type == ClickType::Proposition
+                        || (!allow_functions && matches!(click_type, ClickType::Function { .. }))
+                    {
                         return Err(self.error(
                             "specification function declaration parameters are not supported yet",
                         ));
@@ -8673,6 +8702,12 @@ impl Parser {
                     self.position = start;
                     return self.parse_proposition_comparison();
                 }
+                _ if self.proposition_function_names.contains(&name) => {
+                    return Ok(ClickProposition::Value(ContractExpression::Call {
+                        name,
+                        arguments,
+                    }));
+                }
                 _ if self.symbols.is_pure_function(&name) => {
                     return Ok(bool_truth(ContractExpression::Call { name, arguments }));
                 }
@@ -9077,6 +9112,7 @@ impl Parser {
                 _ => false,
             };
             if proposition_binding
+                || matches!(&left, ContractExpression::Call { name, .. } if self.proposition_function_names.contains(name))
                 || matches!(
                     left,
                     ContractExpression::Apply { .. }
@@ -9272,6 +9308,10 @@ impl Parser {
     }
 
     fn declares_integer_result(&self, start: usize) -> bool {
+        self.declares_named_result(start, "Integer")
+    }
+
+    fn declares_named_result(&self, start: usize, result: &str) -> bool {
         if self.tokens.get(start) != Some(&Token::LParen) {
             return false;
         }
@@ -9279,7 +9319,7 @@ impl Parser {
             return false;
         };
         self.tokens.get(close + 1) == Some(&Token::Arrow)
-            && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
+            && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == result)
     }
 
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must

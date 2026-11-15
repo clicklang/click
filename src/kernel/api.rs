@@ -7737,6 +7737,7 @@ pub fn substitute_integer_term_in_proposition(
 }
 
 /// The opaque application `f(args)` with the int32 or uint64 argument at `position`
+/// replaced by its predecessor, or an already specialized fold with its end
 /// replaced by its predecessor, for restating a range fold one endpoint
 /// lower. The subtraction is wrapping bitvector arithmetic, matching the
 /// endpoint `integer_range_fold_predecessor_index` builds, so the two agree
@@ -7745,6 +7746,23 @@ pub fn integer_range_fold_predecessor_application(
     whole: &IntegerTerm,
     position: usize,
 ) -> Option<IntegerTerm> {
+    if let IntegerTerm::RangeFold {
+        index,
+        initial,
+        accumulator,
+        item,
+        body,
+    } = whole
+    {
+        let (index, _) = integer_range_fold_predecessor_index(index)?;
+        return Some(IntegerTerm::range_fold(
+            index,
+            initial.as_ref().clone(),
+            *accumulator,
+            *item,
+            body.as_ref().clone(),
+        ));
+    }
     let IntegerTerm::PureFunctionApplication(applied) = whole else {
         return None;
     };

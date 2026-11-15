@@ -49,11 +49,30 @@ fn fold_laws_retain_cold_shared_endpoint_dags() {
                     IntegerTerm::constant_i64(0),
                     accumulator,
                     item,
-                    body,
+                    body.clone(),
                 )
                 .unwrap();
                 assert!(matches!(append.proposition(), Proposition::Implies(..)));
                 let (predecessor, _) = integer_range_fold_predecessor_index(&index).unwrap();
+                let specialized = IntegerTerm::range_fold(
+                    index.clone(),
+                    IntegerTerm::constant_i64(0),
+                    accumulator,
+                    item,
+                    body.clone(),
+                );
+                let specialized_prior =
+                    integer_range_fold_predecessor_application(&specialized, 0).unwrap();
+                assert_eq!(
+                    specialized_prior,
+                    IntegerTerm::range_fold(
+                        predecessor.clone(),
+                        IntegerTerm::constant_i64(0),
+                        accumulator,
+                        item,
+                        body
+                    )
+                );
                 let (original, shifted) = match (&index, predecessor) {
                     (
                         IntegerRangeFoldIndex::Int32 { end, .. },

@@ -127,6 +127,11 @@ impl Parser {
                     proposition_result: *result == ClickType::Proposition,
                 }),
                 ContractExpression::Proposition(_) => Some(SpecificationBinding::Proposition),
+                ContractExpression::Call { name, .. }
+                    if self.proposition_function_names.contains(name) =>
+                {
+                    Some(SpecificationBinding::Proposition)
+                }
                 ContractExpression::Apply { function, .. } => {
                     let proposition_result = match function.as_ref() {
                         ContractExpression::Binding(name)
