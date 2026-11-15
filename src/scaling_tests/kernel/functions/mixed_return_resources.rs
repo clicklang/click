@@ -125,3 +125,115 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
         assert!(*maps <= samples[0].2 * growth * 4, "{samples:?}");
     }
 }
+
+#[test]
+fn consumed_scalar_return_ignores_aliases_and_retained_owners() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    for axis in [
+        "aliases",
+        "same block aliases",
+        "related owners",
+        "unrelated owners",
+    ] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(8_870_000)),
+            };
+            let other = |id| {
+                if axis == "same block aliases" {
+                    Pointer {
+                        block: pointer.block.clone(),
+                        offset: PointerOffsetTerm::Variable(Variable(8_870_001 + u64::from(id))),
+                    }
+                } else {
+                    Pointer::symbolic(Variable(8_870_001 + u64::from(id)))
+                }
+            };
+            let owner = |base, start: u32| {
+                ResourceFact::own_memory(MemoryRange::new(base, start.into(), (start + 1).into()))
+            };
+            let cell = owner(pointer.clone(), 0);
+            let mut facts = PureFactContext::new();
+            let mut caller =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(cell.clone());
+            let function = super::tests::scalar_transfer_contract(MemorySegment::new(
+                variable("p"),
+                int32_literal(0),
+                int32_literal(1),
+            ));
+            // Entry discovery is legacy work, outside this return operation.
+            // Extend its checked partition with disjoint retained owners and
+            // fork its facts before measuring classification and restoration.
+            let transfer = super::tests::prepare_scalar_transfer(
+                &function,
+                pointer.clone(),
+                caller.clone(),
+                &facts,
+            );
+            let mut frame = transfer.caller_resources_after_requirements.clone();
+            for index in 0..count {
+                match axis {
+                    "aliases" | "same block aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(pointer.clone(), other(index)),
+                            true,
+                        )
+                    }
+                    "related owners" => {
+                        let fact = owner(pointer.clone(), index + 2);
+                        caller = caller.unchecked_with_fact(fact.clone());
+                        frame = frame.unchecked_with_fact(fact)
+                    }
+                    _ => {
+                        let fact = owner(other(index), 0);
+                        caller = caller.unchecked_with_fact(fact.clone());
+                        frame = frame.unchecked_with_fact(fact);
+                    }
+                }
+            }
+            caller.synchronize_memory_equalities(&facts);
+            frame.synchronize_memory_equalities(&facts);
+            let selected = transfer
+                .consumed_cell_return
+                .expect("explicit scalar transfer");
+            let evaluated = EvaluatedReturnResources::new(&facts)
+                .admit(cell.clone(), false, &facts)
+                .unwrap();
+            let ((result, transfers), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast = crate::kernel::search::FastOperationScope::enter(
+                        "consumed scalar return composition",
+                    );
+                    let selected_again = ConsumedCellReturn::prepare(
+                        function.contract_interface(),
+                        transfer.stable_view_plan.as_ref().unwrap(),
+                        &caller,
+                    )
+                    .unwrap();
+                    assert_eq!(selected_again, selected);
+                    evaluated
+                        .restore_entry_borrows(
+                            frame.clone(),
+                            ReturnResourceComposition::RestoreConsumedCell(selected),
+                            &facts,
+                        )
+                        .unwrap()
+                        .finish(&facts)
+                        .unwrap()
+                });
+            assert_eq!(transfers[0].consumed_input, Some(selected.input));
+            assert_eq!(
+                result.owned_fact_for_occurrence(transfers[0].destination),
+                Some(&cell)
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 48),
+            "{axis}: {samples:?}"
+        );
+    }
+}

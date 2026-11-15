@@ -5959,6 +5959,30 @@ impl ResourceContext {
         Ok((frame, inserted))
     }
 
+    /// Move one checked consumed cell back to the residual selected at entry.
+    /// The private producer establishes fixed contract geometry; no frame or
+    /// alias discovery is needed to reconstruct that ownership relationship.
+    pub(in crate::kernel) fn return_consumed_cell(
+        transfer: crate::kernel::functions::ReturnedConsumedCell,
+        assumptions: &PureFactContext,
+    ) -> (Self, crate::kernel::functions::ReturnResourceTransfer) {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("consumed cell return");
+        let (mut frame, output, source, input) = transfer.into_parts();
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        let entry = frame.storage.next_entry_id;
+        frame.insert_fact(output);
+        let transfer = crate::kernel::functions::ReturnResourceTransfer {
+            source,
+            destination: frame.occurrence(entry),
+            consumed_input: Some(input),
+        };
+        frame.advance_prepared_memory_equalities(assumptions);
+        (frame, transfer)
+    }
+
     /// Apply the framed definitional exchange R * F -> body(R) * F.
     /// The instance rewrite constructs this body from the exclusively held
     /// parent after selecting its definition/arm and checking child identities.
