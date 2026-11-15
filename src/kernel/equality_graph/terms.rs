@@ -42,6 +42,16 @@ pub(super) enum CellRead {
     Narrow(crate::kernel::CarrierWidth),
 }
 
+/// Shallow registration key: the read, its exact snapshot and observation
+/// source, and the graph's address application before class normalization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct WideReadSource {
+    read: u64,
+    snapshot: (u32, u32),
+    origin: Option<(u32, u32)>,
+    address: u64,
+}
+
 /// A read to look up, and the blocks to look in: all of its block class, or
 /// only the members a union just brought to it.
 #[derive(Clone)]
@@ -726,6 +736,10 @@ pub(super) struct TermClasses {
     load_blocks: PersistentMap<PointerBlock, u64>,
     // The load nodes, four-byte and narrow, already queued for registration.
     registered_int32_loads: PersistentSet<u64>,
+    // An observed word may name its own read. Register each exact source
+    // once, before interning its stored value, to close that cycle. Keep
+    // distinct snapshots, origins and address spellings as separate sources.
+    registered_uint64_cell_reads: PersistentSet<WideReadSource>,
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
     pending_loads: Vec<(

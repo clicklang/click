@@ -796,3 +796,77 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
         "{observed:?}"
     );
 }
+
+#[test]
+fn self_named_wide_read_observations_register_once_across_metadata() {
+    use crate::kernel::{LoadKind, Memory, ProgramValue, intern_memory};
+    for size in [8_u64, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let graph = EqualityGraph::default();
+        let mut reads = Vec::new();
+        let ((), production) = crate::instrumentation::measure_deterministic_work(|| {
+            for item in 0..size {
+                let address = Pointer::symbolic(Variable(9_800_000 + item));
+                let named = intern_memory(Memory::new().with_block(format!("word-{item}"), 8));
+                let variable = crate::kernel::load_variable_for_cell_with_origin(
+                    &named,
+                    &address,
+                    LoadKind::Bits64,
+                    8,
+                    &named,
+                );
+                let value = MachineTerm::Variable(variable);
+                let observed = intern_memory(
+                    named
+                        .memory()
+                        .clone()
+                        .with_block(format!("temporary-{item}"), 4)
+                        .materialize_named_cell(
+                            address.clone(),
+                            ProgramValue::UInt64(value.clone()),
+                        ),
+                );
+                assert_eq!(named.read_identity(), observed.read_identity());
+                crate::kernel::eval::begin_load_origin_epoch();
+                assert_eq!(
+                    variable,
+                    crate::kernel::load_variable_for_cell_with_origin(
+                        &named,
+                        &address,
+                        LoadKind::Bits64,
+                        8,
+                        &observed,
+                    )
+                );
+                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
+                // A genuinely different observation of the same read must
+                // still be processed by an already populated graph.
+                let resolved = intern_memory(named.memory().clone().materialize_named_cell(
+                    address.clone(),
+                    ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
+                ));
+                crate::kernel::eval::begin_load_origin_epoch();
+                assert_eq!(
+                    variable,
+                    crate::kernel::load_variable_for_cell_with_origin(
+                        &named,
+                        &address,
+                        LoadKind::Bits64,
+                        8,
+                        &resolved,
+                    )
+                );
+                assert!(graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(17)));
+                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
+                reads.push(value);
+            }
+        });
+        let ((), queries) = crate::instrumentation::measure_deterministic_work(|| {
+            for read in reads {
+                assert!(!graph.are_uint64_equal(&read, &MachineTerm::uint64_constant(0)));
+            }
+        });
+        assert!(production < 500 * size as usize, "{size}: {production}");
+        assert!(queries < 50 * size as usize, "{size}: {queries}");
+    }
+}
