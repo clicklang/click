@@ -126,6 +126,13 @@ pub(super) fn unify_click_type(
         None => actual,
     };
     match pattern {
+        ClickType::Proposition => {
+            if actual == &ClickType::Proposition {
+                Ok(())
+            } else {
+                Err("expected Prop argument".into())
+            }
+        }
         ClickType::Resource if actual == &ClickType::Resource => Ok(()),
         ClickType::Resource => Err("expected Resource argument".into()),
         ClickType::Function { parameters, result } => {
@@ -252,6 +259,7 @@ pub(super) fn instantiate_click_type(
     substitution: &TypeSubstitution,
 ) -> Result<ClickType, String> {
     match click_type {
+        ClickType::Proposition => Ok(ClickType::Proposition),
         ClickType::Resource => Ok(ClickType::Resource),
         ClickType::Function { parameters, result } => Ok(ClickType::Function {
             parameters: parameters
@@ -641,6 +649,7 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
             }
             ClickType::Algebraic(_)
             | ClickType::Parameter(_)
+            | ClickType::Proposition
             | ClickType::Function { .. }
             | ClickType::Integer => syntactic_expression_type(argument, variables),
         })
@@ -792,6 +801,7 @@ pub(super) fn instantiate_predicate_for_surface_call(
             }
             ClickType::Algebraic(_)
             | ClickType::Parameter(_)
+            | ClickType::Proposition
             | ClickType::Function { .. }
             | ClickType::Integer => syntactic_expression_type(argument, variables),
         })
@@ -1320,6 +1330,10 @@ fn instantiate_expression(
     let recurse =
         |expression: &ContractExpression| instantiate_expression(expression, substitution);
     Ok(match expression {
+        ContractExpression::Proposition(proposition) => ContractExpression::Proposition(Box::new(
+            instantiate_proposition(proposition, substitution)?,
+        )),
+
         ContractExpression::Lambda {
             parameters,
             result,
@@ -1491,6 +1505,8 @@ fn instantiate_proposition(
     let recurse =
         |proposition: &ClickProposition| instantiate_proposition(proposition, substitution);
     Ok(match proposition {
+        ClickProposition::Value(value) => ClickProposition::Value(expression(value)?),
+
         ClickProposition::Comparison {
             operator,
             left,

@@ -141,6 +141,9 @@ fn collect_signed_surface_terms<'a>(
     while let Some(expression) = pending.pop() {
         terms.push(expression);
         match expression {
+            ContractExpression::Proposition(proposition) => {
+                collect_signed_surface_proposition_terms(proposition, terms)
+            }
             ContractExpression::Resource(_) => {}
             ContractExpression::Lambda { .. } => {}
             ContractExpression::Apply {
@@ -309,6 +312,7 @@ fn collect_signed_surface_proposition_terms<'a>(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
+            ClickProposition::Value(expression) => collect_signed_surface_terms(expression, terms),
             ClickProposition::Comparison { left, right, .. } => {
                 collect_signed_surface_terms(left, terms);
                 collect_signed_surface_terms(right, terms);

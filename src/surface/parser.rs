@@ -1330,6 +1330,7 @@ fn algebraic_parameter_types(
             ClickType::Parameter(_)
             | ClickType::Program(_)
             | ClickType::CObjectPointer { .. }
+            | ClickType::Proposition
             | ClickType::Function { .. }
             | ClickType::Integer => None,
         })
@@ -3140,7 +3141,10 @@ impl Parser {
         );
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
-        if matches!(return_type, ClickType::Function { .. }) {
+        if matches!(
+            return_type,
+            ClickType::Proposition | ClickType::Function { .. }
+        ) {
             return Err(
                 self.error("specification function declaration results are not supported yet")
             );
@@ -3957,7 +3961,10 @@ impl Parser {
                     });
                 } else {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
-                    if matches!(click_type, ClickType::Function { .. }) {
+                    if matches!(
+                        click_type,
+                        ClickType::Proposition | ClickType::Function { .. }
+                    ) {
                         return Err(self.error(
                             "specification function declaration parameters are not supported yet",
                         ));
@@ -6352,6 +6359,10 @@ impl Parser {
     }
 
     fn parse_click_type(&mut self) -> Result<(ClickType, Option<ParsedType>), ClickError> {
+        if self.peek_ident() == Some("Prop") {
+            self.position += 1;
+            return Ok((ClickType::Proposition, None));
+        }
         if self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen) {
             if self.algebraic_type_nesting >= MATCH_NESTING_LIMIT {
                 return Err(self
@@ -8559,6 +8570,17 @@ impl Parser {
             return Ok(ClickProposition::Defined { expression });
         }
 
+        if self.peek_ident().is_some_and(|name| {
+            self.names.contains(NameKind::ContractBinding, name)
+                || matches!(
+                    self.specification_binding_kind(name),
+                    Some(spec_arithmetic::SpecificationBinding::Function { .. })
+                )
+        }) && self.peek_next() == Some(&Token::LParen)
+        {
+            return self.parse_proposition_comparison();
+        }
+
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_ident() != Some("old")
             && self.peek_ident() != Some("at")
@@ -8833,7 +8855,9 @@ impl Parser {
                                     .set_scoped(NameKind::ContractBinding, &name, true);
                                 self.integer_literal_context = false;
                             }
-                            ClickType::Function { .. } | ClickType::Parameter(_) => {
+                            ClickType::Proposition
+                            | ClickType::Function { .. }
+                            | ClickType::Parameter(_) => {
                                 return Err(self.error(
                                     "quantifier type must be a concrete C, Integer, or algebraic type",
                                 ));
@@ -8959,6 +8983,19 @@ impl Parser {
         }
 
         self.expect(Token::LParen)?;
+        let legacy_binder = self.peek() == Some(&Token::Pipe)
+            && matches!(self.peek_next(), Some(Token::Ident(_)))
+            && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
+        if !legacy_binder {
+            let predicate = self.parse_contract_expression()?;
+            self.expect(Token::RParen)?;
+            return Ok(lambdas::range_proposition(
+                start,
+                end,
+                predicate,
+                method == "all",
+            ));
+        }
         self.expect(Token::Pipe)?;
         let item = self.expect_ident("range item name")?;
         self.expect(Token::Pipe)?;
@@ -9029,6 +9066,25 @@ impl Parser {
         // the value is not a `bool`, so an integer is never read with C's
         // nonzero truth.
         if self.at_proposition_end() {
+            let proposition_binding = match &left {
+                ContractExpression::Binding(name)
+                | ContractExpression::CBinding(name)
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                    self.specification_binding_kind(name)
+                        == Some(spec_arithmetic::SpecificationBinding::Proposition)
+                }
+                _ => false,
+            };
+            if proposition_binding
+                || matches!(
+                    left,
+                    ContractExpression::Apply { .. }
+                        | ContractExpression::Let { .. }
+                        | ContractExpression::Proposition(_)
+                )
+            {
+                return Ok(ClickProposition::Value(left));
+            }
             return Ok(bool_truth(left));
         }
         let operator = self.parse_comparison_operator("proposition")?;
@@ -9560,7 +9616,12 @@ impl Parser {
             if !slots.insert(slot.clone()) || !names.insert(name.clone()) {
                 return Err(self.error("duplicate child slot or resource name"));
             }
-            if self.names.contains(NameKind::ContractBinding, &name) {
+            if self.names.contains(NameKind::ContractBinding, &name)
+                || matches!(
+                    self.specification_binding_kind(&name),
+                    Some(spec_arithmetic::SpecificationBinding::Function { .. })
+                )
+            {
                 return Err(self.error("child resource name conflicts with a C or pure binding"));
             }
             self.bind_proof_name(&name, true)?;
@@ -9828,7 +9889,9 @@ impl Parser {
                 _ => format!("#{resource_name}{}", self.next_resource_identity),
             },
         };
-        if self.names.contains_any(NameKind::VALUES, &name) {
+        if self.names.contains_any(NameKind::VALUES, &name)
+            || self.specification_binding_kind(&name).is_some()
+        {
             return Err(self.error("fold result conflicts with a C or pure binding"));
         }
         self.bind_proof_name(&name, true)?;
@@ -10059,7 +10122,7 @@ impl Parser {
                     self.names.set_scoped(NameKind::ContractBinding, name, true);
                     self.integer_literal_context = false;
                 }
-                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
                     unreachable!("rejected above")
                 }
             }
@@ -15693,6 +15756,12 @@ impl Parser {
                 _ => {}
             }
         }
+        if self.peek_ident() == Some("prop") && self.peek_next() == Some(&Token::LBrace) {
+            self.position += 2;
+            let proposition = self.parse_proposition()?;
+            self.expect(Token::RBrace)?;
+            return Ok(ContractExpression::Proposition(Box::new(proposition)));
+        }
         if self.peek() == Some(&Token::Pipe) {
             self.position += 1;
             let mut parameters = Vec::new();
@@ -15732,19 +15801,26 @@ impl Parser {
                 self.names.set_scoped_struct_param(name, None);
                 shadowed.push(self.bind_let_operand(name, Some(ty), None));
             }
-            let body = self
-                .parse_branch_value(result == ClickType::Program(InterfaceType::Bool))
-                .and_then(|body| match &result {
-                    ClickType::Integer => Ok(self.at_integer_position(body)),
-                    ClickType::Program(ty) => self.typed_let_literal("lambda result", *ty, body),
-                    _ => Ok(body),
-                });
+            let body = if result == ClickType::Proposition {
+                self.parse_proposition()
+                    .map(|body| ContractExpression::Proposition(Box::new(body)))
+            } else {
+                self.parse_branch_value(result == ClickType::Program(InterfaceType::Bool))
+                    .and_then(|body| match &result {
+                        ClickType::Integer => Ok(self.at_integer_position(body)),
+                        ClickType::Program(ty) => {
+                            self.typed_let_literal("lambda result", *ty, body)
+                        }
+                        _ => Ok(body),
+                    })
+            };
             self.unbind_let_operands(shadowed);
             self.names.end(scope);
             self.bool_value_context = previous_bool;
             self.integer_literal_context = previous_integer;
             let body = body?;
             self.expect(Token::RBrace)?;
+            super::lambdas::validate_body_state(&body)?;
             return Ok(ContractExpression::Lambda {
                 parameters,
                 result,
@@ -16005,7 +16081,12 @@ impl Parser {
         if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::LParen)
         {
             let (name, arguments) = self.parse_call_arguments("function name")?;
-            if self.names.contains(NameKind::ContractBinding, &name) {
+            if self.names.contains(NameKind::ContractBinding, &name)
+                || matches!(
+                    self.specification_binding_kind(&name),
+                    Some(spec_arithmetic::SpecificationBinding::Function { .. })
+                )
+            {
                 return Ok(ContractExpression::Apply {
                     function: Box::new(ContractExpression::Binding(name)),
                     arguments,
@@ -16065,7 +16146,7 @@ impl Parser {
                 if let Some(field) = self.names.resource_fields.get(&name) {
                     return Ok(ContractExpression::ResourceField(field.clone()));
                 }
-                if self.names.contains_any(NameKind::VALUES, &name)
+                if self.names.contains_any(NameKind::VALUES, &name) || self.specification_binding_kind(&name).is_some()
                 {
                     Ok(ContractExpression::Binding(name))
                 } else {

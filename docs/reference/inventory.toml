@@ -5126,3 +5126,11 @@ path = "reference/library/index.md#integerle_difference"
 [[item]]
 id = "library.theorem.integer::difference_le"
 path = "reference/library/index.md#integerdifference_le"
+
+[[item]]
+id = "language.word.prop"
+path = "reference/language/grammar.md#proposition-valued-lambdas"
+
+[[item]]
+id = "language.proposition-value"
+path = "reference/language/grammar.md#proposition-valued-lambdas"
