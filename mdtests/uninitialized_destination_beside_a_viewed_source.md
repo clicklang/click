@@ -68,31 +68,57 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                     contains(memory(src[0..n]), memory(src[0..n]));
                 };
             }
-            step(); step();
+            step();
             have forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) } by {
                 intro(); intro();
                 instantiate(at(iteration, forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) }), k) using { 0 <= k; k < n; };
-                transport(at(iteration, src[k]) == old(src[k]), src[k] == old(src[k])) using {
-                    at(iteration, src[k]) == old(src[k]);
-                    separate(memory(dst[0..n]), memory(src[0..n]));
-                    0 <= k; k < n; 0 <= at(iteration, i); at(iteration, i) < n;
-                };
+                have contains(memory(src[0..n]), memory(src[k])) by {
+                    apply(click::separation::contains_element(src, 0, n, k)) using { 0 <= k; k < n; };
+                }
+                have contains(memory(dst[i]), memory(dst[i])) by {
+                    apply(click::separation::contains_refl(memory(dst[i])));
+                }
+                have separate(memory(dst[i]), memory(src[k])) by {
+                    apply(click::separation::separate_restrict(memory(dst[i]), memory(src[0..n]), memory(dst[i]), memory(src[k]))) using {
+                        separate(memory(dst[i]), memory(src[0..n]));
+                        contains(memory(dst[i]), memory(dst[i]));
+                        contains(memory(src[0..n]), memory(src[k]));
+                    };
+                }
+                have separate(statement(2).statement(0).footprint, memory(src[k])) by {
+                    normalize() using { separate(memory(dst[i]), memory(src[k])); };
+                }
+                have src[k] == at(iteration, src[k]) by {
+                    preserve(separate(statement(2).statement(0).footprint, memory(src[k])));
+                }
+                known();
             }
+            step();
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro(); intro();
                 if k < at(iteration, i) {
                     instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k) using { 0 <= k; k < at(iteration, i); };
                     have k != at(iteration, i) by { solve() using { k < at(iteration, i); }; }
-                    transport(at(iteration, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
-                        at(iteration, dst[k]) == old(src[k]); k != at(iteration, i);
-                    };
+                    have at(iteration, separate(memory(dst[i]), memory(dst[k]))) by {
+                        apply(click::separation::separate_elements(dst, at(iteration, i), k)) using { k != at(iteration, i); };
+                    }
+                    have separate(statement(2).statement(0).footprint, memory(dst[k])) by {
+                        normalize() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
+                    }
+                    have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
+                        preserve(separate(statement(2).statement(0).footprint, memory(dst[k])));
+                    }
+                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { normalize() using { }; }
+                    have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
+                        preserve(separate(statement(2).statement(1).footprint, memory(dst[k])));
+                    }
+                    known();
                 } else {
                     have k == at(iteration, i) by { solve() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < n; }; }
                     have k < n by { solve() using { k == at(iteration, i); at(iteration, i) < n; }; }
                     instantiate(at(iteration, forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) }), k) using { 0 <= k; k < n; };
-                    transport(at(iteration, src[k]) == old(src[k]), dst[k] == old(src[k])) using {
-                        at(iteration, src[k]) == old(src[k]); k == at(iteration, i);
-                    };
+                    rewrite(k, at(iteration, i));
+                    known();
                 }
             }
         }
@@ -112,33 +138,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
         };
     }
     have forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) } by {
-        have forall (k: int32) {
-                at(region(0).entry, 0) <= at(region(0).entry, k) and
-                at(region(0).entry, k) < at(region(0).entry, n) implies
-                old(src[k]) == at(region(0).entry, src[k])
-        } by {
-            intro();
-            intro();
-            normalize();
-        }
-        transport(
-            forall (k: int32) {
-                    at(region(0).entry, 0) <= at(region(0).entry, k) and
-                    at(region(0).entry, k) < at(region(0).entry, n) implies
-                    old(src[k]) == at(region(0).entry, src[k])
-            },
-            forall (k: int32) {
-                0 <= k and k < n implies old(src[k]) == src[k]
-            }
-        ) using {
-            forall (k: int32) {
-                    at(region(0).entry, 0) <= at(region(0).entry, k) and
-                    at(region(0).entry, k) < at(region(0).entry, n) implies
-                    old(src[k]) == at(region(0).entry, src[k])
-            };
-            separate(memory(dst[0..n]), memory(src[0..n]));
-        };
-        solve();
+        known();
     }
     have forall (k: int32) { 0 <= k and k < n implies dst[k] == old(src[k]) } by {
         have forall (k: int32) {

@@ -56,7 +56,6 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             }
         }
         preserve by {
-            have 0 <= i;
             mark iteration;
             have contains(memory(dst[0..3]), memory(dst[i])) by {
                 apply(click::separation::contains_element(dst, 0, 3, i)) using { 0 <= i; i < 3; };
@@ -72,157 +71,55 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 };
             }
             step();
-            step();
             have forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) } by {
                 intro(); intro();
-                extract(0 <= k); extract(k < 3);
-                instantiate(at(iteration, forall (j: int32) {
-                    0 <= j and j < 3 implies src[j] == old(src[j])
-                }), k) using { 0 <= k; k < 3; };
-                transport(at(iteration, src[k]) == old(src[k]), src[k] == old(src[k])) using {
-                    at(iteration, src[k]) == old(src[k]);
-                    separate(memory(dst[0..3]), memory(src[0..3]));
-                    0 <= k; k < 3;
-                    0 <= at(iteration, i); at(iteration, i) < 3;
-                };
+                instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k) using { 0 <= k; k < 3; };
+                have contains(memory(src[0..3]), memory(src[k])) by {
+                    apply(click::separation::contains_element(src, 0, 3, k)) using { 0 <= k; k < 3; };
+                }
+                have contains(memory(dst[i]), memory(dst[i])) by {
+                    apply(click::separation::contains_refl(memory(dst[i])));
+                }
+                have separate(memory(dst[i]), memory(src[k])) by {
+                    apply(click::separation::separate_restrict(memory(dst[i]), memory(src[0..3]), memory(dst[i]), memory(src[k]))) using {
+                        separate(memory(dst[i]), memory(src[0..3]));
+                        contains(memory(dst[i]), memory(dst[i]));
+                        contains(memory(src[0..3]), memory(src[k]));
+                    };
+                }
+                have separate(statement(2).statement(0).footprint, memory(src[k])) by {
+                    normalize() using { separate(memory(dst[i]), memory(src[k])); };
+                }
+                have src[k] == at(iteration, src[k]) by {
+                    preserve(separate(statement(2).statement(0).footprint, memory(src[k])));
+                }
+                known();
             }
+            step();
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
-                intro();
-                intro();
-                if to_integer(k) < to_integer((i - 1)) {
-                    have to_integer(k) != to_integer((i - 1)) by {
-                        have to_integer(k) < to_integer((i - 1)) by {
-                            known();
-                        }
-                        intro();
-                        arithmetic_certificate {
-                            premise 0: to_integer(k) < to_integer((i - 1)) => to_integer(k) < to_integer((i -
-                                1));
-                            premise 1: to_integer(k) == to_integer((i - 1)) => to_integer(k) == to_integer((i -
-                                1));
-                            less_equal_from_equal 1 reverse => to_integer((i - 1)) <= to_integer(k);
-                            add 0, 2 => (to_integer(k) + to_integer((i - 1))) < (to_integer((i - 1)) +
-                                to_integer(k));
-                            trivial => -1 <= 0;
-                            equal_from_bounds 3, 4 => false == true;
-                            conclusion 5;
-                        }
+                intro(); intro();
+                if k < at(iteration, i) {
+                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k) using { 0 <= k; k < at(iteration, i); };
+                    have k != at(iteration, i) by { solve() using { k < at(iteration, i); }; }
+                    have at(iteration, separate(memory(dst[i]), memory(dst[k]))) by {
+                        apply(click::separation::separate_elements(dst, at(iteration, i), k)) using { k != at(iteration, i); };
                     }
-                    have to_integer((i - 1)) == to_integer(at(region(3).entry, i)) by { normalize(); }
-                    have to_integer(k) < to_integer(at(region(3).entry, i)) by {
-                        rewrite(to_integer(at(region(3).entry, i)), to_integer((i - 1)));
-                        known();
+                    have separate(statement(2).statement(0).footprint, memory(dst[k])) by {
+                        normalize() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
-                    have k != at(region(3).entry, i) by {
-                        solve() using { to_integer(k) < to_integer(at(region(3).entry, i)); };
+                    have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
+                        preserve(separate(statement(2).statement(0).footprint, memory(dst[k])));
                     }
-                    instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) }, k);
-                    transport(at(region(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
-                        at(region(3).entry, dst[k]) == old(src[k]);
-                        k != at(region(3).entry, i);
-                    };
+                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { normalize() using { }; }
+                    have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
+                        preserve(separate(statement(2).statement(1).footprint, memory(dst[k])));
+                    }
+                    known();
                 } else {
-                    have to_integer(k) == to_integer((i - 1)) by {
-                        have to_integer(k) <= to_integer((i - 1)) by {
-                            arithmetic_certificate signed_int32 {
-                                premise 0: at(region(3).entry, i) < at(region(3).entry, 3) =>
-                                    at(region(3).entry, i) < at(region(3).entry, 3);
-                                premise 1: k < i => k < i;
-                                premise 2: at(region(3).entry, i) >= at(region(3).entry, 0) =>
-                                    at(region(3).entry, i) >= at(region(3).entry, 0);
-                                interval_from_affine 2 (at(region(3).entry, i)) (0) (2147483647);
-                                interval_from_affine 0 (at(region(3).entry, i)) (-2147483648) (2);
-                                interval_intersect 3, 4 (0) (2);
-                                interval_atom (1) (1) (1);
-                                interval_add_bounded 5, 6 (1) (3);
-                                affine_premise 1 7 7 => k < i;
-                                conclusion 8;
-                            }
-                        }
-                        have to_integer(k) == (to_integer(i) - 1) by {
-                            have to_integer(k) <= (to_integer(i) - 1) by {
-                                arithmetic_certificate {
-                                    negated_goal => (to_integer(i) - 1) < to_integer(k);
-                                    premise 0: to_integer(k) < to_integer(i) => to_integer(k) < to_integer(i);
-                                    add 0, 1 => ((to_integer(i) - 1) + 1 + (to_integer(k) + 1)) <=
-                                        (to_integer(k) + to_integer(i));
-                                    conclusion 2;
-                                }
-                            }
-                            have (to_integer(i) - 1) <= to_integer(k) by {
-                                have -2147483648 <= (to_integer(at(region(3).entry, i)) + 1) by {
-                                    arithmetic_certificate {
-                                        negated_goal => (to_integer(at(region(3).entry, i)) + 1) < -2147483648;
-                                        premise 0: 0 <= to_integer(at(region(3).entry, i)) => 0 <=
-                                            to_integer(at(region(3).entry, i));
-                                        add 0, 1 => (to_integer(at(region(3).entry, i)) + 1 + 0) < (-2147483648
-                                            + to_integer(at(region(3).entry, i)));
-                                        conclusion 2;
-                                    }
-                                }
-                                have (to_integer(at(region(3).entry, i)) + 1) <= 2147483647 by {
-                                    arithmetic_certificate {
-                                        negated_goal => 2147483647 < (to_integer(at(region(3).entry, i)) + 1);
-                                        premise 0: to_integer(at(region(3).entry, i)) < 3 =>
-                                            to_integer(at(region(3).entry, i)) < 3;
-                                        add 0, 1 => (2147483647 + 1 + (to_integer(at(region(3).entry, i)) + 1))
-                                            <= (to_integer(at(region(3).entry, i)) + 1 + 3);
-                                        conclusion 2;
-                                    }
-                                }
-                                have to_integer(i) == (to_integer(at(region(3).entry, i)) + 1) by {
-                                    arithmetic_certificate rules {
-                                        premise 0: -2147483648 <= (to_integer(at(region(3).entry, i)) + 1) =>
-                                            -2147483648 <= (to_integer(at(region(3).entry, i)) + 1);
-                                        premise 1: (to_integer(at(region(3).entry, i)) + 1) <= 2147483647 =>
-                                            (to_integer(at(region(3).entry, i)) + 1) <= 2147483647;
-                                        integer_operation_identity bounds [0, 1] => to_integer(i) ==
-                                            (to_integer(at(region(3).entry, i)) + 1);
-                                        conclusion 0;
-                                    }
-                                }
-                                arithmetic_certificate {
-                                    negated_goal => to_integer(k) < (to_integer(i) - 1);
-                                    premise 0: to_integer(i) == (to_integer(at(region(3).entry, i)) + 1) =>
-                                        to_integer(i) == (to_integer(at(region(3).entry, i)) + 1);
-                                    less_equal_from_equal 1 => to_integer(i) <= (to_integer(at(region(3).entry,
-                                        i)) + 1);
-                                    premise 1: to_integer(at(region(3).entry, i)) <= to_integer(k) =>
-                                        to_integer(at(region(3).entry, i)) <= to_integer(k);
-                                    add 0, 2 => (to_integer(k) + to_integer(i)) < ((to_integer(i) - 1) +
-                                        (to_integer(at(region(3).entry, i)) + 1));
-                                    add 4, 3 => (to_integer(k) + to_integer(i) + to_integer(at(region(3).entry,
-                                        i))) < ((to_integer(i) - 1) + (to_integer(at(region(3).entry, i)) + 1) +
-                                        to_integer(k));
-                                    conclusion 5;
-                                }
-                            }
-                            arithmetic_certificate {
-                                premise 0: to_integer(k) <= (to_integer(i) - 1) => to_integer(k) <=
-                                    (to_integer(i) - 1);
-                                premise 1: (to_integer(i) - 1) <= to_integer(k) => (to_integer(i) - 1) <=
-                                    to_integer(k);
-                                equal_from_bounds 0, 1 => to_integer(k) == (to_integer(i) - 1);
-                                conclusion 2;
-                            }
-                        }
-                        known();
-                    }
-                    instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, 3) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {
-                        0 <= k;
-                        at(region(3).entry, i) < at(region(3).entry, 3);
-                        not to_integer(k) < to_integer((i - 1));
-                        k < i;
-                        at(region(3).entry, i) <= at(region(3).entry, 3);
-                        at(region(3).entry, i) >= at(region(3).entry, 0);
-                        to_integer(k) == to_integer((i - 1));
-                    };
-                    have dst[k] == old(src[k]) by {
-                        normalize() using {
-                            at(region(3).entry, src[k]) == old(src[k]);
-                            to_integer(k) == to_integer((i - 1));
-                        };
-                    }
+                    have k == at(iteration, i) by { solve() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < 3; }; }
+                    have k < 3 by { solve() using { k == at(iteration, i); at(iteration, i) < 3; }; }
+                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k) using { 0 <= k; k < 3; };
+                    rewrite(k, at(iteration, i));
                     known();
                 }
             }
