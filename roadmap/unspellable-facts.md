@@ -521,6 +521,23 @@ Validation: five focused tests and 2,040 broader tests passed, including all
 scaling tests, algebraic/match checks, Surface synthesis, Rust lowering and full
 ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
 
+8r retains both algebraic equality operands in a typed common condition node.
+Constructor/variable syntax comparisons traverse shared fields and match children,
+with native field equality preserving type, variant, order and pointer-metadata
+semantics. Exact producer payloads remain distinct. Constructor source matching
+uses this comparison instead of exporting the whole common constructor.
+
+Observation-key normalization follows the retained operands, and dependency
+readers preserve the native carrier/binder policies. Existing Surface equality
+spelling and native condition consumers use explicit output adapters. Scoped
+native field substitutions, call/handoff activation and the general raise/lower
+boundary remain assigned to their existing slices. No equality search rules or
+budgets changed. Regressions cover exact payloads, old/new views, operand order,
+native/common observation keys, readers and linear shared-constructor comparison.
+Validation: 2,010 selected tests passed, including every scaling test, algebraic
+and Boolean checks, rewrites/readers, Surface synthesis and full ordinary
+example projects. `scripts/check.sh --ci-quality` exited 0.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes

@@ -226,7 +226,9 @@ pub(super) fn common_variables(
             && term.ty() == &KernelType::Bool
             && !matches!(
                 term.node(),
-                KernelTermNode::IntegerCompare { .. } | KernelTermNode::LegacyBool(_)
+                KernelTermNode::IntegerCompare { .. }
+                    | KernelTermNode::AlgebraicEqual { .. }
+                    | KernelTermNode::LegacyBool(_)
             )
         {
             summaries.insert(term.id(), Variables::default());
@@ -578,6 +580,12 @@ mod tests {
                 body: IntegerTerm::Variable(Variable(999613)).into(),
             })],
         };
+        let other = AlgebraicTerm {
+            algebraic_type: native.algebraic_type.clone(),
+            node: AlgebraicTermNode::Variable(Variable(999615)),
+        };
+        let condition = ConditionTerm::AlgebraicEqual(Box::new(native.clone()), Box::new(other));
+        let guard = KernelTermImport::default().condition(&condition);
         let root = KernelTermImport::default().algebraic(&native);
         let argument = PureFunctionArgument::Algebraic(native.clone());
         for mode in [
@@ -594,6 +602,19 @@ mod tests {
                 .copied()
                 .collect::<BTreeSet<_>>();
             assert_eq!(actual, expected, "{mode:?}");
+            let mut expected = BTreeSet::new();
+            let mut actual = BTreeSet::new();
+            collect_boolean_variables(
+                crate::kernel::BooleanOperandView::Native(&condition),
+                mode,
+                &mut expected,
+            );
+            collect_boolean_variables(
+                crate::kernel::BooleanOperandView::Shared(&guard),
+                mode,
+                &mut actual,
+            );
+            assert_eq!(actual, expected, "algebraic equality {mode:?}");
         }
         let mut expected = BTreeSet::new();
         collect_algebraic_free_integer_variables(&native, &mut expected, &mut SeenTerms::default());

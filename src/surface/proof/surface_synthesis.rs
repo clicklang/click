@@ -3242,6 +3242,7 @@ pub(super) fn raise_kernel_term(
         // Offset spelling still uses its existing address context at the
         // explicit Surface boundary; no new standalone offset syntax.
         Node::BoolRead(_)
+        | Node::AlgebraicEqual { .. }
         | Node::BoolOverflow { .. }
         | Node::PointerValueEqual(_)
         | Node::PointerEqual { .. }

@@ -116,6 +116,16 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
+            match (left.algebraic_equality(), right.algebraic_equality()) {
+                (Some(a), Some(b)) => {
+                    if !a.iter().zip(&b).all(|(a, b)| a.algebraic_syntax_equal(b)) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
             match (left.read(), right.read()) {
                 (Some((am, a)), Some((bm, b))) => {
                     if am != bm || !a.syntax_equal(&b) {
@@ -186,6 +196,21 @@ impl<'a> BooleanOperandView<'a> {
             return std::borrow::Cow::Borrowed(call);
         }
         self.native()
+    }
+
+    pub(crate) fn algebraic_equality(self) -> Option<[KernelTerm; 2]> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::AlgebraicEqual { arguments } = root.node()
+        {
+            return Some(arguments.clone());
+        }
+        let ConditionTerm::AlgebraicEqual(a, b) = self.native_leaf()? else {
+            return None;
+        };
+        Some([
+            KernelTermImport::default().algebraic(a),
+            KernelTermImport::default().algebraic(b),
+        ])
     }
 
     pub(crate) fn native_leaf(self) -> Option<&'a ConditionTerm> {
@@ -590,6 +615,9 @@ impl KernelTermImport {
                     arguments: [self.integer(left), self.integer(right)],
                 }
             }
+            Old::AlgebraicEqual(left, right) => Node::AlgebraicEqual {
+                arguments: [self.algebraic(left), self.algebraic(right)],
+            },
             Old::BoolEqual(left, right) => Node::BoolEqual {
                 arguments: [self.condition(left), self.condition(right)],
             },
@@ -687,6 +715,10 @@ impl KernelTermExport {
                     Op::NotEqual => Old::IntegerNotEqual(left, right),
                 }
             }
+            Node::AlgebraicEqual { arguments } => Old::AlgebraicEqual(
+                Box::new(Self::default().algebraic(&arguments[0])?),
+                Box::new(Self::default().algebraic(&arguments[1])?),
+            ),
             Node::BoolEqual { arguments } => Old::BoolEqual(
                 Box::new(Self::condition(&arguments[0])?),
                 Box::new(Self::condition(&arguments[1])?),

@@ -12,6 +12,7 @@ mod folds;
 pub use folds::KernelFold;
 pub(crate) use folds::KernelFoldIndex;
 mod algebraic;
+mod algebraic_equality;
 mod machine;
 #[allow(dead_code)]
 mod matches;
@@ -84,6 +85,9 @@ pub enum KernelTermNode {
     },
     IntegerCompare {
         operator: IntegerComparisonOperator,
+        arguments: [KernelTerm; 2],
+    },
+    AlgebraicEqual {
         arguments: [KernelTerm; 2],
     },
     BoolEqual {
@@ -385,6 +389,7 @@ impl NodeKey {
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
+            | KernelTermNode::AlgebraicEqual { arguments }
             | KernelTermNode::BoolEqual { arguments } => arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
@@ -738,6 +743,7 @@ impl KernelTerm {
             | KernelTermNode::BoolOverflow { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
+            | KernelTermNode::AlgebraicEqual { arguments }
             | KernelTermNode::BoolEqual { arguments } => arguments,
             KernelTermNode::BoolIf { arguments }
             | KernelTermNode::IntegerIf { arguments }
