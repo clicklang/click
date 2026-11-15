@@ -611,29 +611,34 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
-    pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, ConditionTerm>, [Self; 2])> {
+    /// Borrow the guard and arms without exporting the guard's expression DAG.
+    pub(crate) fn conditional_view(self) -> Option<(BooleanOperandView<'a>, [Self; 2])> {
         match self {
             Self::Shared(root) => match root.node() {
                 KernelTermNode::MachineIf { arguments } => Some((
-                    std::borrow::Cow::Owned(
-                        KernelTermExport::condition(&arguments[0]).expect("conditional guard"),
-                    ),
+                    BooleanOperandView::Shared(&arguments[0]),
                     [Self::Shared(&arguments[1]), Self::Shared(&arguments[2])],
                 )),
                 _ => root
                     .machine_conversion_leaf()
-                    .and_then(|leaf| Self::Legacy(leaf).conditional()),
+                    .and_then(|leaf| Self::Legacy(leaf).conditional_view()),
             },
             Self::Legacy(MachineTerm::If {
                 condition,
                 then_term,
                 else_term,
             }) => Some((
-                std::borrow::Cow::Borrowed(condition),
+                BooleanOperandView::Native(condition),
                 [Self::Legacy(then_term), Self::Legacy(else_term)],
             )),
             _ => None,
         }
+    }
+
+    /// Explicit native guard boundary for consumers not yet migrated.
+    pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, ConditionTerm>, [Self; 2])> {
+        self.conditional_view()
+            .map(|(guard, arms)| (guard.native(), arms))
     }
 
     /// Read kind alone does not require a native address compatibility view.

@@ -209,7 +209,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
             vec![child]
         } else if let Some((_, _, child)) = view.unary() {
             vec![child]
-        } else if let Some((_, children)) = view.conditional() {
+        } else if let Some((_, children)) = view.conditional_view() {
             children.into_iter().collect()
         } else {
             Vec::new()
