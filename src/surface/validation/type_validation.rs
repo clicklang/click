@@ -1480,6 +1480,18 @@ pub(super) fn infer_scoped_spec_value_type(
             Ok(SpecValueType::Integer)
         }
         ContractExpression::Negate(inner) => {
+            if !expected_integer && matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+            {
+                // Type the signed literal as a whole: INT32_MIN's positive
+                // magnitude alone needs int64, but its negation is int32.
+                return infer_contract_expression_type(
+                    expression,
+                    variables,
+                    click_functions,
+                    context,
+                )
+                .map(SpecValueType::Scalar);
+            }
             let inner = infer_scoped_spec_value_type(
                 inner,
                 variables,
@@ -1577,6 +1589,16 @@ pub(super) fn infer_scoped_spec_value_type(
                 ContractExpression::RustShiftLeft(..) | ContractExpression::RustShiftRight(..)
             ) {
                 return Ok(left);
+            }
+            if matches!(
+                expression,
+                ContractExpression::ShiftLeft(..) | ContractExpression::ShiftRight(..)
+            ) {
+                return Ok(SpecValueType::Scalar(contract_shift_result_type(
+                    scoped_scalar_type(&left),
+                    scoped_scalar_type(&right),
+                    false,
+                )));
             }
             Ok(SpecValueType::Scalar(arithmetic_result_type(
                 scoped_scalar_type(&left),
@@ -4658,10 +4680,22 @@ fn infer_contract_shift_type(
 ) -> Result<Option<InterfaceType>, ClickError> {
     let left_type = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right_type = infer_contract_expression_type(right, variables, click_functions, context)?;
-    Ok(match (left_type, right_type) {
+    Ok(contract_shift_result_type(
+        left_type,
+        right_type,
+        retain_operand_width,
+    ))
+}
+
+fn contract_shift_result_type(
+    left_type: Option<InterfaceType>,
+    right_type: Option<InterfaceType>,
+    retain_operand_width: bool,
+) -> Option<InterfaceType> {
+    match (left_type, right_type) {
         (Some(left), Some(right)) if type_is_scalar(left) && type_is_scalar(right) => {
             if retain_operand_width {
-                return Ok(Some(left));
+                return Some(left);
             }
             Some(match left {
                 InterfaceType::UInt64(rank) => InterfaceType::UInt64(rank),
@@ -4671,7 +4705,7 @@ fn infer_contract_shift_type(
             })
         }
         _ => None,
-    })
+    }
 }
 
 fn type_is_scalar(interface_type: InterfaceType) -> bool {
