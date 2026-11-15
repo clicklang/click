@@ -506,7 +506,8 @@ Validation: 2,128 selected tests passed, including every scaling test, algebraic
 and retained-match readers/rewrites, Surface synthesis, Rust lowering and the
 full ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
 
-8q selects common constructor variants directly during retained-match reduction.
+8q ([#2836](https://github.com/clicklang/click/pull/2836), merged) selects common
+constructor variants directly during retained-match reduction.
 The existing schema/type refusals and typed field-replacement policy are retained;
 only the selected fields cross that remaining substitution adapter. Symbolic
 common roots decline reduction without materializing algebraic output.
@@ -534,9 +535,11 @@ native field substitutions, call/handoff activation and the general raise/lower
 boundary remain assigned to their existing slices. No equality search rules or
 budgets changed. Regressions cover exact payloads, old/new views, operand order,
 native/common observation keys, readers and linear shared-constructor comparison.
-Validation: 2,010 selected tests passed, including every scaling test, algebraic
-and Boolean checks, rewrites/readers, Surface synthesis and full ordinary
-example projects. `scripts/check.sh --ci-quality` exited 0.
+Validation: 2,010 selected tests passed before integration. After incorporating
+upstream call/destination-write retirement, 3,045 tests passed, including every
+scaling test, algebraic/Boolean checks, rewrites/readers, Surface synthesis, call
+and statement checks, language lowering and full ordinary example projects.
+`scripts/check.sh --ci-quality` exited 0 on the integrated tree.
 
 ### 8a inventory
 
