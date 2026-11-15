@@ -57,6 +57,7 @@ pub(in crate::kernel) mod float_conversion;
 mod heap_extent_tests;
 #[cfg(test)]
 mod memory_construction_tests;
+pub(crate) mod reached_point;
 mod statement_clone;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
@@ -10233,6 +10234,9 @@ pub struct ExecutionState {
     pub(super) resource_bindings: Option<std::sync::Arc<BTreeMap<Variable, Variable>>>,
     pub(super) locals: LocalEnvironment,
     pub(super) memory: Memory,
+    /// The point this state's path has reached; not part of equality
+    /// ([`reached_point::ReachedPoint`]).
+    pub(super) point: reached_point::ReachedPoint,
     pub(super) resources: ResourceContext,
     /// Active stable-view authority. `None` is the canonical empty ledger so
     /// independently constructed states retain ordinary structural equality.

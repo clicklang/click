@@ -4649,10 +4649,14 @@ impl CheckedExecutionBranch {
             arm_effect_facts,
             Some([&memory_steps[0], &memory_steps[1]]),
         )?;
+        // The arms reach equal states by different routes; the join is a new
+        // point reached from both.
+        let mut joined_state = arms[0].reached_state().clone();
+        joined_state.join_reached_points(arms[0].reached_state(), arms[1].reached_state());
         Ok(Self {
             split,
             arms: [then_arm, else_arm],
-            joined_state: arms[0].reached_state().clone(),
+            joined_state,
             interface_successor_facts: None,
             interface_execution_facts: Vec::new().into(),
             interface_effect_facts,
