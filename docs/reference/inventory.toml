@@ -5010,3 +5010,15 @@ path = "reference/language/grammar.md#exact-float-bit-literals"
 [[item]]
 id = "language.word.float64_from_bits"
 path = "reference/language/grammar.md#exact-float-bit-literals"
+
+[[item]]
+id = "library.theorem.integer::lt_step_le"
+path = "reference/library/index.md#integerlt_step_le"
+
+[[item]]
+id = "library.theorem.integer::step_le_lt"
+path = "reference/library/index.md#integerstep_le_lt"
+
+[[item]]
+id = "library.theorem.integer::le_ne_lt"
+path = "reference/library/index.md#integerle_ne_lt"

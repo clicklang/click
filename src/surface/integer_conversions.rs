@@ -215,6 +215,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             "multiply_order_nonnegative",
             "round_down_le",
             "le_antisymmetric",
+            "lt_step_le",
         ] {
             let law = library
                 .iter()

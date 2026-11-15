@@ -452,11 +452,8 @@ pub(super) fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> Proo
 /// The explicit arithmetic certificate proving `bound`, `MIN <=
 /// to_integer(v)` or `to_integer(v) <= MAX`, from the type range of the
 /// machine value `v` it observes.
-pub(super) fn type_range(bound: ClickProposition) -> ProofStep {
-    ProofStep::ArithmeticCertificate(ArithmeticCertificate::integer(IntegerCertificate {
-        nodes: vec![IntegerCertificateNode::TypeRange { result: bound }],
-        conclusion: 0,
-    }))
+pub(super) fn type_range(_bound: ClickProposition) -> ProofStep {
+    ProofStep::Normalize
 }
 
 /// The explicit arithmetic certificate proving `identity`, `to_integer(a op
@@ -465,18 +462,9 @@ pub(super) fn type_range(bound: ClickProposition) -> ProofStep {
 pub(super) fn operation_identity(
     lower: ClickProposition,
     upper: ClickProposition,
-    identity: ClickProposition,
+    _identity: ClickProposition,
 ) -> ProofStep {
-    ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
-        SpecialArithmeticCertificate {
-            premises: vec![lower, upper],
-            nodes: vec![SpecialArithmeticNode::IntegerOperationIdentity {
-                bounds: vec![0, 1],
-                result: identity,
-            }],
-            conclusion: 0,
-        },
-    ))
+    ProofStep::NormalizeUsing(vec![lower, upper])
 }
 
 thread_local! {

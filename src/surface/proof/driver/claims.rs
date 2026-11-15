@@ -2076,6 +2076,15 @@ fn apply_post_execution_arithmetic_using<'a>(
                 } else {
                     pairs.clone()
                 };
+                if let Some(closed) = crate::kernel::search::ProofSearch::apply_integer_composition(
+                    focused,
+                    &plan,
+                    &integer_pairs,
+                    surface_goal,
+                    &[],
+                )? {
+                    return Ok(closed);
+                }
                 let certificate =
                     crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
                         &plan,

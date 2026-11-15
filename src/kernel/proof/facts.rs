@@ -77,6 +77,26 @@ mod constant_truth_tests {
         assert!(!root.contradicts(&positive_false));
         assert!(!root.contradicts(&negative_true));
     }
+
+    #[test]
+    fn integer_equality_and_disequality_are_exact_opposites_in_their_branch() {
+        let a: crate::kernel::SharedIntegerTerm =
+            crate::kernel::IntegerTerm::Variable(Variable(901_001)).into();
+        let b: crate::kernel::SharedIntegerTerm =
+            crate::kernel::IntegerTerm::Variable(Variable(901_002)).into();
+        let equality =
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.clone(), b.clone()), true);
+        let root = ProofFacts::from_ordered(&[equality.clone()]);
+        assert!(!root.contradicts(&equality));
+        for (left, right) in [(a.clone(), b.clone()), (b, a)] {
+            let disequality =
+                Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true);
+            let branch = root.with_fact(disequality.clone());
+            assert!(branch.contradicts(&equality));
+            assert!(branch.contradicts(&disequality));
+            assert!(!root.contradicts(&equality));
+        }
+    }
 }
 
 #[cfg(test)]

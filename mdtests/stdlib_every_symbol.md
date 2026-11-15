@@ -2005,6 +2005,26 @@ theorem check_integer_congruence(a: Integer, b: Integer, c: Integer, d: Integer,
     }
 }
 
+theorem check_integer_strict_step(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a + 1 <= b by {
+        apply(integer::lt_step_le(a,b)) using { a < b; };
+    }
+}
+theorem check_integer_step_strict(a: Integer, b: Integer) {
+    requires a + 1 <= b;
+    ensures a < b by {
+        apply(integer::step_le_lt(a,b)) using { a + 1 <= b; };
+    }
+}
+theorem check_integer_disequal_strict(a: Integer, b: Integer) {
+    requires a <= b;
+    requires a != b;
+    ensures a < b by {
+        apply(integer::le_ne_lt(a,b)) using { a <= b; a != b; };
+    }
+}
+
 ```
 
 ```expect
