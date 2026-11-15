@@ -473,7 +473,8 @@ lowers through checked statements. The assignment result has the target's
 scalar type, its right operand is evaluated exactly once, the second conjunct
 remains short-circuited, and a loop guard reruns the assignment after every
 iteration and `continue`. The retained `mdtests/rb_next_conjunctive_guard.md`
-now reaches its next bounded proof frontier: `execute()` needs a view of
+reached its next bounded proof frontier: execution (then spelled `execute()`)
+needs a view of
 `node->rb_right` while the entry `rb_at(node)` remains folded. C4b still owns
 the complete descent/ascent proof; this support does not claim traversal
 verification.
@@ -748,7 +749,7 @@ the acyclicity check across definitions all apply unchanged. Mutual
 resource-definition cycles remain rejected.
 
 **D9. No new resource algebra and no automatic unfolding.** No ghost state,
-fractions, magic wands, or `auto` fold search. Every layer a proof needs is
+fractions, magic wands, or automatic fold search. Every layer a proof needs is
 named. Reasoning and certificates stay output-sensitive in the explicitly
 exposed model terms; each rebalancing case is an explicit sequence of
 unfold, C steps, fold, and `have`. Symmetric cases are written out; proof

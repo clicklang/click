@@ -321,7 +321,7 @@ These make a C operation in range. A goal in a proof is a separate matter,
 because a tactic builds a kernel theorem for each step it takes. Order
 chains have theirs: `integer::uint64_less_equal_transitive` and
 `integer::uint64_less_than_less_equal_transitive`, proved library theorems. Linear arithmetic does not:
-`arithmetic() using` proves a linear `uint64` order goal through those
+`solve() using { ... }` proves a linear `uint64` order goal through those
 bridges (`src/surface/proof/wide_arithmetic.rs`): it writes the steps a
 proof would write by hand and adds no rule to the kernel. A `size_t` loop
 invariant (`i + 2 <= length` from `i + 1 < length`) is one step.

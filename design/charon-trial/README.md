@@ -99,7 +99,7 @@ reference on each iteration, writes the counter, and restores the original
 caller value when the guard drops. Its sidecar proves `result == n`, restoration,
 and termination for every `0 <= n <= INT32_MAX`, including zero iterations.
 The separate `final_header` probe checks header assignments on the final false
-test, including zero iterations. The proofs use `execute_until(loop(0))`, source
+test, including zero iterations. The proofs use `step_until(loop(0))`, source
 locals, and ordinary loop
 invariants; no generated counter or manual CFG statement numbers are needed.
 
@@ -680,7 +680,7 @@ checkpoint locks are refreshed without changing prior ULLBC bytes or compiler
 pins. Deterministic scaling checks cover header work and emitted code size.
 
 The shared proof interface now also accepts
-`execute_until(assignment(local, N))`, selecting a named ordinary store, local compound update, or
+`step_until(assignment(local, N))`, selecting a named ordinary store, local compound update, or
 call-result assignment by zero-based static occurrence. The loop checkpoint
 proves source-local initialization through this selector, including live
 re-extraction with an unrelated compiler local. Indexed selection avoids
@@ -689,7 +689,7 @@ Selecting a final store does not move before right-hand-side helpers. This
 adds a stable observation mechanism without changing frozen numeric-selector
 sidecars, Rust interpretation pins, locks, or parity percentages.
 
-`execute_until(read(N))` additionally selects the Nth statement containing an
+`step_until(read(N))` additionally selects the Nth statement containing an
 explicit scalar load, before the statement executes. The complete unchanged
 byte-sum source and original prefix-sum contract now verify using loop, read,
 and named assignment frontiers. The load, overflow checks, index update,
@@ -757,7 +757,7 @@ that the migration or Rust-language support is complete.
 [chunk-proof](chunk-proof/README.md) verifies the byte-identical original
 `rust-chunks-exact` source and unchanged contract with a migrated proof. It uses
 the imported iterator's cursor, remaining length, and remainder directly.
-`execute_until(back_edge())` checks the rest of a loop preservation region
+`step_until(loop(0).back_edge())` checks the rest of a loop preservation region
 without counting compiler cleanup statements. `close_invariants()` still
 checked every invariant and the decreasing measure separately; that tactic has
 since been retired, and the back edge now closes each member with `solve()`.

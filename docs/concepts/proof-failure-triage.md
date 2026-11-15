@@ -321,11 +321,11 @@ before reading this location.
 ## Classifying smart versus simple tactics
 
 [Smart and simple tactics](smart-and-simple-tactics.md) defines the classes:
-the four smart tactics, and an elided form, which is smart while its argument
-is elided and simple once it is written. Classify tactics by whether they
-select or plan proof operations, not by whether
-the user listed every contextual input. A tactic that receives hints and
-chooses among normalization, rewriting, arithmetic, transport, framing, or
+written `solve` and `step_until`, the implicit tail and closer, and elided
+forms, which are smart while an argument is elided and simple once it is
+written. Classify tactics by whether they select or plan proof operations,
+not by whether the user listed every contextual input. A tactic that receives
+hints and chooses among normalization, rewriting, arithmetic, transport, framing, or
 other theories is smart and must expand. A simple tactic checks one selected
 operation deterministically, with work proportional to its relevant input,
 affected program operation, indexed context access, and proof-state delta.

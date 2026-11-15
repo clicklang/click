@@ -248,7 +248,8 @@ can't be written out as explicit tactics isn't allowed in the
 slow part either: then there's no way to remove its cost, which makes it fast
 part, and fast part may not search. [Smart and simple
 tactics](../concepts/smart-and-simple-tactics.md) defines the tactic classes
-and the target set of four smart tactics.
+including `solve`, `step_until`, the implicit tail and closer, and searches
+that fill elided arguments.
 
 ## Design check
 
