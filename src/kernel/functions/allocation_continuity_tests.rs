@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{CompareRelation, MachineIntegerType, VerificationSession};
 
 /// [`allocation_continuity`] of two 32-bit extents.
 fn int32_continuity(
@@ -337,6 +337,114 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
         ),
         AllocationContinuity::Same,
     );
+}
+
+/// One allocation is lent to a helper beside storage the caller keeps.
+fn allocation_companion_call(unrelated: u64) -> (Pointer, ExecutionState, ExecutionState) {
+    let base = Pointer {
+        block: PointerBlock::Heap(984_000),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = Memory::new()
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+        .unwrap();
+    let mut caller = ExecutionState::new()
+        .with_memory(memory)
+        .with_population_creation_tracking();
+    caller.record_population_storage_creation(base.block.clone());
+    for id in 0..unrelated {
+        caller.record_population_storage_creation(PointerBlock::Heap(985_000 + id));
+    }
+    let mut callee = caller.clone();
+    Arc::make_mut(&mut callee.population_effects).creation = Some(
+        caller
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .enter_call(),
+    );
+    let input = ResourceFact::own_allocation(base.clone(), 4);
+    let lent = transfer_population_call_facts(
+        callee.clone(),
+        &caller,
+        &callee,
+        &caller,
+        std::iter::once(&input),
+        &[],
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    (base, caller, lent)
+}
+
+#[test]
+fn allocation_companion_returns_through_a_proven_alias_only() {
+    let _session = VerificationSession::enter();
+    let (base, caller, callee) = allocation_companion_call(0);
+    let alias = Pointer::symbolic(Variable(984_001));
+    let output = ResourceFact::own_allocation(alias.clone(), 4);
+    let missing = PureFactContext::new();
+    let proven = missing
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(alias, base.clone()), true);
+    let caller_events = caller.population_effects.creation.as_ref().unwrap();
+    for (facts, accepted) in [(&missing, false), (&proven, true)] {
+        let returned = transfer_population_call_facts(
+            callee.clone(),
+            &callee,
+            &caller,
+            &callee,
+            std::iter::once(&output),
+            &[],
+            facts,
+        )
+        .unwrap();
+        let finished = returned
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .finish_call(caller_events);
+        if accepted {
+            let resumed = finished.unwrap();
+            assert!(resumed.created_here(&base.block));
+            assert!(resumed.retired(&base.block).is_ok());
+        } else {
+            assert!(matches!(finished,
+                Err(crate::kernel::population_authority::storage_creation::CreationRefusal::OutstandingOwnership)));
+        }
+    }
+}
+
+#[test]
+fn a_return_alias_does_not_recreate_a_retired_cleanup_anchor() {
+    let _session = VerificationSession::enter();
+    let (base, caller, mut callee) = allocation_companion_call(0);
+    callee.retire_population_storage(&base.block).unwrap();
+    let alias = Pointer::symbolic(Variable(984_002));
+    let output = ResourceFact::own_allocation(alias.clone(), 4);
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(alias, base.clone()), true);
+    let returned = transfer_population_call_facts(
+        callee.clone(),
+        &callee,
+        &caller,
+        &callee,
+        std::iter::once(&output),
+        &[],
+        &facts,
+    )
+    .unwrap();
+    let finished = returned
+        .population_effects
+        .creation
+        .as_ref()
+        .unwrap()
+        .finish_call(caller.population_effects.creation.as_ref().unwrap())
+        .unwrap();
+    assert!(!finished.tracks_storage_anchor(&base.block));
+    assert!(!finished.created_here(&base.block));
 }
 
 #[cfg(test)]

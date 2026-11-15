@@ -2767,10 +2767,19 @@ fn execute_program_heap_free_paths(
                     &effective_assumptions,
                 )
             });
-        let (pointer, declared_allocation) = match declared_allocation {
+        let (mut pointer, declared_allocation) = match declared_allocation {
             Some((base, bytes)) => (base.clone().with_type(pointer.program_type()), Some(bytes)),
             None => (pointer, None),
         };
+        // The owned token can itself be spelled by a returned alias. Resolve
+        // that address to its indexed storage coordinate before asking whether
+        // it is the exact live allocation base. Keep designation and extent;
+        // this address spelling grants no permission and preserves offsets.
+        pointer.replace_pointer(
+            effective_assumptions
+                .equality_graph
+                .storage_address(pointer.pointer()),
+        );
         if state
             .memory
             .heap
