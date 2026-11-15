@@ -12,6 +12,8 @@ mod folds;
 pub use folds::KernelFold;
 pub(crate) use folds::KernelFoldIndex;
 mod algebraic;
+mod algebraic_call;
+pub(crate) use algebraic_call::KernelAlgebraicCall;
 mod algebraic_equality;
 mod machine;
 #[allow(dead_code)]
@@ -60,6 +62,7 @@ pub enum KernelTermNode {
     Fold(KernelFold),
     Match(KernelMatch),
     Constructor(KernelConstructor),
+    AlgebraicCall(KernelAlgebraicCall),
     BoolLiteral(bool),
     BoolRead(KernelBooleanRead),
     BoolCast {
@@ -355,11 +358,15 @@ impl NodeKey {
                 .fields
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::Match(matched) if matches!(ty, KernelType::Program(_)) => matched
-                .arguments
-                .iter()
-                .chain(matched.arms.iter().flat_map(|arm| &arm.bindings))
-                .any(KernelTerm::has_opaque_observation_boundary),
+            KernelTermNode::Match(matched)
+                if matches!(ty, KernelType::Program(_) | KernelType::Algebraic(_)) =>
+            {
+                matched
+                    .arguments
+                    .iter()
+                    .chain(matched.arms.iter().flat_map(|arm| &arm.bindings))
+                    .any(KernelTerm::has_opaque_observation_boundary)
+            }
             KernelTermNode::Fold(fold) if matches!(ty, KernelType::Program(_)) => fold
                 .arguments
                 .iter()
@@ -381,6 +388,10 @@ impl NodeKey {
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
+            KernelTermNode::AlgebraicCall(call) => call
+                .arguments
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::Call { arguments, .. }
             | KernelTermNode::IntegerOperation { arguments, .. } => arguments
                 .iter()
@@ -737,6 +748,7 @@ impl KernelTerm {
             KernelTermNode::Fold(fold) => &fold.arguments,
             KernelTermNode::Match(matched) => &matched.arguments,
             KernelTermNode::Constructor(constructor) => &constructor.fields,
+            KernelTermNode::AlgebraicCall(call) => &call.arguments,
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
@@ -1507,6 +1519,7 @@ impl KernelTermExport {
             && matches!(
                 term.node(),
                 KernelTermNode::Match(_)
+                    | KernelTermNode::AlgebraicCall(_)
                     | KernelTermNode::Constructor(_)
                     | KernelTermNode::Variable(_)
             )

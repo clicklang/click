@@ -204,3 +204,53 @@ fn common_constructor_projection_selects_shared_field_without_exporting_prefix()
         assert!(work <= 4, "size={size} work={work}");
     }
 }
+
+#[test]
+fn nested_algebraic_calls_retain_shared_arguments_with_linear_work() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = maybe_type();
+        let mut expression = SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Variable(Variable(999705)),
+        };
+        for _ in 0..size {
+            expression = SpecAlgebraicExpression {
+                algebraic_type: ty.clone(),
+                node: SpecAlgebraicExpressionNode::PureFunctionApplication {
+                    name: "nested_algebraic_call".into(),
+                    arguments: vec![SpecPureFunctionArgument::Algebraic(expression)],
+                },
+            };
+        }
+        let mut execution = ExecutionBudget::new();
+        let mut budget = SpecEvaluation::logical(&mut execution);
+        let exports = KernelTermExport::algebraic_export_count();
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_algebraic_at_state_in(
+                &ExecutionState::new(),
+                &expression,
+                None,
+                &PureFactContext::new(),
+                &mut budget,
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(work <= 100 * size + 100, "size={size} work={work}");
+        let AlgebraicResult::Shared(mut root) = paths[0].value.clone() else {
+            panic!("retained call");
+        };
+        for _ in 0..size {
+            let KernelTermNode::AlgebraicCall(call) = root.node() else {
+                panic!("nested common call");
+            };
+            assert_eq!(call.shared_machine_arguments, vec![false]);
+            root = call.arguments[0].clone();
+        }
+        assert!(
+            matches!(root.node(), KernelTermNode::Variable(variable) if *variable == Variable(999705))
+        );
+    }
+}

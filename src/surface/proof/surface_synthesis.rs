@@ -3170,6 +3170,14 @@ pub(super) fn raise_kernel_term(
                 },
             }
         }
+        Node::AlgebraicCall(call) => SurfaceTerm::Call {
+            name: generic_instance_source_name(&call.name).into(),
+            arguments: call
+                .arguments
+                .iter()
+                .map(recurse)
+                .collect::<Option<Vec<_>>>()?,
+        },
         Node::Call { name, arguments } => {
             let call = SurfaceTerm::Call {
                 name: generic_instance_source_name(name).into(),

@@ -263,10 +263,33 @@ impl SpecCallArgument {
         }
     }
 
+    pub(super) fn into_algebraic_call_operand(self) -> (KernelTerm, bool) {
+        match self {
+            Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => (root, false),
+            Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) => {
+                (root, true)
+            }
+            // Mixed-family descriptor adapters retain their existing exact forms
+            // until their shared argument migration.
+            value => {
+                let argument = value.into_payload();
+                let shared = matches!(argument, PureFunctionArgument::SharedMachine(_));
+                (KernelTermImport::default().argument(&argument), shared)
+            }
+        }
+    }
+
     fn into_payload(self) -> PureFunctionArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
+                if matches!(value.ty(), KernelType::Algebraic(_)) {
+                    return PureFunctionArgument::Algebraic(
+                        KernelTermExport::default()
+                            .algebraic(&value)
+                            .expect("algebraic argument compatibility boundary"),
+                    );
+                }
                 if let Some(descriptor) = value
                     .pointer_argument_native()
                     .or_else(|| value.boolean_argument_native())
