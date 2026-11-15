@@ -1,10 +1,15 @@
+mod ordinary;
+pub(crate) use ordinary::{
+    OrdinaryTerminationScope, TerminationAtomKind, TerminationCause, TerminationCheck,
+    TerminationCheckReport, termination_predicate_spelling,
+};
 mod execution;
 mod obligations;
 pub(in crate::kernel) use completion::ProgramBodyOwner;
-mod completion;
+pub(in crate::kernel) mod completion;
 pub(crate) use completion::{
     ProgramContractBodies, ProgramContractFailure, ProgramContractGoal, ProgramContractProof,
-    ProgramTerminationInputs,
+    ProgramTerminationInputs, ProgramTerminationProof, ProvedProgramContracts,
 };
 
 use super::prelude::*;

@@ -2468,6 +2468,9 @@ fn synthesize_surface_atomic_proposition(
         arguments: kernel_arguments,
     } = proposition
     {
+        if let Some(surface) = super::program_termination::predicate_spelling(name) {
+            return Some(surface);
+        }
         let mut call_arguments = Vec::new();
         let mut index = usize::from(matches!(
             kernel_arguments.first(),

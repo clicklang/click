@@ -101,6 +101,12 @@ pub enum ProofStep {
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
+    CheckTerminationLocal(String),
+    CheckTerminationComponent {
+        function: String,
+        strict: bool,
+    },
+    CheckTerminationCallbacks,
     Known,
     Extract(ClickProposition),
     Normalize,
@@ -752,6 +758,16 @@ impl ProofStep {
             ProofTactic::Witness(witness) => Self::Witness(witness.clone()),
             ProofTactic::LetSatisfy(binding) => Self::LetSatisfy(binding.clone()),
             ProofTactic::Choose(choice) => Self::Choose(choice.clone()),
+            ProofTactic::CheckTerminationLocal(function) => {
+                Self::CheckTerminationLocal(function.clone())
+            }
+            ProofTactic::CheckTerminationComponent { function, strict } => {
+                Self::CheckTerminationComponent {
+                    function: function.clone(),
+                    strict: *strict,
+                }
+            }
+            ProofTactic::CheckTerminationCallbacks => Self::CheckTerminationCallbacks,
             ProofTactic::Known => Self::Known,
             ProofTactic::Extract(proposition) => Self::Extract(proposition.clone()),
             ProofTactic::Normalize => Self::Normalize,
@@ -902,6 +918,16 @@ impl ProofStep {
             Self::Witness(witness) => ProofTactic::Witness(witness.clone()),
             Self::LetSatisfy(binding) => ProofTactic::LetSatisfy(binding.clone()),
             Self::Choose(choice) => ProofTactic::Choose(choice.clone()),
+            Self::CheckTerminationLocal(function) => {
+                ProofTactic::CheckTerminationLocal(function.clone())
+            }
+            Self::CheckTerminationComponent { function, strict } => {
+                ProofTactic::CheckTerminationComponent {
+                    function: function.clone(),
+                    strict: *strict,
+                }
+            }
+            Self::CheckTerminationCallbacks => ProofTactic::CheckTerminationCallbacks,
             Self::Known => ProofTactic::Known,
             Self::Extract(proposition) => ProofTactic::Extract(proposition.clone()),
             Self::Normalize => ProofTactic::Normalize,
@@ -1123,6 +1149,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
         ProofStep::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
         ProofStep::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
+        ProofStep::CheckTerminationLocal(_)
+        | ProofStep::CheckTerminationComponent { .. }
+        | ProofStep::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
         ProofStep::Known => TacticClass::Simple(SimpleTactic::Known),
         ProofStep::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {

@@ -208,6 +208,9 @@ src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	driver	4
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	try_restricted_solve_closure	2
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	try_solve_closure	1
+src/surface/proof/program_termination.rs	mixed	::prove	driver	1
+src/surface/proof/program_termination.rs	mixed	::solve_omitted	try_solve_closure	1
+src/surface/proof/program_termination.rs	mixed	::try_closure	driver	2
 src/surface/proof/proof_object.rs	presentation	Proof::spelled_goal	available_surface_fact	2
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::execute_enum_match_group	execute_enum_match_group	1
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::execute_enum_match_group	try_focused_execute_to_exit_within	1

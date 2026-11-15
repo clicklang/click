@@ -498,6 +498,13 @@ impl Printer<'_> {
             }
             _ if !self.source_mode() => None,
             Proposition::Predicate { name, arguments } => {
+                if let Some(surface) =
+                    crate::surface::proof::program_termination::predicate_spelling(name)
+                {
+                    return Some(atom(crate::surface::printing::source_click_proposition(
+                        &surface,
+                    )));
+                }
                 if name == &format!("{}1", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX)
                     && let [origin, start, end] = arguments.as_slice()
                 {

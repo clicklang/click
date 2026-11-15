@@ -352,6 +352,18 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "witness",
     "write",
     "true",
+    "termination",
+    "termination_local",
+    "termination_strict",
+    "termination_body",
+    "termination_returns",
+    "termination_divergence",
+    "termination_callbacks",
+    "strict",
+    "normal",
+    "check_termination_local",
+    "check_termination_component",
+    "check_termination_callbacks",
 ];
 
 /// Stable identifiers for the documented Surface Click declaration,
@@ -433,6 +445,8 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "verifying",
     "viewable",
     "write",
+    "termination",
+    "termination-goals",
 ];
 
 /// The `click::` path of a Click library module identity:
@@ -806,6 +820,8 @@ pub struct ClickFile {
     theorem_definitions: Vec<TheoremDefinition>,
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
+    termination_proof: Option<Vec<ProofTactic>>,
+    termination_span: Option<(crate::source::SourcePosition, crate::source::SourcePosition)>,
     /// User-defined tactics: contracts over the proof state, each proved once
     /// and then applied as one simple step.
     tactic_definitions: Vec<TacticDefinition>,
@@ -5776,6 +5792,12 @@ pub enum ProofTactic {
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
+    CheckTerminationLocal(String),
+    CheckTerminationComponent {
+        function: String,
+        strict: bool,
+    },
+    CheckTerminationCallbacks,
     Known,
     Extract(ClickProposition),
     Normalize,
@@ -5885,6 +5907,7 @@ pub enum SimpleTactic {
     Witness,
     LetSatisfy,
     Choose,
+    Termination,
     Known,
     Extract,
     Normalize,
@@ -6281,6 +6304,21 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         syntax: "solve() using",
         class: "smart",
     },
+    PublicTacticForm {
+        id: "check-termination-local",
+        syntax: "check_termination_local(",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "check-termination-component",
+        syntax: "check_termination_component(",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "check-termination-callbacks",
+        syntax: "check_termination_callbacks()",
+        class: "simple",
+    },
 ];
 
 mod proof_certificate;
@@ -6418,6 +6456,9 @@ impl ProofTactic {
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
             Self::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
+            Self::CheckTerminationLocal(_)
+            | Self::CheckTerminationComponent { .. }
+            | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known => TacticClass::Simple(SimpleTactic::Known),
             Self::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
             Self::Normalize | Self::NormalizeUsing(_) => {
@@ -7648,6 +7689,8 @@ impl ParameterIndex {
 #[derive(Clone, Copy)]
 struct SpecDefinitions<'a> {
     struct_sizes: Option<&'a BTreeMap<String, u32>>,
+    termination_scope: Option<&'a std::sync::Arc<crate::kernel::OrdinaryTerminationScope>>,
+    termination_tactics: Option<&'a BTreeSet<String>>,
     predicates: &'a PredicateEnvironment,
     functions: &'a ClickFunctionEnvironment,
 }
@@ -7658,7 +7701,19 @@ impl<'a> SpecDefinitions<'a> {
             predicates,
             functions,
             struct_sizes: None,
+            termination_scope: None,
+            termination_tactics: None,
         }
+    }
+
+    fn with_termination_scope(
+        mut self,
+        scope: &'a std::sync::Arc<crate::kernel::OrdinaryTerminationScope>,
+        tactics: &'a BTreeSet<String>,
+    ) -> Self {
+        self.termination_scope = Some(scope);
+        self.termination_tactics = Some(tactics);
+        self
     }
 
     fn with_struct_sizes(mut self, sizes: &'a BTreeMap<String, u32>) -> Self {

@@ -4,7 +4,7 @@ use super::obligations::{TerminationCallObligation, TerminationObligations};
 use super::*;
 
 impl TerminationObligations {
-    fn prove_local_descent(
+    pub(super) fn prove_local_descent(
         &self,
         name: &String,
     ) -> Result<Option<TerminationRefusal>, TerminationError> {

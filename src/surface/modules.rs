@@ -456,6 +456,12 @@ fn merge_modules(
         contract_definitions: Vec::new(),
         function_blocks: Vec::new(),
         tactic_definitions: Vec::new(),
+        termination_proof: locals
+            .get(entry)
+            .and_then(|file| file.termination_proof.clone()),
+        termination_span: locals
+            .get(entry)
+            .and_then(|file| file.termination_span.clone()),
         declaration_owners: BTreeMap::new(),
         entry_module: Some(entry.to_string()),
         source_spans: locals
