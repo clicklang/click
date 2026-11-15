@@ -986,6 +986,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
                 ProgramStatement::Call {
                     function_name: callee.to_string(),
                     arguments: vec![argument],
+                    callee: None,
                 }
             } else {
                 program_seq(

@@ -1333,30 +1333,30 @@ statement that holds the expression:
   `if (a() && b())`, the statement's own `if` then reads that value, which each
   path has already decided.
 
+- A statement expression `({ body; value })` runs its body, then a
+  `ProgramStatement::StepValue` records its value. `WRITE_ONCE(x, v)` records
+  `v` once under two steps, one read by the ordered store and one by the
+  expression. A discarded expression statement is a `StepValue` with no steps:
+  its value is evaluated and discarded.
+- A call through a function pointer is a call whose `callee` is the pointer
+  expression; its `function_name` is the pointer as the source writes it. The
+  surface names any call `S.call(j)`, counting every call of the statement, and
+  a call of a named function also `S.call(f, j)`.
+
 A step's result stays in the path state by its number
 (`ExecutionState::step_results`), and the statement reads it as
-`ProgramExpression::StepResult`. The result ends with the first statement that
+`ProgramExpression::StepResult`. Each result ends with the statement that
 reads it, or with the condition that decides a branch.
 
 #### Where the implementation departs from this
 
-Other expressions with effects still move into locals:
+The Rust importer gives every MIR local the user did not name a local
+`__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's
+result to such a temporary, so a `for` loop's `next` result is one and a proof
+sees it.
 
-- The C front end assigns the value of `({ })` and `WRITE_ONCE`, and of a
-  call through a callback, to a temporary `__click_call_result<N>`
-  (`fresh_synthesized_call_name` in `src/languages/c/syntax.rs`).
-- The Rust importer gives every MIR local the user did not name a local
-  `__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's
-  result to such a temporary, so a `for` loop's `next` result is one and a
-  proof sees it.
-- The surface recognizes the C temporaries by name to hide them
-  (`is_call_result_temporary` and its callers in `source_layout`,
-  `execution_planning/context`, `cursor_execution` and `surface_synthesis`).
-
-These temporaries are defects to remove, not a design to extend. A proof
-should never see `__click_call_result<N>`, `__rust_mir_<N>` or any other name
-a front end or compiler invented, and the name-based hiding above is a
-workaround for them. Do not add a temporary, a name check, or a special case
+This temporary is a defect to remove, not a design to extend. A proof should
+never see `__rust_mir_<N>` or any other name a front end or compiler invented. Do not add a temporary, a name check, or a special case
 that depends on one; where existing code needs one, remove it by moving toward
 the model: a call is a node of the expression that holds it, its result is
 named by its site, and no compiler temporary becomes a program variable.

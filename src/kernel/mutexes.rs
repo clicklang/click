@@ -3498,6 +3498,7 @@ mod tests {
                 arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
                     address.clone(),
                 ))],
+                callee: None,
             };
             let paths = eval::execute_execution_statement_paths(
                 &state,
@@ -3767,6 +3768,7 @@ mod tests {
                 ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
                 crate::kernel::program_expression::int32_literal(0),
             ],
+            callee: None,
         };
         let paths = eval::execute_execution_statement_paths(
             &state,
@@ -3852,6 +3854,7 @@ mod tests {
                     arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
                         pointer.clone(),
                     ))],
+                    callee: None,
                 },
                 &assumptions,
                 ExecutionContext::execute_bodies(&environment),
@@ -4454,6 +4457,7 @@ mod tests {
             arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
                 address.clone(),
             ))],
+            callee: None,
         };
         let paths = eval::execute_execution_statement_paths(
             state,

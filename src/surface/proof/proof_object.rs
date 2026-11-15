@@ -1653,12 +1653,6 @@ fn register_snapshot_names(
         for (name, stored) in state.locals().object_values() {
             let value = stored.native();
             let value = value.as_ref();
-            // A call's result temporary is spelled by its call,
-            // `<region>.result`, at any point that holds it.
-            if let Some(spelling) = crate::surface::diagnostics::call_result_spelling(name) {
-                register_call_result_name(labels, spelling, value);
-                continue;
-            }
             // A pointer's offset variable is not the pointer; a scalar
             // local's value, or a pointer local's whole address, is exactly
             // the local.

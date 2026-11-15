@@ -3817,6 +3817,7 @@ fn destructor_object_order<'a>(statement: &'a ProgramStatement, destructor: &str
             ProgramStatement::Call {
                 function_name,
                 arguments,
+                ..
             } if function_name == destructor
                 || click::surface::source_display_name(function_name).as_deref()
                     == Some(destructor) =>

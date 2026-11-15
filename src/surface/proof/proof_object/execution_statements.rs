@@ -1144,6 +1144,7 @@ impl<'a> Proof<'a> {
             ProgramStatement::Call {
                 function_name,
                 arguments,
+                ..
             }
             | ProgramStatement::CallAssign {
                 function_name,

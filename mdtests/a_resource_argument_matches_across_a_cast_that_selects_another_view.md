@@ -58,7 +58,6 @@ void caller(struct rb_node* rb_old) {
     step();
     step();
     step();
-    step();
     step(set_size, { parent: source });
 }
 ```

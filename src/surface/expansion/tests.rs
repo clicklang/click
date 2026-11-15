@@ -3844,6 +3844,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
             ProgramStatement::Call {
                 function_name: "may_throw".into(),
                 arguments: Vec::new(),
+                callee: None,
             },
             program_return(crate::kernel::program_expression::int32_literal(0)),
         ),

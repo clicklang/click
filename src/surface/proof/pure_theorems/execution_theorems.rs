@@ -346,6 +346,7 @@ pub(super) fn verify_execution_theorem(
             function_name: call_name.to_string(),
             arguments,
             site: crate::languages::c::syntax::C0Site::NONE,
+            callee: None,
         }
     } else {
         syntax::C0Statement::Seq(

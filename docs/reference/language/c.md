@@ -2870,9 +2870,7 @@ checked again on every pass, `continue` included. Its calls and its test are
 the loop's own regions, `loop(i).call(f, j)` and `loop(i).test()`: a pass steps
 the calls, then the test, whose false side leaves the loop
 ([a loop's points](../../internals/kernel.md#what-stepping-a-statement-means)).
-The call's result still goes to a `__click_call_result<N>` temporary, a known
-defect; see
-[where stepping departs from its model](../../internals/kernel.md#where-the-implementation-departs-from-this).
+The call's result is named by its call, `loop(i).call(f, j).result`.
 
 Symbolic pointer-writing loops should use invariants and explicit loop effects.
 Do not expect unconstrained symbolic loops to be unrolled automatically.

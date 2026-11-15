@@ -589,6 +589,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             ProgramStatement::Call {
                 function_name,
                 arguments,
+                ..
             }
             | ProgramStatement::CallResult {
                 function_name,
@@ -1685,6 +1686,20 @@ fn statement_calls_visiting(
         return;
     }
     match statement {
+        // A call through a function pointer reaches whatever the pointer
+        // holds, which no function name says.
+        ProgramStatement::Call {
+            function_name,
+            callee: Some(_),
+            ..
+        }
+        | ProgramStatement::CallResult {
+            function_name,
+            callee: Some(_),
+            ..
+        } => {
+            calls.insert(format!("{function_name}#indirect"));
+        }
         ProgramStatement::CallAssign { function_name, .. }
         | ProgramStatement::Call { function_name, .. }
         | ProgramStatement::CallResult { function_name, .. } => {
@@ -2117,6 +2132,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
             ProgramStatement::Call {
                 function_name,
                 arguments,
+                ..
             }
             | ProgramStatement::CallResult {
                 function_name,
@@ -5516,6 +5532,7 @@ mod address_escape_tests {
         let call = ProgramStatement::Call {
             function_name: "reset".to_string(),
             arguments: vec![address_of("n")],
+            callee: None,
         };
         assert!(address_taken_locals(&call).contains("n"));
         assert!(reject_address_escaped_measure("f", "n", &address_taken_locals(&call)).is_err());

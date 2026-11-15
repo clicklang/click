@@ -152,9 +152,11 @@ impl ProgramStatement {
             Self::Call {
                 function_name,
                 arguments,
+                callee,
             } => Self::Call {
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
+                callee: callee.clone(),
             },
             Self::CallResult {
                 call,
@@ -162,12 +164,14 @@ impl ProgramStatement {
                 arguments,
                 result_type,
                 result_pointee_constant,
+                callee,
             } => Self::CallResult {
                 call: *call,
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
                 result_type: *result_type,
                 result_pointee_constant: *result_pointee_constant,
+                callee: callee.clone(),
             },
             Self::HeapAllocate {
                 target,
@@ -190,12 +194,12 @@ impl ProgramStatement {
                 label: label.clone(),
             },
             Self::StepValue {
-                step,
+                steps,
                 expression,
                 value_type,
                 pointee_constant,
             } => Self::StepValue {
-                step: *step,
+                steps: steps.clone(),
                 expression: expression.clone(),
                 value_type: *value_type,
                 pointee_constant: *pointee_constant,

@@ -3583,22 +3583,30 @@ void symbolic(int32* p, const struct callbacks* cb) {
         let source = format!("verifying \"callbacks.c\";\n{contract}");
         with_proof_trace(name, || {
             let error = verify_c_sources(&source, &[("callbacks.c", c)]).unwrap_err();
+            if name == "symbolic" {
+                // The call reads its function pointer itself; with no contract
+                // for what the pointer holds, the call is refused by the
+                // pointer as the source writes it.
+                let message = error.message();
+                assert!(
+                    message.contains("no contract fact for the function pointer `cb->call`"),
+                    "{message}"
+                );
+                return;
+            }
             let trace = error
                 .trace_context_report()
                 .unwrap_or_else(|| panic!("{}", error.concise_report()));
-            assert!(trace.contains("produces __click_call_result"), "{trace}");
-            assert!(trace.contains("read: at(snapshot#"), "{trace}");
-            assert!(trace.contains("load_function_pointer(value#"), "{trace}");
+            // The call reads its function pointer itself, and the trace
+            // shows the value it read and the snapshot it read it from.
+            assert!(trace.contains("step(cb->call(...))"), "{trace}");
+            assert!(trace.contains("pointer read at snapshot#"), "{trace}");
             assert!(trace.contains("label definitions"), "{trace}");
-            if name == "concrete" {
-                assert!(
-                    trace.contains("function `target#inline:callbacks.c`"),
-                    "{trace}"
-                );
-                assert!(trace.contains("table#file-static:callbacks.c"), "{trace}");
-            } else {
-                assert!(trace.contains("pointer read at"), "{trace}");
-            }
+            assert!(
+                trace.contains("function `target#inline:callbacks.c`"),
+                "{trace}"
+            );
+            assert!(trace.contains("table#file-static:callbacks.c"), "{trace}");
         });
     }
 }

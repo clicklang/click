@@ -14268,7 +14268,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     let click_file = crate::surface::parse("void read(int32* cb) { ensures true; }").unwrap();
     let function_block = &click_file.function_blocks()[0];
     let parsed_function = syntax::parse_functions(
-        "struct callbacks { void (*call)(int *p); }; void read(struct callbacks *cb) { cb->call(0); }",
+        "typedef void (*callback)(int *p); struct callbacks { callback call; }; void read(struct callbacks *cb) { callback f = cb->call; }",
     ).unwrap().pop().unwrap();
     let function = parsed_function.to_kernel_function();
     fn load_type(statement: &ProgramStatement) -> Option<(ProgramType, &str)> {

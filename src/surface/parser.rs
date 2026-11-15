@@ -12527,6 +12527,12 @@ impl Parser {
                     steps.push(SourcePathStep::Operator(kind, index));
                     break;
                 }
+                _ if matches!(self.peek(), Some(Token::Number(_))) => {
+                    let index = self.expect_index("call index")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::AnyCall(index));
+                    break;
+                }
                 _ => {
                     let function = self.expect_ident("called function")?;
                     self.expect(Token::Comma)?;
