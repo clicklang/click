@@ -545,7 +545,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let mut result = proof.clone();
         for step in steps {
-            if result.is_complete() {
+            if result.focused_discharged() {
                 break;
             }
             let next = match step {
@@ -562,7 +562,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             result = next?;
         }
-        if !result.is_complete() {
+        if !result.focused_discharged() {
             return Err(result.step_error("Integer composition did not close the written goal"));
         }
         Ok(Some(result))
@@ -786,6 +786,16 @@ mod tests {
         "requires x >= 3;",
         "2 * x >= 6"
     );
+
+    #[test]
+    #[ignore = "nightly: two composed branches and replay"]
+    fn integer_composition_closes_its_focused_conjunction_branch() {
+        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { solve() using { x <= 3; }; } and { solve() using { x <= 3; }; } } }";
+        let expanded =
+            expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    }
 
     #[test]
     #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]

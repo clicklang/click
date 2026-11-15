@@ -74,7 +74,7 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
             assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
             assert!(expanded.contains("le_antisymmetric"), "{expanded}");
         } else {
-            assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+            assert!(expanded.contains("normalize();"), "{expanded}");
         }
         assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);

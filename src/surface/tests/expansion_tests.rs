@@ -2593,10 +2593,7 @@ theorem integer_exists_choose() {
         let expanded = expand_c_claim_source_by_label(source, &[], label)
             .expect("the Integer quantifier claim should expand");
         if label.ends_with("ordered") {
-            assert!(
-                expanded.contains("arithmetic_certificate"),
-                "{label}: {expanded}"
-            );
+            assert!(expanded.contains("normalize();"), "{label}: {expanded}");
         } else if label.ends_with("witnessed") {
             assert!(expanded.contains("known();"), "{label}: {expanded}");
         } else if label.ends_with("logical") {
@@ -17943,7 +17940,7 @@ fn integer_observed_product_identity_rewrites_expand_and_recheck() {
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("observed product identity rewrite should expand");
-        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
                 verify_c_sources(&expanded, &[])
@@ -17952,14 +17949,14 @@ fn integer_observed_product_identity_rewrites_expand_and_recheck() {
         assert_eq!(planning, 0, "explicit identity certificate must not plan");
         if name == "zero_product" {
             let forged = expanded.replace(
-                "trivial => (to_integer(a) * 0) == 0;",
-                "trivial => (to_integer(a) * 0) == 1;",
+                "ensures to_integer(a) * to_integer(b) == 0",
+                "ensures to_integer(a) * to_integer(b) == 1",
             );
             assert_ne!(
                 forged, expanded,
                 "the expanded zero claim should be present"
             );
-            verify_c_sources(&forged, &[]).expect_err("a false trivial certificate must fail");
+            verify_c_sources(&forged, &[]).expect_err("a false product identity must fail");
         }
         let missing = expanded
             .replace("requires to_integer(b) == 0;", "")
