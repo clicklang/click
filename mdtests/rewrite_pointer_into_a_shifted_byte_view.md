@@ -1,10 +1,9 @@
 # Rewrite a pointer into a shifted byte view
 
-The shifted range keeps its endpoint expression `(i + 4) - i`. After
-rewriting the model pointer, the goal names the same address and snapshot
-with a literal four-byte extent. The checked viewability comparison recognizes
-that structural constant without changing the stored range or reading
-unrelated facts.
+The proof restricts the owned range to `p[i..i + 4]`, rebases it with
+`contains_rebase`, then selects the literal four-byte interval with
+`contains_subrange`. Each containment carries viewability through
+`viewable_restrict`, using explicit bounds and the pointer equality.
 
 ```c filename=alias.c
 void keep(const uint8* p, int32 n, int32 i) {}
@@ -37,17 +36,47 @@ void keep(const uint8* p, int32 n, int32 i) {
     match h.model {
         Link::Node(q) => {
             unfold(h);
-            have viewable(p[i..i + 4]) by {
-                transport(viewable(p[0..n]), viewable(p[i..i + 4])) using {
-                    viewable(p[0..n]);
+            have contains(memory(p[0..n]), memory(p[i..i + 4])) by {
+                apply(click::separation::contains_subrange(p, 0, n, i, i + 4)) using {
                     0 <= i;
                     to_integer(i) <= to_integer(i + 4);
                     to_integer(i + 4) <= to_integer(n);
                 };
             }
+            have viewable(p[i..i + 4]) by {
+                apply(click::separation::viewable_restrict(memory(p[0..n]), memory(p[i..i + 4]))) using {
+                    viewable(p[0..n]);
+                    contains(memory(p[0..n]), memory(p[i..i + 4]));
+                };
+            }
             have viewable(q[0..4]) by {
                 rewrite(q == p + i);
-                solve() using { viewable(p[i..i + 4]); };
+                have contains(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i])) by {
+                    apply(click::separation::contains_rebase(p, i, i + 4)) using {
+                        0 <= i;
+                        to_integer(i) <= to_integer(i + 4);
+                    };
+                }
+                have viewable((p + i)[0..(i + 4) - i]) by {
+                    apply(click::separation::viewable_restrict(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i]))) using {
+                        viewable(p[i..i + 4]);
+                        contains(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i]));
+                    };
+                }
+                have 0 <= 0 by { normalize(); }
+                have 0 <= 4 by { normalize(); }
+                have to_integer(4) <= to_integer((i + 4) - i) by { normalize(); }
+                have contains(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4])) by {
+                    apply(click::separation::contains_subrange(p + i, 0, (i + 4) - i, 0, 4)) using {
+                        0 <= 0;
+                        0 <= 4;
+                        to_integer(4) <= to_integer((i + 4) - i);
+                    };
+                }
+                apply(click::separation::viewable_restrict(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4]))) using {
+                    viewable((p + i)[0..(i + 4) - i]);
+                    contains(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4]));
+                };
             }
             let h = fold(Cell(p, n, i), { model: Link::Node(q) });
             step_until(function.exit);

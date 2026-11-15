@@ -422,6 +422,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("fact_transport_candidate_search");
+        // A known source and target need only an ordinary lookup. Construct
+        // that proof directly, before any history or legacy premise planning.
+        let source_fact =
+            search_input.lower_surface_proposition_direct(source, "known transport source")?;
+        if search_input.facts().pure_known_available(&source_fact) {
+            match search_input
+                .driver()
+                .apply_ordinary_transport_steps(target, vec![ProofStep::Known])
+            {
+                Ok(proof) => return Ok(Ok(proof)),
+                Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
+                Err(_) => {}
+            }
+        }
         if let Some(proof) = Self::try_history_indexed_equalities(search_input, source, target)? {
             return Ok(Ok(proof));
         }

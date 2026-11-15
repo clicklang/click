@@ -572,6 +572,31 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
 }
 
 #[test]
+fn bare_transport_of_a_known_resource_read_expands_to_lookup() {
+    let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
+    let bare = source.replace(
+        " using {\n            separate(statement(0).footprint, m);\n        }",
+        "",
+    );
+    assert_ne!(bare, source);
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&bare, &sources, "keep.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+
+    // A known reflexive source must not establish a changed target.
+    let invalid = bare.replace(
+        "m.value == at(statement(0).entry, m.value)",
+        "m.value != at(statement(0).entry, m.value)",
+    );
+    assert_ne!(invalid, bare);
+    assert!(verify_c_sources(&invalid, &sources).is_err());
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_05")]
 fn multiple_write_transport_expands_to_ordinary_equalities() {
     let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
