@@ -3971,7 +3971,7 @@ struct AccessWidths {
 /// stopped below — the same edge the tracker classified. `None` for every
 /// other step, and for a point that records no edge at all.
 fn recorded_store_byte_width(at: Option<&resource_tracker::VersionPoint>) -> Option<u32> {
-    match at?.retained_state().derivation()?.as_ref() {
+    match at?.shared_memory().derivation()?.as_ref() {
         crate::kernel::MemoryDerivation::Store { value, .. } => {
             Some(value.program_type().byte_width())
         }

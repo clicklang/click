@@ -7380,11 +7380,11 @@ impl std::fmt::Display for CodeRegionResolutionError {
     }
 }
 
-/// A proof-visible name for one recorded symbolic state.
+/// The surface program point selected by `at(point, expression)`.
 ///
-/// Program points are locations in C. Marks are proof-local names bound to
-/// the current state, so they deliberately remain a separate variant rather
-/// than masquerading as C code regions.
+/// A code location is a `ProgramPointRef`; a proof mark names the current
+/// point on its proof path. Both select a recorded symbolic state. Neither
+/// is a memory state or a cell's version point.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ProgramPointSelector {
     ProgramPoint(ProgramPointRef),
